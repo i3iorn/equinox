@@ -1,0 +1,77 @@
+{
+  "name": "Sample API Collection",
+  "description": "Example requests for testing Equinox",
+  "requests": [
+    {
+      "name": "Get User",
+      "method": "GET",
+      "url": "https://jsonplaceholder.typicode.com/users/1",
+      "headers": {
+        "Accept": "application/json"
+      },
+      "params": {},
+      "body": null
+    },
+    {
+      "name": "List Posts",
+      "method": "GET",
+      "url": "https://jsonplaceholder.typicode.com/posts",
+      "headers": {
+        "Accept": "application/json"
+      },
+      "params": {
+        "userId": "1"
+      },
+      "body": null
+    },
+    {
+      "name": "Create Post",
+      "method": "POST",
+      "url": "https://jsonplaceholder.typicode.com/posts",
+      "headers": {
+        "Content-Type": "application/json",
+        "Accept": "application/json"
+      },
+      "params": {},
+      "body": "{\"title\": \"Test Post\", \"body\": \"This is a test\", \"userId\": 1}"
+    },
+    {
+      "name": "Update Post",
+      "method": "PUT",
+      "url": "https://jsonplaceholder.typicode.com/posts/1",
+      "headers": {
+        "Content-Type": "application/json"
+      },
+      "params": {},
+      "body": "{\"id\": 1, \"title\": \"Updated Title\", \"body\": \"Updated content\", \"userId\": 1}"
+    },
+    {
+      "name": "Delete Post",
+      "method": "DELETE",
+      "url": "https://jsonplaceholder.typicode.com/posts/1",
+      "headers": {},
+      "params": {},
+      "body": null
+    },
+    {
+      "name": "GitHub User",
+      "method": "GET",
+      "url": "https://api.github.com/users/octocat",
+      "headers": {
+        "Accept": "application/vnd.github.v3+json"
+      },
+      "params": {},
+      "body": null
+    },
+    {
+      "name": "HTTPBin POST",
+      "method": "POST",
+      "url": "https://httpbin.org/post",
+      "headers": {
+        "Content-Type": "application/json"
+      },
+      "params": {},
+      "body": "{\"name\": \"Equinox\", \"version\": \"0.1.0\"}"
+    }
+  ]
+}

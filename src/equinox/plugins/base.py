@@ -1,0 +1,117 @@
+"""Base plugin classes"""
+
+from abc import ABC, abstractmethod
+from typing import Dict, Any, Optional
+from dataclasses import dataclass
+
+from equinox.core.request import Request, Response
+
+
+@dataclass
+class PluginContext:
+    """Context passed to plugins"""
+
+    storage: Any  # Database storage
+    http_client: Any  # HTTP client
+    config: Dict[str, Any]  # Plugin configuration
+
+
+class Plugin(ABC):
+    """Base class for plugins"""
+
+    def __init__(self, context: PluginContext):
+        """
+        Initialize plugin
+
+        Args:
+            context: Plugin context with storage, client, and config
+        """
+        self.context = context
+        self.enabled = True
+
+    @property
+    @abstractmethod
+    def name(self) -> str:
+        """Plugin name"""
+        pass
+
+    @property
+    @abstractmethod
+    def version(self) -> str:
+        """Plugin version"""
+        pass
+
+    @property
+    def description(self) -> str:
+        """Plugin description"""
+        return ""
+
+    def activate(self) -> None:
+        """Called when plugin is activated"""
+        pass
+
+    def deactivate(self) -> None:
+        """Called when plugin is deactivated"""
+        pass
+
+    def on_request(self, request: Request) -> Optional[Request]:
+        """
+        Called before request is sent. Can modify request.
+
+        Args:
+            request: Request object
+
+        Returns:
+            Modified request or None to use original
+        """
+        return None
+
+    def on_response(self, request: Request, response: Response) -> Optional[Response]:
+        """
+        Called after response is received. Can modify response.
+
+        Args:
+            request: Request object
+            response: Response object
+
+        Returns:
+            Modified response or None to use original
+        """
+        return None
+
+    def on_error(self, request: Request, error: Exception) -> None:
+        """
+        Called when request fails
+
+        Args:
+            request: Request object
+            error: Exception that occurred
+        """
+        pass
+
+
+class AuthPlugin(Plugin):
+    """Base class for authentication plugins"""
+
+    @abstractmethod
+    def apply_auth(self, request: Request, headers: Dict[str, str]) -> None:
+        """
+        Apply authentication to request
+
+        Args:
+            request: Request object
+            headers: Headers dictionary to modify
+        """
+        pass
+
+
+class TransformPlugin(Plugin):
+    """Base class for request/response transformation plugins"""
+
+    def transform_request(self, request: Request) -> Request:
+        """Transform outgoing request"""
+        return request
+
+    def transform_response(self, response: Response) -> Response:
+        """Transform incoming response"""
+        return response

@@ -1,0 +1,11 @@
+{
+  "name": "Production",
+  "description": "Production environment variables",
+  "variables": {
+    "BASE_URL": "https://api.example.com",
+    "API_KEY": "prod-key-67890",
+    "API_VERSION": "v1",
+    "TIMEOUT": "60",
+    "DEBUG": "false"
+  }
+}

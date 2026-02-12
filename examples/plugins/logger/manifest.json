@@ -1,0 +1,11 @@
+{
+  "name": "logger",
+  "displayName": "Request Logger",
+  "version": "1.0.0",
+  "description": "Logs all HTTP requests and responses to a file",
+  "author": "Equinox Team",
+  "main": "plugin.py",
+  "permissions": [
+    "filesystem:write"
+  ]
+}

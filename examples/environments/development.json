@@ -1,0 +1,11 @@
+{
+  "name": "Development",
+  "description": "Development environment variables",
+  "variables": {
+    "BASE_URL": "https://api.dev.example.com",
+    "API_KEY": "dev-key-12345",
+    "API_VERSION": "v1",
+    "TIMEOUT": "30",
+    "DEBUG": "true"
+  }
+}
