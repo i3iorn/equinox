@@ -9,8 +9,9 @@ from PyQt6.QtWidgets import (
     QPushButton,
     QLabel,
     QMessageBox,
+    QCheckBox,
 )
-from PyQt6.QtCore import pyqtSignal, Qt
+from PyQt6.QtCore import pyqtSignal, Qt, QTimer
 
 from equinox.storage import Database, HistoryManager
 
@@ -23,7 +24,9 @@ class HistoryPanel(QWidget):
     def __init__(self, db: Database, parent=None):
         super().__init__(parent)
         self.db = db
+        self.auto_refresh_enabled = True
         self._init_ui()
+        self._setup_auto_refresh()
         self.refresh()
 
     def _init_ui(self):
@@ -36,8 +39,15 @@ class HistoryPanel(QWidget):
         self.refresh_btn.clicked.connect(self.refresh)
         self.clear_btn = QPushButton("Clear All")
         self.clear_btn.clicked.connect(self._clear_history)
+
+        # Auto-refresh checkbox
+        self.auto_refresh_checkbox = QCheckBox("Auto-refresh")
+        self.auto_refresh_checkbox.setChecked(self.auto_refresh_enabled)
+        self.auto_refresh_checkbox.stateChanged.connect(self._toggle_auto_refresh)
+
         toolbar.addWidget(self.refresh_btn)
         toolbar.addWidget(self.clear_btn)
+        toolbar.addWidget(self.auto_refresh_checkbox)
         toolbar.addStretch()
         layout.addLayout(toolbar)
 
@@ -49,6 +59,20 @@ class HistoryPanel(QWidget):
         # Stats label
         self.stats_label = QLabel()
         layout.addWidget(self.stats_label)
+
+    def _setup_auto_refresh(self):
+        """Setup auto-refresh timer"""
+        self.refresh_timer = QTimer(self)
+        self.refresh_timer.timeout.connect(self.refresh)
+        self.refresh_timer.start(3000)  # Refresh every 3 seconds
+
+    def _toggle_auto_refresh(self, state):
+        """Toggle auto-refresh on/off"""
+        self.auto_refresh_enabled = (state == Qt.CheckState.Checked.value)
+        if self.auto_refresh_enabled:
+            self.refresh_timer.start(3000)
+        else:
+            self.refresh_timer.stop()
 
     def refresh(self):
         """Refresh history list"""

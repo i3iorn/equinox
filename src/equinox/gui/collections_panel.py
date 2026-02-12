@@ -10,8 +10,9 @@ from PyQt6.QtWidgets import (
     QInputDialog,
     QMessageBox,
     QMenu,
+    QCheckBox,
 )
-from PyQt6.QtCore import pyqtSignal, Qt
+from PyQt6.QtCore import pyqtSignal, Qt, QTimer
 from PyQt6.QtGui import QAction
 
 from equinox.storage import Database, CollectionManager
@@ -21,11 +22,14 @@ class CollectionsPanel(QWidget):
     """Panel for managing collections and requests"""
 
     request_selected = pyqtSignal(object)  # Request object
+    collections_changed = pyqtSignal()  # Emitted when collections change
 
     def __init__(self, db: Database, parent=None):
         super().__init__(parent)
         self.db = db
+        self.auto_refresh_enabled = True
         self._init_ui()
+        self._setup_auto_refresh()
         self.refresh()
 
     def _init_ui(self):
@@ -38,8 +42,15 @@ class CollectionsPanel(QWidget):
         self.new_collection_btn.clicked.connect(self.create_collection)
         self.refresh_btn = QPushButton("Refresh")
         self.refresh_btn.clicked.connect(self.refresh)
+
+        # Auto-refresh checkbox
+        self.auto_refresh_checkbox = QCheckBox("Auto-refresh")
+        self.auto_refresh_checkbox.setChecked(self.auto_refresh_enabled)
+        self.auto_refresh_checkbox.stateChanged.connect(self._toggle_auto_refresh)
+
         toolbar.addWidget(self.new_collection_btn)
         toolbar.addWidget(self.refresh_btn)
+        toolbar.addWidget(self.auto_refresh_checkbox)
         toolbar.addStretch()
         layout.addLayout(toolbar)
 
@@ -50,6 +61,20 @@ class CollectionsPanel(QWidget):
         self.tree.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.tree.customContextMenuRequested.connect(self._show_context_menu)
         layout.addWidget(self.tree)
+
+    def _setup_auto_refresh(self):
+        """Setup auto-refresh timer"""
+        self.refresh_timer = QTimer(self)
+        self.refresh_timer.timeout.connect(self.refresh)
+        self.refresh_timer.start(2000)  # Refresh every 2 seconds
+
+    def _toggle_auto_refresh(self, state):
+        """Toggle auto-refresh on/off"""
+        self.auto_refresh_enabled = (state == Qt.CheckState.Checked.value)
+        if self.auto_refresh_enabled:
+            self.refresh_timer.start(2000)
+        else:
+            self.refresh_timer.stop()
 
     def refresh(self):
         """Refresh collections tree"""
@@ -80,8 +105,14 @@ class CollectionsPanel(QWidget):
             try:
                 mgr.create_collection(name)
                 self.refresh()
+                self.collections_changed.emit()
             except Exception as e:
                 QMessageBox.critical(self, "Error", f"Failed to create collection: {e}")
+
+    def get_collections(self):
+        """Get list of all collections (for selection dialogs)"""
+        mgr = CollectionManager(self.db)
+        return mgr.list_collections()
 
     def _on_item_double_clicked(self, item: QTreeWidgetItem, column: int):
         """Handle item double click"""
@@ -121,14 +152,18 @@ class CollectionsPanel(QWidget):
         reply = QMessageBox.question(
             self,
             "Confirm Delete",
-            "Are you sure you want to delete this collection?",
+            "Are you sure you want to delete this collection and all its requests?",
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
         )
 
         if reply == QMessageBox.StandardButton.Yes:
             mgr = CollectionManager(self.db)
-            mgr.delete_collection(collection_id)
-            self.refresh()
+            try:
+                mgr.delete_collection(collection_id)
+                self.refresh()
+                self.collections_changed.emit()
+            except Exception as e:
+                QMessageBox.critical(self, "Error", f"Failed to delete collection: {e}")
 
     def _delete_request(self, request_id: int):
         """Delete request"""
@@ -141,5 +176,9 @@ class CollectionsPanel(QWidget):
 
         if reply == QMessageBox.StandardButton.Yes:
             mgr = CollectionManager(self.db)
-            mgr.delete_request(request_id)
-            self.refresh()
+            try:
+                mgr.delete_request(request_id)
+                self.refresh()
+                self.collections_changed.emit()
+            except Exception as e:
+                QMessageBox.critical(self, "Error", f"Failed to delete request: {e}")

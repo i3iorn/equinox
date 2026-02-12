@@ -47,12 +47,38 @@ htmlcov/
 # Logs
 *.log
 app.log*
+audit.log*
 
 # OS
 .DS_Store
 Thumbs.db
+desktop.ini
+
+# Security - NEVER commit these files
+*.pem
+*.key
+*.p12
+*.pfx
+*.crt
+*.cer
+credentials.json
+secrets.json
+secrets.yaml
+.env
+.env.*
+.env.local
+.env.*.local
+*.secret
 
 # Equinox specific
 equinox_data/
+.equinox/
 plugins/*/
 !plugins/.gitkeep
+!examples/plugins/
+
+# Temporary and cache
+*.tmp
+*.temp
+*.bak
+.cache/

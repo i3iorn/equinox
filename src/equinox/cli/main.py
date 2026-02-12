@@ -169,8 +169,22 @@ def _send_request(ctx, method, url, body, headers, params, auth, timeout, no_ver
             db = get_db()
             collection_mgr = CollectionManager(db)
             request.name = save_name
-            req_id = collection_mgr.save_request(request)
-            click.echo(f"Request saved with ID: {req_id}")
+
+            # Get or create default collection
+            collections = collection_mgr.list_collections()
+            if not collections:
+                # Create default collection
+                default_id = collection_mgr.create_collection(
+                    "My Requests",
+                    "Default collection for saved requests"
+                )
+                click.echo(f"Created default collection 'My Requests' (ID: {default_id})")
+            else:
+                # Use first collection
+                default_id = collections[0]["id"]
+
+            req_id = collection_mgr.save_request(request, collection_id=default_id)
+            click.echo(f"✓ Request '{save_name}' saved with ID: {req_id} to collection '{collections[0]['name'] if collections else 'My Requests'}'")
 
         # Send request
         client = HTTPClient(timeout=timeout, verify_ssl=not no_verify)

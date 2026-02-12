@@ -14,6 +14,8 @@ from PyQt6.QtWidgets import (
     QHeaderView,
     QLabel,
     QMessageBox,
+    QDialog,
+    QDialogButtonBox,
 )
 from PyQt6.QtCore import pyqtSignal, Qt, QThread
 from PyQt6.QtGui import QFont
@@ -194,15 +196,10 @@ class RequestPanel(QWidget):
 
     def _save_request(self):
         """Save current request to collection"""
-        from PyQt6.QtWidgets import QInputDialog
+        from PyQt6.QtWidgets import QInputDialog, QComboBox, QDialog, QVBoxLayout, QHBoxLayout, QLabel, QDialogButtonBox
         from equinox.storage import CollectionManager
 
-        # Get request name
-        name, ok = QInputDialog.getText(self, "Save Request", "Request name:")
-        if not ok or not name:
-            return
-
-        # Build request
+        # Build request first
         url = self.url_input.text().strip()
         if not url:
             QMessageBox.warning(self, "Error", "Please enter a URL")
@@ -213,15 +210,73 @@ class RequestPanel(QWidget):
         params = self._get_table_data(self.params_table)
         body = self.body_text.toPlainText().strip() or None
 
-        request = Request(
-            method=method, url=url, headers=headers, params=params, body=body, name=name
-        )
+        # Show dialog to get name and collection
+        dialog = QDialog(self)
+        dialog.setWindowTitle("Save Request")
+        dialog.setMinimumWidth(400)
 
-        # Save to database
+        layout = QVBoxLayout(dialog)
+
+        # Request name
+        name_layout = QHBoxLayout()
+        name_layout.addWidget(QLabel("Request Name:"))
+        name_input = QLineEdit()
+        name_input.setPlaceholderText(f"{method} {url[:50]}...")
+        name_layout.addWidget(name_input)
+        layout.addLayout(name_layout)
+
+        # Collection selection
+        collection_layout = QHBoxLayout()
+        collection_layout.addWidget(QLabel("Collection:"))
+        collection_combo = QComboBox()
+
+        # Load collections
         mgr = CollectionManager(self.db)
-        req_id = mgr.save_request(request, name)
+        collections = mgr.list_collections()
 
-        QMessageBox.information(self, "Success", f"Request saved with ID: {req_id}")
+        if not collections:
+            # Create default collection
+            try:
+                default_id = mgr.create_collection("My Requests", "Default collection for saved requests")
+                collections = mgr.list_collections()
+            except Exception as e:
+                QMessageBox.critical(self, "Error", f"Failed to create default collection: {e}")
+                return
+
+        for col in collections:
+            collection_combo.addItem(col["name"], col["id"])
+
+        collection_layout.addWidget(collection_combo)
+        layout.addLayout(collection_layout)
+
+        # Buttons
+        button_box = QDialogButtonBox(QDialogButtonBox.StandardButton.Save | QDialogButtonBox.StandardButton.Cancel)
+        button_box.accepted.connect(dialog.accept)
+        button_box.rejected.connect(dialog.reject)
+        layout.addWidget(button_box)
+
+        # Show dialog
+        if dialog.exec() == QDialog.DialogCode.Accepted:
+            name = name_input.text().strip()
+            if not name:
+                name = f"{method} {url[:50]}"
+
+            collection_id = collection_combo.currentData()
+
+            request = Request(
+                method=method, url=url, headers=headers, params=params, body=body, name=name
+            )
+
+            try:
+                req_id = mgr.save_request(request, collection_id=collection_id, name=name)
+                QMessageBox.information(self, "Success", f"Request '{name}' saved to collection '{collection_combo.currentText()}'")
+
+                # Emit signal to refresh collections panel
+                if hasattr(self.parent(), 'collections_panel'):
+                    self.parent().collections_panel.refresh()
+
+            except Exception as e:
+                QMessageBox.critical(self, "Error", f"Failed to save request: {e}")
 
     def load_request(self, request: Request):
         """Load request into panel"""

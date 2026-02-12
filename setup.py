@@ -32,15 +32,21 @@ setup(
         "jsonschema>=4.0.0",
         "pyyaml>=6.0.0",
         "python-dotenv>=1.0.0",
+        "cryptography>=41.0.0",
+        "certifi>=2023.0.0",
     ],
     extras_require={
         "dev": [
             "pytest>=7.0.0",
             "pytest-asyncio>=0.21.0",
             "pytest-cov>=4.0.0",
+            "pytest-mock>=3.12.0",
             "black>=23.0.0",
             "flake8>=6.0.0",
             "mypy>=1.0.0",
+            "bandit>=1.7.0",
+            "safety>=2.3.0",
+            "pre-commit>=3.0.0",
         ],
     },
     entry_points={
