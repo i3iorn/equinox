@@ -151,6 +151,10 @@ class EnvironmentManager:
             except json.JSONDecodeError as e:
                 logger.error(f"Failed to parse variables for environment {environment_id}: {e}")
                 row["variables"] = {}
+            try:
+                row["secret_keys"] = json.loads(row.get("secret_keys") or "[]")
+            except Exception:
+                row["secret_keys"] = []
         return row
 
     def get_active_environment(self) -> Optional[Dict[str, Any]]:
@@ -159,6 +163,10 @@ class EnvironmentManager:
         if row:
             row = dict(row)
             row["variables"] = json.loads(row["variables"])
+            try:
+                row["secret_keys"] = json.loads(row.get("secret_keys") or "[]")
+            except Exception:
+                row["secret_keys"] = []
         return row
 
     def list_environments(self) -> List[Dict[str, Any]]:
@@ -175,6 +183,10 @@ class EnvironmentManager:
             except json.JSONDecodeError as e:
                 logger.error(f"Failed to parse variables for environment {row['id']}: {e}")
                 row["variables"] = {}
+            try:
+                row["secret_keys"] = json.loads(row.get("secret_keys") or "[]")
+            except Exception:
+                row["secret_keys"] = []
         return rows
 
     def update_environment(
@@ -183,6 +195,7 @@ class EnvironmentManager:
         name: Optional[str] = None,
         variables: Optional[Dict[str, str]] = None,
         description: Optional[str] = None,
+        secret_keys: Optional[List[str]] = None,
     ) -> None:
         """Update environment
 
@@ -274,6 +287,12 @@ class EnvironmentManager:
             updates.append("variables = ?")
             params.append(json.dumps(sanitized_variables))
 
+        if secret_keys is not None:
+            if not isinstance(secret_keys, list):
+                raise ValidationError("secret_keys must be a list")
+            updates.append("secret_keys = ?")
+            params.append(json.dumps(list(secret_keys)))
+
         if not updates:
             logger.warning(f"No updates provided for environment {environment_id}")
             return
@@ -310,10 +329,11 @@ class EnvironmentManager:
             raise StorageError(f"Environment with ID {environment_id} does not exist")
 
         try:
-            # Deactivate all environments
-            self.db.execute("UPDATE environments SET is_active = 0")
-            # Activate specified environment
-            self.db.execute("UPDATE environments SET is_active = 1 WHERE id = ?", (environment_id,))
+            # Use a single UPDATE with CASE to make the switch atomic
+            self.db.execute(
+                "UPDATE environments SET is_active = CASE WHEN id = ? THEN 1 ELSE 0 END",
+                (environment_id,),
+            )
             logger.info(f"Activated environment '{environment['name']}' (ID: {environment_id})")
 
         except Exception as e:
