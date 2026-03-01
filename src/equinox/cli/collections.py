@@ -1,4 +1,5 @@
 """Collection management CLI commands."""
+import json
 
 import click
 import sys
@@ -104,7 +105,13 @@ def collection_run(collection_id, env_id, stop_on_error, timeout):
         name   = req_row.get("name") or "Unnamed"
         method = req_row.get("method") or "GET"
         url    = req_row.get("url") or ""
-        headers = dict(req_row.get("headers") or {})
+        raw_headers = req_row.get("headers") or {}
+        if isinstance(raw_headers, str):
+            try:
+                raw_headers = json.loads(raw_headers)
+            except (json.JSONDecodeError, TypeError):
+                raw_headers = {}
+        headers = dict(raw_headers)
         body    = req_row.get("body")
 
         # Interpolate variables
