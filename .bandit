@@ -1,0 +1,22 @@
+# Bandit configuration for security scanning
+
+[bandit]
+# Exclude test files
+exclude_dirs = [
+    '/tests/',
+    '/.venv/',
+    '/venv/',
+    '/build/',
+    '/dist/'
+]
+
+# Test IDs to skip (add specific test IDs if needed)
+skips = []
+
+# Security level filter
+# LOW, MEDIUM, HIGH
+level = MEDIUM
+
+# Confidence level filter
+# LOW, MEDIUM, HIGH
+confidence = MEDIUM
