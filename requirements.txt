@@ -4,8 +4,10 @@ click>=8.0.0
 PyQt6>=6.5.0
 pygments>=2.15.0
 jsonschema>=4.0.0
+jsonpath-ng>=1.6.0
 pyyaml>=6.0.0
 python-dotenv>=1.0.0
+urlps>=0.3.5
 
 # Security
 cryptography>=41.0.0
