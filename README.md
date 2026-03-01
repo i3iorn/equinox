@@ -255,6 +255,24 @@ If you discover a security vulnerability, please email security@equinox-project.
 - Dark mode/theming
 - Request chaining with variable extraction
 
+## Shell Completion
+
+Equinox supports automatic shell completion via Click:
+
+```bash
+# Bash — add to ~/.bashrc
+eval "$(_EQUINOX_COMPLETE=bash_source equinox)"
+
+# Zsh — add to ~/.zshrc
+eval "$(_EQUINOX_COMPLETE=zsh_source equinox)"
+
+# Fish — add to ~/.config/fish/completions/equinox.fish
+_EQUINOX_COMPLETE=fish_source equinox | source
+
+# PowerShell — add to $PROFILE
+_EQUINOX_COMPLETE=powershell_source equinox | Invoke-Expression
+```
+
 ## License
 
 MIT License - see [LICENSE](LICENSE)
