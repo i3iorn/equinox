@@ -1,12 +1,4 @@
-"""Database connection and management with security features.
-
-This module provides secure database access with:
-- Parameterized queries (SQL injection prevention)
-- Input validation
-- Error handling
-- Connection pooling
-- Transaction support
-"""
+"""Secure SQLite database access with parameterized queries and thread safety."""
 
 import sqlite3
 import threading
@@ -20,6 +12,8 @@ from equinox.core.validation import Validator
 
 logger = logging.getLogger(__name__)
 
+_CONNECTION_TIMEOUT_SECONDS = 10.0
+
 
 class Database:
     """Secure SQLite database manager.
@@ -31,12 +25,11 @@ class Database:
     - Comprehensive error handling
     """
 
-    # Maximum query size to prevent DoS
     MAX_QUERY_LENGTH = 10000
     MAX_PARAMS = 100
 
     def __init__(self, db_path: str = "equinox.db"):
-        """Initialize database with validation.
+        """Initialize database with path validation and schema migration.
 
         Args:
             db_path: Path to SQLite database file
@@ -48,60 +41,41 @@ class Database:
         if not db_path or not isinstance(db_path, str):
             raise ValidationError("Database path must be a non-empty string")
 
-        # Validate and resolve path
         try:
             self.db_path = Path(db_path).resolve()
-        except Exception as e:
-            raise ValidationError(f"Invalid database path: {e}")
+        except Exception as exc:
+            raise ValidationError(f"Invalid database path: {exc}")
 
-        # Ensure parent directory exists
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
-
         self.lock = threading.Lock()
 
         logger.info(f"Initializing database at {self.db_path}")
-        self._init_schema()
+        self._run_migrations()
 
-    def _init_schema(self):
-        """Initialize database schema from SQL file.
+    def _run_migrations(self) -> None:
+        """Run all pending schema migrations on startup.
+
+        Uses the :class:`~equinox.storage.migrations.MigrationRunner` so the
+        schema is always up-to-date without manual intervention.
 
         Raises:
-            StorageError: If schema initialization fails
+            StorageError: If any migration fails.
         """
-        schema_path = Path(__file__).parent / "schema.sql"
-
-        if not schema_path.exists():
-            raise StorageError(f"Schema file not found: {schema_path}")
-
+        from equinox.storage.migrations import MigrationRunner  # local import avoids circulars
+        runner = MigrationRunner(self)
         try:
-            with self.lock, self.get_connection() as conn:
-                # Read schema file
-                with open(schema_path, "r", encoding="utf-8") as f:
-                    schema_sql = f.read()
+            version = runner.run()
+            logger.info("Database schema at version %d", version)
+        except Exception as exc:
+            raise StorageError(f"Failed to run database migrations: {exc}") from exc
 
-                # Validate schema size
-                if len(schema_sql) > 100000:  # 100KB max for schema
-                    raise StorageError("Schema file is too large")
-
-                # Execute schema
-                conn.executescript(schema_sql)
-                conn.commit()
-
-                logger.info("Database schema initialized successfully")
-
-        except sqlite3.Error as e:
-            logger.error(f"SQLite error during schema initialization: {e}")
-            raise StorageError(f"Failed to initialize database schema: {e}")
-        except Exception as e:
-            logger.error(f"Unexpected error during schema initialization: {e}")
-            raise StorageError(f"Failed to initialize database schema: {e}")
+    def _init_schema(self) -> None:  # pragma: no cover
+        """Deprecated — use _run_migrations."""
+        self._run_migrations()
 
     @contextmanager
     def get_connection(self):
-        """Get database connection context manager.
-
-        Yields:
-            sqlite3.Connection: Database connection
+        """Context manager that yields a configured SQLite connection.
 
         Raises:
             StorageError: If connection fails
@@ -110,30 +84,24 @@ class Database:
             conn = sqlite3.connect(
                 self.db_path,
                 check_same_thread=False,
-                timeout=10.0,  # 10 second timeout
+                timeout=_CONNECTION_TIMEOUT_SECONDS,
                 isolation_level='DEFERRED'
             )
             conn.row_factory = sqlite3.Row
-
-            # Enable foreign keys
             conn.execute("PRAGMA foreign_keys = ON")
-
-            # Set secure defaults
             conn.execute("PRAGMA secure_delete = ON")
-
             yield conn
-
-        except sqlite3.Error as e:
-            logger.error(f"Database connection error: {e}")
-            raise StorageError(f"Database connection failed: {e}")
+        except sqlite3.Error as exc:
+            logger.error(f"Database connection error: {exc}")
+            raise StorageError(f"Database connection failed: {exc}")
         finally:
             try:
                 conn.close()
-            except:
+            except Exception:
                 pass
 
     def _validate_query(self, query: str, params: Tuple) -> None:
-        """Validate query and parameters.
+        """Validate query and parameters before execution.
 
         Args:
             query: SQL query
@@ -144,18 +112,13 @@ class Database:
         """
         if not query or not isinstance(query, str):
             raise ValidationError("Query must be a non-empty string")
-
         if len(query) > self.MAX_QUERY_LENGTH:
             raise ValidationError(f"Query exceeds maximum length of {self.MAX_QUERY_LENGTH}")
-
         if not isinstance(params, (tuple, list)):
             raise ValidationError("Query parameters must be a tuple or list")
-
         if len(params) > self.MAX_PARAMS:
             raise ValidationError(f"Too many parameters (max: {self.MAX_PARAMS})")
 
-        # Ensure parameterized query (prevent SQL injection)
-        # Count placeholders
         placeholder_count = query.count('?')
         if placeholder_count != len(params):
             raise ValidationError(
@@ -184,18 +147,18 @@ class Database:
                 cursor = conn.execute(query, params)
                 conn.commit()
                 return cursor
-        except sqlite3.IntegrityError as e:
-            logger.error(f"Integrity error: {e}")
-            raise StorageError(f"Database integrity error: {e}")
-        except sqlite3.OperationalError as e:
-            logger.error(f"Operational error: {e}")
-            raise StorageError(f"Database operational error: {e}")
-        except sqlite3.Error as e:
-            logger.error(f"Database error: {e}")
-            raise StorageError(f"Database error: {e}")
-        except Exception as e:
-            logger.error(f"Unexpected error during query execution: {e}")
-            raise StorageError(f"Query execution failed: {e}")
+        except sqlite3.IntegrityError as exc:
+            logger.error(f"Integrity error: {exc}")
+            raise StorageError(f"Database integrity error: {exc}")
+        except sqlite3.OperationalError as exc:
+            logger.error(f"Operational error: {exc}")
+            raise StorageError(f"Database operational error: {exc}")
+        except sqlite3.Error as exc:
+            logger.error(f"Database error: {exc}")
+            raise StorageError(f"Database error: {exc}")
+        except Exception as exc:
+            logger.error(f"Unexpected error during query execution: {exc}")
+            raise StorageError(f"Query execution failed: {exc}")
 
     def fetchone(self, query: str, params: Tuple = ()) -> Optional[Dict[str, Any]]:
         """Fetch one row safely.
@@ -218,12 +181,9 @@ class Database:
                 cursor = conn.execute(query, params)
                 row = cursor.fetchone()
                 return dict(row) if row else None
-        except sqlite3.Error as e:
-            logger.error(f"Database error in fetchone: {e}")
-            raise StorageError(f"Failed to fetch row: {e}")
-        except Exception as e:
-            logger.error(f"Unexpected error in fetchone: {e}")
-            raise StorageError(f"Failed to fetch row: {e}")
+        except sqlite3.Error as exc:
+            logger.error(f"Database error in fetchone: {exc}")
+            raise StorageError(f"Failed to fetch row: {exc}")
 
     def fetchall(self, query: str, params: Tuple = ()) -> List[Dict[str, Any]]:
         """Fetch all rows safely.
@@ -246,12 +206,9 @@ class Database:
                 cursor = conn.execute(query, params)
                 rows = cursor.fetchall()
                 return [dict(row) for row in rows]
-        except sqlite3.Error as e:
-            logger.error(f"Database error in fetchall: {e}")
-            raise StorageError(f"Failed to fetch rows: {e}")
-        except Exception as e:
-            logger.error(f"Unexpected error in fetchall: {e}")
-            raise StorageError(f"Failed to fetch rows: {e}")
+        except sqlite3.Error as exc:
+            logger.error(f"Database error in fetchall: {exc}")
+            raise StorageError(f"Failed to fetch rows: {exc}")
 
     def insert(self, query: str, params: Tuple = ()) -> int:
         """Insert a row and return its ID safely.
@@ -269,7 +226,6 @@ class Database:
         """
         self._validate_query(query, params)
 
-        # Ensure it's an INSERT query
         if not query.strip().upper().startswith('INSERT'):
             raise ValidationError("Query must be an INSERT statement")
 
@@ -278,17 +234,16 @@ class Database:
                 cursor = conn.execute(query, params)
                 conn.commit()
                 return cursor.lastrowid
-        except sqlite3.IntegrityError as e:
-            logger.error(f"Integrity error during insert: {e}")
-            raise StorageError(f"Failed to insert row (integrity constraint): {e}")
-        except sqlite3.Error as e:
-            logger.error(f"Database error during insert: {e}")
-            raise StorageError(f"Failed to insert row: {e}")
-        except Exception as e:
-            logger.error(f"Unexpected error during insert: {e}")
-            raise StorageError(f"Failed to insert row: {e}")
+        except sqlite3.IntegrityError as exc:
+            logger.error(f"Integrity error during insert: {exc}")
+            raise StorageError(f"Failed to insert row (integrity constraint): {exc}")
+        except sqlite3.Error as exc:
+            logger.error(f"Database error during insert: {exc}")
+            raise StorageError(f"Failed to insert row: {exc}")
+        except Exception as exc:
+            logger.error(f"Unexpected error during insert: {exc}")
+            raise StorageError(f"Failed to insert row: {exc}")
 
     def close(self):
-        """Close database connection"""
-        # Connections are closed automatically in context managers
+        """No-op — connections are closed automatically in context managers."""
         pass
