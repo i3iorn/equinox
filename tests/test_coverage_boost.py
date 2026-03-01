@@ -1246,14 +1246,12 @@ class TestCollectionManagerCoverage:
         mgr.create_folder(col_id, "Auth")
         mgr.create_folder(col_id, "Auth/OAuth")
         folders = mgr.list_folders(col_id)
-        names = [f["name"] for f in folders]
-        assert "Auth" in names
-        assert "Auth/OAuth" in names
+        assert "Auth" in folders
+        assert "Auth/OAuth" in folders
 
         mgr.delete_folder(col_id, "Auth/OAuth")
         folders = mgr.list_folders(col_id)
-        names = [f["name"] for f in folders]
-        assert "Auth/OAuth" not in names
+        assert "Auth/OAuth" not in folders
 
     def test_variable_operations(self, mgr, col_id):
         mgr.add_variable(col_id, "API_KEY", "secret", "My API key")
