@@ -1,0 +1,406 @@
+"""Code generation — convert a Request object to client code in various languages."""
+
+import json
+import base64
+from typing import Optional
+
+from equinox.core.request import Request
+
+
+def _auth_type_name(auth) -> str:
+    return type(auth).__name__ if auth else ""
+
+
+_REDACTED_TOKEN = "<YOUR_TOKEN>"
+_REDACTED_USER = "<YOUR_USERNAME>"
+_REDACTED_PASS = "<YOUR_PASSWORD>"
+_REDACTED_KEY = "<YOUR_API_KEY>"
+
+
+class PythonRequestsGenerator:
+    """Generate Python code using the ``requests`` library."""
+
+    def generate(self, request: Request) -> str:
+        lines = ["import requests", ""]
+
+        headers = dict(request.headers or {})
+        auth_kwarg = self._inject_auth(request, headers)
+
+        if headers:
+            lines.append(f"headers = {json.dumps(headers, indent=4)}")
+            lines.append("")
+
+        if request.params:
+            lines.append(f"params = {json.dumps(request.params, indent=4)}")
+            lines.append("")
+
+        body_arg = ""
+        if request.body:
+            try:
+                parsed = json.loads(request.body)
+                lines.append(f"json_body = {json.dumps(parsed, indent=4)}")
+                lines.append("")
+                body_arg = "json=json_body"
+            except (json.JSONDecodeError, ValueError):
+                lines.append(f"body = {request.body!r}")
+                lines.append("")
+                body_arg = "data=body"
+
+        method = request.method.lower()
+        args = [f'"{request.url}"']
+        if headers:
+            args.append("headers=headers")
+        if request.params:
+            args.append("params=params")
+        if body_arg:
+            args.append(body_arg)
+        if auth_kwarg:
+            args.append(auth_kwarg)
+
+        args_str = ", ".join(args)
+        lines.append(f"response = requests.{method}({args_str})")
+        lines.append("print(response.status_code)")
+        lines.append("print(response.text)")
+        return "\n".join(lines)
+
+    def _inject_auth(self, request: Request, headers: dict) -> Optional[str]:
+        """Inject auth into headers or return an auth= kwarg string."""
+        if not request.auth:
+            return None
+        name = _auth_type_name(request.auth)
+        auth = request.auth
+        if name == "BearerAuth":
+            headers["Authorization"] = f"Bearer {_REDACTED_TOKEN}"
+            return None
+        if name == "BasicAuth":
+            return f"auth=({_REDACTED_USER!r}, {_REDACTED_PASS!r})"
+        if name == "APIKeyAuth" and getattr(auth, "location", "header") == "header":
+            headers[auth.key] = _REDACTED_KEY
+        return None
+
+
+class PythonHttpxGenerator:
+    """Generate Python code using the ``httpx`` library."""
+
+    def generate(self, request: Request) -> str:
+        lines = ["import httpx", ""]
+
+        headers = dict(request.headers or {})
+        self._inject_auth_headers(request, headers)
+        auth_kwarg = self._auth_kwarg(request)
+
+        if headers:
+            lines.append(f"headers = {json.dumps(headers, indent=4)}")
+            lines.append("")
+
+        if request.params:
+            lines.append(f"params = {json.dumps(request.params, indent=4)}")
+            lines.append("")
+
+        body_arg = ""
+        if request.body:
+            try:
+                parsed = json.loads(request.body)
+                lines.append(f"json_body = {json.dumps(parsed, indent=4)}")
+                lines.append("")
+                body_arg = "json=json_body"
+            except (json.JSONDecodeError, ValueError):
+                lines.append(f"body = {request.body!r}")
+                lines.append("")
+                body_arg = "data=body"
+
+        method = request.method.lower()
+        args = [f'"{request.url}"']
+        if headers:
+            args.append("headers=headers")
+        if request.params:
+            args.append("params=params")
+        if body_arg:
+            args.append(body_arg)
+        if auth_kwarg:
+            args.append(auth_kwarg)
+
+        args_str = ", ".join(args)
+        lines.append("with httpx.Client() as client:")
+        lines.append(f"    response = client.{method}({args_str})")
+        lines.append("    print(response.status_code)")
+        lines.append("    print(response.text)")
+        return "\n".join(lines)
+
+    def _inject_auth_headers(self, request: Request, headers: dict) -> None:
+        if not request.auth:
+            return
+        name = _auth_type_name(request.auth)
+        auth = request.auth
+        if name == "BearerAuth":
+            headers["Authorization"] = f"Bearer {_REDACTED_TOKEN}"
+        elif name == "APIKeyAuth" and getattr(auth, "location", "header") == "header":
+            headers[auth.key] = _REDACTED_KEY
+
+    def _auth_kwarg(self, request: Request) -> Optional[str]:
+        if not request.auth:
+            return None
+        if _auth_type_name(request.auth) == "BasicAuth":
+            return f"auth=({_REDACTED_USER!r}, {_REDACTED_PASS!r})"
+        return None
+
+
+class JavaScriptFetchGenerator:
+    """Generate JavaScript code using the Fetch API."""
+
+    def generate(self, request: Request) -> str:
+        lines = []
+
+        headers = dict(request.headers or {})
+        self._inject_auth_headers(request, headers)
+
+        url = request.url
+        if request.params:
+            qs = "&".join(f"{k}={v}" for k, v in request.params.items())
+            sep = "&" if "?" in url else "?"
+            url = f"{url}{sep}{qs}"
+
+        body_line = None
+        if request.body:
+            try:
+                parsed = json.loads(request.body)
+                lines.append(f"const jsonBody = {json.dumps(parsed, indent=2)};")
+                lines.append("")
+                body_line = "body: JSON.stringify(jsonBody),"
+            except (json.JSONDecodeError, ValueError):
+                lines.append(f"const body = {request.body!r};")
+                lines.append("")
+                body_line = "body: body,"
+
+        lines.append("const response = await fetch(")
+        lines.append(f'  "{url}",')
+        lines.append("  {")
+        lines.append(f'    method: "{request.method}",')
+        if headers:
+            header_json = json.dumps(headers, indent=4)
+            indented = header_json.replace("\n", "\n    ")
+            lines.append(f"    headers: {indented},")
+        if body_line:
+            lines.append(f"    {body_line}")
+        lines.append("  }")
+        lines.append(");")
+        lines.append("")
+        lines.append("const data = await response.json();")
+        lines.append("console.log(response.status, data);")
+        return "\n".join(lines)
+
+    def _inject_auth_headers(self, request: Request, headers: dict) -> None:
+        if not request.auth:
+            return
+        name = _auth_type_name(request.auth)
+        auth = request.auth
+        if name == "BearerAuth":
+            headers["Authorization"] = f"Bearer {_REDACTED_TOKEN}"
+        elif name == "BasicAuth":
+            headers["Authorization"] = f"Basic {_REDACTED_TOKEN}"
+        elif name == "APIKeyAuth" and getattr(auth, "location", "header") == "header":
+            headers[auth.key] = _REDACTED_KEY
+
+
+class GoHttpGenerator:
+    """Generate Go code using the standard ``net/http`` package."""
+
+    def generate(self, request: Request) -> str:
+        lines = [
+            "package main",
+            "",
+            "import (",
+            '    "fmt"',
+            '    "net/http"',
+        ]
+
+        if request.body:
+            lines.append('    "strings"')
+        lines.append(")")
+        lines.append("")
+        lines.append("func main() {")
+
+        if request.body:
+            safe = request.body.replace("\\", "\\\\").replace('"', '\\"').replace("\n", "\\n")
+            lines.append(f'    body := strings.NewReader("{safe}")')
+            lines.append("    req, _ := http.NewRequest(")
+            lines.append(f'        "{request.method}",')
+            lines.append(f'        "{request.url}",')
+            lines.append("        body,")
+            lines.append("    )")
+        else:
+            lines.append("    req, _ := http.NewRequest(")
+            lines.append(f'        "{request.method}",')
+            lines.append(f'        "{request.url}",')
+            lines.append("        nil,")
+            lines.append("    )")
+
+        lines.append("")
+
+        headers = dict(request.headers or {})
+        self._inject_auth_headers(request, headers)
+        for k, v in headers.items():
+            lines.append(f'    req.Header.Set("{k}", "{v}")')
+        if headers:
+            lines.append("")
+
+        lines.append("    resp, _ := http.DefaultClient.Do(req)")
+        lines.append("    defer resp.Body.Close()")
+        lines.append("    fmt.Println(resp.Status)")
+        lines.append("}")
+        return "\n".join(lines)
+
+    def _inject_auth_headers(self, request: Request, headers: dict) -> None:
+        if not request.auth:
+            return
+        name = _auth_type_name(request.auth)
+        auth = request.auth
+        if name == "BearerAuth":
+            headers["Authorization"] = f"Bearer {_REDACTED_TOKEN}"
+        elif name == "BasicAuth":
+            headers["Authorization"] = f"Basic {_REDACTED_TOKEN}"
+        elif name == "APIKeyAuth" and getattr(auth, "location", "header") == "header":
+            headers[auth.key] = _REDACTED_KEY
+
+
+class RubyNetHttpGenerator:
+    """Generate Ruby code using the standard ``net/http`` library."""
+
+    def generate(self, request: Request) -> str:
+        lines = [
+            "require 'net/http'",
+            "require 'uri'",
+            "require 'json'",
+            "",
+        ]
+
+        url = request.url
+        if request.params:
+            qs = "&".join(f"{k}={v}" for k, v in request.params.items())
+            sep = "&" if "?" in url else "?"
+            url = f"{url}{sep}{qs}"
+
+        lines.append(f"uri = URI('{url}')")
+        lines.append("http = Net::HTTP.new(uri.host, uri.port)")
+        lines.append("http.use_ssl = uri.scheme == 'https'")
+        lines.append("")
+
+        method_class = {
+            "GET": "Net::HTTP::Get", "POST": "Net::HTTP::Post",
+            "PUT": "Net::HTTP::Put", "PATCH": "Net::HTTP::Patch",
+            "DELETE": "Net::HTTP::Delete", "HEAD": "Net::HTTP::Head",
+        }.get(request.method, f"Net::HTTP::{request.method.capitalize()}")
+
+        lines.append(f"request = {method_class}.new(uri)")
+
+        headers = dict(request.headers or {})
+        self._inject_auth_headers(request, headers)
+        for k, v in headers.items():
+            lines.append(f"request['{k}'] = '{v}'")
+
+        if request.body:
+            try:
+                parsed = json.loads(request.body)
+                lines.append(f"request.body = {json.dumps(parsed)}.to_json")
+                if "Content-Type" not in headers:
+                    lines.append("request['Content-Type'] = 'application/json'")
+            except (json.JSONDecodeError, ValueError):
+                lines.append(f"request.body = {request.body!r}")
+
+        lines.append("")
+        lines.append("response = http.request(request)")
+        lines.append("puts response.code")
+        lines.append("puts response.body")
+        return "\n".join(lines)
+
+    def _inject_auth_headers(self, request: Request, headers: dict) -> None:
+        if not request.auth:
+            return
+        name = _auth_type_name(request.auth)
+        auth = request.auth
+        if name == "BearerAuth":
+            headers["Authorization"] = f"Bearer {_REDACTED_TOKEN}"
+        elif name == "BasicAuth":
+            headers["Authorization"] = f"Basic {_REDACTED_TOKEN}"
+        elif name == "APIKeyAuth" and getattr(auth, "location", "header") == "header":
+            headers[auth.key] = _REDACTED_KEY
+
+
+class PhpCurlGenerator:
+    """Generate PHP code using the cURL extension."""
+
+    def generate(self, request: Request) -> str:
+        lines = ["<?php", ""]
+
+        url = request.url
+        if request.params:
+            qs = "&".join(f"{k}={v}" for k, v in request.params.items())
+            sep = "&" if "?" in url else "?"
+            url = f"{url}{sep}{qs}"
+
+        lines.append(f"$url = '{url}';")
+        lines.append("$ch = curl_init($url);")
+        lines.append("")
+        lines.append(f"curl_setopt($ch, CURLOPT_CUSTOMREQUEST, '{request.method}');")
+        lines.append("curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);")
+
+        if not getattr(request, "verify_ssl", True):
+            lines.append("curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);")
+
+        headers = dict(request.headers or {})
+        self._inject_auth_headers(request, headers)
+        if headers:
+            header_list = [f"'{k}: {v}'" for k, v in headers.items()]
+            lines.append(f"curl_setopt($ch, CURLOPT_HTTPHEADER, [{', '.join(header_list)}]);")
+
+        if request.body:
+            safe = request.body.replace("'", "\\'")
+            lines.append(f"curl_setopt($ch, CURLOPT_POSTFIELDS, '{safe}');")
+
+        lines.append("")
+        lines.append("$response = curl_exec($ch);")
+        lines.append("$status   = curl_getinfo($ch, CURLINFO_HTTP_CODE);")
+        lines.append("curl_close($ch);")
+        lines.append("")
+        lines.append("echo $status . \"\\n\";")
+        lines.append("echo $response . \"\\n\";")
+        return "\n".join(lines)
+
+    def _inject_auth_headers(self, request: Request, headers: dict) -> None:
+        if not request.auth:
+            return
+        name = _auth_type_name(request.auth)
+        auth = request.auth
+        if name == "BearerAuth":
+            headers["Authorization"] = f"Bearer {_REDACTED_TOKEN}"
+        elif name == "BasicAuth":
+            headers["Authorization"] = f"Basic {_REDACTED_TOKEN}"
+        elif name == "APIKeyAuth" and getattr(auth, "location", "header") == "header":
+            headers[auth.key] = _REDACTED_KEY
+
+
+GENERATORS: dict = {
+    "Python (requests)": PythonRequestsGenerator,
+    "Python (httpx)": PythonHttpxGenerator,
+    "JavaScript (fetch)": JavaScriptFetchGenerator,
+    "Go": GoHttpGenerator,
+    "Ruby": RubyNetHttpGenerator,
+    "PHP (cURL)": PhpCurlGenerator,
+}
+
+
+def generate_code(fmt: str, request: Request) -> str:
+    """Generate client code for *request* in the given format.
+
+    Args:
+        fmt: One of the keys in :data:`GENERATORS`.
+        request: The request to generate code for.
+
+    Returns:
+        Generated code as a string.
+
+    Raises:
+        KeyError: If *fmt* is not a known format.
+    """
+    cls = GENERATORS[fmt]
+    return cls().generate(request)
