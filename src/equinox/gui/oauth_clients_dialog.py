@@ -19,33 +19,13 @@ from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtGui import QColor, QFont
 
 from equinox.gui.theme import Colors, get_mono_font
+from equinox.gui.widgets import make_secret_row
 from equinox.storage import Database, OAuthClientManager
 from equinox.storage.oauth_clients import GRANT_TYPES
 
 from typing import Optional
 
 logger = logging.getLogger(__name__)
-
-
-# ── Show/hide helper (reused from auth_dialog) ────────────────────────────────
-
-def _secret_row(field: QLineEdit) -> QHBoxLayout:
-    row = QHBoxLayout()
-    row.setSpacing(2)
-    row.addWidget(field, 1)
-    btn = QToolButton()
-    btn.setCheckable(True)
-    btn.setText("👁")
-    btn.setFixedWidth(28)
-    btn.setToolTip("Show / hide")
-    btn.setStyleSheet("QToolButton { border: none; font-size: 14px; }")
-    btn.toggled.connect(
-        lambda checked: field.setEchoMode(
-            QLineEdit.EchoMode.Normal if checked else QLineEdit.EchoMode.Password
-        )
-    )
-    row.addWidget(btn)
-    return row
 
 
 class OAuthClientsDialog(QDialog):
