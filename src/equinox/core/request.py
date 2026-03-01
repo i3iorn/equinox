@@ -2,7 +2,7 @@
 
 from dataclasses import dataclass, field
 from typing import Dict, Optional, Any, List
-from datetime import datetime
+from datetime import datetime, timezone
 import json
 
 
@@ -24,6 +24,30 @@ class Request:
     name: Optional[str] = None
     description: Optional[str] = None
     collection_id: Optional[int] = None
+    folder: Optional[str] = None
+    id: Optional[int] = None  # set when loaded from DB; used for autosave
+
+    # Capture rules: list of dicts with keys variable/source/path/default
+    captures: List[Any] = field(default_factory=list)
+
+    # Scripts (Python stdlib only)
+    pre_script:  str = ""
+    post_script: str = ""
+
+    # Client certificate paths (PEM)
+    cert_path:     Optional[str] = None
+    cert_key_path: Optional[str] = None
+
+    # Multipart form-data fields: list of {"key", "type": "text"|"file", "value"}
+    multipart_data: Optional[List[Any]] = None
+
+    # Test assertion rules: list of {"type", "field", "expected"}
+    assertions: List[Any] = field(default_factory=list)
+
+    # Full params list with per-row enabled flag:
+    # [{"key": str, "value": str, "enabled": bool}, ...]
+    # When set, this is the authoritative source; `params` holds only enabled rows.
+    params_list: Optional[List[Any]] = None
 
     def to_dict(self) -> Dict[str, Any]:
         """Convert request to dictionary"""
@@ -60,29 +84,40 @@ class Request:
 
     def to_curl(self) -> str:
         """Convert request to curl command"""
+        import shlex
+
         parts = ["curl"]
 
         # Method
         if self.method != "GET":
-            parts.append(f"-X {self.method}")
+            parts.extend(["-X", self.method])
 
-        # Headers
+        # Headers — use shlex.quote to safely handle values with special chars
         for key, value in self.headers.items():
-            parts.append(f'-H "{key}: {value}"')
+            parts.extend(["-H", f"{key}: {value}"])
 
-        # Body
+        # Body — pass via shlex.quote to handle embedded quotes/special chars
         if self.body:
-            parts.append(f"-d '{self.body}'")
+            parts.extend(["-d", self.body])
 
         # URL with params
         url = self.url
         if self.params:
-            param_str = "&".join(f"{k}={v}" for k, v in self.params.items())
-            url = f"{url}?{param_str}"
+            if "{{" in url or (not url.startswith("http://") and not url.startswith("https://")):
+                # Template URL — can't parse with urlps yet, use string concat
+                qs = "&".join(f"{k}={v}" for k, v in self.params.items())
+                sep = "&" if "?" in url else "?"
+                url = f"{url}{sep}{qs}"
+            else:
+                from urlps import parse_url_unsafe
+                u = parse_url_unsafe(url)
+                for k, v in self.params.items():
+                    u = u.with_query_param(str(k), str(v))
+                url = str(u)
 
-        parts.append(f'"{url}"')
+        parts.append(url)
 
-        return " ".join(parts)
+        return shlex.join(parts)
 
 
 @dataclass
@@ -95,7 +130,12 @@ class Response:
     body: bytes
     elapsed: float  # Response time in seconds
     request: Request
-    timestamp: datetime = field(default_factory=datetime.now)
+    timestamp: datetime = field(default_factory=lambda: datetime.now(timezone.utc).replace(tzinfo=None))
+    # Actual headers/URL used when sending (after auth is applied, params encoded)
+    sent_headers: Optional[Dict[str, str]] = None
+    sent_url: Optional[str] = None
+    # Per-phase timing breakdown (ms); populated by HTTPClient
+    timings: Optional[Dict[str, float]] = None
 
     def __post_init__(self):
         """Ensure headers are case-insensitive"""
@@ -111,9 +151,12 @@ class Response:
     def encoding(self) -> Optional[str]:
         """Extract encoding from content-type header"""
         content_type = self.headers.get("content-type", "")
-        if "charset=" in content_type:
-            return content_type.split("charset=")[1].split(";")[0].strip()
-        return None
+        if not content_type or "charset" not in content_type:
+            return None
+        from email.message import Message
+        msg = Message()
+        msg["content-type"] = content_type
+        return msg.get_param("charset")
 
     def json(self) -> Any:
         """Parse response body as JSON"""
