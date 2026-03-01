@@ -9,6 +9,7 @@ from PyQt6.QtCore import Qt, QThread, pyqtSignal
 from typing import Optional
 
 from equinox.gui.theme import Colors
+from equinox.gui.widgets import make_secret_row
 
 from equinox.auth import BasicAuth, OAuth2Auth, BearerAuth, APIKeyAuth
 
@@ -30,26 +31,6 @@ class _TokenFetchWorker(QThread):
             self.finished.emit(self._auth)
         except Exception as exc:
             self.finished.emit(str(exc))
-
-
-def _make_secret_row(line_edit: QLineEdit) -> QHBoxLayout:
-    """Wrap a password QLineEdit with a show/hide toggle button."""
-    row = QHBoxLayout()
-    row.setSpacing(2)
-    row.addWidget(line_edit, 1)
-    toggle = QToolButton()
-    toggle.setCheckable(True)
-    toggle.setText("👁")
-    toggle.setFixedWidth(28)
-    toggle.setToolTip("Show / hide")
-    toggle.setStyleSheet("QToolButton { border: none; font-size: 14px; }")
-    toggle.toggled.connect(
-        lambda checked: line_edit.setEchoMode(
-            QLineEdit.EchoMode.Normal if checked else QLineEdit.EchoMode.Password
-        )
-    )
-    row.addWidget(toggle)
-    return row
 
 
 class AuthDialog(QDialog):
@@ -169,7 +150,7 @@ class AuthDialog(QDialog):
         self.basic_password = QLineEdit()
         self.basic_password.setEchoMode(QLineEdit.EchoMode.Password)
         lay.addRow("Username:", self.basic_username)
-        lay.addRow("Password:", _make_secret_row(self.basic_password))
+        lay.addRow("Password:", make_secret_row(self.basic_password))
         lay.addRow(self._info("Credentials sent base64-encoded in the Authorization header."))
         return w
 
@@ -178,7 +159,7 @@ class AuthDialog(QDialog):
         self.bearer_token = QLineEdit()
         self.bearer_token.setEchoMode(QLineEdit.EchoMode.Password)
         self.bearer_token.setPlaceholderText("Paste your bearer token here…")
-        lay.addRow("Token:", _make_secret_row(self.bearer_token))
+        lay.addRow("Token:", make_secret_row(self.bearer_token))
         lay.addRow(self._info("Sent as:  Authorization: Bearer <token>"))
         return w
 
@@ -203,10 +184,10 @@ class AuthDialog(QDialog):
 
         lay.addRow("Token URL:*",     self.oauth2_token_url)
         lay.addRow("Client ID:*",     self.oauth2_client_id)
-        lay.addRow("Client Secret:",  _make_secret_row(self.oauth2_client_secret))
+        lay.addRow("Client Secret:",  make_secret_row(self.oauth2_client_secret))
         lay.addRow("Scope:",          self.oauth2_scope)
-        lay.addRow("Access Token:",   _make_secret_row(self.oauth2_access_token))
-        lay.addRow("Refresh Token:",  _make_secret_row(self.oauth2_refresh_token))
+        lay.addRow("Access Token:",   make_secret_row(self.oauth2_access_token))
+        lay.addRow("Refresh Token:",  make_secret_row(self.oauth2_refresh_token))
         lay.addRow(self._info(
             "Select a saved credential above to auto-fill, or type manually.\n"
             "Uses client_credentials or refresh_token grant type."
@@ -238,7 +219,7 @@ class AuthDialog(QDialog):
         self.api_key_location = QComboBox()
         self.api_key_location.addItems(["header", "query"])
         lay.addRow("Key Name:",  self.api_key_name)
-        lay.addRow("Key Value:", _make_secret_row(self.api_key_value))
+        lay.addRow("Key Value:", make_secret_row(self.api_key_value))
         lay.addRow("Add To:",    self.api_key_location)
         lay.addRow(self._info("API key can be sent as a header or query parameter."))
         return w
@@ -260,10 +241,10 @@ class AuthDialog(QDialog):
         self.aws_session_token.setEchoMode(QLineEdit.EchoMode.Password)
         self.aws_session_token.setPlaceholderText("Optional — for temporary credentials (STS)")
         lay.addRow("Access Key ID:", self.aws_access_key)
-        lay.addRow("Secret Access Key:", _make_secret_row(self.aws_secret_key))
+        lay.addRow("Secret Access Key:", make_secret_row(self.aws_secret_key))
         lay.addRow("Region:", self.aws_region)
         lay.addRow("Service:", self.aws_service)
-        lay.addRow("Session Token:", _make_secret_row(self.aws_session_token))
+        lay.addRow("Session Token:", make_secret_row(self.aws_session_token))
         lay.addRow(self._info(
             "Signs requests using AWS Signature Version 4.  "
             "Leave Session Token blank unless you are using temporary credentials."
