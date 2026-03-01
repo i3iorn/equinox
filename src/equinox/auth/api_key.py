@@ -20,7 +20,13 @@ class APIKeyAuth(AuthStrategy):
             key: Key name (e.g., 'X-API-Key', 'api_key')
             value: API key value
             location: Where to place the key ('header' or 'query')
+
+        Raises:
+            ValueError: If location is not 'header' or 'query'
         """
+        if location not in ("header", "query"):
+            raise ValueError(f"Invalid location '{location}'. Must be 'header' or 'query'")
+
         self.key = key
         self.value = value
         self.location = location
@@ -30,7 +36,6 @@ class APIKeyAuth(AuthStrategy):
         if self.location == "header":
             headers[self.key] = self.value
         elif self.location == "query":
-            # Modify request params
             if not hasattr(request, "params"):
                 request.params = {}
             request.params[self.key] = self.value
