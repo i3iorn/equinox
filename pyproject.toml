@@ -19,10 +19,13 @@ dependencies = [
     "PyQt6>=6.5.0",
     "pygments>=2.15.0",
     "jsonschema>=4.0.0",
+    "jsonpath-ng>=1.6.0",
     "pyyaml>=6.0.0",
     "python-dotenv>=1.0.0",
     "cryptography>=41.0.0",
     "certifi>=2023.0.0",
+    "urlps>=0.3.5",
+    "websockets>=12.0",
 ]
 
 [project.optional-dependencies]
@@ -52,6 +55,26 @@ python_files = ["test_*.py"]
 python_classes = ["Test*"]
 python_functions = ["test_*"]
 addopts = "-v --cov=equinox --cov-report=html --cov-report=term"
+asyncio_mode = "auto"
+
+[tool.coverage.run]
+omit = [
+    "src/equinox/gui/*",
+    "src/equinox/plugins/*",
+]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "def __repr__",
+    "raise AssertionError",
+    "raise NotImplementedError",
+    "if __name__ == .__main__.:",
+    "if TYPE_CHECKING:",
+]
+
+[tool.setuptools.package-data]
+equinox = ["py.typed"]
 
 [tool.mypy]
 python_version = "3.9"
