@@ -1,0 +1,82 @@
+name: Security Scanning
+
+on:
+  push:
+    branches: [ master ]
+  pull_request:
+    branches: [ master ]
+
+jobs:
+  security:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+        cache: 'pip'
+
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -e ".[dev]"
+
+    - name: Run Bandit security check (medium+ severity fails build)
+      run: |
+        bandit -r src/ -f json -o bandit-report.json --severity-level medium
+        bandit -r src/ -f txt --severity-level medium
+
+    - name: Run Safety vulnerability check
+      # Safety depends on an external advisory DB; allow it to fail without
+      # blocking the build (network issues, DB unavailability, etc.).
+      continue-on-error: true
+      run: |
+        safety check --json || true
+        safety check
+
+    - name: Run pip-audit for dependency vulnerabilities
+      # pip-audit can surface false positives for dev-only packages; allow
+      # it to be informational while we triage findings manually.
+      continue-on-error: true
+      run: |
+        pip install pip-audit
+        pip-audit --desc
+
+    - name: Upload Bandit report
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: bandit-report
+        path: bandit-report.json
+
+    - name: Comment PR with security results
+      if: github.event_name == 'pull_request'
+      uses: actions/github-script@v6
+      with:
+        script: |
+          const fs = require('fs');
+          let comment = '## Security Scan Results\n\n';
+
+          try {
+            const banditReport = JSON.parse(fs.readFileSync('bandit-report.json', 'utf8'));
+            comment += `### Bandit Results\n`;
+            comment += `- Issues found: ${banditReport.metrics.total_issues}\n`;
+            comment += `- High severity: ${banditReport.metrics.high_severity}\n`;
+            comment += `- Medium severity: ${banditReport.metrics.medium_severity}\n`;
+            comment += `- Low severity: ${banditReport.metrics.low_severity}\n\n`;
+          } catch(e) {
+            console.log('Bandit report not found');
+          }
+
+          github.rest.issues.createComment({
+            issue_number: context.issue.number,
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            body: comment + 'Security checks completed'
+          });
