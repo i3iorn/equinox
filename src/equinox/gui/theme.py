@@ -131,10 +131,10 @@ THEME_LABELS = {"system": "System", "light": "Light", "dark": "Dark"}
 
 # ── Defaults ─────────────────────────────────────────────────────────────────
 
-DEFAULT_FONT_SIZE  = 10
-DEFAULT_MONO_SIZE  = 10
-MIN_FONT_SIZE      = 8
-MAX_FONT_SIZE      = 18
+DEFAULT_FONT_SIZE  = 9
+DEFAULT_MONO_SIZE  = 9
+MIN_FONT_SIZE      = 6
+MAX_FONT_SIZE      = 20
 
 
 # ── Settings persistence ────────────────────────────────────────────────────
