@@ -49,6 +49,11 @@ class Request:
     # When set, this is the authoritative source; `params` holds only enabled rows.
     params_list: Optional[List[Any]] = None
 
+    # Path parameter values: {"id": "123", "postId": "456"}
+    # Extracted from {{param}} tokens in the URL.  Values are merged into
+    # the variable dict at send time so interpolation replaces the tokens.
+    path_params: Dict[str, str] = field(default_factory=dict)
+
     def to_dict(self) -> Dict[str, Any]:
         """Convert request to dictionary"""
         return {
@@ -63,6 +68,7 @@ class Request:
             "name": self.name,
             "description": self.description,
             "collection_id": self.collection_id,
+            "path_params": self.path_params,
         }
 
     @classmethod
@@ -80,6 +86,7 @@ class Request:
             name=data.get("name"),
             description=data.get("description"),
             collection_id=data.get("collection_id"),
+            path_params=data.get("path_params", {}),
         )
 
     def to_curl(self) -> str:

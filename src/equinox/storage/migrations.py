@@ -349,6 +349,12 @@ ALTER TABLE collection_folders ADD COLUMN auth_data TEXT;
         description="Add assertions column to requests for post-response test rules",
         sql="ALTER TABLE requests ADD COLUMN assertions TEXT DEFAULT '[]';",
     ),
+
+    Migration(
+        version=18,
+        description="Add path_params column to requests for structured path parameter values",
+        sql="ALTER TABLE requests ADD COLUMN path_params TEXT DEFAULT '{}';",
+    ),
 ]
 
 # ─────────────────────────────────────────────────────────────────────────────

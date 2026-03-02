@@ -1364,6 +1364,7 @@ class RequestPanel(QWidget):
             folder=getattr(_prev, "folder", None),
             id=getattr(_prev, "id", None),
             name=getattr(_prev, "name", None),
+            path_params=self.path_params_table.get_all_data(),
         )
         self.current_request = request
 
@@ -1915,6 +1916,7 @@ class RequestPanel(QWidget):
             cert_path=self.cert_path_input.text().strip() or None,
             cert_key_path=self.cert_key_input.text().strip() or None,
             description=self.notes_editor.toPlainText().strip() or None,
+            path_params=self.path_params_table.get_all_data(),
         )
         try:
             mgr.save_request(request, collection_id=col_id, name=name)
@@ -1973,6 +1975,10 @@ class RequestPanel(QWidget):
         self.pre_script_result.setText("")
         self.post_script_result.setText("")
         self.notes_editor.setPlainText(getattr(request, "description", "") or "")
+        # Restore path parameters: load saved values, then re-extract from URL
+        self.path_params_table.set_data(getattr(request, "path_params", None) or {})
+        self.path_params_table.update_from_url(request.url)
+        self._path_params_widget.setVisible(self.path_params_table.rowCount() > 0)
         self._clear_dirty()
         self._update_tab_labels()
         self._update_url_suffix()
@@ -2011,6 +2017,8 @@ class RequestPanel(QWidget):
         self.method_combo.setCurrentIndex(0)
         self.headers_table.reset()
         self.params_table.reset()
+        self.path_params_table.reset()
+        self._path_params_widget.setVisible(False)
         self.body_text.clear()
         self._multipart_table.setRowCount(0)
         self._gql_query.clear()

@@ -472,6 +472,7 @@ class OpenAPIImporter:
 
         headers: Dict[str, str] = {}
         params: Dict[str, str] = {}
+        path_params: Dict[str, str] = {}
         body = None
 
         for param in operation.get("parameters", []):
@@ -488,6 +489,7 @@ class OpenAPIImporter:
             elif param_in == "path":
                 # Replace {param} with {{param}} for Equinox variable interpolation
                 url = url.replace(f"{{{param_name}}}", f"{{{{{param_name}}}}}")
+                path_params[param_name] = example
 
         if version.startswith("3."):
             request_body = operation.get("requestBody", {})
@@ -507,7 +509,8 @@ class OpenAPIImporter:
             params=params,
             body=body,
             name=name,
-            description=description
+            description=description,
+            path_params=path_params,
         )
 
     @staticmethod

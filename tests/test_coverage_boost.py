@@ -1265,16 +1265,16 @@ class TestCollectionManagerCoverage:
         vars_list = mgr.list_collection_variables(col_id)
         assert not any(v["key"] == "API_KEY" for v in vars_list)
 
-    def test_move_request(self, mgr, col_id):
+    def test_save_request_to_different_collection(self, mgr, col_id):
+        col2 = mgr.create_collection("Other")
         rid = mgr.save_request(
             Request(method="GET", url="https://x.com", name="R"),
-            collection_id=col_id, name="R",
+            collection_id=col2, name="R",
         )
-        col2 = mgr.create_collection("Other")
-        mgr.move_request(rid, col2)
-        # Request should now be in the other collection
         reqs = mgr.list_requests(col2)
         assert any(r["id"] == rid for r in reqs)
+        # Original collection should have no requests
+        assert mgr.list_requests(col_id) == []
 
     def test_update_request_auth(self, mgr, col_id):
         from equinox.auth import BearerAuth

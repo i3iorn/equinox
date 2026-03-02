@@ -5,6 +5,7 @@ from equinox.gui.widgets.key_value_table import KeyValueTable
 from equinox.gui.widgets.checkable_key_value_table import CheckableKeyValueTable
 from equinox.gui.widgets.json_body_editor import JsonBodyEditor
 from equinox.gui.widgets.secret_row import make_secret_row
+from equinox.gui.widgets.path_params_table import PathParamsTable
 
 __all__ = [
     "UrlLineEdit",
@@ -12,5 +13,6 @@ __all__ = [
     "CheckableKeyValueTable",
     "JsonBodyEditor",
     "make_secret_row",
+    "PathParamsTable",
 ]
 

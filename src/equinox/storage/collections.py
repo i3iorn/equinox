@@ -194,8 +194,9 @@ class CollectionManager:
                 INSERT INTO requests
                 (collection_id, name, description, method, url, headers, params, body,
                  auth_type, auth_data, captures, pre_script, post_script,
-                 cert_path, cert_key_path, folder, timeout, verify_ssl, follow_redirects)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                 cert_path, cert_key_path, folder, timeout, verify_ssl, follow_redirects,
+                 path_params)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     row["collection_id"], copy_name, row.get("description", ""),
@@ -209,6 +210,7 @@ class CollectionManager:
                     row.get("timeout") or self.DEFAULT_TIMEOUT,
                     row.get("verify_ssl", 1),
                     row.get("follow_redirects", 1),
+                    row.get("path_params", "{}"),
                 ),
             )
             logger.info(f"Duplicated request {request_id} → {new_id} ('{copy_name}')")
