@@ -12,6 +12,7 @@ from typing import Any, Dict, List, Optional
 from urllib.parse import urlparse
 
 from equinox.core.exceptions import StorageError, ValidationError
+from equinox.storage.utils import require_positive_int
 from equinox.storage.database import Database
 
 logger = logging.getLogger(__name__)
@@ -58,8 +59,7 @@ class CookieJarManager:
 
     def get(self, cookie_id: int) -> Optional[Dict[str, Any]]:
         """Return a single cookie by id, or None if not found."""
-        if not isinstance(cookie_id, int) or cookie_id < 1:
-            raise ValidationError("cookie_id must be a positive integer")
+        require_positive_int(cookie_id, "cookie_id")
         row = self.db.fetchone(
             "SELECT id, name, value, domain, path, secure, http_only, expires, created_at "
             "FROM cookies WHERE id = ?",
@@ -124,8 +124,7 @@ class CookieJarManager:
         expires: Optional[str] = None,
     ) -> None:
         """Update mutable fields of an existing cookie."""
-        if not isinstance(cookie_id, int) or cookie_id < 1:
-            raise ValidationError("cookie_id must be a positive integer")
+        require_positive_int(cookie_id, "cookie_id")
         if self.get(cookie_id) is None:
             raise StorageError(f"Cookie {cookie_id} not found")
 
@@ -152,8 +151,7 @@ class CookieJarManager:
 
     def delete_cookie(self, cookie_id: int) -> None:
         """Delete a cookie by id."""
-        if not isinstance(cookie_id, int) or cookie_id < 1:
-            raise ValidationError("cookie_id must be a positive integer")
+        require_positive_int(cookie_id, "cookie_id")
         if self.get(cookie_id) is None:
             raise StorageError(f"Cookie {cookie_id} not found")
         self.db.execute("DELETE FROM cookies WHERE id = ?", (cookie_id,))

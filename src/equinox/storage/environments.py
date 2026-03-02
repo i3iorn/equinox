@@ -7,6 +7,7 @@ from typing import List, Dict, Any, Optional
 
 from equinox.storage.database import Database
 from equinox.core.exceptions import StorageError, ValidationError, SecurityError
+from equinox.storage.utils import require_positive_int
 
 logger = logging.getLogger(__name__)
 
@@ -140,8 +141,7 @@ class EnvironmentManager:
         Raises:
             ValidationError: If environment_id is invalid
         """
-        if not isinstance(environment_id, int) or environment_id <= 0:
-            raise ValidationError("Environment ID must be a positive integer")
+        require_positive_int(environment_id, "Environment ID")
 
         row = self.db.fetchone("SELECT * FROM environments WHERE id = ?", (environment_id,))
         if row:
@@ -211,8 +211,7 @@ class EnvironmentManager:
             StorageError: If environment doesn't exist or update fails
         """
         # Validate environment_id
-        if not isinstance(environment_id, int) or environment_id <= 0:
-            raise ValidationError("Environment ID must be a positive integer")
+        require_positive_int(environment_id, "Environment ID")
 
         # Check environment exists
         environment = self.get_environment(environment_id)
@@ -320,8 +319,7 @@ class EnvironmentManager:
             StorageError: If environment doesn't exist
         """
         # Validate environment_id
-        if not isinstance(environment_id, int) or environment_id <= 0:
-            raise ValidationError("Environment ID must be a positive integer")
+        require_positive_int(environment_id, "Environment ID")
 
         # Check environment exists
         environment = self.get_environment(environment_id)
@@ -350,8 +348,7 @@ class EnvironmentManager:
             StorageError: If environment doesn't exist or deletion fails
         """
         # Validate environment_id
-        if not isinstance(environment_id, int) or environment_id <= 0:
-            raise ValidationError("Environment ID must be a positive integer")
+        require_positive_int(environment_id, "Environment ID")
 
         # Check environment exists
         environment = self.get_environment(environment_id)

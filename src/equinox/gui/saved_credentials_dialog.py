@@ -12,13 +12,15 @@ from PyQt6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QSplitter,
     QListWidget, QListWidgetItem, QPushButton, QLabel,
     QWidget, QFormLayout, QLineEdit, QComboBox, QTextEdit,
-    QDialogButtonBox, QMessageBox, QInputDialog, QToolButton,
+    QDialogButtonBox, QMessageBox, QInputDialog,
     QFrame, QStackedWidget,
 )
-from PyQt6.QtCore import Qt, QThread, pyqtSignal
+from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtGui import QColor, QFont
 
 from equinox.gui.theme import Colors, get_mono_font
+from equinox.gui.widgets.secret_row import make_secret_row as _secret_row
+from equinox.gui.workers import OAuthTokenTester
 
 from equinox.storage import Database
 from equinox.storage.saved_credentials import (
@@ -37,26 +39,6 @@ _TYPE_COLOUR = {
     "bearer":    Colors.PURPLE,
     "aws_sigv4": Colors.RED,
 }
-
-
-def _secret_row(field: QLineEdit) -> QHBoxLayout:
-    """Wrap a password QLineEdit with a show/hide eye-toggle button."""
-    row = QHBoxLayout()
-    row.setSpacing(2)
-    row.addWidget(field, 1)
-    btn = QToolButton()
-    btn.setCheckable(True)
-    btn.setText("\U0001f441")   # 👁
-    btn.setFixedWidth(28)
-    btn.setToolTip("Show / hide")
-    btn.setStyleSheet("QToolButton { border: none; font-size: 14px; }")
-    btn.toggled.connect(
-        lambda checked: field.setEchoMode(
-            QLineEdit.EchoMode.Normal if checked else QLineEdit.EchoMode.Password
-        )
-    )
-    row.addWidget(btn)
-    return row
 
 
 class SavedCredentialsDialog(QDialog):
@@ -739,56 +721,7 @@ class SavedCredentialsDialog(QDialog):
         self.test_btn.setText("Testing\u2026")
         self._set_status("Connecting\u2026", ok=None)
 
-        class _Tester(QThread):
-            done = pyqtSignal(bool, str)
-
-            def __init__(self, token_url, client_id, secret, scope, grant_type, extra_params):
-                super().__init__()
-                self.token_url    = token_url
-                self.client_id    = client_id
-                self.secret       = secret
-                self.scope        = scope
-                self.grant_type   = grant_type
-                self.extra_params = extra_params
-
-            def run(self):
-                try:
-                    import httpx
-                    data = {
-                        "grant_type":    self.grant_type,
-                        "client_id":     self.client_id,
-                        "client_secret": self.secret,
-                    }
-                    if self.scope:
-                        data["scope"] = self.scope
-                    data.update(self.extra_params)
-                    resp = httpx.post(self.token_url, data=data, timeout=10.0)
-                    if resp.status_code == 200:
-                        payload    = resp.json()
-                        token_type = payload.get("token_type", "bearer")
-                        expires_in = payload.get("expires_in")
-                        has_access = bool(payload.get("access_token"))
-                        msg = (
-                            f"\u2713 Token received  [{token_type}]"
-                            + (f"  expires_in={expires_in}s" if expires_in else "")
-                            + ("  (no access_token!)" if not has_access else "")
-                        )
-                        self.done.emit(True, msg)
-                    else:
-                        try:
-                            body = resp.json()
-                            err  = (
-                                body.get("error_description")
-                                or body.get("error")
-                                or resp.text[:200]
-                            )
-                        except Exception:
-                            err = resp.text[:200]
-                        self.done.emit(False, f"HTTP {resp.status_code}: {err}")
-                except Exception as exc:
-                    self.done.emit(False, str(exc))
-
-        self._tester = _Tester(
+        self._tester = OAuthTokenTester(
             token_url, client_id, secret, scope, grant_type, extra_params
         )
         self._tester.done.connect(self._on_test_done)

@@ -8,6 +8,7 @@ from typing import List, Dict, Any, Optional
 from equinox.storage.database import Database
 from equinox.core.request import Request, Response
 from equinox.core.exceptions import StorageError, ValidationError, SecurityError
+from equinox.storage.utils import require_positive_int as _require_positive_int_impl
 
 logger = logging.getLogger(__name__)
 
@@ -485,8 +486,7 @@ class HistoryManager:
     @staticmethod
     def _require_positive_int(value: Any, label: str) -> None:
         """Raise ValidationError unless value is a positive integer."""
-        if not isinstance(value, int) or value <= 0:
-            raise ValidationError(f"{label} must be a positive integer")
+        _require_positive_int_impl(value, label)
 
     def _validate_pagination(self, limit: int, offset: int) -> None:
         """Validate limit/offset pagination parameters."""

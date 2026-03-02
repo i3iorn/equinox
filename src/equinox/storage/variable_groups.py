@@ -5,6 +5,11 @@ from typing import List, Dict, Any, Optional
 
 from equinox.storage.database import Database
 from equinox.core.exceptions import StorageError, ValidationError, SecurityError
+from equinox.storage.utils import (
+    require_positive_int,
+    validate_variable_key,
+    validate_variable_value,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -91,8 +96,7 @@ class VariableGroupManager:
         Raises:
             ValidationError: If group_id is invalid
         """
-        if not isinstance(group_id, int) or group_id <= 0:
-            raise ValidationError("Variable group ID must be a positive integer")
+        require_positive_int(group_id, "Variable group ID")
 
         return self.db.fetchone("SELECT * FROM variable_groups WHERE id = ?", (group_id,))
 
@@ -117,8 +121,7 @@ class VariableGroupManager:
             StorageError: If group doesn't exist or update fails
         """
         # Validate group_id
-        if not isinstance(group_id, int) or group_id <= 0:
-            raise ValidationError("Variable group ID must be a positive integer")
+        require_positive_int(group_id, "Variable group ID")
 
         # Check group exists
         group = self.get_group(group_id)
@@ -179,8 +182,7 @@ class VariableGroupManager:
             StorageError: If group doesn't exist or deletion fails
         """
         # Validate group_id
-        if not isinstance(group_id, int) or group_id <= 0:
-            raise ValidationError("Variable group ID must be a positive integer")
+        require_positive_int(group_id, "Variable group ID")
 
         # Check group exists
         group = self.get_group(group_id)
@@ -216,31 +218,15 @@ class VariableGroupManager:
             StorageError: If operation fails
         """
         # Validate group_id
-        if not isinstance(group_id, int) or group_id <= 0:
-            raise ValidationError("Variable group ID must be a positive integer")
+        require_positive_int(group_id, "Variable group ID")
 
         # Check group exists
         group = self.get_group(group_id)
         if not group:
             raise StorageError(f"Variable group with ID {group_id} does not exist")
 
-        # Validate key
-        if not key or not isinstance(key, str):
-            raise ValidationError("Variable key must be a non-empty string")
-
-        if len(key) > self.MAX_VARIABLE_KEY_LENGTH:
-            raise ValidationError(f"Variable key too long (max {self.MAX_VARIABLE_KEY_LENGTH} characters)")
-
-        key = key.strip()
-        if not key:
-            raise ValidationError("Variable key cannot be empty or whitespace")
-
-        # Validate value
-        if not isinstance(value, str):
-            raise ValidationError("Variable value must be a string")
-
-        if len(value) > self.MAX_VARIABLE_VALUE_LENGTH:
-            raise ValidationError(f"Variable value too long (max {self.MAX_VARIABLE_VALUE_LENGTH} characters)")
+        key = validate_variable_key(key, self.MAX_VARIABLE_KEY_LENGTH)
+        validate_variable_value(value, self.MAX_VARIABLE_VALUE_LENGTH)
 
         # Validate description
         if not isinstance(description, str):
@@ -288,8 +274,7 @@ class VariableGroupManager:
             StorageError: If variable doesn't exist or deletion fails
         """
         # Validate group_id
-        if not isinstance(group_id, int) or group_id <= 0:
-            raise ValidationError("Variable group ID must be a positive integer")
+        require_positive_int(group_id, "Variable group ID")
 
         # Validate key
         if not key or not isinstance(key, str):
@@ -317,8 +302,7 @@ class VariableGroupManager:
         Raises:
             ValidationError: If group_id is invalid
         """
-        if not isinstance(group_id, int) or group_id <= 0:
-            raise ValidationError("Variable group ID must be a positive integer")
+        require_positive_int(group_id, "Variable group ID")
 
         return self.db.fetchall(
             "SELECT * FROM variable_group_items WHERE group_id = ? ORDER BY key",

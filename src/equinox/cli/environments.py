@@ -151,32 +151,7 @@ def env_remove_var(environment_id, key):
     click.echo(f"Variable '{key}' removed from environment '{environment['name']}'")
 
 
-def _parse_dotenv(text: str) -> dict:
-    """Parse a .env file and return a {key: value} dict.
-
-    Supports:
-    - ``KEY=VALUE`` pairs (leading/trailing whitespace stripped)
-    - ``export KEY=VALUE`` prefix
-    - Single- and double-quoted values (quotes stripped)
-    - ``# comment`` lines and blank lines (ignored)
-    """
-    result = {}
-    for line in text.splitlines():
-        line = line.strip()
-        if not line or line.startswith("#"):
-            continue
-        if line.startswith("export "):
-            line = line[7:].strip()
-        if "=" not in line:
-            continue
-        key, _, value = line.partition("=")
-        key = key.strip()
-        value = value.strip()
-        if len(value) >= 2 and value[0] == value[-1] and value[0] in ('"', "'"):
-            value = value[1:-1]
-        if key:
-            result[key] = value
-    return result
+from equinox.core.dotenv import parse_dotenv as _parse_dotenv
 
 
 @env.command("import-dotenv")

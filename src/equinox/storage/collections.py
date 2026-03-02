@@ -7,6 +7,11 @@ from typing import List, Dict, Any, Optional
 from equinox.storage.database import Database
 from equinox.core.request import Request
 from equinox.core.exceptions import StorageError, ValidationError
+from equinox.storage.utils import (
+    require_positive_int,
+    validate_variable_key,
+    validate_variable_value,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -228,8 +233,7 @@ class CollectionManager:
             ValidationError: If collection_id is invalid
             StorageError: If deletion fails or collection doesn't exist
         """
-        if not isinstance(collection_id, int) or collection_id <= 0:
-            raise ValidationError("Collection ID must be a positive integer")
+        require_positive_int(collection_id, "Collection ID")
 
         collection = self.get_collection(collection_id)
         if not collection:
@@ -374,8 +378,7 @@ class CollectionManager:
             ValidationError: If request_id is invalid
             StorageError: If deletion fails or request doesn't exist
         """
-        if not isinstance(request_id, int) or request_id <= 0:
-            raise ValidationError("Request ID must be a positive integer")
+        require_positive_int(request_id, "Request ID")
 
         request = self.get_request(request_id)
         if not request:
@@ -403,23 +406,11 @@ class CollectionManager:
             ValidationError: If input is invalid
             StorageError: If operation fails
         """
-        if not isinstance(collection_id, int) or collection_id <= 0:
-            raise ValidationError("Collection ID must be a positive integer")
+        require_positive_int(collection_id, "Collection ID")
         if not self.get_collection(collection_id):
             raise StorageError(f"Collection with ID {collection_id} does not exist")
-        if not key or not isinstance(key, str):
-            raise ValidationError("Variable key must be a non-empty string")
-        if len(key) > _MAX_VARIABLE_KEY_LENGTH:
-            raise ValidationError(f"Variable key too long (max {_MAX_VARIABLE_KEY_LENGTH} characters)")
-
-        key = key.strip()
-        if not key:
-            raise ValidationError("Variable key cannot be empty or whitespace")
-
-        if not isinstance(value, str):
-            raise ValidationError("Variable value must be a string")
-        if len(value) > _MAX_VARIABLE_VALUE_LENGTH:
-            raise ValidationError(f"Variable value too long (max {_MAX_VARIABLE_VALUE_LENGTH} characters)")
+        key = validate_variable_key(key)
+        validate_variable_value(value)
         if not isinstance(description, str):
             raise ValidationError("Variable description must be a string")
         if len(description) > self.MAX_DESCRIPTION_LENGTH:
@@ -453,8 +444,7 @@ class CollectionManager:
             ValidationError: If input is invalid
             StorageError: If deletion fails
         """
-        if not isinstance(collection_id, int) or collection_id <= 0:
-            raise ValidationError("Collection ID must be a positive integer")
+        require_positive_int(collection_id, "Collection ID")
         if not key or not isinstance(key, str):
             raise ValidationError("Variable key must be a non-empty string")
 
@@ -479,8 +469,7 @@ class CollectionManager:
         Raises:
             ValidationError: If collection_id is invalid
         """
-        if not isinstance(collection_id, int) or collection_id <= 0:
-            raise ValidationError("Collection ID must be a positive integer")
+        require_positive_int(collection_id, "Collection ID")
         return self.db.fetchall(
             "SELECT * FROM collection_variables WHERE collection_id = ? ORDER BY key",
             (collection_id,)
@@ -506,10 +495,8 @@ class CollectionManager:
             ValidationError: If input is invalid
             StorageError: If operation fails
         """
-        if not isinstance(collection_id, int) or collection_id <= 0:
-            raise ValidationError("Collection ID must be a positive integer")
-        if not isinstance(group_id, int) or group_id <= 0:
-            raise ValidationError("Variable group ID must be a positive integer")
+        require_positive_int(collection_id, "Collection ID")
+        require_positive_int(group_id, "Variable group ID")
         if not isinstance(priority, int):
             raise ValidationError("Priority must be an integer")
 
@@ -539,10 +526,8 @@ class CollectionManager:
             ValidationError: If input is invalid
             StorageError: If deletion fails
         """
-        if not isinstance(collection_id, int) or collection_id <= 0:
-            raise ValidationError("Collection ID must be a positive integer")
-        if not isinstance(group_id, int) or group_id <= 0:
-            raise ValidationError("Variable group ID must be a positive integer")
+        require_positive_int(collection_id, "Collection ID")
+        require_positive_int(group_id, "Variable group ID")
 
         try:
             self.db.execute(
@@ -565,8 +550,7 @@ class CollectionManager:
         Raises:
             ValidationError: If collection_id is invalid
         """
-        if not isinstance(collection_id, int) or collection_id <= 0:
-            raise ValidationError("Collection ID must be a positive integer")
+        require_positive_int(collection_id, "Collection ID")
         return self.db.fetchall(
             """
             SELECT vg.*, cvg.priority
@@ -594,8 +578,7 @@ class CollectionManager:
         Raises:
             ValidationError: If collection_id is invalid
         """
-        if not isinstance(collection_id, int) or collection_id <= 0:
-            raise ValidationError("Collection ID must be a positive integer")
+        require_positive_int(collection_id, "Collection ID")
 
         merged: Dict[str, str] = {}
 
@@ -1011,8 +994,7 @@ class CollectionManager:
             ValidationError: If *collection_id* or *path* is invalid.
             StorageError: If the collection does not exist or the DB write fails.
         """
-        if not isinstance(collection_id, int) or collection_id <= 0:
-            raise ValidationError("collection_id must be a positive integer")
+        require_positive_int(collection_id, "Collection ID")
         path = (path or "").strip()
         if not path:
             raise ValidationError("Folder path must not be empty")
