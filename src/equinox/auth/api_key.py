@@ -1,7 +1,8 @@
 """API Key authentication"""
 
 from typing import Dict, Any, Literal
-from equinox.auth.base import AuthStrategy
+from equinox.auth.base import AuthStrategy, _validate_credential
+from equinox.core.exceptions import AuthError
 
 
 class APIKeyAuth(AuthStrategy):
@@ -23,12 +24,13 @@ class APIKeyAuth(AuthStrategy):
 
         Raises:
             ValueError: If location is not 'header' or 'query'
+            AuthError: If key or value is empty, too long, or contains CRLF.
         """
         if location not in ("header", "query"):
             raise ValueError(f"Invalid location '{location}'. Must be 'header' or 'query'")
 
-        self.key = key
-        self.value = value
+        self.key = _validate_credential(key, "API key name")
+        self.value = _validate_credential(value, "API key value")
         self.location = location
 
     def apply(self, request: Any, headers: Dict[str, str]) -> None:
@@ -51,8 +53,15 @@ class APIKeyAuth(AuthStrategy):
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> "APIKeyAuth":
-        """Create from dictionary"""
-        return cls(key=data["key"], value=data["value"], location=data.get("location", "header"))
+        """Create from dictionary.
+
+        Raises:
+            AuthError: If required keys are missing or values are invalid.
+        """
+        try:
+            return cls(key=data["key"], value=data["value"], location=data.get("location", "header"))
+        except KeyError as exc:
+            raise AuthError(f"Invalid API key auth data: missing key {exc}") from exc
 
     def __repr__(self) -> str:
         masked_value = f"{self.value[:4]}..." if len(self.value) > 4 else "***"

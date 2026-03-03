@@ -2,7 +2,8 @@
 
 import base64
 from typing import Dict, Any
-from equinox.auth.base import AuthStrategy
+from equinox.auth.base import AuthStrategy, _validate_credential
+from equinox.core.exceptions import AuthError
 
 
 class BasicAuth(AuthStrategy):
@@ -15,9 +16,13 @@ class BasicAuth(AuthStrategy):
         Args:
             username: Username
             password: Password
+
+        Raises:
+            AuthError: If username or password is empty, too long, or
+                contains CRLF characters.
         """
-        self.username = username
-        self.password = password
+        self.username = _validate_credential(username, "Username")
+        self.password = _validate_credential(password, "Password")
 
     def apply(self, request: Any, headers: Dict[str, str]) -> None:
         """Add Authorization header with basic auth credentials"""
@@ -31,8 +36,16 @@ class BasicAuth(AuthStrategy):
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> "BasicAuth":
-        """Create from dictionary"""
-        return cls(username=data["username"], password=data["password"])
+        """Create from dictionary.
+
+        Raises:
+            AuthError: If required keys are missing or values are invalid.
+        """
+        try:
+            return cls(username=data["username"], password=data["password"])
+        except KeyError as exc:
+            raise AuthError(f"Invalid basic auth data: missing key {exc}") from exc
 
     def __repr__(self) -> str:
-        return f"BasicAuth(username={self.username})"
+        masked = f"{self.username[:2]}****" if len(self.username) > 2 else "****"
+        return f"BasicAuth(username={masked})"

@@ -9,7 +9,7 @@ from typing import Dict, Any, Optional
 
 import httpx
 
-from equinox.auth.base import AuthStrategy
+from equinox.auth.base import AuthStrategy, _validate_credential
 from equinox.core.exceptions import AuthError
 from equinox.core.secure_storage import SecureStorage
 from equinox.core.audit import get_audit_logger, AuditEventType, AuditLevel
@@ -65,9 +65,21 @@ class OAuth2Auth(AuthStrategy):
         self.scope = scope
         self.refresh_token = refresh_token
         self.expires_at: Optional[datetime] = None
-        self.token_timeout = token_timeout
+
+        # Validate and clamp token_timeout
+        if not isinstance(token_timeout, (int, float)) or token_timeout <= 0:
+            token_timeout = self.DEFAULT_TOKEN_TIMEOUT
+        self.token_timeout = max(0.1, min(token_timeout, 300.0))
+
         self.secure_storage = secure_storage
-        self.storage_key = storage_key or f"oauth2_{client_id}"
+        # Prevent storage-key collision when client_id is None.
+        if storage_key:
+            self.storage_key = storage_key
+        elif client_id:
+            self.storage_key = f"oauth2_{client_id}"
+        else:
+            import uuid
+            self.storage_key = f"oauth2_anonymous_{uuid.uuid4().hex[:12]}"
 
         # Prevent concurrent token-refresh races
         self._refresh_lock = Lock()
@@ -90,6 +102,10 @@ class OAuth2Auth(AuthStrategy):
 
         if not self.access_token:
             raise AuthError("No access token available")
+
+        # Validate the token before injecting into the header — it may
+        # originate from an untrusted token endpoint.
+        _validate_credential(self.access_token, "OAuth2 access token")
 
         headers["Authorization"] = f"Bearer {self.access_token}"
 
@@ -324,7 +340,20 @@ class OAuth2Auth(AuthStrategy):
         if not self.access_token:
             raise AuthError("Token endpoint did not return access_token")
 
-        expires_in_seconds = int(token_data["expires_in"]) if "expires_in" in token_data else _DEFAULT_TOKEN_EXPIRY_SECONDS
+        # Parse expires_in robustly — servers may return int, float, or
+        # string representations.  Fall back to the default on any error.
+        raw_expires = token_data.get("expires_in")
+        try:
+            expires_in_seconds = int(float(raw_expires)) if raw_expires is not None else _DEFAULT_TOKEN_EXPIRY_SECONDS
+            if expires_in_seconds <= 0:
+                expires_in_seconds = _DEFAULT_TOKEN_EXPIRY_SECONDS
+        except (ValueError, TypeError):
+            logger.warning(
+                "Invalid expires_in value %r, using default %ds",
+                raw_expires, _DEFAULT_TOKEN_EXPIRY_SECONDS,
+            )
+            expires_in_seconds = _DEFAULT_TOKEN_EXPIRY_SECONDS
+
         self.expires_at = (
             datetime.now(timezone.utc).replace(tzinfo=None)
             + timedelta(seconds=expires_in_seconds)

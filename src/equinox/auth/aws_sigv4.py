@@ -14,10 +14,10 @@ import hashlib
 import hmac
 from datetime import datetime, timezone
 from typing import Any, Dict, Optional
-from urllib.parse import quote, urlencode, urlparse, parse_qsl
+from urllib.parse import quote, urlparse, parse_qsl
 
 from equinox.auth.base import AuthStrategy
-from equinox.core.exceptions import ValidationError
+from equinox.core.exceptions import ValidationError, AuthError
 
 
 class AWSSigV4Auth(AuthStrategy):
@@ -132,17 +132,28 @@ class AWSSigV4Auth(AuthStrategy):
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> "AWSSigV4Auth":
-        return cls(
-            access_key=data["access_key"],
-            secret_key=data["secret_key"],
-            region=data["region"],
-            service=data["service"],
-            session_token=data.get("session_token"),
-        )
+        """Create from dictionary.
+
+        Raises:
+            AuthError: If required keys are missing.
+        """
+        try:
+            return cls(
+                access_key=data["access_key"],
+                secret_key=data["secret_key"],
+                region=data["region"],
+                service=data["service"],
+                session_token=data.get("session_token"),
+            )
+        except KeyError as exc:
+            raise AuthError(f"Invalid AWS SigV4 auth data: missing key {exc}") from exc
 
     def __repr__(self) -> str:
+        masked_key = (
+            f"{self.access_key[:4]}****" if len(self.access_key) > 4 else "****"
+        )
         return (
-            f"AWSSigV4Auth(access_key={self.access_key!r}, "
+            f"AWSSigV4Auth(access_key={masked_key!r}, "
             f"region={self.region!r}, service={self.service!r})"
         )
 
