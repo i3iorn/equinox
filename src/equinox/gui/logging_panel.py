@@ -14,6 +14,7 @@ from PyQt6.QtCore import Qt, QSettings
 from PyQt6.QtGui import QFont, QColor
 
 from equinox.gui.theme import Colors, get_mono_font
+from equinox.core.redact import redact_headers
 
 # Python logger — routes GUI traffic to the structured log file as well
 _py_logger = logging.getLogger("equinox.gui.traffic")

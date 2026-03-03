@@ -649,7 +649,7 @@ class TestAuthDialogClientPicker:
         """When a saved credential is picked, access_token and refresh_token
         fields must be cleared so stale tokens don't suppress auto-fetch."""
         from equinox.storage import SavedCredentialsManager
-        from equinox.gui.auth_dialog import AuthDialog
+        from equinox.gui.dialogs.auth_dialog import AuthDialog
         from equinox.auth import OAuth2Auth
 
         # Create a saved credential

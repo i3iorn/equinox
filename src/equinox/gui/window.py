@@ -12,7 +12,7 @@ from equinox.storage import Database
 from equinox.storage.cookies import CookieJarManager
 from equinox.gui.request_panel import RequestPanel
 from equinox.gui.response_panel import ResponsePanel
-from equinox.gui.collections_panel import CollectionsPanel
+from equinox.gui.collections_panel_pkg import CollectionsPanel
 from equinox.gui.history_panel import HistoryPanel
 from equinox.gui.variables_panel import VariablesPanel
 from equinox.gui.logging_panel import LoggingPanel
@@ -342,7 +342,7 @@ class MainWindow(QMainWindow):
             action.setChecked(mode == current)
 
     def _open_preferences(self):
-        from equinox.gui.preferences_dialog import PreferencesDialog
+        from equinox.gui.dialogs.preferences_dialog import PreferencesDialog
         PreferencesDialog(self).exec()
         self._sync_theme_checks()
 
@@ -671,7 +671,7 @@ class MainWindow(QMainWindow):
             QMessageBox.critical(self, "Export Error", f"Failed to export: {e}")
 
     def _manage_environments(self):
-        from equinox.gui.environment_dialog import EnvironmentDialog
+        from equinox.gui.dialogs.environment_dialog import EnvironmentDialog
         dialog = EnvironmentDialog(self.db, self)
         dialog.environment_changed.connect(self._refresh_env_label)
         dialog.exec()
@@ -679,7 +679,7 @@ class MainWindow(QMainWindow):
         self._refresh_env_label()
 
     def _manage_oauth_clients(self):
-        from equinox.gui.saved_credentials_dialog import SavedCredentialsDialog
+        from equinox.gui.dialogs.saved_credentials_dialog import SavedCredentialsDialog
         dialog = SavedCredentialsDialog(self.db, self)
         dialog.exec()
 

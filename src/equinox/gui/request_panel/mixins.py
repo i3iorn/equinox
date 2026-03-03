@@ -477,7 +477,7 @@ class _RequestAuthMixin:
         return w
 
     def _configure_auth(self) -> None:
-        from equinox.gui.auth_dialog import AuthDialog
+        from equinox.gui.dialogs.auth_dialog import AuthDialog
         # Show inherited auth in the dialog so the user sees what's active
         display_auth = self._auth or self._inherited_auth
         dialog = AuthDialog(display_auth, self, db=self.db)

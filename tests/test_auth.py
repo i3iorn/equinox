@@ -31,14 +31,10 @@ class TestBearerAuth:
         assert headers["Authorization"] == "Bearer my-token"
 
     def test_bearer_auth_with_empty_token(self):
-        """Test Bearer auth with empty token."""
-        auth = BearerAuth("")
-        request = Mock()
-        headers = {}
-
-        auth.apply(request, headers)
-
-        assert headers["Authorization"] == "Bearer "
+        """Test Bearer auth rejects empty token."""
+        from equinox.core.exceptions import AuthError
+        with pytest.raises(AuthError, match="non-empty string"):
+            BearerAuth("")
 
 
 class TestAPIKeyAuth:
