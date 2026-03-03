@@ -3,7 +3,7 @@
 These mixins have no ``__init__`` and are purely method containers.  They rely on
 ``self.*`` attributes set by ``RequestPanel.__init__`` (PyQt6 MRO is respected).
 
-Body/captures/assertions/multipart logic lives in ``request_panel_body_mixin``.
+Body/captures/assertions/multipart logic lives in ``body_mixin``.
 """
 
 import logging
@@ -105,7 +105,7 @@ class _RequestSendMixin:
         params  = self.params_table.get_enabled_data()   # only checked rows are sent
         params_list = self.params_table.get_all_rows()   # full list incl. disabled
         body_type = self.body_type_combo.currentText()
-        from equinox.gui.request_builder import assemble_body, inject_content_type
+        from equinox.gui.request_panel.builder import assemble_body, inject_content_type
         body, multipart_data = assemble_body(
             body_type,
             self.body_text.toPlainText().strip(),
