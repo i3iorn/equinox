@@ -130,13 +130,10 @@ class OAuth2Auth(AuthStrategy):
         return instance
 
     def __repr__(self) -> str:
-        token_preview = (
-            f"{self.access_token[:8]}..." if self.access_token and len(self.access_token) > 8
-            else "None"
-        )
+        token_status = "present" if self.access_token else "None"
         return (
             f"OAuth2Auth(client_id={self.client_id}, "
-            f"access_token={token_preview}, expires_at={self.expires_at})"
+            f"access_token={token_status}, expires_at={self.expires_at})"
         )
 
     # ── Token state helpers ───────────────────────────────────────────────────
