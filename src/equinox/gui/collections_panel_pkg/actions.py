@@ -108,7 +108,7 @@ class _CollectionsActionsMixin:
                 QMessageBox.critical(self, "Error", f"Failed to delete request: {e}")
 
     def _manage_variables(self, collection_id: int):
-        from equinox.gui.collection_variables_dialog import CollectionVariablesDialog
+        from equinox.gui.dialogs.collection_variables_dialog import CollectionVariablesDialog
         mgr = CollectionManager(self.db)
         collection = mgr.get_collection(collection_id)
         if not collection:
@@ -174,7 +174,7 @@ class _CollectionsActionsMixin:
         """Create a new request at the collection root and open it in the editor."""
         if col_id is None:
             return
-        from equinox.gui.collections_panel import _NewRequestDialog
+        from equinox.gui.collections_panel_pkg.panel import _NewRequestDialog
         dlg = _NewRequestDialog(self, title="New Request")
         if dlg.exec() != QDialog.DialogCode.Accepted:
             return
@@ -185,7 +185,7 @@ class _CollectionsActionsMixin:
         """Create a new request inside *folder_path* and open it in the editor."""
         if col_id is None:
             return
-        from equinox.gui.collections_panel import _NewRequestDialog
+        from equinox.gui.collections_panel_pkg.panel import _NewRequestDialog
         dlg = _NewRequestDialog(
             self, title=f"New Request in \"{folder_path}\"", folder_hint=folder_path
         )
@@ -367,7 +367,7 @@ class _CollectionsActionsMixin:
         """Open the auth dialog and persist the result on the collection."""
         mgr = CollectionManager(self.db)
         current_auth = mgr.get_collection_auth(col_id)
-        from equinox.gui.auth_dialog import AuthDialog
+        from equinox.gui.dialogs.auth_dialog import AuthDialog
         dialog = AuthDialog(current_auth, self, db=self.db)
         if dialog.exec() == QDialog.DialogCode.Accepted and hasattr(dialog, "_saved_auth"):
             mgr.set_collection_auth(col_id, dialog._saved_auth)
@@ -382,7 +382,7 @@ class _CollectionsActionsMixin:
         """Open the auth dialog and persist the result on the folder."""
         mgr = CollectionManager(self.db)
         current_auth = mgr.get_folder_auth(col_id, folder_path)
-        from equinox.gui.auth_dialog import AuthDialog
+        from equinox.gui.dialogs.auth_dialog import AuthDialog
         dialog = AuthDialog(current_auth, self, db=self.db)
         if dialog.exec() == QDialog.DialogCode.Accepted and hasattr(dialog, "_saved_auth"):
             mgr.set_folder_auth(col_id, folder_path, dialog._saved_auth)

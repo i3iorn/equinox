@@ -57,7 +57,7 @@ def mgr(db):
 
 @pytest.fixture
 def panel(qapp, db):
-    from equinox.gui.collections_panel import CollectionsPanel
+    from equinox.gui.collections_panel_pkg import CollectionsPanel
     p = CollectionsPanel(db)
     yield p
     p.close()

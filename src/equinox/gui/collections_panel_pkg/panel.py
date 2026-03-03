@@ -11,7 +11,7 @@ from PyQt6.QtGui import QAction, QFont, QColor, QShortcut, QKeySequence
 from equinox.gui.theme import Colors
 from equinox.storage import Database, CollectionManager
 from equinox.gui.widgets.drag_drop_tree import _DragDropTree
-from equinox.gui.collections_panel_actions import _CollectionsActionsMixin
+from equinox.gui.collections_panel_pkg.actions import _CollectionsActionsMixin
 
 
 # ── Lightweight "new request" dialog ─────────────────────────────────────────
