@@ -12,6 +12,7 @@ from equinox.core.exceptions import EquinoxError
 from equinox.core.interpolation import VariableInterpolator
 from equinox.auth import BearerAuth, APIKeyAuth, BasicAuth
 from equinox.storage import CollectionManager, HistoryManager
+from equinox.core.redact import redact_headers, redact_body
 
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
@@ -74,11 +75,11 @@ def _print_response(response, debug=False, quiet=False, fmt="text"):
     if debug:
         click.secho("Sent Request:", bold=True)
         click.echo(f"  {response.request.method} {response.sent_url or response.request.url}")
-        sent_hdrs = response.sent_headers or response.request.headers or {}
+        sent_hdrs = redact_headers(response.sent_headers or response.request.headers or {})
         for key, value in sent_hdrs.items():
             click.echo(f"  {key}: {value}")
         if response.request.body:
-            click.echo(f"  Body: {response.request.body[:200]}")
+            click.echo(f"  Body: {redact_body(response.request.body[:200], max_length=200)}")
         click.echo()
 
     status_color = "green" if response.status_code < 400 else "red"
@@ -89,7 +90,7 @@ def _print_response(response, debug=False, quiet=False, fmt="text"):
 
     if debug:
         click.secho("Response Headers:", bold=True)
-        for key, value in response.headers.items():
+        for key, value in redact_headers(dict(response.headers)).items():
             click.echo(f"  {key}: {value}")
         click.echo()
 
@@ -106,7 +107,7 @@ def _print_response(response, debug=False, quiet=False, fmt="text"):
 def _print_response_json(response) -> None:
     """Emit a single JSON object with full response metadata (for scripting/piping)."""
     req = response.request
-    sent_hdrs = response.sent_headers or req.headers or {}
+    sent_hdrs = redact_headers(response.sent_headers or req.headers or {})
     try:
         body_parsed = response.json()
     except Exception:
@@ -117,14 +118,14 @@ def _print_response_json(response) -> None:
             "method": req.method,
             "url": response.sent_url or req.url,
             "headers": dict(sent_hdrs),
-            "body": req.body,
+            "body": redact_body(req.body) if req.body else None,
         },
         "response": {
             "status_code": response.status_code,
             "reason": response.reason,
             "elapsed_s": round(response.elapsed, 4),
             "size_bytes": response.size,
-            "headers": dict(response.headers),
+            "headers": redact_headers(dict(response.headers)),
             "body": body_parsed if body_parsed is not None else response.text,
         },
     }
@@ -233,12 +234,12 @@ def _send_request(ctx, method, url, body, headers, params, auth, timeout,
                 sys.exit(2)
 
     except EquinoxError as exc:
-        click.echo(f"Error: {exc}", err=True)
+        click.echo(f"Error: {redact_body(str(exc))}", err=True)
         sys.exit(1)
     except Exception as exc:
         if ctx.obj.get("DEBUG"):
             raise
-        click.echo(f"Unexpected error: {exc}", err=True)
+        click.echo(f"Unexpected error: {redact_body(str(exc))}", err=True)
         sys.exit(1)
 
 
