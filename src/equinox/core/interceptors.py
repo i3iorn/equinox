@@ -12,7 +12,7 @@ from datetime import datetime, timezone
 from enum import Enum
 
 from equinox.core.request import Request, Response
-from equinox.core.redact import redact_headers, redact_body
+from equinox.core.redact import redact_headers, redact_body, redact_url
 
 
 class InterceptorType(Enum):
@@ -253,7 +253,7 @@ class RequestResponseLogger:
         log_data = {
             "event": "request_sent",
             "method": request.method,
-            "url": request.url,
+            "url": redact_url(request.url),
             "headers": safe_headers,
             "params": dict(request.params) if request.params else {},
             "timeout": request.timeout,
@@ -286,7 +286,7 @@ class RequestResponseLogger:
         log_data = {
             "event": "response_received",
             "method": request.method,
-            "url": request.url,
+            "url": redact_url(request.url),
             "status_code": response.status_code,
             "reason": response.reason,
             "elapsed_time_seconds": elapsed_time,
@@ -319,7 +319,7 @@ class RequestResponseLogger:
         log_data = {
             "event": "request_failed",
             "method": request.method,
-            "url": request.url,
+            "url": redact_url(request.url),
             "error_type": type(error).__name__,
             "error_message": error_msg,
             "timestamp": datetime.now(timezone.utc).replace(tzinfo=None).isoformat(),

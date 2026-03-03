@@ -9,7 +9,7 @@ import dataclasses
 import logging
 import traceback
 
-from equinox.core.redact import redact_body as _redact
+from equinox.core.redact import redact_body as _redact, redact_url as _redact_url
 
 logger = logging.getLogger(__name__)
 
@@ -74,6 +74,8 @@ def _enrich_httpx_error(exc: Exception, raw: str, exc_type: str) -> "str | None"
 
 def _describe_connect_error(inner: str) -> str:
     """Produce a helpful message for an httpx.ConnectError."""
+    # Sanitize the inner message — it may contain URLs with embedded credentials
+    inner = _redact_url(inner)
     lower = inner.lower()
     if "ssl" in lower or "certificate" in lower:
         return (

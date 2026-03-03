@@ -131,6 +131,12 @@ def _validate_ast(source: str, filename: str) -> ast.Module:
 
     tree = ast.parse(source, filename=filename, mode="exec")
 
+    # Names that are blocked when used as function calls
+    _BLOCKED_CALLS: frozenset = frozenset({
+        "setattr", "delattr", "vars", "globals", "locals",
+        "classmethod", "staticmethod", "property", "super",
+    })
+
     for node in ast.walk(tree):
         if isinstance(node, ast.Attribute):
             if node.attr in _DANGEROUS_ATTRS:
@@ -138,17 +144,30 @@ def _validate_ast(source: str, filename: str) -> ast.Module:
                     f"Access to '{node.attr}' is blocked in scripts "
                     f"(line {getattr(node, 'lineno', '?')})"
                 )
-        # Also block string-based getattr calls targeting dangerous attrs
         if isinstance(node, ast.Call):
             func = node.func
-            if isinstance(func, ast.Name) and func.id == "getattr" and len(node.args) >= 2:
-                arg = node.args[1]
-                if isinstance(arg, ast.Constant) and isinstance(arg.value, str):
-                    if arg.value in _DANGEROUS_ATTRS:
-                        raise SecurityError(
-                            f"getattr() with '{arg.value}' is blocked in scripts "
-                            f"(line {getattr(node, 'lineno', '?')})"
-                        )
+            if isinstance(func, ast.Name):
+                # Block 3-arg type() — dynamic class creation (sandbox escape)
+                if func.id == "type" and len(node.args) == 3:
+                    raise SecurityError(
+                        f"type() with 3 arguments (class creation) is blocked in scripts "
+                        f"(line {getattr(node, 'lineno', '?')})"
+                    )
+                # Block introspection / attribute manipulation builtins
+                if func.id in _BLOCKED_CALLS:
+                    raise SecurityError(
+                        f"'{func.id}()' is blocked in scripts "
+                        f"(line {getattr(node, 'lineno', '?')})"
+                    )
+                # Block getattr with dangerous attr names
+                if func.id == "getattr" and len(node.args) >= 2:
+                    arg = node.args[1]
+                    if isinstance(arg, ast.Constant) and isinstance(arg.value, str):
+                        if arg.value in _DANGEROUS_ATTRS:
+                            raise SecurityError(
+                                f"getattr() with '{arg.value}' is blocked in scripts "
+                                f"(line {getattr(node, 'lineno', '?')})"
+                            )
 
     return tree
 

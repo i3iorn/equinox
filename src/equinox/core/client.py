@@ -16,6 +16,7 @@ from equinox.core.exceptions import (
     CertificateError, ValidationError
 )
 from equinox.core.validation import Validator
+from equinox.core.redact import redact_body, redact_url
 from equinox.auth.base import AuthStrategy
 from equinox.core.interceptors import InterceptorChain, RequestResponseLogger
 from equinox.core.audit import get_audit_logger, AuditEventType, AuditLevel
@@ -184,7 +185,7 @@ class HTTPClient:
         try:
             self._validate_request(request)
         except ValidationError as validation_error:
-            logger.error(f"Request validation failed: {validation_error}")
+            logger.error("Request validation failed: %s", type(validation_error).__name__)
             raise
 
         self._check_rate_limit()
@@ -307,15 +308,15 @@ class HTTPClient:
             (
                 httpx.ConnectTimeout,
                 lambda exc, req: dict(
-                    error=TimeoutError("Connection timed out", details={"url": req.url}),
-                    log_message=f"Connection timeout: {exc}",
+                    error=TimeoutError("Connection timed out", details={"url": redact_url(req.url)}),
+                    log_message=f"Connection timeout for {redact_url(req.url)}",
                 ),
             ),
             (
                 httpx.ReadTimeout,
                 lambda exc, req: dict(
-                    error=TimeoutError("Server response timed out", details={"url": req.url}),
-                    log_message=f"Read timeout: {exc}",
+                    error=TimeoutError("Server response timed out", details={"url": redact_url(req.url)}),
+                    log_message=f"Read timeout for {redact_url(req.url)}",
                 ),
             ),
             (
@@ -323,10 +324,10 @@ class HTTPClient:
                 lambda exc, req: dict(
                     error=TimeoutError(
                         f"Request timed out after {self.timeout} seconds",
-                        details={"url": req.url, "timeout": self.timeout},
+                        details={"url": redact_url(req.url), "timeout": self.timeout},
                     ),
-                    audit_tag=f"timeout: {exc}",
-                    log_message=f"Request timeout after {self.timeout}s: {exc}",
+                    audit_tag="timeout",
+                    log_message=f"Request timeout after {self.timeout}s for {redact_url(req.url)}",
                 ),
             ),
             (
@@ -335,9 +336,9 @@ class HTTPClient:
                     error=CertificateError(
                         "SSL certificate verification failed. "
                         "The server's certificate is invalid or untrusted.",
-                        details={"url": req.url, "ssl_error": str(exc)},
+                        details={"url": redact_url(req.url)},
                     ),
-                    log_message=f"SSL certificate verification failed: {exc}",
+                    log_message=f"SSL certificate verification failed for {redact_url(req.url)}",
                 ),
             ),
             (
@@ -346,9 +347,9 @@ class HTTPClient:
                     error=RequestError(
                         "Failed to connect to server. "
                         "Please check the URL and your network connection.",
-                        details={"url": req.url, "error": str(exc)},
+                        details={"url": redact_url(req.url)},
                     ),
-                    log_message=f"Connection error: {exc}",
+                    log_message=f"Connection error for {redact_url(req.url)}",
                 ),
             ),
             (
@@ -356,9 +357,9 @@ class HTTPClient:
                 lambda exc, req: dict(
                     error=RequestError(
                         f"Too many redirects (max: {self.MAX_REDIRECTS})",
-                        details={"url": req.url},
+                        details={"url": redact_url(req.url)},
                     ),
-                    log_message=f"Too many redirects: {exc}",
+                    log_message=f"Too many redirects for {redact_url(req.url)}",
                 ),
             ),
             (
@@ -366,9 +367,9 @@ class HTTPClient:
                 lambda exc, req: dict(
                     error=RequestError(
                         f"HTTP error: {exc.response.status_code}",
-                        details={"url": req.url, "status": exc.response.status_code},
+                        details={"url": redact_url(req.url), "status": exc.response.status_code},
                     ),
-                    log_message=f"HTTP error status: {exc}",
+                    log_message=f"HTTP error status {exc.response.status_code} for {redact_url(req.url)}",
                 ),
             ),
             (
@@ -376,9 +377,9 @@ class HTTPClient:
                 lambda exc, req: dict(
                     error=RequestError(
                         "HTTP request failed",
-                        details={"url": req.url, "error": str(exc)},
+                        details={"url": redact_url(req.url)},
                     ),
-                    log_message=f"HTTP error: {exc}",
+                    log_message=f"HTTP error for {redact_url(req.url)}",
                 ),
             ),
             (
@@ -386,9 +387,9 @@ class HTTPClient:
                 lambda exc, req: dict(
                     error=RequestError(
                         "Request body contains invalid characters",
-                        details={"error": str(exc)},
+                        details={},
                     ),
-                    log_message=f"Encoding error: {exc}",
+                    log_message="Encoding error in request body",
                 ),
             ),
         ]
@@ -408,7 +409,7 @@ class HTTPClient:
             self._update_cookie_jar(request, response)
             response = self.interceptors.process_response(request, response)
             self._audit.log_request(
-                request.method, request.url, status_code=response.status_code
+                request.method, redact_url(request.url), status_code=response.status_code
             )
             return response
 
@@ -425,7 +426,7 @@ class HTTPClient:
                     return self._handle_error(request, **kwargs)
 
             # Generic fallback for truly unexpected errors
-            safe_msg = _redact_body(str(exc))
+            safe_msg = redact_body(str(exc), max_length=500) or ""
             return self._handle_error(
                 request,
                 error=RequestError(
@@ -459,8 +460,10 @@ class HTTPClient:
         try:
             auth_strategy.apply(request, headers)
         except Exception as auth_exc:
-            logger.error(f"Authentication failed: {auth_exc}")
-            raise RequestError(f"Authentication failed: {auth_exc}")
+            # Redact the exception message — it may contain tokens or passwords
+            safe_msg = redact_body(str(auth_exc), max_length=200) or "unknown error"
+            logger.error("Authentication failed: %s", type(auth_exc).__name__)
+            raise RequestError(f"Authentication failed: {safe_msg}")
 
     def _dispatch_request(self, request: Request, headers: Dict[str, str]) -> Response:
         """Choose the right httpx client (cert-aware or standard) and execute the request."""

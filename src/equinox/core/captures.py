@@ -20,6 +20,7 @@ from __future__ import annotations
 import json
 import logging
 import re
+import threading
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 
@@ -183,6 +184,7 @@ class CaptureEngine:
         return response.headers.get(name.lower(), "")
 
     MAX_REGEX_PATTERN_LENGTH = 500
+    _REGEX_TIMEOUT_SECONDS = 5.0
 
     @staticmethod
     def _extract_regex(pattern: str, response: Any) -> str:
@@ -190,6 +192,9 @@ class CaptureEngine:
 
         Returns ``group(1)`` if the pattern defines a capture group,
         otherwise ``group(0)`` (the full match).
+
+        A background thread with a timeout guard protects against
+        catastrophic backtracking (ReDoS).
 
         Args:
             pattern: Regular expression pattern string.
@@ -199,7 +204,7 @@ class CaptureEngine:
             Extracted string.
 
         Raises:
-            ValueError: Pattern did not match or is too long.
+            ValueError: Pattern did not match, is too long, or timed out.
         """
         if len(pattern) > CaptureEngine.MAX_REGEX_PATTERN_LENGTH:
             raise ValueError(
@@ -213,7 +218,30 @@ class CaptureEngine:
 
         # Limit search to first 1 MB of response text to bound CPU time
         text = response.text[:1_048_576] if len(response.text) > 1_048_576 else response.text
-        m = compiled.search(text)
+
+        # Run regex in a thread with a timeout to mitigate ReDoS
+        result_container: List[Any] = [None]  # [match_or_None]
+        error_container: List[Any] = [None]
+
+        def _search() -> None:
+            try:
+                result_container[0] = compiled.search(text)
+            except Exception as exc:
+                error_container[0] = exc
+
+        t = threading.Thread(target=_search, daemon=True)
+        t.start()
+        t.join(timeout=CaptureEngine._REGEX_TIMEOUT_SECONDS)
+
+        if t.is_alive():
+            raise ValueError(
+                f"Regex pattern timed out after {CaptureEngine._REGEX_TIMEOUT_SECONDS}s "
+                f"(possible catastrophic backtracking)"
+            )
+        if error_container[0] is not None:
+            raise ValueError(f"Regex execution error: {error_container[0]}")
+
+        m = result_container[0]
         if not m:
             raise ValueError(f"Pattern {pattern!r} did not match the response body")
         return m.group(1) if m.lastindex and m.lastindex >= 1 else m.group(0)

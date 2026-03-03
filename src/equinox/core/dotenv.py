@@ -1,12 +1,22 @@
 """Shared .env file parser used by both the CLI and GUI."""
 
+# Maximum size of a .env file to prevent memory exhaustion (1 MB).
+MAX_DOTENV_SIZE = 1 * 1024 * 1024
+
 
 def parse_dotenv(text: str) -> dict:
     """Parse a .env file text and return {key: value}.
 
     Handles ``KEY=VALUE``, ``export KEY=VALUE``, quoted values,
     comment lines (``#``), and blank lines.
+
+    Raises:
+        ValueError: If the text exceeds the maximum allowed size.
     """
+    if len(text) > MAX_DOTENV_SIZE:
+        raise ValueError(
+            f".env content exceeds maximum size ({MAX_DOTENV_SIZE} bytes)"
+        )
     result = {}
     for line in text.splitlines():
         line = line.strip()

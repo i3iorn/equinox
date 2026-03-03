@@ -44,7 +44,8 @@ _URL_CREDENTIALS = re.compile(r"(https?://)([^@/:]+):([^@/]+)@", re.IGNORECASE)
 
 # URL query-string secret parameters
 _URL_SECRET_PARAMS = re.compile(
-    r"((?:\?|&)(?:api_key|apikey|token|access_token|secret|password|client_secret)"
+    r"((?:\?|&)(?:api_key|apikey|token|access_token|refresh_token|secret|password"
+    r"|client_secret|private_key)"
     r"=)([^&#]+)",
     re.IGNORECASE,
 )

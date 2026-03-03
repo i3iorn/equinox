@@ -16,6 +16,8 @@ from pathlib import Path
 from typing import Optional, Dict, Any
 from enum import Enum
 
+from equinox.core.redact import redact_url, redact_body
+
 logger = logging.getLogger(__name__)
 
 
@@ -161,6 +163,9 @@ class AuditLogger:
             "authorization",
             "credential",
             "private_key",
+            "client_secret",
+            "access_token",
+            "refresh_token",
         }
 
         for key, value in details.items():
@@ -197,11 +202,12 @@ class AuditLogger:
 
     def log_auth_failure(self, auth_type: str, reason: str, user: Optional[str] = None):
         """Log failed authentication."""
+        safe_reason = redact_body(reason, max_length=200) or "unknown"
         self.log_event(
             AuditEventType.AUTH_FAILURE,
             AuditLevel.WARNING,
-            f"Authentication failed: {auth_type} - {reason}",
-            {"auth_type": auth_type, "reason": reason},
+            f"Authentication failed: {auth_type} - {safe_reason}",
+            {"auth_type": auth_type, "reason": safe_reason},
             user=user,
         )
 
@@ -230,20 +236,22 @@ class AuditLogger:
         user: Optional[str] = None,
     ):
         """Log HTTP request."""
+        safe_url = redact_url(url)
+        safe_error = redact_body(error, max_length=200) if error else None
         if error:
             self.log_event(
                 AuditEventType.REQUEST_FAILED,
                 AuditLevel.ERROR,
-                f"{method} {url} failed: {error}",
-                {"method": method, "url": url, "error": error},
+                f"{method} {safe_url} failed: {safe_error}",
+                {"method": method, "url": safe_url, "error": safe_error},
                 user=user,
             )
         else:
             self.log_event(
                 AuditEventType.REQUEST_SENT,
                 AuditLevel.INFO,
-                f"{method} {url} - {status_code}",
-                {"method": method, "url": url, "status_code": status_code},
+                f"{method} {safe_url} - {status_code}",
+                {"method": method, "url": safe_url, "status_code": status_code},
                 user=user,
             )
 
@@ -317,7 +325,10 @@ class AuditLogger:
         if not self.log_path.exists():
             return
 
-        size_mb = self.log_path.stat().st_size / (1024 * 1024)
+        try:
+            size_mb = self.log_path.stat().st_size / (1024 * 1024)
+        except OSError:
+            return
 
         if size_mb > max_size_mb:
             # Rotate log
@@ -326,9 +337,18 @@ class AuditLogger:
 
             try:
                 self.log_path.rename(rotated_path)
-                logger.info(f"Rotated audit log to {rotated_path}")
-            except Exception as e:
-                logger.error(f"Failed to rotate audit log: {e}")
+                logger.info("Rotated audit log to %s", rotated_path)
+            except OSError:
+                # On Windows the file may be locked by another handler;
+                # fall back to copy-and-truncate.
+                try:
+                    import shutil
+                    shutil.copy2(self.log_path, rotated_path)
+                    with open(self.log_path, "w") as f:
+                        f.truncate(0)
+                    logger.info("Rotated audit log to %s (copy+truncate)", rotated_path)
+                except Exception as e:
+                    logger.error("Failed to rotate audit log: %s", type(e).__name__)
 
 
 # Global audit logger instance

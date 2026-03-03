@@ -166,8 +166,11 @@ class Validator:
                     f"Requests to private/internal IP '{hostname}' are blocked (SSRF protection)"
                 )
         except ValueError:
-            # Not a literal IP — try DNS resolution
+            # Not a literal IP — try DNS resolution with a tight timeout
+            # to avoid stalling on slow/unresponsive DNS servers.
+            old_timeout = socket.getdefaulttimeout()
             try:
+                socket.setdefaulttimeout(2.0)
                 infos = socket.getaddrinfo(hostname_lower, None, socket.AF_UNSPEC, socket.SOCK_STREAM)
                 for family, _, _, _, sockaddr in infos:
                     ip_str = sockaddr[0]
@@ -177,8 +180,10 @@ class Validator:
                             f"Hostname '{hostname}' resolves to private IP {ip_str} "
                             f"(SSRF protection)"
                         )
-            except socket.gaierror:
-                pass  # DNS resolution failed — allow (will fail at connect time)
+            except (socket.gaierror, socket.timeout, OSError):
+                pass  # DNS resolution failed or timed out — allow (will fail at connect time)
+            finally:
+                socket.setdefaulttimeout(old_timeout)
 
     @classmethod
     def validate_header_name(cls, name: str) -> str:

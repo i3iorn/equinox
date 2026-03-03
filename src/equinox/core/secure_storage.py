@@ -18,6 +18,7 @@ import os
 import json
 import base64
 import logging
+import tempfile
 from pathlib import Path
 from typing import Optional, Dict, Any
 from cryptography.fernet import Fernet
@@ -88,7 +89,7 @@ class SecureStorage:
                 return key
 
             except Exception as e:
-                logger.error(f"Failed to load encryption key: {e}")
+                logger.error("Failed to load encryption key: %s", type(e).__name__)
                 raise SecurityError("Failed to load encryption key")
 
         else:
@@ -111,7 +112,7 @@ class SecureStorage:
                 return key
 
             except Exception as e:
-                logger.error(f"Failed to generate encryption key: {e}")
+                logger.error("Failed to generate encryption key: %s", type(e).__name__)
                 raise SecurityError("Failed to generate encryption key")
 
     def _get_cipher(self) -> Fernet:
@@ -130,7 +131,7 @@ class SecureStorage:
                 fernet_key = base64.urlsafe_b64encode(key)
                 self._cipher = Fernet(fernet_key)
             except Exception as e:
-                logger.error(f"Failed to create cipher: {e}")
+                logger.error("Failed to create cipher: %s", type(e).__name__)
                 raise SecurityError("Failed to initialize encryption")
 
         return self._cipher
@@ -165,7 +166,7 @@ class SecureStorage:
             return storage
 
         except Exception as e:
-            logger.error(f"Failed to load secure storage: {e}")
+            logger.error("Failed to load secure storage: %s", type(e).__name__)
             raise SecurityError("Failed to decrypt credentials")
 
     def _save_storage(self, storage: Dict[str, Any]) -> None:
@@ -186,9 +187,25 @@ class SecureStorage:
             # Encrypt
             encrypted_data = cipher.encrypt(json_data.encode("utf-8"))
 
-            # Write to file
-            with open(self.storage_path, "wb") as f:
-                f.write(encrypted_data)
+            # Atomic write: write to a temp file then rename, so a crash
+            # mid-write never leaves a truncated/corrupt credentials file.
+            fd, tmp_path = tempfile.mkstemp(
+                dir=str(self.storage_path.parent), suffix=".tmp"
+            )
+            try:
+                with os.fdopen(fd, "wb") as f:
+                    f.write(encrypted_data)
+                    f.flush()
+                    os.fsync(f.fileno())
+                # os.replace is atomic on POSIX; on Windows it's close enough
+                os.replace(tmp_path, str(self.storage_path))
+            except BaseException:
+                # Clean up the temp file on failure
+                try:
+                    os.unlink(tmp_path)
+                except OSError:
+                    pass
+                raise
 
             # Set restrictive permissions
             try:
@@ -199,7 +216,7 @@ class SecureStorage:
             logger.debug("Secure storage saved successfully")
 
         except Exception as e:
-            logger.error(f"Failed to save secure storage: {e}")
+            logger.error("Failed to save secure storage: %s", type(e).__name__)
             raise SecurityError("Failed to encrypt credentials")
 
     def store(self, key: str, value: str, metadata: Optional[Dict[str, Any]] = None) -> None:
@@ -238,7 +255,7 @@ class SecureStorage:
         # Save storage
         self._save_storage(storage)
 
-        logger.info(f"Stored credential: {key}")
+        logger.debug("Stored credential: %s", key)
         self._audit.log_credential_access("store", key)
 
     def retrieve(self, key: str) -> Optional[str]:
@@ -298,7 +315,7 @@ class SecureStorage:
         # Save storage
         self._save_storage(storage)
 
-        logger.info(f"Deleted credential: {key}")
+        logger.debug("Deleted credential: %s", key)
         self._audit.log_credential_access("delete", key)
         return True
 
@@ -372,7 +389,7 @@ class SecureStorage:
         except (ValidationError, SecurityError):
             raise
         except Exception as exc:
-            logger.error("Failed to export credentials: %s", exc)
+            logger.error("Failed to export credentials: %s", type(exc).__name__)
             raise SecurityError("Failed to export credentials")
         finally:
             if key is not None:
