@@ -425,16 +425,17 @@ class HTTPClient:
                     return self._handle_error(request, **kwargs)
 
             # Generic fallback for truly unexpected errors
+            safe_msg = _redact_body(str(exc))
             return self._handle_error(
                 request,
                 error=RequestError(
-                    f"Request failed: {type(exc).__name__}: {exc}",
+                    f"Request failed: {type(exc).__name__}: {safe_msg}",
                     details={"error": type(exc).__name__},
                 ),
-                audit_tag=f"{type(exc).__name__}: {exc}",
+                audit_tag=f"{type(exc).__name__}",
                 log_message=(
                     f"Unexpected error during request: "
-                    f"{type(exc).__name__}: {exc}"
+                    f"{type(exc).__name__}: {safe_msg}"
                 ),
             )
 
