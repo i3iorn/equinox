@@ -5,6 +5,7 @@ import click
 import sys
 
 from equinox.storage import CollectionManager
+from equinox.core.redact import redact_body as _redact
 
 
 @click.group()
@@ -146,7 +147,7 @@ def collection_run(collection_id, env_id, stop_on_error, timeout):
                 click.secho(f"       {sc} {resp.reason}  ({elapsed_ms} ms)", fg="red")
                 failed += 1
         except Exception as exc:
-            click.secho(f"       ERROR: {exc}", fg="red")
+            click.secho(f"       ERROR: {_redact(str(exc))}", fg="red")
             failed += 1
 
         if stop_on_error and failed:
