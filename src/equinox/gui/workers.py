@@ -84,9 +84,9 @@ class OAuthTokenTester(QThread):
                     )
                 except Exception:
                     err = resp.text[:200]
-                self.done.emit(False, f"HTTP {resp.status_code}: {err}")
+                self.done.emit(False, f"HTTP {resp.status_code}: {redact_body(str(err))}")
         except Exception as exc:
-            self.done.emit(False, str(exc))
+            self.done.emit(False, redact_body(str(exc)))
 
 
 # ─────────────────────────────────────────────────────────────────────────────
