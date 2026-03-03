@@ -120,7 +120,7 @@ class LoggingPanel(QWidget):
             "reason": response.reason,
             "elapsed_ms": elapsed_ms,
             "size_bytes": response.size,
-            "headers": dict(response.headers or {}),
+            "headers": redact_headers(dict(response.headers or {})),
         }
         level = logging.INFO if response.status_code < 400 else logging.WARNING
         _py_logger.log(
