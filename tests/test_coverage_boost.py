@@ -88,7 +88,9 @@ class TestOAuth2Coverage:
         from equinox.auth.oauth2 import OAuth2Auth
         auth = OAuth2Auth(client_id="cid", access_token="a" * 20)
         r = repr(auth)
-        assert "aaaaaaaa..." in r
+        # Token value must NOT appear — only a safe status label
+        assert "aaaaaaaa" not in r
+        assert "present" in r
 
     def test_repr_without_token(self):
         from equinox.auth.oauth2 import OAuth2Auth
