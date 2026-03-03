@@ -9,6 +9,8 @@ import dataclasses
 import logging
 import traceback
 
+from equinox.core.redact import redact_body as _redact
+
 logger = logging.getLogger(__name__)
 
 
@@ -32,8 +34,8 @@ def enrich_exception(exc: Exception) -> RichError:
     exc_type = type(exc).__name__
     tb = traceback.format_exc()
 
-    # Log full traceback regardless
-    logger.debug("Exception in worker thread:\n%s", tb)
+    # Log full traceback regardless — redact secrets that might appear
+    logger.debug("Exception in worker thread:\n%s", _redact(tb))
 
     raw = str(exc).strip()
 
@@ -43,7 +45,8 @@ def enrich_exception(exc: Exception) -> RichError:
     if msg is None:
         msg = raw or f"Unexpected error ({exc_type})"
 
-    return RichError(exc_type=exc_type, message=msg, tb=tb)
+    # Scrub any credential fragments that leaked through exception strings
+    return RichError(exc_type=exc_type, message=_redact(msg), tb=_redact(tb))
 
 
 def _enrich_httpx_error(exc: Exception, raw: str, exc_type: str) -> "str | None":
