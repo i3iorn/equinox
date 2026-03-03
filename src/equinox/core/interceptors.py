@@ -12,6 +12,7 @@ from datetime import datetime, timezone
 from enum import Enum
 
 from equinox.core.request import Request, Response
+from equinox.core.redact import redact_headers, redact_body
 
 
 class InterceptorType(Enum):
@@ -248,15 +249,7 @@ class RequestResponseLogger:
             level: Logging level
             include_body: Whether to include request body
         """
-        _sensitive_headers = {
-            "authorization", "x-api-key", "api-key", "apikey",
-            "x-auth-token", "x-access-token", "cookie", "set-cookie",
-            "x-csrf-token", "proxy-authorization",
-        }
-        safe_headers = {
-            k: ("[REDACTED]" if k.lower() in _sensitive_headers else v)
-            for k, v in (request.headers or {}).items()
-        }
+        safe_headers = redact_headers(request.headers or {})
         log_data = {
             "event": "request_sent",
             "method": request.method,
@@ -269,7 +262,7 @@ class RequestResponseLogger:
         }
 
         if include_body and request.body:
-            log_data["body"] = request.body[:1000]  # Limit to first 1000 chars
+            log_data["body"] = redact_body(request.body[:1000], max_length=1000)
 
         self.logger.log(level, json.dumps(log_data))
 
@@ -297,13 +290,13 @@ class RequestResponseLogger:
             "status_code": response.status_code,
             "reason": response.reason,
             "elapsed_time_seconds": elapsed_time,
-            "headers": dict(response.headers) if response.headers else {},
+            "headers": redact_headers(dict(response.headers) if response.headers else {}),
             "timestamp": datetime.now(timezone.utc).replace(tzinfo=None).isoformat(),
         }
 
         if include_body and response.body:
             body_preview = response.body[:1000] if isinstance(response.body, str) else str(response.body)[:1000]
-            log_data["body"] = body_preview
+            log_data["body"] = redact_body(body_preview, max_length=1000)
 
         self.logger.log(level, json.dumps(log_data))
 
@@ -320,12 +313,15 @@ class RequestResponseLogger:
             error: Exception that occurred
             level: Logging level
         """
+        error_msg = str(error)
+        # Strip potential credential fragments from error messages
+        error_msg = redact_body(error_msg, max_length=500)
         log_data = {
             "event": "request_failed",
             "method": request.method,
             "url": request.url,
             "error_type": type(error).__name__,
-            "error_message": str(error),
+            "error_message": error_msg,
             "timestamp": datetime.now(timezone.utc).replace(tzinfo=None).isoformat(),
         }
 
