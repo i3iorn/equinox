@@ -18,6 +18,7 @@ from equinox.core.request import Request, Response
 from equinox.storage.collections import CollectionManager
 from equinox.storage.database import Database
 from equinox.core.exceptions import ValidationError
+from equinox.core.redact import redact_headers
 
 logger = logging.getLogger(__name__)
 
@@ -43,9 +44,10 @@ class CurlExporter:
         """
         curl_cmd = ["curl", "-X", request.method]
 
-        # Add headers
+        # Add headers — redact sensitive values so exports are safe to share
         if request.headers:
-            for key, value in request.headers.items():
+            safe_headers = redact_headers(request.headers)
+            for key, value in safe_headers.items():
                 curl_cmd.append(f"-H {CurlExporter._shell_quote(f'{key}: {value}')}")
 
         # Add body if present
@@ -100,7 +102,9 @@ class PostmanExporter:
                     "method": req.get("method", "GET"),
                     "header": [
                         {"key": k, "value": v, "type": "text"}
-                        for k, v in (json.loads(req.get("headers", "{}")) or {}).items()
+                        for k, v in redact_headers(
+                            json.loads(req.get("headers", "{}")) or {}
+                        ).items()
                     ],
                     "url": {
                         "raw": req.get("url", ""),
@@ -268,6 +272,9 @@ class HARExporter:
         if started_datetime is None:
             started_datetime = datetime.now(timezone.utc).replace(tzinfo=None)
 
+        safe_req_headers = redact_headers(request.headers or {})
+        safe_resp_headers = redact_headers(dict(response.headers) if response.headers else {})
+
         return {
             "startedDateTime": started_datetime.isoformat() + "Z",
             "time": response.elapsed * 1000 if response.elapsed else 0,
@@ -277,7 +284,7 @@ class HARExporter:
                 "httpVersion": "HTTP/1.1",
                 "headers": [
                     {"name": k, "value": v}
-                    for k, v in (request.headers or {}).items()
+                    for k, v in safe_req_headers.items()
                 ],
                 "queryString": [
                     {"name": k, "value": v}
@@ -288,7 +295,7 @@ class HARExporter:
                     "text": request.body or ""
                 } if request.body else None,
                 "cookies": [],
-                "headersSize": sum(len(f"{k}: {v}\r\n") for k, v in (request.headers or {}).items()),
+                "headersSize": sum(len(f"{k}: {v}\r\n") for k, v in safe_req_headers.items()),
                 "bodySize": len(request.body) if request.body else 0
             },
             "response": {
@@ -297,7 +304,7 @@ class HARExporter:
                 "httpVersion": "HTTP/1.1",
                 "headers": [
                     {"name": k, "value": v}
-                    for k, v in (response.headers or {}).items()
+                    for k, v in safe_resp_headers.items()
                 ],
                 "cookies": [],
                 "content": {
@@ -306,7 +313,7 @@ class HARExporter:
                     "text": response.body.decode('utf-8', errors='replace') if isinstance(response.body, bytes) else response.body
                 },
                 "redirectURL": response.headers.get("Location", ""),
-                "headersSize": sum(len(f"{k}: {v}\r\n") for k, v in (response.headers or {}).items()),
+                "headersSize": sum(len(f"{k}: {v}\r\n") for k, v in safe_resp_headers.items()),
                 "bodySize": len(response.body) if response.body else 0
             },
             "cache": {},
@@ -402,7 +409,9 @@ class InsomniaExporter:
                 ],
                 "headers": [
                     {"name": k, "value": v}
-                    for k, v in (json.loads(req.get("headers", "{}")) or {}).items()
+                    for k, v in redact_headers(
+                        json.loads(req.get("headers", "{}")) or {}
+                    ).items()
                 ],
                 "body": {
                     "mimeType": "application/json",
