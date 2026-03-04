@@ -85,6 +85,9 @@ class OAuth2Auth(AuthStrategy):
         self._refresh_lock = Lock()
         self._audit = get_audit_logger()
 
+        # Last token-endpoint exchange (redacted) — surfaced in the GUI
+        self.last_token_response: Optional[Dict[str, Any]] = None
+
         if self.secure_storage and self.storage_key:
             self._load_from_storage()
 
@@ -127,6 +130,7 @@ class OAuth2Auth(AuthStrategy):
             "has_access_token": bool(self.access_token),
             "has_refresh_token": bool(self.refresh_token),
             "expires_at": self.expires_at.isoformat() if self.expires_at else None,
+            "token_timeout": self.token_timeout,
         }
 
     @classmethod
@@ -140,6 +144,7 @@ class OAuth2Auth(AuthStrategy):
             scope=data.get("scope"),
             refresh_token=data.get("refresh_token"),
             secure_storage=secure_storage,
+            token_timeout=data.get("token_timeout", cls.DEFAULT_TOKEN_TIMEOUT),
         )
         # Restore expiration so _needs_refresh() can make the right decision.
         instance.expires_at = cls._parse_expires_at(data.get("expires_at"))
@@ -240,7 +245,51 @@ class OAuth2Auth(AuthStrategy):
 
         grant_data = self._build_grant_data()
         response = self._post_token_request(grant_data)
+        self._capture_token_response(response)
         self._apply_token_response(response)
+
+    def _capture_token_response(self, response: httpx.Response) -> None:
+        """Store a redacted snapshot of the token endpoint response for inspection."""
+        _TOKEN_KEYS = {"access_token", "refresh_token", "id_token"}
+        try:
+            body = response.json()
+            redacted_body = {}
+            for k, v in body.items():
+                if k in _TOKEN_KEYS and isinstance(v, str) and len(v) > 12:
+                    redacted_body[k] = v[:8] + "…" + v[-4:]
+                else:
+                    redacted_body[k] = v
+        except Exception:
+            try:
+                redacted_body = {"_raw": response.text[:2000] if response.text else ""}
+            except Exception:
+                redacted_body = {}
+
+        try:
+            resp_headers = {
+                k: v for k, v in response.headers.items()
+                if k.lower() not in ("set-cookie",)
+            }
+        except Exception:
+            resp_headers = {}
+
+        try:
+            url = str(response.request.url) if response.request else self.token_url
+        except Exception:
+            url = self.token_url or ""
+
+        try:
+            status = response.status_code
+        except Exception:
+            status = 0
+
+        self.last_token_response = {
+            "status_code": status,
+            "headers": resp_headers,
+            "body": redacted_body,
+            "url": url,
+            "method": "POST",
+        }
 
     def _build_grant_data(self) -> Dict[str, Any]:
         """Build the form-data payload for the token endpoint.
@@ -336,9 +385,15 @@ class OAuth2Auth(AuthStrategy):
             self._audit.log_auth_failure("oauth2", error_msg)
             raise AuthError(error_msg)
 
-        self.access_token = token_data.get("access_token")
-        if not self.access_token:
+        raw_access = token_data.get("access_token")
+        if not raw_access:
             raise AuthError("Token endpoint did not return access_token")
+
+        # Validate tokens from the (untrusted) token endpoint immediately
+        # — prevents CRLF header injection and oversized payloads.
+        self.access_token = _validate_credential(
+            raw_access, "OAuth2 access token (from endpoint)"
+        )
 
         # Parse expires_in robustly — servers may return int, float, or
         # string representations.  Fall back to the default on any error.
@@ -361,7 +416,16 @@ class OAuth2Auth(AuthStrategy):
         logger.debug("OAuth2 token will expire in %d seconds", expires_in_seconds)
 
         if "refresh_token" in token_data:
-            self.refresh_token = token_data["refresh_token"]
+            raw_refresh = token_data["refresh_token"]
+            try:
+                self.refresh_token = _validate_credential(
+                    raw_refresh, "OAuth2 refresh token (from endpoint)"
+                )
+            except AuthError:
+                logger.warning(
+                    "Token endpoint returned an invalid refresh_token — "
+                    "keeping previous refresh_token"
+                )
 
         self._save_to_storage()
 

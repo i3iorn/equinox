@@ -16,8 +16,8 @@ from datetime import datetime, timezone
 from typing import Any, Dict, Optional
 from urllib.parse import quote, urlparse, parse_qsl
 
-from equinox.auth.base import AuthStrategy
-from equinox.core.exceptions import ValidationError, AuthError
+from equinox.auth.base import AuthStrategy, _validate_credential
+from equinox.core.exceptions import AuthError
 
 
 class AWSSigV4Auth(AuthStrategy):
@@ -41,20 +41,18 @@ class AWSSigV4Auth(AuthStrategy):
         service: str,
         session_token: Optional[str] = None,
     ) -> None:
-        if not access_key or not isinstance(access_key, str):
-            raise ValidationError("AWS access_key must be a non-empty string")
-        if not secret_key or not isinstance(secret_key, str):
-            raise ValidationError("AWS secret_key must be a non-empty string")
-        if not region or not isinstance(region, str):
-            raise ValidationError("AWS region must be a non-empty string")
-        if not service or not isinstance(service, str):
-            raise ValidationError("AWS service must be a non-empty string")
-
-        self.access_key = access_key
-        self.secret_key = secret_key
-        self.region = region
-        self.service = service
-        self.session_token = session_token or None
+        # Validate all fields for type, length, and CRLF injection.
+        # access_key / secret_key / session_token are injected into HTTP
+        # headers — CRLF would allow header-injection attacks.
+        self.access_key = _validate_credential(access_key, "AWS access_key")
+        self.secret_key = _validate_credential(secret_key, "AWS secret_key")
+        self.region = _validate_credential(region, "AWS region")
+        self.service = _validate_credential(service, "AWS service")
+        self.session_token: Optional[str] = (
+            _validate_credential(session_token, "AWS session_token")
+            if session_token
+            else None
+        )
 
     # ── AuthStrategy interface ────────────────────────────────────────────────
 
