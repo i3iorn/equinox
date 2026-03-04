@@ -397,6 +397,7 @@ class ResponsePanel(QWidget):
             color = Colors.RED
 
         self.status_label.setText(f"{code}  {response.reason}")
+        print(code, response.reason)
         self.status_label.setStyleSheet(
             f"font-weight: bold; color: {color};"
         )

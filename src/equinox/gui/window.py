@@ -75,16 +75,8 @@ class MainWindow(QMainWindow):
         self._settings.setValue("left_tabs/index", self._left_tabs.currentIndex())
 
     def closeEvent(self, event):
-        # #3 — unsaved changes guard
-        if self.request_panel.is_dirty():
-            reply = QMessageBox.question(
-                self, "Unsaved Changes",
-                "You have unsaved changes in the request editor.\nDiscard and exit?",
-                QMessageBox.StandardButton.Discard | QMessageBox.StandardButton.Cancel,
-            )
-            if reply == QMessageBox.StandardButton.Cancel:
-                event.ignore()
-                return
+        # Autosave any pending edits before closing
+        self.request_panel.autosave_current()
         self._save_layout()
         super().closeEvent(event)
 
@@ -164,16 +156,15 @@ class MainWindow(QMainWindow):
         self.collections_panel.collections_changed.connect(
             self.request_panel.refresh_inherited_auth)
 
+        # Session variables: captured values flow into the Variables panel
+        self.request_panel.session_vars_changed.connect(
+            self.variables_panel.refresh_session_vars)
+        self.variables_panel.clear_session_requested.connect(
+            self.request_panel.clear_session_vars)
+
     def _load_request_guarded(self, request):
-        """Load request with unsaved-changes guard (#3)."""
-        if self.request_panel.is_dirty():
-            reply = QMessageBox.question(
-                self, "Unsaved Changes",
-                "Discard unsaved changes in the request editor?",
-                QMessageBox.StandardButton.Discard | QMessageBox.StandardButton.Cancel,
-            )
-            if reply == QMessageBox.StandardButton.Cancel:
-                return
+        """Auto-save current request then load the new one."""
+        self.request_panel.autosave_current()
         self.request_panel.load_request(request)
 
     def _on_response_received(self, response):
@@ -202,8 +193,14 @@ class MainWindow(QMainWindow):
 
     def _run_request_directly(self, request):
         """Load a request into the editor then fire it immediately."""
+        self.request_panel.autosave_current()
         self.request_panel.load_request(request)
         self.request_panel._send_request()
+
+    def _new_request(self):
+        """Autosave current request then clear the editor for a new one."""
+        self.request_panel.autosave_current()
+        self.request_panel.clear()
 
     # ── Menu bar ──────────────────────────────────────────────────────
 
@@ -213,7 +210,7 @@ class MainWindow(QMainWindow):
         file_menu = menubar.addMenu("&File")
         new_request_action = QAction("&New Request", self)
         new_request_action.setShortcut("Ctrl+N")
-        new_request_action.triggered.connect(self.request_panel.clear)
+        new_request_action.triggered.connect(self._new_request)
         file_menu.addAction(new_request_action)
         file_menu.addSeparator()
 
@@ -457,6 +454,9 @@ class MainWindow(QMainWindow):
         from equinox.core.request import Response
         from datetime import datetime
 
+        # Autosave current request before switching
+        self.request_panel.autosave_current()
+
         entry = self._fetch_history_entry(history_id)
         if not entry:
             return
@@ -486,6 +486,7 @@ class MainWindow(QMainWindow):
 
     def _replay_history_entry(self, history_id: int):
         """Re-run a history entry exactly as originally sent."""
+        self.request_panel.autosave_current()
         entry = self._fetch_history_entry(history_id)
         if not entry:
             return

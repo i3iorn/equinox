@@ -20,8 +20,11 @@ from PyQt6.QtWidgets import (
     QTextEdit,
     QFormLayout,
     QDialogButtonBox,
+    QGroupBox,
+    QApplication,
 )
 from PyQt6.QtCore import Qt, pyqtSignal, QSettings
+
 
 from equinox.storage import Database, VariableGroupManager
 
@@ -66,15 +69,17 @@ class VariableDialog(QDialog):
 
 
 class VariablesPanel(QWidget):
-    """Panel for managing variable groups"""
+    """Panel for managing variable groups and viewing captured session variables."""
 
     variables_changed = pyqtSignal()
+    clear_session_requested = pyqtSignal()
 
     def __init__(self, db: Database, parent=None):
         super().__init__(parent)
         self.db = db
         self.current_group_id = None
         self._settings = QSettings("Equinox", "Equinox")
+        self._session_var_count = 0
         self._init_ui()
         self.refresh_groups()
 
@@ -84,6 +89,64 @@ class VariablesPanel(QWidget):
         layout.setContentsMargins(4, 4, 4, 4)
         layout.setSpacing(4)
 
+        # ── Session Variables (captured at runtime) ───────────────────
+        self._session_group = QGroupBox("Session Variables")
+        self._session_group.setCheckable(True)
+        self._session_group.setChecked(False)
+        session_layout = QVBoxLayout(self._session_group)
+        session_layout.setContentsMargins(4, 4, 4, 4)
+        session_layout.setSpacing(4)
+
+        session_header = QHBoxLayout()
+        self._session_count_label = QLabel("No captured variables")
+        self._session_count_label.setObjectName("mutedLabel")
+        session_header.addWidget(self._session_count_label)
+        session_header.addStretch()
+        self._session_copy_btn = QPushButton("Copy All")
+        self._session_copy_btn.setToolTip("Copy all session variables to clipboard as KEY=VALUE lines")
+        self._session_copy_btn.clicked.connect(self._copy_session_vars)
+        self._session_copy_btn.setEnabled(False)
+        session_header.addWidget(self._session_copy_btn)
+        self._session_delete_btn = QPushButton("Delete")
+        self._session_delete_btn.setToolTip("Delete selected session variable")
+        self._session_delete_btn.clicked.connect(self._delete_session_var)
+        self._session_delete_btn.setEnabled(False)
+        session_header.addWidget(self._session_delete_btn)
+        self._session_clear_btn = QPushButton("Clear All")
+        self._session_clear_btn.setToolTip("Remove all captured session variables")
+        self._session_clear_btn.clicked.connect(self._on_clear_session)
+        self._session_clear_btn.setEnabled(False)
+        session_header.addWidget(self._session_clear_btn)
+        session_layout.addLayout(session_header)
+
+        self._session_table = QTableWidget()
+        self._session_table.setColumnCount(2)
+        self._session_table.setHorizontalHeaderLabels(["Variable", "Value"])
+        self._session_table.horizontalHeader().setSectionResizeMode(
+            0, QHeaderView.ResizeMode.ResizeToContents
+        )
+        self._session_table.horizontalHeader().setSectionResizeMode(
+            1, QHeaderView.ResizeMode.Stretch
+        )
+        self._session_table.setSelectionBehavior(
+            QTableWidget.SelectionBehavior.SelectRows
+        )
+        self._session_table.setEditTriggers(
+            QTableWidget.EditTrigger.NoEditTriggers
+        )
+        self._session_table.setContextMenuPolicy(
+            Qt.ContextMenuPolicy.CustomContextMenu
+        )
+        self._session_table.customContextMenuRequested.connect(
+            self._show_session_context_menu
+        )
+        self._session_table.itemSelectionChanged.connect(self._on_session_selection)
+        self._session_table.setMaximumHeight(200)
+        session_layout.addWidget(self._session_table)
+
+        layout.addWidget(self._session_group)
+
+        # ── Variable Groups (persisted in DB) ─────────────────────────
         # Splitter for groups list and variables table
         splitter = QSplitter(Qt.Orientation.Horizontal)
 
@@ -394,3 +457,127 @@ class VariablesPanel(QWidget):
             self.variables_changed.emit()
         except Exception as e:
             QMessageBox.critical(self, "Error", f"Failed to rename group: {e}")
+
+    # ── Session Variables ──────────────────────────────────────────────
+
+    def refresh_session_vars(self, session_vars: dict) -> None:
+        """Repopulate the session variables table.
+
+        Called by the signal from ``RequestPanel.session_vars_changed``.
+        """
+        self._session_var_count = len(session_vars)
+        self._session_table.setRowCount(self._session_var_count)
+
+        for row, (key, value) in enumerate(sorted(session_vars.items())):
+            key_item = QTableWidgetItem(key)
+            key_item.setFlags(key_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
+            val_item = QTableWidgetItem(str(value))
+            val_item.setFlags(val_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
+            self._session_table.setItem(row, 0, key_item)
+            self._session_table.setItem(row, 1, val_item)
+
+        has_vars = self._session_var_count > 0
+        self._session_clear_btn.setEnabled(has_vars)
+        self._session_copy_btn.setEnabled(has_vars)
+        self._session_delete_btn.setEnabled(False)
+        noun = "variable" if self._session_var_count == 1 else "variables"
+        self._session_count_label.setText(
+            f"{self._session_var_count} captured {noun}"
+            if has_vars else "No captured variables"
+        )
+        # Auto-expand when first variable arrives, stay collapsed when empty
+        if has_vars and not self._session_group.isChecked():
+            self._session_group.setChecked(True)
+        self._update_tab_badge()
+
+    def _on_session_selection(self) -> None:
+        """Enable/disable delete button based on session table selection."""
+        has_sel = len(self._session_table.selectedItems()) > 0
+        self._session_delete_btn.setEnabled(has_sel)
+
+    def _on_clear_session(self) -> None:
+        """Handle Clear All button click."""
+        if self._session_var_count == 0:
+            return
+        self.clear_session_requested.emit()
+
+    def _delete_session_var(self) -> None:
+        """Delete the selected session variable and notify."""
+        row = self._session_table.currentRow()
+        if row < 0:
+            return
+        key_item = self._session_table.item(row, 0)
+        if not key_item:
+            return
+        key = key_item.text()
+        # Ask the request panel to remove this variable
+        try:
+            win = self.window()
+            rp = getattr(win, "request_panel", None)
+            if rp and key in rp._session_vars:
+                del rp._session_vars[key]
+                rp.session_vars_changed.emit(dict(rp._session_vars))
+        except Exception:
+            pass
+
+    def _copy_session_vars(self) -> None:
+        """Copy all session variables to clipboard as KEY=VALUE lines."""
+        lines = []
+        for row in range(self._session_table.rowCount()):
+            key_item = self._session_table.item(row, 0)
+            val_item = self._session_table.item(row, 1)
+            if key_item and val_item:
+                lines.append(f"{key_item.text()}={val_item.text()}")
+        if lines:
+            clipboard = QApplication.clipboard()
+            if clipboard:
+                clipboard.setText("\n".join(lines))
+
+    def _show_session_context_menu(self, position) -> None:
+        """Context menu for session variables table (copy value / delete)."""
+        item = self._session_table.itemAt(position)
+        if not item:
+            return
+        row = item.row()
+        menu = QMenu()
+        copy_key_action = menu.addAction("Copy Variable Name")
+        copy_val_action = menu.addAction("Copy Value")
+        menu.addSeparator()
+        delete_action = menu.addAction("Delete")
+
+        action = menu.exec(self._session_table.viewport().mapToGlobal(position))
+        clipboard = QApplication.clipboard()
+        if action == copy_key_action:
+            key_item = self._session_table.item(row, 0)
+            if key_item and clipboard:
+                clipboard.setText(key_item.text())
+        elif action == copy_val_action:
+            val_item = self._session_table.item(row, 1)
+            if val_item and clipboard:
+                clipboard.setText(val_item.text())
+        elif action == delete_action:
+            self._session_table.setCurrentItem(self._session_table.item(row, 0))
+            self._delete_session_var()
+
+    def _update_tab_badge(self) -> None:
+        """Update the Variables tab title to show a session var count badge."""
+        try:
+            tab_widget = self.parent()
+            if tab_widget is None:
+                return
+            # Walk up to find the QTabWidget that contains this panel
+            from PyQt6.QtWidgets import QTabWidget
+            while tab_widget and not isinstance(tab_widget, QTabWidget):
+                tab_widget = tab_widget.parent()
+            if not isinstance(tab_widget, QTabWidget):
+                return
+            idx = tab_widget.indexOf(self)
+            if idx < 0:
+                return
+            if self._session_var_count > 0:
+                tab_widget.setTabText(idx, f"Variables ({self._session_var_count})")
+            else:
+                tab_widget.setTabText(idx, "Variables")
+        except Exception:
+            pass
+
