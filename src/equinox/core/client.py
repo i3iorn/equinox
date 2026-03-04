@@ -1,5 +1,5 @@
 """HTTP Client implementation using httpx"""
-
+import json
 import os
 import ssl
 import httpx
@@ -22,6 +22,22 @@ from equinox.core.interceptors import InterceptorChain, RequestResponseLogger
 from equinox.core.audit import get_audit_logger, AuditEventType, AuditLevel
 
 logger = logging.getLogger(__name__)
+
+
+def _is_ssl_error(exc: Exception) -> bool:
+    """Return True if *exc* (typically ``httpx.ConnectError``) wraps an SSL failure.
+
+    In httpx ≥0.24 there is no dedicated ``SSLError``; SSL failures surface
+    as ``ConnectError`` whose ``__cause__`` is an ``ssl.SSLError`` or similar.
+    """
+    cause = exc.__cause__
+    while cause is not None:
+        if isinstance(cause, ssl.SSLError):
+            return True
+        cause = getattr(cause, "__cause__", None)
+    # Fallback: check the string representation
+    msg = str(exc).lower()
+    return "ssl" in msg or "certificate" in msg
 
 
 class HTTPClient:
@@ -331,25 +347,27 @@ class HTTPClient:
                 ),
             ),
             (
-                httpx.SSLError,
-                lambda exc, req: dict(
-                    error=CertificateError(
-                        "SSL certificate verification failed. "
-                        "The server's certificate is invalid or untrusted.",
-                        details={"url": redact_url(req.url)},
-                    ),
-                    log_message=f"SSL certificate verification failed for {redact_url(req.url)}",
-                ),
-            ),
-            (
                 httpx.ConnectError,
-                lambda exc, req: dict(
-                    error=RequestError(
-                        "Failed to connect to server. "
-                        "Please check the URL and your network connection.",
-                        details={"url": redact_url(req.url)},
-                    ),
-                    log_message=f"Connection error for {redact_url(req.url)}",
+                lambda exc, req: (
+                    # SSL errors surface as ConnectError in httpx ≥0.24;
+                    # detect by inspecting the cause chain for ssl-related exceptions.
+                    dict(
+                        error=CertificateError(
+                            "SSL certificate verification failed. "
+                            "The server's certificate is invalid or untrusted.",
+                            details={"url": redact_url(req.url)},
+                        ),
+                        log_message=f"SSL certificate verification failed for {redact_url(req.url)}",
+                    )
+                    if _is_ssl_error(exc)
+                    else dict(
+                        error=RequestError(
+                            "Failed to connect to server. "
+                            "Please check the URL and your network connection.",
+                            details={"url": redact_url(req.url)},
+                        ),
+                        log_message=f"Connection error for {redact_url(req.url)}",
+                    )
                 ),
             ),
             (
@@ -570,6 +588,8 @@ class HTTPClient:
             for file_handle in opened_file_handles:
                 file_handle.close()
 
+        _reason = self._extract_reason_phrase(raw)
+
         elapsed = time.time() - start_time
         logger.debug(
             "Request completed in %.2fs with status %d", elapsed, raw.status_code
@@ -586,6 +606,20 @@ class HTTPClient:
             sent_url=str(raw.request.url),
             timings={"total_ms": round(elapsed * 1000, 2)},
         )
+
+    @staticmethod
+    def _extract_reason_phrase(raw_response: httpx.Response) -> str:
+        """Extract the reason phrase from the raw httpx response, with a fallback."""
+        reason = raw_response.reason_phrase
+        if reason is None:
+            content = raw_response.read().decode("utf-8")
+            try:
+                content_object = json.loads(content)
+                if "statusText" in content_object:
+                    reason = content_object["statusText"]
+            except (json.JSONDecodeError, UnicodeDecodeError):
+                pass
+        return reason or ""
 
     def _build_multipart_files(
         self,
