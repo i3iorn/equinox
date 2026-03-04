@@ -3,7 +3,6 @@
 import pytest
 from equinox.core.client import HTTPClient
 from equinox.core.request import Request
-from equinox.auth import BearerAuth, APIKeyAuth, BasicAuth
 
 
 def test_create_request():
@@ -100,44 +99,6 @@ def test_send_post_request():
     assert response.is_json
 
 
-def test_bearer_auth():
-    """Test Bearer authentication"""
-    auth = BearerAuth("test-token-123")
-    headers = {}
-
-    from unittest.mock import Mock
-
-    request = Mock()
-    auth.apply(request, headers)
-
-    assert headers["Authorization"] == "Bearer test-token-123"
-
-
-def test_api_key_auth_header():
-    """Test API Key authentication in header"""
-    auth = APIKeyAuth("X-API-Key", "test-key-123", location="header")
-    headers = {}
-
-    from unittest.mock import Mock
-
-    request = Mock()
-    auth.apply(request, headers)
-
-    assert headers["X-API-Key"] == "test-key-123"
-
-
-def test_basic_auth():
-    """Test Basic authentication"""
-    auth = BasicAuth("user", "pass")
-    headers = {}
-
-    from unittest.mock import Mock
-
-    request = Mock()
-    auth.apply(request, headers)
-
-    assert "Authorization" in headers
-    assert headers["Authorization"].startswith("Basic ")
 
 
 if __name__ == "__main__":

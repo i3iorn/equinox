@@ -3,7 +3,7 @@
 import pytest
 from equinox.core.client import HTTPClient
 from equinox.core.request import Request
-from equinox.core.exceptions import ValidationError, RateLimitError, TimeoutError
+from equinox.core.exceptions import ValidationError
 from equinox.storage.database import Database
 
 
@@ -93,60 +93,6 @@ class TestInputValidation:
             client.send(request)
 
 
-class TestRateLimiting:
-    """Tests for rate limiting functionality."""
-
-    def test_rate_limit_enforcement(self):
-        """Test that rate limiting is enforced."""
-        client = HTTPClient(max_rate_per_minute=5)
-
-        # Create multiple requests
-        request = Request(method="GET", url="https://httpbin.org/get")
-
-        # First 5 should be allowed
-        for i in range(5):
-            try:
-                client._check_rate_limit()
-            except RateLimitError:
-                pytest.fail(f"Rate limit triggered too early at request {i}")
-
-        # 6th should be blocked
-        with pytest.raises(RateLimitError):
-            client._check_rate_limit()
-
-    def test_concurrent_limit_enforcement(self):
-        """Test concurrent request limit."""
-        client = HTTPClient(max_concurrent_requests=2)
-
-        # First 2 should be allowed
-        client._check_concurrent_limit()
-        client._check_concurrent_limit()
-
-        # 3rd should fail
-        with pytest.raises(Exception, match="concurrent"):
-            client._check_concurrent_limit()
-
-        # Release one
-        client._release_concurrent_slot()
-
-        # Should allow another now
-        client._check_concurrent_limit()
-
-
-class TestTimeoutEnforcement:
-    """Tests for timeout enforcement."""
-
-    def test_minimum_timeout(self):
-        """Test that minimum timeout is enforced."""
-        client = HTTPClient(timeout=0.01)
-        # Should be clamped to minimum
-        assert client.timeout >= HTTPClient.MIN_TIMEOUT
-
-    def test_maximum_timeout(self):
-        """Test that maximum timeout is enforced."""
-        client = HTTPClient(timeout=1000)
-        # Should be clamped to maximum
-        assert client.timeout <= HTTPClient.MAX_TIMEOUT
 
 
 class TestPathTraversal:

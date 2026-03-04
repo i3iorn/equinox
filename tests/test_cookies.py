@@ -4,6 +4,7 @@ import pytest
 
 from equinox.storage.database import Database
 from equinox.storage.cookies import CookieJarManager
+from equinox.core.exceptions import StorageError, ValidationError
 
 
 @pytest.fixture
@@ -61,6 +62,11 @@ class TestCookieCRUD:
         assert len(cookies) == 1
         assert cookies[0]["value"] == "v2"
 
+    def test_different_paths_are_separate(self, mgr):
+        mgr.add_cookie("c", "1", domain="x.com", path="/a")
+        mgr.add_cookie("c", "2", domain="x.com", path="/b")
+        assert len(mgr.list_cookies()) == 2
+
     def test_secure_flag(self, mgr):
         mgr.add_cookie("s", "1", domain="s.com", secure=True)
         c = mgr.list_cookies()[0]
@@ -70,6 +76,56 @@ class TestCookieCRUD:
         mgr.add_cookie("h", "1", domain="h.com", http_only=True)
         c = mgr.list_cookies()[0]
         assert c["http_only"] is True or c["http_only"] == 1
+
+    def test_expires_stored(self, mgr):
+        mgr.add_cookie("e", "1", domain="e.com", expires="2030-01-01")
+        c = mgr.list_cookies()[0]
+        assert c["expires"] == "2030-01-01"
+
+    def test_delete_nonexistent_raises(self, mgr):
+        with pytest.raises(StorageError, match="not found"):
+            mgr.delete_cookie(999)
+
+
+# ── update_cookie ────────────────────────────────────────────────────────────
+
+class TestUpdateCookie:
+    def test_update_value(self, mgr):
+        cid = mgr.add_cookie("k", "old", domain="d.com")
+        mgr.update_cookie(cid, value="new")
+        assert mgr.get(cid)["value"] == "new"
+
+    def test_update_secure(self, mgr):
+        cid = mgr.add_cookie("k", "v", domain="d.com")
+        mgr.update_cookie(cid, secure=True)
+        assert mgr.get(cid)["secure"] is True
+
+    def test_update_http_only(self, mgr):
+        cid = mgr.add_cookie("k", "v", domain="d.com")
+        mgr.update_cookie(cid, http_only=True)
+        assert mgr.get(cid)["http_only"] is True
+
+    def test_update_expires(self, mgr):
+        cid = mgr.add_cookie("k", "v", domain="d.com")
+        mgr.update_cookie(cid, expires="2030-12-31")
+        assert mgr.get(cid)["expires"] == "2030-12-31"
+
+    def test_update_multiple_fields(self, mgr):
+        cid = mgr.add_cookie("k", "v", domain="d.com")
+        mgr.update_cookie(cid, value="v2", secure=True, http_only=True)
+        c = mgr.get(cid)
+        assert c["value"] == "v2"
+        assert c["secure"] is True
+        assert c["http_only"] is True
+
+    def test_update_no_fields_noop(self, mgr):
+        cid = mgr.add_cookie("k", "v", domain="d.com")
+        mgr.update_cookie(cid)
+        assert mgr.get(cid)["value"] == "v"
+
+    def test_update_nonexistent_raises(self, mgr):
+        with pytest.raises(StorageError, match="not found"):
+            mgr.update_cookie(999, value="x")
 
 
 # ── to_httpx_cookies ─────────────────────────────────────────────────────────
@@ -107,3 +163,103 @@ class TestUpdateFromResponse:
         cookies = mgr.list_cookies()
         assert len(cookies) == 1
         assert cookies[0]["value"] == "new"
+
+    def test_secure_and_httponly_flags(self, mgr):
+        headers = {"Set-Cookie": "s=1; Secure; HttpOnly"}
+        mgr.update_from_response(headers, "https://example.com")
+        c = mgr.list_cookies()[0]
+        assert c["secure"] is True
+        assert c["http_only"] is True
+
+    def test_expires_attribute(self, mgr):
+        headers = {"Set-Cookie": "k=v; Expires=Thu, 01 Jan 2030 00:00:00 GMT"}
+        mgr.update_from_response(headers, "https://example.com")
+        c = mgr.list_cookies()[0]
+        assert "2030" in c["expires"]
+
+    def test_domain_dot_stripped(self, mgr):
+        headers = {"Set-Cookie": "k=v; Domain=.sub.example.com"}
+        mgr.update_from_response(headers, "https://sub.example.com")
+        c = mgr.list_cookies()[0]
+        assert c["domain"] == "sub.example.com"
+
+    def test_cookie_name_only_no_equals(self, mgr):
+        headers = {"Set-Cookie": "flag; Secure"}
+        mgr.update_from_response(headers, "https://example.com")
+        cookies = mgr.list_cookies()
+        if cookies:
+            assert cookies[0]["name"] == "flag"
+
+
+# ── Validation ────────────────────────────────────────────────────────────────
+
+class TestCookieValidation:
+    def test_empty_name_raises(self, mgr):
+        with pytest.raises(ValidationError, match="non-empty"):
+            mgr.add_cookie("", "v")
+
+    def test_whitespace_name_raises(self, mgr):
+        with pytest.raises(ValidationError, match="non-empty"):
+            mgr.add_cookie("   ", "v")
+
+    def test_name_too_long(self, mgr):
+        with pytest.raises(ValidationError):
+            mgr.add_cookie("x" * 257, "v")
+
+    def test_name_crlf(self, mgr):
+        with pytest.raises(ValidationError, match="invalid"):
+            mgr.add_cookie("bad\rname", "v")
+
+    def test_value_too_long(self, mgr):
+        with pytest.raises(ValidationError):
+            mgr.add_cookie("k", "x" * 4097)
+
+    def test_value_crlf(self, mgr):
+        with pytest.raises(ValidationError, match="invalid"):
+            mgr.add_cookie("k", "bad\nvalue")
+
+    def test_domain_too_long(self, mgr):
+        with pytest.raises(ValidationError):
+            mgr.add_cookie("k", "v", domain="x" * 254)
+
+    def test_domain_crlf(self, mgr):
+        with pytest.raises(ValidationError, match="invalid"):
+            mgr.add_cookie("k", "v", domain="bad\r\ndomain")
+
+    def test_path_too_long(self, mgr):
+        with pytest.raises(ValidationError):
+            mgr.add_cookie("k", "v", path="/" + "x" * 1024)
+
+    def test_path_crlf(self, mgr):
+        with pytest.raises(ValidationError, match="invalid"):
+            mgr.add_cookie("k", "v", path="/bad\npath")
+
+    def test_expires_too_long(self, mgr):
+        with pytest.raises(ValidationError, match="too long"):
+            mgr.add_cookie("k", "v", expires="x" * 101)
+
+    def test_expires_crlf(self, mgr):
+        with pytest.raises(ValidationError, match="invalid"):
+            mgr.add_cookie("k", "v", expires="bad\nexpires")
+
+    def test_non_string_value_raises(self, mgr):
+        with pytest.raises(ValidationError):
+            mgr.add_cookie("k", 123)
+
+    def test_non_string_domain_raises(self, mgr):
+        with pytest.raises(ValidationError):
+            mgr.add_cookie("k", "v", domain=123)
+
+    def test_non_string_path_raises(self, mgr):
+        with pytest.raises(ValidationError):
+            mgr.add_cookie("k", "v", path=123)
+
+    def test_non_string_expires_raises(self, mgr):
+        with pytest.raises(ValidationError):
+            mgr.add_cookie("k", "v", expires=123)
+
+    def test_max_cookies_limit(self, mgr):
+        for i in range(CookieJarManager.MAX_COOKIES):
+            mgr.add_cookie(f"c{i}", "v", domain=f"d{i}.com")
+        with pytest.raises(StorageError, match="full"):
+            mgr.add_cookie("overflow", "v", domain="new.com")

@@ -60,6 +60,113 @@ class TestOAuthClientManager:
     def test_get_nonexistent(self, db):
         mgr = OAuthClientManager(db)
         assert mgr.get_client(9999) is None
+
+    def test_get_client_by_name(self, db):
+        mgr = OAuthClientManager(db)
+        mgr.create_client(name='ByName', token_url='https://t.com/token',
+                          client_id='cid', client_secret='sec')
+        client = mgr.get_client_by_name('ByName')
+        assert client is not None
+        assert client['client_id'] == 'cid'
+        assert mgr.get_client_by_name('NonExistent') is None
+
+    def test_clear_default(self, db):
+        mgr = OAuthClientManager(db)
+        cid = mgr.create_client(name='CD', token_url='', client_id='', client_secret='')
+        mgr.set_default(cid)
+        assert mgr.get_default() is not None
+        mgr.clear_default()
+        assert mgr.get_default() is None
+
+    def test_update_multiple_fields(self, db):
+        mgr = OAuthClientManager(db)
+        cid = mgr.create_client(name='Multi', token_url='https://old.com',
+                                client_id='old_id', client_secret='old_sec',
+                                scope='read', grant_type='client_credentials')
+        mgr.update_client(cid, token_url='https://new.com',
+                          client_id_val='new_id', client_secret='new_sec',
+                          scope='read write', grant_type='password',
+                          description='Updated desc')
+        client = mgr.get_client(cid)
+        assert client['token_url'] == 'https://new.com'
+        assert client['client_id'] == 'new_id'
+        assert client['client_secret'] == 'new_sec'
+        assert client['scope'] == 'read write'
+        assert client['grant_type'] == 'password'
+        assert client['description'] == 'Updated desc'
+
+    def test_update_extra_params(self, db):
+        mgr = OAuthClientManager(db)
+        cid = mgr.create_client(name='EP', token_url='', client_id='', client_secret='',
+                                extra_params={'audience': 'https://api.example.com'})
+        client = mgr.get_client(cid)
+        assert client['extra_params'] == {'audience': 'https://api.example.com'}
+        mgr.update_client(cid, extra_params={'resource': 'new_res'})
+        client = mgr.get_client(cid)
+        assert client['extra_params'] == {'resource': 'new_res'}
+
+    def test_update_no_fields_noop(self, db):
+        mgr = OAuthClientManager(db)
+        cid = mgr.create_client(name='NoOp', token_url='', client_id='', client_secret='')
+        mgr.update_client(cid)  # should not raise
+        assert mgr.get_client(cid)['name'] == 'NoOp'
+
+    def test_update_nonexistent_raises(self, db):
+        mgr = OAuthClientManager(db)
+        with pytest.raises(StorageError, match='not found'):
+            mgr.update_client(9999, name='New')
+
+    def test_delete_nonexistent_raises(self, db):
+        mgr = OAuthClientManager(db)
+        with pytest.raises(StorageError, match='not found'):
+            mgr.delete_client(9999)
+
+    def test_set_default_nonexistent_raises(self, db):
+        mgr = OAuthClientManager(db)
+        with pytest.raises(StorageError, match='not found'):
+            mgr.set_default(9999)
+
+    def test_update_invalid_grant_type(self, db):
+        mgr = OAuthClientManager(db)
+        cid = mgr.create_client(name='GT', token_url='', client_id='', client_secret='')
+        with pytest.raises(ValidationError, match='grant_type'):
+            mgr.update_client(cid, grant_type='bad_grant')
+
+    def test_to_oauth2_auth(self, db):
+        mgr = OAuthClientManager(db)
+        cid = mgr.create_client(name='Auth', token_url='https://auth.com/token',
+                                client_id='cid', client_secret='csec', scope='openid')
+        client = mgr.get_client(cid)
+        auth_obj = mgr.to_oauth2_auth(client)
+        from equinox.auth.oauth2 import OAuth2Auth
+        assert isinstance(auth_obj, OAuth2Auth)
+        assert auth_obj.token_url == 'https://auth.com/token'
+        assert auth_obj.client_id == 'cid'
+        assert auth_obj.client_secret == 'csec'
+
+    def test_name_required(self, db):
+        mgr = OAuthClientManager(db)
+        with pytest.raises(ValidationError, match='required'):
+            mgr.create_client(name='', token_url='', client_id='', client_secret='')
+
+    def test_name_too_long(self, db):
+        mgr = OAuthClientManager(db)
+        with pytest.raises(ValidationError, match='too long'):
+            mgr.create_client(name='x' * 201, token_url='', client_id='', client_secret='')
+
+    def test_update_duplicate_name_raises(self, db):
+        mgr = OAuthClientManager(db)
+        mgr.create_client(name='First', token_url='', client_id='', client_secret='')
+        c2 = mgr.create_client(name='Second', token_url='', client_id='', client_secret='')
+        with pytest.raises(StorageError, match='already exists'):
+            mgr.update_client(c2, name='First')
+
+    def test_extra_params_default_empty(self, db):
+        mgr = OAuthClientManager(db)
+        cid = mgr.create_client(name='NoExtra', token_url='', client_id='', client_secret='')
+        client = mgr.get_client(cid)
+        assert client['extra_params'] == {}
+
 # ── SavedCredentialsManager ──────────────────────────────────────────────────
 class TestSavedCredentialsManager:
     def test_create_bearer(self, db):
