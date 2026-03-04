@@ -29,6 +29,7 @@ class CookieJarManager:
     MAX_NAME_LEN = 256
     MAX_VALUE_LEN = 4096
     MAX_DOMAIN_LEN = 253
+    MAX_PATH_LEN = 1024
 
     def __init__(self, db: Database) -> None:
         self.db = db
@@ -40,12 +41,42 @@ class CookieJarManager:
             raise ValidationError("Cookie name must be a non-empty string")
         if len(name) > self.MAX_NAME_LEN:
             raise ValidationError(f"Cookie name exceeds {self.MAX_NAME_LEN} characters")
+        if "\r" in name or "\n" in name:
+            raise ValidationError("Cookie name contains invalid characters")
 
     def _validate_value(self, value: str) -> None:
         if not isinstance(value, str):
             raise ValidationError("Cookie value must be a string")
         if len(value) > self.MAX_VALUE_LEN:
             raise ValidationError(f"Cookie value exceeds {self.MAX_VALUE_LEN} characters")
+        if "\r" in value or "\n" in value:
+            raise ValidationError("Cookie value contains invalid characters")
+
+    def _validate_domain(self, domain: str) -> None:
+        if not isinstance(domain, str):
+            raise ValidationError("Cookie domain must be a string")
+        if len(domain) > self.MAX_DOMAIN_LEN:
+            raise ValidationError(f"Cookie domain exceeds {self.MAX_DOMAIN_LEN} characters")
+        if "\r" in domain or "\n" in domain:
+            raise ValidationError("Cookie domain contains invalid characters")
+
+    def _validate_path(self, path: str) -> None:
+        if not isinstance(path, str):
+            raise ValidationError("Cookie path must be a string")
+        if len(path) > self.MAX_PATH_LEN:
+            raise ValidationError(f"Cookie path exceeds {self.MAX_PATH_LEN} characters")
+        if "\r" in path or "\n" in path:
+            raise ValidationError("Cookie path contains invalid characters")
+
+    def _validate_expires(self, expires: Optional[str]) -> None:
+        if expires is None:
+            return
+        if not isinstance(expires, str):
+            raise ValidationError("Cookie expires must be a string or None")
+        if len(expires) > 100:
+            raise ValidationError("Cookie expires value too long")
+        if "\r" in expires or "\n" in expires:
+            raise ValidationError("Cookie expires contains invalid characters")
 
     # ── Public API ────────────────────────────────────────────────────────────
 
@@ -84,6 +115,9 @@ class CookieJarManager:
         """
         self._validate_name(name)
         self._validate_value(value)
+        self._validate_domain(domain or "")
+        self._validate_path(path or "/")
+        self._validate_expires(expires)
 
         row = self.db.fetchone("SELECT COUNT(*) AS cnt FROM cookies")
         count = row["cnt"] if row else 0
@@ -141,6 +175,7 @@ class CookieJarManager:
             updates.append("http_only = ?")
             params.append(int(http_only))
         if expires is not None:
+            self._validate_expires(expires)
             updates.append("expires = ?")
             params.append(expires)
 
@@ -257,5 +292,5 @@ class CookieJarManager:
                 http_only=http_only,
                 expires=expires,
             )
-        except Exception:
-            pass  # jar full or invalid — skip silently
+        except Exception as exc:
+            logger.debug("Failed to store cookie '%s': %s", name[:80], exc)

@@ -162,7 +162,11 @@ class EnvironmentManager:
         row = self.db.fetchone("SELECT * FROM environments WHERE is_active = 1")
         if row:
             row = dict(row)
-            row["variables"] = json.loads(row["variables"])
+            try:
+                row["variables"] = json.loads(row["variables"])
+            except (json.JSONDecodeError, TypeError) as e:
+                logger.error(f"Failed to parse variables for active environment {row.get('id')}: {e}")
+                row["variables"] = {}
             try:
                 row["secret_keys"] = json.loads(row.get("secret_keys") or "[]")
             except Exception:
@@ -289,6 +293,15 @@ class EnvironmentManager:
         if secret_keys is not None:
             if not isinstance(secret_keys, list):
                 raise ValidationError("secret_keys must be a list")
+            if len(secret_keys) > self.MAX_VARIABLE_COUNT:
+                raise SecurityError(f"Too many secret_keys (max {self.MAX_VARIABLE_COUNT})")
+            for item in secret_keys:
+                if not isinstance(item, str):
+                    raise ValidationError("Each secret_keys entry must be a string")
+                if len(item) > self.MAX_VARIABLE_KEY_LENGTH:
+                    raise ValidationError(
+                        f"Secret key name too long (max {self.MAX_VARIABLE_KEY_LENGTH} characters)"
+                    )
             updates.append("secret_keys = ?")
             params.append(json.dumps(list(secret_keys)))
 

@@ -10,6 +10,7 @@ from typing import Any, Dict, List, Optional
 
 from equinox.storage.database import Database
 from equinox.core.exceptions import StorageError, ValidationError
+from equinox.core.auth_cipher import encrypt_auth_data, decrypt_auth_data
 
 logger = logging.getLogger(__name__)
 
@@ -69,7 +70,7 @@ class SavedCredentialsManager:
             raise ValidationError(
                 f"auth_type must be one of: {', '.join(AUTH_TYPES)}"
             )
-        config_json = json.dumps(config or {})
+        config_json = encrypt_auth_data(json.dumps(config or {}))
         try:
             row_id = self.db.insert(
                 """
@@ -162,7 +163,7 @@ class SavedCredentialsManager:
             params.append(auth_type)
         if config is not None:
             updates.append("config = ?")
-            params.append(json.dumps(config))
+            params.append(encrypt_auth_data(json.dumps(config)))
         if description is not None:
             updates.append("description = ?")
             params.append(self._opt_str(description, "description", self.MAX_DESC_LEN))
@@ -186,19 +187,23 @@ class SavedCredentialsManager:
             raise StorageError(f"Failed to update saved credential: {exc}") from exc
 
     def set_default(self, cred_id: int) -> None:
-        """Mark one credential as the default; clears any previous default."""
+        """Mark one credential as the default; clears any previous default.
+
+        Uses a single atomic UPDATE to avoid a window where no credential
+        is marked as default (which would happen if the app crashed between
+        two separate UPDATE statements).
+        """
         if not self.get(cred_id):
             raise StorageError(f"Saved credential {cred_id} not found")
-        self.db.execute("UPDATE saved_credentials SET is_default = 0")
         self.db.execute(
-            "UPDATE saved_credentials SET is_default = 1 WHERE id = ?",
+            "UPDATE saved_credentials SET is_default = CASE WHEN id = ? THEN 1 ELSE 0 END",
             (cred_id,),
         )
         logger.info("Set saved credential id=%d as default", cred_id)
 
     def clear_default(self) -> None:
         """Remove the default flag from all credentials."""
-        self.db.execute("UPDATE saved_credentials SET is_default = 0")
+        self.db.execute("UPDATE saved_credentials SET is_default = 0", ())
 
     # ── Duplicate ─────────────────────────────────────────────────────
 
@@ -255,6 +260,10 @@ class SavedCredentialsManager:
         """Build a live auth-strategy object from a saved credential row.
 
         Imports are lazy to avoid circular dependencies.
+
+        Raises:
+            StorageError: If the credential config is invalid or incomplete
+                (e.g. empty token/password from a legacy row).
         """
         from equinox.auth.oauth2 import OAuth2Auth
         from equinox.auth.api_key import APIKeyAuth
@@ -264,35 +273,40 @@ class SavedCredentialsManager:
         auth_type = row["auth_type"]
         cfg = row["config"]
 
-        if auth_type == "oauth2":
-            return OAuth2Auth(
-                token_url=cfg.get("token_url") or None,
-                client_id=cfg.get("client_id") or None,
-                client_secret=cfg.get("client_secret") or None,
-                scope=cfg.get("scope") or None,
-            )
-        if auth_type == "api_key":
-            return APIKeyAuth(
-                key=cfg.get("key", "X-API-Key"),
-                value=cfg.get("value", ""),
-                location=cfg.get("location", "header"),
-            )
-        if auth_type == "basic":
-            return BasicAuth(
-                username=cfg.get("username", ""),
-                password=cfg.get("password", ""),
-            )
-        if auth_type == "bearer":
-            return BearerAuth(token=cfg.get("token", ""))
-        if auth_type == "aws_sigv4":
-            from equinox.auth.aws_sigv4 import AWSSigV4Auth
-            return AWSSigV4Auth(
-                access_key=cfg.get("access_key", ""),
-                secret_key=cfg.get("secret_key", ""),
-                region=cfg.get("region", "us-east-1"),
-                service=cfg.get("service", "execute-api"),
-                session_token=cfg.get("session_token") or None,
-            )
+        try:
+            if auth_type == "oauth2":
+                return OAuth2Auth(
+                    token_url=cfg.get("token_url") or None,
+                    client_id=cfg.get("client_id") or None,
+                    client_secret=cfg.get("client_secret") or None,
+                    scope=cfg.get("scope") or None,
+                )
+            if auth_type == "api_key":
+                return APIKeyAuth(
+                    key=cfg.get("key", "X-API-Key"),
+                    value=cfg.get("value", ""),
+                    location=cfg.get("location", "header"),
+                )
+            if auth_type == "basic":
+                return BasicAuth(
+                    username=cfg.get("username", ""),
+                    password=cfg.get("password", ""),
+                )
+            if auth_type == "bearer":
+                return BearerAuth(token=cfg.get("token", ""))
+            if auth_type == "aws_sigv4":
+                from equinox.auth.aws_sigv4 import AWSSigV4Auth
+                return AWSSigV4Auth(
+                    access_key=cfg.get("access_key", ""),
+                    secret_key=cfg.get("secret_key", ""),
+                    region=cfg.get("region", "us-east-1"),
+                    service=cfg.get("service", "execute-api"),
+                    session_token=cfg.get("session_token") or None,
+                )
+        except Exception as exc:
+            raise StorageError(
+                f"Saved credential '{row.get('name', '?')}' has invalid config: {exc}"
+            ) from exc
 
         raise ValidationError(f"Unknown auth_type: {auth_type!r}")
 
@@ -310,7 +324,8 @@ class SavedCredentialsManager:
     def _decode(row) -> Dict[str, Any]:
         d = dict(row)
         try:
-            d["config"] = json.loads(d.get("config") or "{}")
+            raw_config = d.get("config") or "{}"
+            d["config"] = json.loads(decrypt_auth_data(raw_config))
         except (json.JSONDecodeError, TypeError):
             d["config"] = {}
         d["is_default"] = bool(d.get("is_default", 0))

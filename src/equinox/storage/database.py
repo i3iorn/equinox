@@ -80,6 +80,7 @@ class Database:
         Raises:
             StorageError: If connection fails
         """
+        conn = None
         try:
             conn = sqlite3.connect(
                 self.db_path,
@@ -95,10 +96,11 @@ class Database:
             logger.error(f"Database connection error: {exc}")
             raise StorageError(f"Database connection failed: {exc}")
         finally:
-            try:
-                conn.close()
-            except Exception:
-                pass
+            if conn is not None:
+                try:
+                    conn.close()
+                except Exception:
+                    pass
 
     def _validate_query(self, query: str, params: Tuple) -> None:
         """Validate query and parameters before execution.

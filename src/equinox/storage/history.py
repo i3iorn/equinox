@@ -499,6 +499,12 @@ class HistoryManager:
 
     # ── Search helpers ────────────────────────────────────────────────────────
 
+    @staticmethod
+    def _escape_like(text: str) -> str:
+        r"""Escape SQL LIKE metacharacters (``%``, ``_``, ``\``) so they
+        match literally when used with ``ESCAPE '\'``."""
+        return text.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+
     def _compile_body_regex(self, body_regex: str) -> Optional["re.Pattern[str]"]:
         """Compile and return a body regex, or None if body_regex is empty.
 
@@ -531,8 +537,8 @@ class HistoryManager:
         except Exception as jp_exc:
             raise ValidationError(f"Invalid JSONPath expression: {jp_exc}")
 
-    @staticmethod
     def _build_sql_filters(
+        self,
         *,
         query: str,
         method: str,
@@ -549,8 +555,9 @@ class HistoryManager:
         params: List[Any] = []
 
         if query and isinstance(query, str):
-            like = f"%{query}%"
-            conditions.append("(url LIKE ? OR request_body LIKE ?)")
+            escaped = self._escape_like(query)
+            like = f"%{escaped}%"
+            conditions.append("(url LIKE ? ESCAPE '\\' OR request_body LIKE ? ESCAPE '\\')")
             params.extend([like, like])
 
         if method and isinstance(method, str):
@@ -576,8 +583,9 @@ class HistoryManager:
                 conditions.append("(status_code IS NULL OR status_code >= 400)")
 
         if content_type and isinstance(content_type, str):
-            conditions.append("response_headers LIKE ?")
-            params.append(f"%{content_type}%")
+            escaped_ct = self._escape_like(content_type)
+            conditions.append("response_headers LIKE ? ESCAPE '\\'")
+            params.append(f"%{escaped_ct}%")
 
         if min_elapsed is not None:
             conditions.append("elapsed >= ?")

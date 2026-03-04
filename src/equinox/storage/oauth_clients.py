@@ -194,19 +194,22 @@ class OAuthClientManager:
             raise StorageError(f"Failed to update OAuth2 client: {exc}") from exc
 
     def set_default(self, client_id: int) -> None:
-        """Mark one client as the default; clears any previous default."""
+        """Mark one client as the default; clears any previous default.
+
+        Uses a single atomic UPDATE to avoid a window where no client
+        is marked as default.
+        """
         if not self.get_client(client_id):
             raise StorageError(f"OAuth2 client {client_id} not found")
-        self.db.execute("UPDATE oauth_clients SET is_default = 0")
         self.db.execute(
-            "UPDATE oauth_clients SET is_default = 1 WHERE id = ?",
+            "UPDATE oauth_clients SET is_default = CASE WHEN id = ? THEN 1 ELSE 0 END",
             (client_id,),
         )
         logger.info("Set OAuth2 client id=%d as default", client_id)
 
     def clear_default(self) -> None:
         """Remove the default flag from all clients."""
-        self.db.execute("UPDATE oauth_clients SET is_default = 0")
+        self.db.execute("UPDATE oauth_clients SET is_default = 0", ())
 
     # ── Delete ────────────────────────────────────────────────────────
 
