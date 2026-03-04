@@ -174,6 +174,99 @@ class TestUpdateEnvironment:
         eid = _create(mgr, "No Change Env")
         mgr.update_environment(eid)  # no keyword args — should not raise
 
+    def test_update_name_too_long(self, mgr):
+        eid = _create(mgr, "LongNameEnv")
+        with pytest.raises(ValidationError):
+            mgr.update_environment(eid, name="x" * 201)
+
+    def test_update_name_whitespace_raises(self, mgr):
+        eid = _create(mgr, "WSNameEnv")
+        with pytest.raises(ValidationError):
+            mgr.update_environment(eid, name="   ")
+
+    def test_update_name_non_string_raises(self, mgr):
+        eid = _create(mgr, "TypeEnv")
+        with pytest.raises(ValidationError):
+            mgr.update_environment(eid, name=123)
+
+    def test_update_description_non_string_raises(self, mgr):
+        eid = _create(mgr, "DescTypeEnv")
+        with pytest.raises(ValidationError):
+            mgr.update_environment(eid, description=999)
+
+    def test_update_description_too_long_raises(self, mgr):
+        eid = _create(mgr, "DescLenEnv")
+        with pytest.raises(ValidationError):
+            mgr.update_environment(eid, description="d" * 1001)
+
+    def test_update_variables_not_dict_raises(self, mgr):
+        eid = _create(mgr, "VarTypeEnv")
+        with pytest.raises(ValidationError):
+            mgr.update_environment(eid, variables="bad")
+
+    def test_update_variables_too_many_raises(self, mgr):
+        eid = _create(mgr, "VarCountEnv")
+        big = {f"K_{i}": "v" for i in range(101)}
+        with pytest.raises(SecurityError):
+            mgr.update_environment(eid, variables=big)
+
+    def test_update_variable_key_not_string_raises(self, mgr):
+        eid = _create(mgr, "VarKeyEnv")
+        with pytest.raises(ValidationError):
+            mgr.update_environment(eid, variables={42: "val"})
+
+    def test_update_variable_key_empty_raises(self, mgr):
+        eid = _create(mgr, "VarEmptyKeyEnv")
+        with pytest.raises(ValidationError):
+            mgr.update_environment(eid, variables={"": "val"})
+
+    def test_update_variable_key_too_long_raises(self, mgr):
+        eid = _create(mgr, "VarKeyLenEnv")
+        with pytest.raises(ValidationError):
+            mgr.update_environment(eid, variables={"k" * 101: "val"})
+
+    def test_update_variable_value_not_string_raises(self, mgr):
+        eid = _create(mgr, "VarValTypeEnv")
+        with pytest.raises(ValidationError):
+            mgr.update_environment(eid, variables={"KEY": 42})
+
+    def test_update_variable_value_too_long_raises(self, mgr):
+        eid = _create(mgr, "VarValLenEnv")
+        with pytest.raises(ValidationError):
+            mgr.update_environment(eid, variables={"KEY": "v" * 10001})
+
+    def test_update_secret_keys(self, mgr):
+        eid = _create(mgr, "SecKeysEnv")
+        mgr.update_environment(eid, secret_keys=["API_KEY", "TOKEN"])
+        env = mgr.get_environment(eid)
+        assert env["secret_keys"] == ["API_KEY", "TOKEN"]
+
+    def test_update_secret_keys_not_list_raises(self, mgr):
+        eid = _create(mgr, "SecKeysTypeEnv")
+        with pytest.raises(ValidationError):
+            mgr.update_environment(eid, secret_keys="bad")
+
+    def test_update_secret_keys_too_many_raises(self, mgr):
+        eid = _create(mgr, "SecKeysCountEnv")
+        with pytest.raises(SecurityError):
+            mgr.update_environment(eid, secret_keys=["k"] * 101)
+
+    def test_update_secret_keys_non_string_entry_raises(self, mgr):
+        eid = _create(mgr, "SecKeysEntryEnv")
+        with pytest.raises(ValidationError):
+            mgr.update_environment(eid, secret_keys=[123])
+
+    def test_update_secret_keys_entry_too_long_raises(self, mgr):
+        eid = _create(mgr, "SecKeysLenEnv")
+        with pytest.raises(ValidationError):
+            mgr.update_environment(eid, secret_keys=["k" * 101])
+
+    def test_update_duplicate_name_raises(self, mgr):
+        _create(mgr, "EnvA")
+        eid_b = _create(mgr, "EnvB")
+        with pytest.raises(StorageError, match="already exists"):
+            mgr.update_environment(eid_b, name="EnvA")
+
 
 # ── delete_environment ────────────────────────────────────────────────────────
 
@@ -255,3 +348,18 @@ class TestInterpolateVariables:
         mgr.set_active_environment(eid)
         text = "just plain text"
         assert mgr.interpolate_variables(text) == text
+
+    def test_empty_variables_returns_unchanged(self, mgr):
+        eid = _create(mgr, "Empty Vars", variables={})
+        mgr.set_active_environment(eid)
+        result = mgr.interpolate_variables("{{MISSING}}")
+        assert result == "{{MISSING}}"
+
+    def test_multiple_variables(self, mgr):
+        eid = _create(mgr, "Multi", variables={"A": "1", "B": "2"})
+        mgr.set_active_environment(eid)
+        assert mgr.interpolate_variables("{{A}} and {{B}}") == "1 and 2"
+
+    def test_variable_value_not_string_raises(self, mgr):
+        with pytest.raises(ValidationError):
+            mgr.create_environment("BadVal", variables={"KEY": 42})

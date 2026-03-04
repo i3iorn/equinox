@@ -3,13 +3,16 @@
 Uses Click CliRunner with ``get_db`` monkeypatched to return a temp DB.
 """
 
+import json
 import pytest
+from pathlib import Path
 from unittest.mock import patch
 
 from click.testing import CliRunner
 
 from equinox.storage.database import Database
 from equinox.storage.collections import CollectionManager
+from equinox.storage.environments import EnvironmentManager
 from equinox.storage import VariableGroupManager
 from equinox.core.request import Request
 
@@ -266,3 +269,206 @@ class TestRequestAuthCLI:
             )
         assert result.exit_code == 0
         assert "query" in result.output
+
+
+# ── env commands ──────────────────────────────────────────────────────────────
+
+
+class TestEnvCLI:
+    def test_list_empty(self, runner, db):
+        from equinox.cli.environments import env
+
+        with _patch_db(db):
+            result = runner.invoke(env, ["list"])
+        assert result.exit_code == 0
+        assert "No environments" in result.output
+
+    def test_create_and_list(self, runner, db):
+        from equinox.cli.environments import env
+
+        with _patch_db(db):
+            result = runner.invoke(env, ["create", "Dev", "-v", "HOST=localhost"])
+        assert result.exit_code == 0
+        assert "created" in result.output.lower()
+
+        with _patch_db(db):
+            result = runner.invoke(env, ["list"])
+        assert "Dev" in result.output
+
+    def test_create_with_description(self, runner, db):
+        from equinox.cli.environments import env
+
+        with _patch_db(db):
+            result = runner.invoke(env, ["create", "Staging", "-d", "Staging env"])
+        assert result.exit_code == 0
+
+    def test_activate(self, runner, db):
+        from equinox.cli.environments import env
+
+        mgr = EnvironmentManager(db)
+        eid = mgr.create_environment("Prod", {"X": "1"})
+
+        with _patch_db(db):
+            result = runner.invoke(env, ["activate", str(eid)])
+        assert result.exit_code == 0
+        assert "activated" in result.output.lower()
+
+    def test_show(self, runner, db):
+        from equinox.cli.environments import env
+
+        mgr = EnvironmentManager(db)
+        eid = mgr.create_environment("Show", {"API_URL": "https://api.com"}, description="My API")
+
+        with _patch_db(db):
+            result = runner.invoke(env, ["show", str(eid)])
+        assert result.exit_code == 0
+        assert "Show" in result.output
+        assert "API_URL" in result.output
+
+    def test_show_not_found(self, runner, db):
+        from equinox.cli.environments import env
+
+        with _patch_db(db):
+            result = runner.invoke(env, ["show", "9999"])
+        assert result.exit_code != 0
+
+    def test_show_empty_vars(self, runner, db):
+        from equinox.cli.environments import env
+
+        mgr = EnvironmentManager(db)
+        eid = mgr.create_environment("Empty", {})
+
+        with _patch_db(db):
+            result = runner.invoke(env, ["show", str(eid)])
+        assert result.exit_code == 0
+        assert "No variables" in result.output
+
+    def test_set_var(self, runner, db):
+        from equinox.cli.environments import env
+
+        mgr = EnvironmentManager(db)
+        eid = mgr.create_environment("VarEnv", {"A": "1"})
+
+        with _patch_db(db):
+            result = runner.invoke(env, ["set-var", str(eid), "B", "2"])
+        assert result.exit_code == 0
+        assert "set" in result.output.lower()
+
+    def test_set_var_not_found(self, runner, db):
+        from equinox.cli.environments import env
+
+        with _patch_db(db):
+            result = runner.invoke(env, ["set-var", "9999", "K", "V"])
+        assert result.exit_code != 0
+
+    def test_remove_var(self, runner, db):
+        from equinox.cli.environments import env
+
+        mgr = EnvironmentManager(db)
+        eid = mgr.create_environment("RemEnv", {"X": "1"})
+
+        with _patch_db(db):
+            result = runner.invoke(env, ["remove-var", str(eid), "X"])
+        assert result.exit_code == 0
+        assert "removed" in result.output.lower()
+
+    def test_remove_var_not_found(self, runner, db):
+        from equinox.cli.environments import env
+
+        mgr = EnvironmentManager(db)
+        eid = mgr.create_environment("RemEnv2", {"A": "1"})
+
+        with _patch_db(db):
+            result = runner.invoke(env, ["remove-var", str(eid), "MISSING"])
+        assert result.exit_code != 0
+
+    def test_delete_with_yes(self, runner, db):
+        from equinox.cli.environments import env
+
+        mgr = EnvironmentManager(db)
+        eid = mgr.create_environment("DeleteMe", {})
+
+        with _patch_db(db):
+            result = runner.invoke(env, ["delete", str(eid), "--yes"])
+        assert result.exit_code == 0
+        assert "deleted" in result.output.lower()
+
+    def test_delete_not_found(self, runner, db):
+        from equinox.cli.environments import env
+
+        with _patch_db(db):
+            result = runner.invoke(env, ["delete", "9999", "--yes"])
+        assert result.exit_code != 0
+
+    def test_list_with_active_and_desc(self, runner, db):
+        from equinox.cli.environments import env
+
+        mgr = EnvironmentManager(db)
+        eid = mgr.create_environment("Active", {"X": "1"}, description="Active env")
+        mgr.set_active_environment(eid)
+
+        with _patch_db(db):
+            result = runner.invoke(env, ["list"])
+        assert "(active)" in result.output
+        assert "Active env" in result.output
+
+    def test_import_dotenv(self, runner, db, tmp_path):
+        from equinox.cli.environments import env
+
+        mgr = EnvironmentManager(db)
+        eid = mgr.create_environment("DotEnv", {"EXISTING": "keep"})
+
+        dotenv_file = tmp_path / ".env"
+        dotenv_file.write_text("NEW_KEY=new_value\nOTHER=123\n", encoding="utf-8")
+
+        with _patch_db(db):
+            result = runner.invoke(env, ["import-dotenv", str(eid), str(dotenv_file)])
+        assert result.exit_code == 0
+        assert "Imported 2" in result.output
+
+        # Verify merge (default)
+        updated = mgr.get_environment(eid)
+        assert updated["variables"]["EXISTING"] == "keep"
+        assert updated["variables"]["NEW_KEY"] == "new_value"
+
+    def test_import_dotenv_replace(self, runner, db, tmp_path):
+        from equinox.cli.environments import env
+
+        mgr = EnvironmentManager(db)
+        eid = mgr.create_environment("Replace", {"OLD": "gone"})
+
+        dotenv_file = tmp_path / ".env"
+        dotenv_file.write_text("FRESH=val\n", encoding="utf-8")
+
+        with _patch_db(db):
+            result = runner.invoke(env, ["import-dotenv", str(eid), str(dotenv_file), "--replace"])
+        assert result.exit_code == 0
+
+        updated = mgr.get_environment(eid)
+        assert "OLD" not in updated["variables"]
+        assert updated["variables"]["FRESH"] == "val"
+
+    def test_import_dotenv_not_found(self, runner, db, tmp_path):
+        from equinox.cli.environments import env
+
+        dotenv_file = tmp_path / ".env"
+        dotenv_file.write_text("K=V\n", encoding="utf-8")
+
+        with _patch_db(db):
+            result = runner.invoke(env, ["import-dotenv", "9999", str(dotenv_file)])
+        assert result.exit_code != 0
+
+    def test_import_dotenv_empty_file(self, runner, db, tmp_path):
+        from equinox.cli.environments import env
+
+        mgr = EnvironmentManager(db)
+        eid = mgr.create_environment("EmptyDot", {})
+
+        dotenv_file = tmp_path / ".env"
+        dotenv_file.write_text("# just comments\n", encoding="utf-8")
+
+        with _patch_db(db):
+            result = runner.invoke(env, ["import-dotenv", str(eid), str(dotenv_file)])
+        assert result.exit_code == 0
+        assert "No variables" in result.output
+
