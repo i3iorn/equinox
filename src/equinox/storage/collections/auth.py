@@ -4,6 +4,8 @@ import json
 import logging
 from typing import Optional
 
+from equinox.core.auth_cipher import encrypt_auth_data, decrypt_auth_data
+
 logger = logging.getLogger(__name__)
 
 
@@ -14,23 +16,31 @@ class CollectionAuthMixin:
 
     @staticmethod
     def _serialize_auth(auth) -> "tuple[Optional[str], Optional[str]]":
-        """Return (auth_type, auth_data_json) from an auth strategy object or None."""
+        """Return (auth_type, encrypted_auth_data) from an auth strategy object or None.
+
+        The JSON blob is encrypted at rest via :func:`encrypt_auth_data`.
+        """
         if auth is None:
             return None, None
         try:
             d = auth.to_dict()
-            return d.get("type"), json.dumps(d)
-        except Exception:
+            return d.get("type"), encrypt_auth_data(json.dumps(d))
+        except Exception as exc:
+            logger.warning("Failed to serialize auth object %r: %s", type(auth).__name__, exc)
             return None, None
 
     @staticmethod
     def _deserialize_auth(auth_type: "Optional[str]", auth_data: "Optional[str]"):
-        """Return an auth strategy object from DB columns, or None."""
+        """Return an auth strategy object from DB columns, or None.
+
+        Handles both encrypted (``enc:…``) and legacy plaintext JSON
+        transparently via :func:`decrypt_auth_data`.
+        """
         if not auth_type or not auth_data:
             return None
         from equinox.auth import BearerAuth, APIKeyAuth, BasicAuth, OAuth2Auth
         try:
-            d = json.loads(auth_data)
+            d = json.loads(decrypt_auth_data(auth_data))
         except (ValueError, TypeError):
             return None
         t = d.get("type", auth_type)

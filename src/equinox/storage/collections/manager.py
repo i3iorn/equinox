@@ -106,6 +106,7 @@ class CollectionManager(
 
     def get_collection(self, collection_id: int) -> Optional[Dict[str, Any]]:
         """Get collection by ID."""
+        require_positive_int(collection_id, "Collection ID")
         return self.db.fetchone("SELECT * FROM collections WHERE id = ?", (collection_id,))
 
     def list_collections(self) -> List[Dict[str, Any]]:
@@ -113,11 +114,44 @@ class CollectionManager(
         return self.db.fetchall("SELECT * FROM collections ORDER BY name")
 
     def update_collection(self, collection_id: int, name: str, description: str) -> None:
-        """Update collection name and description."""
-        self.db.execute(
-            "UPDATE collections SET name = ?, description = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
-            (name, description, collection_id),
-        )
+        """Update collection name and description.
+
+        Args:
+            collection_id: Collection ID
+            name: New name
+            description: New description
+
+        Raises:
+            ValidationError: If input is invalid
+            StorageError: If collection not found or name taken
+        """
+        require_positive_int(collection_id, "Collection ID")
+
+        if not name or not isinstance(name, str):
+            raise ValidationError("Collection name must be a non-empty string")
+        name = name.strip()
+        if not name:
+            raise ValidationError("Collection name cannot be empty or whitespace")
+        if len(name) > self.MAX_NAME_LENGTH:
+            raise ValidationError(f"Collection name too long (max {self.MAX_NAME_LENGTH} characters)")
+
+        if not isinstance(description, str):
+            raise ValidationError("Collection description must be a string")
+        if len(description) > self.MAX_DESCRIPTION_LENGTH:
+            raise ValidationError(f"Collection description too long (max {self.MAX_DESCRIPTION_LENGTH} characters)")
+
+        if not self.get_collection(collection_id):
+            raise StorageError(f"Collection with ID {collection_id} does not exist")
+
+        try:
+            self.db.execute(
+                "UPDATE collections SET name = ?, description = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+                (name, description, collection_id),
+            )
+        except Exception as exc:
+            if "UNIQUE constraint" in str(exc):
+                raise StorageError(f"A collection named '{name}' already exists")
+            raise StorageError(f"Failed to update collection: {exc}")
 
     def rename_collection(self, collection_id: int, new_name: str) -> None:
         """Rename a collection.
@@ -130,6 +164,9 @@ class CollectionManager(
             ValidationError: If new_name is invalid
             StorageError: If collection not found or name taken
         """
+        require_positive_int(collection_id, "Collection ID")
+        if not isinstance(new_name, str):
+            raise ValidationError("Collection name must be a string")
         new_name = new_name.strip()
         if not new_name:
             raise ValidationError("Collection name cannot be empty")
@@ -159,6 +196,9 @@ class CollectionManager(
             ValidationError: If new_name is invalid
             StorageError: If request not found
         """
+        require_positive_int(request_id, "Request ID")
+        if not isinstance(new_name, str):
+            raise ValidationError("Request name must be a string")
         new_name = new_name.strip()
         if not new_name:
             raise ValidationError("Request name cannot be empty")
@@ -188,6 +228,7 @@ class CollectionManager(
         Raises:
             StorageError: If source request not found
         """
+        require_positive_int(request_id, "Request ID")
         row = self.db.fetchone("SELECT * FROM requests WHERE id = ?", (request_id,))
         if not row:
             raise StorageError(f"Request {request_id} not found")
@@ -280,8 +321,9 @@ class CollectionManager(
                 INSERT INTO requests
                 (collection_id, name, description, method, url, headers, params, body,
                  auth_type, auth_data, captures, assertions, pre_script, post_script,
-                 cert_path, cert_key_path, folder, timeout, verify_ssl, follow_redirects)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                 cert_path, cert_key_path, folder, timeout, verify_ssl, follow_redirects,
+                 path_params)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     coll_id,
@@ -304,6 +346,7 @@ class CollectionManager(
                     request.timeout,
                     int(request.verify_ssl),
                     int(request.follow_redirects),
+                    json.dumps(request.path_params) if request.path_params else "{}",
                 ),
             )
             logger.info(f"Saved request '{req_name}' with ID {req_id} to collection {coll_id}")
@@ -350,6 +393,7 @@ class CollectionManager(
 
     def get_request(self, request_id: int) -> Optional[Request]:
         """Get request by ID."""
+        require_positive_int(request_id, "Request ID")
         row = self.db.fetchone("SELECT * FROM requests WHERE id = ?", (request_id,))
         if not row:
             return None
@@ -412,6 +456,13 @@ class CollectionManager(
         except (ValueError, TypeError):
             assertions = []
 
+        try:
+            path_params = json.loads(row["path_params"]) if row.get("path_params") else {}
+            if not isinstance(path_params, dict):
+                path_params = {}
+        except (ValueError, TypeError):
+            path_params = {}
+
         return Request(
             method=row["method"],
             url=row["url"],
@@ -434,6 +485,7 @@ class CollectionManager(
             post_script=row.get("post_script") or "",
             cert_path=row.get("cert_path") or None,
             cert_key_path=row.get("cert_key_path") or None,
+            path_params=path_params,
         )
 
     def update_request(self, request: "Request") -> None:
@@ -465,9 +517,10 @@ class CollectionManager(
                     method=?, url=?, headers=?, params=?, body=?,
                     auth_type=?, auth_data=?,
                     timeout=?, verify_ssl=?, follow_redirects=?,
-                    folder=?,
+                    folder=?, description=?,
                     captures=?, assertions=?, pre_script=?, post_script=?,
                     cert_path=?, cert_key_path=?,
+                    path_params=?,
                     updated_at=CURRENT_TIMESTAMP
                 WHERE id=?
                 """,
@@ -483,12 +536,14 @@ class CollectionManager(
                     int(request.verify_ssl),
                     int(request.follow_redirects),
                     request.folder or None,
+                    request.description or "",
                     captures_json,
                     assertions_json,
                     request.pre_script or "",
                     request.post_script or "",
                     request.cert_path,
                     request.cert_key_path,
+                    json.dumps(request.path_params) if request.path_params else "{}",
                     request.id,
                 ),
             )

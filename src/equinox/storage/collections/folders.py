@@ -71,7 +71,28 @@ class CollectionFoldersMixin:
             collection_id: Collection to operate on.
             old_path: Current folder path (e.g. "Auth").
             new_path: New folder path (e.g. "Authentication").
+
+        Raises:
+            ValidationError: If paths are invalid.
         """
+        require_positive_int(collection_id, "Collection ID")
+        old_path = (old_path or "").strip()
+        new_path = (new_path or "").strip()
+        if not old_path:
+            raise ValidationError("Old folder path must not be empty")
+        if not new_path:
+            raise ValidationError("New folder path must not be empty")
+        for label, path in [("Old", old_path), ("New", new_path)]:
+            if path.startswith("/") or path.endswith("/"):
+                raise ValidationError(f"{label} folder path must not start or end with '/'")
+            if "//" in path:
+                raise ValidationError(f"{label} folder path must not contain empty segments ('//')")
+            if ".." in path.split("/"):
+                raise ValidationError(f"{label} folder path must not contain '..' segments")
+            if "\r" in path or "\n" in path:
+                raise ValidationError(f"{label} folder path contains invalid characters")
+            if len(path) > 1000:
+                raise ValidationError(f"{label} folder path too long (max 1000 characters)")
         rows = self.db.fetchall(
             "SELECT id, folder FROM requests WHERE collection_id=? AND ("
             "folder=? OR folder LIKE ?)",

@@ -3,7 +3,8 @@
 import logging
 from typing import Dict, List, Any, Optional
 
-from equinox.core.exceptions import StorageError
+from equinox.core.exceptions import StorageError, ValidationError
+from equinox.storage.utils import require_positive_int
 
 logger = logging.getLogger(__name__)
 
@@ -17,7 +18,14 @@ class CollectionOrderingMixin:
         Args:
             request_id: Request ID to move.
             folder: Destination folder path (e.g. "Auth/OAuth"), or None/empty for root.
+
+        Raises:
+            ValidationError: If request_id is invalid.
+            StorageError: If the request does not exist.
         """
+        require_positive_int(request_id, "Request ID")
+        if not self.db.fetchone("SELECT id FROM requests WHERE id = ?", (request_id,)):
+            raise StorageError(f"Request {request_id} not found")
         self.db.execute(
             "UPDATE requests SET folder=?, updated_at=CURRENT_TIMESTAMP WHERE id=?",
             (folder or None, request_id),
@@ -56,7 +64,14 @@ class CollectionOrderingMixin:
     # ── Reordering helpers ────────────────────────────────────────────
 
     def set_sort_order(self, request_id: int, sort_order: int) -> None:
-        """Set the sort_order for a single request."""
+        """Set the sort_order for a single request.
+
+        Raises:
+            ValidationError: If request_id or sort_order is invalid.
+        """
+        require_positive_int(request_id, "Request ID")
+        if not isinstance(sort_order, int):
+            raise ValidationError("sort_order must be an integer")
         self.db.execute(
             "UPDATE requests SET sort_order=?, updated_at=CURRENT_TIMESTAMP WHERE id=?",
             (sort_order, request_id),
@@ -69,7 +84,14 @@ class CollectionOrderingMixin:
 
         Args:
             ordered_ids: Request IDs in the desired display order.
+
+        Raises:
+            ValidationError: If any ID is not a positive integer.
         """
+        if not isinstance(ordered_ids, list):
+            raise ValidationError("ordered_ids must be a list")
+        for req_id in ordered_ids:
+            require_positive_int(req_id, "Request ID")
         for position, req_id in enumerate(ordered_ids):
             self.db.execute(
                 "UPDATE requests SET sort_order=? WHERE id=?",
