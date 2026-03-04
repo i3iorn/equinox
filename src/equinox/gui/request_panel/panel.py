@@ -144,6 +144,7 @@ class RequestPanel(_RequestSendMixin, _RequestAuthMixin, _RequestBodyMixin, QWid
 
     response_received = pyqtSignal(object)
     request_sent      = pyqtSignal(object)
+    session_vars_changed = pyqtSignal(dict)
 
     # ── Accessor helpers ───────────────────────────────────────────────
 
@@ -197,6 +198,63 @@ class RequestPanel(_RequestSendMixin, _RequestAuthMixin, _RequestBodyMixin, QWid
 
     def _mark_dirty(self):
         self._dirty = True
+
+    # ── Autosave ──────────────────────────────────────────────────────
+
+    def autosave_current(self) -> None:
+        """Persist the current editor state back to the DB if dirty.
+
+        Only acts when the loaded request originated from a collection (has an
+        ``id``).  Silently does nothing for ad-hoc / history requests.
+        """
+        if not self._dirty:
+            return
+        req = self.current_request
+        if not req or not getattr(req, "id", None):
+            return
+        try:
+            from equinox.storage import CollectionManager
+            mgr = CollectionManager(self.db)
+            updated = Request(
+                method=self.method_combo.currentText(),
+                url=self.url_input.text().strip(),
+                headers=self.headers_table.get_data(),
+                params=self.params_table.get_enabled_data(),
+                params_list=self.params_table.get_all_rows(),
+                body=self.body_text.toPlainText().strip() or None,
+                auth=self._auth,
+                timeout=self.timeout_spin.value(),
+                verify_ssl=self.verify_ssl_check.isChecked(),
+                follow_redirects=self.follow_redirects_check.isChecked(),
+                name=req.name,
+                description=self.notes_editor.toPlainText().strip() or None,
+                collection_id=req.collection_id,
+                folder=req.folder,
+                id=req.id,
+                captures=self._get_captures(),
+                assertions=self._get_assertions(),
+                pre_script=self.pre_script_editor.toPlainText(),
+                post_script=self.post_script_editor.toPlainText(),
+                cert_path=self.cert_path_input.text().strip() or None,
+                cert_key_path=self.cert_key_input.text().strip() or None,
+                path_params=self.path_params_table.get_all_data(),
+            )
+            mgr.update_request(updated)
+            self._dirty = False
+            logger.debug("Autosaved request %d", req.id)
+        except Exception:
+            logger.debug("Autosave failed", exc_info=True)
+
+    # ── Session variable accessors ─────────────────────────────────────
+
+    def get_session_vars(self) -> Dict[str, str]:
+        """Return a copy of the current session variables."""
+        return dict(self._session_vars)
+
+    def clear_session_vars(self) -> None:
+        """Clear all session variables and notify listeners."""
+        self._session_vars.clear()
+        self.session_vars_changed.emit({})
 
     def _clear_dirty(self):
         self._dirty = False
@@ -849,7 +907,12 @@ class RequestPanel(_RequestSendMixin, _RequestAuthMixin, _RequestBodyMixin, QWid
             path_params=self.path_params_table.get_all_data(),
         )
         try:
-            mgr.save_request(request, collection_id=col_id, name=name)
+            req_id = mgr.save_request(request, collection_id=col_id, name=name)
+            # Link the editor to the newly-saved DB row so autosave targets it.
+            request.id = req_id
+            request.collection_id = col_id
+            self.current_request = request
+            self._dirty = False
             self._status_message(f"Saved '{name}' to '{col_name}'")
             try:
                 win = self.window()

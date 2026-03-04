@@ -155,6 +155,7 @@ class _RequestSendMixin:
                 else:
                     self._session_vars.update(result.output_vars)
                     variables.update(self._session_vars)  # re-inject after script
+                    self.session_vars_changed.emit(dict(self._session_vars))
                     msg = f"OK — {len(result.output_vars)} var(s) set" if result.output_vars else "OK"
                     self.pre_script_result.setText(msg)
                     self.pre_script_result.setStyleSheet(f"color: {Colors.GREEN};")
@@ -249,7 +250,9 @@ class _RequestSendMixin:
 
         self.request_sent.emit(request)
         self._set_sending_state(True)
-        self._clear_dirty()
+        # NOTE: Do NOT call _clear_dirty() here.  Sending is not a save —
+        # the user's edits must still be autosaved to the DB when navigating
+        # away.  Clearing the flag here would silently discard changes.
 
         self._worker = RequestWorker(request, self, cookie_manager=self._cookie_manager)
         worker_ref = self._worker
@@ -342,6 +345,7 @@ class _RequestSendMixin:
             )
             for r in results:
                 self._session_vars[r.variable] = r.value
+            self.session_vars_changed.emit(dict(self._session_vars))
             lines = [
                 f"{'✓' if r.success else '✗'} {r.variable} = {r.value!r}"
                 + (f"  ({r.error})" if not r.success else "")
@@ -376,6 +380,7 @@ class _RequestSendMixin:
                 self.post_script_result.setStyleSheet(f"color: {Colors.RED};")
             else:
                 self._session_vars.update(script_result.output_vars)
+                self.session_vars_changed.emit(dict(self._session_vars))
                 msg = (
                     f"OK — {len(script_result.output_vars)} var(s) set"
                     if script_result.output_vars else "OK"
@@ -479,11 +484,19 @@ class _RequestAuthMixin:
     def _configure_auth(self) -> None:
         from equinox.gui.dialogs.auth_dialog import AuthDialog
         # Show inherited auth in the dialog so the user sees what's active
+        was_inherited = self._auth is None and self._inherited_auth is not None
         display_auth = self._auth or self._inherited_auth
         dialog = AuthDialog(display_auth, self, db=self.db)
         if dialog.exec() == QDialog.DialogCode.Accepted:
             if hasattr(dialog, '_saved_auth'):
-                self._auth = dialog._saved_auth
+                saved = dialog._saved_auth
+                # If the request was using inherited auth and the user saved
+                # without meaningful changes, keep self._auth = None so the
+                # request continues inheriting from the collection/folder.
+                if was_inherited and saved is not None and self._auth_configs_match(saved, self._inherited_auth):
+                    return
+                old_auth = self._auth
+                self._auth = saved
                 if self._auth is not None:
                     # Own auth supersedes inherited
                     self._inherited_auth = None
@@ -492,11 +505,42 @@ class _RequestAuthMixin:
                     # User chose "No Auth" — re-resolve inherited
                     self._resolve_inherited_auth()
                 self._update_auth_display(self._auth)
+                # Mark dirty if auth actually changed
+                if not self._auth_configs_match(old_auth, self._auth):
+                    self._mark_dirty()
 
     def _clear_auth(self) -> None:
+        had_auth = self._auth is not None
         self._auth = None
         self._resolve_inherited_auth()
         self._update_auth_display(None)
+        if had_auth:
+            self._mark_dirty()
+
+    @staticmethod
+    def _auth_configs_match(a, b) -> bool:
+        """Return True if two auth objects have the same configuration.
+
+        Excludes volatile / token-state fields that change without user action
+        so that, e.g., a token refresh does not make the dialog think the user
+        changed the inherited auth configuration.
+        """
+        if a is None and b is None:
+            return True
+        if a is None or b is None:
+            return False
+        try:
+            d1 = a.to_dict()
+            d2 = b.to_dict()
+            for key in (
+                "has_access_token", "has_refresh_token", "expires_at",
+                "access_token", "refresh_token", "token_timeout",
+            ):
+                d1.pop(key, None)
+                d2.pop(key, None)
+            return d1 == d2
+        except Exception:
+            return False
 
     def _resolve_inherited_auth(self) -> None:
         """Re-resolve inherited auth from the collection/folder hierarchy.
