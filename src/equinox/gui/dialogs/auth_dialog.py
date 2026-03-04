@@ -1,14 +1,17 @@
 """Authentication configuration dialog"""
 
+import json
+
 from PyQt6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QTabWidget, QWidget,
     QLabel, QLineEdit, QComboBox, QPushButton, QFormLayout,
-    QMessageBox, QToolButton, QFrame,
+    QMessageBox, QToolButton, QFrame, QTextEdit,
 )
 from PyQt6.QtCore import Qt, QThread, pyqtSignal
-from typing import Optional
+from PyQt6.QtGui import QFont
+from typing import Optional, Dict, Any
 
-from equinox.gui.theme import Colors
+from equinox.gui.theme import Colors, get_mono_font
 from equinox.gui.widgets import make_secret_row
 
 from equinox.auth import BasicAuth, OAuth2Auth, BearerAuth, APIKeyAuth
@@ -31,6 +34,60 @@ class _TokenFetchWorker(QThread):
             self.finished.emit(self._auth)
         except Exception as exc:
             self.finished.emit(str(exc))
+
+
+class _TokenResponseDialog(QDialog):
+    """Read-only dialog showing the redacted token endpoint response."""
+
+    def __init__(self, data: Dict[str, Any], parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Token Endpoint Response")
+        self.resize(560, 420)
+
+        layout = QVBoxLayout(self)
+
+        # Status line
+        status = data.get("status_code", "?")
+        method = data.get("method", "POST")
+        url = data.get("url", "")
+        status_lbl = QLabel(f"{method}  {url}  →  {status}")
+        status_lbl.setStyleSheet(f"font-weight: bold; color: {Colors.GREEN if status == 200 else Colors.YELLOW};")
+        status_lbl.setWordWrap(True)
+        layout.addWidget(status_lbl)
+
+        # Headers section
+        layout.addWidget(QLabel("Response Headers:"))
+        headers_text = QTextEdit()
+        headers_text.setReadOnly(True)
+        headers_text.setFont(get_mono_font())
+        headers_text.setMaximumHeight(120)
+        headers_dict = data.get("headers", {})
+        headers_text.setPlainText(
+            "\n".join(f"{k}: {v}" for k, v in headers_dict.items())
+        )
+        layout.addWidget(headers_text)
+
+        # Body section
+        layout.addWidget(QLabel("Response Body (tokens redacted):"))
+        body_text = QTextEdit()
+        body_text.setReadOnly(True)
+        body_text.setFont(get_mono_font())
+        body = data.get("body", {})
+        try:
+            body_str = json.dumps(body, indent=2, ensure_ascii=False)
+        except Exception:
+            body_str = str(body)
+        body_text.setPlainText(body_str)
+        layout.addWidget(body_text)
+
+        # Close button
+        btn_row = QHBoxLayout()
+        btn_row.addStretch()
+        close_btn = QPushButton("Close")
+        close_btn.clicked.connect(self.accept)
+        close_btn.setDefault(True)
+        btn_row.addWidget(close_btn)
+        layout.addLayout(btn_row)
 
 
 class AuthDialog(QDialog):
@@ -196,8 +253,14 @@ class AuthDialog(QDialog):
         # ── Token fetch ───────────────────────────────────────────────
         self.oauth2_fetch_btn = QPushButton("Fetch Token…")
         self.oauth2_fetch_btn.clicked.connect(self._fetch_oauth2_token)
+        self.oauth2_view_response_btn = QPushButton("View Response…")
+        self.oauth2_view_response_btn.setEnabled(False)
+        self.oauth2_view_response_btn.setToolTip("Inspect the token endpoint response (tokens redacted)")
+        self.oauth2_view_response_btn.clicked.connect(self._view_token_response)
+        self._last_fetched_auth = None  # stores OAuth2Auth after successful fetch
         fetch_row = QHBoxLayout()
         fetch_row.addWidget(self.oauth2_fetch_btn)
+        fetch_row.addWidget(self.oauth2_view_response_btn)
         fetch_row.addStretch()
         fetch_container = QWidget()
         fetch_container.setLayout(fetch_row)
@@ -286,6 +349,10 @@ class AuthDialog(QDialog):
             self.oauth2_fetch_status.setStyleSheet(f"color: {Colors.RED};")
         else:
             auth: OAuth2Auth = result
+            self._last_fetched_auth = auth
+            self.oauth2_view_response_btn.setEnabled(
+                auth.last_token_response is not None
+            )
             # Back-fill the access/refresh token fields so the user can inspect them
             self.oauth2_access_token.setText(auth.access_token or "")
             if auth.refresh_token:
@@ -308,6 +375,15 @@ class AuthDialog(QDialog):
                 f"Token acquired{expiry}  [{preview}]"
             )
             self.oauth2_fetch_status.setStyleSheet(f"color: {Colors.GREEN};")
+
+    def _view_token_response(self) -> None:
+        """Open a dialog showing the redacted token endpoint response."""
+        auth = self._last_fetched_auth
+        if auth is None or auth.last_token_response is None:
+            return
+
+        dlg = _TokenResponseDialog(auth.last_token_response, self)
+        dlg.exec()
 
     # ── Saved credential picker ────────────────────────────────────────
 
@@ -398,7 +474,7 @@ class AuthDialog(QDialog):
                 "The credential manager is not available in this context."
             )
             return
-        from equinox.gui.saved_credentials_dialog import SavedCredentialsDialog
+        from equinox.gui.dialogs.saved_credentials_dialog import SavedCredentialsDialog
         dlg = SavedCredentialsDialog(self._db, self)
         dlg.credentials_changed.connect(self._refresh_client_picker)
         dlg.exec()
@@ -474,6 +550,15 @@ class AuthDialog(QDialog):
                     access_token=self.oauth2_access_token.text().strip() or None,
                     refresh_token=self.oauth2_refresh_token.text().strip() or None,
                 )
+                # Carry forward expires_at from a successful "Fetch Token…"
+                # so the token isn't treated as eternal.
+                if self._last_fetched_auth is not None:
+                    fetched = self._last_fetched_auth
+                    if (
+                        fetched.expires_at is not None
+                        and auth.access_token == fetched.access_token
+                    ):
+                        auth.expires_at = fetched.expires_at
             elif tab == 4:
                 key_name  = self.api_key_name.text().strip()
                 key_value = self.api_key_value.text().strip()
