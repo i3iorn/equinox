@@ -208,15 +208,21 @@ class CollectionVariablesMixin:
 
         merged: Dict[str, str] = {}
 
-        # Reverse so lower priority numbers are processed last and thus override.
-        groups = self.list_collection_variable_groups(collection_id)
-        for group in reversed(groups):
-            group_vars = self.db.fetchall(
-                "SELECT key, value FROM variable_group_items WHERE group_id = ?",
-                (group["id"],)
-            )
-            for var in group_vars:
-                merged[var["key"]] = var["value"]
+        # Fetch all group variables in a single query, ordered so that
+        # higher-priority groups (lower number) come last and overwrite.
+        group_vars = self.db.fetchall(
+            """
+            SELECT vgi.key, vgi.value
+            FROM variable_group_items vgi
+            JOIN collection_variable_groups cvg ON vgi.group_id = cvg.group_id
+            WHERE cvg.collection_id = ?
+            ORDER BY cvg.priority DESC
+            """,
+            (collection_id,),
+        )
+        for var in group_vars:
+            merged[var["key"]] = var["value"]
 
+        # Collection-specific variables have the highest precedence.
         merged.update(self.get_collection_variables_dict(collection_id))
         return merged
