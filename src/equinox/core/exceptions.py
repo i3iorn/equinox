@@ -64,9 +64,13 @@ class RateLimitError(EquinoxError):
     pass
 
 
-class TimeoutError(EquinoxError):
+class RequestTimeoutError(EquinoxError):
     """Request timeout error."""
     pass
+
+
+# Backward-compatible alias — prefer ``RequestTimeoutError`` in new code.
+TimeoutError = RequestTimeoutError
 
 
 class FileSizeError(EquinoxError):
