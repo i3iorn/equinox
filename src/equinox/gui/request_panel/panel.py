@@ -1,7 +1,6 @@
 """Request builder panel."""
 
 import logging
-import os
 from typing import Optional, Dict
 
 from PyQt6.QtWidgets import (
@@ -14,13 +13,11 @@ from PyQt6.QtWidgets import (
     QTabWidget,
     QPlainTextEdit,
     QTableWidget,
-    QTableWidgetItem,
     QHeaderView,
     QLabel,
     QGroupBox,
     QMessageBox,
     QDialog,
-    QDialogButtonBox,
     QCompleter,
     QSplitter,
     QFileDialog,
@@ -32,8 +29,8 @@ from PyQt6.QtCore import pyqtSignal, Qt, QTimer, QStringListModel
 from PyQt6.QtGui import QFont, QKeySequence, QShortcut
 
 from equinox.gui.theme import Colors, get_mono_font, get_font_size
-from equinox.gui.widgets import UrlLineEdit, KeyValueTable, CheckableKeyValueTable, JsonBodyEditor, PathParamsTable
-from equinox.core.request import Request, Response
+from equinox.gui.widgets import UrlLineEdit, CheckableKeyValueTable, JsonBodyEditor, PathParamsTable
+from equinox.core.request import Request
 from equinox.core.error_enrichment import RichError, enrich_exception
 from equinox.storage import Database, HistoryManager
 from equinox.gui.workers import RequestWorker, BenchmarkDialog, DEFAULT_TIMEOUT  # noqa: F401
@@ -43,14 +40,10 @@ from equinox.gui.request_panel.mixins import (  # noqa: F401
     _save_history_safe,
 )
 from equinox.gui.request_panel.body_mixin import _RequestBodyMixin  # noqa: F401
+from equinox.gui.request_panel.save_dialog import SaveRequestDialog  # noqa: F401
 
 logger = logging.getLogger(__name__)
 
-# ─────────────────────────────────────────────────────────────────────────────
-# Assertion evaluation — delegate to core module (also used by CLI)
-# ─────────────────────────────────────────────────────────────────────────────
-
-from equinox.core.assertions import evaluate_assertion as _evaluate_assertion
 
 # Common header presets for the Headers tab toolbar
 _HEADER_PRESETS = [
@@ -72,67 +65,8 @@ _HEADER_PRESETS = [
     ("User-Agent: Equinox/1.0",               "User-Agent", "Equinox/1.0"),
 ]
 
-
-# ─────────────────────────────────────────────────────────────────────────────
-# Save-request dialog
-# ─────────────────────────────────────────────────────────────────────────────
-
-class _SaveRequestDialog(QDialog):
-    """Prompt the user for name, collection, and optional folder when saving."""
-
-    def __init__(self, db, method: str, url: str, current_folder: str = "", parent=None):
-        super().__init__(parent)
-        self.setWindowTitle("Save Request")
-        self.setMinimumWidth(420)
-        layout = QVBoxLayout(self)
-
-        name_row = QHBoxLayout()
-        name_row.addWidget(QLabel("Name:"))
-        self._name_input = QLineEdit()
-        self._name_input.setPlaceholderText(f"{method} {url[:50]}")
-        name_row.addWidget(self._name_input)
-        layout.addLayout(name_row)
-
-        col_row = QHBoxLayout()
-        col_row.addWidget(QLabel("Collection:"))
-        self._col_combo = QComboBox()
-        from equinox.storage import CollectionManager
-        mgr = CollectionManager(db)
-        collections = mgr.list_collections()
-        if not collections:
-            mgr.create_collection("My Requests", "Default collection")
-            collections = mgr.list_collections()
-        for col in collections:
-            self._col_combo.addItem(col["name"], col["id"])
-        col_row.addWidget(self._col_combo)
-        layout.addLayout(col_row)
-
-        folder_row = QHBoxLayout()
-        folder_row.addWidget(QLabel("Folder:"))
-        self._folder_input = QLineEdit()
-        self._folder_input.setPlaceholderText("e.g. Auth/OAuth  (optional)")
-        if current_folder:
-            self._folder_input.setText(current_folder)
-        folder_row.addWidget(self._folder_input)
-        layout.addLayout(folder_row)
-
-        buttons = QDialogButtonBox(
-            QDialogButtonBox.StandardButton.Save | QDialogButtonBox.StandardButton.Cancel
-        )
-        buttons.accepted.connect(self.accept)
-        buttons.rejected.connect(self.reject)
-        layout.addWidget(buttons)
-
-        self._method = method
-        self._url = url
-
-    def result_values(self) -> tuple:
-        """Return ``(name, collection_id, folder_or_none)``."""
-        name = self._name_input.text().strip() or f"{self._method} {self._url[:50]}"
-        col_id = self._col_combo.currentData()
-        col_name = self._col_combo.currentText()
-        folder = self._folder_input.text().strip() or None
-        return name, col_id, col_name, folder
+# Backward-compat alias
+_SaveRequestDialog = SaveRequestDialog
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -155,6 +89,7 @@ class RequestPanel(_RequestSendMixin, _RequestAuthMixin, _RequestBodyMixin, QWid
             win = self.window()
             return getattr(win, "logging_panel", None)
         except Exception:
+            logger.debug("Could not access logging panel", exc_info=True)
             return None
 
     def _status_message(self, text: str, timeout_ms: int = 5000) -> None:
@@ -162,7 +97,7 @@ class RequestPanel(_RequestSendMixin, _RequestAuthMixin, _RequestBodyMixin, QWid
         try:
             self.window().statusBar().showMessage(text, timeout_ms)
         except Exception:
-            pass
+            logger.debug("Could not show status message: %s", text)
 
     def __init__(self, db: Database, parent=None, cookie_manager=None):
         super().__init__(parent)
@@ -301,7 +236,7 @@ class RequestPanel(_RequestSendMixin, _RequestAuthMixin, _RequestBodyMixin, QWid
             urls = list(dict.fromkeys(e["url"] for e in entries))  # deduplicate, keep order
             self._url_model.setStringList(urls)
         except Exception:
-            pass
+            logger.warning("Failed to refresh URL completer", exc_info=True)
 
     # ── UI construction ───────────────────────────────────────────────
 
@@ -415,7 +350,7 @@ class RequestPanel(_RequestSendMixin, _RequestAuthMixin, _RequestBodyMixin, QWid
         toolbar.addStretch()
         toolbar.addWidget(presets_btn)
         layout.addLayout(toolbar)
-        self.headers_table = CheckableKeyValueTable()
+        self.headers_table = CheckableKeyValueTable(enable_key_completer=True)
         layout.addWidget(self.headers_table, 1)
         return w
 
@@ -798,25 +733,24 @@ class RequestPanel(_RequestSendMixin, _RequestAuthMixin, _RequestBodyMixin, QWid
         dlg = BenchmarkDialog(req, self, cookie_manager=self._cookie_manager)
         dlg.exec()
 
-    # ── Headers bulk actions and presets ─────────────────────────────
+    # ── Headers / params bulk actions and presets ─────────────────────
+
+    @staticmethod
+    def _set_all_checkable(table, enabled: bool) -> None:
+        """Enable or disable every row in a checkable key-value table."""
+        state = Qt.CheckState.Checked if enabled else Qt.CheckState.Unchecked
+        for row in range(table.rowCount()):
+            chk_item = table.item(row, 0)
+            if chk_item is not None:
+                chk_item.setCheckState(state)
 
     def _headers_set_all(self, enabled: bool) -> None:
         """Enable or disable every row in the headers table."""
-        for row in range(self.headers_table.rowCount()):
-            chk_item = self.headers_table.item(row, 0)
-            if chk_item is not None:
-                chk_item.setCheckState(
-                    Qt.CheckState.Checked if enabled else Qt.CheckState.Unchecked
-                )
+        self._set_all_checkable(self.headers_table, enabled)
 
     def _params_set_all(self, enabled: bool) -> None:
         """Enable or disable every row in the params table."""
-        for row in range(self.params_table.rowCount()):
-            chk_item = self.params_table.item(row, 0)
-            if chk_item is not None:
-                chk_item.setCheckState(
-                    Qt.CheckState.Checked if enabled else Qt.CheckState.Unchecked
-                )
+        self._set_all_checkable(self.params_table, enabled)
 
     def _insert_header_preset(self, key: str, value: str) -> None:
         """Append a header preset row (or update existing key)."""
@@ -840,6 +774,7 @@ class RequestPanel(_RequestSendMixin, _RequestAuthMixin, _RequestBodyMixin, QWid
             parts = [f"{k}={v}" for k, v in enabled.items() if k]
             self.url_input.set_param_suffix(sep + "&".join(parts))
         except Exception:
+            logger.debug("Failed to update URL suffix", exc_info=True)
             self.url_input.set_param_suffix("")
 
     def _on_url_changed_for_path_params(self, text: str) -> None:
@@ -877,7 +812,7 @@ class RequestPanel(_RequestSendMixin, _RequestAuthMixin, _RequestBodyMixin, QWid
             current_folder = self.current_request.folder
 
         try:
-            dlg = _SaveRequestDialog(self.db, method, url, current_folder, parent=self)
+            dlg = SaveRequestDialog(self.db, method, url, current_folder, parent=self)
         except Exception as exc:
             QMessageBox.critical(self, "Error", f"Could not open save dialog: {exc}")
             return
@@ -919,7 +854,7 @@ class RequestPanel(_RequestSendMixin, _RequestAuthMixin, _RequestBodyMixin, QWid
                 if hasattr(win, 'collections_panel'):
                     win.collections_panel.refresh()
             except Exception:
-                pass
+                logger.warning("Failed to refresh collections panel after save", exc_info=True)
         except Exception as exc:
             QMessageBox.critical(self, "Save Failed", str(exc))
 
