@@ -11,6 +11,7 @@ from typing import Any, Dict, List, Optional
 from equinox.storage.database import Database
 from equinox.core.exceptions import StorageError, ValidationError
 from equinox.core.auth_cipher import encrypt_auth_data, decrypt_auth_data
+from equinox.storage.utils import require_str as _require_str
 
 logger = logging.getLogger(__name__)
 
@@ -333,24 +334,8 @@ class SavedCredentialsManager:
 
     @staticmethod
     def _req_str(value: Any, field: str, max_len: int) -> str:
-        if value is None:
-            value = ""
-        if not isinstance(value, str):
-            raise ValidationError(f"'{field}' must be a string")
-        value = value.strip()
-        if not value:
-            raise ValidationError(f"'{field}' is required")
-        if len(value) > max_len:
-            raise ValidationError(f"'{field}' is too long (max {max_len} chars)")
-        return value
+        return _require_str(value, field, max_len, required=True)
 
     @staticmethod
     def _opt_str(value: Any, field: str, max_len: int) -> str:
-        if value is None:
-            return ""
-        if not isinstance(value, str):
-            raise ValidationError(f"'{field}' must be a string")
-        value = value.strip()
-        if len(value) > max_len:
-            raise ValidationError(f"'{field}' is too long (max {max_len} chars)")
-        return value
+        return _require_str(value, field, max_len, required=False)
