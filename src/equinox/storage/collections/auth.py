@@ -5,6 +5,7 @@ import logging
 from typing import Optional
 
 from equinox.core.auth_cipher import encrypt_auth_data, decrypt_auth_data
+from equinox.core.exceptions import StorageError
 
 logger = logging.getLogger(__name__)
 
@@ -19,6 +20,9 @@ class CollectionAuthMixin:
         """Return (auth_type, encrypted_auth_data) from an auth strategy object or None.
 
         The JSON blob is encrypted at rest via :func:`encrypt_auth_data`.
+
+        Raises:
+            StorageError: If the auth object cannot be serialized.
         """
         if auth is None:
             return None, None
@@ -26,8 +30,9 @@ class CollectionAuthMixin:
             d = auth.to_dict()
             return d.get("type"), encrypt_auth_data(json.dumps(d))
         except Exception as exc:
-            logger.warning("Failed to serialize auth object %r: %s", type(auth).__name__, exc)
-            return None, None
+            raise StorageError(
+                f"Failed to serialize auth ({type(auth).__name__}): {exc}"
+            ) from exc
 
     @staticmethod
     def _deserialize_auth(auth_type: "Optional[str]", auth_data: "Optional[str]"):
