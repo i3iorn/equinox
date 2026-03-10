@@ -10,7 +10,7 @@ from PyQt6.QtGui import QAction, QFont, QColor, QShortcut, QKeySequence
 
 from equinox.gui.theme import Colors
 from equinox.storage import Database, CollectionManager
-from equinox.gui.widgets.drag_drop_tree import _DragDropTree
+from equinox.gui.widgets.drag_drop_tree import DragDropTree
 from equinox.gui.collections_panel_pkg.actions import _CollectionsActionsMixin
 
 
@@ -121,7 +121,7 @@ class CollectionsPanel(_CollectionsActionsMixin, QWidget):
         self._filter_input.textChanged.connect(self._apply_filter)
         layout.addWidget(self._filter_input)
 
-        self.tree = _DragDropTree()
+        self.tree = DragDropTree()
         self.tree.setHeaderLabel("Collections")
         self.tree.itemDoubleClicked.connect(self._on_item_double_clicked)
         self.tree.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
