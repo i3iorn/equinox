@@ -335,10 +335,12 @@ class OAuth2Auth(AuthStrategy):
         """
         last_exc: Optional[Exception] = None
 
-        # Validate token URL against SSRF before making the request
+        # Validate token URL with full structural + SSRF checks (scheme,
+        # private-IP, metadata-endpoint blocking).  At send-time the URL is
+        # fully resolved so validate_resolved_url is appropriate.
         from equinox.core.validation import Validator
         try:
-            Validator.validate_url(self.token_url)
+            Validator.validate_resolved_url(self.token_url)
         except Exception as exc:
             raise AuthError(f"Invalid token URL: {exc}", details={"token_url": self.token_url})
 
