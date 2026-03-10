@@ -5,7 +5,10 @@ without a display server.
 """
 
 import json as _json
+import logging
 from typing import Any, Dict, List, Optional
+
+logger = logging.getLogger(__name__)
 
 
 def assemble_body(
@@ -39,7 +42,7 @@ def assemble_body(
             if parsed is not None:
                 gql_body["variables"] = parsed
         except Exception:
-            pass
+            logger.warning("Failed to parse GraphQL variables as JSON", exc_info=True)
         body = _json.dumps(gql_body)
     else:
         body = body_text or None
@@ -70,3 +73,33 @@ def inject_content_type(
         headers = dict(headers)
         headers["Content-Type"] = ct
     return headers
+
+
+def detect_body_type(body: str, headers: Optional[Dict] = None) -> str:
+    """Guess body type from content or Content-Type header.
+
+    Pure-logic helper — no Qt dependency.
+    """
+    ct = (headers or {}).get("Content-Type", "").lower()
+    if "json" in ct:
+        return "raw (JSON)"
+    if "xml" in ct:
+        return "raw (XML)"
+    if "urlencoded" in ct:
+        return "form-urlencoded"
+    if "text" in ct:
+        return "raw (text)"
+    # Sniff content
+    stripped = body.strip()
+    if stripped.startswith(("{", "[")):
+        try:
+            _json.loads(stripped)
+            return "raw (JSON)"
+        except Exception:
+            pass  # Not valid JSON — fall through to other heuristics
+    if stripped.startswith("<") and (">" in stripped):
+        return "raw (XML)"
+    if "=" in stripped and "&" in stripped:
+        return "form-urlencoded"
+    return "raw (text)"
+
