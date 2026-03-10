@@ -175,3 +175,98 @@ class TestMigrationIntegrationWithDatabase:
         assert col_id > 0
         col = mgr.get_collection(col_id)
         assert col["name"] == "Test Collection"
+
+    def test_v19_indexes_created(self, db):
+        """Migration v19 adds missing performance indexes."""
+        with db.get_connection() as conn:
+            indexes = {
+                row[1]
+                for row in conn.execute(
+                    "SELECT * FROM sqlite_master WHERE type='index'"
+                ).fetchall()
+                if row[1]
+            }
+        expected = {
+            "idx_environments_active",
+            "idx_collection_variables_collection",
+            "idx_variable_group_items_group",
+            "idx_collection_variable_groups_collection",
+            "idx_collection_variable_groups_group",
+            "idx_collection_folders_collection",
+        }
+        assert expected.issubset(indexes), f"Missing indexes: {expected - indexes}"
+
+
+class TestDatabaseTransaction:
+    """Tests for Database.transaction() context manager."""
+
+    def test_transaction_commits_on_success(self, db):
+        with db.transaction() as tx:
+            tx.execute(
+                "INSERT INTO collections (name, description) VALUES (?, ?)",
+                ("TxCol", ""),
+            )
+        row = db.fetchone("SELECT name FROM collections WHERE name = ?", ("TxCol",))
+        assert row is not None
+        assert row["name"] == "TxCol"
+
+    def test_transaction_rolls_back_on_error(self, db):
+        with pytest.raises(RuntimeError):
+            with db.transaction() as tx:
+                tx.execute(
+                    "INSERT INTO collections (name, description) VALUES (?, ?)",
+                    ("RollbackCol", ""),
+                )
+                raise RuntimeError("Force rollback")
+        row = db.fetchone("SELECT name FROM collections WHERE name = ?", ("RollbackCol",))
+        assert row is None
+
+    def test_transaction_multiple_inserts_atomic(self, db):
+        with db.transaction() as tx:
+            tx.execute(
+                "INSERT INTO collections (name, description) VALUES (?, ?)",
+                ("AtomicA", ""),
+            )
+            tx.execute(
+                "INSERT INTO collections (name, description) VALUES (?, ?)",
+                ("AtomicB", ""),
+            )
+        rows = db.fetchall("SELECT name FROM collections WHERE name LIKE ?", ("Atomic%",))
+        assert len(rows) == 2
+
+    def test_transaction_fetchone(self, db):
+        db.execute(
+            "INSERT INTO collections (name, description) VALUES (?, ?)",
+            ("FetchOne", ""),
+        )
+        with db.transaction() as tx:
+            row = tx.fetchone(
+                "SELECT name FROM collections WHERE name = ?", ("FetchOne",)
+            )
+        assert row is not None
+        assert row["name"] == "FetchOne"
+
+    def test_transaction_fetchall(self, db):
+        db.execute(
+            "INSERT INTO collections (name, description) VALUES (?, ?)",
+            ("FetchAll1", ""),
+        )
+        db.execute(
+            "INSERT INTO collections (name, description) VALUES (?, ?)",
+            ("FetchAll2", ""),
+        )
+        with db.transaction() as tx:
+            rows = tx.fetchall(
+                "SELECT name FROM collections WHERE name LIKE ?", ("FetchAll%",)
+            )
+        assert len(rows) == 2
+
+    def test_transaction_insert_returns_rowid(self, db):
+        with db.transaction() as tx:
+            row_id = tx.insert(
+                "INSERT INTO collections (name, description) VALUES (?, ?)",
+                ("RowIdCol", ""),
+            )
+        assert isinstance(row_id, int)
+        assert row_id > 0
+
