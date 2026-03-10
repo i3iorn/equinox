@@ -8,7 +8,6 @@ from typing import Optional, Any, List, Dict, Tuple
 from contextlib import contextmanager
 
 from equinox.core.exceptions import StorageError, ValidationError
-from equinox.core.validation import Validator
 
 logger = logging.getLogger(__name__)
 
@@ -91,6 +90,7 @@ class Database:
             conn.row_factory = sqlite3.Row
             conn.execute("PRAGMA foreign_keys = ON")
             conn.execute("PRAGMA secure_delete = ON")
+            conn.execute("PRAGMA journal_mode = WAL")
             yield conn
         except sqlite3.Error as exc:
             logger.error(f"Database connection error: {exc}")
@@ -101,6 +101,49 @@ class Database:
                     conn.close()
                 except Exception:
                     pass
+
+    @contextmanager
+    def transaction(self):
+        """Context manager for multi-statement transactions.
+
+        All statements executed via the yielded helper run on the **same**
+        connection inside a single ``BEGIN … COMMIT`` block.  If an exception
+        occurs the transaction is rolled back.
+
+        Usage::
+
+            with db.transaction() as tx:
+                tx.execute("INSERT INTO ...", (...))
+                tx.execute("INSERT INTO ...", (...))
+            # COMMIT happens automatically on clean exit
+
+        Yields:
+            A :class:`_TransactionHelper` with ``execute``, ``executemany``,
+            ``fetchone``, ``fetchall``, and ``insert`` methods.
+        """
+        with self.lock:
+            conn = sqlite3.connect(
+                self.db_path,
+                check_same_thread=False,
+                timeout=_CONNECTION_TIMEOUT_SECONDS,
+                isolation_level=None,  # autocommit off — we manage manually
+            )
+            conn.row_factory = sqlite3.Row
+            conn.execute("PRAGMA foreign_keys = ON")
+            conn.execute("PRAGMA secure_delete = ON")
+            conn.execute("PRAGMA journal_mode = WAL")
+            conn.execute("BEGIN")
+            try:
+                yield _TransactionHelper(conn)
+                conn.execute("COMMIT")
+            except Exception:
+                try:
+                    conn.execute("ROLLBACK")
+                except Exception:
+                    pass
+                raise
+            finally:
+                conn.close()
 
     def _validate_query(self, query: str, params: Tuple) -> None:
         """Validate query and parameters before execution.
@@ -249,3 +292,42 @@ class Database:
     def close(self):
         """No-op — connections are closed automatically in context managers."""
         pass
+
+
+class _TransactionHelper:
+    """Thin wrapper around a ``sqlite3.Connection`` for use inside
+    :meth:`Database.transaction`.
+
+    All methods execute on the **same** connection so they participate in
+    the enclosing transaction.
+    """
+
+    __slots__ = ("_conn",)
+
+    def __init__(self, conn: sqlite3.Connection) -> None:
+        self._conn = conn
+
+    def execute(self, query: str, params: Tuple = ()) -> sqlite3.Cursor:
+        """Execute a query and return the cursor."""
+        return self._conn.execute(query, params)
+
+    def executemany(self, query: str, seq_of_params) -> sqlite3.Cursor:
+        """Execute a query against all parameter sequences."""
+        return self._conn.executemany(query, seq_of_params)
+
+    def fetchone(self, query: str, params: Tuple = ()) -> Optional[Dict[str, Any]]:
+        """Execute a query and return a single row as a dict, or None."""
+        cursor = self._conn.execute(query, params)
+        row = cursor.fetchone()
+        return dict(row) if row else None
+
+    def fetchall(self, query: str, params: Tuple = ()) -> List[Dict[str, Any]]:
+        """Execute a query and return all rows as dicts."""
+        cursor = self._conn.execute(query, params)
+        return [dict(r) for r in cursor.fetchall()]
+
+    def insert(self, query: str, params: Tuple = ()) -> int:
+        """Execute an INSERT and return the last row id."""
+        cursor = self._conn.execute(query, params)
+        return cursor.lastrowid
+
