@@ -1,11 +1,13 @@
 """Drag-and-drop enabled QTreeWidget for the collections panel."""
 
+from typing import Optional
+
 from PyQt6.QtWidgets import QTreeWidget, QTreeWidgetItem, QAbstractItemView
 from PyQt6.QtCore import pyqtSignal, Qt, QMimeData
 from PyQt6.QtGui import QDrag
 
 
-class _DragDropTree(QTreeWidget):
+class DragDropTree(QTreeWidget):
     """QTreeWidget subclass that supports dragging request items
     onto collections or folders (including cross-collection moves)."""
 
@@ -27,7 +29,7 @@ class _DragDropTree(QTreeWidget):
 
     # ── Only request items are draggable ──────────────────────────────
 
-    def _item_data(self, item: QTreeWidgetItem):
+    def _item_data(self, item: Optional[QTreeWidgetItem]) -> Optional[dict]:
         return item.data(0, Qt.ItemDataRole.UserRole) if item else None
 
     def startDrag(self, supportedActions):
@@ -109,7 +111,7 @@ class _DragDropTree(QTreeWidget):
     # ── Helpers ───────────────────────────────────────────────────────
 
     @staticmethod
-    def _col_id_of(item: QTreeWidgetItem):
+    def _col_id_of(item: QTreeWidgetItem) -> Optional[int]:
         """Walk parent chain to find the enclosing collection ID."""
         cursor = item
         while cursor is not None:
@@ -120,7 +122,7 @@ class _DragDropTree(QTreeWidget):
         return None
 
     @staticmethod
-    def _folder_of(item: QTreeWidgetItem):
+    def _folder_of(item: QTreeWidgetItem) -> Optional[str]:
         """Return the folder path of the item's direct parent (or None for root)."""
         parent = item.parent()
         if parent is None:
@@ -129,3 +131,8 @@ class _DragDropTree(QTreeWidget):
         if pd.get("type") == "folder":
             return pd.get("path")
         return None
+
+
+# Backward-compat alias
+_DragDropTree = DragDropTree
+
