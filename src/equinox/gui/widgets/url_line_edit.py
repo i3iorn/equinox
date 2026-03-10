@@ -1,6 +1,5 @@
 """URL input with ghost query-parameter preview."""
 
-from typing import Dict
 
 from PyQt6.QtWidgets import QLineEdit
 from PyQt6.QtCore import Qt
