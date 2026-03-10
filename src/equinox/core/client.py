@@ -12,7 +12,7 @@ from threading import Lock
 
 from equinox.core.request import Request, Response
 from equinox.core.exceptions import (
-    EquinoxError, RequestError, TimeoutError, RateLimitError,
+    EquinoxError, RequestError, RequestTimeoutError, RateLimitError,
     CertificateError, ValidationError
 )
 from equinox.core.validation import Validator
@@ -22,6 +22,29 @@ from equinox.core.interceptors import InterceptorChain, RequestResponseLogger
 from equinox.core.audit import get_audit_logger, AuditEventType, AuditLevel
 
 logger = logging.getLogger(__name__)
+
+
+class _RedirectSafeAuth(httpx.Auth):
+    """httpx Auth adapter that re-applies auth headers after redirects.
+
+    httpx strips ``Authorization`` (and ``Cookie``) headers when following
+    cross-origin redirects (different scheme, host, or port).  This is
+    correct per RFC 7235 §2.2 for untrusted redirects, but breaks many
+    real-world OAuth2/Bearer flows where the same auth is required
+    after a scheme upgrade (HTTP → HTTPS) or a load-balancer redirect.
+
+    By passing auth through httpx's native ``auth`` parameter instead of
+    as a plain header, the auth flow is re-executed on every leg of the
+    redirect chain, ensuring the ``Authorization`` header is present.
+    """
+
+    def __init__(self, auth_headers: Dict[str, str]) -> None:
+        self._auth_headers = auth_headers
+
+    def auth_flow(self, request: httpx.Request):
+        for key, value in self._auth_headers.items():
+            request.headers[key] = value
+        yield request
 
 
 def _is_ssl_error(exc: Exception) -> bool:
@@ -210,6 +233,11 @@ class HTTPClient:
         try:
             response = self._send_with_timeout_retries(request, auth)
             response = self._retry_on_server_overload(request, auth, response)
+            if response is None:
+                raise RequestError(
+                    "Request was suppressed by an interceptor",
+                    details={"url": request.url},
+                )
             return response
         finally:
             self._release_concurrent_slot()
@@ -230,7 +258,7 @@ class HTTPClient:
             try:
                 response = self._send_once(request, auth)
                 return response
-            except TimeoutError as timeout_error:
+            except RequestTimeoutError as timeout_error:
                 last_error = timeout_error
                 if attempt < self.MAX_RETRIES - 1:
                     wait_seconds = 2 ** attempt  # 1s, 2s, 4s
@@ -300,7 +328,7 @@ class HTTPClient:
         Validator.validate_method(request.method)
 
         if request.headers:
-            Validator.validate_headers(request.headers)
+            Validator.validate_headers(request.headers, strict=False)
 
         if request.params:
             Validator.validate_query_params(request.params)
@@ -312,33 +340,35 @@ class HTTPClient:
     # ── Exception-to-error mapping for _send_internal ───────────────────
     # Each entry: (exception_type, error_factory, log_template, audit_tag_or_None)
     # The list is ordered most-specific-first (Python matches the first handler).
+    # Built lazily on first use and cached — the lambdas capture ``self``
+    # so dynamic attributes (e.g. ``self.timeout``) are read at call time.
 
-    def _build_error_handlers(self):
-        """Return the ordered list of (exc_type, handler_fn) tuples.
-
-        Each handler receives the caught exception and the request and returns
-        the arguments for ``_handle_error``.  Built as a method so ``self``
-        attributes (e.g. ``self.timeout``) are current at call time.
-        """
-        return [
+    @property
+    def _error_handlers(self):
+        """Return the cached (exc_type, handler_fn) list, building on first access."""
+        try:
+            return self.__error_handlers
+        except AttributeError:
+            pass
+        self.__error_handlers = [
             (
                 httpx.ConnectTimeout,
                 lambda exc, req: dict(
-                    error=TimeoutError("Connection timed out", details={"url": redact_url(req.url)}),
+                    error=RequestTimeoutError("Connection timed out", details={"url": redact_url(req.url)}),
                     log_message=f"Connection timeout for {redact_url(req.url)}",
                 ),
             ),
             (
                 httpx.ReadTimeout,
                 lambda exc, req: dict(
-                    error=TimeoutError("Server response timed out", details={"url": redact_url(req.url)}),
+                    error=RequestTimeoutError("Server response timed out", details={"url": redact_url(req.url)}),
                     log_message=f"Read timeout for {redact_url(req.url)}",
                 ),
             ),
             (
                 httpx.TimeoutException,
                 lambda exc, req: dict(
-                    error=TimeoutError(
+                    error=RequestTimeoutError(
                         f"Request timed out after {self.timeout} seconds",
                         details={"url": redact_url(req.url), "timeout": self.timeout},
                     ),
@@ -411,6 +441,7 @@ class HTTPClient:
                 ),
             ),
         ]
+        return self.__error_handlers
 
     def _send_internal(self, request: Request, auth: Optional[AuthStrategy] = None) -> Response:
         """Send the request through the interceptor chain, applying auth and error handling.
@@ -421,9 +452,9 @@ class HTTPClient:
         try:
             request = self.interceptors.process_request(request)
             headers = dict(request.headers) if request.headers else {}
-            self._apply_auth(request, headers, auth)
+            auth_headers = self._apply_auth(request, headers, auth)
 
-            response = self._dispatch_request(request, headers)
+            response = self._dispatch_request(request, headers, auth_headers)
             self._update_cookie_jar(request, response)
             response = self.interceptors.process_response(request, response)
             self._audit.log_request(
@@ -438,7 +469,7 @@ class HTTPClient:
                 raise
 
             # Walk the handler list; first matching type wins
-            for exc_type, handler_fn in self._build_error_handlers():
+            for exc_type, handler_fn in self._error_handlers:
                 if isinstance(exc, exc_type):
                     kwargs = handler_fn(exc, request)
                     return self._handle_error(request, **kwargs)
@@ -463,18 +494,26 @@ class HTTPClient:
         request: Request,
         headers: Dict[str, str],
         explicit_auth: Optional[AuthStrategy],
-    ) -> None:
-        """Apply the auth strategy to request headers.
+    ) -> Dict[str, str]:
+        """Apply the auth strategy and return the auth-injected headers separately.
 
-        The explicitly passed auth takes precedence over request.auth.
+        Auth headers (e.g. ``Authorization``) are added to *headers* for
+        backward compatibility, but also returned in a separate dict so the
+        caller can pass them through httpx's native ``auth`` mechanism to
+        survive cross-origin redirects.
+
+        Returns:
+            Dict of headers that were added by the auth strategy (empty if
+            no auth is configured).
 
         Raises:
             RequestError: If authentication fails.
         """
         auth_strategy = explicit_auth or request.auth
         if not auth_strategy:
-            return
+            return {}
 
+        snapshot = set(headers.keys())
         try:
             auth_strategy.apply(request, headers)
         except Exception as auth_exc:
@@ -483,18 +522,34 @@ class HTTPClient:
             logger.error("Authentication failed: %s", type(auth_exc).__name__)
             raise RequestError(f"Authentication failed: {safe_msg}")
 
-    def _dispatch_request(self, request: Request, headers: Dict[str, str]) -> Response:
+        # Identify which headers were added by the auth strategy
+        auth_headers = {k: headers[k] for k in headers if k not in snapshot}
+        if auth_headers:
+            logger.debug(
+                "Auth applied (%s): %s",
+                type(auth_strategy).__name__,
+                ", ".join(auth_headers.keys()),
+            )
+        return auth_headers
+
+    def _dispatch_request(
+        self,
+        request: Request,
+        headers: Dict[str, str],
+        auth_headers: Optional[Dict[str, str]] = None,
+    ) -> Response:
         """Choose the right httpx client (cert-aware or standard) and execute the request."""
         cert_path = getattr(request, "cert_path", None)
         if cert_path:
-            return self._execute_with_client_certificate(request, headers, cert_path)
-        return self._execute_httpx(self._client, request, headers)
+            return self._execute_with_client_certificate(request, headers, cert_path, auth_headers)
+        return self._execute_httpx(self._client, request, headers, auth_headers)
 
     def _execute_with_client_certificate(
         self,
         request: Request,
         headers: Dict[str, str],
         cert_path: str,
+        auth_headers: Optional[Dict[str, str]] = None,
     ) -> Response:
         """Execute the request using a per-request httpx.Client with a client certificate.
 
@@ -511,7 +566,7 @@ class HTTPClient:
             cert=cert_arg,
             cookies=self._get_current_cookies(),
         ) as cert_client:
-            return self._execute_httpx(cert_client, request, headers)
+            return self._execute_httpx(cert_client, request, headers, auth_headers)
 
     def _update_cookie_jar(self, request: Request, response: Optional[Response]) -> None:
         """Persist any Set-Cookie headers from the response into the cookie manager."""
@@ -551,11 +606,14 @@ class HTTPClient:
         client: httpx.Client,
         request: Request,
         headers: Dict[str, str],
+        auth_headers: Optional[Dict[str, str]] = None,
     ) -> Response:
         """Execute the httpx request and build a Response object.
 
-        Extracted so both the standard client path and the per-request cert
-        path can reuse identical send logic.
+        When *auth_headers* is provided, they are passed through httpx's
+        native ``auth`` parameter via :class:`_RedirectSafeAuth` so the
+        ``Authorization`` header survives cross-origin redirects (httpx
+        strips manual ``Authorization`` headers on redirect by default).
         """
         logger.debug(
             "Sending %s request to %s",
@@ -563,6 +621,16 @@ class HTTPClient:
             Validator.sanitize_for_display(request.url, 100),
         )
         start_time = time.time()
+
+        # Pass auth headers through httpx's native auth mechanism so they
+        # survive cross-origin redirects (scheme/host/port changes).
+        httpx_auth: Optional[_RedirectSafeAuth] = None
+        if auth_headers:
+            # Remove auth headers from the regular headers dict — they'll
+            # be injected by the auth flow on every leg of the redirect chain.
+            for key in auth_headers:
+                headers.pop(key, None)
+            httpx_auth = _RedirectSafeAuth(auth_headers)
 
         multipart_files, opened_file_handles = self._build_multipart_files(request)
         try:
@@ -583,10 +651,22 @@ class HTTPClient:
                     if request.follow_redirects is not None
                     else self.follow_redirects
                 ),
+                auth=httpx_auth,
             )
         finally:
             for file_handle in opened_file_handles:
                 file_handle.close()
+
+        # Log redirect chain for diagnostics
+        if raw.history:
+            chain = " → ".join(
+                f"{r.status_code} {r.headers.get('location', '?')}"
+                for r in raw.history
+            )
+            logger.info(
+                "Request followed %d redirect(s): %s → %d",
+                len(raw.history), chain, raw.status_code,
+            )
 
         _reason = self._extract_reason_phrase(raw)
 
