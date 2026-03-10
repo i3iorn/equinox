@@ -27,6 +27,7 @@ from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 
 from equinox.core.exceptions import SecurityError, ValidationError
 from equinox.core.audit import get_audit_logger
+from equinox.core.auth_cipher import get_or_create_key as _get_or_create_key
 
 logger = logging.getLogger(__name__)
 
@@ -69,6 +70,9 @@ class SecureStorage:
     def _get_or_create_key(self) -> bytes:
         """Get or create encryption key.
 
+        Delegates to the shared :func:`~equinox.core.auth_cipher.get_or_create_key`
+        so key management logic is never duplicated.
+
         Returns:
             Encryption key bytes
 
@@ -76,44 +80,12 @@ class SecureStorage:
             SecurityError: If key generation fails
         """
         key_path = self.storage_path.parent / ".key"
+        try:
+            return _get_or_create_key(key_path)
+        except Exception as e:
+            logger.error("Failed to load/generate encryption key: %s", type(e).__name__)
+            raise SecurityError("Failed to load encryption key")
 
-        if key_path.exists():
-            # Load existing key
-            try:
-                with open(key_path, "rb") as f:
-                    key = f.read()
-
-                if len(key) != 32:  # 256 bits
-                    raise SecurityError("Invalid key length")
-
-                return key
-
-            except Exception as e:
-                logger.error("Failed to load encryption key: %s", type(e).__name__)
-                raise SecurityError("Failed to load encryption key")
-
-        else:
-            # Generate new key
-            try:
-                # Generate random 32 bytes for key
-                key = os.urandom(32)
-
-                # Save key with restrictive permissions
-                with open(key_path, "wb") as f:
-                    f.write(key)
-
-                # Set permissions
-                try:
-                    os.chmod(key_path, 0o600)
-                except (OSError, NotImplementedError):
-                    logger.warning("Could not set key file permissions")
-
-                logger.info("Generated new encryption key")
-                return key
-
-            except Exception as e:
-                logger.error("Failed to generate encryption key: %s", type(e).__name__)
-                raise SecurityError("Failed to generate encryption key")
 
     def _get_cipher(self) -> Fernet:
         """Get or create cipher instance.
