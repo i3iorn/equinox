@@ -451,6 +451,113 @@ class TestGUIInheritedAuth:
         assert isinstance(display_auth, BearerAuth)
         assert display_auth.token == "col-tok"
 
+    def test_configure_auth_fetched_token_not_discarded(self, panel, mgr, col_id):
+        """When inherited auth is active and the user fetches a new token
+        in the auth dialog, the guard clause must NOT discard the save.
+
+        Regression: _auth_configs_match strips token fields, so a fetched
+        token was silently lost because the 'configs match' early-return
+        fired before self._auth was updated.
+        """
+        from unittest.mock import patch, MagicMock
+        from equinox.auth import OAuth2Auth
+
+        # Set up collection-level OAuth2 auth (inherited)
+        col_auth = OAuth2Auth(
+            token_url="https://auth.example.com/token",
+            client_id="cid",
+            client_secret="secret",
+            access_token="old-token",
+        )
+        mgr.set_collection_auth(col_id, col_auth)
+        req_id = mgr.save_request(
+            Request(method="GET", url="https://x.com", name="R"),
+            collection_id=col_id, name="R",
+        )
+        req = mgr.get_request(req_id)
+        panel.load_request(req)
+
+        # Precondition: request uses inherited auth
+        assert panel._auth is None
+        assert panel._inherited_auth is not None
+
+        # Simulate the auth dialog returning with same config but a
+        # freshly-fetched token (dialog._last_fetched_auth is set).
+        saved_auth = OAuth2Auth(
+            token_url="https://auth.example.com/token",
+            client_id="cid",
+            client_secret="secret",
+            access_token="new-fetched-token",
+        )
+        fetched_auth = OAuth2Auth(
+            token_url="https://auth.example.com/token",
+            client_id="cid",
+            access_token="new-fetched-token",
+        )
+
+        mock_dialog = MagicMock()
+        mock_dialog.exec.return_value = 1  # QDialog.DialogCode.Accepted
+        mock_dialog._saved_auth = saved_auth
+        mock_dialog._last_fetched_auth = fetched_auth
+
+        with patch(
+            "equinox.gui.dialogs.auth_dialog.AuthDialog",
+            return_value=mock_dialog,
+        ):
+            panel._configure_auth()
+
+        # The fetched token must be honoured — self._auth should now be set
+        assert panel._auth is not None, (
+            "Fetched token was silently discarded by the inherited-auth guard"
+        )
+        assert panel._auth.access_token == "new-fetched-token"
+
+    def test_configure_auth_guard_still_skips_when_no_fetch(self, panel, mgr, col_id):
+        """When the user opens the auth dialog on inherited auth and saves
+        without fetching a token (no meaningful change), the guard clause
+        should still return early, keeping self._auth = None."""
+        from unittest.mock import patch, MagicMock
+        from equinox.auth import OAuth2Auth
+
+        col_auth = OAuth2Auth(
+            token_url="https://auth.example.com/token",
+            client_id="cid",
+            client_secret="secret",
+            access_token="existing-token",
+        )
+        mgr.set_collection_auth(col_id, col_auth)
+        req_id = mgr.save_request(
+            Request(method="GET", url="https://x.com", name="R"),
+            collection_id=col_id, name="R",
+        )
+        req = mgr.get_request(req_id)
+        panel.load_request(req)
+
+        assert panel._auth is None
+
+        # Dialog returns same config, no token fetch
+        saved_auth = OAuth2Auth(
+            token_url="https://auth.example.com/token",
+            client_id="cid",
+            client_secret="secret",
+            access_token="existing-token",
+        )
+        mock_dialog = MagicMock()
+        mock_dialog.exec.return_value = 1
+        mock_dialog._saved_auth = saved_auth
+        mock_dialog._last_fetched_auth = None  # no fetch
+
+        with patch(
+            "equinox.gui.dialogs.auth_dialog.AuthDialog",
+            return_value=mock_dialog,
+        ):
+            panel._configure_auth()
+
+        # Guard should fire — self._auth stays None (still inheriting)
+        assert panel._auth is None, (
+            "Guard clause should keep self._auth = None when no token was fetched"
+        )
+
 
 # ── Query-params default-unchecked ────────────────────────────────────────────
 
