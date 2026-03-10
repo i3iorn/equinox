@@ -6,8 +6,8 @@ and comprehensive structured logging for debugging and auditing.
 
 import logging
 import json
-from typing import Optional, List, Callable, Any, Dict
-from dataclasses import dataclass, field, asdict
+from typing import Optional, List, Any, Dict
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
 
@@ -358,7 +358,7 @@ class LoggingResponseInterceptor(ResponseInterceptor):
 
     def intercept(self, context: InterceptorContext) -> Optional[Response]:
         """Log the response."""
-        elapsed = (context.timestamp - context.request.timestamp).total_seconds() if hasattr(context.request, 'timestamp') else 0
+        elapsed = context.response.elapsed if context.response else 0
         self.logger.log_response(context.request, context.response, elapsed, include_body=True)
         return None
 
