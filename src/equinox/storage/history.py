@@ -311,15 +311,22 @@ class HistoryManager:
     # ── save_history helpers ──────────────────────────────────────────────────
 
     def _prune_oldest_entry_if_limit_reached(self) -> None:
-        """Delete the single oldest history entry when the cap is reached."""
+        """Delete the oldest entries when the history cap is reached.
+
+        Removes ~1% of the cap in one batch to avoid running a DELETE on
+        every single insert once the table is at capacity.
+        """
         count_row = self.db.fetchone("SELECT COUNT(*) as count FROM history")
         if count_row and count_row["count"] >= self.MAX_HISTORY_ENTRIES:
+            prune_count = max(1, self.MAX_HISTORY_ENTRIES // 100)
             logger.warning(
-                "History limit reached (%d), removing oldest entry", self.MAX_HISTORY_ENTRIES
+                "History limit reached (%d), removing %d oldest entries",
+                self.MAX_HISTORY_ENTRIES, prune_count,
             )
             self.db.execute(
-                "DELETE FROM history WHERE id = "
-                "(SELECT id FROM history ORDER BY executed_at ASC LIMIT 1)"
+                "DELETE FROM history WHERE id IN "
+                "(SELECT id FROM history ORDER BY executed_at ASC LIMIT ?)",
+                (prune_count,),
             )
 
     def _prepare_url(self, url: str) -> str:
