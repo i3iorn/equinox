@@ -23,7 +23,7 @@ def _params_to_json(request: Request) -> str:
     stored as a JSON array so enable/disable state survives round-trips.
     Otherwise the plain ``params`` dict is stored for backward compatibility.
     """
-    params_list = getattr(request, "params_list", None)
+    params_list = request.params_list
     if params_list:
         return json.dumps(params_list)
     return json.dumps(request.params) if request.params else "[]"
@@ -241,10 +241,10 @@ class CollectionManager(
                 """
                 INSERT INTO requests
                 (collection_id, name, description, method, url, headers, params, body,
-                 auth_type, auth_data, captures, pre_script, post_script,
+                 auth_type, auth_data, captures, assertions, pre_script, post_script,
                  cert_path, cert_key_path, folder, timeout, verify_ssl, follow_redirects,
                  path_params)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     row["collection_id"], copy_name, row.get("description", ""),
@@ -252,6 +252,7 @@ class CollectionManager(
                     row.get("headers", "{}"), row.get("params", "{}"),
                     row.get("body"), row.get("auth_type"), row.get("auth_data"),
                     row.get("captures", "[]"),
+                    row.get("assertions", "[]"),
                     row.get("pre_script", ""), row.get("post_script", ""),
                     row.get("cert_path"), row.get("cert_key_path"),
                     row.get("folder") or None,
@@ -283,7 +284,11 @@ class CollectionManager(
             raise StorageError(f"Collection with ID {collection_id} does not exist")
 
         try:
-            request_count = len(self.list_requests(collection_id))
+            count_row = self.db.fetchone(
+                "SELECT COUNT(*) AS cnt FROM requests WHERE collection_id = ?",
+                (collection_id,),
+            )
+            request_count = (count_row or {}).get("cnt", 0)
             self.db.execute("DELETE FROM collections WHERE id = ?", (collection_id,))
             logger.warning(
                 f"Deleted collection '{collection['name']}' (ID: {collection_id}) "
@@ -401,7 +406,7 @@ class CollectionManager(
 
     def list_requests(self, collection_id: Optional[int] = None) -> List[Dict[str, Any]]:
         """List requests, optionally filtered by collection."""
-        if collection_id:
+        if collection_id is not None:
             return self.db.fetchall(
                 "SELECT * FROM requests WHERE collection_id = ? ORDER BY sort_order, name",
                 (collection_id,),
@@ -514,7 +519,7 @@ class CollectionManager(
             self.db.execute(
                 """
                 UPDATE requests SET
-                    method=?, url=?, headers=?, params=?, body=?,
+                    name=?, method=?, url=?, headers=?, params=?, body=?,
                     auth_type=?, auth_data=?,
                     timeout=?, verify_ssl=?, follow_redirects=?,
                     folder=?, description=?,
@@ -525,6 +530,7 @@ class CollectionManager(
                 WHERE id=?
                 """,
                 (
+                    request.name or "",
                     request.method,
                     request.url,
                     json.dumps(request.headers) if request.headers else "{}",
