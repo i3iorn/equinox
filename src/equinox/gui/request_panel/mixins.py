@@ -123,7 +123,7 @@ class _RequestSendMixin:
             if active:
                 variables.update(active.get("variables", {}))
         except Exception:
-            pass
+            logger.warning("Failed to load environment variables", exc_info=True)
 
         # Include inherited collection variables (groups + collection-specific)
         # These override environment variables but are overridden by OS env / session.
@@ -136,7 +136,7 @@ class _RequestSendMixin:
                 )
                 variables.update(col_vars)
             except Exception:
-                pass
+                logger.warning("Failed to load collection variables", exc_info=True)
 
         variables.update({k: v for k, v in os.environ.items() if isinstance(v, str)})
         variables.update(self._session_vars)  # captured session vars override env
@@ -333,6 +333,12 @@ class _RequestSendMixin:
             # Save refreshed inherited-auth tokens back to collection/folder
             self._persist_inherited_auth_tokens()
 
+            # Refresh the auth display — OAuth2Auth.apply() may have
+            # auto-refreshed the token in the worker thread, mutating
+            # self._auth in-place.  Without this, the Auth tab preview
+            # would still show the pre-send token.
+            self._update_auth_display(self._auth)
+
     def _apply_captures(self, response: Response) -> None:
         """Run capture rules against the response and update session vars."""
         try:
@@ -371,7 +377,7 @@ class _RequestSendMixin:
             try:
                 resp_dict["json"] = response.json()
             except Exception:
-                pass
+                logger.debug("Response body is not JSON; post-script will see json=None")
             script_result = ScriptRunner.run_post(
                 post_src, resp_dict, self._session_vars
             )
@@ -493,7 +499,15 @@ class _RequestAuthMixin:
                 # If the request was using inherited auth and the user saved
                 # without meaningful changes, keep self._auth = None so the
                 # request continues inheriting from the collection/folder.
-                if was_inherited and saved is not None and self._auth_configs_match(saved, self._inherited_auth):
+                # BUT: if the user explicitly fetched a new token, always
+                # honour it — the fetched token must not be silently discarded.
+                fetched_token = getattr(dialog, '_last_fetched_auth', None)
+                if (
+                    was_inherited
+                    and saved is not None
+                    and not fetched_token
+                    and self._auth_configs_match(saved, self._inherited_auth)
+                ):
                     return
                 old_auth = self._auth
                 self._auth = saved
@@ -540,6 +554,7 @@ class _RequestAuthMixin:
                 d2.pop(key, None)
             return d1 == d2
         except Exception:
+            logger.warning("Auth config comparison failed", exc_info=True)
             return False
 
     def _resolve_inherited_auth(self) -> None:
@@ -618,7 +633,7 @@ class _RequestAuthMixin:
                                 datetime.now(timezone.utc).replace(tzinfo=None)).total_seconds())
                     text += f"  (expires in {secs}s)" if secs > 0 else "  (expired)"
                 except Exception:
-                    pass
+                    logger.debug("Failed to parse OAuth2 token expiry", exc_info=True)
             self.auth_status_label.setText(text)
             self.auth_status_label.setStyleSheet(f"color: {color};")
         elif isinstance(display_auth, APIKeyAuth):
