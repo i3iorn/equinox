@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import ast
 import builtins
+import threading
 from dataclasses import dataclass, field
 from typing import Any, Dict, Optional
 
@@ -86,6 +87,19 @@ _BLOCKED = frozenset(
         "__loader__",
         "__spec__",
         "__build_class__",
+        # Block introspection builtins that can bypass AST-level checks
+        # via string concatenation (e.g. getattr(obj, '__sub' + 'classes__'))
+        "getattr",
+        "hasattr",
+        "delattr",
+        "type",       # blocks type(name, bases, dict) dynamic class creation
+        "vars",
+        "globals",
+        "locals",
+        "classmethod",
+        "staticmethod",
+        "property",
+        "super",
     }
 )
 
@@ -206,6 +220,11 @@ class ScriptRunner:
     ``ScriptResult.error``.
     """
 
+    # Maximum source code length (64 KB) to prevent memory exhaustion
+    MAX_SOURCE_LENGTH = 64 * 1024
+    # Maximum execution time in seconds
+    EXECUTION_TIMEOUT = 10.0
+
     @classmethod
     def run_pre(
         cls,
@@ -259,6 +278,11 @@ class ScriptRunner:
         if not script or not script.strip():
             return ScriptResult()
 
+        if len(script) > cls.MAX_SOURCE_LENGTH:
+            return ScriptResult(
+                error=f"Script too long ({len(script)} chars, max {cls.MAX_SOURCE_LENGTH})"
+            )
+
         globs: Dict[str, Any] = {"__builtins__": SAFE_BUILTINS}
         locs: Dict[str, Any] = {"env": dict(session_vars)}
         locs.update(extra_locals)
@@ -266,9 +290,28 @@ class ScriptRunner:
         try:
             tree = _validate_ast(script, filename)
             code = compile(tree, filename, "exec")
-            exec(code, globs, locs)  # noqa: S102  (intentional sandboxed exec)
         except Exception as exc:  # noqa: BLE001
             return ScriptResult(error=str(exc))
+
+        # Run exec() in a thread with a timeout to prevent infinite loops
+        error_container: list = [None]
+
+        def _exec_target() -> None:
+            try:
+                exec(code, globs, locs)  # noqa: S102  (intentional sandboxed exec)
+            except Exception as exc:  # noqa: BLE001
+                error_container[0] = exc
+
+        t = threading.Thread(target=_exec_target, daemon=True)
+        t.start()
+        t.join(timeout=cls.EXECUTION_TIMEOUT)
+
+        if t.is_alive():
+            return ScriptResult(
+                error=f"Script timed out after {cls.EXECUTION_TIMEOUT}s"
+            )
+        if error_container[0] is not None:
+            return ScriptResult(error=str(error_container[0]))
 
         # Collect any new or changed env entries, coercing values to str
         new_env: Dict[str, str] = locs.get("env", {})  # type: ignore[assignment]
