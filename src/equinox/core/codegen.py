@@ -1,7 +1,6 @@
 """Code generation — convert a Request object to client code in various languages."""
 
 import json
-import base64
 from typing import Optional
 
 from equinox.core.request import Request
@@ -17,6 +16,31 @@ _REDACTED_PASS = "<YOUR_PASSWORD>"
 _REDACTED_KEY = "<YOUR_API_KEY>"
 
 
+def _inject_auth_into_headers(request: Request, headers: dict) -> None:
+    """Inject auth credentials into *headers* as redacted placeholders.
+
+    Handles Bearer, Basic (as header), and API-Key (header location).
+    Shared by all code generators to avoid duplication.
+    """
+    if not request.auth:
+        return
+    name = _auth_type_name(request.auth)
+    auth = request.auth
+    if name == "BearerAuth":
+        headers["Authorization"] = f"Bearer {_REDACTED_TOKEN}"
+    elif name == "BasicAuth":
+        headers["Authorization"] = f"Basic {_REDACTED_TOKEN}"
+    elif name == "APIKeyAuth" and getattr(auth, "location", "header") == "header":
+        headers[auth.key] = _REDACTED_KEY
+
+
+def _auth_kwarg_for_basic(request: Request) -> Optional[str]:
+    """Return an ``auth=(…)`` keyword string for Basic auth, or None."""
+    if request.auth and _auth_type_name(request.auth) == "BasicAuth":
+        return f"auth=({_REDACTED_USER!r}, {_REDACTED_PASS!r})"
+    return None
+
+
 class PythonRequestsGenerator:
     """Generate Python code using the ``requests`` library."""
 
@@ -24,7 +48,8 @@ class PythonRequestsGenerator:
         lines = ["import requests", ""]
 
         headers = dict(request.headers or {})
-        auth_kwarg = self._inject_auth(request, headers)
+        _inject_auth_into_headers(request, headers)
+        auth_kwarg = _auth_kwarg_for_basic(request)
 
         if headers:
             lines.append(f"headers = {json.dumps(headers, indent=4)}")
@@ -63,20 +88,6 @@ class PythonRequestsGenerator:
         lines.append("print(response.text)")
         return "\n".join(lines)
 
-    def _inject_auth(self, request: Request, headers: dict) -> Optional[str]:
-        """Inject auth into headers or return an auth= kwarg string."""
-        if not request.auth:
-            return None
-        name = _auth_type_name(request.auth)
-        auth = request.auth
-        if name == "BearerAuth":
-            headers["Authorization"] = f"Bearer {_REDACTED_TOKEN}"
-            return None
-        if name == "BasicAuth":
-            return f"auth=({_REDACTED_USER!r}, {_REDACTED_PASS!r})"
-        if name == "APIKeyAuth" and getattr(auth, "location", "header") == "header":
-            headers[auth.key] = _REDACTED_KEY
-        return None
 
 
 class PythonHttpxGenerator:
@@ -86,8 +97,8 @@ class PythonHttpxGenerator:
         lines = ["import httpx", ""]
 
         headers = dict(request.headers or {})
-        self._inject_auth_headers(request, headers)
-        auth_kwarg = self._auth_kwarg(request)
+        _inject_auth_into_headers(request, headers)
+        auth_kwarg = _auth_kwarg_for_basic(request)
 
         if headers:
             lines.append(f"headers = {json.dumps(headers, indent=4)}")
@@ -127,22 +138,6 @@ class PythonHttpxGenerator:
         lines.append("    print(response.text)")
         return "\n".join(lines)
 
-    def _inject_auth_headers(self, request: Request, headers: dict) -> None:
-        if not request.auth:
-            return
-        name = _auth_type_name(request.auth)
-        auth = request.auth
-        if name == "BearerAuth":
-            headers["Authorization"] = f"Bearer {_REDACTED_TOKEN}"
-        elif name == "APIKeyAuth" and getattr(auth, "location", "header") == "header":
-            headers[auth.key] = _REDACTED_KEY
-
-    def _auth_kwarg(self, request: Request) -> Optional[str]:
-        if not request.auth:
-            return None
-        if _auth_type_name(request.auth) == "BasicAuth":
-            return f"auth=({_REDACTED_USER!r}, {_REDACTED_PASS!r})"
-        return None
 
 
 class JavaScriptFetchGenerator:
@@ -152,7 +147,7 @@ class JavaScriptFetchGenerator:
         lines = []
 
         headers = dict(request.headers or {})
-        self._inject_auth_headers(request, headers)
+        _inject_auth_into_headers(request, headers)
 
         url = request.url
         if request.params:
@@ -188,18 +183,6 @@ class JavaScriptFetchGenerator:
         lines.append("const data = await response.json();")
         lines.append("console.log(response.status, data);")
         return "\n".join(lines)
-
-    def _inject_auth_headers(self, request: Request, headers: dict) -> None:
-        if not request.auth:
-            return
-        name = _auth_type_name(request.auth)
-        auth = request.auth
-        if name == "BearerAuth":
-            headers["Authorization"] = f"Bearer {_REDACTED_TOKEN}"
-        elif name == "BasicAuth":
-            headers["Authorization"] = f"Basic {_REDACTED_TOKEN}"
-        elif name == "APIKeyAuth" and getattr(auth, "location", "header") == "header":
-            headers[auth.key] = _REDACTED_KEY
 
 
 class GoHttpGenerator:
@@ -238,7 +221,7 @@ class GoHttpGenerator:
         lines.append("")
 
         headers = dict(request.headers or {})
-        self._inject_auth_headers(request, headers)
+        _inject_auth_into_headers(request, headers)
         for k, v in headers.items():
             lines.append(f'    req.Header.Set("{k}", "{v}")')
         if headers:
@@ -250,17 +233,6 @@ class GoHttpGenerator:
         lines.append("}")
         return "\n".join(lines)
 
-    def _inject_auth_headers(self, request: Request, headers: dict) -> None:
-        if not request.auth:
-            return
-        name = _auth_type_name(request.auth)
-        auth = request.auth
-        if name == "BearerAuth":
-            headers["Authorization"] = f"Bearer {_REDACTED_TOKEN}"
-        elif name == "BasicAuth":
-            headers["Authorization"] = f"Basic {_REDACTED_TOKEN}"
-        elif name == "APIKeyAuth" and getattr(auth, "location", "header") == "header":
-            headers[auth.key] = _REDACTED_KEY
 
 
 class RubyNetHttpGenerator:
@@ -294,7 +266,7 @@ class RubyNetHttpGenerator:
         lines.append(f"request = {method_class}.new(uri)")
 
         headers = dict(request.headers or {})
-        self._inject_auth_headers(request, headers)
+        _inject_auth_into_headers(request, headers)
         for k, v in headers.items():
             lines.append(f"request['{k}'] = '{v}'")
 
@@ -313,17 +285,6 @@ class RubyNetHttpGenerator:
         lines.append("puts response.body")
         return "\n".join(lines)
 
-    def _inject_auth_headers(self, request: Request, headers: dict) -> None:
-        if not request.auth:
-            return
-        name = _auth_type_name(request.auth)
-        auth = request.auth
-        if name == "BearerAuth":
-            headers["Authorization"] = f"Bearer {_REDACTED_TOKEN}"
-        elif name == "BasicAuth":
-            headers["Authorization"] = f"Basic {_REDACTED_TOKEN}"
-        elif name == "APIKeyAuth" and getattr(auth, "location", "header") == "header":
-            headers[auth.key] = _REDACTED_KEY
 
 
 class PhpCurlGenerator:
@@ -348,7 +309,7 @@ class PhpCurlGenerator:
             lines.append("curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);")
 
         headers = dict(request.headers or {})
-        self._inject_auth_headers(request, headers)
+        _inject_auth_into_headers(request, headers)
         if headers:
             header_list = [f"'{k}: {v}'" for k, v in headers.items()]
             lines.append(f"curl_setopt($ch, CURLOPT_HTTPHEADER, [{', '.join(header_list)}]);")
@@ -366,17 +327,6 @@ class PhpCurlGenerator:
         lines.append("echo $response . \"\\n\";")
         return "\n".join(lines)
 
-    def _inject_auth_headers(self, request: Request, headers: dict) -> None:
-        if not request.auth:
-            return
-        name = _auth_type_name(request.auth)
-        auth = request.auth
-        if name == "BearerAuth":
-            headers["Authorization"] = f"Bearer {_REDACTED_TOKEN}"
-        elif name == "BasicAuth":
-            headers["Authorization"] = f"Basic {_REDACTED_TOKEN}"
-        elif name == "APIKeyAuth" and getattr(auth, "location", "header") == "header":
-            headers[auth.key] = _REDACTED_KEY
 
 
 GENERATORS: dict = {
