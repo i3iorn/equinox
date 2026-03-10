@@ -355,6 +355,19 @@ ALTER TABLE collection_folders ADD COLUMN auth_data TEXT;
         description="Add path_params column to requests for structured path parameter values",
         sql="ALTER TABLE requests ADD COLUMN path_params TEXT DEFAULT '{}';",
     ),
+
+    Migration(
+        version=19,
+        description="Add missing performance indexes for environments, collection variables, and variable groups",
+        sql="""
+CREATE INDEX IF NOT EXISTS idx_environments_active ON environments(is_active);
+CREATE INDEX IF NOT EXISTS idx_collection_variables_collection ON collection_variables(collection_id);
+CREATE INDEX IF NOT EXISTS idx_variable_group_items_group ON variable_group_items(group_id);
+CREATE INDEX IF NOT EXISTS idx_collection_variable_groups_collection ON collection_variable_groups(collection_id);
+CREATE INDEX IF NOT EXISTS idx_collection_variable_groups_group ON collection_variable_groups(group_id);
+CREATE INDEX IF NOT EXISTS idx_collection_folders_collection ON collection_folders(collection_id);
+""",
+    ),
 ]
 
 # ─────────────────────────────────────────────────────────────────────────────
