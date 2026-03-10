@@ -2,11 +2,11 @@
 
 import json
 import logging
-import re
 from typing import Any, Dict, List, Optional
 
 from equinox.storage.database import Database
 from equinox.core.exceptions import StorageError, ValidationError
+from equinox.storage.utils import require_str as _require_str
 
 logger = logging.getLogger(__name__)
 
@@ -252,14 +252,5 @@ class OAuthClientManager:
         max_len: int,
         required: bool = True,
     ) -> str:
-        if value is None:
-            value = ""
-        if not isinstance(value, str):
-            raise ValidationError(f"'{field}' must be a string")
-        value = value.strip()
-        if required and not value:
-            raise ValidationError(f"'{field}' is required")
-        if len(value) > max_len:
-            raise ValidationError(f"'{field}' is too long (max {max_len} chars)")
-        return value
+        return _require_str(value, field, max_len, required=required)
 
