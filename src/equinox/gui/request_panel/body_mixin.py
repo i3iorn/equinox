@@ -1,5 +1,6 @@
 """Body-related mixin for RequestPanel: captures, assertions, multipart, load/clear."""
 
+import logging
 from typing import Optional, Dict
 
 from PyQt6.QtWidgets import (
@@ -19,6 +20,8 @@ from equinox.gui.theme import get_mono_font
 from equinox.core.request import Request
 from equinox.core.assertions import evaluate_assertion as _evaluate_assertion
 from equinox.gui.workers import DEFAULT_TIMEOUT
+
+logger = logging.getLogger(__name__)
 
 
 class _RequestBodyMixin:
@@ -285,7 +288,7 @@ class _RequestBodyMixin:
             else:
                 self.tabs.setTabText(2, "Body")
         except Exception:
-            pass
+            logger.debug("Failed to update tab labels", exc_info=True)
 
     # ── Multipart form-data ────────────────────────────────────────────
 
@@ -409,30 +412,13 @@ class _RequestBodyMixin:
 
     @staticmethod
     def _detect_body_type(body: str, headers: Optional[Dict] = None) -> str:
-        """Guess body type from content or Content-Type header."""
-        import json as _json
-        ct = (headers or {}).get("Content-Type", "").lower()
-        if "json" in ct:
-            return "raw (JSON)"
-        if "xml" in ct:
-            return "raw (XML)"
-        if "urlencoded" in ct:
-            return "form-urlencoded"
-        if "text" in ct:
-            return "raw (text)"
-        # Sniff content
-        stripped = body.strip()
-        if stripped.startswith(("{", "[")):
-            try:
-                _json.loads(stripped)
-                return "raw (JSON)"
-            except Exception:
-                pass
-        if stripped.startswith("<") and (">" in stripped):
-            return "raw (XML)"
-        if "=" in stripped and "&" in stripped:
-            return "form-urlencoded"
-        return "raw (text)"
+        """Guess body type from content or Content-Type header.
+
+        Delegates to the pure-logic helper in ``builder`` so the heuristic
+        is unit-testable without a display server.
+        """
+        from equinox.gui.request_panel.builder import detect_body_type
+        return detect_body_type(body, headers)
 
     def clear(self) -> None:
         if self._worker is not None and self._worker.isRunning():
