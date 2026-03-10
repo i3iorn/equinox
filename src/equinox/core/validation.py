@@ -8,6 +8,7 @@ import ipaddress
 import re
 import json
 import socket
+import concurrent.futures
 from typing import Any, Dict, Optional
 from urlps import parse_url_unsafe as _urlps_parse
 from pathlib import Path
@@ -168,10 +169,15 @@ class Validator:
         except ValueError:
             # Not a literal IP — try DNS resolution with a tight timeout
             # to avoid stalling on slow/unresponsive DNS servers.
-            old_timeout = socket.getdefaulttimeout()
+            # Uses a thread pool instead of socket.setdefaulttimeout() to
+            # avoid mutating process-global state in a multi-threaded app.
             try:
-                socket.setdefaulttimeout(2.0)
-                infos = socket.getaddrinfo(hostname_lower, None, socket.AF_UNSPEC, socket.SOCK_STREAM)
+                with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
+                    future = pool.submit(
+                        socket.getaddrinfo,
+                        hostname_lower, None, socket.AF_UNSPEC, socket.SOCK_STREAM,
+                    )
+                    infos = future.result(timeout=2.0)
                 for family, _, _, _, sockaddr in infos:
                     ip_str = sockaddr[0]
                     addr = ipaddress.ip_address(ip_str)
@@ -180,17 +186,28 @@ class Validator:
                             f"Hostname '{hostname}' resolves to private IP {ip_str} "
                             f"(SSRF protection)"
                         )
-            except (socket.gaierror, socket.timeout, OSError):
+            except (socket.gaierror, OSError, concurrent.futures.TimeoutError):
                 pass  # DNS resolution failed or timed out — allow (will fail at connect time)
-            finally:
-                socket.setdefaulttimeout(old_timeout)
+
+    # Headers that httpx manages internally — setting them manually may
+    # cause unexpected behaviour, but an API testing tool should allow it
+    # when ``strict=False``.
+    _MANAGED_HEADERS = frozenset({
+        'host', 'connection', 'content-length',
+        'transfer-encoding', 'upgrade',
+    })
 
     @classmethod
-    def validate_header_name(cls, name: str) -> str:
+    def validate_header_name(cls, name: str, *, strict: bool = True) -> str:
         """Validate HTTP header name.
 
         Args:
             name: Header name to validate
+            strict: When *True* (default) managed headers like ``Host``
+                and ``Content-Length`` are rejected.  Pass ``strict=False``
+                from the send path to allow them with a logged warning —
+                useful for an API testing tool where users may want to
+                override transport-level headers intentionally.
 
         Returns:
             Validated header name
@@ -211,13 +228,16 @@ class Validator:
         if not re.match(r'^[a-zA-Z0-9!#$%&\'*+\-.^_`|~]+$', name):
             raise ValidationError(f"Invalid header name format: {name}")
 
-        # Prevent dangerous headers
-        dangerous_headers = {
-            'host', 'connection', 'content-length',
-            'transfer-encoding', 'upgrade'
-        }
-        if name.lower() in dangerous_headers:
-            raise ValidationError(f"Cannot manually set header: {name}")
+        # Managed headers
+        if name.lower() in cls._MANAGED_HEADERS:
+            if strict:
+                raise ValidationError(f"Cannot manually set header: {name}")
+            else:
+                import logging as _logging
+                _logging.getLogger(__name__).warning(
+                    "Header '%s' is normally managed by the HTTP transport layer "
+                    "— overriding it may cause unexpected behaviour.", name,
+                )
 
         return name
 
@@ -253,11 +273,12 @@ class Validator:
         return value
 
     @classmethod
-    def validate_headers(cls, headers: Dict[str, str]) -> Dict[str, str]:
+    def validate_headers(cls, headers: Dict[str, str], *, strict: bool = True) -> Dict[str, str]:
         """Validate all headers.
 
         Args:
             headers: Dictionary of headers
+            strict: Passed through to :meth:`validate_header_name`.
 
         Returns:
             Validated headers
@@ -273,7 +294,7 @@ class Validator:
 
         validated = {}
         for name, value in headers.items():
-            validated_name = cls.validate_header_name(name)
+            validated_name = cls.validate_header_name(name, strict=strict)
             validated_value = cls.validate_header_value(str(value))
             validated[validated_name] = validated_value
 
