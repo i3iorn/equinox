@@ -49,3 +49,28 @@ def validate_variable_value(value, max_length: int = _MAX_VARIABLE_VALUE_LENGTH)
         raise ValidationError(
             f"Variable value too long (max {max_length} characters)"
         )
+
+
+def require_str(value, field: str, max_len: int, required: bool = True) -> str:
+    """Validate and strip a string field.  Returns the stripped value.
+
+    Args:
+        value: The value to validate (will be coerced from None to "").
+        field: Human-readable field name for error messages.
+        max_len: Maximum allowed length.
+        required: If True, raise on empty/whitespace-only strings.
+
+    Raises:
+        ValidationError: If validation fails.
+    """
+    if value is None:
+        value = ""
+    if not isinstance(value, str):
+        raise ValidationError(f"'{field}' must be a string")
+    value = value.strip()
+    if required and not value:
+        raise ValidationError(f"'{field}' is required")
+    if len(value) > max_len:
+        raise ValidationError(f"'{field}' is too long (max {max_len} chars)")
+    return value
+
