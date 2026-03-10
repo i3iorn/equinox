@@ -6,7 +6,6 @@ from PyQt6.QtWidgets import (
     QTableWidget, QTableWidgetItem, QHeaderView, QStyledItemDelegate, QLineEdit,
 )
 from PyQt6.QtCore import Qt
-from PyQt6.QtGui import QStandardItemModel
 
 # Common HTTP request headers for auto-complete
 _COMMON_HTTP_HEADERS = [
@@ -51,9 +50,16 @@ class CheckableKeyValueTable(QTableWidget):
                              (used when saving / displaying the badge count).
     ``set_data()``         → accepts either Dict[str, str] (all enabled) or
                              List[Dict] with optional ``"enabled"`` key.
+
+    Parameters
+    ----------
+    enable_key_completer : bool
+        When *True*, install a completer on the Key column that suggests
+        common HTTP header names.  Leave *False* for parameter tables where
+        header suggestions would be confusing.
     """
 
-    def __init__(self, parent=None):
+    def __init__(self, parent=None, *, enable_key_completer: bool = False):
         super().__init__(parent)
         self.setColumnCount(3)
         self.setHorizontalHeaderLabels(["", "Key", "Value"])
@@ -65,19 +71,27 @@ class CheckableKeyValueTable(QTableWidget):
         self.verticalHeader().setVisible(False)
         self.setAlternatingRowColors(True)
         self.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
-        # Install header-name completer on the Key column (col 1)
-        self._header_delegate = _HeaderCompleterDelegate(self)
-        self.setItemDelegateForColumn(1, self._header_delegate)
+        # Install header-name completer on the Key column only when requested
+        if enable_key_completer:
+            self._header_delegate = _HeaderCompleterDelegate(self)
+            self.setItemDelegateForColumn(1, self._header_delegate)
         self._add_empty_row(enabled=False)
         self.itemChanged.connect(self._on_item_changed)
+
+    # ── Helpers ────────────────────────────────────────────────────────
+
+    @staticmethod
+    def _make_checkbox(enabled: bool = False) -> QTableWidgetItem:
+        """Create a checkbox-only item for column 0."""
+        item = QTableWidgetItem()
+        item.setFlags(Qt.ItemFlag.ItemIsUserCheckable | Qt.ItemFlag.ItemIsEnabled)
+        item.setCheckState(Qt.CheckState.Checked if enabled else Qt.CheckState.Unchecked)
+        return item
 
     def _add_empty_row(self, enabled: bool = False) -> None:
         row = self.rowCount()
         self.insertRow(row)
-        checkbox = QTableWidgetItem()
-        checkbox.setFlags(Qt.ItemFlag.ItemIsUserCheckable | Qt.ItemFlag.ItemIsEnabled)
-        checkbox.setCheckState(Qt.CheckState.Checked if enabled else Qt.CheckState.Unchecked)
-        self.setItem(row, 0, checkbox)
+        self.setItem(row, 0, self._make_checkbox(enabled))
         self.setItem(row, 1, QTableWidgetItem(""))
         self.setItem(row, 2, QTableWidgetItem(""))
 
@@ -136,11 +150,8 @@ class CheckableKeyValueTable(QTableWidget):
         for row_data in rows:
             row = self.rowCount()
             self.insertRow(row)
-            checkbox = QTableWidgetItem()
-            checkbox.setFlags(Qt.ItemFlag.ItemIsUserCheckable | Qt.ItemFlag.ItemIsEnabled)
             enabled = row_data.get("enabled", False)
-            checkbox.setCheckState(Qt.CheckState.Checked if enabled else Qt.CheckState.Unchecked)
-            self.setItem(row, 0, checkbox)
+            self.setItem(row, 0, self._make_checkbox(enabled))
             self.setItem(row, 1, QTableWidgetItem(str(row_data.get("key", ""))))
             self.setItem(row, 2, QTableWidgetItem(str(row_data.get("value", ""))))
         self._add_empty_row(enabled=False)
@@ -155,10 +166,7 @@ class CheckableKeyValueTable(QTableWidget):
             self.removeRow(last)
         row = self.rowCount()
         self.insertRow(row)
-        checkbox = QTableWidgetItem()
-        checkbox.setFlags(Qt.ItemFlag.ItemIsUserCheckable | Qt.ItemFlag.ItemIsEnabled)
-        checkbox.setCheckState(Qt.CheckState.Checked if enabled else Qt.CheckState.Unchecked)
-        self.setItem(row, 0, checkbox)
+        self.setItem(row, 0, self._make_checkbox(enabled))
         self.setItem(row, 1, QTableWidgetItem(key))
         self.setItem(row, 2, QTableWidgetItem(value))
         self._add_empty_row(enabled=False)
