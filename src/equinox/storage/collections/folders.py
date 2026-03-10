@@ -8,6 +8,33 @@ from equinox.storage.utils import require_positive_int
 
 logger = logging.getLogger(__name__)
 
+MAX_FOLDER_PATH_LENGTH = 1000
+
+
+def _validate_folder_path(path: str, label: str = "Folder") -> str:
+    """Validate and strip a folder path.  Returns the stripped path.
+
+    Raises:
+        ValidationError: If the path is empty, malformed, or contains
+            dangerous characters.
+    """
+    path = (path or "").strip()
+    if not path:
+        raise ValidationError(f"{label} path must not be empty")
+    if path.startswith("/") or path.endswith("/"):
+        raise ValidationError(f"{label} path must not start or end with '/'")
+    if "//" in path:
+        raise ValidationError(f"{label} path must not contain empty segments ('//')")
+    if ".." in path.split("/"):
+        raise ValidationError(f"{label} path must not contain '..' segments")
+    if "\r" in path or "\n" in path:
+        raise ValidationError(f"{label} path contains invalid characters")
+    if len(path) > MAX_FOLDER_PATH_LENGTH:
+        raise ValidationError(
+            f"{label} path too long (max {MAX_FOLDER_PATH_LENGTH} characters)"
+        )
+    return path
+
 
 class CollectionFoldersMixin:
     """Mixin providing folder management for CollectionManager."""
@@ -34,13 +61,7 @@ class CollectionFoldersMixin:
             StorageError: If the collection does not exist or the DB write fails.
         """
         require_positive_int(collection_id, "Collection ID")
-        path = (path or "").strip()
-        if not path:
-            raise ValidationError("Folder path must not be empty")
-        if path.startswith("/") or path.endswith("/"):
-            raise ValidationError("Folder path must not start or end with '/'")
-        if "//" in path:
-            raise ValidationError("Folder path must not contain empty segments ('//')")
+        path = _validate_folder_path(path)
         if not self.get_collection(collection_id):
             raise StorageError(f"Collection {collection_id} does not exist")
         try:
@@ -76,61 +97,44 @@ class CollectionFoldersMixin:
             ValidationError: If paths are invalid.
         """
         require_positive_int(collection_id, "Collection ID")
-        old_path = (old_path or "").strip()
-        new_path = (new_path or "").strip()
-        if not old_path:
-            raise ValidationError("Old folder path must not be empty")
-        if not new_path:
-            raise ValidationError("New folder path must not be empty")
-        for label, path in [("Old", old_path), ("New", new_path)]:
-            if path.startswith("/") or path.endswith("/"):
-                raise ValidationError(f"{label} folder path must not start or end with '/'")
-            if "//" in path:
-                raise ValidationError(f"{label} folder path must not contain empty segments ('//')")
-            if ".." in path.split("/"):
-                raise ValidationError(f"{label} folder path must not contain '..' segments")
-            if "\r" in path or "\n" in path:
-                raise ValidationError(f"{label} folder path contains invalid characters")
-            if len(path) > 1000:
-                raise ValidationError(f"{label} folder path too long (max 1000 characters)")
-        rows = self.db.fetchall(
-            "SELECT id, folder FROM requests WHERE collection_id=? AND ("
-            "folder=? OR folder LIKE ?)",
-            (collection_id, old_path, f"{old_path}/%"),
+        old_path = _validate_folder_path(old_path, "Old folder")
+        new_path = _validate_folder_path(new_path, "New folder")
+
+        # Batch-update request folders: replace old_path prefix with new_path.
+        # CASE handles both exact match and sub-folder prefix in one statement.
+        self.db.execute(
+            "UPDATE requests SET "
+            "folder = CASE "
+            "  WHEN folder = ? THEN ? "
+            "  ELSE ? || SUBSTR(folder, ?) "
+            "END, "
+            "updated_at = CURRENT_TIMESTAMP "
+            "WHERE collection_id = ? AND (folder = ? OR folder LIKE ?)",
+            (
+                old_path, new_path,                       # exact match
+                new_path, len(old_path) + 1,              # prefix replacement
+                collection_id, old_path, f"{old_path}/%", # WHERE
+            ),
         )
-        for row in rows:
-            current = row["folder"] or ""
-            if current == old_path:
-                updated = new_path
-            elif current.startswith(f"{old_path}/"):
-                updated = new_path + current[len(old_path):]
-            else:
-                continue
-            self.db.execute(
-                "UPDATE requests SET folder=?, updated_at=CURRENT_TIMESTAMP WHERE id=?",
-                (updated or None, row["id"]),
-            )
-        # Keep collection_folders records in sync
-        folder_rows = self.db.fetchall(
-            "SELECT id, path FROM collection_folders "
-            "WHERE collection_id=? AND (path=? OR path LIKE ?)",
-            (collection_id, old_path, f"{old_path}/%"),
+
+        # Batch-update collection_folders records in sync.
+        self.db.execute(
+            "UPDATE collection_folders SET "
+            "path = CASE "
+            "  WHEN path = ? THEN ? "
+            "  ELSE ? || SUBSTR(path, ?) "
+            "END "
+            "WHERE collection_id = ? AND (path = ? OR path LIKE ?)",
+            (
+                old_path, new_path,
+                new_path, len(old_path) + 1,
+                collection_id, old_path, f"{old_path}/%",
+            ),
         )
-        for row in folder_rows:
-            current = row["path"]
-            if current == old_path:
-                updated = new_path
-            elif current.startswith(f"{old_path}/"):
-                updated = new_path + current[len(old_path):]
-            else:
-                continue
-            self.db.execute(
-                "UPDATE collection_folders SET path=? WHERE id=?",
-                (updated, row["id"]),
-            )
+
         logger.info(
-            "Renamed folder %r → %r in collection %d (%d request(s), %d folder record(s) updated)",
-            old_path, new_path, collection_id, len(rows), len(folder_rows),
+            "Renamed folder %r → %r in collection %d",
+            old_path, new_path, collection_id,
         )
 
     def delete_folder(
@@ -147,30 +151,39 @@ class CollectionFoldersMixin:
             move_to_root: If True (default), move all requests in the folder
                 (and sub-folders) to the collection root.  If False, delete
                 those requests entirely.
+
+        Raises:
+            ValidationError: If *collection_id* or *folder_path* is invalid.
         """
-        rows = self.db.fetchall(
-            "SELECT id FROM requests WHERE collection_id=? AND ("
-            "folder=? OR folder LIKE ?)",
+        require_positive_int(collection_id, "Collection ID")
+        folder_path = _validate_folder_path(folder_path)
+        # Count affected requests for logging
+        count_row = self.db.fetchone(
+            "SELECT COUNT(*) AS cnt FROM requests WHERE collection_id=? AND "
+            "(folder=? OR folder LIKE ?)",
             (collection_id, folder_path, f"{folder_path}/%"),
         )
-        request_ids = [row["id"] for row in rows]
-        if request_ids:
+        request_count = (count_row or {}).get("cnt", 0)
+        if request_count:
             if move_to_root:
-                for req_id in request_ids:
-                    self.db.execute(
-                        "UPDATE requests SET folder=NULL, updated_at=CURRENT_TIMESTAMP WHERE id=?",
-                        (req_id,),
-                    )
+                self.db.execute(
+                    "UPDATE requests SET folder=NULL, updated_at=CURRENT_TIMESTAMP "
+                    "WHERE collection_id=? AND (folder=? OR folder LIKE ?)",
+                    (collection_id, folder_path, f"{folder_path}/%"),
+                )
                 logger.info(
                     "Moved %d request(s) from folder %r to root in collection %d",
-                    len(request_ids), folder_path, collection_id,
+                    request_count, folder_path, collection_id,
                 )
             else:
-                for req_id in request_ids:
-                    self.db.execute("DELETE FROM requests WHERE id=?", (req_id,))
+                self.db.execute(
+                    "DELETE FROM requests WHERE collection_id=? AND "
+                    "(folder=? OR folder LIKE ?)",
+                    (collection_id, folder_path, f"{folder_path}/%"),
+                )
                 logger.info(
                     "Deleted %d request(s) in folder %r from collection %d",
-                    len(request_ids), folder_path, collection_id,
+                    request_count, folder_path, collection_id,
                 )
         # Always clean up explicit folder records (handles empty folders too)
         self.db.execute(
