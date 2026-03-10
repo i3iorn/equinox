@@ -33,29 +33,54 @@ _fernet: Optional[Fernet] = None
 _ENC_PREFIX = "enc:"
 
 
+def get_or_create_key(key_path: Optional[Path] = None) -> bytes:
+    """Read or generate a 32-byte encryption key at *key_path*.
+
+    This is the canonical key-management function for the entire
+    application.  Both ``auth_cipher`` and
+    :class:`~equinox.core.secure_storage.SecureStorage` delegate here
+    so the logic is never duplicated.
+
+    Args:
+        key_path: Path to the key file.  Defaults to ``~/.equinox/.key``.
+
+    Returns:
+        32 raw bytes suitable for deriving a Fernet key via
+        ``base64.urlsafe_b64encode``.
+
+    Raises:
+        RuntimeError: If an existing key file is corrupt.
+    """
+    if key_path is None:
+        key_path = _KEY_PATH
+
+    key_path.parent.mkdir(parents=True, exist_ok=True)
+
+    if key_path.exists():
+        key = key_path.read_bytes()
+        if len(key) != 32:
+            raise RuntimeError(
+                f"Corrupt encryption key at {key_path} "
+                f"(expected 32 bytes, got {len(key)})"
+            )
+        return key
+
+    key = os.urandom(32)
+    key_path.write_bytes(key)
+    try:
+        os.chmod(key_path, 0o600)
+    except (OSError, NotImplementedError):
+        logger.warning("Could not set restrictive permissions on %s", key_path)
+    return key
+
+
 def _get_fernet() -> Fernet:
     """Return (and cache) a Fernet cipher backed by ``~/.equinox/.key``."""
     global _fernet
     if _fernet is not None:
         return _fernet
 
-    _EQUINOX_DIR.mkdir(parents=True, exist_ok=True)
-
-    if _KEY_PATH.exists():
-        key = _KEY_PATH.read_bytes()
-        if len(key) != 32:
-            raise RuntimeError(
-                f"Corrupt encryption key at {_KEY_PATH} "
-                f"(expected 32 bytes, got {len(key)})"
-            )
-    else:
-        key = os.urandom(32)
-        _KEY_PATH.write_bytes(key)
-        try:
-            os.chmod(_KEY_PATH, 0o600)
-        except (OSError, NotImplementedError):
-            logger.warning("Could not set restrictive permissions on %s", _KEY_PATH)
-
+    key = get_or_create_key()
     _fernet = Fernet(base64.urlsafe_b64encode(key))
     return _fernet
 
