@@ -56,7 +56,7 @@ class Request:
 
     def to_dict(self) -> Dict[str, Any]:
         """Convert request to dictionary"""
-        return {
+        d: Dict[str, Any] = {
             "method": self.method,
             "url": self.url,
             "headers": self.headers,
@@ -68,8 +68,22 @@ class Request:
             "name": self.name,
             "description": self.description,
             "collection_id": self.collection_id,
+            "folder": self.folder,
+            "id": self.id,
             "path_params": self.path_params,
+            "captures": [c if isinstance(c, dict) else c for c in self.captures],
+            "pre_script": self.pre_script,
+            "post_script": self.post_script,
+            "cert_path": self.cert_path,
+            "cert_key_path": self.cert_key_path,
+            "multipart_data": self.multipart_data,
+            "assertions": self.assertions,
+            "params_list": self.params_list,
         }
+        if self.auth is not None and hasattr(self.auth, "to_dict"):
+            d["auth"] = self.auth.to_dict()
+            d["auth_type"] = type(self.auth).__name__
+        return d
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> "Request":
@@ -86,7 +100,17 @@ class Request:
             name=data.get("name"),
             description=data.get("description"),
             collection_id=data.get("collection_id"),
+            folder=data.get("folder"),
+            id=data.get("id"),
             path_params=data.get("path_params", {}),
+            captures=data.get("captures", []),
+            pre_script=data.get("pre_script", ""),
+            post_script=data.get("post_script", ""),
+            cert_path=data.get("cert_path"),
+            cert_key_path=data.get("cert_key_path"),
+            multipart_data=data.get("multipart_data"),
+            assertions=data.get("assertions", []),
+            params_list=data.get("params_list"),
         )
 
     def to_curl(self) -> str:
