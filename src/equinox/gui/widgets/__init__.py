@@ -6,7 +6,7 @@ from equinox.gui.widgets.checkable_key_value_table import CheckableKeyValueTable
 from equinox.gui.widgets.json_body_editor import JsonBodyEditor
 from equinox.gui.widgets.secret_row import make_secret_row
 from equinox.gui.widgets.path_params_table import PathParamsTable
-from equinox.gui.widgets.drag_drop_tree import _DragDropTree
+from equinox.gui.widgets.drag_drop_tree import DragDropTree, _DragDropTree  # noqa: F401
 
 __all__ = [
     "UrlLineEdit",
@@ -15,6 +15,7 @@ __all__ = [
     "JsonBodyEditor",
     "make_secret_row",
     "PathParamsTable",
-    "_DragDropTree",
+    "DragDropTree",
+    "_DragDropTree",  # backward-compat alias
 ]
 
