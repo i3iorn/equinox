@@ -92,11 +92,9 @@ class CollectionOrderingMixin:
             raise ValidationError("ordered_ids must be a list")
         for req_id in ordered_ids:
             require_positive_int(req_id, "Request ID")
-        for position, req_id in enumerate(ordered_ids):
-            self.db.execute(
-                "UPDATE requests SET sort_order=? WHERE id=?",
-                (position, req_id),
-            )
+        self._batch_set_sort_order(
+            [(req_id, pos) for pos, req_id in enumerate(ordered_ids)]
+        )
         logger.info("Reordered %d requests", len(ordered_ids))
 
     def sort_requests_alphabetically(
@@ -110,11 +108,9 @@ class CollectionOrderingMixin:
         """
         rows = self._select_group(collection_id, folder)
         sorted_rows = sorted(rows, key=lambda r: (r["name"] or "").lower())
-        for position, row in enumerate(sorted_rows):
-            self.db.execute(
-                "UPDATE requests SET sort_order=? WHERE id=?",
-                (position, row["id"]),
-            )
+        self._batch_set_sort_order(
+            [(row["id"], pos) for pos, row in enumerate(sorted_rows)]
+        )
         logger.info(
             "Sorted %d request(s) alphabetically in collection %d, folder %r",
             len(sorted_rows), collection_id, folder,
@@ -143,15 +139,42 @@ class CollectionOrderingMixin:
                 (r["name"] or "").lower(),
             ),
         )
-        for position, row in enumerate(sorted_rows):
-            self.db.execute(
-                "UPDATE requests SET sort_order=? WHERE id=?",
-                (position, row["id"]),
-            )
+        self._batch_set_sort_order(
+            [(row["id"], pos) for pos, row in enumerate(sorted_rows)]
+        )
         logger.info(
             "Sorted %d request(s) by method in collection %d, folder %r",
             len(sorted_rows), collection_id, folder,
         )
+
+    def _batch_set_sort_order(self, id_position_pairs: List["tuple[int, int]"]) -> None:
+        """Batch-update sort_order using a single CASE expression per chunk.
+
+        Respects the database ``MAX_PARAMS`` limit by splitting large lists
+        into chunks of 33 items (each item requires 3 SQL parameters).
+
+        Args:
+            id_position_pairs: List of ``(request_id, sort_order)`` tuples.
+        """
+        if not id_position_pairs:
+            return
+        # Each item uses 3 params: 2 in CASE clause + 1 in IN list.
+        # Database.MAX_PARAMS is 100 → max 33 items per batch.
+        chunk_size = 33
+        for start in range(0, len(id_position_pairs), chunk_size):
+            chunk = id_position_pairs[start:start + chunk_size]
+            case_clauses = " ".join("WHEN ? THEN ?" for _ in chunk)
+            ids = [rid for rid, _ in chunk]
+            placeholders = ", ".join("?" for _ in ids)
+            params: list = []
+            for rid, pos in chunk:
+                params.extend([rid, pos])
+            params.extend(ids)
+            self.db.execute(
+                f"UPDATE requests SET sort_order = CASE id {case_clauses} END "
+                f"WHERE id IN ({placeholders})",
+                tuple(params),
+            )
 
     def _select_group(
         self, collection_id: int, folder: Optional[str],
