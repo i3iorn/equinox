@@ -7,7 +7,7 @@ from typing import List, Dict, Any, Optional
 
 from equinox.storage.database import Database
 from equinox.core.exceptions import StorageError, ValidationError, SecurityError
-from equinox.storage.utils import require_positive_int
+from equinox.storage.utils import require_positive_int, validate_variable_key, validate_variable_value
 
 logger = logging.getLogger(__name__)
 
@@ -34,6 +34,31 @@ class EnvironmentManager:
             db: Database instance
         """
         self.db = db
+
+    def _validate_variables(self, variables: dict) -> Dict[str, str]:
+        """Validate and return a sanitised copy of a variable dict.
+
+        Raises:
+            ValidationError: If any key or value is invalid.
+            SecurityError: If the number of variables exceeds the limit.
+        """
+        if not isinstance(variables, dict):
+            raise ValidationError("Variables must be a dictionary")
+
+        if len(variables) > self.MAX_VARIABLE_COUNT:
+            raise SecurityError(f"Too many variables (max {self.MAX_VARIABLE_COUNT})")
+
+        sanitized: Dict[str, str] = {}
+        for key, value in variables.items():
+            key = validate_variable_key(key, self.MAX_VARIABLE_KEY_LENGTH)
+            if not self.VARIABLE_NAME_PATTERN.match(key):
+                raise ValidationError(
+                    f"Invalid variable key: {key}. Must contain only alphanumeric characters, "
+                    "underscores, and hyphens"
+                )
+            validate_variable_value(value, self.MAX_VARIABLE_VALUE_LENGTH)
+            sanitized[key] = value
+        return sanitized
 
     def create_environment(
         self, name: str, variables: Dict[str, str], description: str = ""
@@ -73,46 +98,13 @@ class EnvironmentManager:
             raise ValidationError(f"Environment description too long (max {self.MAX_DESCRIPTION_LENGTH} characters)")
 
         # Validate variables
-        if not isinstance(variables, dict):
-            raise ValidationError("Variables must be a dictionary")
-
-        if len(variables) > self.MAX_VARIABLE_COUNT:
-            raise SecurityError(f"Too many variables (max {self.MAX_VARIABLE_COUNT})")
+        sanitized_variables = self._validate_variables(variables)
 
         # Check environment count limit
         env_count = self.db.fetchone("SELECT COUNT(*) as count FROM environments")
         if env_count and env_count["count"] >= self.MAX_ENVIRONMENTS:
             raise SecurityError(f"Maximum number of environments reached ({self.MAX_ENVIRONMENTS})")
 
-        # Validate each variable
-        sanitized_variables = {}
-        for key, value in variables.items():
-            # Validate key
-            if not isinstance(key, str):
-                raise ValidationError(f"Variable key must be a string: {key}")
-
-            if not key or not key.strip():
-                raise ValidationError("Variable key cannot be empty")
-
-            if len(key) > self.MAX_VARIABLE_KEY_LENGTH:
-                raise ValidationError(f"Variable key too long: {key} (max {self.MAX_VARIABLE_KEY_LENGTH} characters)")
-
-            if not self.VARIABLE_NAME_PATTERN.match(key):
-                raise ValidationError(
-                    f"Invalid variable key: {key}. Must contain only alphanumeric characters, "
-                    "underscores, and hyphens"
-                )
-
-            # Validate value
-            if not isinstance(value, str):
-                raise ValidationError(f"Variable value must be a string for key: {key}")
-
-            if len(value) > self.MAX_VARIABLE_VALUE_LENGTH:
-                raise ValidationError(
-                    f"Variable value too long for key '{key}' (max {self.MAX_VARIABLE_VALUE_LENGTH} characters)"
-                )
-
-            sanitized_variables[key] = value
 
         try:
             environment_id = self.db.insert(
@@ -127,6 +119,20 @@ class EnvironmentManager:
             if "UNIQUE constraint failed" in str(e):
                 raise StorageError(f"Environment '{name}' already exists")
             raise StorageError(f"Failed to create environment: {e}")
+
+    @staticmethod
+    def _decode_row(row: Dict[str, Any]) -> Dict[str, Any]:
+        """Decode JSON columns in an environment row in-place and return it."""
+        try:
+            row["variables"] = json.loads(row["variables"])
+        except (json.JSONDecodeError, TypeError):
+            logger.error("Failed to parse variables for environment %s", row.get("id"))
+            row["variables"] = {}
+        try:
+            row["secret_keys"] = json.loads(row.get("secret_keys") or "[]")
+        except Exception:
+            row["secret_keys"] = []
+        return row
 
     def get_environment(self, environment_id: int) -> Optional[Dict[str, Any]]:
         """
@@ -144,34 +150,12 @@ class EnvironmentManager:
         require_positive_int(environment_id, "Environment ID")
 
         row = self.db.fetchone("SELECT * FROM environments WHERE id = ?", (environment_id,))
-        if row:
-            row = dict(row)
-            try:
-                row["variables"] = json.loads(row["variables"])
-            except json.JSONDecodeError as e:
-                logger.error(f"Failed to parse variables for environment {environment_id}: {e}")
-                row["variables"] = {}
-            try:
-                row["secret_keys"] = json.loads(row.get("secret_keys") or "[]")
-            except Exception:
-                row["secret_keys"] = []
-        return row
+        return self._decode_row(dict(row)) if row else None
 
     def get_active_environment(self) -> Optional[Dict[str, Any]]:
         """Get the currently active environment"""
         row = self.db.fetchone("SELECT * FROM environments WHERE is_active = 1")
-        if row:
-            row = dict(row)
-            try:
-                row["variables"] = json.loads(row["variables"])
-            except (json.JSONDecodeError, TypeError) as e:
-                logger.error(f"Failed to parse variables for active environment {row.get('id')}: {e}")
-                row["variables"] = {}
-            try:
-                row["secret_keys"] = json.loads(row.get("secret_keys") or "[]")
-            except Exception:
-                row["secret_keys"] = []
-        return row
+        return self._decode_row(dict(row)) if row else None
 
     def list_environments(self) -> List[Dict[str, Any]]:
         """
@@ -181,17 +165,7 @@ class EnvironmentManager:
             List of environments
         """
         rows = self.db.fetchall("SELECT * FROM environments ORDER BY name")
-        for row in rows:
-            try:
-                row["variables"] = json.loads(row["variables"])
-            except json.JSONDecodeError as e:
-                logger.error(f"Failed to parse variables for environment {row['id']}: {e}")
-                row["variables"] = {}
-            try:
-                row["secret_keys"] = json.loads(row.get("secret_keys") or "[]")
-            except Exception:
-                row["secret_keys"] = []
-        return rows
+        return [self._decode_row(row) for row in rows]
 
     def update_environment(
         self,
@@ -253,40 +227,7 @@ class EnvironmentManager:
 
         # Validate and add variables update
         if variables is not None:
-            if not isinstance(variables, dict):
-                raise ValidationError("Variables must be a dictionary")
-
-            if len(variables) > self.MAX_VARIABLE_COUNT:
-                raise SecurityError(f"Too many variables (max {self.MAX_VARIABLE_COUNT})")
-
-            # Validate each variable
-            sanitized_variables = {}
-            for key, value in variables.items():
-                if not isinstance(key, str):
-                    raise ValidationError(f"Variable key must be a string: {key}")
-
-                if not key or not key.strip():
-                    raise ValidationError("Variable key cannot be empty")
-
-                if len(key) > self.MAX_VARIABLE_KEY_LENGTH:
-                    raise ValidationError(f"Variable key too long: {key} (max {self.MAX_VARIABLE_KEY_LENGTH} characters)")
-
-                if not self.VARIABLE_NAME_PATTERN.match(key):
-                    raise ValidationError(
-                        f"Invalid variable key: {key}. Must contain only alphanumeric characters, "
-                        "underscores, and hyphens"
-                    )
-
-                if not isinstance(value, str):
-                    raise ValidationError(f"Variable value must be a string for key: {key}")
-
-                if len(value) > self.MAX_VARIABLE_VALUE_LENGTH:
-                    raise ValidationError(
-                        f"Variable value too long for key '{key}' (max {self.MAX_VARIABLE_VALUE_LENGTH} characters)"
-                    )
-
-                sanitized_variables[key] = value
-
+            sanitized_variables = self._validate_variables(variables)
             updates.append("variables = ?")
             params.append(json.dumps(sanitized_variables))
 
