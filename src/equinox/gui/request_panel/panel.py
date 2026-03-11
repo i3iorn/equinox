@@ -41,6 +41,7 @@ from equinox.gui.request_panel.mixins import (  # noqa: F401
 )
 from equinox.gui.request_panel.body_mixin import _RequestBodyMixin  # noqa: F401
 from equinox.gui.request_panel.save_dialog import SaveRequestDialog  # noqa: F401
+from equinox.gui.request_panel.toolbar import TabToolbar
 
 logger = logging.getLogger(__name__)
 
@@ -520,55 +521,17 @@ class RequestPanel(_RequestSendMixin, _RequestAuthMixin, _RequestBodyMixin, QWid
         return banner
 
     def _build_headers_tab(self) -> QWidget:
-        from PyQt6.QtWidgets import QToolButton, QMenu
         w = QWidget()
         layout = QVBoxLayout(w)
         layout.setContentsMargins(0, 2, 0, 0)
         layout.setSpacing(2)
-        toolbar = QHBoxLayout()
-        toolbar.setContentsMargins(0, 2, 0, 0)
-        toolbar.setSpacing(2)
-        # Label so control buttons align with other tabs
-        hdr_label = QLabel("Headers")
-        hdr_label.setStyleSheet("font-weight: bold;")
-        toolbar.addWidget(hdr_label)
-
-        add_btn = QPushButton("+ Add")
-        add_btn.setFixedWidth(64)
-        add_btn.clicked.connect(self._headers_add_row)
-        remove_btn = QPushButton("− Remove")
-        remove_btn.setFixedWidth(80)
-        remove_btn.clicked.connect(self._headers_remove_row)
-        enable_btn = QPushButton("Enable All")
-        enable_btn.setFixedWidth(80)
-        enable_btn.setToolTip("Enable all header rows")
-        enable_btn.clicked.connect(lambda: self._headers_set_all(True))
-        disable_btn = QPushButton("Disable All")
-        disable_btn.setFixedWidth(82)
-        disable_btn.setToolTip("Disable all header rows")
-        disable_btn.clicked.connect(lambda: self._headers_set_all(False))
-        presets_btn = QToolButton()
-        presets_btn.setText("Presets ▾")
-        presets_btn.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
-        presets_btn.setToolTip("Insert a common header")
-        presets_menu = QMenu(presets_btn)
-        for preset in _HEADER_PRESETS:
-            if preset is None:
-                presets_menu.addSeparator()
-            else:
-                lbl, key, value = preset
-                act = presets_menu.addAction(lbl)
-                act.triggered.connect(
-                    lambda checked, k=key, v=value: self._insert_header_preset(k, v)
-                )
-        presets_btn.setMenu(presets_menu)
-        toolbar.addWidget(add_btn)
-        toolbar.addWidget(remove_btn)
-        toolbar.addWidget(enable_btn)
-        toolbar.addWidget(disable_btn)
-        toolbar.addStretch()
-        toolbar.addWidget(presets_btn)
-        layout.addLayout(toolbar)
+        toolbar = TabToolbar("Headers", presets=_HEADER_PRESETS, parent=self)
+        toolbar.add_clicked.connect(self._headers_add_row)
+        toolbar.remove_clicked.connect(self._headers_remove_row)
+        toolbar.enable_all_clicked.connect(lambda: self._headers_set_all(True))
+        toolbar.disable_all_clicked.connect(lambda: self._headers_set_all(False))
+        toolbar.preset_selected.connect(self._insert_header_preset)
+        layout.addWidget(toolbar)
         self.headers_table = CheckableKeyValueTable(enable_key_completer=True)
         layout.addWidget(self.headers_table, 1)
         return w
@@ -578,34 +541,12 @@ class RequestPanel(_RequestSendMixin, _RequestAuthMixin, _RequestBodyMixin, QWid
         layout = QVBoxLayout(w)
         layout.setContentsMargins(0, 2, 0, 0)
         layout.setSpacing(2)
-        toolbar = QHBoxLayout()
-        toolbar.setContentsMargins(0, 2, 0, 0)
-        toolbar.setSpacing(2)
-        qlabel = QLabel("Query Parameters")
-        qlabel.setStyleSheet("font-weight: bold;")
-        # Place the label, then control buttons, then a stretch so control
-        # buttons appear in the same position as other tabs (left-aligned).
-        toolbar.addWidget(qlabel)
-        add_btn = QPushButton("+ Add")
-        add_btn.setFixedWidth(64)
-        add_btn.clicked.connect(self._params_add_row)
-        remove_btn = QPushButton("− Remove")
-        remove_btn.setFixedWidth(80)
-        remove_btn.clicked.connect(self._params_remove_row)
-        enable_btn = QPushButton("Enable All")
-        enable_btn.setFixedWidth(80)
-        enable_btn.setToolTip("Enable all query parameter rows")
-        enable_btn.clicked.connect(lambda: self._params_set_all(True))
-        disable_btn = QPushButton("Disable All")
-        disable_btn.setFixedWidth(82)
-        disable_btn.setToolTip("Disable all query parameter rows")
-        disable_btn.clicked.connect(lambda: self._params_set_all(False))
-        toolbar.addWidget(add_btn)
-        toolbar.addWidget(remove_btn)
-        toolbar.addWidget(enable_btn)
-        toolbar.addWidget(disable_btn)
-        toolbar.addStretch()
-        layout.addLayout(toolbar)
+        toolbar = TabToolbar("Query Parameters", parent=self)
+        toolbar.add_clicked.connect(self._params_add_row)
+        toolbar.remove_clicked.connect(self._params_remove_row)
+        toolbar.enable_all_clicked.connect(lambda: self._params_set_all(True))
+        toolbar.disable_all_clicked.connect(lambda: self._params_set_all(False))
+        layout.addWidget(toolbar)
         self.params_table = CheckableKeyValueTable()
         layout.addWidget(self.params_table, 1)
         self._path_params_widget = QWidget()
@@ -699,44 +640,13 @@ class RequestPanel(_RequestSendMixin, _RequestAuthMixin, _RequestBodyMixin, QWid
         self._fmt_json_btn.setVisible(False)
         type_bar.addWidget(self._fmt_json_btn)
 
-        # Create a small top toolbar for multipart control buttons so they
-        # appear in the same place as other tab control buttons (Add/Remove).
-        self._mp_add_btn = QPushButton("+ Add")
-        self._mp_add_btn.setFixedWidth(64)
-        self._mp_add_btn.clicked.connect(self._multipart_add_row)
-
-        self._mp_remove_btn = QPushButton("− Remove")
-        self._mp_remove_btn.setFixedWidth(80)
-        self._mp_remove_btn.clicked.connect(self._multipart_remove_row)
-
-        self._mp_file_btn = QPushButton("Browse File…")
-        self._mp_file_btn.setFixedWidth(100)
-        self._mp_file_btn.clicked.connect(self._multipart_browse_file)
-        self._mp_file_btn.setToolTip("Select a file to upload for the selected row")
-
-        mp_btns_row = QHBoxLayout()
-        mp_btns_row.setContentsMargins(0, 2, 0, 0)
-        mp_btns_row.setSpacing(2)
-        # Add a spacer label so multipart controls line up with other tab toolbars
-        mp_label = QLabel("")
-        mp_btns_row.addWidget(mp_label)
-        mp_label.setFixedWidth(80)
-        mp_btns_row.addWidget(self._mp_add_btn)
-        mp_btns_row.addWidget(self._mp_remove_btn)
-        mp_btns_row.addWidget(self._mp_file_btn)
-        mp_btns_row.addStretch()
-        self._mp_btns_widget = QWidget()
-        self._mp_btns_widget.setLayout(mp_btns_row)
-        self._mp_btns_widget.setVisible(False)
-
-        # Insert the multipart button toolbar above the type bar so the
-        # control area lines up with other tabs' control toolbars.
-        toolbar = QHBoxLayout()
-        toolbar.setContentsMargins(0, 2, 0, 0)
-        toolbar.setSpacing(2)
-        toolbar.addWidget(self._mp_btns_widget)
-        toolbar.addStretch()
-        layout.addLayout(toolbar)
+        # Multipart toolbar (consistent with other tab toolbars)
+        self._mp_toolbar = TabToolbar("", include_file_btn=True, parent=self)
+        self._mp_toolbar.add_clicked.connect(self._multipart_add_row)
+        self._mp_toolbar.remove_clicked.connect(self._multipart_remove_row)
+        self._mp_toolbar.file_browse_clicked.connect(self._multipart_browse_file)
+        self._mp_toolbar.setVisible(False)
+        layout.addWidget(self._mp_toolbar)
 
         type_bar.addStretch()
         layout.addLayout(type_bar)
