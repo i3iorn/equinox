@@ -159,17 +159,24 @@ class CheckableKeyValueTable(QTableWidget):
 
     def add_row(self, key: str = "", value: str = "", enabled: bool = True) -> None:
         """Insert a new row before the trailing empty row."""
-        # Remove trailing empty row, add the new row, then re-add an empty row
-        last = self.rowCount() - 1
-        last_key = self.item(last, 1)
-        if last >= 0 and (last_key is None or not last_key.text().strip()):
-            self.removeRow(last)
-        row = self.rowCount()
-        self.insertRow(row)
-        self.setItem(row, 0, self._make_checkbox(enabled))
-        self.setItem(row, 1, QTableWidgetItem(key))
-        self.setItem(row, 2, QTableWidgetItem(value))
-        self._add_empty_row(enabled=False)
+        # Perform programmatic changes with signals blocked so the
+        # on_item_changed handler does not auto-add another empty row
+        # while we are setting items (which would create two empty rows).
+        self.blockSignals(True)
+        try:
+            # Remove trailing empty row, add the new row, then re-add an empty row
+            last = self.rowCount() - 1
+            last_key = self.item(last, 1) if last >= 0 else None
+            if last >= 0 and (last_key is None or not last_key.text().strip()):
+                self.removeRow(last)
+            row = self.rowCount()
+            self.insertRow(row)
+            self.setItem(row, 0, self._make_checkbox(enabled))
+            self.setItem(row, 1, QTableWidgetItem(key))
+            self.setItem(row, 2, QTableWidgetItem(value))
+            self._add_empty_row(enabled=False)
+        finally:
+            self.blockSignals(False)
 
     def reset(self) -> None:
         self.blockSignals(True)

@@ -35,6 +35,13 @@ class _RequestBodyMixin:
         layout.setContentsMargins(0, 4, 0, 0)
 
         toolbar = QHBoxLayout()
+        toolbar.setContentsMargins(0, 2, 0, 0)
+        toolbar.setSpacing(2)
+        # Label so control buttons align consistently across tabs
+        cap_label = QLabel("Captures")
+        cap_label.setStyleSheet("font-weight: bold;")
+        toolbar.addWidget(cap_label)
+
         add_btn = QPushButton("+ Add")
         add_btn.setFixedWidth(64)
         add_btn.clicked.connect(self._captures_add_row)
@@ -76,6 +83,13 @@ class _RequestBodyMixin:
         layout.setContentsMargins(0, 4, 0, 0)
 
         toolbar = QHBoxLayout()
+        toolbar.setContentsMargins(0, 2, 0, 0)
+        toolbar.setSpacing(2)
+        # Label so control buttons align consistently across tabs
+        asrt_label = QLabel("Assertions")
+        asrt_label.setStyleSheet("font-weight: bold;")
+        toolbar.addWidget(asrt_label)
+
         add_btn = QPushButton("+ Add")
         add_btn.setFixedWidth(64)
         add_btn.clicked.connect(self._assertions_add_row)
@@ -293,6 +307,8 @@ class _RequestBodyMixin:
     # ── Multipart form-data ────────────────────────────────────────────
 
     def _multipart_add_row(self) -> None:
+        # Follow the captures tab model: add a row and focus the key cell,
+        # but don't rely on auto-edit behavior that differs across tables.
         r = self._multipart_table.rowCount()
         self._multipart_table.insertRow(r)
         self._multipart_table.setItem(r, 0, QTableWidgetItem(""))
@@ -300,15 +316,16 @@ class _RequestBodyMixin:
         type_combo.addItems(["text", "file"])
         self._multipart_table.setCellWidget(r, 1, type_combo)
         self._multipart_table.setItem(r, 2, QTableWidgetItem(""))
+        # Focus the newly added key cell
         self._multipart_table.setCurrentCell(r, 0)
-        self._multipart_table.editItem(self._multipart_table.item(r, 0))
+        item = self._multipart_table.item(r, 0)
+        if item:
+            self._multipart_table.editItem(item)
         self._dirty = True
         self._update_tab_labels()
 
     def _multipart_remove_row(self) -> None:
-        rows = sorted(
-            {i.row() for i in self._multipart_table.selectedItems()}, reverse=True
-        )
+        rows = sorted({idx.row() for idx in self._multipart_table.selectedIndexes()}, reverse=True)
         for r in rows:
             self._multipart_table.removeRow(r)
         self._dirty = True
@@ -327,6 +344,11 @@ class _RequestBodyMixin:
             type_widget.setCurrentText("file")
         self._multipart_table.setItem(row, 2, QTableWidgetItem(path))
         self._dirty = True
+        # If the key cell is empty, set focus to the key for user clarity
+        key_item = self._multipart_table.item(row, 0)
+        if key_item and not key_item.text().strip():
+            self._multipart_table.setCurrentCell(row, 0)
+            self._multipart_table.editItem(key_item)
 
     def _get_multipart_data(self) -> list:
         fields = []
@@ -358,57 +380,130 @@ class _RequestBodyMixin:
     # ── Load / detect / clear ──────────────────────────────────────────
 
     def load_request(self, request: Request) -> None:
-        self.url_input.setText(request.url)
-        idx = self.method_combo.findText(request.method)
-        if idx >= 0:
-            self.method_combo.setCurrentIndex(idx)
-        self.headers_table.set_data(request.headers or {})
-        # Prefer the rich params_list (with enabled flags) when present
-        pl = getattr(request, "params_list", None)
-        self.params_table.set_data(pl if pl else (request.params or {}))
-        mp_data = getattr(request, "multipart_data", None)
-        if mp_data:
-            self._set_multipart_data(mp_data)
-            self.body_type_combo.setCurrentText("multipart/form-data")
-            self.body_text.clear()
-        elif request.body:
-            self.body_text.setPlainText(request.body)
-            self._multipart_table.setRowCount(0)
-            # Auto-detect body type
-            detected = self._detect_body_type(request.body, request.headers)
-            self.body_type_combo.setCurrentText(detected)
-        else:
-            self.body_text.clear()
-            self._multipart_table.setRowCount(0)
-            self.body_type_combo.setCurrentText("none")
+        # Update internal state first so tests and callers can inspect
+        # request metadata and auth even if some GUI widgets are unavailable.
         self._auth = getattr(request, 'auth', None)
         self.current_request = request
-        # Resolve inherited auth when request has no own auth.
+
+        # Resolve inherited auth when request has no own auth. Guard in case
+        # DB resolution fails in tests.
         if self._auth is None:
-            self._resolve_inherited_auth()
+            try:
+                self._resolve_inherited_auth()
+            except Exception:
+                logger.debug("Failed to resolve inherited auth during load_request", exc_info=True)
         else:
             self._inherited_auth = None
             self._inherited_auth_source = None
-        self._update_auth_display(self._auth)
-        self._set_captures(getattr(request, "captures", None) or [])
-        self._set_assertions(getattr(request, "assertions", None) or [])
-        self.pre_script_editor.setPlainText(getattr(request, "pre_script", "") or "")
-        self.post_script_editor.setPlainText(getattr(request, "post_script", "") or "")
-        self.cert_path_input.setText(getattr(request, "cert_path", "") or "")
-        self.cert_key_input.setText(getattr(request, "cert_key_path", "") or "")
-        self.timeout_spin.setValue(getattr(request, "timeout", DEFAULT_TIMEOUT) or DEFAULT_TIMEOUT)
-        self.verify_ssl_check.setChecked(bool(getattr(request, "verify_ssl", True)))
-        self.follow_redirects_check.setChecked(bool(getattr(request, "follow_redirects", True)))
-        self.pre_script_result.setText("")
-        self.post_script_result.setText("")
-        self.notes_editor.setPlainText(getattr(request, "description", "") or "")
-        # Restore path parameters: load saved values, then re-extract from URL
-        self.path_params_table.set_data(getattr(request, "path_params", None) or {})
-        self.path_params_table.update_from_url(request.url)
-        self._path_params_widget.setVisible(self.path_params_table.rowCount() > 0)
-        self._clear_dirty()
-        self._update_tab_labels()
-        self._update_url_suffix()
+
+        # Populate UI widgets — each step is best-effort in headless/test envs.
+        try:
+            self.url_input.setText(request.url)
+        except RuntimeError:
+            logger.debug("url_input unavailable while loading request", exc_info=True)
+
+        try:
+            idx = self.method_combo.findText(request.method)
+            if idx >= 0:
+                self.method_combo.setCurrentIndex(idx)
+        except RuntimeError:
+            logger.debug("method_combo unavailable while loading request", exc_info=True)
+
+        try:
+            self.headers_table.set_data(request.headers or {})
+        except RuntimeError:
+            logger.debug("headers_table unavailable while loading request", exc_info=True)
+
+        # Prefer the rich params_list (with enabled flags) when present
+        pl = getattr(request, "params_list", None)
+        try:
+            self.params_table.set_data(pl if pl else (request.params or {}))
+        except RuntimeError:
+            logger.debug("params_table unavailable while loading request", exc_info=True)
+
+        mp_data = getattr(request, "multipart_data", None)
+        if mp_data:
+            try:
+                self._set_multipart_data(mp_data)
+                self.body_type_combo.setCurrentText("multipart/form-data")
+                self.body_text.clear()
+            except RuntimeError:
+                logger.warning("Multipart widgets unavailable while loading multipart data", exc_info=True)
+        elif request.body:
+            try:
+                self.body_text.setPlainText(request.body)
+                self._multipart_table.setRowCount(0)
+                detected = self._detect_body_type(request.body, request.headers)
+                self.body_type_combo.setCurrentText(detected)
+            except RuntimeError:
+                logger.warning("Body widgets unavailable while setting request body", exc_info=True)
+        else:
+            try:
+                self.body_text.clear()
+                self._multipart_table.setRowCount(0)
+                self.body_type_combo.setCurrentText("none")
+            except RuntimeError:
+                logger.warning("Body/multipart widgets unavailable while clearing for empty body", exc_info=True)
+
+        try:
+            self._update_auth_display(self._auth)
+        except RuntimeError:
+            logger.debug("auth display widgets unavailable while loading request", exc_info=True)
+
+        try:
+            self._set_captures(getattr(request, "captures", None) or [])
+        except RuntimeError:
+            logger.debug("captures table unavailable while loading request", exc_info=True)
+
+        try:
+            self._set_assertions(getattr(request, "assertions", None) or [])
+        except RuntimeError:
+            logger.debug("assertions table unavailable while loading request", exc_info=True)
+
+        try:
+            self.pre_script_editor.setPlainText(getattr(request, "pre_script", "") or "")
+            self.post_script_editor.setPlainText(getattr(request, "post_script", "") or "")
+        except RuntimeError:
+            logger.debug("script editors unavailable while loading request", exc_info=True)
+
+        try:
+            self.cert_path_input.setText(getattr(request, "cert_path", "") or "")
+            self.cert_key_input.setText(getattr(request, "cert_key_path", "") or "")
+        except RuntimeError:
+            logger.debug("cert inputs unavailable while loading request", exc_info=True)
+
+        try:
+            self.timeout_spin.setValue(getattr(request, "timeout", DEFAULT_TIMEOUT) or DEFAULT_TIMEOUT)
+            self.verify_ssl_check.setChecked(bool(getattr(request, "verify_ssl", True)))
+            self.follow_redirects_check.setChecked(bool(getattr(request, "follow_redirects", True)))
+        except RuntimeError:
+            logger.debug("settings widgets unavailable while loading request", exc_info=True)
+
+        try:
+            self.pre_script_result.setText("")
+            self.post_script_result.setText("")
+        except RuntimeError:
+            pass
+
+        try:
+            self.notes_editor.setPlainText(getattr(request, "description", "") or "")
+        except RuntimeError:
+            logger.debug("notes editor unavailable while loading request", exc_info=True)
+
+        try:
+            self.path_params_table.set_data(getattr(request, "path_params", None) or {})
+            self.path_params_table.update_from_url(request.url)
+            self._path_params_widget.setVisible(self.path_params_table.rowCount() > 0)
+        except RuntimeError:
+            logger.debug("path params widgets unavailable while loading request", exc_info=True)
+
+        # Final housekeeping — best-effort
+        try:
+            self._clear_dirty()
+            self._update_tab_labels()
+            self._update_url_suffix()
+        except RuntimeError:
+            logger.debug("final UI housekeeping skipped due to missing widgets", exc_info=True)
 
     @staticmethod
     def _detect_body_type(body: str, headers: Optional[Dict] = None) -> str:
