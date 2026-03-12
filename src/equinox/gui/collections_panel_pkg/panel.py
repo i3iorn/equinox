@@ -6,12 +6,18 @@ from PyQt6.QtWidgets import (
     QDialog, QFormLayout, QComboBox, QDialogButtonBox,
 )
 from PyQt6.QtCore import pyqtSignal, Qt, QTimer
-from PyQt6.QtGui import QAction, QFont, QColor, QShortcut, QKeySequence
+from PyQt6.QtGui import QAction, QColor, QShortcut, QKeySequence
 
 from equinox.gui.theme import Colors
+import json
+import logging
 from equinox.storage import Database, CollectionManager
 from equinox.gui.widgets.drag_drop_tree import DragDropTree
 from equinox.gui.collections_panel_pkg.actions import _CollectionsActionsMixin
+from equinox.importers.exporters import OpenAPIExporter, PostmanExporter, CurlExporter
+from equinox.gui.dialogs.api_spec_dialog import ApiSpecDialog
+
+logger = logging.getLogger(__name__)
 
 
 # ── Lightweight "new request" dialog ─────────────────────────────────────────
@@ -521,6 +527,7 @@ class CollectionsPanel(_CollectionsActionsMixin, QWidget):
                 QMessageBox.critical(self, "Error", f"Failed to create collection: {e}")
 
     def get_collections(self):
+        logger.info("_show_api_spec_for_collection called for %s", collection_id)
         mgr = CollectionManager(self.db)
         return mgr.list_collections()
 
@@ -555,7 +562,7 @@ class CollectionsPanel(_CollectionsActionsMixin, QWidget):
         menu = QMenu()
 
         if data["type"] == "collection":
-            col_id = data["id"]
+            col_id = data.get("id")
 
             new_req_action = QAction("New Request…", self)
             new_req_action.triggered.connect(lambda: self._new_request_in_collection(col_id))
@@ -566,6 +573,14 @@ class CollectionsPanel(_CollectionsActionsMixin, QWidget):
             menu.addAction(add_folder_action)
 
             menu.addSeparator()
+
+            # Only enable spec viewing for saved collections with a positive integer id
+            if isinstance(col_id, int) and col_id > 0:
+                show_spec_action = QAction("Show API Spec…", self)
+                show_spec_action.triggered.connect(lambda c=col_id: self._show_api_spec_for_collection(c))
+                menu.addAction(show_spec_action)
+            else:
+                logger.debug("CollectionsPanel: skipping Show API Spec action for invalid collection id: %r", col_id)
 
             rename_action = QAction("Rename…", self)
             rename_action.triggered.connect(lambda: self._rename_collection(col_id, item))
@@ -664,6 +679,14 @@ class CollectionsPanel(_CollectionsActionsMixin, QWidget):
 
             menu.addSeparator()
 
+            req_id = data.get("id")
+            if isinstance(req_id, int) and req_id > 0:
+                show_spec_action = QAction("Show API Spec…", self)
+                show_spec_action.triggered.connect(lambda r=req_id: self._show_api_spec_for_request(r))
+                menu.addAction(show_spec_action)
+            else:
+                logger.debug("CollectionsPanel: skipping Show API Spec action for invalid request id: %r", req_id)
+
             rename_action = QAction("Rename…", self)
             rename_action.triggered.connect(lambda: self._rename_request(data["id"], item))
             menu.addAction(rename_action)
@@ -683,4 +706,135 @@ class CollectionsPanel(_CollectionsActionsMixin, QWidget):
             menu.addAction(delete_action)
 
         menu.exec(self.tree.viewport().mapToGlobal(position))
+
+    # ── API spec helpers ─────────────────────────────────────────────
+    def _show_api_spec_for_collection(self, collection_id: int) -> None:
+        """Open ApiSpecDialog showing OpenAPI and Postman variants for the collection.
+
+        Errors are logged and shown to the user so failures are not silently swallowed.
+        """
+        mgr = CollectionManager(self.db)
+        try:
+            coll = mgr.get_collection(collection_id)
+        except Exception as exc:
+            logger.exception("Failed to load collection %s", collection_id)
+            QMessageBox.warning(self, "Export Error", f"Failed to load collection: {exc}")
+            return
+
+        if not coll:
+            QMessageBox.warning(self, "Not Found", "Collection not found")
+            return
+
+        title = f"API Spec — {coll.get('name', 'Collection')}"
+        variants = {}
+        errors = []
+
+        try:
+            oa = OpenAPIExporter.export_collection(self.db, collection_id, title=coll.get('name', 'API'))
+            variants['OpenAPI 3 (JSON)'] = json.dumps(oa, indent=2, ensure_ascii=False)
+        except Exception as exc:
+            logger.exception("OpenAPI export failed for collection %s", collection_id)
+            variants['OpenAPI 3 (JSON)'] = ''
+            errors.append(f"OpenAPI export failed: {exc}")
+
+        try:
+            pm = PostmanExporter.export_collection(self.db, collection_id)
+            variants['Postman v2.1 (JSON)'] = json.dumps(pm, indent=2, ensure_ascii=False)
+        except Exception as exc:
+            logger.exception("Postman export failed for collection %s", collection_id)
+            variants['Postman v2.1 (JSON)'] = ''
+            errors.append(f"Postman export failed: {exc}")
+
+        # If exporters failed to produce any content, provide an informative
+        # placeholder in the dialog rather than failing silently.
+        if not any(variants.values()):
+            info_text = "Could not generate any spec for this collection."
+            if errors:
+                info_text += "\n\n" + "\n".join(errors)
+            variants = {"Info": info_text}
+
+        try:
+            dlg = ApiSpecDialog(self, title=title)
+            dlg.set_variants(variants)
+            # Keep a reference on the panel so the dialog isn't GC'd immediately
+            if not hasattr(self, "_spec_dialogs"):
+                self._spec_dialogs = []
+            self._spec_dialogs.append(dlg)
+
+            # Ensure we remove the reference when the dialog is closed/destroyed
+            try:
+                dlg.finished.connect(lambda code, d=dlg: self._spec_dialogs.remove(d) if d in self._spec_dialogs else None)
+            except Exception:
+                dlg.destroyed.connect(lambda _, d=dlg: self._spec_dialogs.remove(d) if d in self._spec_dialogs else None)
+
+            # Use non-modal show + raise/activate to ensure the dialog becomes visible
+            dlg.show()
+            try:
+                dlg.raise_()
+                dlg.activateWindow()
+            except Exception:
+                pass
+        except Exception as exc:
+            logger.exception("Failed to show API spec dialog for collection %s", collection_id)
+            QMessageBox.warning(self, "UI Error", f"Failed to show API spec: {exc}")
+
+    def _show_api_spec_for_request(self, request_id: int) -> None:
+        """Open ApiSpecDialog showing cURL and (optionally) mini OpenAPI for a request."""
+        logger.info("_show_api_spec_for_request called for %s", request_id)
+        mgr = CollectionManager(self.db)
+        try:
+            req = mgr.get_request(request_id)
+        except Exception as exc:
+            logger.exception("Failed to load request %s", request_id)
+            QMessageBox.warning(self, "Export Error", f"Failed to load request: {exc}")
+            return
+
+        if not req:
+            QMessageBox.warning(self, "Not Found", "Request not found")
+            return
+
+        title = f"API Spec — {req.name or 'Request'}"
+        variants = {}
+        errors = []
+
+        try:
+            variants['cURL'] = CurlExporter.export_request(req)
+        except Exception as exc:
+            logger.exception("Curl export failed for request %s", request_id)
+            variants['cURL'] = ''
+            errors.append(f"cURL export failed: {exc}")
+
+        try:
+            oa = OpenAPIExporter.export_collection(self.db, req.collection_id or 0, title=req.name or 'API')
+            variants['OpenAPI 3 (JSON)'] = json.dumps(oa, indent=2, ensure_ascii=False)
+        except Exception as exc:
+            logger.exception("OpenAPI export failed for request %s", request_id)
+            variants['OpenAPI 3 (JSON)'] = ''
+            errors.append(f"OpenAPI export failed: {exc}")
+
+        if not any(variants.values()):
+            info_text = "Could not generate any spec for this request."
+            if errors:
+                info_text += "\n\n" + "\n".join(errors)
+            variants = {"Info": info_text}
+
+        try:
+            dlg = ApiSpecDialog(self, title=title)
+            dlg.set_variants(variants)
+            if not hasattr(self, "_spec_dialogs"):
+                self._spec_dialogs = []
+            self._spec_dialogs.append(dlg)
+            try:
+                dlg.finished.connect(lambda code, d=dlg: self._spec_dialogs.remove(d) if d in self._spec_dialogs else None)
+            except Exception:
+                dlg.destroyed.connect(lambda _, d=dlg: self._spec_dialogs.remove(d) if d in self._spec_dialogs else None)
+            dlg.show()
+            try:
+                dlg.raise_()
+                dlg.activateWindow()
+            except Exception:
+                pass
+        except Exception as exc:
+            logger.exception("Failed to show API spec dialog for request %s", request_id)
+            QMessageBox.warning(self, "UI Error", f"Failed to show API spec: {exc}")
 

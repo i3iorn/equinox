@@ -1,6 +1,7 @@
 """Body-related mixin for RequestPanel: captures, assertions, multipart, load/clear."""
 
 import logging
+import json
 from typing import Optional, Dict
 
 from PyQt6.QtWidgets import (
@@ -14,7 +15,12 @@ from PyQt6.QtWidgets import (
     QTableWidgetItem,
     QHeaderView,
     QFileDialog,
+    QLineEdit,
+    QToolButton,
+    QCheckBox,
+    QTextEdit,
 )
+from PyQt6.QtGui import QTextCursor, QTextCharFormat, QColor
 
 from equinox.gui.theme import get_mono_font
 from equinox.core.request import Request
@@ -264,7 +270,7 @@ class _RequestBodyMixin:
         # Show/hide the multipart table vs. raw text editor vs. GraphQL editor
         self.body_text.setVisible(not is_multipart and not is_gql)
         self._multipart_table.setVisible(is_multipart)
-        self._mp_btns_widget.setVisible(is_multipart)
+        self._mp_toolbar.setVisible(is_multipart)
         self._fmt_json_btn.setVisible(is_json)
         self._gql_widget.setVisible(is_gql)
 
@@ -304,78 +310,240 @@ class _RequestBodyMixin:
         except Exception:
             logger.debug("Failed to update tab labels", exc_info=True)
 
-    # ── Multipart form-data ────────────────────────────────────────────
+    # ── Body search utilities ─────────────────────────────────────────
 
-    def _multipart_add_row(self) -> None:
-        # Follow the captures tab model: add a row and focus the key cell,
-        # but don't rely on auto-edit behavior that differs across tables.
-        r = self._multipart_table.rowCount()
-        self._multipart_table.insertRow(r)
-        self._multipart_table.setItem(r, 0, QTableWidgetItem(""))
-        type_combo = QComboBox()
-        type_combo.addItems(["text", "file"])
-        self._multipart_table.setCellWidget(r, 1, type_combo)
-        self._multipart_table.setItem(r, 2, QTableWidgetItem(""))
-        # Focus the newly added key cell
-        self._multipart_table.setCurrentCell(r, 0)
-        item = self._multipart_table.item(r, 0)
-        if item:
-            self._multipart_table.editItem(item)
-        self._dirty = True
-        self._update_tab_labels()
-
-    def _multipart_remove_row(self) -> None:
-        rows = sorted({idx.row() for idx in self._multipart_table.selectedIndexes()}, reverse=True)
-        for r in rows:
-            self._multipart_table.removeRow(r)
-        self._dirty = True
-        self._update_tab_labels()
-
-    def _multipart_browse_file(self) -> None:
-        row = self._multipart_table.currentRow()
-        if row < 0:
+    def _body_highlight_all(self) -> None:
+        """Highlight all matches in the body editor according to options."""
+        try:
+            term = getattr(self, '_body_search_input', None)
+            if term is None:
+                return
+            term_text = term.text()
+        except Exception:
             return
-        path, _ = QFileDialog.getOpenFileName(self, "Select File", "", "All Files (*)")
-        if not path:
-            return
-        # Set type to "file"
-        type_widget = self._multipart_table.cellWidget(row, 1)
-        if type_widget:
-            type_widget.setCurrentText("file")
-        self._multipart_table.setItem(row, 2, QTableWidgetItem(path))
-        self._dirty = True
-        # If the key cell is empty, set focus to the key for user clarity
-        key_item = self._multipart_table.item(row, 0)
-        if key_item and not key_item.text().strip():
-            self._multipart_table.setCurrentCell(row, 0)
-            self._multipart_table.editItem(key_item)
 
-    def _get_multipart_data(self) -> list:
-        fields = []
-        for r in range(self._multipart_table.rowCount()):
-            key_item = self._multipart_table.item(r, 0)
-            key = key_item.text().strip() if key_item else ""
-            if not key:
+        try:
+            has_widget = getattr(self.body_text, '_has_widget', lambda: False)()
+            target = getattr(self.body_text, '_widget', None) if has_widget else None
+            doc_text = target.toPlainText() if target is not None else getattr(self.body_text, '_buffer', '')
+
+            # JSONPath mode: don't attempt complex highlights; select first match
+            if getattr(self, '_body_jsonpath_cb', None) and self._body_jsonpath_cb.isChecked() and term_text.strip():
+                positions = self._find_jsonpath_positions(term_text)
+                if positions and target is not None:
+                    # select first occurrence
+                    pos = positions[0]
+                    cursor = target.textCursor()
+                    cursor.setPosition(pos)
+                    # crude way to select a reasonable chunk; select 50 chars or until end
+                    end = min(pos + 50, len(doc_text))
+                    cursor.setPosition(end, QTextCursor.MoveMode.KeepAnchor)
+                    target.setTextCursor(cursor)
+                return
+
+            # Prepare highlight format
+            fmt = QTextCharFormat()
+            fmt.setBackground(QColor("#fff59d"))
+            selections = []
+
+            if getattr(self, '_body_regex_cb', None) and self._body_regex_cb.isChecked():
+                import re
+                flags_re = 0 if (getattr(self, '_body_case_cb', None) and self._body_case_cb.isChecked()) else re.IGNORECASE
+                try:
+                    for m in re.finditer(term_text, doc_text, flags_re):
+                        if target is not None:
+                            sel = QTextEdit.ExtraSelection()
+                            # create a cursor for the match range
+                            cursor = target.textCursor()
+                            cursor.setPosition(m.start())
+                            cursor.setPosition(m.end(), QTextCursor.MoveMode.KeepAnchor)
+                            sel.cursor = cursor
+                            sel.format = fmt
+                            selections.append(sel)
+                except re.error:
+                    # invalid regex - ignore
+                    pass
+            else:
+                # plain text find (respect case checkbox)
+                if not term_text:
+                    if target is not None:
+                        target.setExtraSelections([])
+                    return
+                start = 0
+                text_to_search = doc_text
+                if not (getattr(self, '_body_case_cb', None) and self._body_case_cb.isChecked()):
+                    term_low = term_text.lower()
+                    text_to_search = doc_text.lower()
+                else:
+                    term_low = term_text
+                while True:
+                    idx = text_to_search.find(term_low, start)
+                    if idx == -1:
+                        break
+                    if target is not None:
+                        sel = QTextEdit.ExtraSelection()
+                        cursor = target.textCursor()
+                        cursor.setPosition(idx)
+                        cursor.setPosition(idx + len(term_low), QTextCursor.MoveMode.KeepAnchor)
+                        sel.cursor = cursor
+                        sel.format = fmt
+                        selections.append(sel)
+                    start = idx + max(1, len(term_low))
+
+            if target is not None:
+                target.setExtraSelections(selections)
+        except RuntimeError:
+            logger.debug("Body editor unavailable while highlighting", exc_info=True)
+        except Exception:
+            logger.debug("Error during body highlight", exc_info=True)
+
+    def _body_find_next(self) -> None:
+        try:
+            term_input = getattr(self, '_body_search_input', None)
+            if term_input is None:
+                return
+            term = term_input.text()
+            if not term:
+                return
+            has_widget = getattr(self.body_text, '_has_widget', lambda: False)()
+            target = getattr(self.body_text, '_widget', None) if has_widget else None
+            doc_text = target.toPlainText() if target is not None else getattr(self.body_text, '_buffer', '')
+
+            # JSONPath
+            if getattr(self, '_body_jsonpath_cb', None) and self._body_jsonpath_cb.isChecked():
+                positions = self._find_jsonpath_positions(term)
+                if positions and target is not None:
+                    pos = positions[0]
+                    cursor = target.textCursor()
+                    cursor.setPosition(pos)
+                    cursor.setPosition(min(pos + 50, len(doc_text)), QTextCursor.MoveMode.KeepAnchor)
+                    target.setTextCursor(cursor)
+                return
+
+            # Regex
+            if getattr(self, '_body_regex_cb', None) and self._body_regex_cb.isChecked():
+                import re
+                flags_re = 0 if (getattr(self, '_body_case_cb', None) and self._body_case_cb.isChecked()) else re.IGNORECASE
+                m = re.search(term, doc_text, flags_re)
+                if m and target is not None:
+                    cursor = target.textCursor()
+                    cursor.setPosition(m.start())
+                    cursor.setPosition(m.end(), QTextCursor.MoveMode.KeepAnchor)
+                    target.setTextCursor(cursor)
+                return
+
+            # Plain text: use QTextDocument.find with wrap-around
+            if target is None:
+                return
+            found = target.find(term)
+            if not found:
+                cur = target.textCursor()
+                cur.movePosition(QTextCursor.MoveOperation.Start)
+                target.setTextCursor(cur)
+                target.find(term)
+        except RuntimeError:
+            logger.debug("Body editor unavailable during find next", exc_info=True)
+        except Exception:
+            logger.debug("Error during find next", exc_info=True)
+
+    def _body_find_prev(self) -> None:
+        try:
+            term_input = getattr(self, '_body_search_input', None)
+            if term_input is None:
+                return
+            term = term_input.text()
+            if not term:
+                return
+            has_widget = getattr(self.body_text, '_has_widget', lambda: False)()
+            target = getattr(self.body_text, '_widget', None) if has_widget else None
+            doc_text = target.toPlainText() if target is not None else getattr(self.body_text, '_buffer', '')
+
+            if getattr(self, '_body_regex_cb', None) and self._body_regex_cb.isChecked():
+                import re
+                flags_re = 0 if (getattr(self, '_body_case_cb', None) and self._body_case_cb.isChecked()) else re.IGNORECASE
+                text = doc_text
+                curpos = target.textCursor().position() if target is not None else 0
+                matches = [m for m in re.finditer(term, text, flags_re) if m.start() < curpos]
+                if matches and target is not None:
+                    m = matches[-1]
+                    cursor = target.textCursor()
+                    cursor.setPosition(m.start())
+                    cursor.setPosition(m.end(), QTextCursor.MoveMode.KeepAnchor)
+                    target.setTextCursor(cursor)
+                return
+
+            if target is None:
+                return
+            found = target.find(term, QTextDocument.FindFlag.FindBackward)
+            if not found:
+                cur = target.textCursor()
+                cur.movePosition(QTextCursor.MoveOperation.End)
+                target.setTextCursor(cur)
+                target.find(term, QTextDocument.FindFlag.FindBackward)
+        except RuntimeError:
+            logger.debug("Body editor unavailable during find prev", exc_info=True)
+        except Exception:
+            logger.debug("Error during find prev", exc_info=True)
+
+    def _find_jsonpath_positions(self, path: str) -> list:
+        """Small JSON-path evaluator supporting dot and bracket navigation.
+
+        Returns list of character offsets in the body text for matched values.
+        """
+        try:
+            has_widget = getattr(self.body_text, '_has_widget', lambda: False)()
+            text = getattr(self.body_text, '_widget', None).toPlainText() if has_widget else getattr(self.body_text, '_buffer', '')
+            if not text:
+                return []
+            obj = json.loads(text)
+        except Exception:
+            return []
+
+        # Parse path like a.b[0].c into steps
+        steps = []
+        i = 0
+        while i < len(path):
+            if path[i] == '.':
+                i += 1
                 continue
-            type_widget = self._multipart_table.cellWidget(r, 1)
-            field_type = type_widget.currentText() if type_widget else "text"
-            val_item = self._multipart_table.item(r, 2)
-            value = val_item.text() if val_item else ""
-            fields.append({"key": key, "type": field_type, "value": value})
-        return fields
+            if path[i] == '[':
+                j = path.find(']', i)
+                if j == -1:
+                    return []
+                idx = path[i+1:j]
+                if idx.isdigit():
+                    steps.append(int(idx))
+                else:
+                    steps.append(idx.strip('"\''))
+                i = j + 1
+            else:
+                j = i
+                while j < len(path) and path[j] not in '.[':
+                    j += 1
+                steps.append(path[i:j])
+                i = j
 
-    def _set_multipart_data(self, fields: list) -> None:
-        self._multipart_table.setRowCount(0)
-        for field in fields:
-            r = self._multipart_table.rowCount()
-            self._multipart_table.insertRow(r)
-            self._multipart_table.setItem(r, 0, QTableWidgetItem(field.get("key", "")))
-            type_combo = QComboBox()
-            type_combo.addItems(["text", "file"])
-            ft = field.get("type", "text")
-            type_combo.setCurrentText(ft if ft in ("text", "file") else "text")
-            self._multipart_table.setCellWidget(r, 1, type_combo)
-            self._multipart_table.setItem(r, 2, QTableWidgetItem(field.get("value", "")))
+        matches = []
+        def walk(o, sidx):
+            if sidx >= len(steps):
+                try:
+                    txt = json.dumps(o, ensure_ascii=False)
+                    off = text.find(txt)
+                    if off >= 0:
+                        matches.append(off)
+                except Exception:
+                    pass
+                return
+            step = steps[sidx]
+            if isinstance(step, int):
+                if isinstance(o, list) and 0 <= step < len(o):
+                    walk(o[step], sidx+1)
+            else:
+                if isinstance(o, dict) and step in o:
+                    walk(o[step], sidx+1)
+
+        walk(obj, 0)
+        return matches
 
     # ── Load / detect / clear ──────────────────────────────────────────
 
@@ -554,3 +722,116 @@ class _RequestBodyMixin:
         self._clear_dirty()
         self._update_tab_labels()
         self._update_url_suffix()
+
+    # ── Multipart helpers ───────────────────────────────────────────
+
+    def _multipart_add_row(self) -> None:
+        """Insert a new multipart row (Key, Type, Value/FilePath)."""
+        tbl = getattr(self, '_multipart_table', None)
+        if tbl is None:
+            raise RuntimeError("Multipart table unavailable")
+        try:
+            row = tbl.rowCount()
+            tbl.insertRow(row)
+            tbl.setItem(row, 0, QTableWidgetItem(""))
+            type_combo = QComboBox()
+            type_combo.addItems(["text", "file"])
+            tbl.setCellWidget(row, 1, type_combo)
+            tbl.setItem(row, 2, QTableWidgetItem(""))
+        except RuntimeError:
+            raise
+        except Exception:
+            logger.debug("Failed to add multipart row", exc_info=True)
+
+    def _multipart_remove_row(self) -> None:
+        """Remove selected multipart rows."""
+        tbl = getattr(self, '_multipart_table', None)
+        if tbl is None:
+            raise RuntimeError("Multipart table unavailable")
+        try:
+            rows = sorted({idx.row() for idx in tbl.selectedIndexes()}, reverse=True)
+            for r in rows:
+                tbl.removeRow(r)
+        except RuntimeError:
+            raise
+        except Exception:
+            logger.debug("Failed to remove multipart row", exc_info=True)
+
+    def _multipart_browse_file(self) -> None:
+        """Open file dialog and set chosen path into the selected row's Value cell."""
+        tbl = getattr(self, '_multipart_table', None)
+        if tbl is None:
+            raise RuntimeError("Multipart table unavailable")
+        try:
+            sel = tbl.currentRow()
+            if sel < 0:
+                # nothing selected
+                return
+            path, _ = QFileDialog.getOpenFileName(self, "Select file to upload", "", "All files (*)")
+            if path:
+                # Ensure there is an item at col 2
+                item = tbl.item(sel, 2)
+                if item is None:
+                    item = QTableWidgetItem(path)
+                    tbl.setItem(sel, 2, item)
+                else:
+                    item.setText(path)
+        except RuntimeError:
+            raise
+        except Exception:
+            logger.debug("Failed to browse multipart file", exc_info=True)
+
+    def _get_multipart_data(self) -> list:
+        """Return a list of multipart entries as dicts: {key, type, value}.
+
+        Skip rows with empty key.
+        """
+        tbl = getattr(self, '_multipart_table', None)
+        if tbl is None:
+            return []
+        out = []
+        try:
+            for r in range(tbl.rowCount()):
+                key_item = tbl.item(r, 0)
+                if key_item is None or not key_item.text().strip():
+                    continue
+                key = key_item.text().strip()
+                # Type may be a widget
+                type_widget = tbl.cellWidget(r, 1)
+                if isinstance(type_widget, QComboBox):
+                    t = type_widget.currentText()
+                else:
+                    t_item = tbl.item(r, 1)
+                    t = t_item.text() if t_item else "text"
+                val_item = tbl.item(r, 2)
+                v = val_item.text() if val_item else ""
+                out.append({"key": key, "type": t, "value": v})
+        except Exception:
+            logger.debug("Failed to read multipart data", exc_info=True)
+        return out
+
+    def _set_multipart_data(self, data) -> None:
+        """Load multipart rows from a list of dicts {'key','type','value'}.
+
+        Overwrites existing rows.
+        """
+        tbl = getattr(self, '_multipart_table', None)
+        if tbl is None:
+            raise RuntimeError("Multipart table unavailable")
+        try:
+            tbl.setRowCount(0)
+            for entry in (data or []):
+                row = tbl.rowCount()
+                tbl.insertRow(row)
+                tbl.setItem(row, 0, QTableWidgetItem(str(entry.get('key', ''))))
+                type_combo = QComboBox()
+                type_combo.addItems(["text", "file"])
+                t = entry.get('type', 'text')
+                idx = type_combo.findText(t)
+                if idx >= 0:
+                    type_combo.setCurrentIndex(idx)
+                tbl.setCellWidget(row, 1, type_combo)
+                tbl.setItem(row, 2, QTableWidgetItem(str(entry.get('value', ''))))
+        except Exception:
+            logger.debug("Failed to set multipart data", exc_info=True)
+

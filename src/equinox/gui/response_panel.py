@@ -6,14 +6,15 @@ from typing import Optional
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QTextEdit,
     QTabWidget, QTableWidget, QTableWidgetItem, QPushButton,
-    QHeaderView, QSplitter, QApplication, QLineEdit, QToolButton,
+    QHeaderView, QApplication, QLineEdit, QToolButton,
     QMenu, QDialog, QComboBox, QPlainTextEdit, QListWidget, QListWidgetItem,
+    QTreeWidget, QTreeWidgetItem,
 )
 from PyQt6.QtCore import Qt
-from PyQt6.QtGui import QFont, QColor, QTextDocument, QTextCharFormat, QTextCursor, QKeySequence, QShortcut
+from PyQt6.QtGui import QColor, QTextDocument, QTextCharFormat, QTextCursor, QKeySequence, QShortcut
 
 from equinox.gui.theme import Colors, get_mono_font
-from equinox.core.request import Response, Request
+from equinox.core.request import Response
 
 
 class _SearchBar(QWidget):
@@ -145,10 +146,12 @@ class _HeaderTable(QTableWidget):
         self._all_headers: dict = {}
 
     def load(self, headers: dict) -> None:
-        self._all_headers = dict(sorted(headers.items()))
+        """Load a headers dict into the table (keeps internal copy for filtering)."""
+        self._all_headers = dict(sorted((k, v) for k, v in headers.items()))
         self._apply_filter("")
 
     def filter(self, text: str) -> None:
+        """Filter visible rows by the provided text (case-insensitive)."""
         self._apply_filter(text)
 
     def _apply_filter(self, text: str) -> None:
@@ -162,6 +165,119 @@ class _HeaderTable(QTableWidget):
             self.setItem(row, 0, QTableWidgetItem(k))
             self.setItem(row, 1, QTableWidgetItem(str(v)))
         self.resizeRowsToContents()
+
+
+class _JsonTree(QWidget):
+    """Simple collapsible JSON viewer using QTreeWidget.
+
+    Shows objects and arrays as expandable nodes and primitive values as leaves.
+    Provides Expand All / Collapse All / Copy JSON controls.
+    """
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self._last_obj = None
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(0, 2, 0, 0)
+        layout.setSpacing(4)
+
+        # Toolbar
+        toolbar = QHBoxLayout()
+        self._expand_btn = QPushButton("Expand All")
+        self._expand_btn.setFixedWidth(90)
+        self._collapse_btn = QPushButton("Collapse All")
+        self._collapse_btn.setFixedWidth(90)
+        self._copy_btn = QPushButton("Copy JSON")
+        self._copy_btn.setFixedWidth(90)
+
+        self._expand_btn.clicked.connect(self._on_expand_all)
+        self._collapse_btn.clicked.connect(self._on_collapse_all)
+        self._copy_btn.clicked.connect(self._on_copy_json)
+
+        toolbar.addWidget(self._expand_btn)
+        toolbar.addWidget(self._collapse_btn)
+        toolbar.addStretch()
+        toolbar.addWidget(self._copy_btn)
+        layout.addLayout(toolbar)
+
+        # Tree
+        self.tree = QTreeWidget()
+        self.tree.setColumnCount(2)
+        self.tree.setHeaderLabels(["Key", "Value"])
+        hdr = self.tree.header()
+        hdr.setSectionResizeMode(0, QHeaderView.ResizeMode.Interactive)
+        hdr.setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
+        self.tree.setAlternatingRowColors(True)
+        self.tree.setUniformRowHeights(True)
+        layout.addWidget(self.tree, 1)
+
+        # Placeholder label when no JSON is loaded
+        self._placeholder = QLabel("(no JSON to display)")
+        self._placeholder.setObjectName("mutedLabel")
+        layout.addWidget(self._placeholder)
+
+        self._show_placeholder(True)
+
+    def _show_placeholder(self, show: bool) -> None:
+        self._placeholder.setVisible(show)
+        self.tree.setVisible(not show)
+
+    def clear(self) -> None:
+        self._last_obj = None
+        self.tree.clear()
+        self._show_placeholder(True)
+
+    def load_json(self, obj) -> None:
+        """Load a Python object (from json.loads) into the tree."""
+        self._last_obj = obj
+        self.tree.clear()
+        root = self.tree.invisibleRootItem()
+
+        def _add(parent_item, value):
+            if isinstance(value, dict):
+                for k, v in value.items():
+                    if isinstance(v, (dict, list)):
+                        child = QTreeWidgetItem(parent_item, [str(k), ""])
+                        _add(child, v)
+                    else:
+                        # Show primitives as JSON-encoded strings for fidelity
+                        child = QTreeWidgetItem(parent_item, [str(k), json.dumps(v, ensure_ascii=False)])
+            elif isinstance(value, list):
+                for i, v in enumerate(value):
+                    key = f"[{i}]"
+                    if isinstance(v, (dict, list)):
+                        child = QTreeWidgetItem(parent_item, [key, ""])
+                        _add(child, v)
+                    else:
+                        child = QTreeWidgetItem(parent_item, [key, json.dumps(v, ensure_ascii=False)])
+            else:
+                # Fallback for primitives at the root
+                QTreeWidgetItem(parent_item, ["", json.dumps(value, ensure_ascii=False)])
+
+        # If the top-level object is a primitive, create one root item
+        if isinstance(obj, (dict, list)):
+            _add(root, obj)
+        else:
+            QTreeWidgetItem(root, ["value", json.dumps(obj, ensure_ascii=False)])
+
+        self.tree.expandToDepth(0)
+        self._show_placeholder(False)
+
+    def _on_expand_all(self) -> None:
+        self.tree.expandAll()
+
+    def _on_collapse_all(self) -> None:
+        self.tree.collapseAll()
+
+    def _on_copy_json(self) -> None:
+        if self._last_obj is None:
+            return
+        try:
+            text = json.dumps(self._last_obj, indent=2, ensure_ascii=False)
+            QApplication.clipboard().setText(text)
+        except Exception:
+            pass
 
 
 class ResponsePanel(QWidget):
@@ -223,6 +339,24 @@ class ResponsePanel(QWidget):
         self._wrap_btn.setToolTip("Toggle line wrapping in response body")
         self._wrap_btn.clicked.connect(self._toggle_word_wrap)
 
+        # View selector: Raw / JSON Tree
+        self._view_btn = QToolButton()
+        self._view_btn.setText("View")
+        self._view_btn.setPopupMode(QToolButton.ToolButtonPopupMode.MenuButtonPopup)
+        self._view_menu = QMenu(self._view_btn)
+        self._view_raw_act = self._view_menu.addAction("Raw")
+        self._view_json_act = self._view_menu.addAction("JSON Tree")
+        self._view_raw_act.setCheckable(True)
+        self._view_json_act.setCheckable(True)
+        # default preference: Raw view
+        self._view_raw_act.setChecked(True)
+        self._view_json_act.setChecked(False)
+        self._view_btn.setMenu(self._view_menu)
+        # Track preferred view (persist for the panel session)
+        self._prefer_json_view = False
+        self._view_raw_act.triggered.connect(lambda: self._on_view_selected("raw"))
+        self._view_json_act.triggered.connect(lambda: self._on_view_selected("json"))
+
         diff_btn = QPushButton("Diff…")
         diff_btn.setFixedWidth(56)
         diff_btn.setToolTip("Compare response body with a history entry")
@@ -234,6 +368,7 @@ class ResponsePanel(QWidget):
         status_row.addWidget(QLabel("|"))
         status_row.addWidget(self.size_label)
         status_row.addWidget(self._wrap_btn)
+        status_row.addWidget(self._view_btn)
         status_row.addWidget(diff_btn)
         status_row.addWidget(copy_btn)
         status_row.addWidget(download_btn)
@@ -330,6 +465,10 @@ class ResponsePanel(QWidget):
         cookies_vbox.addWidget(self._cookies_table, 1)
         self.tabs.addTab(cookies_widget, "Cookies")
 
+        # JSON Tree tab (collapsible view for JSON objects)
+        self._json_tree = _JsonTree()
+        self.tabs.addTab(self._json_tree, "JSON")
+
         # ── Sent Request tab ──────────────────────────────────────────
         sent_widget = self._build_sent_request_tab()
         self.tabs.addTab(sent_widget, "Sent Request")
@@ -419,6 +558,26 @@ class ResponsePanel(QWidget):
             self._body_warning.setVisible(False)
             self.body_text.set_code(self._pretty_body(response))
 
+        # JSON tree: populate when content is JSON and body is loaded
+        try:
+            can_show_json = bool(response.is_json and response.size <= self._LARGE_BODY_THRESHOLD)
+            if can_show_json:
+                obj = response.json()
+                self._json_tree.load_json(obj)
+            else:
+                self._json_tree.clear()
+            # Enable or disable the JSON Tree view option based on whether JSON is available
+            self._view_json_act.setEnabled(can_show_json)
+            # If user prefers JSON view and JSON is available, switch to it
+            if self._prefer_json_view and can_show_json:
+                self._switch_to_json_view()
+            else:
+                # otherwise ensure raw body is selected
+                self._switch_to_raw_view()
+        except Exception:
+            self._json_tree.clear()
+            self._view_json_act.setEnabled(False)
+
         # Response headers (reset filter on new response)
         self._hdrs_search.blockSignals(True)
         self._hdrs_search.clear()
@@ -448,7 +607,11 @@ class ResponsePanel(QWidget):
         self._display_sent_request(response)
 
         # Switch to Body tab automatically
-        self.tabs.setCurrentIndex(0)
+        # Respect user's preferred view (raw or JSON) when selecting tab
+        if self._prefer_json_view and self._view_json_act.isEnabled():
+            self._switch_to_json_view()
+        else:
+            self._switch_to_raw_view()
 
     def _display_sent_request(self, response: Response) -> None:
         """Populate the 'Sent Request' tab from the response's metadata."""
@@ -739,8 +902,39 @@ class ResponsePanel(QWidget):
 
     def _open_search(self) -> None:
         """Activate Ctrl+F search bar (switch to Body tab first)."""
-        self.tabs.setCurrentIndex(0)
+        # Ensure raw body is visible when opening search
+        self._switch_to_raw_view()
         self._search_bar.show_and_focus()
+
+    def _on_view_selected(self, which: str) -> None:
+        """Handle selection from the View menu (raw or json)."""
+        self._prefer_json_view = (which == "json")
+        if which == "json":
+            self._switch_to_json_view()
+        else:
+            self._switch_to_raw_view()
+
+    def _switch_to_raw_view(self) -> None:
+        # Body tab index assumed 0, JSON tab index found dynamically
+        for i in range(self.tabs.count()):
+            if self.tabs.tabText(i) == "Body":
+                self.tabs.setTabVisible(i, True)
+                self.tabs.setCurrentIndex(i)
+                break
+        # update menu checks
+        self._view_raw_act.setChecked(True)
+        self._view_json_act.setChecked(False)
+
+    def _switch_to_json_view(self) -> None:
+        # Find JSON tab and switch to it
+        for i in range(self.tabs.count()):
+            if self.tabs.tabText(i) == "JSON":
+                self.tabs.setTabVisible(i, True)
+                self.tabs.setCurrentIndex(i)
+                break
+        # update menu checks
+        self._view_raw_act.setChecked(False)
+        self._view_json_act.setChecked(True)
 
     def _copy_as_code(self, fmt: str) -> None:
         """Copy client code for the current request in *fmt* to the clipboard."""
@@ -902,3 +1096,8 @@ class ResponsePanel(QWidget):
         self.sent_method_label.setText("—")
         self.sent_url_label.setText("—")
         self.current_response = None
+        # Clear JSON tab as well
+        try:
+            self._json_tree.clear()
+        except Exception:
+            pass

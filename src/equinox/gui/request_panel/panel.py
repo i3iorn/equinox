@@ -23,7 +23,7 @@ from PyQt6.QtWidgets import (
     QFileDialog,
     QCheckBox,
     QDoubleSpinBox,
-    QFormLayout,
+    QFormLayout, QToolButton,
 )
 from PyQt6.QtCore import pyqtSignal, Qt, QTimer, QStringListModel
 from PyQt6.QtGui import QFont, QKeySequence, QShortcut
@@ -582,6 +582,41 @@ class RequestPanel(_RequestSendMixin, _RequestAuthMixin, _RequestBodyMixin, QWid
         self._fmt_json_btn.clicked.connect(self._format_json_body)
         self._fmt_json_btn.setVisible(False)
         type_bar.addWidget(self._fmt_json_btn)
+        # Inline search controls for the body editor: term + options
+        self._body_search_input = QLineEdit()
+        self._body_search_input.setPlaceholderText("Find in body…")
+        self._body_search_input.setFixedHeight(26)
+        self._body_search_input.setClearButtonEnabled(True)
+        self._body_search_input.returnPressed.connect(lambda: self._body_find_next())
+        self._body_search_input.textChanged.connect(lambda: self._body_highlight_all())
+
+        self._body_case_cb = QCheckBox("Aa")
+        self._body_case_cb.setToolTip("Case-sensitive")
+        self._body_case_cb.setFixedWidth(36)
+        self._body_regex_cb = QCheckBox(".*")
+        self._body_regex_cb.setToolTip("Use regular expression")
+        self._body_regex_cb.setFixedWidth(36)
+        self._body_jsonpath_cb = QCheckBox("$.")
+        self._body_jsonpath_cb.setToolTip("Interpret search as JSON path (dot/bracket syntax)")
+        self._body_jsonpath_cb.setFixedWidth(36)
+
+        prev_btn = QToolButton(); prev_btn.setText("▲"); prev_btn.setFixedSize(24, 24)
+        next_btn = QToolButton(); next_btn.setText("▼"); next_btn.setFixedSize(24, 24)
+        prev_btn.clicked.connect(lambda: self._body_find_prev())
+        next_btn.clicked.connect(lambda: self._body_find_next())
+
+        # Pack search controls into a horizontal layout placed under the type bar
+        search_row = QHBoxLayout()
+        search_row.setContentsMargins(0, 2, 0, 0)
+        search_row.setSpacing(4)
+        search_row.addWidget(QLabel("Find:"))
+        search_row.addWidget(self._body_search_input, 1)
+        search_row.addWidget(self._body_case_cb)
+        search_row.addWidget(self._body_regex_cb)
+        search_row.addWidget(self._body_jsonpath_cb)
+        search_row.addWidget(prev_btn)
+        search_row.addWidget(next_btn)
+        layout.addLayout(search_row)
 
         # (multipart controls are created once later as a top toolbar so
         # controls align with other tab toolbars)
@@ -650,6 +685,7 @@ class RequestPanel(_RequestSendMixin, _RequestAuthMixin, _RequestBodyMixin, QWid
 
         type_bar.addStretch()
         layout.addLayout(type_bar)
+        return w
 
     def _build_notes_tab(self) -> QWidget:
         """Notes tab: free-form description for the request."""
