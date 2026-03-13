@@ -1,10 +1,9 @@
 """JSON body editor with bracket-matching, auto-indent, line numbers, and more."""
 
 import json as _json
-import re
-from PyQt6.QtWidgets import QTextEdit, QWidget, QVBoxLayout, QPlainTextEdit
-from PyQt6.QtCore import Qt, QRect, QSize
-from PyQt6.QtGui import QTextCursor, QPainter, QColor, QFont, QTextFormat, QTextCharFormat
+from PyQt6.QtWidgets import QWidget, QPlainTextEdit
+from PyQt6.QtCore import Qt, QSize
+from PyQt6.QtGui import QTextCursor, QPainter, QColor, QTextCharFormat
 
 _OPEN_CLOSE = {"{": "}", "[": "]", '"': '"', "(": ")"}
 _CLOSE_CHARS = set(_OPEN_CLOSE.values())
@@ -49,8 +48,8 @@ class LineNumberArea(QWidget):
             block_number += 1
 
 
-class JsonBodyEditor(QTextEdit):
-    """QTextEdit with JSON-friendly editing helpers:
+class JsonBodyEditor(QPlainTextEdit):
+    """QPlainTextEdit with JSON-friendly editing helpers:
 
     Features:
     - Auto-close ``{``, ``[``, ``(`` and ``"`` (inserts matching closer)
@@ -77,7 +76,6 @@ class JsonBodyEditor(QTextEdit):
         self._update_line_number_area_width(0)
         
         # Visual settings
-        self.setAcceptRichText(False)
         self._bracket_pairs = {}  # Cache bracket positions for highlighting
         self.cursorPositionChanged.connect(self._on_cursor_position_changed)
 
@@ -112,19 +110,18 @@ class JsonBodyEditor(QTextEdit):
         self._highlight_matching_bracket()
 
     def _highlight_matching_bracket(self):
-        """Find and highlight matching bracket/brace at cursor."""
+        """Find and highlight matching bracket/brace at cursor using ExtraSelection."""
         cursor = self.textCursor()
         text = self.toPlainText()
-        pos = cursor.positionInBlock()
+        pos = cursor.position()
         
-        # Get character at cursor
-        block = cursor.block()
-        block_text = block.text()
+        # Clear previous highlights
+        self.setExtraSelections([])
         
-        if pos >= len(block_text):
+        if pos <= 0 or pos > len(text):
             return
         
-        char = block_text[pos] if pos < len(block_text) else ""
+        char = text[pos - 1] if pos > 0 else ""
         
         # Find matching bracket
         matching_pos = None
@@ -132,7 +129,7 @@ class JsonBodyEditor(QTextEdit):
             matching_char = _OPEN_CLOSE[char]
             # Find closing bracket
             count = 1
-            search_pos = cursor.position() + 1
+            search_pos = pos
             while search_pos < len(text) and count > 0:
                 if text[search_pos] == char:
                     count += 1
@@ -151,7 +148,7 @@ class JsonBodyEditor(QTextEdit):
                     break
             if opening:
                 count = 1
-                search_pos = cursor.position() - 1
+                search_pos = pos - 2
                 while search_pos >= 0 and count > 0:
                     if text[search_pos] == char:
                         count += 1
@@ -162,23 +159,41 @@ class JsonBodyEditor(QTextEdit):
                             break
                     search_pos -= 1
         
-        # Clear previous highlights
-        fmt = QTextCharFormat()
-        cursor.select(QTextCursor.SelectionType.Document)
-        cursor.setCharFormat(fmt)
-        self.setTextCursor(cursor)
+        # Highlight matching bracket using ExtraSelection
+        if matching_pos is not None:
+            fmt = QTextCharFormat()
+            fmt.setBackground(QColor(200, 200, 0, 100))
+            fmt.setForeground(QColor(0, 0, 0))
+            
+            # Highlight both brackets
+            sel1 = self._make_selection(pos - 1, fmt)
+            sel2 = self._make_selection(matching_pos, fmt)
+            
+            self.setExtraSelections([sel1, sel2])
+
+    def _make_selection(self, pos, fmt):
+        """Create an ExtraSelection for a single character."""
+        from PyQt6.QtWidgets import QTextEdit
+        cursor = QTextCursor(self.document())
+        cursor.setPosition(pos)
+        cursor.movePosition(QTextCursor.MoveOperation.NextCharacter, QTextCursor.MoveMode.KeepAnchor)
+        
+        selection = QTextEdit.ExtraSelection()
+        selection.cursor = cursor
+        selection.format = fmt
+        return selection
 
     def keyPressEvent(self, event) -> None:  # type: ignore[override]
         key = event.key()
         modifiers = event.modifiers()
         
         # Ctrl+Shift+F → auto-format JSON
-        if key == Qt.Key.Key_F and modifiers == (Qt.KeyboardModifier.ControlModifier | Qt.KeyboardModifier.ShiftModifier):
+        if key == Qt.Key.Key_F and modifiers & (Qt.KeyboardModifier.ControlModifier | Qt.KeyboardModifier.ShiftModifier) == (Qt.KeyboardModifier.ControlModifier | Qt.KeyboardModifier.ShiftModifier):
             self._auto_format_json()
             return
         
         # Ctrl+/ → toggle comment
-        if key == Qt.Key.Key_Slash and modifiers == Qt.KeyboardModifier.ControlModifier:
+        if key == Qt.Key.Key_Slash and modifiers & Qt.KeyboardModifier.ControlModifier:
             self._toggle_comment()
             return
         
@@ -221,14 +236,47 @@ class JsonBodyEditor(QTextEdit):
         self.setTextCursor(cursor)
         return True
 
+    def _handle_tab(self, key: int, modifiers, cursor: QTextCursor) -> bool:
+        """Tab / Shift+Tab → indent / dedent."""
+        if key == Qt.Key.Key_Tab:
+            if modifiers & Qt.KeyboardModifier.ShiftModifier:
+                # Shift+Tab: dedent
+                self.decrease_indent()
+            else:
+                # Tab: indent
+                if cursor.hasSelection():
+                    self._increase_indent()
+                else:
+                    # Insert 4 spaces at cursor
+                    cursor.insertText(" " * self._INDENT_SIZE)
+            return True
+        return False
+
     def _handle_enter(self, key: int, modifiers, cursor: QTextCursor) -> bool:
-        """Enter / Return → auto-indent."""
+        """Enter / Return → auto-indent and auto-comma in JSON."""
         if key not in (Qt.Key.Key_Return, Qt.Key.Key_Enter) or modifiers:
             return False
 
         block_text = cursor.block().text()
         leading_indent = len(block_text) - len(block_text.lstrip())
         stripped = block_text.rstrip()
+        
+        # Check if we should add a comma (we're in JSON and line doesn't end with comma/bracket)
+        should_add_comma = (
+            stripped and 
+            not stripped.endswith((",", "{", "[", "}", "]", ":")) and
+            self._is_in_json_structure(cursor)
+        )
+        
+        # Add comma if needed
+        if should_add_comma:
+            # Move cursor to end of current text (before any trailing whitespace)
+            insert_pos = cursor.block().position() + len(block_text)
+            cursor.setPosition(insert_pos)
+            cursor.insertText(",")
+            # Get fresh cursor for further processing
+            cursor = self.textCursor()
+        
         extra = self._INDENT_SIZE if stripped.endswith(("{", "[")) else 0
         new_indent = " " * (leading_indent + extra)
 
@@ -442,4 +490,49 @@ class JsonBodyEditor(QTextEdit):
         clone = QTextCursor(cursor)
         clone.movePosition(QTextCursor.MoveOperation.NextCharacter, QTextCursor.MoveMode.KeepAnchor)
         return clone.selectedText()
+
+    def _is_in_json_structure(self, cursor: QTextCursor) -> bool:
+        """Check if cursor position is inside a JSON object or array."""
+        text = self.toPlainText()
+        pos = cursor.position()
+        
+        # Count brackets up to cursor position
+        brace_depth = 0
+        bracket_depth = 0
+        in_string = False
+        escape_next = False
+        
+        for i in range(min(pos, len(text))):
+            char = text[i]
+            
+            # Handle string escaping
+            if escape_next:
+                escape_next = False
+                continue
+            
+            if char == "\\":
+                escape_next = True
+                continue
+            
+            # Toggle string state
+            if char == '"':
+                in_string = not in_string
+                continue
+            
+            # Skip bracket counting inside strings
+            if in_string:
+                continue
+            
+            # Count brackets
+            if char == "{":
+                brace_depth += 1
+            elif char == "}":
+                brace_depth -= 1
+            elif char == "[":
+                bracket_depth += 1
+            elif char == "]":
+                bracket_depth -= 1
+        
+        # We're in a JSON structure if we have unclosed braces or brackets
+        return brace_depth > 0 or bracket_depth > 0
 
