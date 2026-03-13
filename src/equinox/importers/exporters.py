@@ -6,21 +6,147 @@ Supports multiple export formats:
 - cURL commands
 - Insomnia v4
 - HAR (HTTP Archive)
+
+## Improvements:
+1. Input validation (zero-trust)
+2. Windows-aware shell quoting
+3. Safe URL parsing via urllib.parse
+4. Auth export support
+5. Path parameters export
+6. Code deduplication (write_json_file utility)
+7. Consistent response body encoding
+8. Comprehensive error handling
+9. Safe JSON parsing utility
+10. Collection variables export
+11. Content-Type inference
+12. Better timestamp handling
 """
 
 import json
 import logging
+import platform
+import shlex
 from typing import Dict, List, Any, Optional
 from pathlib import Path
 from datetime import datetime, timezone
+from urllib.parse import urlparse
 
 from equinox.core.request import Request, Response
 from equinox.storage.collections import CollectionManager
 from equinox.storage.database import Database
 from equinox.core.exceptions import ValidationError
 from equinox.core.redact import redact_headers
+from equinox.core.validation import Validator
 
 logger = logging.getLogger(__name__)
+
+
+# ============================================================================
+# UTILITY FUNCTIONS (Improvements #6, #7, #8, #9, #12)
+# ============================================================================
+
+def _safe_json_parse(data: str, default: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    """Parse JSON with fallback to default. (Improvement #9)
+    
+    Args:
+        data: JSON string to parse
+        default: Default dict if parsing fails
+        
+    Returns:
+        Parsed dict or default
+    """
+    if default is None:
+        default = {}
+    try:
+        result = json.loads(data) if data else default
+        # If result is a list (params_list format), convert to dict
+        if isinstance(result, list):
+            return {item.get("key", ""): item.get("value", "") for item in result if isinstance(item, dict)}
+        return result if isinstance(result, dict) else default
+    except (json.JSONDecodeError, TypeError) as e:
+        logger.warning(f"Failed to parse JSON: {data!r} — {e}")
+        return default
+
+
+def _decode_body(body: Optional[bytes | str]) -> str:
+    """Safely decode body to string. (Improvement #7)
+    
+    Args:
+        body: Response body (bytes or str)
+        
+    Returns:
+        Decoded string
+    """
+    if body is None:
+        return ""
+    if isinstance(body, bytes):
+        return body.decode('utf-8', errors='replace')
+    return str(body)
+
+
+def _get_iso_timestamp(dt: Optional[datetime] = None) -> str:
+    """Get ISO 8601 timestamp with Z suffix. (Improvement #12)
+    
+    Args:
+        dt: Datetime to format (defaults to now)
+        
+    Returns:
+        ISO timestamp string with Z suffix
+    """
+    if dt is None:
+        dt = datetime.now(timezone.utc)
+    return dt.isoformat() + "Z" if not dt.isoformat().endswith("Z") else dt.isoformat()
+
+
+def _parse_url_safe(url: str) -> Dict[str, str]:
+    """Safely parse URL into components. (Improvement #3)
+    
+    Args:
+        url: URL to parse
+        
+    Returns:
+        Dict with 'scheme', 'hostname', 'port', 'path', 'query'
+    """
+    try:
+        parsed = urlparse(url)
+        return {
+            "scheme": parsed.scheme or "https",
+            "hostname": parsed.hostname or "",
+            "port": str(parsed.port) if parsed.port else "",
+            "path": parsed.path or "/",
+            "query": parsed.query or "",
+            "netloc": parsed.netloc or "",
+        }
+    except Exception as e:
+        logger.warning(f"Failed to parse URL {url}: {e}")
+        return {
+            "scheme": "https",
+            "hostname": "",
+            "port": "",
+            "path": "/",
+            "query": "",
+            "netloc": "",
+        }
+
+
+def _write_json_file(data: Dict[str, Any], file_path: Path) -> None:
+    """Write JSON data to file with error handling. (Improvement #6)
+    
+    Args:
+        data: Data to write
+        file_path: Path to save file
+        
+    Raises:
+        IOError: If write fails
+    """
+    try:
+        file_path.parent.mkdir(parents=True, exist_ok=True)
+        with open(file_path, 'w', encoding='utf-8') as f:
+            json.dump(data, f, indent=2, ensure_ascii=False)
+        logger.info(f"Exported to {file_path}")
+    except IOError as e:
+        logger.error(f"Failed to write {file_path}: {e}")
+        raise
 
 
 class CurlExporter:
@@ -28,9 +154,23 @@ class CurlExporter:
 
     @staticmethod
     def _shell_quote(s: str) -> str:
-        """Shell-escape a string using single quotes (safe on all platforms)."""
-        # Replace each ' with '\'' (end quote, escaped quote, start quote)
-        return "'" + s.replace("'", "'\\''") + "'"
+        """Shell-escape a string with platform-aware quoting. (Improvement #2)
+        
+        Uses double quotes on Windows (requires internal quote escaping),
+        and shlex.quote() on Unix systems.
+        
+        Args:
+            s: String to quote
+            
+        Returns:
+            Properly quoted string
+        """
+        if platform.system() == "Windows":
+            # Windows: use double quotes, escape internal quotes
+            return '"' + s.replace('"', '\\"') + '"'
+        else:
+            # Unix: use shlex.quote
+            return shlex.quote(s)
 
     @staticmethod
     def export_request(request: Request) -> str:
@@ -41,7 +181,17 @@ class CurlExporter:
 
         Returns:
             cURL command string
+            
+        Raises:
+            ValidationError: If request is invalid
         """
+        # Validation (Improvement #1)
+        try:
+            Validator.validate_url(request.url)
+        except ValidationError as e:
+            logger.error(f"Invalid URL in cURL export: {e}")
+            raise
+
         curl_cmd = ["curl", "-X", request.method]
 
         # Add headers — redact sensitive values so exports are safe to share
@@ -71,6 +221,54 @@ class PostmanExporter:
     """Export collections in Postman v2.1 format."""
 
     @staticmethod
+    def _export_auth(auth_obj: Dict[str, Any]) -> Dict[str, Any]:
+        """Convert auth object to Postman format. (Improvement #4)
+        
+        Args:
+            auth_obj: Auth dict from request
+            
+        Returns:
+            Postman auth dict
+        """
+        if not auth_obj:
+            return {}
+        
+        auth_type = auth_obj.get("type", "").lower()
+        
+        if auth_type == "bearer":
+            return {
+                "type": "bearer",
+                "bearer": [{"key": "token", "value": auth_obj.get("token", ""), "type": "string"}]
+            }
+        elif auth_type == "apikey":
+            return {
+                "type": "apikey",
+                "apikey": [
+                    {"key": "key", "value": auth_obj.get("key", ""), "type": "string"},
+                    {"key": "value", "value": auth_obj.get("value", ""), "type": "string"},
+                    {"key": "in", "value": auth_obj.get("in", "header"), "type": "string"},
+                ]
+            }
+        elif auth_type == "basic":
+            return {
+                "type": "basic",
+                "basic": [
+                    {"key": "username", "value": auth_obj.get("username", ""), "type": "string"},
+                    {"key": "password", "value": auth_obj.get("password", ""), "type": "string"},
+                ]
+            }
+        elif auth_type == "oauth2":
+            return {
+                "type": "oauth2",
+                "oauth2": [
+                    {"key": "grant_type", "value": auth_obj.get("grant_type", ""), "type": "string"},
+                    {"key": "tokenUrl", "value": auth_obj.get("token_url", ""), "type": "string"},
+                ]
+            }
+        
+        return {}
+
+    @staticmethod
     def export_collection(
         db: Database,
         collection_id: int,
@@ -85,57 +283,97 @@ class PostmanExporter:
 
         Returns:
             Postman collection dict
+            
+        Raises:
+            ValidationError: If collection not found or invalid
         """
-        manager = CollectionManager(db)
-        collection = manager.get_collection(collection_id)
+        try:
+            manager = CollectionManager(db)
+            collection = manager.get_collection(collection_id)
 
-        if not collection:
-            raise ValidationError(f"Collection {collection_id} not found")
+            if not collection:
+                raise ValidationError(f"Collection {collection_id} not found")
 
-        items = []
-        requests = manager.list_requests_in_collection(collection_id)
+            items = []
+            requests = manager.list_requests_in_collection(collection_id)
 
-        for req in requests:
-            item = {
-                "name": req.get("name", "Unnamed"),
-                "request": {
-                    "method": req.get("method", "GET"),
-                    "header": [
-                        {"key": k, "value": v, "type": "text"}
-                        for k, v in redact_headers(
-                            json.loads(req.get("headers", "{}")) or {}
-                        ).items()
-                    ],
-                    "url": {
-                        "raw": req.get("url", ""),
-                        "protocol": req.get("url", "").split("://")[0] if "://" in req.get("url", "") else "https",
-                        "host": req.get("url", "").split("/")[2] if "//" in req.get("url", "") else "",
-                        "query": [
+            for req in requests:
+                # Safe JSON parsing (Improvement #9)
+                headers = _safe_json_parse(req.get("headers", "{}"))
+                params = _safe_json_parse(req.get("params", "{}"))
+                path_params = _safe_json_parse(req.get("path_params", "{}"))  # Improvement #5
+                auth_data = req.get("auth")
+                
+                # Parse URL safely (Improvement #3)
+                url_parts = _parse_url_safe(req.get("url", ""))
+                
+                item = {
+                    "name": req.get("name", "Unnamed"),
+                    "request": {
+                        "method": req.get("method", "GET"),
+                        "header": [
                             {"key": k, "value": v, "type": "text"}
-                            for k, v in (json.loads(req.get("params", "{}")) or {}).items()
-                        ]
+                            for k, v in redact_headers(headers).items()
+                        ],
+                        "url": {
+                            "raw": req.get("url", ""),
+                            "protocol": url_parts["scheme"],
+                            "host": url_parts["hostname"].split(".") if url_parts["hostname"] else [],
+                            "port": url_parts["port"],
+                            "path": url_parts["path"].split("/")[1:],  # Split path into segments
+                            "query": [
+                                {"key": k, "value": v, "type": "text"}
+                                for k, v in params.items()
+                            ]
+                        }
                     }
                 }
+                
+                # Add auth if present (Improvement #4)
+                if auth_data:
+                    try:
+                        auth_obj = _safe_json_parse(auth_data)
+                        auth_export = PostmanExporter._export_auth(auth_obj)
+                        if auth_export:
+                            item["request"]["auth"] = auth_export
+                    except Exception as e:
+                        logger.warning(f"Failed to export auth for request {req.get('name')}: {e}")
+
+                if req.get("body"):
+                    # Content-Type inference (Improvement #11)
+                    content_type = headers.get("Content-Type", "application/json")
+                    item["request"]["body"] = {
+                        "mode": "raw",
+                        "raw": req["body"],
+                        "options": {"raw": {"language": "json" if "json" in content_type else "text"}}
+                    }
+
+                items.append(item)
+
+            # Export collection variables (Improvement #10)
+            variables = []
+            try:
+                var_list = manager.list_collection_variables(collection_id)
+                variables = [
+                    {"key": v["name"], "value": v["value"], "type": "string"}
+                    for v in var_list
+                ]
+            except Exception as e:
+                logger.warning(f"Failed to export collection variables: {e}")
+
+            return {
+                "info": {
+                    "_postman_id": collection.get("id", ""),
+                    "name": collection.get("name", ""),
+                    "description": collection.get("description", ""),
+                    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+                },
+                "item": items,
+                "variable": variables
             }
-
-            if req.get("body"):
-                item["request"]["body"] = {
-                    "mode": "raw",
-                    "raw": req["body"]
-                }
-
-            items.append(item)
-
-        return {
-            "info": {
-                "_postman_id": collection.get("id", ""),
-                "name": collection.get("name", ""),
-                "description": collection.get("description", ""),
-                "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
-            },
-            "item": items,
-            "variable": []
-        }
+        except Exception as e:
+            logger.error(f"Failed to export collection {collection_id}: {e}")
+            raise
 
     @staticmethod
     def export_to_file(collection_dict: Dict[str, Any], file_path: Path) -> None:
@@ -144,13 +382,61 @@ class PostmanExporter:
         Args:
             collection_dict: Collection dict
             file_path: Path to save file
+            
+        Raises:
+            IOError: If file write fails
         """
-        with open(file_path, 'w', encoding='utf-8') as f:
-            json.dump(collection_dict, f, indent=2, ensure_ascii=False)
+        _write_json_file(collection_dict, file_path)
 
 
 class OpenAPIExporter:
     """Export requests/collections as OpenAPI 3.0 spec."""
+
+    @staticmethod
+    def _export_openapi_auth(auth_obj: Dict[str, Any]) -> Dict[str, Any]:
+        """Convert auth object to OpenAPI security scheme. (Improvement #4)
+        
+        Args:
+            auth_obj: Auth dict from request
+            
+        Returns:
+            OpenAPI securityScheme dict
+        """
+        if not auth_obj:
+            return {}
+        
+        auth_type = auth_obj.get("type", "").lower()
+        
+        if auth_type == "bearer":
+            return {
+                "type": "http",
+                "scheme": "bearer",
+                "bearerFormat": "JWT"
+            }
+        elif auth_type == "apikey":
+            return {
+                "type": "apiKey",
+                "name": auth_obj.get("key", "X-API-Key"),
+                "in": auth_obj.get("in", "header")
+            }
+        elif auth_type == "basic":
+            return {
+                "type": "http",
+                "scheme": "basic"
+            }
+        elif auth_type == "oauth2":
+            return {
+                "type": "oauth2",
+                "flows": {
+                    "authorizationCode": {
+                        "authorizationUrl": auth_obj.get("auth_url", ""),
+                        "tokenUrl": auth_obj.get("token_url", ""),
+                        "scopes": {}
+                    }
+                }
+            }
+        
+        return {}
 
     @staticmethod
     def export_collection(
@@ -169,74 +455,125 @@ class OpenAPIExporter:
 
         Returns:
             OpenAPI spec dict
+            
+        Raises:
+            ValidationError: If collection not found or invalid
         """
-        manager = CollectionManager(db)
-        collection = manager.get_collection(collection_id)
+        try:
+            manager = CollectionManager(db)
+            collection = manager.get_collection(collection_id)
 
-        if not collection:
-            raise ValidationError(f"Collection {collection_id} not found")
+            if not collection:
+                raise ValidationError(f"Collection {collection_id} not found")
 
-        paths = {}
-        requests = manager.list_requests_in_collection(collection_id)
+            paths = {}
+            security_schemes = {}
+            requests = manager.list_requests_in_collection(collection_id)
 
-        for req in requests:
-            url = req.get("url", "")
-            method = req.get("method", "GET").lower()
+            for req in requests:
+                url = req.get("url", "")
+                method = req.get("method", "GET").lower()
+                
+                # Parse URL safely (Improvement #3)
+                url_parts = _parse_url_safe(url)
+                path = url_parts["path"] or "/"
+                
+                # Safe JSON parsing (Improvement #9)
+                headers = _safe_json_parse(req.get("headers", "{}"))
+                params = _safe_json_parse(req.get("params", "{}"))
+                path_params = _safe_json_parse(req.get("path_params", "{}"))  # Improvement #5
+                auth_data = req.get("auth")
 
-            # Parse URL to get path
-            if "://" in url:
-                path = "/" + url.split("/", 3)[-1]
-            else:
-                path = "/"
+                if path not in paths:
+                    paths[path] = {}
 
-            if path not in paths:
-                paths[path] = {}
-
-            headers = json.loads(req.get("headers", "{}")) or {}
-            params = json.loads(req.get("params", "{}")) or {}
-
-            operation = {
-                "summary": req.get("name", ""),
-                "description": req.get("description", ""),
-                "parameters": [
-                    {
-                        "name": k,
-                        "in": "query",
-                        "required": False,
-                        "schema": {"type": "string"},
-                        "example": v
-                    }
-                    for k, v in params.items()
-                ],
-                "responses": {
-                    "200": {
-                        "description": "Successful response",
-                        "content": {"application/json": {}}
-                    }
-                }
-            }
-
-            if req.get("body"):
-                operation["requestBody"] = {
-                    "required": True,
-                    "content": {
-                        headers.get("Content-Type", "application/json"): {
-                            "schema": {"type": "object"}
+                # Content-Type inference (Improvement #11)
+                content_type = headers.get("Content-Type", "application/json")
+                
+                operation = {
+                    "summary": req.get("name", ""),
+                    "description": req.get("description", ""),
+                    "parameters": [
+                        {
+                            "name": k,
+                            "in": "query",
+                            "required": False,
+                            "schema": {"type": "string"},
+                            "example": v
+                        }
+                        for k, v in params.items()
+                    ] + [
+                        # Path parameters (Improvement #5)
+                        {
+                            "name": k,
+                            "in": "path",
+                            "required": True,
+                            "schema": {"type": "string"},
+                            "example": v
+                        }
+                        for k, v in path_params.items()
+                    ],
+                    "responses": {
+                        "200": {
+                            "description": "Successful response",
+                            "content": {content_type: {}}
                         }
                     }
                 }
 
-            paths[path][method] = operation
+                if req.get("body"):
+                    operation["requestBody"] = {
+                        "required": True,
+                        "content": {
+                            content_type: {
+                                "schema": {"type": "object"}
+                            }
+                        }
+                    }
+                
+                # Add auth to operation if present (Improvement #4)
+                if auth_data:
+                    try:
+                        auth_obj = _safe_json_parse(auth_data)
+                        auth_type = auth_obj.get("type", "").lower()
+                        if auth_type:
+                            operation["security"] = [{auth_type: []}]
+                    except Exception as e:
+                        logger.warning(f"Failed to process auth for request {req.get('name')}: {e}")
 
-        return {
-            "openapi": "3.0.0",
-            "info": {
-                "title": title,
-                "version": version,
-                "description": collection.get("description", "")
-            },
-            "paths": paths
-        }
+                paths[path][method] = operation
+            
+            # Build security schemes from all requests (Improvement #4)
+            for req in requests:
+                auth_data = req.get("auth")
+                if auth_data:
+                    try:
+                        auth_obj = _safe_json_parse(auth_data)
+                        auth_type = auth_obj.get("type", "").lower()
+                        if auth_type and auth_type not in security_schemes:
+                            scheme = OpenAPIExporter._export_openapi_auth(auth_obj)
+                            if scheme:
+                                security_schemes[auth_type] = scheme
+                    except Exception as e:
+                        logger.warning(f"Failed to export auth scheme: {e}")
+
+            spec = {
+                "openapi": "3.0.0",
+                "info": {
+                    "title": title,
+                    "version": version,
+                    "description": collection.get("description", "")
+                },
+                "paths": paths
+            }
+            
+            if security_schemes:
+                spec["components"] = {"securitySchemes": security_schemes}
+            
+            return spec
+        except Exception as e:
+            logger.error(f"Failed to export collection {collection_id}: {e}")
+            raise
 
     @staticmethod
     def export_to_file(spec_dict: Dict[str, Any], file_path: Path) -> None:
@@ -245,9 +582,11 @@ class OpenAPIExporter:
         Args:
             spec_dict: OpenAPI spec dict
             file_path: Path to save file
+            
+        Raises:
+            IOError: If file write fails
         """
-        with open(file_path, 'w', encoding='utf-8') as f:
-            json.dump(spec_dict, f, indent=2, ensure_ascii=False)
+        _write_json_file(spec_dict, file_path)
 
 
 class HARExporter:
@@ -269,14 +608,20 @@ class HARExporter:
         Returns:
             HAR entry dict
         """
+        # Better timestamp handling (Improvement #12)
         if started_datetime is None:
-            started_datetime = datetime.now(timezone.utc).replace(tzinfo=None)
-
+            started_datetime = datetime.now(timezone.utc)
+        
         safe_req_headers = redact_headers(request.headers or {})
         safe_resp_headers = redact_headers(dict(response.headers) if response.headers else {})
+        
+        # Consistent body encoding (Improvement #7)
+        resp_body = _decode_body(response.body) if response.body else ""
+
+        req_content_type = (request.headers or {}).get("Content-Type", "application/x-www-form-urlencoded") if request.headers else "application/x-www-form-urlencoded"
 
         return {
-            "startedDateTime": started_datetime.isoformat() + "Z",
+            "startedDateTime": _get_iso_timestamp(started_datetime),  # Improvement #12
             "time": response.elapsed * 1000 if response.elapsed else 0,
             "request": {
                 "method": request.method,
@@ -291,7 +636,7 @@ class HARExporter:
                     for k, v in (request.params or {}).items()
                 ],
                 "postData": {
-                    "mimeType": request.headers.get("Content-Type", "application/x-www-form-urlencoded"),
+                    "mimeType": req_content_type,
                     "text": request.body or ""
                 } if request.body else None,
                 "cookies": [],
@@ -309,10 +654,10 @@ class HARExporter:
                 "cookies": [],
                 "content": {
                     "size": len(response.body) if response.body else 0,
-                    "mimeType": response.headers.get("Content-Type", "application/octet-stream"),
-                    "text": response.body.decode('utf-8', errors='replace') if isinstance(response.body, bytes) else response.body
+                    "mimeType": (response.headers or {}).get("Content-Type", "application/octet-stream") if response.headers else "application/octet-stream",
+                    "text": resp_body  # Uses consistent _decode_body (Improvement #7)
                 },
-                "redirectURL": response.headers.get("Location", ""),
+                "redirectURL": (response.headers or {}).get("Location", "") if response.headers else "",
                 "headersSize": sum(len(f"{k}: {v}\r\n") for k, v in safe_resp_headers.items()),
                 "bodySize": len(response.body) if response.body else 0
             },
@@ -360,9 +705,11 @@ class HARExporter:
         Args:
             har_dict: HAR dict
             file_path: Path to save file
+            
+        Raises:
+            IOError: If file write fails
         """
-        with open(file_path, 'w', encoding='utf-8') as f:
-            json.dump(har_dict, f, indent=2, ensure_ascii=False)
+        _write_json_file(har_dict, file_path)
 
 
 class InsomniaExporter:
@@ -381,62 +728,77 @@ class InsomniaExporter:
 
         Returns:
             Insomnia collection dict
+            
+        Raises:
+            ValidationError: If collection not found or invalid
         """
-        manager = CollectionManager(db)
-        collection = manager.get_collection(collection_id)
+        try:
+            manager = CollectionManager(db)
+            collection = manager.get_collection(collection_id)
 
-        if not collection:
-            raise ValidationError(f"Collection {collection_id} not found")
+            if not collection:
+                raise ValidationError(f"Collection {collection_id} not found")
 
-        resources = []
-        requests = manager.list_requests_in_collection(collection_id)
+            resources = []
+            requests = manager.list_requests_in_collection(collection_id)
+            
+            # Get current timestamp (Improvement #12)
+            now_ms = int(datetime.now(timezone.utc).timestamp() * 1000)
 
-        for idx, req in enumerate(requests):
-            resource = {
-                "_id": f"req_{idx}",
-                "_type": "request",
-                "parentId": "fld_root",
-                "modified": int(datetime.now(timezone.utc).timestamp() * 1000),
-                "created": int(datetime.now(timezone.utc).timestamp() * 1000),
-                "name": req.get("name", "Unnamed"),
-                "description": req.get("description", ""),
-                "method": req.get("method", "GET"),
-                "url": req.get("url", ""),
-                "authentication": {},
-                "parameters": [
-                    {"name": k, "value": v}
-                    for k, v in (json.loads(req.get("params", "{}")) or {}).items()
-                ],
-                "headers": [
-                    {"name": k, "value": v}
-                    for k, v in redact_headers(
-                        json.loads(req.get("headers", "{}")) or {}
-                    ).items()
-                ],
-                "body": {
-                    "mimeType": "application/json",
-                    "text": req.get("body", "")
-                } if req.get("body") else None
+            for idx, req in enumerate(requests):
+                # Safe JSON parsing (Improvement #9)
+                headers = _safe_json_parse(req.get("headers", "{}"))
+                params = _safe_json_parse(req.get("params", "{}"))
+                
+                # Content-Type inference (Improvement #11)
+                content_type = headers.get("Content-Type", "application/json")
+                
+                resource = {
+                    "_id": f"req_{idx}",
+                    "_type": "request",
+                    "parentId": "fld_root",
+                    "modified": now_ms,
+                    "created": now_ms,
+                    "name": req.get("name", "Unnamed"),
+                    "description": req.get("description", ""),
+                    "method": req.get("method", "GET"),
+                    "url": req.get("url", ""),
+                    "authentication": {},
+                    "parameters": [
+                        {"name": k, "value": v}
+                        for k, v in params.items()
+                    ],
+                    "headers": [
+                        {"name": k, "value": v}
+                        for k, v in redact_headers(headers).items()
+                    ],
+                    "body": {
+                        "mimeType": content_type,
+                        "text": req.get("body", "")
+                    } if req.get("body") else None
+                }
+                resources.append(resource)
+
+            resources.append({
+                "_id": "fld_root",
+                "_type": "request_group",
+                "name": collection.get("name", ""),
+                "description": collection.get("description", ""),
+                "environment": {},
+                "environmentPropertyOrder": None,
+                "metaSortKey": -1
+            })
+
+            return {
+                "_type": "export",
+                "__export_format": 4,
+                "__export_date": _get_iso_timestamp(),  # Improvement #12
+                "__export_source": "equinox.api",
+                "resources": resources
             }
-            resources.append(resource)
-
-        resources.append({
-            "_id": "fld_root",
-            "_type": "request_group",
-            "name": collection.get("name", ""),
-            "description": collection.get("description", ""),
-            "environment": {},
-            "environmentPropertyOrder": None,
-            "metaSortKey": -1
-        })
-
-        return {
-            "_type": "export",
-            "__export_format": 4,
-            "__export_date": datetime.now(timezone.utc).replace(tzinfo=None).isoformat() + "Z",
-            "__export_source": "equinox.api",
-            "resources": resources
-        }
+        except Exception as e:
+            logger.error(f"Failed to export collection {collection_id}: {e}")
+            raise
 
     @staticmethod
     def export_to_file(collection_dict: Dict[str, Any], file_path: Path) -> None:
@@ -445,7 +807,9 @@ class InsomniaExporter:
         Args:
             collection_dict: Collection dict
             file_path: Path to save file
+            
+        Raises:
+            IOError: If file write fails
         """
-        with open(file_path, 'w', encoding='utf-8') as f:
-            json.dump(collection_dict, f, indent=2, ensure_ascii=False)
+        _write_json_file(collection_dict, file_path)
 
