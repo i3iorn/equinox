@@ -16,6 +16,7 @@ from equinox.gui.widgets.drag_drop_tree import DragDropTree
 from equinox.gui.collections_panel_pkg.actions import _CollectionsActionsMixin
 from equinox.importers.exporters import OpenAPIExporter, PostmanExporter, CurlExporter
 from equinox.gui.dialogs.api_spec_dialog import ApiSpecDialog
+import traceback
 
 logger = logging.getLogger(__name__)
 
@@ -398,7 +399,11 @@ class CollectionsPanel(_CollectionsActionsMixin, QWidget):
             collections = mgr.list_collections()
 
             for col in collections:
-                col_id = col["id"]
+                col_id = col.get("id")
+                # Defensive: ensure col_id is a positive non-boolean integer.
+                if isinstance(col_id, bool) or not (isinstance(col_id, int) and col_id > 0):
+                    logger.warning("Skipping collection with invalid id=%r name=%r", col_id, col.get("name"))
+                    continue
                 col_item = QTreeWidgetItem([col["name"]])
                 f = col_item.font(0)
                 f.setBold(True)
@@ -527,7 +532,7 @@ class CollectionsPanel(_CollectionsActionsMixin, QWidget):
                 QMessageBox.critical(self, "Error", f"Failed to create collection: {e}")
 
     def get_collections(self):
-        logger.info("_show_api_spec_for_collection called for %s", collection_id)
+        logger.debug("get_collections called")
         mgr = CollectionManager(self.db)
         return mgr.list_collections()
 
@@ -577,7 +582,8 @@ class CollectionsPanel(_CollectionsActionsMixin, QWidget):
             # Only enable spec viewing for saved collections with a positive integer id
             if isinstance(col_id, int) and col_id > 0:
                 show_spec_action = QAction("Show API Spec…", self)
-                show_spec_action.triggered.connect(lambda c=col_id: self._show_api_spec_for_collection(c))
+                # Use the clicked item to resolve the collection id at trigger time
+                show_spec_action.triggered.connect(lambda _=None, it=item: self._show_api_spec_for_collection(self._col_id_for_item(it)))
                 menu.addAction(show_spec_action)
             else:
                 logger.debug("CollectionsPanel: skipping Show API Spec action for invalid collection id: %r", col_id)
@@ -713,9 +719,39 @@ class CollectionsPanel(_CollectionsActionsMixin, QWidget):
 
         Errors are logged and shown to the user so failures are not silently swallowed.
         """
+        # Guard against invalid IDs (e.g. False/None) — storage layer expects a positive int
+        if not isinstance(collection_id, int) or collection_id <= 0:
+            # Invalid caller input — warn and include a short stack trace to help locate the caller.
+            stack = "".join(traceback.format_stack(limit=8))
+            logger.warning("_show_api_spec_for_collection called with invalid collection_id: %r\nCaller stack:\n%s", collection_id, stack)
+            # Inform the user in a non-technical way
+            QMessageBox.warning(self, "Invalid Collection", "Collection not specified or invalid.")
+            return
+
         mgr = CollectionManager(self.db)
         try:
             coll = mgr.get_collection(collection_id)
+            # Defensive normalization: some storage bugs or older code paths may
+            # return a list instead of a dict. Exporters expect a mapping with
+            # .items() and .get(); coerce to a dict safely.
+            if isinstance(coll, list):
+                logger.warning("get_collection returned list for id %r — coercing to single collection dict", collection_id)
+                # Prefer an element that looks like the collection (has 'id' or 'name')
+                candidate = None
+                for el in coll:
+                    if isinstance(el, dict) and (el.get('id') == collection_id or 'name' in el):
+                        candidate = el
+                        break
+                if candidate is None:
+                    # Pick first dict element if any, else wrap the list
+                    for el in coll:
+                        if isinstance(el, dict):
+                            candidate = el
+                            break
+                if candidate is None:
+                    coll = {"name": f"Collection {collection_id}", "items": coll}
+                else:
+                    coll = candidate
         except Exception as exc:
             logger.exception("Failed to load collection %s", collection_id)
             QMessageBox.warning(self, "Export Error", f"Failed to load collection: {exc}")
@@ -734,24 +770,106 @@ class CollectionsPanel(_CollectionsActionsMixin, QWidget):
             variants['OpenAPI 3 (JSON)'] = json.dumps(oa, indent=2, ensure_ascii=False)
         except Exception as exc:
             logger.exception("OpenAPI export failed for collection %s", collection_id)
-            variants['OpenAPI 3 (JSON)'] = ''
+            # Exporter failed — attempt a minimal fallback OpenAPI document constructed
+            # from the collection's requests so the user still sees something useful.
             errors.append(f"OpenAPI export failed: {exc}")
+            try:
+                reqs = mgr.list_requests(collection_id)
+                paths = {}
+                def _req_url(r):
+                    for k in ("url", "raw_url", "full_url", "path"):
+                        v = r.get(k) if isinstance(r, dict) else None
+                        if v:
+                            return v
+                    return r.get("name") if isinstance(r, dict) else ""
+
+                for r in reqs:
+                    url = _req_url(r) or "/"
+                    # Use the full URL as a path key; OpenAPI allows arbitrary strings.
+                    method = (r.get("method") or "get").lower()
+                    if url not in paths:
+                        paths[url] = {}
+                    paths[url][method] = {
+                        "summary": r.get("name") or "",
+                        "responses": {"200": {"description": "OK"}},
+                    }
+                oa_fallback = {
+                    "openapi": "3.0.0",
+                    "info": {"title": coll.get("name", "Collection"), "version": "1.0.0"},
+                    "paths": paths,
+                }
+                variants['OpenAPI 3 (JSON)'] = json.dumps(oa_fallback, indent=2, ensure_ascii=False)
+            except Exception:
+                logger.exception("Failed to build OpenAPI fallback for collection %s", collection_id)
+                variants['OpenAPI 3 (JSON)'] = ''
 
         try:
             pm = PostmanExporter.export_collection(self.db, collection_id)
             variants['Postman v2.1 (JSON)'] = json.dumps(pm, indent=2, ensure_ascii=False)
         except Exception as exc:
             logger.exception("Postman export failed for collection %s", collection_id)
-            variants['Postman v2.1 (JSON)'] = ''
+            # Exporter failed — build a simple Postman-like collection from requests.
             errors.append(f"Postman export failed: {exc}")
+            try:
+                reqs = mgr.list_requests(collection_id)
+                items = []
+                def _req_url(r):
+                    for k in ("url", "raw_url", "full_url", "path"):
+                        v = r.get(k) if isinstance(r, dict) else None
+                        if v:
+                            return v
+                    return r.get("name") if isinstance(r, dict) else ""
+
+                for r in reqs:
+                    req_url = _req_url(r) or ""
+                    item = {
+                        "name": r.get("name") or "",
+                        "request": {
+                            "method": r.get("method") or "GET",
+                            "url": req_url,
+                        },
+                    }
+                    items.append(item)
+                pm_fallback = {
+                    "info": {"name": coll.get("name", "Collection"), "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"},
+                    "item": items,
+                }
+                variants['Postman v2.1 (JSON)'] = json.dumps(pm_fallback, indent=2, ensure_ascii=False)
+            except Exception:
+                logger.exception("Failed to build Postman fallback for collection %s", collection_id)
+                variants['Postman v2.1 (JSON)'] = ''
 
         # If exporters failed to produce any content, provide an informative
         # placeholder in the dialog rather than failing silently.
+        # If exporters failed to produce any content, attempt to include
+        # useful raw representations (collection JSON, raw requests) so
+        # the user has something to inspect. Fall back to a simple Info
+        # message if nothing else works.
         if not any(variants.values()):
-            info_text = "Could not generate any spec for this collection."
-            if errors:
-                info_text += "\n\n" + "\n".join(errors)
-            variants = {"Info": info_text}
+            # Try raw collection dict
+            try:
+                variants['Raw Collection'] = json.dumps(coll, indent=2, ensure_ascii=False) if isinstance(coll, dict) else repr(coll)
+            except Exception:
+                logger.exception("Failed to serialize raw collection for fallback display")
+
+            # Try raw requests list
+            try:
+                reqs = mgr.list_requests(collection_id)
+                # Safely stringify requests even when they are not plain dicts
+                try:
+                    variants['Raw Requests'] = json.dumps(reqs, indent=2, ensure_ascii=False)
+                except Exception:
+                    # JSON may fail if objects are not serializable — fall back to repr
+                    variants['Raw Requests'] = repr(reqs)
+            except Exception:
+                logger.exception("Failed to fetch raw requests for fallback display for collection %s", collection_id)
+
+            # If still empty, show an Info text block with captured errors
+            if not any(variants.values()):
+                info_text = "Could not generate any spec for this collection."
+                if errors:
+                    info_text += "\n\n" + "\n".join(errors)
+                variants = {"Info": info_text}
 
         try:
             dlg = ApiSpecDialog(self, title=title)
