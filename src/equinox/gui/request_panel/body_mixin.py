@@ -20,7 +20,7 @@ from PyQt6.QtWidgets import (
     QCheckBox,
     QTextEdit,
 )
-from PyQt6.QtGui import QTextCursor, QTextCharFormat, QColor
+from PyQt6.QtGui import QTextCursor, QTextCharFormat, QColor, QTextDocument
 
 from equinox.gui.theme import get_mono_font
 from equinox.core.request import Request
