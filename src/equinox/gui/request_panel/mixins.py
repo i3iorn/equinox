@@ -330,8 +330,19 @@ class _RequestSendMixin:
                 log_panel.log_response(self.current_request, response)
             _save_history_safe(self.db, self.current_request, response)
 
-            # Save refreshed inherited-auth tokens back to collection/folder
+            # Save refreshed tokens back to DB so subsequent requests (and
+            # navigation) reuse the cached token rather than fetching a new one.
+            #
+            # Two separate paths:
+            #  • Inherited auth (self._auth is None): token lives on the
+            #    collection/folder row — handled by _persist_inherited_auth_tokens.
+            #  • Own auth (self._auth is OAuth2Auth): token lives on the request
+            #    row — handled by _persist_own_oauth2_token.  autosave_current()
+            #    would also do this, but only when dirty; _send_request()
+            #    deliberately never sets the dirty flag, so a "send without edits"
+            #    would lose the token on the next navigation without this call.
             self._persist_inherited_auth_tokens()
+            self._persist_own_oauth2_token()
 
             # Refresh the auth display — OAuth2Auth.apply() may have
             # auto-refreshed the token in the worker thread, mutating
@@ -432,6 +443,58 @@ class _RequestSendMixin:
         except Exception as exc:
             logger.debug("Failed to persist inherited auth tokens: %s", exc)
 
+    def _persist_own_oauth2_token(self) -> None:
+        """Save a freshly-fetched OAuth2 access token when the request has its own auth.
+
+        ``OAuth2Auth.apply()`` mutates the auth object in-place on the worker
+        thread (setting ``access_token``, ``expires_at``).  For *inherited* auth
+        this is handled by :meth:`_persist_inherited_auth_tokens`.  For *own*
+        auth the normal path is ``autosave_current()``, but that only runs when
+        the dirty flag is set.  Since ``_send_request()`` deliberately never
+        sets the dirty flag, a "send without any edits" scenario would silently
+        discard the fetched token on the next navigation.  This method persists
+        the token directly via ``update_request_auth`` regardless of dirty state.
+        """
+        from equinox.auth import OAuth2Auth
+        if not isinstance(self._auth, OAuth2Auth):
+            return
+        if not self._auth.access_token:
+            return
+        req = self.current_request
+        if not req or not getattr(req, "id", None):
+            return
+        try:
+            from equinox.storage import CollectionManager
+            mgr = CollectionManager(self.db)
+            mgr.update_request_auth(req.id, self._auth)
+            logger.debug("Persisted own-auth OAuth2 token for request %d", req.id)
+        except Exception as exc:
+            logger.debug("Failed to persist own OAuth2 token: %s", exc)
+
+    def _save_inherited_token_to_source(self, auth) -> None:
+        """Write a freshly-fetched token back to the collection or folder it came from.
+
+        Used by :meth:`_configure_auth` when the user fetches a token via the
+        auth dialog while the request is still using *inherited* auth.  The
+        token belongs to the collection/folder, not to the request.
+        """
+        source = getattr(self, "_inherited_auth_source", None)
+        if not source:
+            return
+        req = self.current_request
+        if not req or not req.collection_id:
+            return
+        try:
+            from equinox.storage import CollectionManager
+            mgr = CollectionManager(self.db)
+            if source == "collection":
+                mgr.set_collection_auth(req.collection_id, auth)
+            elif source.startswith("folder:"):
+                mgr.set_folder_auth(req.collection_id, source[7:], auth)
+            logger.debug("Saved dialog-fetched token to %s", source)
+        except Exception as exc:
+            logger.debug("Failed to save dialog token to source: %s", exc)
+
     def _set_sending_state(self, sending: bool) -> None:
         if sending:
             self._elapsed_secs = 0.0
@@ -460,6 +523,30 @@ class _RequestSendMixin:
 
 class _RequestAuthMixin:
     """Methods for authentication configuration and display."""
+
+    def _save_inherited_token_to_source(self, auth) -> None:
+        """Write a freshly-fetched token back to the collection or folder it came from.
+
+        Used by :meth:`_configure_auth` when the user fetches a token via the
+        auth dialog while the request is still using *inherited* auth.  The
+        token belongs to the collection/folder, not to the request.
+        """
+        source = getattr(self, "_inherited_auth_source", None)
+        if not source:
+            return
+        req = self.current_request
+        if not req or not req.collection_id:
+            return
+        try:
+            from equinox.storage import CollectionManager
+            mgr = CollectionManager(self.db)
+            if source == "collection":
+                mgr.set_collection_auth(req.collection_id, auth)
+            elif source.startswith("folder:"):
+                mgr.set_folder_auth(req.collection_id, source[7:], auth)
+            logger.debug("Saved dialog-fetched token to %s", source)
+        except Exception as exc:
+            logger.debug("Failed to save dialog token to source: %s", exc)
 
     def _create_auth_tab(self) -> QWidget:
         w = QWidget()
@@ -496,12 +583,18 @@ class _RequestAuthMixin:
         if dialog.exec() == QDialog.DialogCode.Accepted:
             if hasattr(dialog, '_saved_auth'):
                 saved = dialog._saved_auth
-                # If the request was using inherited auth and the user saved
-                # without meaningful changes, keep self._auth = None so the
-                # request continues inheriting from the collection/folder.
-                # BUT: if the user explicitly fetched a new token, always
-                # honour it — the fetched token must not be silently discarded.
                 fetched_token = getattr(dialog, '_last_fetched_auth', None)
+
+                # ── Guard: don't accidentally bake inherited auth into the request ──
+                #
+                # If the request was using inherited auth (from collection/folder)
+                # and the user opened the dialog without changing the underlying
+                # configuration, we must NOT set self._auth — that would store a
+                # copy of the collection's auth on the request row, breaking the
+                # "auth info should not be cached by request" invariant.
+                #
+                # Case A — user changed nothing and didn't fetch a token:
+                #   The configs still match → early return (no change).
                 if (
                     was_inherited
                     and saved is not None
@@ -509,6 +602,24 @@ class _RequestAuthMixin:
                     and self._auth_configs_match(saved, self._inherited_auth)
                 ):
                     return
+
+                # Case B — user fetched a token but didn't change the config:
+                #   The token belongs to the collection/folder, not to this
+                #   request.  Persist it at the source level and update the
+                #   in-memory inherited auth — do NOT promote to own auth.
+                if (
+                    was_inherited
+                    and saved is not None
+                    and fetched_token is not None
+                    and self._auth_configs_match(saved, self._inherited_auth)
+                ):
+                    self._inherited_auth = saved
+                    self._save_inherited_token_to_source(saved)
+                    self._update_auth_display(self._auth)  # self._auth still None
+                    return
+
+                # Case C — user explicitly set a different auth (or changed the
+                # config): honour it as own auth on the request.
                 old_auth = self._auth
                 self._auth = saved
                 if self._auth is not None:

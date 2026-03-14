@@ -451,13 +451,21 @@ class TestGUIInheritedAuth:
         assert isinstance(display_auth, BearerAuth)
         assert display_auth.token == "col-tok"
 
-    def test_configure_auth_fetched_token_not_discarded(self, panel, mgr, col_id):
-        """When inherited auth is active and the user fetches a new token
-        in the auth dialog, the guard clause must NOT discard the save.
+    def test_configure_auth_fetched_token_saved_to_collection(self, panel, mgr, col_id):
+        """When inherited auth is active and the user fetches a new token in the
+        auth dialog *without changing the underlying config*, the token must be
+        persisted back to the collection — NOT baked into the request row.
 
-        Regression: _auth_configs_match strips token fields, so a fetched
-        token was silently lost because the 'configs match' early-return
-        fired before self._auth was updated.
+        Correct behaviour (post-fix):
+        • panel._auth remains None  — the request does not own the auth config
+        • panel._inherited_auth is updated with the new token (in-memory)
+        • The collection row in the DB is updated with the new token
+        • The request row in the DB still has auth_type=None (no own auth)
+
+        Old (buggy) behaviour: self._auth was set to the inherited OAuth2
+        config+token, causing a copy of the collection auth to be persisted on
+        the request row and breaking the "auth info should not be cached by
+        request" invariant.
         """
         from unittest.mock import patch, MagicMock
         from equinox.auth import OAuth2Auth
@@ -506,11 +514,28 @@ class TestGUIInheritedAuth:
         ):
             panel._configure_auth()
 
-        # The fetched token must be honoured — self._auth should now be set
-        assert panel._auth is not None, (
-            "Fetched token was silently discarded by the inherited-auth guard"
+        # Token was fetched from *inherited* config that still matches the
+        # collection — it must be saved to the collection, NOT to the request.
+        assert panel._auth is None, (
+            "_auth must stay None: the token belongs to the collection, "
+            "not to this request row"
         )
-        assert panel._auth.access_token == "new-fetched-token"
+        # In-memory inherited auth should reflect the new token
+        assert panel._inherited_auth is not None
+        assert panel._inherited_auth.access_token == "new-fetched-token", (
+            "In-memory _inherited_auth must be updated with the fetched token"
+        )
+        # DB: the collection's auth should now carry the new token
+        col_auth_in_db = mgr.get_collection_auth(col_id)
+        if col_auth_in_db is not None:
+            assert col_auth_in_db.access_token == "new-fetched-token", (
+                "Collection DB auth must be updated with the fetched token"
+            )
+        # DB: the request row must NOT have own auth stored
+        req_reloaded = mgr.get_request(req_id)
+        assert req_reloaded.auth is None, (
+            "Request row must have auth=None — it should inherit, not own, the auth"
+        )
 
     def test_configure_auth_guard_still_skips_when_no_fetch(self, panel, mgr, col_id):
         """When the user opens the auth dialog on inherited auth and saves

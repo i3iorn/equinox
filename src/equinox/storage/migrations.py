@@ -368,6 +368,37 @@ CREATE INDEX IF NOT EXISTS idx_collection_variable_groups_group ON collection_va
 CREATE INDEX IF NOT EXISTS idx_collection_folders_collection ON collection_folders(collection_id);
 """,
     ),
+
+    Migration(
+        version=20,
+        description="Add Response Intelligence tables for endpoint stats and schema drift tracking",
+        sql="""
+CREATE TABLE IF NOT EXISTS endpoint_stats (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    url_pattern     TEXT    NOT NULL,
+    method          TEXT    NOT NULL,
+    call_count      INTEGER DEFAULT 0,
+    total_elapsed   REAL    DEFAULT 0,
+    min_elapsed     REAL,
+    max_elapsed     REAL,
+    elapsed_values  TEXT    DEFAULT '[]',
+    updated_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_endpoint_stats_pattern
+    ON endpoint_stats(url_pattern, method);
+
+CREATE TABLE IF NOT EXISTS response_schemas (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    url_pattern     TEXT    NOT NULL,
+    method          TEXT    NOT NULL,
+    schema_hash     TEXT    NOT NULL,
+    schema_json     TEXT    NOT NULL,
+    captured_at     TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_response_schemas_pattern
+    ON response_schemas(url_pattern, method);
+""",
+    ),
 ]
 
 # ─────────────────────────────────────────────────────────────────────────────

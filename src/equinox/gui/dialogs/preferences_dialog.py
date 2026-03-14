@@ -1,9 +1,11 @@
 """Preferences dialog — user-configurable appearance settings."""
 
+import json as _json
+
 from PyQt6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QLabel, QSlider,
     QDialogButtonBox, QGroupBox, QFormLayout, QSpinBox,
-    QComboBox, QLineEdit,
+    QComboBox, QLineEdit, QCheckBox, QScrollArea, QWidget,
 )
 from PyQt6.QtCore import Qt, QSettings
 
@@ -97,6 +99,62 @@ class PreferencesDialog(QDialog):
 
         layout.addWidget(net_group)
 
+        # ── Intelligence group ────────────────────────────────────────
+        intel_group = QGroupBox("Response Intelligence")
+        intel_layout = QVBoxLayout(intel_group)
+
+        intel_desc = QLabel(
+            "Select which analyzers run automatically after each response."
+        )
+        intel_desc.setWordWrap(True)
+        intel_desc.setStyleSheet(f"color: {Colors.FG_MUTED};")
+        intel_layout.addWidget(intel_desc)
+
+        # Load disabled set from settings
+        disabled_raw = self._settings.value("intelligence/disabled_analyzers", "[]")
+        try:
+            self._disabled_set = set(_json.loads(disabled_raw)) if disabled_raw else set()
+        except Exception:
+            self._disabled_set = set()
+
+        # Scroll area for checkboxes
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setMaximumHeight(200)
+        scroll_widget = QWidget()
+        scroll_layout = QVBoxLayout(scroll_widget)
+        scroll_layout.setContentsMargins(4, 4, 4, 4)
+        scroll_layout.setSpacing(2)
+
+        self._analyzer_checks: list = []
+        try:
+            from equinox.core.response_intelligence.engine import AnalysisEngine
+            all_info = AnalysisEngine().get_all_analyzer_info()
+            current_cat = ""
+            for info in all_info:
+                cat = info["category"]
+                if cat != current_cat:
+                    current_cat = cat
+                    cat_label = QLabel(f"── {cat} ──")
+                    cat_label.setStyleSheet(
+                        f"font-weight: bold; color: {Colors.FG_MUTED}; "
+                        f"padding-top: 4px; font-size: 11px;"
+                    )
+                    scroll_layout.addWidget(cat_label)
+                cb = QCheckBox(info["name"])
+                cb.setChecked(info["id"] not in self._disabled_set)
+                cb.setProperty("analyzer_id", info["id"])
+                scroll_layout.addWidget(cb)
+                self._analyzer_checks.append(cb)
+        except Exception:
+            scroll_layout.addWidget(QLabel("(Could not load analyzers)"))
+
+        scroll_layout.addStretch()
+        scroll.setWidget(scroll_widget)
+        intel_layout.addWidget(scroll)
+
+        layout.addWidget(intel_group)
+
         # ── Buttons ───────────────────────────────────────────────────
         btns = QDialogButtonBox(
             QDialogButtonBox.StandardButton.Ok
@@ -136,6 +194,16 @@ class PreferencesDialog(QDialog):
     def _accept(self) -> None:
         self._settings.setValue("proxy/host", self._proxy_host.text().strip())
         self._settings.setValue("proxy/port", self._proxy_port.value())
+
+        # Save disabled analyzers
+        disabled = []
+        for cb in self._analyzer_checks:
+            if not cb.isChecked():
+                disabled.append(cb.property("analyzer_id"))
+        self._settings.setValue(
+            "intelligence/disabled_analyzers", _json.dumps(disabled)
+        )
+
         self.accept()
 
     def _cancel(self) -> None:

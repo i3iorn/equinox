@@ -473,6 +473,11 @@ class ResponsePanel(QWidget):
         sent_widget = self._build_sent_request_tab()
         self.tabs.addTab(sent_widget, "Sent Request")
 
+        # ── Intelligence tab ──────────────────────────────────────────
+        from equinox.gui.intelligence_panel import IntelligencePanel
+        self.intelligence_panel = IntelligencePanel()
+        self.tabs.addTab(self.intelligence_panel, "Intelligence")
+
         layout.addWidget(self.tabs, 1)
 
     def _build_sent_request_tab(self) -> QWidget:
@@ -1099,5 +1104,10 @@ class ResponsePanel(QWidget):
         # Clear JSON tab as well
         try:
             self._json_tree.clear()
+        except Exception:
+            pass
+        # Clear Intelligence tab
+        try:
+            self.intelligence_panel.clear()
         except Exception:
             pass

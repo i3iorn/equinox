@@ -162,6 +162,10 @@ class MainWindow(QMainWindow):
         self.variables_panel.clear_session_requested.connect(
             self.request_panel.clear_session_vars)
 
+        # Intelligence analysis — run asynchronously after each response
+        self.request_panel.response_received.connect(self._run_intelligence_analysis)
+        self._intelligence_worker = None  # keep reference to avoid GC
+
     def _load_request_guarded(self, request):
         """Auto-save current request then load the new one."""
         self.request_panel.autosave_current()
@@ -196,6 +200,52 @@ class MainWindow(QMainWindow):
         self.request_panel.autosave_current()
         self.request_panel.load_request(request)
         self.request_panel._send_request()
+
+    def _run_intelligence_analysis(self, response):
+        """Launch a background thread to run Response Intelligence analysis."""
+        try:
+            from equinox.gui.intelligence_worker import IntelligenceWorker
+            from PyQt6.QtCore import QSettings
+            import json as _json
+
+            settings = QSettings("Equinox", "Equinox")
+            disabled_raw = settings.value("intelligence/disabled_analyzers", "[]")
+            try:
+                disabled = set(_json.loads(disabled_raw)) if disabled_raw else set()
+            except Exception:
+                disabled = set()
+
+            self.response_panel.intelligence_panel.set_analyzing()
+
+            worker = IntelligenceWorker(
+                request=response.request,
+                response=response,
+                db=self.db,
+                disabled_analyzers=disabled,
+                parent=self,
+            )
+            worker.finished.connect(self.response_panel.intelligence_panel.display_findings)
+            worker.finished.connect(lambda _: self._update_intelligence_tab_badge())
+            worker.start()
+            self._intelligence_worker = worker
+        except Exception:
+            import logging
+            logging.getLogger(__name__).debug(
+                "Intelligence analysis failed to start", exc_info=True
+            )
+
+    def _update_intelligence_tab_badge(self):
+        """Update the Intelligence tab title with finding count."""
+        try:
+            findings = self.response_panel.intelligence_panel._findings
+            count = len(findings)
+            for i in range(self.response_panel.tabs.count()):
+                if self.response_panel.tabs.tabText(i).startswith("Intelligence"):
+                    label = f"Intelligence ({count})" if count else "Intelligence"
+                    self.response_panel.tabs.setTabText(i, label)
+                    break
+        except Exception:
+            pass
 
     def _new_request(self):
         """Autosave current request then clear the editor for a new one."""
