@@ -496,12 +496,11 @@ class RequestPanel(_RequestSendMixin, _RequestAuthMixin, _RequestBodyMixin, QWid
             )
         except Exception:
             # Best-effort — don't let signal wiring break UI init
-            pass
+            logger.debug("Could not connect session_vars_changed signal", exc_info=True)
 
         return row
 
     def _build_preflight_banner(self) -> QWidget:
-        from PyQt6.QtWidgets import QToolButton
         banner = QWidget()
         banner.setObjectName("preflightBanner")
         pf_row = QHBoxLayout(banner)
@@ -559,7 +558,7 @@ class RequestPanel(_RequestSendMixin, _RequestAuthMixin, _RequestBodyMixin, QWid
         self.path_params_table = PathParamsTable()
         pp_inner.addWidget(self.path_params_table)
         self._path_params_widget.setVisible(False)
-        layout.addWidget(self._path_params_widget)
+        layout.addWidget(self._path_params_widget, 1)
         return w
 
     def _build_body_tab(self) -> QWidget:
@@ -651,6 +650,7 @@ class RequestPanel(_RequestSendMixin, _RequestAuthMixin, _RequestBodyMixin, QWid
         layout.addWidget(self._multipart_table)
         # ...existing code... (multipart controls moved to the top toolbar)
         self._gql_widget = QWidget()
+        layout.addWidget(self._gql_widget)
         gql_layout = QVBoxLayout(self._gql_widget)
         gql_layout.setContentsMargins(0, 4, 0, 0)
         gql_splitter = QSplitter(Qt.Orientation.Vertical)
@@ -718,7 +718,7 @@ class RequestPanel(_RequestSendMixin, _RequestAuthMixin, _RequestBodyMixin, QWid
             "# Available: request (dict), env (dict)\n"
             "# Example: env['timestamp'] = str(int(__import__('time').time()))"
         )
-        self.pre_script_editor.setFont(QFont("Courier New", get_font_size()))
+        self.pre_script_editor.setFont(get_mono_font())
         self.pre_script_result = QLabel("")
         self.pre_script_result.setWordWrap(True)
         pre_layout.addWidget(self.pre_script_editor)
@@ -735,7 +735,7 @@ class RequestPanel(_RequestSendMixin, _RequestAuthMixin, _RequestBodyMixin, QWid
             "# Available: response (dict with status_code, headers, body, json), env (dict)\n"
             "# Example: env['user_id'] = str(response['json']['id'])"
         )
-        self.post_script_editor.setFont(QFont("Courier New", get_font_size()))
+        self.post_script_editor.setFont(get_mono_font())
         self.post_script_result = QLabel("")
         self.post_script_result.setWordWrap(True)
         post_layout.addWidget(self.post_script_editor)
@@ -753,8 +753,7 @@ class RequestPanel(_RequestSendMixin, _RequestAuthMixin, _RequestBodyMixin, QWid
         self._post_highlighter = PythonHighlighter(self.post_script_editor.document())
 
         # ── Collapsible cheat-sheet ───────────────────────────────────
-        from PyQt6.QtWidgets import QPushButton as _PB
-        cheat_toggle = _PB()
+        cheat_toggle = QPushButton()
         cheat_toggle.setText("▶ Available variables & modules")
         cheat_toggle.setCheckable(True)
         cheat_toggle.setFlat(True)
@@ -958,20 +957,27 @@ class RequestPanel(_RequestSendMixin, _RequestAuthMixin, _RequestBodyMixin, QWid
                 # Key already present — select the row so user can edit the value
                 return
         self.headers_table.add_row(key, value)
-        self._dirty = True
+        self._mark_dirty()
         self._update_tab_labels()
 
     def _headers_add_row(self) -> None:
         """Add an empty header row and focus it."""
-        self.headers_table.add_row("", "", enabled=True)
-        # Focus the newly-added row's key cell
-        last = self.headers_table.rowCount() - 2  # -1 trailing empty, -1 zero-based
+        self._add_row_and_focus(self.headers_table)
+
+    def _params_add_row(self) -> None:
+        """Add an empty query-params row and focus it."""
+        self._add_row_and_focus(self.params_table)
+
+    def _add_row_and_focus(self, table: CheckableKeyValueTable) -> None:
+        """Append an empty row to *table*, select its key cell, and mark dirty."""
+        table.add_row("", "", enabled=True)
+        last = table.rowCount() - 2  # skip trailing sentinel
         if last >= 0:
-            self.headers_table.setCurrentCell(last, 1)
-            item = self.headers_table.item(last, 1)
+            table.setCurrentCell(last, 1)  # column 1 = Key
+            item = table.item(last, 1)
             if item:
-                self.headers_table.editItem(item)
-        self._dirty = True
+                table.editItem(item)
+        self._mark_dirty()
         self._update_tab_labels()
 
     def _headers_remove_row(self) -> None:
@@ -979,7 +985,7 @@ class RequestPanel(_RequestSendMixin, _RequestAuthMixin, _RequestBodyMixin, QWid
         rows = sorted({idx.row() for idx in self.headers_table.selectedIndexes()}, reverse=True)
         for r in rows:
             self.headers_table.removeRow(r)
-        self._dirty = True
+        self._mark_dirty()
         self._update_tab_labels()
 
     # ── URL ghost-params preview ──────────────────────────────────────
@@ -998,24 +1004,12 @@ class RequestPanel(_RequestSendMixin, _RequestAuthMixin, _RequestBodyMixin, QWid
             logger.debug("Failed to update URL suffix", exc_info=True)
             self.url_input.set_param_suffix("")
 
-    def _params_add_row(self) -> None:
-        """Add an empty query-params row and focus it."""
-        self.params_table.add_row("", "", enabled=True)
-        last = self.params_table.rowCount() - 2
-        if last >= 0:
-            self.params_table.setCurrentCell(last, 1)
-            item = self.params_table.item(last, 1)
-            if item:
-                self.params_table.editItem(item)
-        self._dirty = True
-        self._update_tab_labels()
-
     def _params_remove_row(self) -> None:
         """Remove selected param rows (capture-tab model)."""
         rows = sorted({idx.row() for idx in self.params_table.selectedIndexes()}, reverse=True)
         for r in rows:
             self.params_table.removeRow(r)
-        self._dirty = True
+        self._mark_dirty()
         self._update_tab_labels()
 
     def _on_url_changed_for_path_params(self, text: str) -> None:
