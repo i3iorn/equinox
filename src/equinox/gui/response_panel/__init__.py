@@ -8,276 +8,17 @@ from PyQt6.QtWidgets import (
     QTabWidget, QTableWidget, QTableWidgetItem, QPushButton,
     QHeaderView, QApplication, QLineEdit, QToolButton,
     QMenu, QDialog, QComboBox, QPlainTextEdit, QListWidget, QListWidgetItem,
-    QTreeWidget, QTreeWidgetItem,
 )
 from PyQt6.QtCore import Qt
-from PyQt6.QtGui import QColor, QTextDocument, QTextCharFormat, QTextCursor, QKeySequence, QShortcut
+from PyQt6.QtGui import QKeySequence, QShortcut
 
+from equinox.gui.response_panel.header_table import HeaderTable
+from equinox.gui.response_panel.json_tree import JsonTree
+from equinox.gui.response_panel.read_only_text import ReadOnlyText
+
+from equinox.gui.response_panel.search_bar import SearchBar
 from equinox.gui.theme import Colors, get_mono_font
 from equinox.core.request import Response
-
-
-class _SearchBar(QWidget):
-    """Inline find-bar for a QTextEdit — shown/hidden with Ctrl+F."""
-
-    def __init__(self, target: QTextEdit, parent=None):
-        super().__init__(parent)
-        self._target = target
-        self.setVisible(False)
-
-        row = QHBoxLayout(self)
-        row.setContentsMargins(2, 2, 2, 2)
-        row.setSpacing(4)
-
-        self._input = QLineEdit()
-        self._input.setPlaceholderText("Find in body…")
-        self._input.setFixedHeight(24)
-        self._input.returnPressed.connect(self._find_next)
-        self._input.textChanged.connect(self._on_text_changed)
-
-        self._match_label = QLabel("")
-        self._match_label.setObjectName("mutedLabel")
-
-        prev_btn = QToolButton(); prev_btn.setText("▲"); prev_btn.setFixedSize(24, 24)
-        next_btn = QToolButton(); next_btn.setText("▼"); next_btn.setFixedSize(24, 24)
-        close_btn = QToolButton(); close_btn.setText("✕"); close_btn.setFixedSize(24, 24)
-        close_btn.setStyleSheet(f"color: {Colors.FG_MUTED};")
-
-        prev_btn.clicked.connect(self._find_prev)
-        next_btn.clicked.connect(self._find_next)
-        close_btn.clicked.connect(self.hide)
-
-        row.addWidget(QLabel("Find:"))
-        row.addWidget(self._input, 1)
-        row.addWidget(self._match_label)
-        row.addWidget(prev_btn)
-        row.addWidget(next_btn)
-        row.addWidget(close_btn)
-
-    def show_and_focus(self):
-        self.setVisible(True)
-        self._input.selectAll()
-        self._input.setFocus()
-
-    def hide(self):
-        self.setVisible(False)
-        self._target.setExtraSelections([])   # clear yellow highlights
-        self._target.setFocus()
-
-    def _on_text_changed(self, _text):
-        self._highlight_all()
-
-    def _highlight_all(self):
-        term = self._input.text()
-        if not term:
-            self._match_label.setText("")
-            self._target.setExtraSelections([])
-            return
-
-        fmt = QTextCharFormat()
-        fmt.setBackground(QColor(Colors.HIGHLIGHT))
-
-        selections = []
-        doc    = self._target.document()
-        cursor = QTextCursor(doc)
-        count  = 0
-        while True:
-            cursor = doc.find(term, cursor)   # no flags = forward, case-insensitive
-            if cursor.isNull():
-                break
-            sel = QTextEdit.ExtraSelection()
-            sel.cursor = cursor
-            sel.format  = fmt
-            selections.append(sel)
-            count += 1
-
-        self._target.setExtraSelections(selections)
-        self._match_label.setText(f"{count} match{'es' if count != 1 else ''}")
-
-    def _find_next(self):
-        term = self._input.text()
-        if not term:
-            return
-        if not self._target.find(term):
-            cur = self._target.textCursor()
-            cur.movePosition(QTextCursor.MoveOperation.Start)
-            self._target.setTextCursor(cur)
-            self._target.find(term)
-
-    def _find_prev(self):
-        term = self._input.text()
-        if not term:
-            return
-        if not self._target.find(term, QTextDocument.FindFlag.FindBackward):
-            cur = self._target.textCursor()
-            cur.movePosition(QTextCursor.MoveOperation.End)
-            self._target.setTextCursor(cur)
-            self._target.find(term, QTextDocument.FindFlag.FindBackward)
-
-
-class _ReadOnlyText(QTextEdit):
-    """Read-only monospaced text editor."""
-
-    def __init__(self, parent=None):
-        super().__init__(parent)
-        self.setReadOnly(True)
-        self.setFont(get_mono_font())
-        self.setLineWrapMode(QTextEdit.LineWrapMode.NoWrap)
-
-    def set_code(self, text: str) -> None:
-        self.setPlainText(text)
-        self.verticalScrollBar().setValue(0)
-
-
-class _HeaderTable(QTableWidget):
-    """Read-only table for displaying headers with built-in filter."""
-
-    def __init__(self, parent=None):
-        super().__init__(parent)
-        self.setColumnCount(2)
-        self.setHorizontalHeaderLabels(["Header", "Value"])
-        self.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Interactive)
-        self.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
-        self.horizontalHeader().setDefaultSectionSize(200)
-        self.verticalHeader().setVisible(False)
-        self.setAlternatingRowColors(True)
-        self.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
-        self.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
-        self._all_headers: dict = {}
-
-    def load(self, headers: dict) -> None:
-        """Load a headers dict into the table (keeps internal copy for filtering)."""
-        self._all_headers = dict(sorted((k, v) for k, v in headers.items()))
-        self._apply_filter("")
-
-    def filter(self, text: str) -> None:
-        """Filter visible rows by the provided text (case-insensitive)."""
-        self._apply_filter(text)
-
-    def _apply_filter(self, text: str) -> None:
-        term = text.lower().strip()
-        rows = [
-            (k, v) for k, v in self._all_headers.items()
-            if not term or term in k.lower() or term in str(v).lower()
-        ]
-        self.setRowCount(len(rows))
-        for row, (k, v) in enumerate(rows):
-            self.setItem(row, 0, QTableWidgetItem(k))
-            self.setItem(row, 1, QTableWidgetItem(str(v)))
-        self.resizeRowsToContents()
-
-
-class _JsonTree(QWidget):
-    """Simple collapsible JSON viewer using QTreeWidget.
-
-    Shows objects and arrays as expandable nodes and primitive values as leaves.
-    Provides Expand All / Collapse All / Copy JSON controls.
-    """
-
-    def __init__(self, parent=None):
-        super().__init__(parent)
-        self._last_obj = None
-
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(0, 2, 0, 0)
-        layout.setSpacing(4)
-
-        # Toolbar
-        toolbar = QHBoxLayout()
-        self._expand_btn = QPushButton("Expand All")
-        self._expand_btn.setFixedWidth(90)
-        self._collapse_btn = QPushButton("Collapse All")
-        self._collapse_btn.setFixedWidth(90)
-        self._copy_btn = QPushButton("Copy JSON")
-        self._copy_btn.setFixedWidth(90)
-
-        self._expand_btn.clicked.connect(self._on_expand_all)
-        self._collapse_btn.clicked.connect(self._on_collapse_all)
-        self._copy_btn.clicked.connect(self._on_copy_json)
-
-        toolbar.addWidget(self._expand_btn)
-        toolbar.addWidget(self._collapse_btn)
-        toolbar.addStretch()
-        toolbar.addWidget(self._copy_btn)
-        layout.addLayout(toolbar)
-
-        # Tree
-        self.tree = QTreeWidget()
-        self.tree.setColumnCount(2)
-        self.tree.setHeaderLabels(["Key", "Value"])
-        hdr = self.tree.header()
-        hdr.setSectionResizeMode(0, QHeaderView.ResizeMode.Interactive)
-        hdr.setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
-        self.tree.setAlternatingRowColors(True)
-        self.tree.setUniformRowHeights(True)
-        layout.addWidget(self.tree, 1)
-
-        # Placeholder label when no JSON is loaded
-        self._placeholder = QLabel("(no JSON to display)")
-        self._placeholder.setObjectName("mutedLabel")
-        layout.addWidget(self._placeholder)
-
-        self._show_placeholder(True)
-
-    def _show_placeholder(self, show: bool) -> None:
-        self._placeholder.setVisible(show)
-        self.tree.setVisible(not show)
-
-    def clear(self) -> None:
-        self._last_obj = None
-        self.tree.clear()
-        self._show_placeholder(True)
-
-    def load_json(self, obj) -> None:
-        """Load a Python object (from json.loads) into the tree."""
-        self._last_obj = obj
-        self.tree.clear()
-        root = self.tree.invisibleRootItem()
-
-        def _add(parent_item, value):
-            if isinstance(value, dict):
-                for k, v in value.items():
-                    if isinstance(v, (dict, list)):
-                        child = QTreeWidgetItem(parent_item, [str(k), ""])
-                        _add(child, v)
-                    else:
-                        # Show primitives as JSON-encoded strings for fidelity
-                        child = QTreeWidgetItem(parent_item, [str(k), json.dumps(v, ensure_ascii=False)])
-            elif isinstance(value, list):
-                for i, v in enumerate(value):
-                    key = f"[{i}]"
-                    if isinstance(v, (dict, list)):
-                        child = QTreeWidgetItem(parent_item, [key, ""])
-                        _add(child, v)
-                    else:
-                        child = QTreeWidgetItem(parent_item, [key, json.dumps(v, ensure_ascii=False)])
-            else:
-                # Fallback for primitives at the root
-                QTreeWidgetItem(parent_item, ["", json.dumps(value, ensure_ascii=False)])
-
-        # If the top-level object is a primitive, create one root item
-        if isinstance(obj, (dict, list)):
-            _add(root, obj)
-        else:
-            QTreeWidgetItem(root, ["value", json.dumps(obj, ensure_ascii=False)])
-
-        self.tree.expandToDepth(0)
-        self._show_placeholder(False)
-
-    def _on_expand_all(self) -> None:
-        self.tree.expandAll()
-
-    def _on_collapse_all(self) -> None:
-        self.tree.collapseAll()
-
-    def _on_copy_json(self) -> None:
-        if self._last_obj is None:
-            return
-        try:
-            text = json.dumps(self._last_obj, indent=2, ensure_ascii=False)
-            QApplication.clipboard().setText(text)
-        except Exception:
-            pass
 
 
 class ResponsePanel(QWidget):
@@ -414,9 +155,9 @@ class ResponsePanel(QWidget):
         self._body_warning.setVisible(False)
         body_vbox.addWidget(self._body_warning)
 
-        self.body_text = _ReadOnlyText()
+        self.body_text = ReadOnlyText()
         self._body_highlighter = None  # set dynamically per content-type
-        self._search_bar = _SearchBar(self.body_text, body_container)
+        self._search_bar = SearchBar(self.body_text, body_container)
         body_vbox.addWidget(self.body_text, 1)
         body_vbox.addWidget(self._search_bar)
         self.tabs.addTab(body_container, "Body")
@@ -441,7 +182,7 @@ class ResponsePanel(QWidget):
         hdrs_search_row.addWidget(self._hdrs_search, 1)
         hdrs_search_row.addWidget(self._hdrs_count_label)
         hdrs_vbox.addLayout(hdrs_search_row)
-        self.resp_headers_table = _HeaderTable()
+        self.resp_headers_table = HeaderTable()
         hdrs_vbox.addWidget(self.resp_headers_table, 1)
         self.tabs.addTab(hdrs_container, "Headers")
 
@@ -466,7 +207,7 @@ class ResponsePanel(QWidget):
         self.tabs.addTab(cookies_widget, "Cookies")
 
         # JSON Tree tab (collapsible view for JSON objects)
-        self._json_tree = _JsonTree()
+        self._json_tree = JsonTree()
         self.tabs.addTab(self._json_tree, "JSON")
 
         # ── Sent Request tab ──────────────────────────────────────────
@@ -513,12 +254,12 @@ class ResponsePanel(QWidget):
 
         # ── Sent Headers ──────────────────────────────────────────────
         layout.addWidget(QLabel("Request Headers (as sent — includes auth):"))
-        self.sent_headers_table = _HeaderTable()
+        self.sent_headers_table = HeaderTable()
         layout.addWidget(self.sent_headers_table, 2)
 
         # ── Request Body ──────────────────────────────────────────────
         layout.addWidget(QLabel("Request Body:"))
-        self.sent_body_text = _ReadOnlyText()
+        self.sent_body_text = ReadOnlyText()
         self.sent_body_text.setMaximumHeight(180)
         layout.addWidget(self.sent_body_text, 1)
 
