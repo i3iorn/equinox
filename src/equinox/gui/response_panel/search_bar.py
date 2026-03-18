@@ -10,6 +10,8 @@ class SearchBar(QWidget):
     def __init__(self, target: QTextEdit, parent=None):
         super().__init__(parent)
         self._target = target
+        self._matches: list = []   # list[QTextCursor] — populated by _collect_matches
+        self._current_idx: int = -1
         self.setVisible(False)
 
         row = QHBoxLayout(self)
@@ -48,55 +50,86 @@ class SearchBar(QWidget):
 
     def hide(self):
         self.setVisible(False)
-        self._target.setExtraSelections([])   # clear yellow highlights
+        self._matches = []
+        self._current_idx = -1
+        self._target.setExtraSelections([])
         self._target.setFocus()
 
-    def _on_text_changed(self, _text):
-        self._highlight_all()
+    # ── internal helpers ──────────────────────────────────────────────
 
-    def _highlight_all(self):
+    def _on_text_changed(self, _text):
+        self._collect_matches()
+        self._current_idx = 0 if self._matches else -1
+        self._apply_highlights()
+
+    def _collect_matches(self):
+        """Scan the document and store every matching cursor in self._matches."""
         term = self._input.text()
         if not term:
+            self._matches = []
             self._match_label.setText("")
+            return
+
+        doc = self._target.document()
+        cursor = QTextCursor(doc)
+        matches = []
+        while True:
+            cursor = doc.find(term, cursor)   # forward, case-sensitive
+            if cursor.isNull():
+                break
+            matches.append(QTextCursor(cursor))   # copy the cursor
+
+        self._matches = matches
+        count = len(matches)
+        self._match_label.setText(f"{count} match{'es' if count != 1 else ''}")
+
+    def _apply_highlights(self):
+        """Repaint extra selections: current match in orange, others in yellow."""
+        if not self._matches:
             self._target.setExtraSelections([])
             return
 
-        fmt = QTextCharFormat()
-        fmt.setBackground(QColor(Colors.HIGHLIGHT))
+        dim_fmt = QTextCharFormat()
+        dim_fmt.setBackground(QColor(Colors.HIGHLIGHT))
+
+        cur_fmt = QTextCharFormat()
+        cur_fmt.setBackground(QColor("#e8a030"))   # orange — visible on light & dark themes
 
         selections = []
-        doc    = self._target.document()
-        cursor = QTextCursor(doc)
-        count  = 0
-        while True:
-            cursor = doc.find(term, cursor)   # no flags = forward, case-insensitive
-            if cursor.isNull():
-                break
+        for i, cur in enumerate(self._matches):
             sel = QTextEdit.ExtraSelection()
-            sel.cursor = cursor
-            sel.format  = fmt
+            sel.cursor = cur
+            sel.format = cur_fmt if i == self._current_idx else dim_fmt
             selections.append(sel)
-            count += 1
 
         self._target.setExtraSelections(selections)
-        self._match_label.setText(f"{count} match{'es' if count != 1 else ''}")
+
+        # Scroll current match into view without giving the editor focus
+        if 0 <= self._current_idx < len(self._matches):
+            self._target.setTextCursor(self._matches[self._current_idx])
+            self._target.ensureCursorVisible()
+
+    def _update_label(self):
+        count = len(self._matches)
+        if count == 0:
+            self._match_label.setText("no matches")
+        else:
+            self._match_label.setText(
+                f"{self._current_idx + 1} / {count} match{'es' if count != 1 else ''}"
+            )
+
+    # ── navigation ────────────────────────────────────────────────────
 
     def _find_next(self):
-        term = self._input.text()
-        if not term:
+        if not self._matches:
             return
-        if not self._target.find(term):
-            cur = self._target.textCursor()
-            cur.movePosition(QTextCursor.MoveOperation.Start)
-            self._target.setTextCursor(cur)
-            self._target.find(term)
+        self._current_idx = (self._current_idx + 1) % len(self._matches)
+        self._apply_highlights()
+        self._update_label()
 
     def _find_prev(self):
-        term = self._input.text()
-        if not term:
+        if not self._matches:
             return
-        if not self._target.find(term, QTextDocument.FindFlag.FindBackward):
-            cur = self._target.textCursor()
-            cur.movePosition(QTextCursor.MoveOperation.End)
-            self._target.setTextCursor(cur)
-            self._target.find(term, QTextDocument.FindFlag.FindBackward)
+        self._current_idx = (self._current_idx - 1) % len(self._matches)
+        self._apply_highlights()
+        self._update_label()
