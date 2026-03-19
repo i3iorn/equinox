@@ -1,8 +1,10 @@
 """Variable interpolation for requests"""
 
+import copy
 import re
 import logging
 from typing import Dict, Any, Optional
+from dataclasses import replace as _dc_replace
 
 from equinox.core.exceptions import ValidationError, SecurityError
 
@@ -71,16 +73,20 @@ class VariableInterpolator:
 
     @classmethod
     def interpolate_request(cls, o_request: Any, variables: Dict[str, str]) -> Any:
-        """Interpolate variables in a Request object in-place.
+        """Interpolate variables in a copy of the Request object.
 
-        Args:
-            o_request: Request object to modify
-            variables: Dictionary of variable values
+        Returns a new Request with placeholders expanded.
+        The original request is never modified.
         """
-        request = o_request.copy()
+        # Shallow-copy the request; use dataclasses.replace for dataclasses,
+        # fall back to copy.copy for anything else.
+        try:
+            request = _dc_replace(o_request)
+        except TypeError:
+            request = copy.copy(o_request)
 
         if not variables:
-            return
+            return request  # ← was `return` (None)
 
         if hasattr(request, 'url') and request.url:
             request.url = cls.interpolate(request.url, variables)
