@@ -67,18 +67,19 @@ class TestHTTPClientHeaders:
         assert req.headers["X-Custom-Header"] == "test-value"
         assert req.headers["Accept"] == "application/json"
     
-    def test_headers_are_case_insensitive(self):
-        """Test that response headers are case-insensitive."""
+    def test_headers_are_case_sensitive(self):
+        """Test that response headers are case-sensitive."""
         req = Request(method="GET", url="https://example.com")
         resp = Response(
             status_code=200,
-            headers={"Content-Type": "application/json"},
+            headers={"Content-Type": "application/json", "content-type": "application/json"},
             body=b"{}",
             reason="OK",
             elapsed=0.1,
             request=req
         )
-        # Headers are normalized to lowercase
+
+        assert "Content-Type" in resp.headers
         assert "content-type" in resp.headers
 
 

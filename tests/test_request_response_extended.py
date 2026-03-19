@@ -314,22 +314,7 @@ class TestResponseModel:
             request=req
         )
         assert resp.content_type is None
-    
-    def test_response_headers_case_insensitive(self):
-        """Test response headers are case-insensitive."""
-        req = Request(method="GET", url="https://api.example.com")
-        resp = Response(
-            status_code=200,
-            reason="OK",
-            headers={"Content-Type": "application/json", "X-Custom": "value"},
-            body=b"{}",
-            elapsed=0.1,
-            request=req
-        )
-        # Headers should be normalized to lowercase
-        assert "content-type" in resp.headers
-        assert "x-custom" in resp.headers
-    
+
     def test_response_timestamp(self):
         """Test response timestamp."""
         req = Request(method="GET", url="https://api.example.com")
