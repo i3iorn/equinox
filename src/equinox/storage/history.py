@@ -99,12 +99,13 @@ class HistoryManager:
         """
         self._require_positive_int(history_id, "History ID")
 
-        if not self.get_history(history_id):
-            raise StorageError(f"History entry with ID {history_id} does not exist")
-
         try:
-            self.db.execute("DELETE FROM history WHERE id = ?", (history_id,))
+            cursor = self.db.execute("DELETE FROM history WHERE id = ?", (history_id,))
+            if cursor.rowcount == 0:
+                raise StorageError(f"History entry with ID {history_id} does not exist")
             logger.info("Deleted history entry %d", history_id)
+        except StorageError:
+            raise
         except Exception as delete_exc:
             raise StorageError(f"Failed to delete history entry: {delete_exc}")
 
