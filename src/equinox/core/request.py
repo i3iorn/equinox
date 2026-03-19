@@ -168,6 +168,18 @@ class Response:
     # Per-phase timing breakdown (ms); populated by HTTPClient
     timings: Optional[Dict[str, float]] = None
 
+    def _get_header(self, name: str, default: str = "") -> str:
+        """Case-insensitive header lookup.
+
+        HTTP headers are case-insensitive per RFC 7230, but the
+        ``headers`` dict may store any casing depending on the source.
+        """
+        name_lower = name.lower()
+        for k, v in self.headers.items():
+            if k.lower() == name_lower:
+                return v
+        return default
+
     @property
     def text(self) -> str:
         """Get response body as text"""
@@ -177,7 +189,7 @@ class Response:
     @property
     def encoding(self) -> Optional[str]:
         """Extract encoding from content-type header"""
-        content_type = self.headers.get("content-type", "")
+        content_type = self._get_header("content-type")
         if not content_type or "charset" not in content_type:
             return None
         from email.message import Message
@@ -192,7 +204,7 @@ class Response:
     @property
     def content_type(self) -> Optional[str]:
         """Get content type"""
-        ct = self.headers.get("content-type", "")
+        ct = self._get_header("content-type")
         return ct.split(";")[0].strip() if ct else None
 
     @property
