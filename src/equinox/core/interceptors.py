@@ -11,7 +11,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
 
-from equinox.core import utc_now
+from equinox.core.time import utc_now
 from equinox.core.request import Request, Response
 from equinox.core.redact import redact_headers, redact_body, redact_url
 

@@ -33,8 +33,10 @@ class QueryValidator:
 
         if has_positional:
             QueryValidator._validate_positional(query, params)
-        else:
+        elif has_named:
             QueryValidator._validate_named(query, params)
+        else:
+            logger.debug(f"No placeholders found for {query}")
 
     @staticmethod
     def _validate_positional(query: str, params: Tuple) -> None:

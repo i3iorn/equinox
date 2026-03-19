@@ -2,6 +2,8 @@
 import json
 import os
 import ssl
+import threading
+
 import httpx
 import time
 import logging
@@ -10,7 +12,7 @@ from typing import Optional, Dict, Any, List, Tuple
 from datetime import datetime, timezone
 from threading import Lock
 
-from equinox.core import utc_now
+from equinox.core.time import utc_now
 from equinox.core.request import Request, Response
 from equinox.core.exceptions import (
     EquinoxError, RequestError, RequestTimeoutError, RateLimitError,
@@ -94,6 +96,7 @@ class HTTPClient:
         max_rate_per_minute: int = 60,
         max_concurrent_requests: int = 10,
         cookie_manager: Optional[Any] = None,
+        cancel_event: Optional[threading.Event] = None,
     ):
         """Initialize HTTP client.
 
@@ -104,6 +107,8 @@ class HTTPClient:
             proxy: Proxy URL (e.g., 'http://localhost:8080')
             max_rate_per_minute: Maximum requests per minute (0 = unlimited)
             max_concurrent_requests: Maximum concurrent requests
+            cookie_manager:
+            cancel_event:
 
         Raises:
             ValidationError: If parameters are invalid
@@ -125,6 +130,7 @@ class HTTPClient:
         self.max_rate_per_minute = max_rate_per_minute
         self.max_concurrent_requests = max_concurrent_requests
         self._cookie_manager = cookie_manager
+        self._cancel_event = cancel_event
 
         self._client: Optional[httpx.Client] = None
 
@@ -267,7 +273,7 @@ class HTTPClient:
                         "Request timed out (attempt %d/%d), retrying in %ds",
                         attempt + 1, self.MAX_RETRIES, wait_seconds,
                     )
-                    time.sleep(wait_seconds)
+                    self._interruptible_sleep(wait_seconds)
                 else:
                     raise
 
@@ -275,6 +281,23 @@ class HTTPClient:
             raise last_error  # unreachable — satisfies type checkers
 
         return response
+
+    def _interruptible_sleep(self, seconds: float) -> None:
+        """Sleep for *seconds*, but wake immediately if the cancel event fires.
+
+        Uses ``threading.Event.wait`` instead of ``time.sleep`` so that
+        ``RequestWorker.cancel()`` can interrupt a retry backoff instantly
+        rather than waiting for the full sleep to expire.
+
+        Raises:
+            RequestError: If the cancel event was set during the sleep.
+        """
+        if self._cancel_event is not None:
+            cancelled = self._cancel_event.wait(timeout=seconds)
+            if cancelled:
+                raise RequestError("Request cancelled during retry backoff")
+        else:
+            time.sleep(seconds)
 
     def _retry_on_server_overload(
         self,
@@ -295,7 +318,7 @@ class HTTPClient:
                 "Received %d (attempt %d/%d), retrying after %.1fs",
                 response.status_code, attempt + 1, self.MAX_HTTP_RETRIES, retry_after,
             )
-            time.sleep(retry_after)
+            self._interruptible_sleep(retry_after)
             response = self._send_once(request, auth)
             if response is None or response.status_code not in self.RETRYABLE_STATUS_CODES:
                 break

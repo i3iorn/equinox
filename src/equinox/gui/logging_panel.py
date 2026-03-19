@@ -13,7 +13,7 @@ from PyQt6.QtWidgets import (
 from PyQt6.QtCore import Qt, QSettings
 from PyQt6.QtGui import QFont, QColor
 
-from equinox.core import utc_now
+from equinox.core.time import utc_now
 from equinox.gui.theme import Colors, get_mono_font
 from equinox.core.redact import redact_headers
 

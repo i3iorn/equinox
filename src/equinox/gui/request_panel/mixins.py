@@ -19,7 +19,7 @@ from PyQt6.QtWidgets import (
     QDialog,
 )
 
-from equinox.core import utc_now
+from equinox.core.time import utc_now
 from equinox.gui.theme import Colors
 from equinox.core.request import Request, Response
 from equinox.core.error_enrichment import RichError, enrich_exception

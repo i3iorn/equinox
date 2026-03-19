@@ -11,7 +11,7 @@ from PyQt6.QtCore import Qt, QThread, pyqtSignal
 from PyQt6.QtGui import QFont
 from typing import Optional, Dict, Any
 
-from equinox.core import utc_now
+from equinox.core.time import utc_now
 from equinox.gui.theme import Colors, get_mono_font
 from equinox.gui.widgets import make_secret_row
 

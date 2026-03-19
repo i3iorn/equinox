@@ -5,7 +5,7 @@ from typing import Dict, Optional, Any, List
 from datetime import datetime, timezone
 import json
 
-from equinox.core import utc_now
+from equinox.core.time import utc_now
 
 
 @dataclass
