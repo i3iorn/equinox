@@ -217,7 +217,7 @@ class TestRequestInterpolation:
             "path": "users"
         }
 
-        VariableInterpolator.interpolate_request(request, variables)
+        request = VariableInterpolator.interpolate_request(request, variables)
         assert request.url == "https://api.example.com/users"
 
     def test_interpolate_headers(self):
@@ -235,7 +235,7 @@ class TestRequestInterpolation:
             "api_key": "secret"
         }
 
-        VariableInterpolator.interpolate_request(request, variables)
+        request = VariableInterpolator.interpolate_request(request, variables)
         assert request.headers["Authorization"] == "Bearer abc123"
         assert request.headers["X-API-Key"] == "secret"
 
@@ -254,7 +254,7 @@ class TestRequestInterpolation:
             "limit": "10"
         }
 
-        VariableInterpolator.interpolate_request(request, variables)
+        request = VariableInterpolator.interpolate_request(request, variables)
         assert request.params["user_id"] == "12345"
         assert request.params["limit"] == "10"
 
@@ -270,7 +270,7 @@ class TestRequestInterpolation:
             "email": "john@example.com"
         }
 
-        VariableInterpolator.interpolate_request(request, variables)
+        request = VariableInterpolator.interpolate_request(request, variables)
         assert request.body == '{"name": "John Doe", "email": "john@example.com"}'
 
     def test_interpolate_name(self):
@@ -282,7 +282,7 @@ class TestRequestInterpolation:
         )
         variables = {"resource": "users"}
 
-        VariableInterpolator.interpolate_request(request, variables)
+        request = VariableInterpolator.interpolate_request(request, variables)
         assert request.name == "Get users"
 
     def test_interpolate_description(self):
@@ -297,7 +297,7 @@ class TestRequestInterpolation:
             "env": "production"
         }
 
-        VariableInterpolator.interpolate_request(request, variables)
+        request = VariableInterpolator.interpolate_request(request, variables)
         assert request.description == "Fetch data from production"
 
     def test_interpolate_all_fields(self):
@@ -320,7 +320,7 @@ class TestRequestInterpolation:
             "resource": "item"
         }
 
-        VariableInterpolator.interpolate_request(request, variables)
+        request = VariableInterpolator.interpolate_request(request, variables)
 
         assert request.url == "https://api.example.com/items"
         assert request.headers["Authorization"] == "Bearer secret123"
@@ -334,7 +334,7 @@ class TestRequestInterpolation:
         original_url = "https://api.example.com"
         request = Request(method="GET", url=original_url)
 
-        VariableInterpolator.interpolate_request(request, {})
+        request = VariableInterpolator.interpolate_request(request, {})
         assert request.url == original_url
 
     def test_interpolate_none_values(self):
@@ -351,7 +351,7 @@ class TestRequestInterpolation:
         variables = {"base_url": "https://api.example.com"}
 
         # Should not raise errors
-        VariableInterpolator.interpolate_request(request, variables)
+        request = VariableInterpolator.interpolate_request(request, variables)
         assert request.url == "https://api.example.com/test"
 
 

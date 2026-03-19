@@ -70,13 +70,15 @@ class VariableInterpolator:
         return text
 
     @classmethod
-    def interpolate_request(cls, request: Any, variables: Dict[str, str]) -> None:
+    def interpolate_request(cls, o_request: Any, variables: Dict[str, str]) -> Any:
         """Interpolate variables in a Request object in-place.
 
         Args:
-            request: Request object to modify
+            o_request: Request object to modify
             variables: Dictionary of variable values
         """
+        request = o_request.copy()
+
         if not variables:
             return
 
@@ -103,6 +105,8 @@ class VariableInterpolator:
 
         if hasattr(request, 'description') and request.description:
             request.description = cls.interpolate(request.description, variables)
+
+        return request
 
     @classmethod
     def find_variables(cls, text: str) -> list:
