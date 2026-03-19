@@ -40,23 +40,32 @@ class QueryValidator:
 
     @staticmethod
     def _validate_positional(query: str, params: Tuple) -> None:
-        """Validate positional '?' placeholders."""
+        """Validate positional '?' placeholders.
+
+        Tracks single-quoted string literals using SQL's own escaping
+        convention (doubled quotes ``''``), **not** backslash escaping.
+        """
         in_string = False
-        escaped = False
         count = 0
+        i = 0
+        length = len(query)
 
-        for char in query:
-            if char == "\\" and not escaped:
-                escaped = True
-                continue
+        while i < length:
+            char = query[i]
 
-            if char == "'" and not escaped:
-                in_string = not in_string
-
+            if char == "'":
+                if in_string:
+                    # Check for escaped quote ('')
+                    if i + 1 < length and query[i + 1] == "'":
+                        i += 2  # skip both quotes
+                        continue
+                    in_string = False
+                else:
+                    in_string = True
             elif char == "?" and not in_string:
                 count += 1
 
-            escaped = False
+            i += 1
 
         if count != len(params):
             raise ValidationError(
@@ -83,24 +92,29 @@ class QueryValidator:
 
     @staticmethod
     def _extract_named_placeholders(query: str):
-        """Extract named placeholders outside string literals."""
+        """Extract named placeholders outside string literals.
+
+        Uses SQL's own escaping convention (doubled quotes ``''``),
+        not backslash escaping.
+        """
         in_string = False
-        escaped = False
         names = []
 
         i = 0
-        while i < len(query):
+        length = len(query)
+        while i < length:
             char = query[i]
 
-            if char == "\\" and not escaped:
-                escaped = True
-                i += 1
-                continue
+            if char == "'":
+                if in_string:
+                    if i + 1 < length and query[i + 1] == "'":
+                        i += 2  # skip escaped quote
+                        continue
+                    in_string = False
+                else:
+                    in_string = True
 
-            if char == "'" and not escaped:
-                in_string = not in_string
-
-            if char == ":" and not in_string:
+            elif char == ":" and not in_string:
                 # Extract identifier
                 match = QueryValidator.NAMED_PATTERN.match(query, i)
                 if match:
@@ -108,7 +122,6 @@ class QueryValidator:
                     i = match.end()
                     continue
 
-            escaped = False
             i += 1
 
         return names
@@ -150,6 +163,20 @@ class Database:
 
         logger.info(f"Initializing database at {self.db_path}")
         self._run_migrations()
+        self._set_database_pragmas()
+
+    def _set_database_pragmas(self) -> None:
+        """Set persistent database-level PRAGMAs once at startup.
+
+        ``journal_mode`` and ``secure_delete`` persist across connections,
+        so they only need to be set once per database file.
+        """
+        conn = sqlite3.connect(self.db_path, timeout=_CONNECTION_TIMEOUT_SECONDS)
+        try:
+            conn.execute("PRAGMA journal_mode = WAL")
+            conn.execute("PRAGMA secure_delete = ON")
+        finally:
+            conn.close()
 
     def _run_migrations(self) -> None:
         """Run all pending schema migrations on startup.
@@ -189,8 +216,6 @@ class Database:
             )
             conn.row_factory = sqlite3.Row
             conn.execute("PRAGMA foreign_keys = ON")
-            conn.execute("PRAGMA secure_delete = ON")
-            conn.execute("PRAGMA journal_mode = WAL")
             yield conn
         except sqlite3.Error as exc:
             logger.error(f"Database connection error: {exc}")
@@ -230,8 +255,6 @@ class Database:
             )
             conn.row_factory = sqlite3.Row
             conn.execute("PRAGMA foreign_keys = ON")
-            conn.execute("PRAGMA secure_delete = ON")
-            conn.execute("PRAGMA journal_mode = WAL")
             conn.execute("BEGIN")
             try:
                 yield _TransactionHelper(conn)
