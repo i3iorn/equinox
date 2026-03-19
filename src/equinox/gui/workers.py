@@ -1,5 +1,7 @@
 """Background worker threads and dialogs for the Equinox GUI."""
 
+import threading
+
 from PyQt6.QtWidgets import (
     QDialog,
     QVBoxLayout,
@@ -108,9 +110,11 @@ class RequestWorker(QThread):
         self.request = request
         self._cancelled = False
         self._cookie_manager = cookie_manager
+        self._cancel_event = threading.Event()
 
     def cancel(self) -> None:
         self._cancelled = True
+        self._cancel_event.set()
 
     def run(self) -> None:
         try:
@@ -125,6 +129,7 @@ class RequestWorker(QThread):
                 verify_ssl=getattr(self.request, "verify_ssl", True),
                 follow_redirects=getattr(self.request, "follow_redirects", True),
                 proxy=_proxy,
+                cancel_event=self._cancel_event
             )
             response = client.send(self.request)
             if not self._cancelled:
