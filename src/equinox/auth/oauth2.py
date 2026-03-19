@@ -13,6 +13,7 @@ from equinox.auth.base import AuthStrategy, _validate_credential
 from equinox.core.exceptions import AuthError
 from equinox.core.secure_storage import SecureStorage
 from equinox.core.audit import get_audit_logger, AuditEventType, AuditLevel
+from equinox.core.time import utc_now
 
 logger = logging.getLogger(__name__)
 
@@ -169,9 +170,8 @@ class OAuth2Auth(AuthStrategy):
             # Forcing a refresh every request would exhaust client-credentials grants.
             return False
 
-        now = utc_now()
         expiry = self.expires_at.replace(tzinfo=None) if self.expires_at.tzinfo else self.expires_at
-        seconds_until_expiry = (expiry - now).total_seconds()
+        seconds_until_expiry = (expiry - utc_now()).total_seconds()
         return seconds_until_expiry <= self.REFRESH_BUFFER_SECONDS
 
     def get_token_info(self) -> Dict[str, Any]:
