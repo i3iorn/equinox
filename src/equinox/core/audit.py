@@ -71,43 +71,30 @@ class AuditLevel(Enum):
 
 
 class AuditLogger:
-    """Audit logger for security events.
-
-    Logs security-relevant events to a dedicated audit log file
-    with structured JSON format for easy parsing and analysis.
-    """
-
     def __init__(self, log_path: Optional[Path] = None):
-        """Initialize audit logger.
-
-        Args:
-            log_path: Path to audit log file
-        """
         if log_path is None:
             log_path = Path.home() / ".equinox" / "audit.log"
 
         self.log_path = Path(log_path)
         self.log_path.parent.mkdir(parents=True, exist_ok=True)
 
-        # Configure audit logger
         self.logger = logging.getLogger("equinox.audit")
         self.logger.setLevel(logging.INFO)
-
-        # Prevent propagation to root logger
         self.logger.propagate = False
 
-        # Remove existing handlers
-        self.logger.handlers.clear()
+        # Close and remove existing handlers to avoid leaked file descriptors
+        for h in list(self.logger.handlers):
+            try:
+                h.close()
+            except Exception:
+                pass
+            self.logger.removeHandler(h)
 
-        # Add file handler
         handler = logging.FileHandler(self.log_path, encoding="utf-8")
         handler.setLevel(logging.INFO)
-
-        # Use JSON format
-        formatter = logging.Formatter("%(message)s")
-        handler.setFormatter(formatter)
-
+        handler.setFormatter(logging.Formatter("%(message)s"))
         self.logger.addHandler(handler)
+
 
     def log_event(
         self,
