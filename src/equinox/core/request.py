@@ -125,11 +125,9 @@ class Request:
         if self.method != "GET":
             parts.extend(["-X", self.method])
 
-        # Headers — use shlex.quote to safely handle values with special chars
         for key, value in self.headers.items():
             parts.extend(["-H", f"{key}: {value}"])
 
-        # Body — pass via shlex.quote to handle embedded quotes/special chars
         if self.body:
             parts.extend(["-d", self.body])
 
@@ -169,10 +167,6 @@ class Response:
     sent_url: Optional[str] = None
     # Per-phase timing breakdown (ms); populated by HTTPClient
     timings: Optional[Dict[str, float]] = None
-
-    def __post_init__(self):
-        """Ensure headers are case-insensitive"""
-        self.headers = {k.lower(): v for k, v in self.headers.items()}
 
     @property
     def text(self) -> str:
