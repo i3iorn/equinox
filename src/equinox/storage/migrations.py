@@ -575,19 +575,55 @@ class MigrationRunner:
     def _split_sql(sql: str) -> list:
         """Split a SQL script into individual non-empty statements.
 
-        Strips leading ``-- comment`` lines from each statement so that
-        blocks like ``-- Collections\\nCREATE TABLE ...`` are not
-        mistakenly discarded.
+        Respects single-quoted string literals so that semicolons inside
+        strings (e.g. ``DEFAULT 'a;b'``) do not cause a spurious split.
+        Strips leading ``-- comment`` lines from each statement.
         """
-        results = []
-        for raw_stmt in sql.split(";"):
-            # Remove pure-comment lines; keep the actual SQL lines.
-            lines = [
-                line for line in raw_stmt.splitlines()
-                if line.strip() and not line.strip().startswith("--")
-            ]
-            cleaned = "\n".join(lines).strip()
-            if cleaned:
-                results.append(cleaned)
-        return results
+        statements: list = []
+        current: list = []
+        in_string = False
+
+        i = 0
+        while i < len(sql):
+            char = sql[i]
+
+            if in_string:
+                current.append(char)
+                if char == "'":
+                    # Handle SQL escaped quotes ('')
+                    if i + 1 < len(sql) and sql[i + 1] == "'":
+                        current.append("'")
+                        i += 2
+                        continue
+                    in_string = False
+            elif char == "'":
+                in_string = True
+                current.append(char)
+            elif char == ";":
+                # End of statement
+                raw = "".join(current)
+                lines = [
+                    line for line in raw.splitlines()
+                    if line.strip() and not line.strip().startswith("--")
+                ]
+                cleaned = "\n".join(lines).strip()
+                if cleaned:
+                    statements.append(cleaned)
+                current = []
+            else:
+                current.append(char)
+
+            i += 1
+
+        # Handle trailing statement without semicolon
+        raw = "".join(current)
+        lines = [
+            line for line in raw.splitlines()
+            if line.strip() and not line.strip().startswith("--")
+        ]
+        cleaned = "\n".join(lines).strip()
+        if cleaned:
+            statements.append(cleaned)
+
+        return statements
 
