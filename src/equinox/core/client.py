@@ -10,6 +10,7 @@ from typing import Optional, Dict, Any, List, Tuple
 from datetime import datetime, timezone
 from threading import Lock
 
+from equinox.core import utc_now
 from equinox.core.request import Request, Response
 from equinox.core.exceptions import (
     EquinoxError, RequestError, RequestTimeoutError, RateLimitError,
@@ -668,20 +669,18 @@ class HTTPClient:
                 len(raw.history), chain, raw.status_code,
             )
 
-        _reason = self._extract_reason_phrase(raw)
-
         elapsed = time.time() - start_time
         logger.debug(
             "Request completed in %.2fs with status %d", elapsed, raw.status_code
         )
         return Response(
             status_code=raw.status_code,
-            reason=raw.reason_phrase,
+            reason=self._extract_reason_phrase(raw),
             headers=dict(raw.headers),
             body=raw.content,
             elapsed=elapsed,
             request=request,
-            timestamp=datetime.now(timezone.utc).replace(tzinfo=None),
+            timestamp=utc_now(),
             sent_headers=dict(raw.request.headers),
             sent_url=str(raw.request.url),
             timings={"total_ms": round(elapsed * 1000, 2)},

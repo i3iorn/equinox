@@ -19,6 +19,7 @@ from PyQt6.QtWidgets import (
     QDialog,
 )
 
+from equinox.core import utc_now
 from equinox.gui.theme import Colors
 from equinox.core.request import Request, Response
 from equinox.core.error_enrichment import RichError, enrich_exception
@@ -741,7 +742,7 @@ class _RequestAuthMixin:
             if info["expires_at"]:
                 try:
                     secs = int((datetime.fromisoformat(info["expires_at"]) -
-                                datetime.now(timezone.utc).replace(tzinfo=None)).total_seconds())
+                                utc_now()).total_seconds())
                     text += f"  (expires in {secs}s)" if secs > 0 else "  (expired)"
                 except Exception:
                     logger.debug("Failed to parse OAuth2 token expiry", exc_info=True)

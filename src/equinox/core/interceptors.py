@@ -11,6 +11,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
 
+from equinox.core import utc_now
 from equinox.core.request import Request, Response
 from equinox.core.redact import redact_headers, redact_body, redact_url
 
@@ -33,7 +34,7 @@ class InterceptorContext:
 
     def __post_init__(self):
         if self.timestamp is None:
-            self.timestamp = datetime.now(timezone.utc).replace(tzinfo=None)
+            self.timestamp = utc_now()
 
 
 class RequestInterceptor:
@@ -258,7 +259,7 @@ class RequestResponseLogger:
             "params": dict(request.params) if request.params else {},
             "timeout": request.timeout,
             "verify_ssl": request.verify_ssl,
-            "timestamp": datetime.now(timezone.utc).replace(tzinfo=None).isoformat(),
+            "timestamp": utc_now().isoformat(),
         }
 
         if include_body and request.body:
@@ -291,7 +292,7 @@ class RequestResponseLogger:
             "reason": response.reason,
             "elapsed_time_seconds": elapsed_time,
             "headers": redact_headers(dict(response.headers) if response.headers else {}),
-            "timestamp": datetime.now(timezone.utc).replace(tzinfo=None).isoformat(),
+            "timestamp": utc_now().isoformat(),
         }
 
         if include_body and response.body:
@@ -322,7 +323,7 @@ class RequestResponseLogger:
             "url": redact_url(request.url),
             "error_type": type(error).__name__,
             "error_message": error_msg,
-            "timestamp": datetime.now(timezone.utc).replace(tzinfo=None).isoformat(),
+            "timestamp": utc_now().isoformat(),
         }
 
         self.logger.log(level, json.dumps(log_data))

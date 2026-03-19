@@ -5,6 +5,8 @@ from typing import Dict, Optional, Any, List
 from datetime import datetime, timezone
 import json
 
+from equinox.core import utc_now
+
 
 @dataclass
 class Request:
@@ -161,7 +163,7 @@ class Response:
     body: bytes
     elapsed: float  # Response time in seconds
     request: Request
-    timestamp: datetime = field(default_factory=lambda: datetime.now(timezone.utc).replace(tzinfo=None))
+    timestamp: datetime = field(default_factory=lambda: utc_now())
     # Actual headers/URL used when sending (after auth is applied, params encoded)
     sent_headers: Optional[Dict[str, str]] = None
     sent_url: Optional[str] = None

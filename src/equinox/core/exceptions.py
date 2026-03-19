@@ -1,4 +1,5 @@
 """Exceptions for Equinox"""
+from typing import Optional
 
 
 class EquinoxError(Exception):
@@ -7,7 +8,7 @@ class EquinoxError(Exception):
     All Equinox exceptions inherit from this base class.
     """
 
-    def __init__(self, message: str, details: dict = None):
+    def __init__(self, message: str, details: Optional[dict] = None):
         """Initialize exception.
 
         Args:

@@ -1,10 +1,10 @@
 """Secure SQLite database access with parameterized queries and thread safety."""
-
+import re
 import sqlite3
 import threading
 import logging
 from pathlib import Path
-from typing import Optional, Any, List, Dict, Tuple
+from typing import Optional, Any, List, Dict, Tuple, Mapping
 from contextlib import contextmanager
 
 from equinox.core.exceptions import StorageError, ValidationError
@@ -12,6 +12,104 @@ from equinox.core.exceptions import StorageError, ValidationError
 logger = logging.getLogger(__name__)
 
 _CONNECTION_TIMEOUT_SECONDS = 10.0
+
+
+class QueryValidator:
+
+    NAMED_PATTERN = re.compile(r":([A-Za-z_][A-Za-z0-9_]*)")
+
+    @staticmethod
+    def validate_placeholders(query: str, params) -> None:
+        """
+        Validate SQL placeholders for both positional (?) and named (:name) styles.
+        """
+
+        # Detect placeholder style
+        has_positional = "?" in query
+        has_named = bool(QueryValidator.NAMED_PATTERN.search(query))
+
+        if has_positional and has_named:
+            raise ValidationError("Cannot mix positional and named placeholders")
+
+        if has_positional:
+            QueryValidator._validate_positional(query, params)
+        else:
+            QueryValidator._validate_named(query, params)
+
+    @staticmethod
+    def _validate_positional(query: str, params: Tuple) -> None:
+        """Validate positional '?' placeholders."""
+        in_string = False
+        escaped = False
+        count = 0
+
+        for char in query:
+            if char == "\\" and not escaped:
+                escaped = True
+                continue
+
+            if char == "'" and not escaped:
+                in_string = not in_string
+
+            elif char == "?" and not in_string:
+                count += 1
+
+            escaped = False
+
+        if count != len(params):
+            raise ValidationError(
+                f"Expected {count} parameters but got {len(params)}"
+            )
+
+    @staticmethod
+    def _validate_named(query: str, params: Mapping) -> None:
+        """Validate named ':name' placeholders."""
+        if not isinstance(params, Mapping):
+            raise ValidationError("Named placeholders require a mapping (dict-like)")
+
+        # Extract placeholder names outside string literals
+        names = QueryValidator._extract_named_placeholders(query)
+
+        missing = [n for n in names if n not in params]
+        extra = [p for p in params.keys() if p not in names]
+
+        if missing:
+            raise ValidationError(f"Missing parameters for placeholders: {missing}")
+
+        if extra:
+            raise ValidationError(f"Extra parameters not used in query: {extra}")
+
+    @staticmethod
+    def _extract_named_placeholders(query: str):
+        """Extract named placeholders outside string literals."""
+        in_string = False
+        escaped = False
+        names = []
+
+        i = 0
+        while i < len(query):
+            char = query[i]
+
+            if char == "\\" and not escaped:
+                escaped = True
+                i += 1
+                continue
+
+            if char == "'" and not escaped:
+                in_string = not in_string
+
+            if char == ":" and not in_string:
+                # Extract identifier
+                match = QueryValidator.NAMED_PATTERN.match(query, i)
+                if match:
+                    names.append(match.group(1))
+                    i = match.end()
+                    continue
+
+            escaped = False
+            i += 1
+
+        return names
 
 
 class Database:
@@ -164,12 +262,7 @@ class Database:
         if len(params) > self.MAX_PARAMS:
             raise ValidationError(f"Too many parameters (max: {self.MAX_PARAMS})")
 
-        placeholder_count = query.count('?')
-        if placeholder_count != len(params):
-            raise ValidationError(
-                f"Parameter count mismatch: query has {placeholder_count} placeholders "
-                f"but {len(params)} parameters provided"
-            )
+        QueryValidator.validate_placeholders(query, params)
 
     def execute(self, query: str, params: Tuple = ()) -> sqlite3.Cursor:
         """Execute a query safely with validation.

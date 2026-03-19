@@ -11,6 +11,7 @@ from PyQt6.QtCore import Qt, QThread, pyqtSignal
 from PyQt6.QtGui import QFont
 from typing import Optional, Dict, Any
 
+from equinox.core import utc_now
 from equinox.gui.theme import Colors, get_mono_font
 from equinox.gui.widgets import make_secret_row
 
@@ -365,7 +366,7 @@ class AuthDialog(QDialog):
                 try:
                     secs = int(
                         (datetime.fromisoformat(str(info["expires_at"])) -
-                         datetime.now(timezone.utc).replace(tzinfo=None)).total_seconds()
+                         utc_now()).total_seconds()
                     )
                     expiry = f", expires in {secs}s"
                 except Exception:

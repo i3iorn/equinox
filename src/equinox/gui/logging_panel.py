@@ -13,6 +13,7 @@ from PyQt6.QtWidgets import (
 from PyQt6.QtCore import Qt, QSettings
 from PyQt6.QtGui import QFont, QColor
 
+from equinox.core import utc_now
 from equinox.gui.theme import Colors, get_mono_font
 from equinox.core.redact import redact_headers
 
@@ -97,7 +98,7 @@ class LoggingPanel(QWidget):
     def log_request(self, request) -> None:
         entry = {
             "type": "request",
-            "timestamp": datetime.now(timezone.utc).replace(tzinfo=None).isoformat(timespec="milliseconds"),
+            "timestamp": utc_now().isoformat(timespec="milliseconds"),
             "method": request.method,
             "url": request.url,
             "headers": dict(request.headers or {}),
@@ -114,7 +115,7 @@ class LoggingPanel(QWidget):
         elapsed_ms = int(response.elapsed * 1000)
         entry = {
             "type": "response",
-            "timestamp": datetime.now(timezone.utc).replace(tzinfo=None).isoformat(timespec="milliseconds"),
+            "timestamp": utc_now().isoformat(timespec="milliseconds"),
             "method": request.method,
             "url": request.url,
             "status": response.status_code,
@@ -141,7 +142,7 @@ class LoggingPanel(QWidget):
     def log_error(self, request, error) -> None:
         entry = {
             "type": "error",
-            "timestamp": datetime.now(timezone.utc).replace(tzinfo=None).isoformat(timespec="milliseconds"),
+            "timestamp": utc_now().isoformat(timespec="milliseconds"),
             "method": getattr(request, "method", "?"),
             "url": getattr(request, "url", "?"),
             "error": str(error),

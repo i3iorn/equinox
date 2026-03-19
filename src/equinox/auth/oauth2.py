@@ -169,7 +169,7 @@ class OAuth2Auth(AuthStrategy):
             # Forcing a refresh every request would exhaust client-credentials grants.
             return False
 
-        now = datetime.now(timezone.utc).replace(tzinfo=None)
+        now = utc_now()
         expiry = self.expires_at.replace(tzinfo=None) if self.expires_at.tzinfo else self.expires_at
         seconds_until_expiry = (expiry - now).total_seconds()
         return seconds_until_expiry <= self.REFRESH_BUFFER_SECONDS
@@ -412,7 +412,7 @@ class OAuth2Auth(AuthStrategy):
             expires_in_seconds = _DEFAULT_TOKEN_EXPIRY_SECONDS
 
         self.expires_at = (
-            datetime.now(timezone.utc).replace(tzinfo=None)
+            utc_now()
             + timedelta(seconds=expires_in_seconds)
         )
         logger.debug("OAuth2 token will expire in %d seconds", expires_in_seconds)

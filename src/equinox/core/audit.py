@@ -16,6 +16,7 @@ from pathlib import Path
 from typing import Optional, Dict, Any
 from enum import Enum
 
+from equinox.core import utc_now
 from equinox.core.redact import redact_url, redact_body
 
 logger = logging.getLogger(__name__)
@@ -127,7 +128,7 @@ class AuditLogger:
         """
         # Create audit record
         record = {
-            "timestamp": datetime.now(timezone.utc).replace(tzinfo=None).isoformat() + "Z",
+            "timestamp": utc_now().isoformat() + "Z",
             "event_type": event_type.value,
             "level": level.value,
             "message": message,
