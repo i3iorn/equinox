@@ -20,6 +20,18 @@ SENSITIVE_HEADER_NAMES = frozenset({
     "cookie",
     "set-cookie",
     "x-csrf-token",
+    'authorization',
+    'x-api-key',
+    'api-key',
+    'apikey',
+    'token',
+    'x-auth-token',
+    'x-access-token',
+    'cookie',
+    'set-cookie',
+    'x-csrf-token',
+    'password',
+    'secret',
 })
 
 _REDACTED = "[REDACTED]"

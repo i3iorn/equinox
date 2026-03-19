@@ -5,6 +5,7 @@ import logging
 import re
 from typing import List, Dict, Any, Optional
 
+from equinox.core.redact import redact_headers, redact_url
 from equinox.storage.database import Database
 from equinox.core.request import Request, Response
 from equinox.core.exceptions import StorageError, ValidationError, SecurityError
@@ -24,19 +25,6 @@ class HistoryManager:
     MAX_REGEX_LENGTH = 500
     DEFAULT_LIMIT = 100
     MAX_LIMIT = 10000
-
-    SENSITIVE_PATTERNS = [
-        re.compile(r'(password|passwd|pwd)=([^&\s]+)', re.IGNORECASE),
-        re.compile(r'(token|api[_-]?key|secret)=([^&\s]+)', re.IGNORECASE),
-        re.compile(r'(auth|authorization)=([^&\s]+)', re.IGNORECASE),
-    ]
-
-    _SENSITIVE_HEADER_KEYS = {
-        'authorization', 'x-api-key', 'api-key', 'apikey',
-        'token', 'x-auth-token', 'x-access-token',
-        'cookie', 'set-cookie', 'x-csrf-token',
-        'password', 'secret',
-    }
 
     def __init__(self, db: Database):
         self.db = db
@@ -338,7 +326,7 @@ class HistoryManager:
             logger.warning("URL too long, truncating: %s...", url[:100])
             url = url[:self.MAX_URL_LENGTH]
 
-        sanitized = self._sanitize_url(url)
+        sanitized = redact_url(url)
         if sanitized != url:
             logger.info("Sensitive data detected and redacted from URL in history")
         return sanitized
@@ -359,7 +347,7 @@ class HistoryManager:
         if not isinstance(headers, dict):
             raise ValidationError("Request headers must be a dictionary")
 
-        sanitized = self._sanitize_headers(headers)
+        sanitized = redact_headers(headers)
         headers_json = json.dumps(sanitized)
 
         if len(headers_json) > self.MAX_HEADERS_SIZE:
@@ -401,7 +389,7 @@ class HistoryManager:
         elapsed = response.elapsed
 
         response_headers = dict(response.headers) if response.headers else {}
-        sanitized_response_headers = self._sanitize_headers(response_headers)
+        sanitized_response_headers = redact_headers(response_headers)
         response_headers_json = json.dumps(sanitized_response_headers)
 
         if len(response_headers_json) > self.MAX_HEADERS_SIZE:
@@ -436,22 +424,6 @@ class HistoryManager:
         if len(error) > self.MAX_ERROR_MESSAGE_LENGTH:
             error = error[:self.MAX_ERROR_MESSAGE_LENGTH] + "... [TRUNCATED]"
         return error
-
-    # ── Header/URL sanitisation ───────────────────────────────────────────────
-
-    def _sanitize_url(self, url: str) -> str:
-        """Redact sensitive query parameter values in a URL."""
-        sanitized = url
-        for pattern in self.SENSITIVE_PATTERNS:
-            sanitized = pattern.sub(r'\1=[REDACTED]', sanitized)
-        return sanitized
-
-    def _sanitize_headers(self, headers: Dict[str, Any]) -> Dict[str, Any]:
-        """Redact values of security-sensitive HTTP headers."""
-        return {
-            key: ("[REDACTED]" if any(s in key.lower() for s in self._SENSITIVE_HEADER_KEYS) else value)
-            for key, value in headers.items()
-        }
 
     # ── JSON header decoding ──────────────────────────────────────────────────
 
