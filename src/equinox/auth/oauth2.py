@@ -3,7 +3,7 @@
 import json
 import time
 import logging
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta
 from threading import Lock
 from typing import Dict, Any, Optional
 
@@ -170,7 +170,11 @@ class OAuth2Auth(AuthStrategy):
             # Forcing a refresh every request would exhaust client-credentials grants.
             return False
 
-        expiry = self.expires_at.replace(tzinfo=None) if self.expires_at.tzinfo else self.expires_at
+        # Normalise to naive UTC in case expires_at was set directly with tzinfo.
+        expiry = self.expires_at
+        if expiry.tzinfo is not None:
+            from datetime import timezone
+            expiry = expiry.astimezone(timezone.utc).replace(tzinfo=None)
         seconds_until_expiry = (expiry - utc_now()).total_seconds()
         return seconds_until_expiry <= self.REFRESH_BUFFER_SECONDS
 
