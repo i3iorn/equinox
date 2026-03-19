@@ -20,15 +20,9 @@ SENSITIVE_HEADER_NAMES = frozenset({
     "cookie",
     "set-cookie",
     "x-csrf-token",
-    'api-key',
-    'apikey',
-    'token',
-    'x-auth-token',
-    'x-access-token',
-    'set-cookie',
-    'x-csrf-token',
-    'password',
-    'secret',
+    "token",
+    "password",
+    "secret",
 })
 
 _REDACTED = "[REDACTED]"
@@ -54,7 +48,7 @@ _URL_CREDENTIALS = re.compile(r"(https?://)([^@/:]+):([^@/]+)@", re.IGNORECASE)
 # URL query-string secret parameters
 _URL_SECRET_PARAMS = re.compile(
     r"((?:\?|&)(?:api_key|apikey|token|access_token|refresh_token|secret|password"
-    r"|client_secret|private_key)"
+    r"|client_secret|private_key|authorization)"
     r"=)([^&#]+)",
     re.IGNORECASE,
 )
