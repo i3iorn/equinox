@@ -33,8 +33,7 @@ class InterceptorContext:
     metadata: Dict[str, Any] = field(default_factory=dict)
 
     def __post_init__(self):
-        if self.timestamp is None:
-            self.timestamp = utc_now()
+        self.timestamp = utc_now(self.timestamp)
 
 
 class RequestInterceptor:
