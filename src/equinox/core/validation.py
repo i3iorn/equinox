@@ -15,6 +15,18 @@ from pathlib import Path
 
 from equinox.core.exceptions import ValidationError
 
+# Lazy-initialised thread pool for DNS resolution in SSRF checks.
+# A single-worker pool avoids creating/tearing down threads on every call.
+_dns_pool: Optional[concurrent.futures.ThreadPoolExecutor] = None
+
+
+def _get_dns_pool() -> concurrent.futures.ThreadPoolExecutor:
+    """Return a shared single-worker thread pool for DNS lookups."""
+    global _dns_pool
+    if _dns_pool is None:
+        _dns_pool = concurrent.futures.ThreadPoolExecutor(max_workers=1)
+    return _dns_pool
+
 
 class Validator:
     """Zero-trust input validator."""
@@ -169,15 +181,13 @@ class Validator:
         except ValueError:
             # Not a literal IP — try DNS resolution with a tight timeout
             # to avoid stalling on slow/unresponsive DNS servers.
-            # Uses a thread pool instead of socket.setdefaulttimeout() to
-            # avoid mutating process-global state in a multi-threaded app.
             try:
-                with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
-                    future = pool.submit(
-                        socket.getaddrinfo,
-                        hostname_lower, None, socket.AF_UNSPEC, socket.SOCK_STREAM,
-                    )
-                    infos = future.result(timeout=2.0)
+                pool = _get_dns_pool()
+                future = pool.submit(
+                    socket.getaddrinfo,
+                    hostname_lower, None, socket.AF_UNSPEC, socket.SOCK_STREAM,
+                )
+                infos = future.result(timeout=2.0)
                 for family, _, _, _, sockaddr in infos:
                     ip_str = sockaddr[0]
                     addr = ipaddress.ip_address(ip_str)
@@ -386,20 +396,18 @@ class Validator:
             if len(key) > cls.MAX_PARAM_KEY_LENGTH:
                 raise ValidationError("Parameter key too long")
 
-            # Check for command injection in keys
-            for pattern in cls.COMMAND_INJECTION_PATTERNS:
-                if re.search(pattern, key):
-                    raise ValidationError(f"Parameter key contains invalid characters: {key}")
+            # Check for CRLF injection in keys (could allow header injection)
+            if '\r' in key or '\n' in key:
+                raise ValidationError(f"Parameter key contains invalid characters (CRLF): {key}")
 
             # Validate value
             value_str = str(value)
             if len(value_str) > cls.MAX_PARAM_VALUE_LENGTH:
                 raise ValidationError("Parameter value too long")
 
-            # Check for command injection in values
-            for pattern in cls.COMMAND_INJECTION_PATTERNS:
-                if re.search(pattern, value_str):
-                    raise ValidationError(f"Parameter value contains invalid characters")
+            # Check for CRLF injection in values
+            if '\r' in value_str or '\n' in value_str:
+                raise ValidationError("Parameter value contains invalid characters (CRLF)")
 
             validated[key] = value
 
@@ -448,7 +456,7 @@ class Validator:
         return file_path
 
     @classmethod
-    def validate_environment_variable(cls, name: str, value: str) -> tuple[str, str]:
+    def validate_environment_variable(cls, name: str, value: str) -> Tuple[str, str]:
         """Validate environment variable.
 
         Args:

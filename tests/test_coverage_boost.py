@@ -491,7 +491,7 @@ class TestHTTPClientCoverage:
         req = Request(method="POST", url="https://example.com")
         req.multipart_data = [{"key": "name", "type": "text", "value": "Alice"}]
         files, handles = client._build_multipart_files(req)
-        assert "name" in files
+        assert any(k == "name" for k, v in files)
         assert handles == []
 
     def test_build_multipart_files_missing_file(self):
@@ -500,7 +500,7 @@ class TestHTTPClientCoverage:
         req = Request(method="POST", url="https://example.com")
         req.multipart_data = [{"key": "doc", "type": "file", "value": "/nonexistent/file.txt"}]
         files, handles = client._build_multipart_files(req)
-        assert files["doc"] == (None, b"")
+        assert any(k == "doc" and v == (None, b"") for k, v in files)
         assert handles == []
 
     def test_build_multipart_files_empty_key_skipped(self):
@@ -509,7 +509,7 @@ class TestHTTPClientCoverage:
         req = Request(method="POST", url="https://example.com")
         req.multipart_data = [{"key": "", "type": "text", "value": "skip"}]
         files, handles = client._build_multipart_files(req)
-        assert files == {}
+        assert files is None
 
 
 # ═════════════════════════════════════════════════════════════════════════════

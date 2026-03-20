@@ -75,21 +75,26 @@ class TestInputValidation:
             client.send(request)
 
     def test_command_injection_in_params(self):
-        """Test parameter validation against command injection."""
+        """Test parameter validation against CRLF injection.
+
+        Shell metacharacters (;, $, |, &) are legitimate in query param
+        values for an API testing tool, so they are allowed.  CRLF
+        characters are the real threat (header injection) and must still
+        be rejected.
+        """
         client = HTTPClient()
 
-        malicious_params = {
-            "cmd": "test; rm -rf /",
-            "exec": "$(cat /etc/passwd)",
+        crlf_params = {
+            "injected": "value\r\nX-Evil: header",
         }
 
         request = Request(
             method="GET",
             url="https://example.com",
-            params=malicious_params
+            params=crlf_params
         )
 
-        with pytest.raises(ValidationError):
+        with pytest.raises(ValidationError, match="CRLF"):
             client.send(request)
 
 

@@ -20,7 +20,7 @@ import base64
 import logging
 import tempfile
 from pathlib import Path
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, List
 from cryptography.fernet import Fernet
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
@@ -291,7 +291,7 @@ class SecureStorage:
         self._audit.log_credential_access("delete", key)
         return True
 
-    def list_keys(self) -> list[str]:
+    def list_keys(self) -> List[str]:
         """List all credential keys.
 
         Returns:
@@ -501,6 +501,8 @@ def _wipe_bytes(b: bytes) -> None:
     *not* guaranteed by the language spec, but it raises the bar
     compared to leaving keys in memory until the GC collects them.
     """
+    if not b:
+        return  # nothing to wipe
     try:
         import ctypes
         ptr = ctypes.cast(id(b), ctypes.POINTER(ctypes.c_char))

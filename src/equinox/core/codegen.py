@@ -16,6 +16,21 @@ _REDACTED_PASS = "<YOUR_PASSWORD>"
 _REDACTED_KEY = "<YOUR_API_KEY>"
 
 
+def _escape_go_string(s: str) -> str:
+    """Escape a string for use inside Go double-quoted string literals."""
+    return s.replace("\\", "\\\\").replace('"', '\\"').replace("\n", "\\n").replace("\r", "\\r").replace("\t", "\\t")
+
+
+def _escape_ruby_single(s: str) -> str:
+    """Escape a string for use inside Ruby single-quoted string literals."""
+    return s.replace("\\", "\\\\").replace("'", "\\\\'")
+
+
+def _escape_php_single(s: str) -> str:
+    """Escape a string for use inside PHP single-quoted string literals."""
+    return s.replace("\\", "\\\\").replace("'", "\\\\'")
+
+
 def _inject_auth_into_headers(request: Request, headers: dict) -> None:
     """Inject auth credentials into *headers* as redacted placeholders.
 
@@ -204,17 +219,17 @@ class GoHttpGenerator:
         lines.append("func main() {")
 
         if request.body:
-            safe = request.body.replace("\\", "\\\\").replace('"', '\\"').replace("\n", "\\n")
+            safe = _escape_go_string(request.body)
             lines.append(f'    body := strings.NewReader("{safe}")')
             lines.append("    req, _ := http.NewRequest(")
             lines.append(f'        "{request.method}",')
-            lines.append(f'        "{request.url}",')
+            lines.append(f'        "{_escape_go_string(request.url)}",')
             lines.append("        body,")
             lines.append("    )")
         else:
             lines.append("    req, _ := http.NewRequest(")
             lines.append(f'        "{request.method}",')
-            lines.append(f'        "{request.url}",')
+            lines.append(f'        "{_escape_go_string(request.url)}",')
             lines.append("        nil,")
             lines.append("    )")
 
@@ -223,7 +238,7 @@ class GoHttpGenerator:
         headers = dict(request.headers or {})
         _inject_auth_into_headers(request, headers)
         for k, v in headers.items():
-            lines.append(f'    req.Header.Set("{k}", "{v}")')
+            lines.append(f'    req.Header.Set("{_escape_go_string(k)}", "{_escape_go_string(v)}")')
         if headers:
             lines.append("")
 
@@ -252,7 +267,7 @@ class RubyNetHttpGenerator:
             sep = "&" if "?" in url else "?"
             url = f"{url}{sep}{qs}"
 
-        lines.append(f"uri = URI('{url}')")
+        lines.append(f"uri = URI('{_escape_ruby_single(url)}')")
         lines.append("http = Net::HTTP.new(uri.host, uri.port)")
         lines.append("http.use_ssl = uri.scheme == 'https'")
         lines.append("")
@@ -268,7 +283,7 @@ class RubyNetHttpGenerator:
         headers = dict(request.headers or {})
         _inject_auth_into_headers(request, headers)
         for k, v in headers.items():
-            lines.append(f"request['{k}'] = '{v}'")
+            lines.append(f"request['{_escape_ruby_single(k)}'] = '{_escape_ruby_single(v)}'")
 
         if request.body:
             try:
@@ -299,10 +314,10 @@ class PhpCurlGenerator:
             sep = "&" if "?" in url else "?"
             url = f"{url}{sep}{qs}"
 
-        lines.append(f"$url = '{url}';")
+        lines.append(f"$url = '{_escape_php_single(url)}';")
         lines.append("$ch = curl_init($url);")
         lines.append("")
-        lines.append(f"curl_setopt($ch, CURLOPT_CUSTOMREQUEST, '{request.method}');")
+        lines.append(f"curl_setopt($ch, CURLOPT_CUSTOMREQUEST, '{_escape_php_single(request.method)}');")
         lines.append("curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);")
 
         if not getattr(request, "verify_ssl", True):
@@ -311,11 +326,11 @@ class PhpCurlGenerator:
         headers = dict(request.headers or {})
         _inject_auth_into_headers(request, headers)
         if headers:
-            header_list = [f"'{k}: {v}'" for k, v in headers.items()]
+            header_list = [f"'{_escape_php_single(k)}: {_escape_php_single(v)}'" for k, v in headers.items()]
             lines.append(f"curl_setopt($ch, CURLOPT_HTTPHEADER, [{', '.join(header_list)}]);")
 
         if request.body:
-            safe = request.body.replace("'", "\\'")
+            safe = _escape_php_single(request.body)
             lines.append(f"curl_setopt($ch, CURLOPT_POSTFIELDS, '{safe}');")
 
         lines.append("")

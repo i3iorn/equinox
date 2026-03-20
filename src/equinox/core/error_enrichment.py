@@ -8,6 +8,7 @@ labels, and full tracebacks for logging.
 import dataclasses
 import logging
 import traceback
+from typing import Optional
 
 from equinox.core.redact import redact_body as _redact, redact_url as _redact_url
 
@@ -89,7 +90,7 @@ def _describe_connect_error(inner: str) -> str:
     return f"Could not connect to server.\n{inner or '(no additional detail)'}"
 
 
-def _enrich_equinox_error(exc: Exception, raw: str, exc_type: str) -> "str | None":
+def _enrich_equinox_error(exc: Exception, raw: str, exc_type: str) -> Optional[str]:
     """Return a human-readable message for equinox domain errors, or None."""
     from equinox.core.exceptions import (
         TimeoutError as EqTimeoutError,

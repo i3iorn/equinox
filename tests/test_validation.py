@@ -142,9 +142,9 @@ class TestQueryParamsValidation:
             Validator.validate_query_params(params)
 
     def test_param_with_injection(self):
-        """Test parameter with command injection attempt."""
-        params = {"cmd": "test; rm -rf /"}
-        with pytest.raises(ValidationError, match="invalid characters"):
+        """Test parameter with CRLF injection attempt."""
+        params = {"cmd": "value\r\nX-Evil: injected"}
+        with pytest.raises(ValidationError, match="CRLF"):
             Validator.validate_query_params(params)
 
 

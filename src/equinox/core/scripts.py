@@ -27,12 +27,12 @@ import ast
 import builtins
 import threading
 from dataclasses import dataclass, field
-from typing import Any, Dict, Optional
+from typing import Any, Dict, FrozenSet, Optional
 
 
 # ── Allow-list of importable top-level packages ──────────────────────────────
 
-ALLOWED_MODULES: frozenset[str] = frozenset(
+ALLOWED_MODULES: FrozenSet[str] = frozenset(
     {
         "json",
         "re",

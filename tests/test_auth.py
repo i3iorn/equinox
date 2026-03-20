@@ -8,6 +8,7 @@ from equinox.auth.bearer import BearerAuth
 from equinox.auth.api_key import APIKeyAuth
 from equinox.auth.basic import BasicAuth
 from equinox.auth.oauth2 import OAuth2Auth
+from equinox.core.exceptions import AuthError
 from equinox.core.request import Request
 
 
@@ -64,7 +65,7 @@ class TestAPIKeyAuth:
 
     def test_api_key_auth_invalid_location(self):
         """Test API key with invalid location."""
-        with pytest.raises(ValueError, match="location"):
+        with pytest.raises(AuthError, match="location"):
             APIKeyAuth("key", "value", location="invalid")
 
 

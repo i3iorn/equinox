@@ -31,6 +31,13 @@ def parse_dotenv(text: str) -> dict:
         value = value.strip()
         if len(value) >= 2 and value[0] == value[-1] and value[0] in ('"', "'"):
             value = value[1:-1]
+        else:
+            # Strip inline comments for unquoted values: KEY=value # comment
+            # Only strip if there's a space before the #, so values like
+            # "color=#fff" are preserved.
+            comment_idx = value.find(" #")
+            if comment_idx >= 0:
+                value = value[:comment_idx].rstrip()
         if key:
             result[key] = value
     return result

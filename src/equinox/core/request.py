@@ -2,7 +2,7 @@
 
 from dataclasses import dataclass, field
 from typing import Dict, Optional, Any, List
-from datetime import datetime, timezone
+from datetime import datetime
 import json
 
 from equinox.core.time import utc_now
