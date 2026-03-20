@@ -3,7 +3,7 @@
 import json
 import time
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from threading import Lock
 from typing import Dict, Any, Optional
 
@@ -173,7 +173,6 @@ class OAuth2Auth(AuthStrategy):
         # Normalise to naive UTC in case expires_at was set directly with tzinfo.
         expiry = self.expires_at
         if expiry.tzinfo is not None:
-            from datetime import timezone
             expiry = expiry.astimezone(timezone.utc).replace(tzinfo=None)
         seconds_until_expiry = (expiry - utc_now()).total_seconds()
         return seconds_until_expiry <= self.REFRESH_BUFFER_SECONDS
@@ -308,9 +307,11 @@ class OAuth2Auth(AuthStrategy):
             data: Dict[str, Any] = {
                 "grant_type": "refresh_token",
                 "refresh_token": self.refresh_token,
-                "client_id": self.client_id,
-                "client_secret": self.client_secret,
             }
+            if self.client_id:
+                data["client_id"] = self.client_id
+            if self.client_secret:
+                data["client_secret"] = self.client_secret
             # RFC 6749 §6: scope is OPTIONAL on refresh, but many servers honour it.
             if self.scope:
                 data["scope"] = self.scope

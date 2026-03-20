@@ -13,7 +13,7 @@ from __future__ import annotations
 import hashlib
 import hmac
 from datetime import datetime, timezone
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, Tuple
 from urllib.parse import quote, urlparse, parse_qsl
 
 from equinox.auth.base import AuthStrategy, _validate_credential
@@ -89,6 +89,7 @@ class AWSSigV4Auth(AuthStrategy):
         signed_headers, canonical_headers = self._canonical_headers(headers)
 
         payload_hash = hashlib.sha256(body_bytes).hexdigest()
+        headers["x-amz-content-sha256"] = payload_hash
 
         canonical_request = "\n".join([
             method,
@@ -187,7 +188,7 @@ class AWSSigV4Auth(AuthStrategy):
         return "&".join(f"{k}={v}" for k, v in encoded)
 
     @staticmethod
-    def _canonical_headers(headers: Dict[str, str]) -> tuple[str, str]:
+    def _canonical_headers(headers: Dict[str, str]) -> Tuple[str, str]:
         """Return (signed_headers_string, canonical_headers_block).
 
         Only lowercase header names are used.  Headers are sorted by name.

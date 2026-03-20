@@ -22,7 +22,7 @@ def _validate_credential(value: str, field_name: str) -> str:
         field_name: Human-readable label used in error messages.
 
     Returns:
-        The validated (stripped) string.
+        The validated string.
 
     Raises:
         AuthError: If validation fails.

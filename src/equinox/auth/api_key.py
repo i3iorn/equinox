@@ -23,11 +23,11 @@ class APIKeyAuth(AuthStrategy):
             location: Where to place the key ('header' or 'query')
 
         Raises:
-            ValueError: If location is not 'header' or 'query'
-            AuthError: If key or value is empty, too long, or contains CRLF.
+            AuthError: If location is not 'header' or 'query', or if key/value
+                is empty, too long, or contains CRLF characters.
         """
         if location not in ("header", "query"):
-            raise ValueError(f"Invalid location '{location}'. Must be 'header' or 'query'")
+            raise AuthError(f"Invalid location '{location}'. Must be 'header' or 'query'")
 
         self.key = _validate_credential(key, "API key name")
         self.value = _validate_credential(value, "API key value")

@@ -9,7 +9,7 @@ import re
 import json
 import socket
 import concurrent.futures
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, Tuple
 from urlps import parse_url_unsafe as _urlps_parse
 from pathlib import Path
 
