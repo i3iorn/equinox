@@ -26,9 +26,10 @@ from PyQt6.QtWidgets import (
     QFormLayout, QToolButton,
 )
 from PyQt6.QtCore import pyqtSignal, Qt, QTimer, QStringListModel
-from PyQt6.QtGui import QFont, QKeySequence, QShortcut
+from PyQt6.QtGui import QKeySequence, QShortcut
 
-from equinox.gui.theme import Colors, get_mono_font, get_font_size
+from equinox.gui.request_panel.body_text_proxy import BodyTextProxy
+from equinox.gui.theme import Colors, get_mono_font
 from equinox.gui.widgets import UrlLineEdit, CheckableKeyValueTable, JsonBodyEditor, PathParamsTable
 from equinox.core.request import Request
 from equinox.core.error_enrichment import RichError, enrich_exception
@@ -44,136 +45,6 @@ from equinox.gui.request_panel.save_dialog import SaveRequestDialog  # noqa: F40
 from equinox.gui.request_panel.toolbar import TabToolbar
 
 logger = logging.getLogger(__name__)
-
-
-class _BodyTextProxy:
-    """A resilient proxy for the JsonBodyEditor.
-
-    It forwards calls to the underlying widget when available. If the
-    underlying C++ object has been deleted (as seen in some headless
-    test environments), the proxy provides a lightweight fallback so
-    callers (and tests) can still set/get body text and the panel can
-    respond (mark dirty, update labels) without raising RuntimeError.
-    """
-    def __init__(self, panel, widget=None):
-        self._panel = panel
-        self._widget = widget
-        self._buffer = ""
-
-    class _NoopSignal:
-        """A tiny object that exposes a connect(slot) method for safe_connect.
-
-        It intentionally does nothing when connected; the panel's proxy will
-        manually call _mark_dirty/_update_tab_labels when setPlainText is used.
-        """
-        def connect(self, slot):
-            # No-op: nothing to connect to in headless fallback
-            return
-
-
-    def __getattr__(self, name: str):
-        # Forward attribute access to the underlying widget when possible
-        if self._widget is not None:
-            try:
-                return getattr(self._widget, name)
-            except RuntimeError:
-                self._widget = None
-        raise AttributeError(name)
-
-    @property
-    def textChanged(self):
-        """Expose the underlying signal when available, otherwise a noop.
-
-        This allows callers that lazily retrieve signals (see safe_connect)
-        to attempt connecting without raising AttributeError when the C++
-        object is gone.
-        """
-        if self._widget is not None:
-            try:
-                return getattr(self._widget, "textChanged")
-            except RuntimeError:
-                self._widget = None
-        return _BodyTextProxy._NoopSignal()
-
-    def _has_widget(self):
-        return self._widget is not None
-
-    def setPlainText(self, text: str):
-        if self._has_widget():
-            try:
-                self._widget.setPlainText(text)
-            except RuntimeError:
-                # Underlying C++ object missing — fall back
-                self._widget = None
-                self._buffer = text
-        else:
-            self._buffer = text
-        # Mark the panel dirty and update labels as the real signal would
-        try:
-            self._panel._mark_dirty()
-            self._panel._update_tab_labels()
-        except Exception:
-            logger.debug("Failed to mark panel dirty from BodyTextProxy", exc_info=True)
-
-    def clear(self):
-        if self._has_widget():
-            try:
-                self._widget.clear()
-                return
-            except RuntimeError:
-                self._widget = None
-        self._buffer = ""
-
-    def toPlainText(self) -> str:
-        if self._has_widget():
-            try:
-                return self._widget.toPlainText()
-            except RuntimeError:
-                self._widget = None
-        return self._buffer
-
-    # Lightweight passthroughs / no-ops for methods used elsewhere
-    def setVisible(self, v: bool):
-        if self._has_widget():
-            try:
-                self._widget.setVisible(v)
-            except RuntimeError:
-                self._widget = None
-
-    def setEnabled(self, v: bool):
-        if self._has_widget():
-            try:
-                self._widget.setEnabled(v)
-            except RuntimeError:
-                self._widget = None
-
-    def setPlaceholderText(self, txt: str):
-        if self._has_widget():
-            try:
-                self._widget.setPlaceholderText(txt)
-            except RuntimeError:
-                self._widget = None
-
-    def setFont(self, font):
-        if self._has_widget():
-            try:
-                self._widget.setFont(font)
-            except RuntimeError:
-                self._widget = None
-
-    def document(self):
-        if self._has_widget():
-            try:
-                return self._widget.document()
-            except RuntimeError:
-                self._widget = None
-        # Fallback: create a simple QTextDocument for syntax highlighter use
-        from PyQt6.QtGui import QTextDocument
-        doc = QTextDocument()
-        doc.setPlainText(self._buffer)
-        return doc
-
-
 
 # Common header presets for the Headers tab toolbar
 _HEADER_PRESETS = [
@@ -628,7 +499,7 @@ class RequestPanel(_RequestSendMixin, _RequestAuthMixin, _RequestBodyMixin, QWid
         # Create the real editor and wrap it in a proxy that tolerates
         # a missing underlying C++ object in some headless test environments.
         real_body = JsonBodyEditor(self)
-        proxy = _BodyTextProxy(self, real_body)
+        proxy = BodyTextProxy(self, real_body)
         # Add the real widget to the layout (QLayout expects a QWidget)
         layout.addWidget(real_body)
         # Expose the proxy as the public attribute so callers go through it
