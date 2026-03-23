@@ -11,10 +11,7 @@ Sub-modules
 
 from equinox.gui.request_panel.panel import (  # noqa: F401 – public API
     RequestPanel,
-    _SaveRequestDialog,
     _HEADER_PRESETS,
-    _RichError,
-    _enrich_exception,
 )
 from equinox.gui.request_panel.save_dialog import SaveRequestDialog  # noqa: F401
 from equinox.gui.request_panel.mixins import _save_history_safe  # noqa: F401
@@ -22,10 +19,6 @@ from equinox.gui.request_panel.mixins import _save_history_safe  # noqa: F401
 __all__ = [
     "RequestPanel",
     "SaveRequestDialog",
-    "_SaveRequestDialog",
     "_HEADER_PRESETS",
-    "_RichError",
-    "_enrich_exception",
     "_save_history_safe",
 ]
-

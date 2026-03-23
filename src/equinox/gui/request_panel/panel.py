@@ -1,7 +1,7 @@
 """Request builder panel."""
 
 import logging
-from typing import Optional, Dict
+from typing import Optional, Dict, Tuple
 
 from PyQt6.QtWidgets import (
     QWidget,
@@ -23,7 +23,9 @@ from PyQt6.QtWidgets import (
     QFileDialog,
     QCheckBox,
     QDoubleSpinBox,
-    QFormLayout, QToolButton,
+    QFormLayout,
+    QToolButton,
+    QApplication,
 )
 from PyQt6.QtCore import pyqtSignal, Qt, QTimer, QStringListModel
 from PyQt6.QtGui import QKeySequence, QShortcut
@@ -32,16 +34,16 @@ from equinox.gui.request_panel.body_text_proxy import BodyTextProxy
 from equinox.gui.theme import Colors, get_mono_font
 from equinox.gui.widgets import UrlLineEdit, CheckableKeyValueTable, JsonBodyEditor, PathParamsTable
 from equinox.core.request import Request
-from equinox.core.error_enrichment import RichError, enrich_exception
-from equinox.storage import Database, HistoryManager
-from equinox.gui.workers import RequestWorker, BenchmarkDialog, DEFAULT_TIMEOUT  # noqa: F401
+from equinox.core.error_enrichment import RichError, enrich_exception  # noqa: F401 (used in mixin layer)
+from equinox.storage import Database, HistoryManager, CollectionManager
+from equinox.gui.workers import RequestWorker, BenchmarkDialog, DEFAULT_TIMEOUT  # noqa: F401 (RequestWorker used as type annotation)
 from equinox.gui.request_panel.mixins import (  # noqa: F401
     _RequestSendMixin,
     _RequestAuthMixin,
     _save_history_safe,
 )
 from equinox.gui.request_panel.body_mixin import _RequestBodyMixin  # noqa: F401
-from equinox.gui.request_panel.save_dialog import SaveRequestDialog  # noqa: F401
+from equinox.gui.request_panel.save_dialog import SaveRequestDialog
 from equinox.gui.request_panel.toolbar import TabToolbar
 
 logger = logging.getLogger(__name__)
@@ -66,8 +68,6 @@ _HEADER_PRESETS = [
     ("User-Agent: Equinox/1.0",               "User-Agent", "Equinox/1.0"),
 ]
 
-# Backward-compat alias
-_SaveRequestDialog = SaveRequestDialog
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -132,7 +132,7 @@ class RequestPanel(_RequestSendMixin, _RequestAuthMixin, _RequestBodyMixin, QWid
     def is_dirty(self) -> bool:
         return self._dirty
 
-    def _mark_dirty(self):
+    def _mark_dirty(self) -> None:
         self._dirty = True
 
     # ── Autosave ──────────────────────────────────────────────────────
@@ -149,7 +149,6 @@ class RequestPanel(_RequestSendMixin, _RequestAuthMixin, _RequestBodyMixin, QWid
         if not req or not getattr(req, "id", None):
             return
         try:
-            from equinox.storage import CollectionManager
             mgr = CollectionManager(self.db)
             updated = Request(
                 method=self.method_combo.currentText(),
@@ -192,10 +191,10 @@ class RequestPanel(_RequestSendMixin, _RequestAuthMixin, _RequestBodyMixin, QWid
         self._session_vars.clear()
         self.session_vars_changed.emit({})
 
-    def _clear_dirty(self):
+    def _clear_dirty(self) -> None:
         self._dirty = False
 
-    def _setup_dirty_tracking(self):
+    def _setup_dirty_tracking(self) -> None:
         """Connect change signals on all editor widgets to mark dirty."""
         def safe_connect(get_signal, slot, name=None):
             """Lazily retrieve a signal via get_signal() and connect it to slot.
@@ -225,10 +224,9 @@ class RequestPanel(_RequestSendMixin, _RequestAuthMixin, _RequestBodyMixin, QWid
 
         safe_connect(lambda: self.url_input.textChanged, self._mark_dirty, "url_input.textChanged")
         safe_connect(lambda: self.method_combo.currentIndexChanged, self._mark_dirty, "method_combo.currentIndexChanged")
-        # body_text is a wrapped C++ Qt object; attempt to connect but don't
-        # let a RuntimeError abort initialization.
-        safe_connect(lambda: getattr(self, "body_text").textChanged, self._mark_dirty, "body_text.textChanged")
-        safe_connect(lambda: getattr(self, "body_text").textChanged, self._update_tab_labels, "body_text.textChanged->update_tab_labels")
+        # body_text is a BodyTextProxy; access it directly like any other widget.
+        safe_connect(lambda: self.body_text.textChanged, self._mark_dirty, "body_text.textChanged")
+        safe_connect(lambda: self.body_text.textChanged, self._update_tab_labels, "body_text.textChanged->update_tab_labels")
         safe_connect(lambda: self.body_type_combo.currentIndexChanged, self._mark_dirty, "body_type_combo.currentIndexChanged")
         safe_connect(lambda: self.headers_table.itemChanged, self._mark_dirty, "headers_table.itemChanged")
         safe_connect(lambda: self.headers_table.itemChanged, self._update_tab_labels, "headers_table.itemChanged->update_tab_labels")
@@ -248,7 +246,7 @@ class RequestPanel(_RequestSendMixin, _RequestAuthMixin, _RequestBodyMixin, QWid
 
     # ── URL auto-complete from history (#6) ───────────────────────────
 
-    def _setup_url_completer(self):
+    def _setup_url_completer(self) -> None:
         self._url_model = QStringListModel(self)
         completer = QCompleter(self._url_model, self)
         completer.setCaseSensitivity(Qt.CaseSensitivity.CaseInsensitive)
@@ -257,7 +255,7 @@ class RequestPanel(_RequestSendMixin, _RequestAuthMixin, _RequestBodyMixin, QWid
         self.url_input.setCompleter(completer)
         self._refresh_url_completer()
 
-    def _refresh_url_completer(self):
+    def _refresh_url_completer(self) -> None:
         """Populate the completer model from recent history URLs."""
         try:
             mgr = HistoryManager(self.db)
@@ -285,12 +283,12 @@ class RequestPanel(_RequestSendMixin, _RequestAuthMixin, _RequestBodyMixin, QWid
         self.tabs.addTab(self._build_headers_tab(), "Headers")
         self.tabs.addTab(self._build_params_tab(), "Params")
         self.tabs.addTab(self._build_body_tab(), "Body")
-        self.tabs.addTab(self._create_auth_tab(), "Auth")
-        self.tabs.addTab(self._create_captures_tab(), "Captures")
+        self.tabs.addTab(self._create_auth_tab(), "Auth")           # defined in _RequestAuthMixin
+        self.tabs.addTab(self._create_captures_tab(), "Captures")   # defined in _RequestBodyMixin
+        self.tabs.addTab(self._create_assertions_tab(), "Assertions")  # defined in _RequestBodyMixin
         self.tabs.addTab(self._create_scripts_tab(), "Scripts")
         self.tabs.addTab(self._create_settings_tab(), "Settings")
         self.tabs.addTab(self._build_notes_tab(), "Notes")
-        self.tabs.addTab(self._create_assertions_tab(), "Assertions")
         layout.addWidget(self.tabs, 1)
 
         layout.addLayout(self._build_bottom_bar())
@@ -311,11 +309,13 @@ class RequestPanel(_RequestSendMixin, _RequestAuthMixin, _RequestBodyMixin, QWid
         self.send_button = QPushButton("Send")
         self.send_button.setObjectName("sendBtn")
         self.send_button.setFixedWidth(80)
+        self.send_button.setToolTip("Send request (Ctrl+Enter)")
         self.send_button.clicked.connect(self._send_request)
         self.send_button.setDefault(True)
         self.cancel_button = QPushButton("Cancel")
         self.cancel_button.setObjectName("cancelBtn")
         self.cancel_button.setFixedWidth(70)
+        self.cancel_button.setToolTip("Cancel the in-flight request")
         self.cancel_button.clicked.connect(self._cancel_request)
         self.cancel_button.setVisible(False)
         row.addWidget(self.method_combo)
@@ -336,18 +336,22 @@ class RequestPanel(_RequestSendMixin, _RequestAuthMixin, _RequestBodyMixin, QWid
 
         save_btn = QPushButton("Save")
         save_btn.setFixedWidth(80)
+        save_btn.setToolTip("Save to a collection (prompts for name / folder)")
         save_btn.clicked.connect(self._save_request)
 
         import_btn = QPushButton("Import from cURL")
         import_btn.setFixedWidth(140)
+        import_btn.setToolTip("Paste a cURL command to populate the request editor")
         import_btn.clicked.connect(self._import_from_curl)
 
         bench_btn = QPushButton("Benchmark")
         bench_btn.setFixedWidth(100)
+        bench_btn.setToolTip("Run repeated requests and view latency statistics")
         bench_btn.clicked.connect(self._open_benchmark)
 
         clear_sv_btn = QPushButton("Clear Session Vars")
         clear_sv_btn.setFixedWidth(140)
+        clear_sv_btn.setToolTip("Clear all captured session variables")
         clear_sv_btn.clicked.connect(self.clear_session_vars)
 
         self._session_vars_label = QLabel("Session vars: 0")
@@ -396,7 +400,7 @@ class RequestPanel(_RequestSendMixin, _RequestAuthMixin, _RequestBodyMixin, QWid
         *,
         presets=None,
         enable_key_completer: bool = False,
-    ) -> tuple:
+    ) -> Tuple[QWidget, QVBoxLayout, "TabToolbar", CheckableKeyValueTable]:
         """Shared boilerplate for Headers / Params tabs.
 
         Builds a widget with a :class:`TabToolbar` and a
@@ -448,12 +452,15 @@ class RequestPanel(_RequestSendMixin, _RequestAuthMixin, _RequestBodyMixin, QWid
         w = QWidget()
         layout = QVBoxLayout(w)
         layout.setContentsMargins(0, 4, 0, 0)
+
+        # ── Type selection bar ────────────────────────────────────────────
         type_bar = QHBoxLayout()
         self.body_type_combo = QComboBox()
         self.body_type_combo.addItems(
             ["none", "raw (JSON)", "raw (XML)", "raw (text)",
              "form-urlencoded", "multipart/form-data", "GraphQL"]
         )
+        # _on_body_type_changed is defined in _RequestBodyMixin
         self.body_type_combo.currentIndexChanged.connect(self._on_body_type_changed)
         type_bar.addWidget(QLabel("Type:"))
         type_bar.addWidget(self.body_type_combo)
@@ -463,13 +470,17 @@ class RequestPanel(_RequestSendMixin, _RequestAuthMixin, _RequestBodyMixin, QWid
         self._fmt_json_btn.clicked.connect(self._format_json_body)
         self._fmt_json_btn.setVisible(False)
         type_bar.addWidget(self._fmt_json_btn)
-        # Inline search controls for the body editor: term + options
+        type_bar.addStretch()
+        layout.addLayout(type_bar)  # ← type bar is the topmost element
+
+        # ── Inline find bar ───────────────────────────────────────────────
         self._body_search_input = QLineEdit()
         self._body_search_input.setPlaceholderText("Find in body…")
         self._body_search_input.setFixedHeight(26)
         self._body_search_input.setClearButtonEnabled(True)
-        self._body_search_input.returnPressed.connect(lambda: self._body_find_next())
-        self._body_search_input.textChanged.connect(lambda: self._body_highlight_all())
+        # _body_find_next / _body_highlight_all are defined in _RequestBodyMixin
+        self._body_search_input.returnPressed.connect(self._body_find_next)
+        self._body_search_input.textChanged.connect(self._body_highlight_all)
 
         self._body_case_cb = QCheckBox("Aa")
         self._body_case_cb.setToolTip("Case-sensitive")
@@ -481,12 +492,18 @@ class RequestPanel(_RequestSendMixin, _RequestAuthMixin, _RequestBodyMixin, QWid
         self._body_jsonpath_cb.setToolTip("Interpret search as JSON path (dot/bracket syntax)")
         self._body_jsonpath_cb.setFixedWidth(36)
 
-        prev_btn = QToolButton(); prev_btn.setText("▲"); prev_btn.setFixedSize(24, 24)
-        next_btn = QToolButton(); next_btn.setText("▼"); next_btn.setFixedSize(24, 24)
-        prev_btn.clicked.connect(lambda: self._body_find_prev())
-        next_btn.clicked.connect(lambda: self._body_find_next())
+        prev_btn = QToolButton()
+        prev_btn.setText("▲")
+        prev_btn.setFixedSize(24, 24)
+        prev_btn.setToolTip("Find previous match")
+        next_btn = QToolButton()
+        next_btn.setText("▼")
+        next_btn.setFixedSize(24, 24)
+        next_btn.setToolTip("Find next match")
+        # _body_find_prev / _body_find_next are defined in _RequestBodyMixin
+        prev_btn.clicked.connect(self._body_find_prev)
+        next_btn.clicked.connect(self._body_find_next)
 
-        # Pack search controls into a horizontal layout placed under the type bar
         search_row = QHBoxLayout()
         search_row.setContentsMargins(0, 2, 0, 0)
         search_row.setSpacing(4)
@@ -499,8 +516,7 @@ class RequestPanel(_RequestSendMixin, _RequestAuthMixin, _RequestBodyMixin, QWid
         search_row.addWidget(next_btn)
         layout.addLayout(search_row)
 
-        # (multipart controls are created once later as a top toolbar so
-        # controls align with other tab toolbars)
+        # ── Raw / text body editor ────────────────────────────────────────
         # Parent the editor to the RequestPanel to ensure Qt owns the
         # underlying C++ object and it isn't deleted unexpectedly by the
         # Python GC while the wrapper remains referenced.
@@ -512,12 +528,24 @@ class RequestPanel(_RequestSendMixin, _RequestAuthMixin, _RequestBodyMixin, QWid
         real_body = JsonBodyEditor(self)
         proxy = BodyTextProxy(self, real_body)
         # Add the real widget to the layout (QLayout expects a QWidget)
-        layout.addWidget(real_body)
+        layout.addWidget(real_body, 1)
         # Expose the proxy as the public attribute so callers go through it
         self.body_text = proxy
         self.body_text.setPlaceholderText('{ "key": "value" }')
         self.body_text.setFont(get_mono_font())
         self._body_highlighter = JsonHighlighter(self.body_text.document())
+
+        # ── Multipart form-data editor ────────────────────────────────────
+        # Toolbar immediately above the table so controls stay adjacent.
+        # _multipart_add_row / _multipart_remove_row / _multipart_browse_file
+        # are defined in _RequestBodyMixin
+        self._mp_toolbar = TabToolbar("", include_file_btn=True, parent=self)
+        self._mp_toolbar.add_clicked.connect(self._multipart_add_row)
+        self._mp_toolbar.remove_clicked.connect(self._multipart_remove_row)
+        self._mp_toolbar.file_browse_clicked.connect(self._multipart_browse_file)
+        self._mp_toolbar.setVisible(False)
+        layout.addWidget(self._mp_toolbar)
+
         self._multipart_table = QTableWidget(0, 3)
         self._multipart_table.setHorizontalHeaderLabels(["Key", "Type", "Value / File Path"])
         _mp_hdr = self._multipart_table.horizontalHeader()
@@ -529,10 +557,12 @@ class RequestPanel(_RequestSendMixin, _RequestAuthMixin, _RequestBodyMixin, QWid
         self._multipart_table.setAlternatingRowColors(True)
         self._multipart_table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
         self._multipart_table.setVisible(False)
-        layout.addWidget(self._multipart_table)
-        # ...existing code... (multipart controls moved to the top toolbar)
+        layout.addWidget(self._multipart_table, 1)
+
+        # ── GraphQL editor ────────────────────────────────────────────────
         self._gql_widget = QWidget()
-        layout.addWidget(self._gql_widget)
+        self._gql_widget.setVisible(False)  # shown only when GraphQL body type is selected
+        layout.addWidget(self._gql_widget, 1)
         gql_layout = QVBoxLayout(self._gql_widget)
         gql_layout.setContentsMargins(0, 4, 0, 0)
         gql_splitter = QSplitter(Qt.Orientation.Vertical)
@@ -554,19 +584,7 @@ class RequestPanel(_RequestSendMixin, _RequestAuthMixin, _RequestBodyMixin, QWid
         gql_splitter.addWidget(v_group)
         gql_splitter.setSizes([200, 120])
         gql_layout.addWidget(gql_splitter, 1)
-        self._fmt_json_btn.setVisible(False)
-        type_bar.addWidget(self._fmt_json_btn)
 
-        # Multipart toolbar (consistent with other tab toolbars)
-        self._mp_toolbar = TabToolbar("", include_file_btn=True, parent=self)
-        self._mp_toolbar.add_clicked.connect(self._multipart_add_row)
-        self._mp_toolbar.remove_clicked.connect(self._multipart_remove_row)
-        self._mp_toolbar.file_browse_clicked.connect(self._multipart_browse_file)
-        self._mp_toolbar.setVisible(False)
-        layout.addWidget(self._mp_toolbar)
-
-        type_bar.addStretch()
-        layout.addLayout(type_bar)
         return w
 
     def _build_notes_tab(self) -> QWidget:
@@ -582,7 +600,7 @@ class RequestPanel(_RequestSendMixin, _RequestAuthMixin, _RequestBodyMixin, QWid
         layout.addWidget(self.notes_editor, 1)
         return w
 
-    def _build_script_section(self, title: str, placeholder: str) -> tuple:
+    def _build_script_section(self, title: str, placeholder: str) -> Tuple[QGroupBox, QPlainTextEdit, QLabel]:
         """Build a labelled script-editor group box.
 
         Returns ``(group, editor, result_label)`` so the caller can assign
@@ -730,7 +748,7 @@ class RequestPanel(_RequestSendMixin, _RequestAuthMixin, _RequestBodyMixin, QWid
         layout.addStretch()
         return w
 
-    def _browse_file_to_input(self, title: str, filters: str, target) -> None:
+    def _browse_file_to_input(self, title: str, filters: str, target: QLineEdit) -> None:
         """Open a file-picker dialog and write the chosen path into *target* QLineEdit."""
         path, _ = QFileDialog.getOpenFileName(self, title, "", filters)
         if path:
@@ -754,7 +772,7 @@ class RequestPanel(_RequestSendMixin, _RequestAuthMixin, _RequestBodyMixin, QWid
 
     def _import_from_curl(self) -> None:
         """Open a dialog to paste a cURL command and populate the editor."""
-        from PyQt6.QtWidgets import QInputDialog, QApplication
+        from PyQt6.QtWidgets import QInputDialog
         from equinox.core.curl_parser import parse_curl
 
         # Pre-fill with clipboard contents if it looks like a curl command
@@ -845,7 +863,9 @@ class RequestPanel(_RequestSendMixin, _RequestAuthMixin, _RequestBodyMixin, QWid
     def _add_row_and_focus(self, table: CheckableKeyValueTable) -> None:
         """Append an empty row to *table*, select its key cell, and mark dirty."""
         table.add_row("", "", enabled=True)
-        last = table.rowCount() - 2  # skip trailing sentinel
+        # -2 skips the trailing empty sentinel row that CheckableKeyValueTable
+        # always maintains; after add_row() there is always ≥1 real data row.
+        last = table.rowCount() - 2  # last real (non-sentinel) row index
         if last >= 0:
             table.setCurrentCell(last, 1)  # column 1 = Key
             item = table.item(last, 1)
@@ -855,11 +875,24 @@ class RequestPanel(_RequestSendMixin, _RequestAuthMixin, _RequestBodyMixin, QWid
         self._update_tab_labels()
 
     def _remove_table_rows(self, table) -> None:
-        """Remove selected rows from *table*, then mark dirty and update labels."""
         for r in sorted({idx.row() for idx in table.selectedIndexes()}, reverse=True):
             table.removeRow(r)
         self._mark_dirty()
         self._update_tab_labels()
+
+    # ── Per-table convenience wrappers (used by toolbar slots and tests) ──
+
+    def _headers_add_row(self) -> None:
+        self._add_row_and_focus(self.headers_table)
+
+    def _headers_remove_row(self) -> None:
+        self._remove_table_rows(self.headers_table)
+
+    def _params_add_row(self) -> None:
+        self._add_row_and_focus(self.params_table)
+
+    def _params_remove_row(self) -> None:
+        self._remove_table_rows(self.params_table)
 
     # ── URL ghost-params preview ──────────────────────────────────────
 
@@ -897,6 +930,7 @@ class RequestPanel(_RequestSendMixin, _RequestAuthMixin, _RequestBodyMixin, QWid
             self._status_message(f"Invalid JSON: {exc}", 5000)
 
     def _save_request(self) -> None:
+        """Save the current editor state to a collection (prompts for name / folder)."""
         url = self.url_input.text().strip()
         if not url:
             QMessageBox.warning(self, "Missing URL", "Please enter a URL before saving.")
@@ -923,7 +957,6 @@ class RequestPanel(_RequestSendMixin, _RequestAuthMixin, _RequestBodyMixin, QWid
 
         name, col_id, col_name, folder = dlg.result_values()
 
-        from equinox.storage import CollectionManager
         mgr = CollectionManager(self.db)
         request = Request(
             method=method, url=url, headers=headers,
@@ -960,9 +993,3 @@ class RequestPanel(_RequestSendMixin, _RequestAuthMixin, _RequestBodyMixin, QWid
             QMessageBox.critical(self, "Save Failed", str(exc))
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# Backward-compat aliases — use core.error_enrichment directly in new code
-# ─────────────────────────────────────────────────────────────────────────────
-
-_RichError = RichError
-_enrich_exception = enrich_exception

@@ -1,4 +1,6 @@
-from equinox.gui.request_panel.panel import logger
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 class BodyTextProxy:
