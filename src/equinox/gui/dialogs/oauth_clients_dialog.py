@@ -20,6 +20,7 @@ from PyQt6.QtGui import QColor, QFont
 
 from equinox.gui.theme import Colors, get_mono_font
 from equinox.gui.widgets import make_secret_row
+
 from equinox.gui.workers import OAuthTokenTester
 from equinox.storage import Database, OAuthClientManager
 from equinox.storage.oauth_clients import GRANT_TYPES
@@ -124,7 +125,7 @@ class OAuthClientsDialog(QDialog):
         form.addRow("Description:",   self.f_description)
         form.addRow("Token URL:*",    self.f_token_url)
         form.addRow("Client ID:*",    self.f_client_id)
-        form.addRow("Client Secret:", _secret_row(self.f_client_secret))
+        form.addRow("Client Secret:", make_secret_row(self.f_client_secret))
         form.addRow("Scope:",         self.f_scope)
         form.addRow("Grant Type:",    self.f_grant_type)
         form.addRow("Extra Params:",  self.f_extra)
