@@ -2,6 +2,7 @@
 
 import logging
 import json
+import re
 from typing import Optional, Dict
 
 from PyQt6.QtWidgets import (
@@ -15,9 +16,6 @@ from PyQt6.QtWidgets import (
     QTableWidgetItem,
     QHeaderView,
     QFileDialog,
-    QLineEdit,
-    QToolButton,
-    QCheckBox,
     QTextEdit,
 )
 from PyQt6.QtGui import QTextCursor, QTextCharFormat, QColor, QTextDocument
@@ -33,9 +31,21 @@ logger = logging.getLogger(__name__)
 class _RequestBodyMixin:
     """Methods for captures, assertions, multipart, body-type handling, load, and clear."""
 
-    # ── Captures tab ──────────────────────────────────────────────────
+    # ── Shared tab-building helpers ───────────────────────────────────
 
-    def _create_captures_tab(self) -> QWidget:
+    def _build_action_tab_shell(
+        self, title: str, add_slot, remove_slot
+    ) -> tuple:
+        """Build the common outer shell for Captures / Assertions tabs.
+
+        Creates ``QWidget → QVBoxLayout`` with a bold-label toolbar
+        (``+ Add`` / ``− Remove`` buttons) already wired to *add_slot* and
+        *remove_slot*.  Also constructs and styles the shared results label.
+
+        Returns ``(widget, layout, results_label)``; the caller is responsible
+        for inserting the data table and appending the caption + results_label
+        to *layout*.
+        """
         w = QWidget()
         layout = QVBoxLayout(w)
         layout.setContentsMargins(0, 4, 0, 0)
@@ -43,22 +53,38 @@ class _RequestBodyMixin:
         toolbar = QHBoxLayout()
         toolbar.setContentsMargins(0, 2, 0, 0)
         toolbar.setSpacing(2)
-        # Label so control buttons align consistently across tabs
-        cap_label = QLabel("Captures")
-        cap_label.setStyleSheet("font-weight: bold;")
-        toolbar.addWidget(cap_label)
-
+        lbl = QLabel(title)
+        lbl.setStyleSheet("font-weight: bold;")
+        toolbar.addWidget(lbl)
         add_btn = QPushButton("+ Add")
         add_btn.setFixedWidth(64)
-        add_btn.clicked.connect(self._captures_add_row)
+        add_btn.clicked.connect(add_slot)
         remove_btn = QPushButton("− Remove")
         remove_btn.setFixedWidth(80)
-        remove_btn.clicked.connect(self._captures_remove_row)
+        remove_btn.clicked.connect(remove_slot)
         toolbar.addWidget(add_btn)
         toolbar.addWidget(remove_btn)
         toolbar.addStretch()
         layout.addLayout(toolbar)
 
+        results_label = QLabel("—")
+        results_label.setFont(get_mono_font())
+        results_label.setWordWrap(True)
+        results_label.setObjectName("mutedLabel")
+        return w, layout, results_label
+
+    @staticmethod
+    def _remove_selected_from(table: QTableWidget) -> None:
+        """Remove every selected row from *table* (highest index first)."""
+        for r in sorted({i.row() for i in table.selectedIndexes()}, reverse=True):
+            table.removeRow(r)
+
+    # ── Captures tab ──────────────────────────────────────────────────
+
+    def _create_captures_tab(self) -> QWidget:
+        w, layout, self.captures_results_label = self._build_action_tab_shell(
+            "Captures", self._captures_add_row, self._captures_remove_row
+        )
         self.captures_table = QTableWidget(0, 4)
         self.captures_table.setHorizontalHeaderLabels(["Variable", "Source", "Path / Pattern", "Default"])
         hdr = self.captures_table.horizontalHeader()
@@ -70,43 +96,17 @@ class _RequestBodyMixin:
         self.captures_table.setAlternatingRowColors(True)
         self.captures_table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
         layout.addWidget(self.captures_table)
-
         layout.addWidget(QLabel("Last capture results:"))
-        self.captures_results_label = QLabel("—")
-        self.captures_results_label.setFont(get_mono_font())
-        self.captures_results_label.setWordWrap(True)
-        self.captures_results_label.setObjectName("mutedLabel")
         layout.addWidget(self.captures_results_label)
-
         return w
 
     # ── Assertions tab ────────────────────────────────────────────────
 
     def _create_assertions_tab(self) -> QWidget:
         """Assertions tab — define pass/fail rules evaluated after each response."""
-        w = QWidget()
-        layout = QVBoxLayout(w)
-        layout.setContentsMargins(0, 4, 0, 0)
-
-        toolbar = QHBoxLayout()
-        toolbar.setContentsMargins(0, 2, 0, 0)
-        toolbar.setSpacing(2)
-        # Label so control buttons align consistently across tabs
-        asrt_label = QLabel("Assertions")
-        asrt_label.setStyleSheet("font-weight: bold;")
-        toolbar.addWidget(asrt_label)
-
-        add_btn = QPushButton("+ Add")
-        add_btn.setFixedWidth(64)
-        add_btn.clicked.connect(self._assertions_add_row)
-        remove_btn = QPushButton("− Remove")
-        remove_btn.setFixedWidth(80)
-        remove_btn.clicked.connect(self._assertions_remove_row)
-        toolbar.addWidget(add_btn)
-        toolbar.addWidget(remove_btn)
-        toolbar.addStretch()
-        layout.addLayout(toolbar)
-
+        w, layout, self.assertions_results_label = self._build_action_tab_shell(
+            "Assertions", self._assertions_add_row, self._assertions_remove_row
+        )
         self.assertions_table = QTableWidget(0, 3)
         self.assertions_table.setHorizontalHeaderLabels(["Type", "Field / Path", "Expected"])
         ahdr = self.assertions_table.horizontalHeader()
@@ -118,12 +118,7 @@ class _RequestBodyMixin:
         self.assertions_table.setAlternatingRowColors(True)
         self.assertions_table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
         layout.addWidget(self.assertions_table)
-
         layout.addWidget(QLabel("Last assertion results:"))
-        self.assertions_results_label = QLabel("—")
-        self.assertions_results_label.setFont(get_mono_font())
-        self.assertions_results_label.setWordWrap(True)
-        self.assertions_results_label.setObjectName("mutedLabel")
         layout.addWidget(self.assertions_results_label)
 
         return w
@@ -142,12 +137,7 @@ class _RequestBodyMixin:
 
     def _assertions_remove_row(self) -> None:
         """Remove the currently selected assertion row(s)."""
-        rows = sorted(
-            {idx.row() for idx in self.assertions_table.selectedIndexes()},
-            reverse=True,
-        )
-        for row in rows:
-            self.assertions_table.removeRow(row)
+        self._remove_selected_from(self.assertions_table)
 
     def _get_assertions(self) -> list:
         """Collect assertion rules from the assertions table."""
@@ -218,12 +208,7 @@ class _RequestBodyMixin:
         self.captures_table.setItem(r, 3, QTableWidgetItem(""))
 
     def _captures_remove_row(self) -> None:
-        rows = sorted(
-            {idx.row() for idx in self.captures_table.selectedIndexes()},
-            reverse=True,
-        )
-        for r in rows:
-            self.captures_table.removeRow(r)
+        self._remove_selected_from(self.captures_table)
 
     def _get_captures(self) -> list:
         captures = []
@@ -312,83 +297,95 @@ class _RequestBodyMixin:
 
     # ── Body search utilities ─────────────────────────────────────────
 
+    def _body_editor_target(self) -> tuple:
+        """Return ``(editor_widget | None, body_text_str)`` for the body editor.
+
+        Handles the :class:`_BodyTextProxy` indirection used in headless
+        environments where the underlying C++ widget may be unavailable.
+        """
+        has_widget = getattr(self.body_text, '_has_widget', lambda: False)()
+        target = getattr(self.body_text, '_widget', None) if has_widget else None
+        text = (
+            target.toPlainText() if target is not None
+            else getattr(self.body_text, '_buffer', '')
+        )
+        return target, text
+
+    @property
+    def _re_flags(self) -> int:
+        """``0`` when case-sensitive search is active, ``re.IGNORECASE`` otherwise."""
+        return (
+            0
+            if (getattr(self, '_body_case_cb', None) and self._body_case_cb.isChecked())
+            else re.IGNORECASE
+        )
+
+    @staticmethod
+    def _make_extra_selection(
+        target, start: int, end: int, fmt: QTextCharFormat
+    ) -> "QTextEdit.ExtraSelection":
+        """Build a :class:`QTextEdit.ExtraSelection` spanning [*start*, *end*)."""
+        sel = QTextEdit.ExtraSelection()
+        cursor = target.textCursor()
+        cursor.setPosition(start)
+        cursor.setPosition(end, QTextCursor.MoveMode.KeepAnchor)
+        sel.cursor = cursor
+        sel.format = fmt
+        return sel
+
     def _body_highlight_all(self) -> None:
-        """Highlight all matches in the body editor according to options."""
+        """Highlight all search matches in the body editor."""
         try:
-            term = getattr(self, '_body_search_input', None)
-            if term is None:
+            term_input = getattr(self, '_body_search_input', None)
+            if term_input is None:
                 return
-            term_text = term.text()
-        except Exception:
-            return
+            term = term_input.text()
+            target, doc_text = self._body_editor_target()
 
-        try:
-            has_widget = getattr(self.body_text, '_has_widget', lambda: False)()
-            target = getattr(self.body_text, '_widget', None) if has_widget else None
-            doc_text = target.toPlainText() if target is not None else getattr(self.body_text, '_buffer', '')
-
-            # JSONPath mode: don't attempt complex highlights; select first match
-            if getattr(self, '_body_jsonpath_cb', None) and self._body_jsonpath_cb.isChecked() and term_text.strip():
-                positions = self._find_jsonpath_positions(term_text)
+            # JSONPath: select first matched value rather than bulk-highlighting
+            if (
+                getattr(self, '_body_jsonpath_cb', None)
+                and self._body_jsonpath_cb.isChecked()
+                and term
+            ):
+                positions = self._find_jsonpath_positions(term)
                 if positions and target is not None:
-                    # select first occurrence
                     pos = positions[0]
                     cursor = target.textCursor()
                     cursor.setPosition(pos)
-                    # crude way to select a reasonable chunk; select 50 chars or until end
-                    end = min(pos + 50, len(doc_text))
-                    cursor.setPosition(end, QTextCursor.MoveMode.KeepAnchor)
+                    cursor.setPosition(
+                        min(pos + 50, len(doc_text)), QTextCursor.MoveMode.KeepAnchor
+                    )
                     target.setTextCursor(cursor)
                 return
 
-            # Prepare highlight format
             fmt = QTextCharFormat()
             fmt.setBackground(QColor("#fff59d"))
             selections = []
 
             if getattr(self, '_body_regex_cb', None) and self._body_regex_cb.isChecked():
-                import re
-                flags_re = 0 if (getattr(self, '_body_case_cb', None) and self._body_case_cb.isChecked()) else re.IGNORECASE
                 try:
-                    for m in re.finditer(term_text, doc_text, flags_re):
+                    for m in re.finditer(term, doc_text, self._re_flags):
                         if target is not None:
-                            sel = QTextEdit.ExtraSelection()
-                            # create a cursor for the match range
-                            cursor = target.textCursor()
-                            cursor.setPosition(m.start())
-                            cursor.setPosition(m.end(), QTextCursor.MoveMode.KeepAnchor)
-                            sel.cursor = cursor
-                            sel.format = fmt
-                            selections.append(sel)
+                            selections.append(
+                                self._make_extra_selection(target, m.start(), m.end(), fmt)
+                            )
                 except re.error:
-                    # invalid regex - ignore
                     pass
-            else:
-                # plain text find (respect case checkbox)
-                if not term_text:
-                    if target is not None:
-                        target.setExtraSelections([])
-                    return
+            elif term:
+                case_on = (
+                    getattr(self, '_body_case_cb', None)
+                    and self._body_case_cb.isChecked()
+                )
+                haystack = doc_text if case_on else doc_text.lower()
+                needle = term if case_on else term.lower()
                 start = 0
-                text_to_search = doc_text
-                if not (getattr(self, '_body_case_cb', None) and self._body_case_cb.isChecked()):
-                    term_low = term_text.lower()
-                    text_to_search = doc_text.lower()
-                else:
-                    term_low = term_text
-                while True:
-                    idx = text_to_search.find(term_low, start)
-                    if idx == -1:
-                        break
+                while (idx := haystack.find(needle, start)) != -1:
                     if target is not None:
-                        sel = QTextEdit.ExtraSelection()
-                        cursor = target.textCursor()
-                        cursor.setPosition(idx)
-                        cursor.setPosition(idx + len(term_low), QTextCursor.MoveMode.KeepAnchor)
-                        sel.cursor = cursor
-                        sel.format = fmt
-                        selections.append(sel)
-                    start = idx + max(1, len(term_low))
+                        selections.append(
+                            self._make_extra_selection(target, idx, idx + len(needle), fmt)
+                        )
+                    start = idx + max(1, len(needle))
 
             if target is not None:
                 target.setExtraSelections(selections)
@@ -397,7 +394,12 @@ class _RequestBodyMixin:
         except Exception:
             logger.debug("Error during body highlight", exc_info=True)
 
-    def _body_find_next(self) -> None:
+    def _body_navigate(self, *, forward: bool) -> None:
+        """Move the body-editor cursor to the next or previous search match.
+
+        Handles plain-text, regex, and JSONPath search modes with wrap-around.
+        *forward=True* → next match; *forward=False* → previous match.
+        """
         try:
             term_input = getattr(self, '_body_search_input', None)
             if term_input is None:
@@ -405,85 +407,82 @@ class _RequestBodyMixin:
             term = term_input.text()
             if not term:
                 return
-            has_widget = getattr(self.body_text, '_has_widget', lambda: False)()
-            target = getattr(self.body_text, '_widget', None) if has_widget else None
-            doc_text = target.toPlainText() if target is not None else getattr(self.body_text, '_buffer', '')
+            target, doc_text = self._body_editor_target()
 
-            # JSONPath
+            # ── JSONPath (forward only) ───────────────────────────────
             if getattr(self, '_body_jsonpath_cb', None) and self._body_jsonpath_cb.isChecked():
-                positions = self._find_jsonpath_positions(term)
-                if positions and target is not None:
-                    pos = positions[0]
-                    cursor = target.textCursor()
-                    cursor.setPosition(pos)
-                    cursor.setPosition(min(pos + 50, len(doc_text)), QTextCursor.MoveMode.KeepAnchor)
-                    target.setTextCursor(cursor)
+                if forward:
+                    positions = self._find_jsonpath_positions(term)
+                    if positions and target is not None:
+                        pos = positions[0]
+                        cursor = target.textCursor()
+                        cursor.setPosition(pos)
+                        cursor.setPosition(
+                            min(pos + 50, len(doc_text)), QTextCursor.MoveMode.KeepAnchor
+                        )
+                        target.setTextCursor(cursor)
                 return
 
-            # Regex
+            # ── Regex ─────────────────────────────────────────────────
             if getattr(self, '_body_regex_cb', None) and self._body_regex_cb.isChecked():
-                import re
-                flags_re = 0 if (getattr(self, '_body_case_cb', None) and self._body_case_cb.isChecked()) else re.IGNORECASE
-                m = re.search(term, doc_text, flags_re)
-                if m and target is not None:
-                    cursor = target.textCursor()
-                    cursor.setPosition(m.start())
-                    cursor.setPosition(m.end(), QTextCursor.MoveMode.KeepAnchor)
-                    target.setTextCursor(cursor)
+                if target is None:
+                    return
+                cur_pos = target.textCursor().position()
+                if forward:
+                    # search from cursor to end of document, then wrap
+                    m = re.search(term, doc_text[cur_pos:], self._re_flags)
+                    if m:
+                        start, end = cur_pos + m.start(), cur_pos + m.end()
+                    else:
+                        m = re.search(term, doc_text, self._re_flags)
+                        if not m:
+                            return
+                        start, end = m.start(), m.end()
+                else:
+                    matches = [
+                        m for m in re.finditer(term, doc_text, self._re_flags)
+                        if m.start() < cur_pos
+                    ]
+                    if not matches:
+                        matches = list(re.finditer(term, doc_text, self._re_flags))
+                    if not matches:
+                        return
+                    m = matches[-1]
+                    start, end = m.start(), m.end()
+                cursor = target.textCursor()
+                cursor.setPosition(start)
+                cursor.setPosition(end, QTextCursor.MoveMode.KeepAnchor)
+                target.setTextCursor(cursor)
                 return
 
-            # Plain text: use QTextDocument.find with wrap-around
+            # ── Plain text via Qt (native wrap-around) ────────────────
             if target is None:
                 return
-            found = target.find(term)
-            if not found:
-                cur = target.textCursor()
-                cur.movePosition(QTextCursor.MoveOperation.Start)
-                target.setTextCursor(cur)
-                target.find(term)
+            if forward:
+                found = target.find(term)
+                if not found:
+                    cur = target.textCursor()
+                    cur.movePosition(QTextCursor.MoveOperation.Start)
+                    target.setTextCursor(cur)
+                    target.find(term)
+            else:
+                found = target.find(term, QTextDocument.FindFlag.FindBackward)
+                if not found:
+                    cur = target.textCursor()
+                    cur.movePosition(QTextCursor.MoveOperation.End)
+                    target.setTextCursor(cur)
+                    target.find(term, QTextDocument.FindFlag.FindBackward)
         except RuntimeError:
-            logger.debug("Body editor unavailable during find next", exc_info=True)
+            direction = "next" if forward else "prev"
+            logger.debug("Body editor unavailable during find %s", direction, exc_info=True)
         except Exception:
-            logger.debug("Error during find next", exc_info=True)
+            logger.debug("Error during body navigate", exc_info=True)
+
+    def _body_find_next(self) -> None:
+        self._body_navigate(forward=True)
 
     def _body_find_prev(self) -> None:
-        try:
-            term_input = getattr(self, '_body_search_input', None)
-            if term_input is None:
-                return
-            term = term_input.text()
-            if not term:
-                return
-            has_widget = getattr(self.body_text, '_has_widget', lambda: False)()
-            target = getattr(self.body_text, '_widget', None) if has_widget else None
-            doc_text = target.toPlainText() if target is not None else getattr(self.body_text, '_buffer', '')
-
-            if getattr(self, '_body_regex_cb', None) and self._body_regex_cb.isChecked():
-                import re
-                flags_re = 0 if (getattr(self, '_body_case_cb', None) and self._body_case_cb.isChecked()) else re.IGNORECASE
-                text = doc_text
-                curpos = target.textCursor().position() if target is not None else 0
-                matches = [m for m in re.finditer(term, text, flags_re) if m.start() < curpos]
-                if matches and target is not None:
-                    m = matches[-1]
-                    cursor = target.textCursor()
-                    cursor.setPosition(m.start())
-                    cursor.setPosition(m.end(), QTextCursor.MoveMode.KeepAnchor)
-                    target.setTextCursor(cursor)
-                return
-
-            if target is None:
-                return
-            found = target.find(term, QTextDocument.FindFlag.FindBackward)
-            if not found:
-                cur = target.textCursor()
-                cur.movePosition(QTextCursor.MoveOperation.End)
-                target.setTextCursor(cur)
-                target.find(term, QTextDocument.FindFlag.FindBackward)
-        except RuntimeError:
-            logger.debug("Body editor unavailable during find prev", exc_info=True)
-        except Exception:
-            logger.debug("Error during find prev", exc_info=True)
+        self._body_navigate(forward=False)
 
     def _find_jsonpath_positions(self, path: str) -> list:
         """Small JSON-path evaluator supporting dot and bracket navigation.
