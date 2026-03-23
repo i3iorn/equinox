@@ -86,6 +86,10 @@ class OAuth2Auth(AuthStrategy):
         self._refresh_lock = Lock()
         self._audit = get_audit_logger()
 
+        # Proxy to use for token endpoint requests — set by HTTPClient._apply_auth
+        # so token fetches route through the same proxy as the main request.
+        self._proxy: Optional[str] = None
+
         # Last token-endpoint exchange (redacted) — surfaced in the GUI
         self.last_token_response: Optional[Dict[str, Any]] = None
 
@@ -339,6 +343,7 @@ class OAuth2Auth(AuthStrategy):
             AuthError: After exhausting retries or on HTTP error status.
         """
         last_exc: Optional[Exception] = None
+        attempts_made = 0
 
         # Validate token URL with full structural + SSRF checks (scheme,
         # private-IP, metadata-endpoint blocking).  At send-time the URL is
@@ -350,31 +355,77 @@ class OAuth2Auth(AuthStrategy):
             raise AuthError(f"Invalid token URL: {exc}", details={"token_url": self.token_url})
 
         for attempt in range(_MAX_TOKEN_RETRIES):
+            attempts_made = attempt + 1
             try:
-                response = httpx.post(
-                    self.token_url,
-                    data=grant_data,
-                    timeout=self.token_timeout,
+                logger.debug(
+                    "Token request to %s (attempt %d/%d, proxy=%s)",
+                    self.token_url, attempts_made, _MAX_TOKEN_RETRIES,
+                    self._proxy or "none",
                 )
+                with httpx.Client(
+                    timeout=httpx.Timeout(
+                        # Limit connect time independently — a dead proxy should
+                        # fail fast at TCP level without waiting the full token_timeout.
+                        connect=min(self.token_timeout, 5.0),
+                        read=self.token_timeout,
+                        write=self.token_timeout,
+                        pool=self.token_timeout,
+                    ),
+                    proxy=self._proxy or None,
+                ) as client:
+                    response = client.post(
+                        self.token_url,
+                        data=grant_data,
+                    )
                 response.raise_for_status()
+                logger.debug(
+                    "Token request succeeded on attempt %d/%d",
+                    attempts_made, _MAX_TOKEN_RETRIES,
+                )
                 return response
             except httpx.HTTPStatusError as status_exc:
                 error_msg = f"Token endpoint returned HTTP {status_exc.response.status_code}"
-                logger.error(error_msg)
+                logger.error(
+                    "%s for %s", error_msg, self.token_url,
+                )
                 self._audit.log_auth_failure("oauth2", error_msg)
                 raise AuthError(error_msg, details={"token_url": self.token_url})
             except (httpx.TransportError, httpx.TimeoutException) as transient_exc:
                 last_exc = transient_exc
+                # ECONNREFUSED / WinError 10061 — nothing is listening on that
+                # port.  This is never transient; retrying only wastes time.
+                exc_str = str(transient_exc).lower()
+                is_refused = (
+                    isinstance(transient_exc, httpx.ConnectError)
+                    and ("10061" in exc_str or "connection refused" in exc_str)
+                )
+                if is_refused:
+                    logger.warning(
+                        "Token request: connection refused on attempt %d — skipping retries"
+                        " (proxy=%s, url=%s): %s",
+                        attempts_made, self._proxy or "none",
+                        self.token_url, transient_exc,
+                    )
+                    break
                 if attempt < _MAX_TOKEN_RETRIES - 1:
                     wait_seconds = 2 ** attempt  # 1s, 2s
                     logger.warning(
-                        "Token request failed (attempt %d/%d), retrying in %ds: %s",
-                        attempt + 1, _MAX_TOKEN_RETRIES, wait_seconds, transient_exc,
+                        "Token request failed (attempt %d/%d), retrying in %ds"
+                        " (proxy=%s, url=%s): %s",
+                        attempts_made, _MAX_TOKEN_RETRIES, wait_seconds,
+                        self._proxy or "none", self.token_url, transient_exc,
                     )
                     time.sleep(wait_seconds)
+                else:
+                    logger.warning(
+                        "Token request failed on final attempt %d/%d"
+                        " (proxy=%s, url=%s): %s",
+                        attempts_made, _MAX_TOKEN_RETRIES,
+                        self._proxy or "none", self.token_url, transient_exc,
+                    )
 
         raise AuthError(
-            f"Failed to refresh OAuth2 token after {_MAX_TOKEN_RETRIES} attempts: {last_exc}",
+            f"Failed to refresh OAuth2 token after {attempts_made} attempt(s): {last_exc}",
             details={"token_url": self.token_url},
         ) from last_exc
 
