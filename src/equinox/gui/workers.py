@@ -1,5 +1,6 @@
 """Background worker threads and dialogs for the Equinox GUI."""
 
+import logging
 import threading
 
 from PyQt6.QtWidgets import (
@@ -19,6 +20,8 @@ from equinox.core.client import HTTPClient
 from equinox.core.request import Request, Response
 from equinox.core.error_enrichment import RichError, enrich_exception
 from equinox.gui.theme import get_mono_font
+
+logger = logging.getLogger(__name__)
 
 DEFAULT_TIMEOUT = 30.0
 
@@ -123,6 +126,10 @@ class RequestWorker(QThread):
             _ph = (_s.value("proxy/host") or "").strip()
             _pp = int(_s.value("proxy/port") or 0)
             _proxy = f"http://{_ph}:{_pp}" if _ph and _pp else None
+            if _proxy:
+                logger.debug("Proxy loaded from settings: %s", _proxy)
+            else:
+                logger.debug("No proxy configured (proxy/host=%r, proxy/port=%r)", _ph, _pp or 0)
             client = HTTPClient(
                 cookie_manager=self._cookie_manager,
                 timeout=getattr(self.request, "timeout", DEFAULT_TIMEOUT),
