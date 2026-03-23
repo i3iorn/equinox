@@ -53,16 +53,66 @@ def _is_ssl_error(exc: Exception) -> bool:
     """Return True if *exc* (typically ``httpx.ConnectError``) wraps an SSL failure.
 
     In httpx ≥0.24 there is no dedicated ``SSLError``; SSL failures surface
-    as ``ConnectError`` whose ``__cause__`` is an ``ssl.SSLError`` or similar.
+    as ``ConnectError`` whose cause chain contains an ``ssl.SSLError``.
+
+    Follows both ``__cause__`` and ``__context__`` (``raise exc from None``
+    clears ``__cause__`` but preserves ``__context__``).
     """
-    cause = exc.__cause__
-    while cause is not None:
-        if isinstance(cause, ssl.SSLError):
+    seen: set = set()
+    stack = [exc]
+    while stack:
+        e = stack.pop()
+        eid = id(e)
+        if eid in seen:
+            continue
+        seen.add(eid)
+        if isinstance(e, ssl.SSLError):
             return True
-        cause = getattr(cause, "__cause__", None)
+        cause = getattr(e, "__cause__", None)
+        if cause is not None:
+            stack.append(cause)
+        context = getattr(e, "__context__", None)
+        if context is not None:
+            stack.append(context)
     # Fallback: check the string representation
     msg = str(exc).lower()
     return "ssl" in msg or "certificate" in msg
+
+
+def _is_proxy_error(exc: Exception) -> bool:
+    """Return True if *exc* originated from a proxy connection attempt.
+
+    httpcore raises the same ``ConnectError`` for direct and proxied
+    connections.  We detect proxy involvement by checking whether any
+    traceback frame in the full exception graph originates from httpcore's
+    ``http_proxy`` module.
+
+    The walk follows both ``__cause__`` *and* ``__context__`` so that
+    ``raise exc from None`` (used in httpcore's connection pool) does not
+    silently break detection — Python clears ``__cause__`` but preserves
+    ``__context__`` in that case.  A *seen* set prevents infinite loops on
+    circular exception chains.
+    """
+    seen: set = set()
+    stack = [exc]
+    while stack:
+        e = stack.pop()
+        eid = id(e)
+        if eid in seen:
+            continue
+        seen.add(eid)
+        tb = e.__traceback__
+        while tb is not None:
+            if "http_proxy" in (tb.tb_frame.f_code.co_filename or ""):
+                return True
+            tb = tb.tb_next
+        cause = getattr(e, "__cause__", None)
+        if cause is not None:
+            stack.append(cause)
+        context = getattr(e, "__context__", None)
+        if context is not None:
+            stack.append(context)
+    return False
 
 
 class HTTPClient:
@@ -142,8 +192,12 @@ class HTTPClient:
         self.interceptors = InterceptorChain()
         self.logger = RequestResponseLogger()
         self._audit = get_audit_logger()
+        self._error_handlers = self._build_error_handlers()
 
     def __enter__(self):
+        if self.proxy:
+            logger.debug("Opening HTTPClient with proxy: %s", self.proxy)
+            self._check_proxy_reachable()
         self._client = httpx.Client(
             timeout=self.timeout,
             follow_redirects=self.follow_redirects,
@@ -157,6 +211,115 @@ class HTTPClient:
         if self._client:
             self._client.close()
             self._client = None
+
+    def _check_proxy_reachable(self) -> None:
+        """Verify the configured proxy is accepting TCP connections.
+
+        Uses a non-blocking ``connect()`` + ``select()`` checking **both** the
+        writable and exceptional file-descriptor sets.
+
+        Cross-platform behaviour of non-blocking connect() on a refused port:
+
+        * **Unix** — socket appears in the *writable* set; ``SO_ERROR`` is
+          ``ECONNREFUSED``.
+        * **Windows** — socket appears in the *exceptional* set; ``SO_ERROR``
+          is ``WSAECONNREFUSED`` (10061).  Our previous implementation only
+          checked the writable set, so Windows refused connections always
+          looked like timeouts.
+
+        A blocking ``settimeout()`` socket was tried as an alternative but
+        Windows also delays the RST on loopback for ~3 s, so it timed out too.
+
+        Raises:
+            RequestError: If the proxy actively refuses the connection.
+        """
+        import errno
+        import select as _select
+        import socket
+        from urllib.parse import urlparse
+
+        parsed = urlparse(self.proxy)
+        host = parsed.hostname
+        port = parsed.port or 8080
+        if not host:
+            return
+
+        # On Windows, loopback RSTs may take ~3 s — use a generous timeout so
+        # the select() actually has a chance to observe the refusal.
+        is_loopback = host in ("127.0.0.1", "::1", "localhost")
+        connect_timeout = 3.5 if is_loopback else 1.5
+        _REFUSED = {errno.ECONNREFUSED, getattr(errno, "WSAECONNREFUSED", 10061)}
+
+        logger.debug(
+            "Pre-flight proxy reachability check: %s:%s (timeout=%.1fs, loopback=%s)",
+            host, port, connect_timeout, is_loopback,
+        )
+
+        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        sock.setblocking(False)
+        try:
+            sock.connect((host, port))
+            # Immediate success — very unusual on non-blocking, but handle it.
+            logger.debug("Proxy pre-flight: %s:%s connected immediately", host, port)
+
+        except BlockingIOError:
+            # EINPROGRESS / WSAEWOULDBLOCK — wait for the OS verdict.
+            # Check BOTH writable (Unix success/fail) AND exceptional (Windows fail).
+            _, writable, exceptional = _select.select(
+                [], [sock], [sock], connect_timeout
+            )
+            logger.debug(
+                "Proxy pre-flight select() after %.1fs: writable=%s exceptional=%s",
+                connect_timeout, bool(writable), bool(exceptional),
+            )
+
+            if exceptional or writable:
+                err = sock.getsockopt(socket.SOL_SOCKET, socket.SO_ERROR)
+                logger.debug(
+                    "Proxy pre-flight SO_ERROR for %s:%s = %d", host, port, err,
+                )
+                if err in _REFUSED:
+                    logger.warning(
+                        "Proxy pre-flight failed — %s:%s refused connection (errno %d)",
+                        host, port, err,
+                    )
+                    raise RequestError(
+                        f"Failed to connect to proxy ({self.proxy}). "
+                        "Please check your proxy settings under Preferences.",
+                        details={"proxy": self.proxy},
+                    )
+                if err != 0:
+                    logger.debug(
+                        "Proxy pre-flight: SO_ERROR %d for %s:%s — deferring to httpx",
+                        err, host, port,
+                    )
+                else:
+                    logger.debug("Proxy pre-flight: %s:%s is reachable", host, port)
+            else:
+                logger.debug(
+                    "Proxy pre-flight: select() timed out for %s:%s (%.1fs) — deferring to httpx",
+                    host, port, connect_timeout,
+                )
+
+        except OSError as os_err:
+            if os_err.errno in _REFUSED:
+                logger.warning(
+                    "Proxy pre-flight failed — %s:%s refused connection: %s",
+                    host, port, os_err,
+                )
+                raise RequestError(
+                    f"Failed to connect to proxy ({self.proxy}). "
+                    "Please check your proxy settings under Preferences.",
+                    details={"proxy": self.proxy},
+                )
+            logger.debug(
+                "Proxy pre-flight socket error for %s:%s (ignored): %s",
+                host, port, os_err,
+            )
+
+        finally:
+            sock.close()
+            logger.debug("Proxy pre-flight: socket closed for %s:%s", host, port)
 
     def _build_ssl_context(self) -> Any:
         """Build an SSL context enforcing TLS 1.2+ minimum, or False to skip verification."""
@@ -227,14 +390,38 @@ class HTTPClient:
             TimeoutError: If request times out
             CertificateError: If SSL verification fails
         """
+        logger.debug(
+            "send() called: method=%s url=%s auth=%s",
+            request.method,
+            Validator.sanitize_for_display(request.url, 80),
+            type(auth).__name__ if auth else "None",
+        )
+
         try:
             self._validate_request(request)
+            logger.debug("Request validation passed for %s", request.method)
         except ValidationError as validation_error:
             logger.error("Request validation failed: %s", type(validation_error).__name__)
             raise
 
-        self._check_rate_limit()
-        self._check_concurrent_limit()
+        try:
+            logger.debug("Checking rate limit (max=%d/min)", self.max_rate_per_minute)
+            self._check_rate_limit()
+            logger.debug("Rate limit check passed")
+        except RateLimitError as rate_error:
+            logger.warning("Rate limit exceeded: %s", rate_error)
+            raise
+
+        try:
+            logger.debug(
+                "Checking concurrent request limit (active=%d, max=%d)",
+                self._active_requests, self.max_concurrent_requests,
+            )
+            self._check_concurrent_limit()
+            logger.debug("Concurrent request limit check passed")
+        except RequestError as concurrent_error:
+            logger.warning("Concurrent request limit exceeded: %s", concurrent_error)
+            raise
 
         try:
             response = self._send_with_timeout_retries(request, auth)
@@ -244,9 +431,11 @@ class HTTPClient:
                     "Request was suppressed by an interceptor",
                     details={"url": request.url},
                 )
+            logger.debug("send() completed successfully: status=%d", response.status_code)
             return response
         finally:
             self._release_concurrent_slot()
+            logger.debug("Concurrent request slot released (active=%d)", self._active_requests)
 
     def _send_with_timeout_retries(
         self,
@@ -262,7 +451,12 @@ class HTTPClient:
 
         for attempt in range(self.MAX_RETRIES):
             try:
+                logger.debug(
+                    "_send_with_timeout_retries: attempt %d/%d",
+                    attempt + 1, self.MAX_RETRIES,
+                )
                 response = self._send_once(request, auth)
+                logger.debug("Request succeeded on attempt %d/%d", attempt + 1, self.MAX_RETRIES)
                 return response
             except RequestTimeoutError as timeout_error:
                 last_error = timeout_error
@@ -274,6 +468,10 @@ class HTTPClient:
                     )
                     self._interruptible_sleep(wait_seconds)
                 else:
+                    logger.error(
+                        "Request timed out on final attempt %d/%d, giving up",
+                        attempt + 1, self.MAX_RETRIES,
+                    )
                     raise
 
         if last_error is not None and response is None:
@@ -311,6 +509,12 @@ class HTTPClient:
         if response is None or response.status_code not in self.RETRYABLE_STATUS_CODES:
             return response
 
+        logger.debug(
+            "_retry_on_server_overload: status=%d (retryable=%s)",
+            response.status_code,
+            response.status_code in self.RETRYABLE_STATUS_CODES,
+        )
+
         for attempt in range(self.MAX_HTTP_RETRIES):
             retry_after = self._parse_retry_after(response)
             logger.warning(
@@ -319,6 +523,10 @@ class HTTPClient:
             )
             self._interruptible_sleep(retry_after)
             response = self._send_once(request, auth)
+            logger.debug(
+                "Retry attempt %d/%d completed, status=%d",
+                attempt + 1, self.MAX_HTTP_RETRIES, response.status_code if response else 0,
+            )
             if response is None or response.status_code not in self.RETRYABLE_STATUS_CODES:
                 break
 
@@ -361,19 +569,14 @@ class HTTPClient:
             Validator.validate_request_body(request.body, content_type)
 
     # ── Exception-to-error mapping for _send_internal ───────────────────
-    # Each entry: (exception_type, error_factory, log_template, audit_tag_or_None)
-    # The list is ordered most-specific-first (Python matches the first handler).
-    # Built lazily on first use and cached — the lambdas capture ``self``
-    # so dynamic attributes (e.g. ``self.timeout``) are read at call time.
+    # Each entry: (exception_type, handler_fn).
+    # Ordered most-specific-first (Python matches the first handler).
+    # Built once in __init__ via _build_error_handlers(); lambdas capture
+    # ``self`` so instance attributes (proxy, timeout) are read at call time.
 
-    @property
-    def _error_handlers(self):
-        """Return the cached (exc_type, handler_fn) list, building on first access."""
-        try:
-            return self.__error_handlers
-        except AttributeError:
-            pass
-        self.__error_handlers = [
+    def _build_error_handlers(self):
+        """Build and return the (exc_type, handler_fn) list."""
+        return [
             (
                 httpx.ConnectTimeout,
                 lambda exc, req: dict(
@@ -402,24 +605,43 @@ class HTTPClient:
             (
                 httpx.ConnectError,
                 lambda exc, req: (
-                    # SSL errors surface as ConnectError in httpx ≥0.24;
-                    # detect by inspecting the cause chain for ssl-related exceptions.
                     dict(
                         error=CertificateError(
                             "SSL certificate verification failed. "
                             "The server's certificate is invalid or untrusted.",
                             details={"url": redact_url(req.url)},
                         ),
-                        log_message=f"SSL certificate verification failed for {redact_url(req.url)}",
+                        log_message=(
+                            f"SSL certificate verification failed for {redact_url(req.url)}"
+                            + (f": {exc}" if str(exc) else "")
+                        ),
                     )
                     if _is_ssl_error(exc)
-                    else dict(
-                        error=RequestError(
-                            "Failed to connect to server. "
-                            "Please check the URL and your network connection.",
-                            details={"url": redact_url(req.url)},
-                        ),
-                        log_message=f"Connection error for {redact_url(req.url)}",
+                    else (
+                        dict(
+                            error=RequestError(
+                                f"Failed to connect to proxy ({self.proxy}). "
+                                "Please check your proxy settings under Preferences.",
+                                details={"url": redact_url(req.url), "proxy": self.proxy},
+                            ),
+                            log_message=(
+                                f"Proxy connection error ({self.proxy})"
+                                + (f": {exc}" if str(exc) else "")
+                                + f" — for {redact_url(req.url)}"
+                            ),
+                        )
+                        if self.proxy and _is_proxy_error(exc)
+                        else dict(
+                            error=RequestError(
+                                "Failed to connect to server. "
+                                "Please check the URL and your network connection.",
+                                details={"url": redact_url(req.url)},
+                            ),
+                            log_message=(
+                                f"Connection error for {redact_url(req.url)}"
+                                + (f": {exc}" if str(exc) else "")
+                            ),
+                        )
                     )
                 ),
             ),
@@ -464,7 +686,6 @@ class HTTPClient:
                 ),
             ),
         ]
-        return self.__error_handlers
 
     def _send_internal(self, request: Request, auth: Optional[AuthStrategy] = None) -> Response:
         """Send the request through the interceptor chain, applying auth and error handling.
@@ -472,32 +693,61 @@ class HTTPClient:
         Uses a data-driven error map so each exception type is handled
         consistently without repetitive ``except`` blocks.
         """
+        logger.debug("_send_internal() starting")
         try:
+            logger.debug("Running pre-request interceptors")
             request = self.interceptors.process_request(request)
             headers = dict(request.headers) if request.headers else {}
+            
+            logger.debug("Applying authentication (strategy=%s)", type(auth or request.auth).__name__)
             auth_headers = self._apply_auth(request, headers, auth)
+            if auth_headers:
+                logger.debug("Auth headers applied: %s", list(auth_headers.keys()))
 
+            logger.debug("Dispatching request via httpx")
             response = self._dispatch_request(request, headers, auth_headers)
+            
+            logger.debug("Updating cookie jar from response")
             self._update_cookie_jar(request, response)
+            
+            logger.debug("Running post-response interceptors")
             response = self.interceptors.process_response(request, response)
+            
+            logger.debug("Logging successful request to audit trail")
             self._audit.log_request(
                 request.method, redact_url(request.url), status_code=response.status_code
+            )
+            logger.debug(
+                "_send_internal() completed: method=%s status=%d elapsed=%.2fs",
+                request.method, response.status_code, response.elapsed,
             )
             return response
 
         except Exception as exc:
+            logger.debug(
+                "_send_internal() caught exception: type=%s message=%s",
+                type(exc).__name__, str(exc)[:100],
+            )
             # Let our own exceptions (auth errors, validation, etc.)
             # propagate with their original message intact.
             if isinstance(exc, EquinoxError):
+                logger.debug("Exception is EquinoxError subclass, re-raising: %s", exc)
                 raise
 
             # Walk the handler list; first matching type wins
             for exc_type, handler_fn in self._error_handlers:
                 if isinstance(exc, exc_type):
+                    logger.debug(
+                        "Exception matched handler for %s", exc_type.__name__,
+                    )
                     kwargs = handler_fn(exc, request)
                     return self._handle_error(request, **kwargs)
 
             # Generic fallback for truly unexpected errors
+            logger.warning(
+                "No handler matched for exception type %s, using fallback",
+                type(exc).__name__,
+            )
             safe_msg = redact_body(str(exc), max_length=500) or ""
             return self._handle_error(
                 request,
@@ -538,11 +788,35 @@ class HTTPClient:
 
         snapshot = set(headers.keys())
         try:
+            # Forward the active proxy so OAuth2 token fetches (and any future
+            # auth strategy that honours _proxy) route through the same proxy
+            # as the main request.  Attribute injection is safe — strategies
+            # that don't use _proxy simply ignore it.
+            if self.proxy and hasattr(auth_strategy, "_proxy"):
+                auth_strategy._proxy = self.proxy
+            logger.debug("Applying auth strategy: %s", type(auth_strategy).__name__)
             auth_strategy.apply(request, headers)
         except Exception as auth_exc:
             # Redact the exception message — it may contain tokens or passwords
             safe_msg = redact_body(str(auth_exc), max_length=200) or "unknown error"
-            logger.error("Authentication failed: %s", type(auth_exc).__name__)
+            logger.error(
+                "Authentication failed (%s): %s — %s",
+                type(auth_exc).__name__,
+                type(auth_strategy).__name__,
+                safe_msg,
+            )
+            # When the failure is caused by a dead proxy, surface that fact
+            # directly rather than burying it inside "Authentication failed: …"
+            if self.proxy and (
+                "10061" in safe_msg
+                or "connection refused" in safe_msg.lower()
+                or "econnrefused" in safe_msg.lower()
+            ):
+                raise RequestError(
+                    f"OAuth2 token refresh failed — proxy ({self.proxy}) is not reachable. "
+                    "Please check your proxy settings under Preferences.",
+                    details={"proxy": self.proxy},
+                )
             raise RequestError(f"Authentication failed: {safe_msg}")
 
         # Identify which headers were added by the auth strategy
@@ -564,7 +838,9 @@ class HTTPClient:
         """Choose the right httpx client (cert-aware or standard) and execute the request."""
         cert_path = getattr(request, "cert_path", None)
         if cert_path:
+            logger.debug("_dispatch_request: using client certificate at %s", cert_path)
             return self._execute_with_client_certificate(request, headers, cert_path, auth_headers)
+        logger.debug("_dispatch_request: using standard httpx client")
         return self._execute_httpx(self._client, request, headers, auth_headers)
 
     def _execute_with_client_certificate(
@@ -580,6 +856,10 @@ class HTTPClient:
         """
         cert_key_path = getattr(request, "cert_key_path", None)
         cert_arg = (cert_path, cert_key_path) if cert_key_path else cert_path
+        logger.debug(
+            "_execute_with_client_certificate: creating cert client for %s (key=%s)",
+            cert_path, cert_key_path or "none",
+        )
 
         with httpx.Client(
             timeout=self.timeout,
@@ -589,16 +869,24 @@ class HTTPClient:
             cert=cert_arg,
             cookies=self._get_current_cookies(),
         ) as cert_client:
-            return self._execute_httpx(cert_client, request, headers, auth_headers)
+            logger.debug("Cert client created successfully, executing request")
+            response = self._execute_httpx(cert_client, request, headers, auth_headers)
+            logger.debug("Request completed, cert client will be closed on context exit")
+            return response
 
     def _update_cookie_jar(self, request: Request, response: Optional[Response]) -> None:
         """Persist any Set-Cookie headers from the response into the cookie manager."""
         if self._cookie_manager is None or response is None:
+            logger.debug("_update_cookie_jar: no cookie manager or response, skipping")
             return
         try:
             response_headers = dict(response.headers) if response else {}
             if response_headers.get("set-cookie"):
+                logger.debug("Updating cookie jar from Set-Cookie header")
                 self._cookie_manager.update_from_response(response_headers, request.url)
+                logger.debug("Cookie jar updated successfully")
+            else:
+                logger.debug("No Set-Cookie header in response")
         except Exception as cookie_exc:
             logger.debug("Cookie jar update failed: %s", cookie_exc)
 
@@ -615,13 +903,18 @@ class HTTPClient:
         Otherwise it re-raises the (potentially transformed) error.
         """
         if audit_tag:
+            logger.debug("Logging error to audit trail: tag=%s", audit_tag)
             self._audit.log_request(request.method, request.url, error=audit_tag)
 
+        if log_message:
+            logger.warning("Error log message: %s", log_message)
+
+        logger.debug("Processing error through interceptor chain: type=%s", type(error).__name__)
         processed_error = self.interceptors.process_error(request, error)
         if processed_error is not None:
-            if log_message:
-                logger.error(log_message)
+            logger.debug("Interceptor returned error, re-raising: %s", type(processed_error).__name__)
             raise processed_error
+        logger.debug("Interceptor suppressed error, returning None")
         return None
 
     def _execute_httpx(
@@ -742,8 +1035,10 @@ class HTTPClient:
         """
         multipart_data = getattr(request, "multipart_data", None)
         if not multipart_data:
+            logger.debug("No multipart data in request")
             return None, []
 
+        logger.debug("Building multipart files from %d field(s)", len(multipart_data))
         multipart_files: List[Tuple[str, Any]] = []
         opened_file_handles: List[Any] = []
 
@@ -759,12 +1054,17 @@ class HTTPClient:
                     Validator.validate_file_path(file_path)
                     file_handle = open(file_path, "rb")  # noqa: WPS515
                     opened_file_handles.append(file_handle)
+                    logger.debug("Multipart: added file field %s = %s", field_key, Path(file_path).name)
                     multipart_files.append((field_key, (Path(file_path).name, file_handle)))
                 else:
+                    logger.debug("Multipart: file not found for field %s, sending empty", field_key)
                     multipart_files.append((field_key, (None, b"")))
             else:
+                value_preview = (field.get("value", "")[:30] + "...") if len(field.get("value", "")) > 30 else field.get("value", "")
+                logger.debug("Multipart: added text field %s = %s", field_key, value_preview)
                 multipart_files.append((field_key, (None, field.get("value", ""))))
 
+        logger.debug("Multipart files ready: %d fields, %d file handles opened", len(multipart_files), len(opened_file_handles))
         return multipart_files or None, opened_file_handles
 
     def get(self, url: str, **kwargs) -> Response:
