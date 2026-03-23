@@ -310,8 +310,10 @@ class ResponsePanel(QWidget):
             if can_show_json:
                 obj = response.json()
                 self._json_tree.load_json(obj)
+                self._search_bar.set_json_doc(obj)  # enable JSONPath search
             else:
                 self._json_tree.clear()
+                self._search_bar.set_json_doc(None)  # no JSON available
             # Enable or disable the JSON Tree view option based on whether JSON is available
             self._view_json_act.setEnabled(can_show_json)
             # If user prefers JSON view and JSON is available, switch to it
@@ -322,6 +324,7 @@ class ResponsePanel(QWidget):
                 self._switch_to_raw_view()
         except Exception:
             self._json_tree.clear()
+            self._search_bar.set_json_doc(None)
             self._view_json_act.setEnabled(False)
 
         # Response headers (reset filter on new response)
@@ -842,11 +845,12 @@ class ResponsePanel(QWidget):
         self.sent_method_label.setText("—")
         self.sent_url_label.setText("—")
         self.current_response = None
-        # Clear JSON tab as well
+        # Clear JSON tab and search-bar JSONPath context
         try:
             self._json_tree.clear()
         except Exception:
             pass
+        self._search_bar.set_json_doc(None)
         # Clear Intelligence tab
         try:
             self.intelligence_panel.clear()
