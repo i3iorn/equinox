@@ -5,6 +5,7 @@ following zero-trust security principles.
 """
 
 import ipaddress
+import logging
 import re
 import json
 import socket
@@ -14,6 +15,9 @@ from urlps import parse_url_unsafe as _urlps_parse
 from pathlib import Path
 
 from equinox.core.exceptions import ValidationError
+
+# Module-level logger for structured logging
+_logger = logging.getLogger(__name__)
 
 # Lazy-initialised thread pool for DNS resolution in SSRF checks.
 # A single-worker pool avoids creating/tearing down threads on every call.
@@ -97,18 +101,25 @@ class Validator:
         interpolation, use :meth:`validate_resolved_url`.
         """
         if not url or not isinstance(url, str):
+            _logger.debug("URL validation failed: empty or non-string input", extra={"input_type": type(url).__name__})
             raise ValidationError("URL must be a non-empty string")
 
         url = url.strip()
 
         if len(url) > cls.MAX_URL_LENGTH:
+            _logger.warning(
+                "URL validation failed: exceeds max length",
+                extra={"length": len(url), "max_length": cls.MAX_URL_LENGTH}
+            )
             raise ValidationError(f"URL exceeds maximum length of {cls.MAX_URL_LENGTH}")
 
         # XSS / injection checks on the raw string
         for pattern in cls.XSS_PATTERNS[:cls._URL_SAFE_XSS_PATTERN_COUNT]:
             if re.search(pattern, url, re.IGNORECASE):
+                _logger.warning("URL validation failed: XSS pattern detected", extra={"pattern": pattern})
                 raise ValidationError("URL contains potentially malicious content")
 
+        _logger.debug("URL validation passed", extra={"url_length": len(url)})
         return url
 
     @classmethod
@@ -126,23 +137,36 @@ class Validator:
             parsed = _urlps_parse(url)
         except Exception as e:
             err_msg = str(e).lower()
+            _logger.warning(
+                "URL parsing failed",
+                extra={"error": str(e), "url_length": len(url)}
+            )
             if "host" in err_msg:
                 raise ValidationError("URL must contain a hostname")
             raise ValidationError(f"Invalid URL format: {e}")
 
         if parsed.scheme not in cls.VALID_URL_SCHEMES:
+            _logger.warning(
+                "URL validation failed: invalid scheme",
+                extra={"scheme": parsed.scheme, "allowed_schemes": list(cls.VALID_URL_SCHEMES)}
+            )
             raise ValidationError(
                 f"Invalid URL scheme: {parsed.scheme}. "
                 f"Allowed schemes: {', '.join(cls.VALID_URL_SCHEMES)}"
             )
 
         if not parsed.netloc:
+            _logger.warning("URL validation failed: missing hostname")
             raise ValidationError("URL must contain a hostname")
 
         hostname = parsed.host
         if hostname:
             cls._check_ssrf(hostname)
 
+        _logger.debug(
+            "URL validation passed",
+            extra={"scheme": parsed.scheme, "host": hostname or "unknown"}
+        )
         return url
 
     # Cloud metadata endpoints that should always be blocked
