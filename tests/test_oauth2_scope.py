@@ -6,7 +6,7 @@ flows, round-trips through serialization, and propagates from storage layers.
 """
 
 import pytest
-from unittest.mock import Mock, patch
+from unittest.mock import Mock, MagicMock, patch
 from datetime import datetime, timedelta, timezone
 
 from equinox.auth.oauth2 import OAuth2Auth
@@ -43,10 +43,12 @@ def _mock_token_response(
 class TestClientCredentialsScopeHandling:
     """Scope must be sent when configured for client_credentials."""
 
-    @patch("equinox.auth.oauth2.httpx.post")
-    def test_scope_included_in_client_credentials(self, mock_post):
+    @patch("equinox.auth.oauth2.httpx.Client")
+    def test_scope_included_in_client_credentials(self, mock_client_class):
         """Scope should appear in the POST body for client_credentials."""
-        mock_post.return_value = _mock_token_response()
+        mock_client = MagicMock()
+        mock_client_class.return_value.__enter__.return_value = mock_client
+        mock_client.post.return_value = _mock_token_response()
 
         auth = OAuth2Auth(
             client_id="cid",
@@ -56,15 +58,17 @@ class TestClientCredentialsScopeHandling:
         )
         auth.apply(Mock(), {})
 
-        mock_post.assert_called_once()
-        sent_data = mock_post.call_args[1].get("data") or mock_post.call_args[0][1] if len(mock_post.call_args[0]) > 1 else mock_post.call_args[1]["data"]
+        mock_client.post.assert_called_once()
+        sent_data = mock_client.post.call_args[1].get("data") or mock_client.post.call_args[0][1] if len(mock_client.post.call_args[0]) > 1 else mock_client.post.call_args[1]["data"]
         assert sent_data["grant_type"] == "client_credentials"
         assert sent_data["scope"] == "read write"
 
-    @patch("equinox.auth.oauth2.httpx.post")
-    def test_scope_omitted_when_none_client_credentials(self, mock_post):
+    @patch("equinox.auth.oauth2.httpx.Client")
+    def test_scope_omitted_when_none_client_credentials(self, mock_client_class):
         """When scope is None, the key should not be in the POST body."""
-        mock_post.return_value = _mock_token_response()
+        mock_client = MagicMock()
+        mock_client_class.return_value.__enter__.return_value = mock_client
+        mock_client.post.return_value = _mock_token_response()
 
         auth = OAuth2Auth(
             client_id="cid",
@@ -74,13 +78,15 @@ class TestClientCredentialsScopeHandling:
         )
         auth.apply(Mock(), {})
 
-        sent_data = mock_post.call_args[1].get("data") or mock_post.call_args[0][1]
+        sent_data = mock_client.post.call_args[1].get("data") or mock_client.post.call_args[0][1]
         assert "scope" not in sent_data
 
-    @patch("equinox.auth.oauth2.httpx.post")
-    def test_scope_omitted_when_empty_string_client_credentials(self, mock_post):
+    @patch("equinox.auth.oauth2.httpx.Client")
+    def test_scope_omitted_when_empty_string_client_credentials(self, mock_client_class):
         """An empty-string scope should be treated as absent."""
-        mock_post.return_value = _mock_token_response()
+        mock_client = MagicMock()
+        mock_client_class.return_value.__enter__.return_value = mock_client
+        mock_client.post.return_value = _mock_token_response()
 
         auth = OAuth2Auth(
             client_id="cid",
@@ -90,13 +96,15 @@ class TestClientCredentialsScopeHandling:
         )
         auth.apply(Mock(), {})
 
-        sent_data = mock_post.call_args[1].get("data") or mock_post.call_args[0][1]
+        sent_data = mock_client.post.call_args[1].get("data") or mock_client.post.call_args[0][1]
         assert "scope" not in sent_data
 
-    @patch("equinox.auth.oauth2.httpx.post")
-    def test_single_scope_client_credentials(self, mock_post):
+    @patch("equinox.auth.oauth2.httpx.Client")
+    def test_single_scope_client_credentials(self, mock_client_class):
         """A single scope value should be sent correctly."""
-        mock_post.return_value = _mock_token_response()
+        mock_client = MagicMock()
+        mock_client_class.return_value.__enter__.return_value = mock_client
+        mock_client.post.return_value = _mock_token_response()
 
         auth = OAuth2Auth(
             client_id="cid",
@@ -106,13 +114,15 @@ class TestClientCredentialsScopeHandling:
         )
         auth.apply(Mock(), {})
 
-        sent_data = mock_post.call_args[1].get("data") or mock_post.call_args[0][1]
+        sent_data = mock_client.post.call_args[1].get("data") or mock_client.post.call_args[0][1]
         assert sent_data["scope"] == "openid"
 
-    @patch("equinox.auth.oauth2.httpx.post")
-    def test_multiple_scopes_client_credentials(self, mock_post):
+    @patch("equinox.auth.oauth2.httpx.Client")
+    def test_multiple_scopes_client_credentials(self, mock_client_class):
         """Multiple space-separated scopes should be sent as-is."""
-        mock_post.return_value = _mock_token_response()
+        mock_client = MagicMock()
+        mock_client_class.return_value.__enter__.return_value = mock_client
+        mock_client.post.return_value = _mock_token_response()
 
         auth = OAuth2Auth(
             client_id="cid",
@@ -122,7 +132,7 @@ class TestClientCredentialsScopeHandling:
         )
         auth.apply(Mock(), {})
 
-        sent_data = mock_post.call_args[1].get("data") or mock_post.call_args[0][1]
+        sent_data = mock_client.post.call_args[1].get("data") or mock_client.post.call_args[0][1]
         assert sent_data["scope"] == "openid profile email"
 
 
@@ -133,10 +143,12 @@ class TestClientCredentialsScopeHandling:
 class TestRefreshTokenScopeHandling:
     """Scope must be sent when configured for refresh_token flow (RFC 6749 §6)."""
 
-    @patch("equinox.auth.oauth2.httpx.post")
-    def test_scope_included_in_refresh_token_flow(self, mock_post):
+    @patch("equinox.auth.oauth2.httpx.Client")
+    def test_scope_included_in_refresh_token_flow(self, mock_client_class):
         """Scope should appear in the POST body for refresh_token flow."""
-        mock_post.return_value = _mock_token_response(refresh_token="new-rt")
+        mock_client = MagicMock()
+        mock_client_class.return_value.__enter__.return_value = mock_client
+        mock_client.post.return_value = _mock_token_response(refresh_token="new-rt")
 
         auth = OAuth2Auth(
             client_id="cid",
@@ -148,16 +160,18 @@ class TestRefreshTokenScopeHandling:
         # No access_token → triggers refresh
         auth.apply(Mock(), {})
 
-        mock_post.assert_called_once()
-        sent_data = mock_post.call_args[1].get("data") or mock_post.call_args[0][1]
+        mock_client.post.assert_called_once()
+        sent_data = mock_client.post.call_args[1].get("data") or mock_client.post.call_args[0][1]
         assert sent_data["grant_type"] == "refresh_token"
         assert sent_data["scope"] == "read write"
         assert sent_data["refresh_token"] == "old-rt"
 
-    @patch("equinox.auth.oauth2.httpx.post")
-    def test_scope_omitted_when_none_refresh_token_flow(self, mock_post):
+    @patch("equinox.auth.oauth2.httpx.Client")
+    def test_scope_omitted_when_none_refresh_token_flow(self, mock_client_class):
         """When scope is None, the key should not be in the refresh POST body."""
-        mock_post.return_value = _mock_token_response(refresh_token="new-rt")
+        mock_client = MagicMock()
+        mock_client_class.return_value.__enter__.return_value = mock_client
+        mock_client.post.return_value = _mock_token_response(refresh_token="new-rt")
 
         auth = OAuth2Auth(
             client_id="cid",
@@ -168,14 +182,16 @@ class TestRefreshTokenScopeHandling:
         )
         auth.apply(Mock(), {})
 
-        sent_data = mock_post.call_args[1].get("data") or mock_post.call_args[0][1]
+        sent_data = mock_client.post.call_args[1].get("data") or mock_client.post.call_args[0][1]
         assert sent_data["grant_type"] == "refresh_token"
         assert "scope" not in sent_data
 
-    @patch("equinox.auth.oauth2.httpx.post")
-    def test_scope_omitted_when_empty_string_refresh_token_flow(self, mock_post):
+    @patch("equinox.auth.oauth2.httpx.Client")
+    def test_scope_omitted_when_empty_string_refresh_token_flow(self, mock_client_class):
         """Empty-string scope should not be sent for refresh_token flow."""
-        mock_post.return_value = _mock_token_response(refresh_token="new-rt")
+        mock_client = MagicMock()
+        mock_client_class.return_value.__enter__.return_value = mock_client
+        mock_client.post.return_value = _mock_token_response(refresh_token="new-rt")
 
         auth = OAuth2Auth(
             client_id="cid",
@@ -186,13 +202,15 @@ class TestRefreshTokenScopeHandling:
         )
         auth.apply(Mock(), {})
 
-        sent_data = mock_post.call_args[1].get("data") or mock_post.call_args[0][1]
+        sent_data = mock_client.post.call_args[1].get("data") or mock_client.post.call_args[0][1]
         assert "scope" not in sent_data
 
-    @patch("equinox.auth.oauth2.httpx.post")
-    def test_multiple_scopes_refresh_token_flow(self, mock_post):
+    @patch("equinox.auth.oauth2.httpx.Client")
+    def test_multiple_scopes_refresh_token_flow(self, mock_client_class):
         """Multiple scopes should be sent correctly for refresh_token flow."""
-        mock_post.return_value = _mock_token_response(refresh_token="new-rt")
+        mock_client = MagicMock()
+        mock_client_class.return_value.__enter__.return_value = mock_client
+        mock_client.post.return_value = _mock_token_response(refresh_token="new-rt")
 
         auth = OAuth2Auth(
             client_id="cid",
@@ -203,7 +221,7 @@ class TestRefreshTokenScopeHandling:
         )
         auth.apply(Mock(), {})
 
-        sent_data = mock_post.call_args[1].get("data") or mock_post.call_args[0][1]
+        sent_data = mock_client.post.call_args[1].get("data") or mock_client.post.call_args[0][1]
         assert sent_data["scope"] == "openid profile email"
 
 
@@ -214,10 +232,12 @@ class TestRefreshTokenScopeHandling:
 class TestScopePreservedAcrossRefreshes:
     """Scope must stay on the instance and be sent on every subsequent refresh."""
 
-    @patch("equinox.auth.oauth2.httpx.post")
-    def test_scope_persists_through_two_refreshes(self, mock_post):
+    @patch("equinox.auth.oauth2.httpx.Client")
+    def test_scope_persists_through_two_refreshes(self, mock_client_class):
         """After a first refresh, a second should still send scope."""
-        mock_post.return_value = _mock_token_response(expires_in=1)
+        mock_client = MagicMock()
+        mock_client_class.return_value.__enter__.return_value = mock_client
+        mock_client.post.return_value = _mock_token_response(expires_in=1)
 
         auth = OAuth2Auth(
             client_id="cid",
@@ -228,22 +248,25 @@ class TestScopePreservedAcrossRefreshes:
 
         # First request → token fetched
         auth.apply(Mock(), {})
-        first_data = mock_post.call_args[1].get("data") or mock_post.call_args[0][1]
+        first_data = mock_client.post.call_args[1].get("data") or mock_client.post.call_args[0][1]
         assert first_data["scope"] == "admin"
 
         # Expire the token to force a second refresh
         auth.expires_at = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(seconds=60)
 
         auth.apply(Mock(), {})
-        second_data = mock_post.call_args[1].get("data") or mock_post.call_args[0][1]
+        second_data = mock_client.post.call_args[1].get("data") or mock_client.post.call_args[0][1]
         assert second_data["scope"] == "admin"
-        assert mock_post.call_count == 2
+        assert mock_client.post.call_count == 2
 
-    @patch("equinox.auth.oauth2.httpx.post")
-    def test_scope_persists_when_switching_to_refresh_token_flow(self, mock_post):
+    @patch("equinox.auth.oauth2.httpx.Client")
+    def test_scope_persists_when_switching_to_refresh_token_flow(self, mock_client_class):
         """Token endpoint returns a refresh_token; next call should still send scope."""
+        mock_client = MagicMock()
+        mock_client_class.return_value.__enter__.return_value = mock_client
+        
         # First call: client_credentials returns a refresh_token
-        mock_post.return_value = _mock_token_response(
+        mock_client.post.return_value = _mock_token_response(
             access_token="tok1", expires_in=1, refresh_token="rt1"
         )
 
@@ -255,19 +278,19 @@ class TestScopePreservedAcrossRefreshes:
         )
 
         auth.apply(Mock(), {})
-        first_data = mock_post.call_args[1].get("data") or mock_post.call_args[0][1]
+        first_data = mock_client.post.call_args[1].get("data") or mock_client.post.call_args[0][1]
         assert first_data["grant_type"] == "client_credentials"
         assert first_data["scope"] == "read"
 
         # Now auth has a refresh_token; expire token to force refresh
         auth.expires_at = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(seconds=60)
 
-        mock_post.return_value = _mock_token_response(
+        mock_client.post.return_value = _mock_token_response(
             access_token="tok2", expires_in=3600, refresh_token="rt2"
         )
 
         auth.apply(Mock(), {})
-        second_data = mock_post.call_args[1].get("data") or mock_post.call_args[0][1]
+        second_data = mock_client.post.call_args[1].get("data") or mock_client.post.call_args[0][1]
         assert second_data["grant_type"] == "refresh_token"
         assert second_data["scope"] == "read"
 
@@ -384,10 +407,12 @@ class TestOAuthClientManagerScopePropagation:
         # Empty string should become None (falsy values normalised)
         assert auth.scope is None
 
-    @patch("equinox.auth.oauth2.httpx.post")
-    def test_scope_reaches_token_endpoint_via_manager(self, mock_post, mgr):
+    @patch("equinox.auth.oauth2.httpx.Client")
+    def test_scope_reaches_token_endpoint_via_manager(self, mock_client_class, mgr):
         """End-to-end: DB scope value → OAuth2Auth → token endpoint POST body."""
-        mock_post.return_value = _mock_token_response()
+        mock_client = MagicMock()
+        mock_client_class.return_value.__enter__.return_value = mock_client
+        mock_client.post.return_value = _mock_token_response()
 
         cid = mgr.create_client(
             name="E2E Client",
@@ -400,7 +425,7 @@ class TestOAuthClientManagerScopePropagation:
         auth = mgr.to_oauth2_auth(client)
         auth.apply(Mock(), {})
 
-        sent_data = mock_post.call_args[1].get("data") or mock_post.call_args[0][1]
+        sent_data = mock_client.post.call_args[1].get("data") or mock_client.post.call_args[0][1]
         assert sent_data["scope"] == "api.read api.write"
 
 
@@ -452,10 +477,12 @@ class TestSavedCredentialsScopePropagation:
 
         assert auth.scope is None
 
-    @patch("equinox.auth.oauth2.httpx.post")
-    def test_saved_credential_scope_reaches_token_endpoint(self, mock_post, mgr):
+    @patch("equinox.auth.oauth2.httpx.Client")
+    def test_saved_credential_scope_reaches_token_endpoint(self, mock_client_class, mgr):
         """End-to-end: saved_credentials scope → OAuth2Auth → POST body."""
-        mock_post.return_value = _mock_token_response()
+        mock_client = MagicMock()
+        mock_client_class.return_value.__enter__.return_value = mock_client
+        mock_client.post.return_value = _mock_token_response()
 
         cid = mgr.create_credential(
             name="Full E2E",
@@ -471,6 +498,6 @@ class TestSavedCredentialsScopePropagation:
         auth = mgr.to_auth_strategy(cred)
         auth.apply(Mock(), {})
 
-        sent_data = mock_post.call_args[1].get("data") or mock_post.call_args[0][1]
+        sent_data = mock_client.post.call_args[1].get("data") or mock_client.post.call_args[0][1]
         assert sent_data["scope"] == "read write delete"
 

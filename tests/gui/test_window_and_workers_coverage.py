@@ -40,20 +40,20 @@ def db(tmp_path, monkeypatch):
 class TestAppModule:
     def test_qt_exception_hook_no_crash(self):
         from equinox.gui.app import _qt_exception_hook
-        with patch("equinox.gui.app.QMessageBox.critical"):
+        with patch("equinox.gui.widgets.CopyableMessageBox.critical"):
             _qt_exception_hook(ValueError, ValueError("test error"), None)
 
     def test_qt_exception_hook_logs(self, caplog):
         import logging
         from equinox.gui.app import _qt_exception_hook
-        with patch("equinox.gui.app.QMessageBox.critical"):
+        with patch("equinox.gui.widgets.CopyableMessageBox.critical"):
             with caplog.at_level(logging.CRITICAL, logger="equinox.gui.app"):
                 _qt_exception_hook(RuntimeError, RuntimeError("crash"), None)
 
     def test_qt_exception_hook_message_box_failure(self):
-        """Hook must not crash even if QMessageBox.critical raises."""
+        """Hook must not crash even if CopyableMessageBox.critical raises."""
         from equinox.gui.app import _qt_exception_hook
-        with patch("equinox.gui.app.QMessageBox.critical", side_effect=RuntimeError("no display")):
+        with patch("equinox.gui.widgets.CopyableMessageBox.critical", side_effect=RuntimeError("no display")):
             _qt_exception_hook(TypeError, TypeError("problem"), None)
 
 

@@ -161,8 +161,7 @@ class TestOAuth2Coverage:
         with pytest.raises(AuthError, match="No token URL"):
             auth._refresh_access_token()
 
-    @patch("equinox.auth.oauth2.httpx.post")
-    def test_apply_token_response_no_access_token(self, mock_post):
+    def test_apply_token_response_no_access_token(self):
         from equinox.auth.oauth2 import OAuth2Auth
         mock_resp = Mock()
         mock_resp.json.return_value = {"token_type": "Bearer"}
@@ -172,8 +171,7 @@ class TestOAuth2Coverage:
         with pytest.raises(AuthError, match="did not return access_token"):
             auth._apply_token_response(mock_resp)
 
-    @patch("equinox.auth.oauth2.httpx.post")
-    def test_apply_token_response_invalid_json(self, mock_post):
+    def test_apply_token_response_invalid_json(self):
         from equinox.auth.oauth2 import OAuth2Auth
         mock_resp = Mock()
         mock_resp.json.side_effect = ValueError("bad json")
@@ -182,8 +180,7 @@ class TestOAuth2Coverage:
         with pytest.raises(AuthError, match="Invalid token endpoint"):
             auth._apply_token_response(mock_resp)
 
-    @patch("equinox.auth.oauth2.httpx.post")
-    def test_apply_token_response_with_refresh_token(self, mock_post):
+    def test_apply_token_response_with_refresh_token(self):
         from equinox.auth.oauth2 import OAuth2Auth
         mock_resp = Mock()
         mock_resp.json.return_value = {
@@ -198,8 +195,7 @@ class TestOAuth2Coverage:
         assert auth.refresh_token == "new-rt"
         assert auth.expires_at is not None
 
-    @patch("equinox.auth.oauth2.httpx.post")
-    def test_apply_token_response_default_expiry(self, mock_post):
+    def test_apply_token_response_default_expiry(self):
         from equinox.auth.oauth2 import OAuth2Auth
         mock_resp = Mock()
         mock_resp.json.return_value = {"access_token": "tok"}
@@ -272,15 +268,18 @@ class TestOAuth2Coverage:
         # Should not raise
         auth._save_to_storage()
 
-    @patch("equinox.auth.oauth2.httpx.post")
-    def test_post_token_request_http_status_error(self, mock_post):
+    @patch("equinox.auth.oauth2.httpx.Client")
+    def test_post_token_request_http_status_error(self, mock_client_class):
         from equinox.auth.oauth2 import OAuth2Auth
+        mock_client = MagicMock()
+        mock_client_class.return_value.__enter__.return_value = mock_client
+        
         resp = Mock()
         resp.status_code = 401
         resp.raise_for_status.side_effect = __import__("httpx").HTTPStatusError(
             "Unauthorized", request=Mock(), response=resp,
         )
-        mock_post.return_value = resp
+        mock_client.post.return_value = resp
         auth = OAuth2Auth(
             token_url="https://auth.example.com/token",
             client_id="c", client_secret="s",

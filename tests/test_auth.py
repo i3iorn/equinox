@@ -1,7 +1,7 @@
 """Tests for authentication modules."""
 
 import pytest
-from unittest.mock import Mock, patch
+from unittest.mock import Mock, MagicMock, patch
 import base64
 
 from equinox.auth.bearer import BearerAuth
@@ -134,10 +134,13 @@ class TestOAuth2Auth:
 
         assert auth.access_token == "existing-token"
 
-    @patch('equinox.auth.oauth2.httpx.post')
-    def test_oauth2_request_token(self, mock_post):
+    @patch('equinox.auth.oauth2.httpx.Client')
+    def test_oauth2_request_token(self, mock_client_class):
         """Test requesting OAuth2 token."""
-        # Mock response
+        # Mock the httpx.Client instance and its post method
+        mock_client = MagicMock()
+        mock_client_class.return_value.__enter__.return_value = mock_client
+        
         mock_response = Mock()
         mock_response.status_code = 200
         mock_response.json.return_value = {
@@ -145,7 +148,7 @@ class TestOAuth2Auth:
             "token_type": "Bearer",
             "expires_in": 3600
         }
-        mock_post.return_value = mock_response
+        mock_client.post.return_value = mock_response
 
         auth = OAuth2Auth(
             client_id="client",
@@ -179,10 +182,13 @@ class TestOAuth2Auth:
         assert "Authorization" in headers
         assert headers["Authorization"] == "Bearer my-token"
 
-    @patch('equinox.auth.oauth2.httpx.post')
-    def test_oauth2_apply_requests_token_if_needed(self, mock_post):
+    @patch('equinox.auth.oauth2.httpx.Client')
+    def test_oauth2_apply_requests_token_if_needed(self, mock_client_class):
         """Test that OAuth2 requests token if not available."""
-        # Mock response
+        # Mock the httpx.Client instance and its post method
+        mock_client = MagicMock()
+        mock_client_class.return_value.__enter__.return_value = mock_client
+        
         mock_response = Mock()
         mock_response.status_code = 200
         mock_response.json.return_value = {
@@ -190,7 +196,7 @@ class TestOAuth2Auth:
             "token_type": "Bearer",
             "expires_in": 3600
         }
-        mock_post.return_value = mock_response
+        mock_client.post.return_value = mock_response
 
         auth = OAuth2Auth(
             client_id="client",
@@ -206,10 +212,13 @@ class TestOAuth2Auth:
         assert auth.access_token == "auto-requested-token"
         assert headers["Authorization"] == "Bearer auto-requested-token"
 
-    @patch('equinox.auth.oauth2.httpx.post')
-    def test_oauth2_token_refresh(self, mock_post):
+    @patch('equinox.auth.oauth2.httpx.Client')
+    def test_oauth2_token_refresh(self, mock_client_class):
         """Test OAuth2 token refresh."""
-        # Mock initial token response
+        # Mock the httpx.Client instance and its post method
+        mock_client = MagicMock()
+        mock_client_class.return_value.__enter__.return_value = mock_client
+        
         mock_response = Mock()
         mock_response.status_code = 200
         mock_response.json.return_value = {
@@ -218,7 +227,7 @@ class TestOAuth2Auth:
             "expires_in": 3600,
             "refresh_token": "new-refresh-token"
         }
-        mock_post.return_value = mock_response
+        mock_client.post.return_value = mock_response
 
         auth = OAuth2Auth(
             client_id="client",

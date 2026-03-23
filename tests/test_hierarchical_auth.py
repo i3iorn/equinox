@@ -719,7 +719,7 @@ class TestOAuth2AutoFetch:
 
     def test_default_expiry_set_after_fetch(self):
         """When token endpoint omits expires_in, a default expiry is set."""
-        from unittest.mock import patch, Mock
+        from unittest.mock import patch, Mock, MagicMock
         from equinox.auth.oauth2 import OAuth2Auth
 
         auth = OAuth2Auth(
@@ -736,7 +736,10 @@ class TestOAuth2AutoFetch:
             "token_type": "Bearer",
             # NO expires_in
         }
-        with patch("equinox.auth.oauth2.httpx.post", return_value=mock_resp):
+        with patch("equinox.auth.oauth2.httpx.Client") as mock_client_class:
+            mock_client = MagicMock()
+            mock_client_class.return_value.__enter__.return_value = mock_client
+            mock_client.post.return_value = mock_resp
             auth._refresh_access_token()
 
         assert auth.access_token == "new-token"

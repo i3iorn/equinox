@@ -239,16 +239,19 @@ class TestOAuth2AuthSecurity:
         auth = OAuth2Auth(client_id="c", storage_key="custom-key")
         assert auth.storage_key == "custom-key"
 
-    @patch("equinox.auth.oauth2.httpx.post")
-    def test_expires_in_float_string_handled(self, mock_post):
+    @patch("equinox.auth.oauth2.httpx.Client")
+    def test_expires_in_float_string_handled(self, mock_client_class):
         """Token endpoint returning expires_in as '3600.5' should not crash."""
+        mock_client = MagicMock()
+        mock_client_class.return_value.__enter__.return_value = mock_client
+        
         mock_resp = Mock()
         mock_resp.status_code = 200
         mock_resp.json.return_value = {
             "access_token": "tok",
             "expires_in": "3600.5",
         }
-        mock_post.return_value = mock_resp
+        mock_client.post.return_value = mock_resp
 
         auth = OAuth2Auth(
             client_id="c",
@@ -260,16 +263,19 @@ class TestOAuth2AuthSecurity:
         assert auth.access_token == "tok"
         assert auth.expires_at is not None
 
-    @patch("equinox.auth.oauth2.httpx.post")
-    def test_expires_in_non_numeric_uses_default(self, mock_post):
+    @patch("equinox.auth.oauth2.httpx.Client")
+    def test_expires_in_non_numeric_uses_default(self, mock_client_class):
         """Token endpoint returning expires_in as 'invalid' should use default."""
+        mock_client = MagicMock()
+        mock_client_class.return_value.__enter__.return_value = mock_client
+        
         mock_resp = Mock()
         mock_resp.status_code = 200
         mock_resp.json.return_value = {
             "access_token": "tok",
             "expires_in": "not-a-number",
         }
-        mock_post.return_value = mock_resp
+        mock_client.post.return_value = mock_resp
 
         auth = OAuth2Auth(
             client_id="c",
@@ -281,16 +287,19 @@ class TestOAuth2AuthSecurity:
         assert auth.access_token == "tok"
         assert auth.expires_at is not None
 
-    @patch("equinox.auth.oauth2.httpx.post")
-    def test_expires_in_negative_uses_default(self, mock_post):
+    @patch("equinox.auth.oauth2.httpx.Client")
+    def test_expires_in_negative_uses_default(self, mock_client_class):
         """Token endpoint returning negative expires_in should use default."""
+        mock_client = MagicMock()
+        mock_client_class.return_value.__enter__.return_value = mock_client
+        
         mock_resp = Mock()
         mock_resp.status_code = 200
         mock_resp.json.return_value = {
             "access_token": "tok",
             "expires_in": -100,
         }
-        mock_post.return_value = mock_resp
+        mock_client.post.return_value = mock_resp
 
         auth = OAuth2Auth(
             client_id="c",
@@ -301,16 +310,19 @@ class TestOAuth2AuthSecurity:
         auth.apply(Mock(), headers)
         assert auth.access_token == "tok"
 
-    @patch("equinox.auth.oauth2.httpx.post")
-    def test_crlf_in_access_token_from_server_rejected(self, mock_post):
+    @patch("equinox.auth.oauth2.httpx.Client")
+    def test_crlf_in_access_token_from_server_rejected(self, mock_client_class):
         """Access token with CRLF from a malicious server must be rejected."""
+        mock_client = MagicMock()
+        mock_client_class.return_value.__enter__.return_value = mock_client
+        
         mock_resp = Mock()
         mock_resp.status_code = 200
         mock_resp.json.return_value = {
             "access_token": "evil\r\nX-Injected: header",
             "expires_in": 3600,
         }
-        mock_post.return_value = mock_resp
+        mock_client.post.return_value = mock_resp
 
         auth = OAuth2Auth(
             client_id="c",
