@@ -3,7 +3,8 @@
 import json
 import logging
 import re
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, Pattern, Tuple
+from collections import namedtuple
 
 from equinox.core.redact import redact_headers, redact_url
 from equinox.storage.database import Database
@@ -12,6 +13,12 @@ from equinox.core.exceptions import StorageError, ValidationError, SecurityError
 from equinox.storage.utils import require_positive_int as _require_positive_int_impl
 
 logger = logging.getLogger(__name__)
+
+# Response fields as a named tuple for clarity
+ResponseFields = namedtuple(
+    "ResponseFields",
+    ["status_code", "reason", "elapsed", "headers_json", "body"],
+)
 
 
 class HistoryManager:
@@ -25,6 +32,17 @@ class HistoryManager:
     MAX_REGEX_LENGTH = 500
     DEFAULT_LIMIT = 100
     MAX_LIMIT = 10000
+    
+    # SQL LIKE escape configuration
+    _LIKE_ESCAPE_CLAUSE = "ESCAPE '\\'"
+    
+    # Status code ranges for filtering
+    _STATUS_CODE_RANGES = {
+        "2xx": (200, 299),
+        "3xx": (300, 399),
+        "4xx": (400, 499),
+        "5xx": (500, 599),
+    }
 
     def __init__(self, db: Database):
         self.db = db
@@ -56,9 +74,17 @@ class HistoryManager:
         request_headers_json = self._prepare_request_headers(request.headers or {})
         request_body = self._prepare_body(request.body)
 
-        status_code, reason, elapsed, response_headers_json, response_body = (
-            self._extract_response_fields(response)
-        )
+        response_fields = self._extract_response_fields(response)
+        if response_fields:
+            status_code, reason, elapsed, response_headers_json, response_body = (
+                response_fields.status_code,
+                response_fields.reason,
+                response_fields.elapsed,
+                response_fields.headers_json,
+                response_fields.body,
+            )
+        else:
+            status_code = reason = elapsed = response_headers_json = response_body = None
 
         error = self._truncate_error(error)
 
@@ -160,7 +186,7 @@ class HistoryManager:
         row = self.db.fetchone("SELECT * FROM history WHERE id = ?", (history_id,))
         if row:
             row = dict(row)
-            self._decode_json_header_columns(row, history_id)
+            self._decode_json_headers(row, history_id)
         return row
 
     def list_history(
@@ -189,7 +215,7 @@ class HistoryManager:
 
         rows = self.db.fetchall(query, params)
         for row in rows:
-            self._decode_json_header_columns(row, row["id"])
+            self._decode_json_headers(row, row["id"])
         return rows
 
     def search_history(
@@ -266,7 +292,7 @@ class HistoryManager:
         rows = self.db.fetchall(sql, tuple(params_list))
 
         for row in rows:
-            self._decode_json_header_columns_silent(row)
+            self._decode_json_headers(row)  # No row_id = silent mode
 
         if needs_post_filter:
             rows = self._apply_post_filters(
@@ -376,14 +402,15 @@ class HistoryManager:
 
     def _extract_response_fields(
         self, response: Optional[Response]
-    ):
+    ) -> Optional[ResponseFields]:
         """Extract storable scalar fields from a Response object.
 
         Returns:
-            (status_code, reason, elapsed, response_headers_json, response_body)
+            ResponseFields with status_code, reason, elapsed, headers_json, body,
+            or None if response is None
         """
         if response is None:
-            return None, None, None, None, None
+            return None
 
         status_code = response.status_code
         reason = response.reason
@@ -397,24 +424,47 @@ class HistoryManager:
             logger.warning("Response headers too large, storing truncated version")
             response_headers_json = response_headers_json[:self.MAX_HEADERS_SIZE] + "..."
 
-        response_body = self._decode_response_body(response.body)
+        response_body = self._decode_body(response.body)
         response_body = self._prepare_body(response_body)
 
-        return status_code, reason, elapsed, response_headers_json, response_body
+        return ResponseFields(
+            status_code=status_code,
+            reason=reason,
+            elapsed=elapsed,
+            headers_json=response_headers_json,
+            body=response_body,
+        )
 
     @staticmethod
-    def _decode_response_body(body: Any) -> Optional[str]:
-        """Decode a bytes or string response body to a UTF-8 string."""
+    def _decode_body(body: Any, strict: bool = False) -> Optional[str]:
+        """Decode a response/request body (bytes or str) to a string.
+        
+        Args:
+            body: The body to decode (bytes, str, or None)
+            strict: If True, raise on decode error; if False, return empty string on error
+            
+        Returns:
+            Decoded string, None (if body is None and strict=False), or empty string on error
+            
+        Raises:
+            UnicodeDecodeError: If strict=True and decoding fails
+        """
         if body is None:
             return None
+        
         if isinstance(body, bytes):
             try:
                 return body.decode("utf-8", errors="replace")
-            except Exception:
-                return body.decode("latin-1")
-        if not isinstance(body, str):
-            return str(body)
-        return body
+            except Exception as exc:
+                if strict:
+                    raise
+                return ""
+        
+        if isinstance(body, str):
+            return body
+        
+        # Coerce other types to string
+        return str(body)
 
     def _truncate_error(self, error: Optional[str]) -> Optional[str]:
         """Coerce and truncate an error message string."""
@@ -428,38 +478,25 @@ class HistoryManager:
 
     # ── JSON header decoding ──────────────────────────────────────────────────
 
-    def _decode_json_header_columns(self, row: Dict[str, Any], row_id: int) -> None:
-        """Decode request_headers and response_headers columns in-place, logging errors."""
-        try:
-            row["request_headers"] = json.loads(row["request_headers"])
-        except (json.JSONDecodeError, TypeError) as parse_exc:
-            logger.error(
-                "Failed to parse request headers for history %d: %s", row_id, parse_exc
-            )
-            row["request_headers"] = {}
-
-        if row.get("response_headers"):
+    def _decode_json_headers(self, row: Dict[str, Any], row_id: Optional[int] = None) -> None:
+        """Decode request_headers and response_headers from JSON strings in-place.
+        
+        Args:
+            row: History row dict to modify in-place
+            row_id: Optional ID for error logging; if None, errors are silently ignored
+        """
+        for col in ("request_headers", "response_headers"):
+            if not row.get(col):
+                row[col] = {}
+                continue
             try:
-                row["response_headers"] = json.loads(row["response_headers"])
-            except (json.JSONDecodeError, TypeError) as parse_exc:
-                logger.error(
-                    "Failed to parse response headers for history %d: %s", row_id, parse_exc
-                )
-                row["response_headers"] = {}
-
-    @staticmethod
-    def _decode_json_header_columns_silent(row: Dict[str, Any]) -> None:
-        """Decode JSON header columns in-place, silently falling back to empty dicts."""
-        try:
-            row["request_headers"] = json.loads(row["request_headers"] or "{}")
-        except (json.JSONDecodeError, TypeError):
-            row["request_headers"] = {}
-
-        if row.get("response_headers"):
-            try:
-                row["response_headers"] = json.loads(row["response_headers"])
-            except (json.JSONDecodeError, TypeError):
-                row["response_headers"] = {}
+                row[col] = json.loads(row[col])
+            except (json.JSONDecodeError, TypeError) as exc:
+                if row_id is not None:
+                    logger.error(
+                        "Failed to parse %s for history %d: %s", col, row_id, exc
+                    )
+                row[col] = {}
 
     # ── Validation helpers ────────────────────────────────────────────────────
 
@@ -480,7 +517,38 @@ class HistoryManager:
     # ── Search helpers ────────────────────────────────────────────────────────
 
     @staticmethod
-    def _escape_like(text: str) -> str:
+    def _validate_iso_timestamp(timestamp: str, label: str) -> None:
+        """Validate that a timestamp string is in ISO-8601 format.
+        
+        Raises:
+            ValidationError: If the timestamp is not in valid ISO-8601 format
+        """
+        if not isinstance(timestamp, str):
+            raise ValidationError(f"{label} must be a string")
+        
+        # Allow common ISO-8601 formats:
+        # - 2026-03-23
+        # - 2026-03-23T16:20:00
+        # - 2026-03-23T16:20:00Z
+        # - 2026-03-23T16:20:00+00:00
+        import datetime
+        formats = [
+            "%Y-%m-%d",
+            "%Y-%m-%dT%H:%M:%S",
+            "%Y-%m-%dT%H:%M:%SZ",
+            "%Y-%m-%dT%H:%M:%S%z",
+        ]
+        
+        for fmt in formats:
+            try:
+                datetime.datetime.strptime(timestamp, fmt)
+                return
+            except ValueError:
+                continue
+        
+        raise ValidationError(
+            f"{label} must be in ISO-8601 format (e.g., 2026-03-23T16:20:00Z)"
+        )
         r"""Escape SQL LIKE metacharacters (``%``, ``_``, ``\``) so they
         match literally when used with ``ESCAPE '\'``."""
         return text.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
@@ -537,7 +605,7 @@ class HistoryManager:
         if query and isinstance(query, str):
             escaped = self._escape_like(query)
             like = f"%{escaped}%"
-            conditions.append("(url LIKE ? ESCAPE '\\' OR request_body LIKE ? ESCAPE '\\')")
+            conditions.append(f"(url LIKE ? {self._LIKE_ESCAPE_CLAUSE} OR request_body LIKE ? {self._LIKE_ESCAPE_CLAUSE})")
             params.extend([like, like])
 
         if method and isinstance(method, str):
@@ -551,20 +619,15 @@ class HistoryManager:
             params.append(status_code)
         else:
             status_class_lower = (status_class or "").lower()
-            if status_class_lower == "2xx":
-                conditions.append("status_code BETWEEN 200 AND 299")
-            elif status_class_lower == "3xx":
-                conditions.append("status_code BETWEEN 300 AND 399")
-            elif status_class_lower == "4xx":
-                conditions.append("status_code BETWEEN 400 AND 499")
-            elif status_class_lower == "5xx":
-                conditions.append("status_code BETWEEN 500 AND 599")
+            if status_class_lower in self._STATUS_CODE_RANGES:
+                start, end = self._STATUS_CODE_RANGES[status_class_lower]
+                conditions.append(f"status_code BETWEEN {start} AND {end}")
             elif status_class_lower == "errors":
                 conditions.append("(status_code IS NULL OR status_code >= 400)")
 
         if content_type and isinstance(content_type, str):
             escaped_ct = self._escape_like(content_type)
-            conditions.append("response_headers LIKE ? ESCAPE '\\'")
+            conditions.append(f"response_headers LIKE ? {self._LIKE_ESCAPE_CLAUSE}")
             params.append(f"%{escaped_ct}%")
 
         if min_elapsed is not None:
@@ -575,9 +638,11 @@ class HistoryManager:
             params.append(float(max_elapsed))
 
         if executed_after and isinstance(executed_after, str):
+            self._validate_iso_timestamp(executed_after, "executed_after")
             conditions.append("executed_at >= ?")
             params.append(executed_after)
         if executed_before and isinstance(executed_before, str):
+            self._validate_iso_timestamp(executed_before, "executed_before")
             conditions.append("executed_at <= ?")
             params.append(executed_before)
 
@@ -593,52 +658,96 @@ class HistoryManager:
         header: str = "",
         limit: int = 100,
     ) -> List[Dict[str, Any]]:
-        """Apply Python-side filters that cannot be expressed in SQL."""
+        """Apply Python-side filters that cannot be expressed in SQL.
+        
+        Filters rows by regex body match, JSONPath match, and/or header match,
+        returning up to `limit` matching rows.
+        """
         result: List[Dict[str, Any]] = []
-
-        header_name = header_val = ""
-        if header:
-            if ":" in header:
-                header_name, header_val = header.split(":", 1)
-                header_name = header_name.strip().lower()
-                header_val = header_val.strip().lower()
-            else:
-                header_name = header.strip().lower()
+        header_name, header_val = HistoryManager._parse_header_filter(header)
 
         for row in rows:
             if len(result) >= limit:
                 break
 
-            if compiled_regex:
-                body = _decode_bytes_body(row.get("response_body") or "")
-                if not compiled_regex.search(body):
-                    continue
-
-            if parsed_jsonpath:
-                body = _decode_bytes_body(row.get("response_body") or "")
-                try:
-                    data = json.loads(body)
-                except (json.JSONDecodeError, TypeError):
-                    continue
-                matches = parsed_jsonpath.find(data)
-                if not matches:
-                    continue
-                if jsonpath_value is not None and str(matches[0].value) != jsonpath_value:
-                    continue
-
-            if header_name:
-                resp_headers = row.get("response_headers") or {}
-                if isinstance(resp_headers, str):
-                    try:
-                        resp_headers = json.loads(resp_headers)
-                    except (json.JSONDecodeError, TypeError):
-                        resp_headers = {}
-                if not _header_matches(resp_headers, header_name, header_val):
-                    continue
+            # Apply all active filters (all must pass)
+            if compiled_regex and not HistoryManager._matches_body_regex(row, compiled_regex):
+                continue
+            if parsed_jsonpath and not HistoryManager._matches_jsonpath(row, parsed_jsonpath, jsonpath_value):
+                continue
+            if header_name and not HistoryManager._matches_header(row, header_name, header_val):
+                continue
 
             result.append(row)
 
         return result
+
+    @staticmethod
+    def _matches_body_regex(row: Dict[str, Any], compiled_regex: "re.Pattern[str]") -> bool:
+        """Return True if the response body matches the regex pattern."""
+        body = _decode_bytes_body(row.get("response_body") or "")
+        return bool(compiled_regex.search(body))
+
+    @staticmethod
+    def _matches_jsonpath(
+        row: Dict[str, Any],
+        parsed_jsonpath: Any,
+        jsonpath_value: Optional[str] = None,
+    ) -> bool:
+        """Return True if the response body contains a JSONPath match.
+        
+        If jsonpath_value is given, the first match must equal that value.
+        """
+        body = _decode_bytes_body(row.get("response_body") or "")
+        try:
+            data = json.loads(body)
+        except (json.JSONDecodeError, TypeError):
+            return False
+        
+        matches = parsed_jsonpath.find(data)
+        if not matches:
+            return False
+        
+        if jsonpath_value is not None:
+            return str(matches[0].value) == jsonpath_value
+        
+        return True
+
+    @staticmethod
+    def _matches_header(
+        row: Dict[str, Any],
+        header_name: str,
+        header_val: str = "",
+    ) -> bool:
+        """Return True if any response header matches the name/value filter."""
+        resp_headers = row.get("response_headers") or {}
+        if isinstance(resp_headers, str):
+            try:
+                resp_headers = json.loads(resp_headers)
+            except (json.JSONDecodeError, TypeError):
+                resp_headers = {}
+        
+        for key, value in resp_headers.items():
+            if header_name in key.lower():
+                if not header_val or header_val in str(value).lower():
+                    return True
+        return False
+
+    @staticmethod
+    def _parse_header_filter(header: str) -> Tuple[str, str]:
+        """Parse 'Name: value' header filter into (name, value) components.
+        
+        Returns:
+            (header_name, header_value) both lowercased, or ('', '') if header is empty
+        """
+        if not header:
+            return "", ""
+        
+        if ":" in header:
+            name, val = header.split(":", 1)
+            return name.strip().lower(), val.strip().lower()
+        
+        return header.strip().lower(), ""
 
 
 # ── Module-level helpers ──────────────────────────────────────────────────────
@@ -653,11 +762,3 @@ def _decode_bytes_body(body: Any) -> str:
             return ""
     return body or ""
 
-
-def _header_matches(headers: Dict[str, Any], header_name: str, header_val: str) -> bool:
-    """Return True if any header key contains header_name and its value contains header_val."""
-    for key, value in headers.items():
-        if header_name in key.lower():
-            if not header_val or header_val in str(value).lower():
-                return True
-    return False
