@@ -3,10 +3,11 @@
 import sys
 import logging
 import traceback
-from PyQt6.QtWidgets import QApplication, QMessageBox
+from PyQt6.QtWidgets import QApplication
 from PyQt6.QtCore import Qt
 
 from equinox.gui.window import MainWindow
+from equinox.gui.widgets import CopyableMessageBox
 from equinox.storage import get_db
 from equinox.core.log_setup import configure_logging
 from equinox.gui.theme import apply_theme
@@ -18,13 +19,15 @@ def _qt_exception_hook(exc_type, exc_value, exc_tb):
     """Catch unhandled exceptions on the Qt main thread, log them and show a dialog."""
     msg = "".join(traceback.format_exception(exc_type, exc_value, exc_tb))
     logger.critical("Unhandled exception on Qt thread:\n%s", msg)
+
     try:
-        QMessageBox.critical(
+        CopyableMessageBox.critical(
             None,
             "Unexpected Error",
             f"{exc_type.__name__}: {exc_value}\n\n"
             f"Details have been written to the log file.\n"
             f"Please restart the application if it appears unstable.",
+            copy_text=msg,
         )
     except Exception:
         pass
