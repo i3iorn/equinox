@@ -1,11 +1,14 @@
 """Request and Response models"""
 
+import logging
 from dataclasses import dataclass, field
 from typing import Dict, Optional, Any, List
 from datetime import datetime
 import json
 
 from equinox.core.time import utc_now
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -56,8 +59,27 @@ class Request:
     # the variable dict at send time so interpolation replaces the tokens.
     path_params: Dict[str, str] = field(default_factory=dict)
 
+    def __post_init__(self) -> None:
+        """Log request initialization"""
+        logger.debug(
+            "Request.__post_init__(): method=%s url=%s id=%s collection=%s auth=%s",
+            self.method,
+            self.url[:60] + "..." if len(self.url) > 60 else self.url,
+            self.id,
+            self.collection_id,
+            type(self.auth).__name__ if self.auth else "None",
+        )
+
     def to_dict(self) -> Dict[str, Any]:
         """Convert request to dictionary"""
+        logger.debug(
+            "Request.to_dict(): method=%s url=%s headers=%d params=%d auth=%s",
+            self.method,
+            self.url[:60] + "..." if len(self.url) > 60 else self.url,
+            len(self.headers),
+            len(self.params),
+            type(self.auth).__name__ if self.auth else "None",
+        )
         d: Dict[str, Any] = {
             "method": self.method,
             "url": self.url,
@@ -83,14 +105,24 @@ class Request:
             "params_list": self.params_list,
         }
         if self.auth is not None and hasattr(self.auth, "to_dict"):
+            logger.debug("Serializing auth: type=%s", type(self.auth).__name__)
             d["auth"] = self.auth.to_dict()
             d["auth_type"] = type(self.auth).__name__
+        logger.debug("Request.to_dict() completed: %d fields", len(d))
         return d
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> "Request":
         """Create request from dictionary"""
-        return cls(
+        logger.debug(
+            "Request.from_dict(): method=%s url=%s headers=%d params=%d",
+            data.get("method", "GET"),
+            (data.get("url", "")[:60] + "...") if len(data.get("url", "")) > 60 else data.get("url", ""),
+            len(data.get("headers", {})),
+            len(data.get("params", {})),
+        )
+        
+        request = cls(
             method=data.get("method", "GET"),
             url=data["url"],
             headers=data.get("headers", {}),
@@ -114,41 +146,82 @@ class Request:
             assertions=data.get("assertions", []),
             params_list=data.get("params_list"),
         )
+        
+        if "auth" in data and "auth_type" in data:
+            auth_type = data["auth_type"]
+            logger.debug("Reconstructing auth from dict: type=%s", auth_type)
+            try:
+                if auth_type == "OAuth2Auth":
+                    from equinox.auth.oauth2 import OAuth2Auth
+                    request.auth = OAuth2Auth.from_dict(data["auth"])
+                elif auth_type == "BasicAuth":
+                    from equinox.auth.basic import BasicAuth
+                    request.auth = BasicAuth.from_dict(data["auth"])
+                elif auth_type == "BearerAuth":
+                    from equinox.auth.bearer import BearerAuth
+                    request.auth = BearerAuth.from_dict(data["auth"])
+                elif auth_type == "APIKeyAuth":
+                    from equinox.auth.api_key import APIKeyAuth
+                    request.auth = APIKeyAuth.from_dict(data["auth"])
+                else:
+                    logger.warning("Unknown auth type: %s", auth_type)
+            except Exception as auth_exc:
+                logger.error("Failed to reconstruct auth %s: %s", auth_type, auth_exc)
+        
+        logger.debug(
+            "Request.from_dict() completed: id=%s collection=%s",
+            request.id, request.collection_id,
+        )
+        return request
 
     def to_curl(self) -> str:
         """Convert request to curl command"""
         import shlex
+
+        logger.debug(
+            "Request.to_curl(): method=%s url=%s headers=%d params=%d",
+            self.method, self.url[:60] + "..." if len(self.url) > 60 else self.url,
+            len(self.headers), len(self.params),
+        )
 
         parts = ["curl"]
 
         # Method
         if self.method != "GET":
             parts.extend(["-X", self.method])
+            logger.debug("Adding HTTP method: %s", self.method)
 
         for key, value in self.headers.items():
             parts.extend(["-H", f"{key}: {value}"])
+        logger.debug("Added %d headers to curl command", len(self.headers))
 
         if self.body:
             parts.extend(["-d", self.body])
+            logger.debug("Added request body to curl command (length=%d)", len(self.body))
 
         # URL with params
         url = self.url
         if self.params:
+            logger.debug("Encoding %d query parameters into URL", len(self.params))
             if "{{" in url or (not url.startswith("http://") and not url.startswith("https://")):
                 # Template URL — can't parse with urlps yet, use string concat
                 qs = "&".join(f"{k}={v}" for k, v in self.params.items())
                 sep = "&" if "?" in url else "?"
                 url = f"{url}{sep}{qs}"
+                logger.debug("Using string concatenation for template URL")
             else:
                 from urlps import parse_url_unsafe
                 u = parse_url_unsafe(url)
                 for k, v in self.params.items():
                     u = u.with_query_param(str(k), str(v))
                 url = str(u)
+                logger.debug("Using urlps to encode query parameters")
 
         parts.append(url)
-
-        return shlex.join(parts)
+        
+        curl_cmd = shlex.join(parts)
+        logger.debug("to_curl() completed: length=%d chars", len(curl_cmd))
+        return curl_cmd
 
 
 @dataclass
@@ -168,6 +241,17 @@ class Response:
     # Per-phase timing breakdown (ms); populated by HTTPClient
     timings: Optional[Dict[str, float]] = None
 
+    def __post_init__(self) -> None:
+        """Log response initialization"""
+        logger.debug(
+            "Response.__post_init__(): status=%d size=%d elapsed=%.2fs headers=%d content_type=%s",
+            self.status_code,
+            self.size,
+            self.elapsed,
+            len(self.headers),
+            self.content_type,
+        )
+
     def _get_header(self, name: str, default: str = "") -> str:
         """Case-insensitive header lookup.
 
@@ -177,13 +261,16 @@ class Response:
         name_lower = name.lower()
         for k, v in self.headers.items():
             if k.lower() == name_lower:
+                logger.debug("_get_header(%s) found: %s", name, v[:50] + "..." if len(v) > 50 else v)
                 return v
+        logger.debug("_get_header(%s) not found, returning default", name)
         return default
 
     @property
     def text(self) -> str:
         """Get response body as text"""
         encoding = self.encoding or "utf-8"
+        logger.debug("Response.text: decoding %d bytes with %s", len(self.body), encoding)
         return self.body.decode(encoding, errors="replace")
 
     @property
@@ -191,48 +278,72 @@ class Response:
         """Extract encoding from content-type header"""
         content_type = self._get_header("content-type")
         if not content_type or "charset" not in content_type:
+            logger.debug("Response.encoding: no charset found in content-type: %s", content_type)
             return None
         from email.message import Message
         msg = Message()
         msg["content-type"] = content_type
-        return msg.get_param("charset")
+        enc = msg.get_param("charset")
+        logger.debug("Response.encoding: extracted %s from content-type", enc)
+        return enc
 
     def json(self) -> Any:
         """Parse response body as JSON"""
-        return json.loads(self.text)
+        try:
+            logger.debug("Response.json(): parsing %d bytes as JSON", len(self.body))
+            result = json.loads(self.text)
+            logger.debug("Response.json(): parsing succeeded")
+            return result
+        except json.JSONDecodeError as json_err:
+            logger.error("Response.json(): JSON parsing failed: %s", json_err)
+            raise
 
     @property
     def content_type(self) -> Optional[str]:
         """Get content type"""
         ct = self._get_header("content-type")
-        return ct.split(";")[0].strip() if ct else None
+        result = ct.split(";")[0].strip() if ct else None
+        logger.debug("Response.content_type: %s", result)
+        return result
 
     @property
     def is_json(self) -> bool:
         """Check if response is JSON"""
         ct = self.content_type
-        return ct is not None and "json" in ct
+        result = ct is not None and "json" in ct
+        logger.debug("Response.is_json: %s (content_type=%s)", result, ct)
+        return result
 
     @property
     def is_html(self) -> bool:
         """Check if response is HTML"""
         ct = self.content_type
-        return ct is not None and "html" in ct
+        result = ct is not None and "html" in ct
+        logger.debug("Response.is_html: %s (content_type=%s)", result, ct)
+        return result
 
     @property
     def is_xml(self) -> bool:
         """Check if response is XML"""
         ct = self.content_type
-        return ct is not None and "xml" in ct
+        result = ct is not None and "xml" in ct
+        logger.debug("Response.is_xml: %s (content_type=%s)", result, ct)
+        return result
 
     @property
     def size(self) -> int:
         """Get response size in bytes"""
-        return len(self.body)
+        size = len(self.body)
+        logger.debug("Response.size: %d bytes", size)
+        return size
 
     def to_dict(self) -> Dict[str, Any]:
         """Convert response to dictionary"""
-        return {
+        logger.debug(
+            "Response.to_dict(): status=%d size=%d headers=%d elapsed=%.2fs",
+            self.status_code, self.size, len(self.headers), self.elapsed,
+        )
+        result = {
             "status_code": self.status_code,
             "reason": self.reason,
             "headers": dict(self.headers),
@@ -242,3 +353,5 @@ class Response:
             "content_type": self.content_type,
             "size": self.size,
         }
+        logger.debug("Response.to_dict() completed: %d fields", len(result))
+        return result
