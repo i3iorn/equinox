@@ -190,10 +190,28 @@ class PreferencesDialog(QDialog):
         self._spin.setValue(DEFAULT_FONT_SIZE)
         idx = list(THEME_MODES).index(THEME_SYSTEM)
         self._theme_combo.setCurrentIndex(idx)
+        # Also clear proxy settings to default (disabled)
+        self._proxy_host.clear()
+        self._proxy_port.setValue(0)
 
     def _accept(self) -> None:
-        self._settings.setValue("proxy/host", self._proxy_host.text().strip())
-        self._settings.setValue("proxy/port", self._proxy_port.value())
+        proxy_host = self._proxy_host.text().strip()
+        proxy_port = self._proxy_port.value()
+        
+        # Validate proxy configuration: require BOTH host and port, or clear both
+        if proxy_host and proxy_port == 0:
+            from PyQt6.QtWidgets import QMessageBox
+            QMessageBox.warning(
+                self,
+                "Incomplete Proxy Configuration",
+                "To enable a proxy, enter both a host and a port.\n\n"
+                "Leave both fields empty to disable the proxy.",
+            )
+            return
+        
+        # Save proxy settings (or empty values to disable)
+        self._settings.setValue("proxy/host", proxy_host)
+        self._settings.setValue("proxy/port", proxy_port)
 
         # Save disabled analyzers
         disabled = []

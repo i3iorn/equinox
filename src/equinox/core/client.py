@@ -242,7 +242,13 @@ class HTTPClient:
         host = parsed.hostname
         port = parsed.port or 8080
         if not host:
+            logger.debug("Proxy check skipped: no hostname in proxy URL")
             return
+
+        logger.debug(
+            "Proxy details: scheme=%s hostname=%s port=%d netloc=%s",
+            parsed.scheme, host, port, parsed.netloc,
+        )
 
         # On Windows, loopback RSTs may take ~3 s — use a generous timeout so
         # the select() actually has a chance to observe the refusal.
@@ -258,11 +264,15 @@ class HTTPClient:
         sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         sock.setblocking(False)
         try:
+            logger.debug("Attempting non-blocking connect to %s:%s", host, port)
             sock.connect((host, port))
             # Immediate success — very unusual on non-blocking, but handle it.
             logger.debug("Proxy pre-flight: %s:%s connected immediately", host, port)
 
-        except BlockingIOError:
+        except BlockingIOError as bio_err:
+            logger.debug(
+                "Proxy pre-flight: BlockingIOError on connect (expected): %s", bio_err,
+            )
             # EINPROGRESS / WSAEWOULDBLOCK — wait for the OS verdict.
             # Check BOTH writable (Unix success/fail) AND exceptional (Windows fail).
             _, writable, exceptional = _select.select(
@@ -280,18 +290,27 @@ class HTTPClient:
                 )
                 if err in _REFUSED:
                     logger.warning(
-                        "Proxy pre-flight failed — %s:%s refused connection (errno %d)",
+                        "Proxy pre-flight failed — %s:%s refused connection (errno %d). "
+                        "Proxy is not running or not accepting connections on this port.",
                         host, port, err,
                     )
                     raise RequestError(
                         f"Failed to connect to proxy ({self.proxy}). "
-                        "Please check your proxy settings under Preferences.",
-                        details={"proxy": self.proxy},
+                        "The proxy server is not running or refusing connections. "
+                        "Please check your proxy settings under Preferences and ensure "
+                        "the proxy server is running and configured correctly.",
+                        details={
+                            "proxy": self.proxy,
+                            "host": host,
+                            "port": port,
+                            "errno": err,
+                            "error_type": "connection_refused",
+                        },
                     )
                 if err != 0:
                     logger.debug(
-                        "Proxy pre-flight: SO_ERROR %d for %s:%s — deferring to httpx",
-                        err, host, port,
+                        "Proxy pre-flight: SO_ERROR %d for %s:%s (errno name: %s) — deferring to httpx",
+                        err, host, port, errno.errorcode.get(err, "unknown"),
                     )
                 else:
                     logger.debug("Proxy pre-flight: %s:%s is reachable", host, port)
@@ -302,19 +321,33 @@ class HTTPClient:
                 )
 
         except OSError as os_err:
+            errno_name = errno.errorcode.get(os_err.errno, "unknown")
+            logger.debug(
+                "Proxy pre-flight OSError for %s:%s (errno %d = %s): %s",
+                host, port, os_err.errno, errno_name, os_err,
+            )
             if os_err.errno in _REFUSED:
                 logger.warning(
-                    "Proxy pre-flight failed — %s:%s refused connection: %s",
-                    host, port, os_err,
+                    "Proxy pre-flight failed — %s:%s refused connection (errno %d = %s)",
+                    host, port, os_err.errno, errno_name,
                 )
                 raise RequestError(
                     f"Failed to connect to proxy ({self.proxy}). "
-                    "Please check your proxy settings under Preferences.",
-                    details={"proxy": self.proxy},
+                    "The proxy server is not running or refusing connections. "
+                    "Please check your proxy settings under Preferences and ensure "
+                    "the proxy server is running and configured correctly.",
+                    details={
+                        "proxy": self.proxy,
+                        "host": host,
+                        "port": port,
+                        "errno": os_err.errno,
+                        "errno_name": errno_name,
+                        "error_type": "connection_refused",
+                    },
                 )
             logger.debug(
-                "Proxy pre-flight socket error for %s:%s (ignored): %s",
-                host, port, os_err,
+                "Proxy pre-flight socket error for %s:%s (errno %d = %s, will defer to httpx): %s",
+                host, port, os_err.errno, errno_name, os_err,
             )
 
         finally:

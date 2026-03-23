@@ -394,6 +394,24 @@ class ResponsePanel(QWidget):
             self.sent_body_text.setPlaceholderText("(no body)")
             self.sent_body_text.clear()
 
+    def set_intelligence_badge(self, count: int) -> None:
+        """Set a badge showing the number of intelligence findings.
+        
+        Args:
+            count: Number of findings (0 means no issues)
+        """
+        # Find the Intelligence tab index
+        intelligence_tab_idx = self.tabs.indexOf(self.intelligence_panel)
+        if intelligence_tab_idx < 0:
+            return
+        
+        # Format the tab label with a badge if there are findings
+        if count > 0:
+            badge_text = f"Intelligence ({count})"
+            self.tabs.setTabText(intelligence_tab_idx, badge_text)
+        else:
+            self.tabs.setTabText(intelligence_tab_idx, "Intelligence")
+
     # ── Helpers ───────────────────────────────────────────────────────
 
     def _load_cookies_tab(self, headers: dict) -> None:

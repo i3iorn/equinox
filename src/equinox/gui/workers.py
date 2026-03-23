@@ -125,11 +125,16 @@ class RequestWorker(QThread):
             _s = _QS("Equinox", "Equinox")
             _ph = (_s.value("proxy/host") or "").strip()
             _pp = int(_s.value("proxy/port") or 0)
-            _proxy = f"http://{_ph}:{_pp}" if _ph and _pp else None
-            if _proxy:
-                logger.debug("Proxy loaded from settings: %s", _proxy)
+            
+            # Validate proxy settings - both host AND port must be set
+            # If port is 0 (the default), proxy is disabled regardless of host
+            if not _ph or _pp == 0:
+                _proxy = None
+                logger.debug("No proxy configured (proxy/host=%r, proxy/port=%r)", _ph or "(empty)", _pp or 0)
             else:
-                logger.debug("No proxy configured (proxy/host=%r, proxy/port=%r)", _ph, _pp or 0)
+                _proxy = f"http://{_ph}:{_pp}"
+                logger.debug("Proxy loaded from settings: %s", _proxy)
+                logger.info("Using proxy: %s (if this is unexpected, clear proxy settings in Preferences)", _proxy)
             client = HTTPClient(
                 cookie_manager=self._cookie_manager,
                 timeout=getattr(self.request, "timeout", DEFAULT_TIMEOUT),
@@ -217,7 +222,8 @@ class BenchmarkDialog(QDialog):
         s = QSettings("Equinox", "Equinox")
         ph = (s.value("proxy/host") or "").strip()
         pp = int(s.value("proxy/port") or 0)
-        proxy = f"http://{ph}:{pp}" if ph and pp else None
+        # Only use proxy if both host AND port are configured
+        proxy = f"http://{ph}:{pp}" if (ph and pp > 0) else None
 
         times: list = []
         errors = 0
