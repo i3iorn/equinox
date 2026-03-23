@@ -390,35 +390,46 @@ class RequestPanel(_RequestSendMixin, _RequestAuthMixin, _RequestBodyMixin, QWid
         banner.setVisible(False)
         return banner
 
-    def _build_headers_tab(self) -> QWidget:
+    def _build_kv_tab(
+        self,
+        title: str,
+        *,
+        presets=None,
+        enable_key_completer: bool = False,
+    ) -> tuple:
+        """Shared boilerplate for Headers / Params tabs.
+
+        Builds a widget with a :class:`TabToolbar` and a
+        :class:`CheckableKeyValueTable`, wiring the common add / remove /
+        enable-all / disable-all toolbar signals to table-generic helpers.
+
+        Returns ``(widget, layout, toolbar, table)`` so callers can
+        post-configure — e.g. connect extra toolbar signals or append
+        additional sections to the layout.
+        """
         w = QWidget()
         layout = QVBoxLayout(w)
         layout.setContentsMargins(0, 2, 0, 0)
         layout.setSpacing(2)
-        toolbar = TabToolbar("Headers", presets=_HEADER_PRESETS, parent=self)
-        toolbar.add_clicked.connect(self._headers_add_row)
-        toolbar.remove_clicked.connect(self._headers_remove_row)
-        toolbar.enable_all_clicked.connect(lambda: self._headers_set_all(True))
-        toolbar.disable_all_clicked.connect(lambda: self._headers_set_all(False))
-        toolbar.preset_selected.connect(self._insert_header_preset)
+        toolbar = TabToolbar(title, presets=presets, parent=self)
+        table = CheckableKeyValueTable(enable_key_completer=enable_key_completer)
+        toolbar.add_clicked.connect(lambda: self._add_row_and_focus(table))
+        toolbar.remove_clicked.connect(lambda: self._remove_table_rows(table))
+        toolbar.enable_all_clicked.connect(lambda: self._set_all_checkable(table, True))
+        toolbar.disable_all_clicked.connect(lambda: self._set_all_checkable(table, False))
         layout.addWidget(toolbar)
-        self.headers_table = CheckableKeyValueTable(enable_key_completer=True)
-        layout.addWidget(self.headers_table, 1)
+        layout.addWidget(table, 1)
+        return w, layout, toolbar, table
+
+    def _build_headers_tab(self) -> QWidget:
+        w, _, toolbar, self.headers_table = self._build_kv_tab(
+            "Headers", presets=_HEADER_PRESETS, enable_key_completer=True
+        )
+        toolbar.preset_selected.connect(self._insert_header_preset)
         return w
 
     def _build_params_tab(self) -> QWidget:
-        w = QWidget()
-        layout = QVBoxLayout(w)
-        layout.setContentsMargins(0, 2, 0, 0)
-        layout.setSpacing(2)
-        toolbar = TabToolbar("Query Parameters", parent=self)
-        toolbar.add_clicked.connect(self._params_add_row)
-        toolbar.remove_clicked.connect(self._params_remove_row)
-        toolbar.enable_all_clicked.connect(lambda: self._params_set_all(True))
-        toolbar.disable_all_clicked.connect(lambda: self._params_set_all(False))
-        layout.addWidget(toolbar)
-        self.params_table = CheckableKeyValueTable()
-        layout.addWidget(self.params_table, 1)
+        w, layout, _, self.params_table = self._build_kv_tab("Query Parameters")
         self._path_params_widget = QWidget()
         pp_inner = QVBoxLayout(self._path_params_widget)
         pp_inner.setContentsMargins(0, 6, 0, 0)
@@ -571,6 +582,24 @@ class RequestPanel(_RequestSendMixin, _RequestAuthMixin, _RequestBodyMixin, QWid
         layout.addWidget(self.notes_editor, 1)
         return w
 
+    def _build_script_section(self, title: str, placeholder: str) -> tuple:
+        """Build a labelled script-editor group box.
+
+        Returns ``(group, editor, result_label)`` so the caller can assign
+        the widgets to instance attributes and add the group to a splitter.
+        """
+        group = QGroupBox(title)
+        grp_layout = QVBoxLayout(group)
+        grp_layout.setContentsMargins(4, 6, 4, 4)
+        editor = QPlainTextEdit()
+        editor.setPlaceholderText(placeholder)
+        editor.setFont(get_mono_font())
+        result_label = QLabel("")
+        result_label.setWordWrap(True)
+        grp_layout.addWidget(editor)
+        grp_layout.addWidget(result_label)
+        return group, editor, result_label
+
     def _create_scripts_tab(self) -> QWidget:
         """Single tab with Pre-request and Post-response script editors."""
         w = QWidget()
@@ -579,38 +608,24 @@ class RequestPanel(_RequestSendMixin, _RequestAuthMixin, _RequestBodyMixin, QWid
 
         splitter = QSplitter(Qt.Orientation.Vertical)
 
-        # ── Pre-request section ───────────────────────────────────────
-        pre_group = QGroupBox("Pre-request Script")
-        pre_layout = QVBoxLayout(pre_group)
-        pre_layout.setContentsMargins(4, 6, 4, 4)
-        self.pre_script_editor = QPlainTextEdit()
-        self.pre_script_editor.setPlaceholderText(
-            "# Runs before the request is sent\n"
-            "# Available: request (dict), env (dict)\n"
-            "# Example: env['timestamp'] = str(int(__import__('time').time()))"
+        pre_group, self.pre_script_editor, self.pre_script_result = (
+            self._build_script_section(
+                "Pre-request Script",
+                "# Runs before the request is sent\n"
+                "# Available: request (dict), env (dict)\n"
+                "# Example: env['timestamp'] = str(int(__import__('time').time()))",
+            )
         )
-        self.pre_script_editor.setFont(get_mono_font())
-        self.pre_script_result = QLabel("")
-        self.pre_script_result.setWordWrap(True)
-        pre_layout.addWidget(self.pre_script_editor)
-        pre_layout.addWidget(self.pre_script_result)
         splitter.addWidget(pre_group)
 
-        # ── Post-response section ─────────────────────────────────────
-        post_group = QGroupBox("Post-response Script")
-        post_layout = QVBoxLayout(post_group)
-        post_layout.setContentsMargins(4, 6, 4, 4)
-        self.post_script_editor = QPlainTextEdit()
-        self.post_script_editor.setPlaceholderText(
-            "# Runs after response is received\n"
-            "# Available: response (dict with status_code, headers, body, json), env (dict)\n"
-            "# Example: env['user_id'] = str(response['json']['id'])"
+        post_group, self.post_script_editor, self.post_script_result = (
+            self._build_script_section(
+                "Post-response Script",
+                "# Runs after response is received\n"
+                "# Available: response (dict with status_code, headers, body, json), env (dict)\n"
+                "# Example: env['user_id'] = str(response['json']['id'])",
+            )
         )
-        self.post_script_editor.setFont(get_mono_font())
-        self.post_script_result = QLabel("")
-        self.post_script_result.setWordWrap(True)
-        post_layout.addWidget(self.post_script_editor)
-        post_layout.addWidget(self.post_script_result)
         splitter.addWidget(post_group)
 
         splitter.setSizes([300, 300])
@@ -715,21 +730,25 @@ class RequestPanel(_RequestSendMixin, _RequestAuthMixin, _RequestBodyMixin, QWid
         layout.addStretch()
         return w
 
-    def _browse_cert(self) -> None:
-        path, _ = QFileDialog.getOpenFileName(
-            self, "Select Certificate File", "",
-            "Certificate files (*.pem *.crt *.cer);;All files (*)"
-        )
+    def _browse_file_to_input(self, title: str, filters: str, target) -> None:
+        """Open a file-picker dialog and write the chosen path into *target* QLineEdit."""
+        path, _ = QFileDialog.getOpenFileName(self, title, "", filters)
         if path:
-            self.cert_path_input.setText(path)
+            target.setText(path)
+
+    def _browse_cert(self) -> None:
+        self._browse_file_to_input(
+            "Select Certificate File",
+            "Certificate files (*.pem *.crt *.cer);;All files (*)",
+            self.cert_path_input,
+        )
 
     def _browse_cert_key(self) -> None:
-        path, _ = QFileDialog.getOpenFileName(
-            self, "Select Private Key File", "",
-            "Key files (*.pem *.key);;All files (*)"
+        self._browse_file_to_input(
+            "Select Private Key File",
+            "Key files (*.pem *.key);;All files (*)",
+            self.cert_key_input,
         )
-        if path:
-            self.cert_key_input.setText(path)
 
     # ── cURL import ───────────────────────────────────────────────────
 
@@ -812,14 +831,6 @@ class RequestPanel(_RequestSendMixin, _RequestAuthMixin, _RequestBodyMixin, QWid
             if chk_item is not None:
                 chk_item.setCheckState(state)
 
-    def _headers_set_all(self, enabled: bool) -> None:
-        """Enable or disable every row in the headers table."""
-        self._set_all_checkable(self.headers_table, enabled)
-
-    def _params_set_all(self, enabled: bool) -> None:
-        """Enable or disable every row in the params table."""
-        self._set_all_checkable(self.params_table, enabled)
-
     def _insert_header_preset(self, key: str, value: str) -> None:
         """Append a header preset row (or update existing key)."""
         existing = self.headers_table.get_all_rows()
@@ -830,14 +841,6 @@ class RequestPanel(_RequestSendMixin, _RequestAuthMixin, _RequestBodyMixin, QWid
         self.headers_table.add_row(key, value)
         self._mark_dirty()
         self._update_tab_labels()
-
-    def _headers_add_row(self) -> None:
-        """Add an empty header row and focus it."""
-        self._add_row_and_focus(self.headers_table)
-
-    def _params_add_row(self) -> None:
-        """Add an empty query-params row and focus it."""
-        self._add_row_and_focus(self.params_table)
 
     def _add_row_and_focus(self, table: CheckableKeyValueTable) -> None:
         """Append an empty row to *table*, select its key cell, and mark dirty."""
@@ -851,11 +854,10 @@ class RequestPanel(_RequestSendMixin, _RequestAuthMixin, _RequestBodyMixin, QWid
         self._mark_dirty()
         self._update_tab_labels()
 
-    def _headers_remove_row(self) -> None:
-        """Remove selected header rows (capture-tab model)."""
-        rows = sorted({idx.row() for idx in self.headers_table.selectedIndexes()}, reverse=True)
-        for r in rows:
-            self.headers_table.removeRow(r)
+    def _remove_table_rows(self, table) -> None:
+        """Remove selected rows from *table*, then mark dirty and update labels."""
+        for r in sorted({idx.row() for idx in table.selectedIndexes()}, reverse=True):
+            table.removeRow(r)
         self._mark_dirty()
         self._update_tab_labels()
 
@@ -875,13 +877,6 @@ class RequestPanel(_RequestSendMixin, _RequestAuthMixin, _RequestBodyMixin, QWid
             logger.debug("Failed to update URL suffix", exc_info=True)
             self.url_input.set_param_suffix("")
 
-    def _params_remove_row(self) -> None:
-        """Remove selected param rows (capture-tab model)."""
-        rows = sorted({idx.row() for idx in self.params_table.selectedIndexes()}, reverse=True)
-        for r in rows:
-            self.params_table.removeRow(r)
-        self._mark_dirty()
-        self._update_tab_labels()
 
     def _on_url_changed_for_path_params(self, text: str) -> None:
         """Show/hide path-params section within the Params tab."""

@@ -472,29 +472,6 @@ class _RequestSendMixin:
         except Exception as exc:
             logger.debug("Failed to persist own OAuth2 token: %s", exc)
 
-    def _save_inherited_token_to_source(self, auth) -> None:
-        """Write a freshly-fetched token back to the collection or folder it came from.
-
-        Used by :meth:`_configure_auth` when the user fetches a token via the
-        auth dialog while the request is still using *inherited* auth.  The
-        token belongs to the collection/folder, not to the request.
-        """
-        source = getattr(self, "_inherited_auth_source", None)
-        if not source:
-            return
-        req = self.current_request
-        if not req or not req.collection_id:
-            return
-        try:
-            from equinox.storage import CollectionManager
-            mgr = CollectionManager(self.db)
-            if source == "collection":
-                mgr.set_collection_auth(req.collection_id, auth)
-            elif source.startswith("folder:"):
-                mgr.set_folder_auth(req.collection_id, source[7:], auth)
-            logger.debug("Saved dialog-fetched token to %s", source)
-        except Exception as exc:
-            logger.debug("Failed to save dialog token to source: %s", exc)
 
     def _set_sending_state(self, sending: bool) -> None:
         if sending:
