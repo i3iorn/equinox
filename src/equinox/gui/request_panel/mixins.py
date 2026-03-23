@@ -89,11 +89,14 @@ class _RequestSendMixin:
             QMessageBox.warning(self, "Missing URL", "Please enter a request URL.")
             return
 
+        logger.debug("_send_request() initiated: url=%s", url[:80])
+
         # Pre-flight advisory warnings (non-blocking)
         pf_warnings = self._run_preflight_checks()
         if pf_warnings:
             self._preflight_label.setText("  ·  ".join(pf_warnings))
             self._preflight_banner.setVisible(True)
+            logger.debug("Preflight warnings: %s", pf_warnings)
         else:
             self._preflight_banner.setVisible(False)
 
@@ -139,7 +142,19 @@ class _RequestSendMixin:
             except Exception:
                 logger.warning("Failed to load collection variables", exc_info=True)
 
-        variables.update({k: v for k, v in os.environ.items() if isinstance(v, str)})
+        # Filter OS environment variables: only include those with valid variable names
+        # (alphanumeric, underscore, hyphen). Windows has variables like PROGRAMFILES(X86)
+        # which are invalid for interpolation syntax.
+        import re
+        valid_var_pattern = re.compile(r'^[a-zA-Z0-9_-]+$')
+        os_env_filtered = {
+            k: v for k, v in os.environ.items()
+            if isinstance(v, str) and valid_var_pattern.match(k)
+        }
+        if os_env_filtered:
+            logger.debug("Adding %d valid OS environment variable(s)", len(os_env_filtered))
+            variables.update(os_env_filtered)
+        
         variables.update(self._session_vars)  # captured session vars override env
 
         # ── Pre-request script ────────────────────────────────────────
@@ -164,6 +179,7 @@ class _RequestSendMixin:
                 logger.debug("Pre-script failed: %s", exc)
 
         try:
+            logger.debug("Interpolating variables in request (url_len=%d)", len(url))
             url = VariableInterpolator.interpolate(url, variables)
             headers = {
                 VariableInterpolator.interpolate(k, variables):
@@ -177,7 +193,9 @@ class _RequestSendMixin:
             }
             if body:
                 body = VariableInterpolator.interpolate(body, variables)
+            logger.debug("Variable interpolation completed successfully")
         except Exception as exc:
+            logger.warning("Variable interpolation failed: %s", exc)
             QMessageBox.warning(self, "Variable Error",
                                 f"Failed to expand variables:\n{exc}")
             return

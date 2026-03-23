@@ -103,8 +103,10 @@ class MainWindow(QMainWindow):
         self._settings.setValue("left_tabs/index", self._left_tabs.currentIndex())
 
     def closeEvent(self, event) -> None:  # type: ignore[override]
+        logger.info("MainWindow closeEvent triggered - autosaving and persisting layout")
         self.request_panel.autosave_current()
         self._save_layout()
+        logger.info("MainWindow closed successfully")
         super().closeEvent(event)
 
     # ── UI construction ───────────────────────────────────────────────
@@ -194,6 +196,7 @@ class MainWindow(QMainWindow):
 
     def _load_request_guarded(self, request: Request) -> None:
         """Auto-save current request then load the new one."""
+        logger.debug("_load_request_guarded() called for request: %s (id=%s)", request.name, request.id)
         self.request_panel.autosave_current()
         self.request_panel.load_request(request)
 

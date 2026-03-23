@@ -107,7 +107,10 @@ class CollectionManager(
     def get_collection(self, collection_id: int) -> Optional[Dict[str, Any]]:
         """Get collection by ID."""
         require_positive_int(collection_id, "Collection ID")
-        return self.db.fetchone("SELECT * FROM collections WHERE id = ?", (collection_id,))
+        result = self.db.fetchone("SELECT * FROM collections WHERE id = ?", (collection_id,))
+        if result:
+            logger.debug("Retrieved collection id=%d name=%s", collection_id, result.get("name"))
+        return result
 
     def list_collections(self) -> List[Dict[str, Any]]:
         """List all collections."""
@@ -148,6 +151,7 @@ class CollectionManager(
                 "UPDATE collections SET name = ?, description = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
                 (name, description, collection_id),
             )
+            logger.info("Updated collection id=%d: name=%s", collection_id, name)
         except Exception as exc:
             if "UNIQUE constraint" in str(exc):
                 raise StorageError(f"A collection named '{name}' already exists")

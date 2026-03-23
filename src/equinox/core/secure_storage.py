@@ -118,27 +118,31 @@ class SecureStorage:
             SecurityError: If decryption fails
         """
         if not self.storage_path.exists():
+            logger.debug("Secure storage file does not exist: %s", self.storage_path)
             return {}
 
         try:
+            logger.debug("Loading secure storage from: %s", self.storage_path)
             cipher = self._get_cipher()
 
             with open(self.storage_path, "rb") as f:
                 encrypted_data = f.read()
 
             if not encrypted_data:
+                logger.debug("Secure storage file is empty")
                 return {}
 
             # Decrypt
+            logger.debug("Decrypting secure storage (%d bytes)", len(encrypted_data))
             decrypted_data = cipher.decrypt(encrypted_data)
 
             # Parse JSON
             storage = json.loads(decrypted_data.decode("utf-8"))
-
+            logger.info("Loaded secure storage with %d entries", len(storage))
             return storage
 
         except Exception as e:
-            logger.error("Failed to load secure storage: %s", type(e).__name__)
+            logger.error("Failed to load secure storage: %s", type(e).__name__, exc_info=True)
             raise SecurityError("Failed to decrypt credentials")
 
     def _save_storage(self, storage: Dict[str, Any]) -> None:

@@ -528,7 +528,10 @@ class MigrationRunner:
         try:
             conn.execute("BEGIN")
             try:
-                for stmt in self._split_sql(migration.sql):
+                stmts = self._split_sql(migration.sql)
+                logger.debug("Migration v%d contains %d SQL statement(s)", migration.version, len(stmts))
+                for i, stmt in enumerate(stmts, 1):
+                    logger.debug("Migration v%d executing statement %d", migration.version, i)
                     self._execute_stmt(conn, stmt)
                 conn.execute(
                     f"INSERT INTO {self.VERSION_TABLE} (version, description) VALUES (?, ?)",
@@ -536,13 +539,15 @@ class MigrationRunner:
                 )
                 conn.execute("COMMIT")
                 logger.info("Migration v%d applied successfully", migration.version)
-            except Exception:
+            except Exception as stmt_exc:
+                logger.error("Migration v%d statement failed: %s", migration.version, stmt_exc)
                 try:
                     conn.execute("ROLLBACK")
                 except Exception:
                     pass
                 raise
         except sqlite3.Error as exc:
+            logger.error("Migration v%d failed with database error: %s", migration.version, exc)
             raise StorageError(
                 f"Migration v{migration.version} failed: {exc}"
             ) from exc

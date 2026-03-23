@@ -67,6 +67,7 @@ class HistoryManager:
             SecurityError: If limits exceeded
             StorageError: If save fails
         """
+        logger.debug("save_history() called for %s %s", request.method, request.url[:60])
         self._prune_oldest_entry_if_limit_reached()
 
         sanitized_url = self._prepare_url(request.url)
@@ -110,10 +111,14 @@ class HistoryManager:
                     error,
                 ),
             )
-            logger.debug("Saved history entry %d for %s %s", history_id, method, sanitized_url)
+            logger.info(
+                "Saved history entry id=%d: %s %s status=%s elapsed=%.2fs",
+                history_id, method, sanitized_url, status_code or "error", elapsed or 0
+            )
             return history_id
 
         except Exception as insert_exc:
+            logger.error("Failed to save history entry: %s", insert_exc)
             raise StorageError(f"Failed to save history: {insert_exc}")
 
     def delete_history(self, history_id: int) -> None:

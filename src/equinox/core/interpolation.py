@@ -70,16 +70,26 @@ class VariableInterpolator:
 
         if not isinstance(variables, dict):
             raise ValidationError("Variables must be a dictionary")
+        
+        logger.debug(
+            "VariableInterpolator.interpolate() started with %d variables",
+            len(variables),
+        )
 
         # Validate input size upfront (early exit for large inputs)
         try:
             text_bytes = text.encode("utf-8")
             if len(text_bytes) > cls.MAX_OUTPUT_BYTES:
+                logger.warning(
+                    "Input text exceeds maximum size: %d bytes > %d bytes max",
+                    len(text_bytes), cls.MAX_OUTPUT_BYTES,
+                )
                 raise SecurityError(
                     f"Input text too large ({len(text_bytes)} bytes, "
                     f"max {cls.MAX_OUTPUT_BYTES} bytes)"
                 )
         except UnicodeDecodeError as e:
+            logger.error("Invalid UTF-8 in input text: %s", e)
             raise ValidationError(f"Invalid UTF-8 in input text: {e}")
 
         # Validate variable keys match expected pattern
@@ -123,10 +133,20 @@ class VariableInterpolator:
 
             # If no changes, interpolation complete
             if text == previous_text:
+                logger.debug(
+                    "Variable interpolation converged at iteration %d/%d",
+                    iteration + 1, iteration_limit,
+                )
                 return text
 
             # Prevent expansion attacks
+            expansion_ratio = len(text) / original_length if original_length > 0 else 1.0
             if len(text) > original_length * cls.MAX_EXPANSION_RATIO:
+                logger.warning(
+                    "Variable interpolation caused excessive expansion: "
+                    "ratio=%.2f, size=%d bytes (max %d bytes)",
+                    expansion_ratio, len(text), original_length * cls.MAX_EXPANSION_RATIO,
+                )
                 raise SecurityError(
                     f"Variable interpolation caused excessive expansion "
                     f"({len(text)} bytes vs {original_length * cls.MAX_EXPANSION_RATIO} max)"
@@ -134,6 +154,10 @@ class VariableInterpolator:
             
             # Double-check absolute size limit
             if len(text.encode("utf-8")) > cls.MAX_OUTPUT_BYTES:
+                logger.warning(
+                    "Variable interpolation output exceeds maximum absolute size: %d bytes > %d bytes",
+                    len(text.encode("utf-8")), cls.MAX_OUTPUT_BYTES,
+                )
                 raise SecurityError(
                     f"Variable interpolation output exceeds maximum size "
                     f"({len(text.encode('utf-8'))} bytes, max {cls.MAX_OUTPUT_BYTES} bytes)"

@@ -191,6 +191,10 @@ class Validator:
 
         # Block known metadata endpoints
         if hostname_lower in cls._METADATA_HOSTS:
+            _logger.warning(
+                "SSRF protection: blocked metadata endpoint request",
+                extra={"hostname": hostname}
+            )
             raise ValidationError(
                 f"Requests to metadata endpoint '{hostname}' are blocked (SSRF protection)"
             )

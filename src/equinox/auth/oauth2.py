@@ -199,32 +199,44 @@ class OAuth2Auth(AuthStrategy):
     def _load_from_storage(self) -> None:
         """Restore tokens from secure storage, if available."""
         if not self.secure_storage or not self.storage_key:
+            logger.debug("OAuth2 secure storage not configured (key=%s)", self.storage_key)
             return
 
         try:
+            logger.debug("Loading OAuth2 tokens from secure storage (key=%s)", self.storage_key)
             stored = self.secure_storage.retrieve(self.storage_key)
             if stored:
                 data = json.loads(stored)
                 self.access_token = data.get("access_token")
                 self.refresh_token = data.get("refresh_token")
                 self.expires_at = self._parse_expires_at(data.get("expires_at"))
-                logger.info("OAuth2 tokens loaded from secure storage")
+                logger.info(
+                    "OAuth2 tokens loaded from storage (expires_at=%s)",
+                    self.expires_at.isoformat() if self.expires_at else "None",
+                )
+            else:
+                logger.debug("No stored OAuth2 tokens found for key=%s", self.storage_key)
         except Exception as storage_exc:
             logger.warning("Failed to load OAuth2 tokens from storage: %s", storage_exc)
 
     def _save_to_storage(self) -> None:
         """Persist current tokens to secure storage."""
         if not self.secure_storage or not self.storage_key:
+            logger.debug("OAuth2 secure storage not configured, skipping save")
             return
 
         try:
+            logger.debug("Saving OAuth2 tokens to secure storage (key=%s)", self.storage_key)
             data = {
                 "access_token": self.access_token,
                 "refresh_token": self.refresh_token,
                 "expires_at": self.expires_at.isoformat() if self.expires_at else None,
             }
             self.secure_storage.store(self.storage_key, json.dumps(data))
-            logger.info("OAuth2 tokens saved to secure storage")
+            logger.info(
+                "OAuth2 tokens saved to storage (expires_at=%s)",
+                self.expires_at.isoformat() if self.expires_at else "None",
+            )
         except Exception as storage_exc:
             logger.warning("Failed to save OAuth2 tokens to storage: %s", storage_exc)
 

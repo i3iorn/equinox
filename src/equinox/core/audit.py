@@ -127,6 +127,7 @@ class AuditLogger:
         try:
             log_line = json.dumps(record, ensure_ascii=False)
             self.logger.info(log_line)
+            logger.debug("Audit event logged: type=%s level=%s", event_type.value, level.value)
         except Exception as e:
             logger.error(f"Failed to write audit log: {e}")
 

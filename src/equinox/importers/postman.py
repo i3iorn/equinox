@@ -131,6 +131,9 @@ class PostmanImporter:
         collection_name = info.get("name", "Imported Collection")
         collection_description = info.get("description", "")
 
+        logger.info("Importing Postman collection: %s (format: %s)", 
+                   collection_name, info.get("schema", "unknown"))
+
         col_variables = _extract_collection_variables(collection_data)
         if col_variables:
             logger.info("Found %d collection variable(s): %s",
@@ -148,6 +151,7 @@ class PostmanImporter:
                     collection_id, var_name, var_value,
                     description="Imported from Postman collection variable",
                 )
+                logger.debug("Added collection variable: %s=%s", var_name, var_value)
             except Exception:
                 pass  # add_variable may not exist on all manager builds
 

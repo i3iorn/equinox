@@ -45,8 +45,9 @@ def get_interpolation_variables(db: Database, collection_id: int = None) -> dict
     Sources (in precedence order, later overrides earlier):
     1. Active DB environment variables
     2. Inherited collection variables (groups + collection-specific)
-    3. ``EQUINOX_*`` environment variables
+    3. ``EQUINOX_*`` environment variables (and other valid OS env vars)
     """
+    import re
     variables = {}
 
     try:
@@ -66,7 +67,12 @@ def get_interpolation_variables(db: Database, collection_id: int = None) -> dict
         except Exception as exc:
             logging.debug("Could not load collection variables for %d: %s", collection_id, exc)
 
-    variables.update({k: v for k, v in os.environ.items() if k.startswith("EQUINOX_")})
+    # Only include EQUINOX_* vars, and filter other OS env vars to valid names
+    # (Windows has vars like PROGRAMFILES(X86) which are invalid for interpolation)
+    valid_var_pattern = re.compile(r'^[a-zA-Z0-9_-]+$')
+    for k, v in os.environ.items():
+        if k.startswith("EQUINOX_") or valid_var_pattern.match(k):
+            variables[k] = v
 
     return variables
 
@@ -90,6 +96,8 @@ def cli(ctx, debug, env_file):
             format="%(asctime)s %(levelname)s %(name)s: %(message)s",
             stream=sys.stderr,
         )
+        logging.debug("Debug mode enabled")
+    logging.debug("CLI invoked with debug=%s env_file=%s", debug, env_file)
     load_environment_variables(Path(env_file) if env_file else None)
 
 
@@ -123,11 +131,13 @@ cli.add_command(import_cmd, "import")
 def gui():
     """Launch GUI application"""
     try:
+        logging.debug("GUI command invoked - launching GUI application")
         from equinox.gui.app import main as gui_main
 
         gui_main()
     except ImportError:
         click.echo("GUI dependencies not installed. Install with: pip install equinox[gui]")
+        logging.error("GUI dependencies not installed")
         sys.exit(1)
 
 

@@ -106,6 +106,8 @@ class SavedCredentialsManager:
         row = self.db.fetchone(
             "SELECT * FROM saved_credentials WHERE name = ?", (name,)
         )
+        if row:
+            logger.debug("Found saved credential by name: %s (id=%d)", name, row["id"])
         return self._decode(row) if row else None
 
     def get_default(self, auth_type: Optional[str] = None) -> Optional[Dict[str, Any]]:
@@ -216,17 +218,23 @@ class SavedCredentialsManager:
         """
         source = self.get(cred_id)
         if not source:
+            logger.warning("Attempted to duplicate non-existent credential id=%d", cred_id)
             raise StorageError(f"Saved credential {cred_id} not found")
 
         if new_name is None:
             new_name = self._unique_copy_name(source["name"])
 
-        return self.create(
+        new_id = self.create(
             name=new_name,
             auth_type=source["auth_type"],
             config=source["config"],
             description=source.get("description", ""),
         )
+        logger.info(
+            "Duplicated saved credential id=%d to new_id=%d (new_name=%s)",
+            cred_id, new_id, new_name,
+        )
+        return new_id
 
     _MAX_COPY_ATTEMPTS = 100
 
@@ -248,6 +256,12 @@ class SavedCredentialsManager:
     def delete(self, cred_id: int) -> None:
         """Delete a credential by DB id."""
         existing = self.get(cred_id)
+        if not existing:
+            logger.warning("Attempted to delete non-existent credential id=%d", cred_id)
+            raise StorageError(f"Saved credential {cred_id} not found")
+        
+        self.db.execute("DELETE FROM saved_credentials WHERE id = ?", (cred_id,))
+        logger.info("Deleted saved credential id=%d (name=%s)", cred_id, existing.get("name"))
         if not existing:
             raise StorageError(f"Saved credential {cred_id} not found")
         self.db.execute("DELETE FROM saved_credentials WHERE id = ?", (cred_id,))

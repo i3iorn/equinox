@@ -35,12 +35,17 @@ class PluginManager:
     def _load_plugins(self):
         """Load all plugins from plugin directory."""
         if not self.plugin_dir.exists():
+            logger.debug("Plugin directory does not exist, creating: %s", self.plugin_dir)
             self.plugin_dir.mkdir(parents=True, exist_ok=True)
             return
 
+        logger.info("Loading plugins from directory: %s", self.plugin_dir)
+        plugin_count = 0
         for plugin_path in self.plugin_dir.iterdir():
             if plugin_path.is_dir():
                 self._load_plugin(plugin_path)
+                plugin_count += 1
+        logger.info("Loaded %d plugin(s)", len(self.plugins))
 
     def _load_plugin(self, plugin_path: Path):
         """Load a single plugin from a directory.
@@ -50,39 +55,49 @@ class PluginManager:
         """
         manifest_path = plugin_path / "manifest.json"
         if not manifest_path.exists():
+            logger.debug("No manifest.json found in plugin directory: %s", plugin_path)
             return
 
         try:
+            logger.debug("Loading plugin manifest from: %s", manifest_path)
             with open(manifest_path, "r") as f:
                 manifest_data = json.load(f)
 
             plugin_manifest = PluginManifest.from_dict(manifest_data)
+            logger.debug("Plugin manifest parsed: name=%s version=%s", plugin_manifest.name, plugin_manifest.version)
+            
             sandbox = PluginSandbox(plugin_manifest)
 
             main_file = manifest_data.get("main", "plugin.py")
             plugin_file = plugin_path / main_file
 
             if not plugin_file.exists():
+                logger.error("Plugin entry point not found: %s", plugin_file)
                 raise PluginError(f"Plugin entry point not found: {plugin_file}")
 
             # Security: validate plugin source before loading
+            logger.debug("Validating plugin file: %s", plugin_file)
             validate_plugin_file(plugin_file)
 
             spec = importlib.util.spec_from_file_location(plugin_manifest.name, plugin_file)
             if spec is None or spec.loader is None:
+                logger.error("Failed to create module spec for plugin: %s", plugin_manifest.name)
                 raise PluginError(f"Failed to load plugin: {plugin_manifest.name}")
 
+            logger.debug("Loading plugin module: %s", plugin_manifest.name)
             module = importlib.util.module_from_spec(spec)
             sys.modules[plugin_manifest.name] = module
             spec.loader.exec_module(module)
 
             if not hasattr(module, "PluginClass"):
+                logger.error("Plugin does not define PluginClass: %s", plugin_manifest.name)
                 raise PluginError(f"Plugin must define 'PluginClass': {plugin_manifest.name}")
 
             plugin_class = getattr(module, "PluginClass")
             plugin = plugin_class(self.context)
 
             if not isinstance(plugin, Plugin):
+                logger.error("PluginClass does not inherit from Plugin: %s", plugin_manifest.name)
                 raise PluginError(f"PluginClass must inherit from Plugin: {plugin_manifest.name}")
 
             plugin.sandbox = sandbox
@@ -93,7 +108,7 @@ class PluginManager:
             _audit.log_plugin_event(plugin.name, "loaded")
 
         except Exception as exc:
-            logger.warning("Failed to load plugin %s: %s", plugin_path.name, exc)
+            logger.warning("Failed to load plugin %s: %s", plugin_path.name, exc, exc_info=True)
             _audit.log_plugin_event(plugin_path.name, "error", error=str(exc))
 
     def get_plugin(self, name: str) -> Optional[Plugin]:

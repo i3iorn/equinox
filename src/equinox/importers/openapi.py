@@ -196,8 +196,12 @@ class OpenAPIImporter:
         info = spec_data.get("info", {})
         base_name = info.get("title", "Imported API")
         base_desc = info.get("description", "")
+        logger.debug("OpenAPI spec: title=%s version=%s", base_name, info.get("version"))
 
         servers = self._get_servers(spec_data, version)
+        logger.info("OpenAPI spec defines %d server(s)", len(servers))
+        for i, server in enumerate(servers, 1):
+            logger.debug("Server %d: url=%s desc=%s", i, server.url, server.description)
         logger.info("Found %d server(s)", len(servers))
 
         first_id: Optional[int] = None
