@@ -147,7 +147,7 @@ class LoggingPanel(QWidget):
             "url": getattr(request, "url", "?"),
             "error": str(error),
         }
-        _py_logger.error(
+        _py_logger.warning(
             "✗ %s %s — %s",
             getattr(request, "method", "?"),
             getattr(request, "url", "?"),
