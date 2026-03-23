@@ -59,6 +59,11 @@ def _enrich_httpx_error(exc: Exception, raw: str, exc_type: str) -> "str | None"
     if isinstance(exc, httpx.ReadTimeout):
         return "Server took too long to send a response (read timeout)."
     if isinstance(exc, httpx.ConnectError):
+        if _is_proxy_connect_error(exc):
+            return (
+                "Failed to connect to the proxy server. "
+                "Check your proxy settings under Preferences."
+            )
         return _describe_connect_error(str(exc))
     if isinstance(exc, httpx.TooManyRedirects):
         return "Too many redirects — the server may be redirecting in a loop."
@@ -88,6 +93,34 @@ def _describe_connect_error(inner: str) -> str:
     if "connection refused" in lower:
         return "Connection refused — the server is not accepting connections on that port."
     return f"Could not connect to server.\n{inner or '(no additional detail)'}"
+
+
+def _is_proxy_connect_error(exc: Exception) -> bool:
+    """Return True if any frame in the full exception graph is from httpcore's proxy module.
+
+    Follows both ``__cause__`` and ``__context__`` — ``raise exc from None``
+    clears ``__cause__`` but leaves ``__context__`` intact.
+    """
+    seen: set = set()
+    stack = [exc]
+    while stack:
+        e = stack.pop()
+        eid = id(e)
+        if eid in seen:
+            continue
+        seen.add(eid)
+        tb = e.__traceback__
+        while tb is not None:
+            if "http_proxy" in (tb.tb_frame.f_code.co_filename or ""):
+                return True
+            tb = tb.tb_next
+        cause = getattr(e, "__cause__", None)
+        if cause is not None:
+            stack.append(cause)
+        context = getattr(e, "__context__", None)
+        if context is not None:
+            stack.append(context)
+    return False
 
 
 def _enrich_equinox_error(exc: Exception, raw: str, exc_type: str) -> Optional[str]:
