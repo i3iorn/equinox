@@ -7,6 +7,7 @@ from equinox.gui.widgets.json_body_editor import JsonBodyEditor
 from equinox.gui.widgets.secret_row import make_secret_row
 from equinox.gui.widgets.path_params_table import PathParamsTable
 from equinox.gui.widgets.drag_drop_tree import DragDropTree, _DragDropTree  # noqa: F401
+from equinox.gui.widgets.copyable_message_box import CopyableMessageBox
 
 __all__ = [
     "UrlLineEdit",
@@ -17,5 +18,6 @@ __all__ = [
     "PathParamsTable",
     "DragDropTree",
     "_DragDropTree",  # backward-compat alias
+    "CopyableMessageBox",
 ]
 
