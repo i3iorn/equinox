@@ -1,24 +1,32 @@
 """Response viewer panel — shows what was received AND what was sent."""
 
+import difflib
+import http.cookies as _hc
 import json
+import os
+import shlex
 from typing import Optional
+from urllib.parse import urlencode
 
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QTextEdit,
     QTabWidget, QTableWidget, QTableWidgetItem, QPushButton,
     QHeaderView, QApplication, QLineEdit, QToolButton,
     QMenu, QDialog, QComboBox, QPlainTextEdit, QListWidget, QListWidgetItem,
+    QMessageBox, QFileDialog,
 )
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QKeySequence, QShortcut
 
+from equinox.core.codegen import GENERATORS, generate_code
+from equinox.core.request import Response
+from equinox.gui.intelligence_panel import IntelligencePanel
 from equinox.gui.response_panel.header_table import HeaderTable
 from equinox.gui.response_panel.json_tree import JsonTree
 from equinox.gui.response_panel.read_only_text import ReadOnlyText
-
 from equinox.gui.response_panel.search_bar import SearchBar
+from equinox.gui.syntax_highlighter import JsonHighlighter, XmlHighlighter, YamlHighlighter
 from equinox.gui.theme import Colors, get_mono_font
-from equinox.core.request import Response
 
 
 class ResponsePanel(QWidget):
@@ -63,7 +71,6 @@ class ResponsePanel(QWidget):
         code_btn.setToolTip("Generate client code for this request")
         code_btn.setPopupMode(QToolButton.ToolButtonPopupMode.MenuButtonPopup)
         code_menu = QMenu()
-        from equinox.core.codegen import GENERATORS
         for fmt in list(GENERATORS.keys()) + ["cURL"]:
             act = code_menu.addAction(fmt)
             act.triggered.connect(lambda checked, f=fmt: self._copy_as_code(f))
@@ -83,20 +90,21 @@ class ResponsePanel(QWidget):
         # View selector: Raw / JSON Tree
         self._view_btn = QToolButton()
         self._view_btn.setText("View")
+        self._view_btn.setToolTip("Switch between Raw and JSON Tree view")
         self._view_btn.setPopupMode(QToolButton.ToolButtonPopupMode.MenuButtonPopup)
         self._view_menu = QMenu(self._view_btn)
         self._view_raw_act = self._view_menu.addAction("Raw")
         self._view_json_act = self._view_menu.addAction("JSON Tree")
         self._view_raw_act.setCheckable(True)
         self._view_json_act.setCheckable(True)
-        # default preference: Raw view
         self._view_raw_act.setChecked(True)
         self._view_json_act.setChecked(False)
         self._view_btn.setMenu(self._view_menu)
-        # Track preferred view (persist for the panel session)
         self._prefer_json_view = False
         self._view_raw_act.triggered.connect(lambda: self._on_view_selected("raw"))
         self._view_json_act.triggered.connect(lambda: self._on_view_selected("json"))
+        # Clicking the main button area opens the menu (same as the arrow)
+        self._view_btn.clicked.connect(self._view_btn.showMenu)
 
         diff_btn = QPushButton("Diff…")
         diff_btn.setFixedWidth(56)
@@ -160,7 +168,7 @@ class ResponsePanel(QWidget):
         self._search_bar = SearchBar(self.body_text, body_container)
         body_vbox.addWidget(self.body_text, 1)
         body_vbox.addWidget(self._search_bar)
-        self.tabs.addTab(body_container, "Body")
+        self._body_tab_idx = self.tabs.addTab(body_container, "Body")
 
         # Ctrl+F to open search (works when body tab is visible)
         find_shortcut = QShortcut(QKeySequence("Ctrl+F"), self)
@@ -208,14 +216,13 @@ class ResponsePanel(QWidget):
 
         # JSON Tree tab (collapsible view for JSON objects)
         self._json_tree = JsonTree()
-        self.tabs.addTab(self._json_tree, "JSON")
+        self._json_tab_idx = self.tabs.addTab(self._json_tree, "JSON")
 
         # ── Sent Request tab ──────────────────────────────────────────
         sent_widget = self._build_sent_request_tab()
         self.tabs.addTab(sent_widget, "Sent Request")
 
         # ── Intelligence tab ──────────────────────────────────────────
-        from equinox.gui.intelligence_panel import IntelligencePanel
         self.intelligence_panel = IntelligencePanel()
         self.tabs.addTab(self.intelligence_panel, "Intelligence")
 
@@ -282,10 +289,7 @@ class ResponsePanel(QWidget):
             color = Colors.RED
 
         self.status_label.setText(f"{code}  {response.reason}")
-        print(code, response.reason)
-        self.status_label.setStyleSheet(
-            f"font-weight: bold; color: {color};"
-        )
+        self.status_label.setStyleSheet(f"font-weight: bold; color: {color};")
         self.time_label.setText(f"{int(response.elapsed * 1000)} ms")
         self.size_label.setText(self._format_size(response.size))
 
@@ -314,18 +318,15 @@ class ResponsePanel(QWidget):
             else:
                 self._json_tree.clear()
                 self._search_bar.set_json_doc(None)  # no JSON available
-            # Enable or disable the JSON Tree view option based on whether JSON is available
+            # Show/hide the JSON tab and enable/disable its View menu entry
+            self.tabs.setTabVisible(self._json_tab_idx, can_show_json)
             self._view_json_act.setEnabled(can_show_json)
-            # If user prefers JSON view and JSON is available, switch to it
-            if self._prefer_json_view and can_show_json:
-                self._switch_to_json_view()
-            else:
-                # otherwise ensure raw body is selected
-                self._switch_to_raw_view()
         except Exception:
             self._json_tree.clear()
             self._search_bar.set_json_doc(None)
+            self.tabs.setTabVisible(self._json_tab_idx, False)
             self._view_json_act.setEnabled(False)
+            can_show_json = False
 
         # Response headers (reset filter on new response)
         self._hdrs_search.blockSignals(True)
@@ -334,7 +335,10 @@ class ResponsePanel(QWidget):
         self.resp_headers_table.load(response.headers)
         self._hdrs_count_label.setText(f"{len(response.headers)}")
 
-        # Timings row
+        # Timings row — reset collapse state first so each response starts fresh
+        self._timings_toggle.setChecked(False)
+        self._timings_toggle.setText("▶ Timings")
+        self._timings_label.setVisible(False)
         timings = getattr(response, "timings", None)
         if timings:
             total = timings.get("total_ms", int(response.elapsed * 1000))
@@ -355,8 +359,7 @@ class ResponsePanel(QWidget):
         # Sent request tab
         self._display_sent_request(response)
 
-        # Switch to Body tab automatically
-        # Respect user's preferred view (raw or JSON) when selecting tab
+        # Switch to Body or JSON tab based on user preference
         if self._prefer_json_view and self._view_json_act.isEnabled():
             self._switch_to_json_view()
         else:
@@ -377,8 +380,7 @@ class ResponsePanel(QWidget):
         # URL — prefer the fully-expanded URL httpx used (with params encoded)
         display_url = response.sent_url or req.url
         if not response.sent_url and req.params:
-            param_str = "&".join(f"{k}={v}" for k, v in req.params.items())
-            display_url = f"{req.url}?{param_str}"
+            display_url = f"{req.url}?{urlencode(req.params)}"
         self.sent_url_label.setText(display_url)
 
         # Headers — prefer sent_headers (includes auth); fall back to req.headers
@@ -396,7 +398,6 @@ class ResponsePanel(QWidget):
 
     def _load_cookies_tab(self, headers: dict) -> None:
         """Parse Set-Cookie headers and populate the Cookies table."""
-        import http.cookies as _hc
         self._cookies_table.setRowCount(0)
         for key, value in headers.items():
             if key.lower() != "set-cookie":
@@ -433,7 +434,6 @@ class ResponsePanel(QWidget):
         if self.current_response is None:
             return
 
-        import difflib
 
         # Try to get a DB reference through the parent window
         db = None
@@ -456,7 +456,6 @@ class ResponsePanel(QWidget):
                 pass
 
         if not history_entries:
-            from PyQt6.QtWidgets import QMessageBox
             QMessageBox.information(
                 self, "Diff vs. History",
                 "No matching history entries found for this request."
@@ -478,8 +477,8 @@ class ResponsePanel(QWidget):
             item.setData(Qt.ItemDataRole.UserRole, entry)
             list_widget.addItem(item)
         pk_layout.addWidget(list_widget, 1)
-        btns = QDialog.DialogCode
         btn_box = QPushButton("Compare")
+        btn_box.setEnabled(False)  # disabled until an item is selected
         cancel_box = QPushButton("Cancel")
         btn_row = QHBoxLayout()
         btn_row.addStretch()
@@ -488,6 +487,7 @@ class ResponsePanel(QWidget):
         pk_layout.addLayout(btn_row)
         cancel_box.clicked.connect(picker.reject)
         btn_box.clicked.connect(picker.accept)
+        list_widget.currentItemChanged.connect(lambda cur, _: btn_box.setEnabled(cur is not None))
 
         if picker.exec() != QDialog.DialogCode.Accepted:
             return
@@ -498,7 +498,10 @@ class ResponsePanel(QWidget):
 
         entry = selected.data(Qt.ItemDataRole.UserRole)
         old_body = entry.get("response_body") or ""
-        new_body = self.body_text.toPlainText()
+        # Use the actual response body so large responses that were never "Load Full"-ed
+        # are still diffed correctly instead of producing an empty comparison.
+        displayed = self.body_text.toPlainText()
+        new_body = displayed if displayed else self._pretty_body(self.current_response)
 
         old_lines = old_body.splitlines(keepends=True)
         new_lines = new_body.splitlines(keepends=True)
@@ -516,7 +519,6 @@ class ResponsePanel(QWidget):
         dv_layout = QVBoxLayout(diff_dlg)
         diff_editor = QPlainTextEdit()
         diff_editor.setReadOnly(True)
-        from equinox.gui.theme import get_mono_font
         diff_editor.setFont(get_mono_font())
         diff_editor.setPlainText(diff_text)
         dv_layout.addWidget(diff_editor, 1)
@@ -555,9 +557,6 @@ class ResponsePanel(QWidget):
 
     def _apply_highlighter(self, content_type: str) -> None:
         """Swap the syntax highlighter to match the response content-type."""
-        from equinox.gui.syntax_highlighter import (
-            JsonHighlighter, XmlHighlighter, YamlHighlighter,
-        )
         ct = content_type.lower()
         if "json" in ct:
             new_cls = JsonHighlighter
@@ -598,7 +597,7 @@ class ResponsePanel(QWidget):
             return text
 
     @staticmethod
-    def _format_size(size_bytes: int) -> str:
+    def _format_size(size_bytes: float) -> str:
         for unit in ("B", "KB", "MB", "GB"):
             if size_bytes < 1024.0:
                 return f"{size_bytes:.1f} {unit}"
@@ -609,13 +608,15 @@ class ResponsePanel(QWidget):
         text = self.body_text.toPlainText()
         if text:
             QApplication.clipboard().setText(text)
+            try:
+                self.window().statusBar().showMessage("Body copied to clipboard", 4000)
+            except Exception:
+                pass
 
     def _download_body(self) -> None:
         """Save the response body to a file chosen by the user."""
         if self.current_response is None:
             return
-        from PyQt6.QtWidgets import QFileDialog
-        import os
 
         # Suggest a filename based on URL path
         url = self.current_response.request.url
@@ -638,15 +639,16 @@ class ResponsePanel(QWidget):
             return
 
         try:
-            body_text = self.body_text.toPlainText()
-            with open(path, "w", encoding="utf-8") as f:
-                f.write(body_text)
+            # Write raw bytes so large/unloaded bodies and binary content are
+            # saved correctly — the displayed text may be empty or re-encoded.
+            body_bytes = self.current_response.body or b""
+            with open(path, "wb") as f:
+                f.write(body_bytes)
             try:
                 self.window().statusBar().showMessage(f"Response saved to {path}", 5000)
             except Exception:
                 pass
         except Exception as exc:
-            from PyQt6.QtWidgets import QMessageBox
             QMessageBox.warning(self, "Save Failed", f"Could not save response: {exc}")
 
     def _open_search(self) -> None:
@@ -664,24 +666,14 @@ class ResponsePanel(QWidget):
             self._switch_to_raw_view()
 
     def _switch_to_raw_view(self) -> None:
-        # Body tab index assumed 0, JSON tab index found dynamically
-        for i in range(self.tabs.count()):
-            if self.tabs.tabText(i) == "Body":
-                self.tabs.setTabVisible(i, True)
-                self.tabs.setCurrentIndex(i)
-                break
-        # update menu checks
+        self.tabs.setTabVisible(self._body_tab_idx, True)
+        self.tabs.setCurrentIndex(self._body_tab_idx)
         self._view_raw_act.setChecked(True)
         self._view_json_act.setChecked(False)
 
     def _switch_to_json_view(self) -> None:
-        # Find JSON tab and switch to it
-        for i in range(self.tabs.count()):
-            if self.tabs.tabText(i) == "JSON":
-                self.tabs.setTabVisible(i, True)
-                self.tabs.setCurrentIndex(i)
-                break
-        # update menu checks
+        self.tabs.setTabVisible(self._json_tab_idx, True)
+        self.tabs.setCurrentIndex(self._json_tab_idx)
         self._view_raw_act.setChecked(False)
         self._view_json_act.setChecked(True)
 
@@ -693,7 +685,6 @@ class ResponsePanel(QWidget):
             self._copy_as_curl()
             return
         try:
-            from equinox.core.codegen import generate_code
             code = generate_code(fmt, self.current_response.request)
             QApplication.clipboard().setText(code)
             try:
@@ -712,9 +703,6 @@ class ResponsePanel(QWidget):
         """Open a dialog to view generated client code."""
         if self.current_response is None:
             return
-
-        from equinox.core.codegen import GENERATORS, generate_code
-        from equinox.gui.theme import get_mono_font
 
         dialog = QDialog(self)
         dialog.setWindowTitle("Generated Code")
@@ -742,34 +730,12 @@ class ResponsePanel(QWidget):
         def _update_code() -> None:
             fmt = fmt_combo.currentText()
             if fmt == "cURL":
-                import os
-                import shlex
-                req = self.current_response.request
-                hdrs = self.current_response.sent_headers or req.headers or {}
-                url = self.current_response.sent_url or req.url
-                parts = ["curl", "-X", req.method]
-                for k, v in hdrs.items():
-                    if not k.startswith(":"):
-                        parts.extend(["-H", f"{k}: {v}"])
-                if req.body:
-                    parts.extend(["-d", req.body])
-                if hasattr(req, "verify_ssl") and not req.verify_ssl:
-                    parts.append("--insecure")
-                parts.append(url)
-                if os.name == "nt":
-                    escaped = []
-                    for p in parts:
-                        if any(c in p for c in " \t\"'&|<>^") or ":" in p:
-                            escaped.append(f'"{p}"')
-                        else:
-                            escaped.append(p)
-                    code_editor.setPlainText(" ^\n  ".join(escaped))
-                else:
-                    code_editor.setPlainText(" \\\n  ".join(shlex.quote(p) for p in parts))
+                code_editor.setPlainText(self._build_curl_command(self.current_response))
             else:
                 try:
-                    code = generate_code(fmt, self.current_response.request)
-                    code_editor.setPlainText(code)
+                    code_editor.setPlainText(
+                        generate_code(fmt, self.current_response.request)
+                    )
                 except Exception as exc:
                     code_editor.setPlainText(f"# Error generating code: {exc}")
 
@@ -781,15 +747,12 @@ class ResponsePanel(QWidget):
         )
         dialog.exec()
 
-    def _copy_as_curl(self) -> None:
-        import os
-        import shlex
-
-        if self.current_response is None:
-            return
-        req    = self.current_response.request
-        hdrs   = self.current_response.sent_headers or req.headers or {}
-        url    = self.current_response.sent_url or req.url
+    @staticmethod
+    def _build_curl_command(response: Response) -> str:
+        """Return a shell-safe cURL command string for *response*'s request."""
+        req  = response.request
+        hdrs = response.sent_headers or req.headers or {}
+        url  = response.sent_url or req.url
 
         parts = ["curl", "-X", req.method]
         for k, v in hdrs.items():
@@ -801,20 +764,20 @@ class ResponsePanel(QWidget):
             parts.append("--insecure")
         parts.append(url)
 
-        # Use shlex.join for proper shell quoting, then split for readability
         if os.name == "nt":
-            # Windows: use ^ for line continuation, double-quote args
             escaped = []
             for p in parts:
                 if any(c in p for c in " \t\"'&|<>^") or ":" in p:
                     escaped.append(f'"{p}"')
                 else:
                     escaped.append(p)
-            curl_cmd = " ^\n  ".join(escaped)
-        else:
-            curl_cmd = " \\\n  ".join(shlex.quote(p) for p in parts)
+            return " ^\n  ".join(escaped)
+        return " \\\n  ".join(shlex.quote(p) for p in parts)
 
-        QApplication.clipboard().setText(curl_cmd)
+    def _copy_as_curl(self) -> None:
+        if self.current_response is None:
+            return
+        QApplication.clipboard().setText(self._build_curl_command(self.current_response))
         try:
             self.window().statusBar().showMessage("cURL command copied to clipboard", 4000)
         except Exception:
