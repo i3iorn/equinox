@@ -3,6 +3,7 @@
 import json
 from typing import Optional
 
+from PyQt6.QtCore import QRegularExpression
 from PyQt6.QtGui import QTextCharFormat, QColor, QTextCursor, QTextDocument
 from PyQt6.QtWidgets import (
     QWidget, QTextEdit, QHBoxLayout, QVBoxLayout,
@@ -21,8 +22,8 @@ class SearchBar(QWidget):
     * **Plain text** (default) — literal substring match.  The ``Aa`` button
       enables case-sensitive searching; without it the search is
       case-insensitive.
-    * **Regex** (``.*``) — Qt ``FindRegEx`` flag; the same ``Aa`` button
-      controls case-sensitivity.  Mutually exclusive with JSONPath mode.
+    * **Regex** (``.*``) — ``QRegularExpression``-based search; the same ``Aa``
+      button controls case-sensitivity.  Mutually exclusive with JSONPath mode.
     * **JSONPath** (``$.``) — the expression is evaluated against the JSON
       document supplied via :meth:`set_json_doc`.  Primitive matched values
       (strings, numbers, booleans, null) are highlighted in the text editor;
@@ -233,17 +234,27 @@ class SearchBar(QWidget):
         )
 
     def _collect_matches_regex(self, pattern: str) -> None:
-        """Regular-expression search via Qt FindRegEx."""
-        flags = QTextDocument.FindFlag.FindRegEx
-        if self._case_btn.isChecked():
-            flags |= QTextDocument.FindFlag.FindCaseSensitively
+        """Regular-expression search using QRegularExpression (Qt6 compatible)."""
+        try:
+            re_options = QRegularExpression.PatternOption(0)
+            if not self._case_btn.isChecked():
+                re_options |= QRegularExpression.PatternOption.CaseInsensitiveOption
+            re_pattern = QRegularExpression(pattern, re_options)
+            if not re_pattern.isValid():
+                self._matches = []
+                self._match_label.setText("invalid regex")
+                return
+        except Exception:
+            self._matches = []
+            self._match_label.setText("invalid regex")
+            return
 
         doc = self._target.document()
         cursor = QTextCursor(doc)
         matches = []
         try:
             while True:
-                cursor = doc.find(pattern, cursor, flags)
+                cursor = doc.find(re_pattern, cursor)
                 if cursor.isNull():
                     break
                 matches.append(QTextCursor(cursor))
