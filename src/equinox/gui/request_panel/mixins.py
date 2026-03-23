@@ -287,10 +287,12 @@ class _RequestSendMixin:
             self._status_message(f"Error: {result.message}", 8000)
             # Rich dialog: show type + message + hint about log file
             from equinox.core.log_setup import get_log_file
+            from equinox.gui.widgets import CopyableMessageBox
             log_hint = f"\n\nFull details in: {get_log_file()}" if get_log_file() else ""
-            QMessageBox.critical(
+            CopyableMessageBox.critical(
                 self, f"Request Failed — {result.exc_type}",
                 f"{result.message}{log_hint}",
+                copy_text=result.tb,
             )
             log_panel = self._logging_panel
             if log_panel:
