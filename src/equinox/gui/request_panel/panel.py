@@ -894,6 +894,14 @@ class RequestPanel(_RequestSendMixin, _RequestAuthMixin, _RequestBodyMixin, QWid
     def _params_remove_row(self) -> None:
         self._remove_table_rows(self.params_table)
 
+    def _params_set_all(self, enabled: bool) -> None:
+        """Enable or disable every row in the params table."""
+        self._set_all_checkable(self.params_table, enabled)
+
+    def _headers_set_all(self, enabled: bool) -> None:
+        """Enable or disable every row in the headers table."""
+        self._set_all_checkable(self.headers_table, enabled)
+
     # ── URL ghost-params preview ──────────────────────────────────────
 
     def _update_url_suffix(self, *_) -> None:
