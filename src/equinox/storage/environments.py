@@ -22,6 +22,9 @@ class EnvironmentManager:
     MAX_VARIABLE_KEY_LENGTH = 100
     MAX_VARIABLE_VALUE_LENGTH = 10000
     MAX_ENVIRONMENTS = 1000
+    MAX_SECRET_KEYS = 100
+    MAX_TEXT_SIZE = 1_000_000  # 1MB text limit for interpolation
+    MAX_EXPANSION_RATIO = 100  # Maximum allowed text expansion during interpolation
 
     # Variable name validation pattern (alphanumeric, underscore, dash)
     VARIABLE_NAME_PATTERN = re.compile(r'^[a-zA-Z0-9_-]+$')
@@ -60,11 +63,93 @@ class EnvironmentManager:
             sanitized[key] = value
         return sanitized
 
+    def _validate_name(self, name: Optional[str], allow_empty: bool = False) -> str:
+        """Validate and normalize an environment name.
+        
+        Args:
+            name: Name to validate
+            allow_empty: If True, empty strings are permitted
+            
+        Returns:
+            Sanitized name
+            
+        Raises:
+            ValidationError: If name is invalid
+        """
+        if not name and not allow_empty:
+            raise ValidationError("Environment name must be a non-empty string")
+
+        if not isinstance(name, str):
+            raise ValidationError("Environment name must be a string")
+
+        if len(name) > self.MAX_NAME_LENGTH:
+            raise ValidationError(f"Environment name too long (max {self.MAX_NAME_LENGTH} characters)")
+
+        name = name.strip()
+        if not name and not allow_empty:
+            raise ValidationError("Environment name cannot be empty or whitespace")
+
+        return name
+
+    def _validate_description(self, description: Optional[str]) -> str:
+        """Validate and normalize environment description.
+        
+        Args:
+            description: Description to validate
+            
+        Returns:
+            Sanitized description
+            
+        Raises:
+            ValidationError: If description is invalid
+        """
+        if description is None:
+            return ""
+
+        if not isinstance(description, str):
+            raise ValidationError("Environment description must be a string")
+
+        if len(description) > self.MAX_DESCRIPTION_LENGTH:
+            raise ValidationError(f"Environment description too long (max {self.MAX_DESCRIPTION_LENGTH} characters)")
+
+        return description.strip()
+
+    def _validate_secret_keys(self, secret_keys: Optional[List[str]]) -> List[str]:
+        """Validate and normalize secret_keys list.
+        
+        Args:
+            secret_keys: List of secret key names
+            
+        Returns:
+            Validated list of secret key names
+            
+        Raises:
+            ValidationError: If any secret key is invalid
+            SecurityError: If too many secret keys
+        """
+        if secret_keys is None:
+            return []
+
+        if not isinstance(secret_keys, list):
+            raise ValidationError("secret_keys must be a list")
+
+        if len(secret_keys) > self.MAX_SECRET_KEYS:
+            raise SecurityError(f"Too many secret_keys (max {self.MAX_SECRET_KEYS})")
+
+        validated: List[str] = []
+        for item in secret_keys:
+            if not isinstance(item, str):
+                raise ValidationError("Each secret_keys entry must be a string")
+            if len(item) > self.MAX_VARIABLE_KEY_LENGTH:
+                raise ValidationError(f"Secret key name too long (max {self.MAX_VARIABLE_KEY_LENGTH} characters)")
+            validated.append(item.strip())
+
+        return validated
+
     def create_environment(
         self, name: str, variables: Dict[str, str], description: str = ""
     ) -> int:
-        """
-        Create a new environment
+        """Create a new environment.
 
         Args:
             name: Environment name
@@ -79,25 +164,9 @@ class EnvironmentManager:
             SecurityError: If limits exceeded
             StorageError: If creation fails
         """
-        # Validate name
-        if not name or not isinstance(name, str):
-            raise ValidationError("Environment name must be a non-empty string")
-
-        if len(name) > self.MAX_NAME_LENGTH:
-            raise ValidationError(f"Environment name too long (max {self.MAX_NAME_LENGTH} characters)")
-
-        name = name.strip()
-        if not name:
-            raise ValidationError("Environment name cannot be empty or whitespace")
-
-        # Validate description
-        if not isinstance(description, str):
-            raise ValidationError("Environment description must be a string")
-
-        if len(description) > self.MAX_DESCRIPTION_LENGTH:
-            raise ValidationError(f"Environment description too long (max {self.MAX_DESCRIPTION_LENGTH} characters)")
-
-        # Validate variables
+        # Validate and normalize inputs
+        name = self._validate_name(name, allow_empty=False)
+        description = self._validate_description(description)
         sanitized_variables = self._validate_variables(variables)
 
         # Check environment count limit
@@ -120,9 +189,15 @@ class EnvironmentManager:
                 raise StorageError(f"Environment '{name}' already exists")
             raise StorageError(f"Failed to create environment: {e}")
 
-    @staticmethod
-    def _decode_row(row: Dict[str, Any]) -> Dict[str, Any]:
-        """Decode JSON columns in an environment row in-place and return it."""
+    def _decode_row(self, row: Dict[str, Any]) -> Dict[str, Any]:
+        """Decode JSON columns in an environment row in-place and return it.
+        
+        Args:
+            row: Database row dict with JSON-encoded columns
+            
+        Returns:
+            Same row dict with variables and secret_keys parsed as Python objects
+        """
         try:
             row["variables"] = json.loads(row["variables"])
         except (json.JSONDecodeError, TypeError):
@@ -130,7 +205,8 @@ class EnvironmentManager:
             row["variables"] = {}
         try:
             row["secret_keys"] = json.loads(row.get("secret_keys") or "[]")
-        except Exception:
+        except (json.JSONDecodeError, TypeError):
+            logger.error("Failed to parse secret_keys for environment %s", row.get("id"))
             row["secret_keys"] = []
         return row
 
@@ -175,13 +251,14 @@ class EnvironmentManager:
         description: Optional[str] = None,
         secret_keys: Optional[List[str]] = None,
     ) -> None:
-        """Update environment
+        """Update environment.
 
         Args:
             environment_id: Environment ID
             name: New environment name
             variables: New environment variables
             description: New environment description
+            secret_keys: New list of secret key names
 
         Raises:
             ValidationError: If input is invalid
@@ -196,55 +273,29 @@ class EnvironmentManager:
         if not environment:
             raise StorageError(f"Environment with ID {environment_id} does not exist")
 
-        updates = []
-        params = []
+        updates: List[str] = []
+        params: List[Any] = []
 
-        # Validate and add name update
+        # Build update clauses using validation helpers
         if name is not None:
-            if not isinstance(name, str):
-                raise ValidationError("Environment name must be a string")
-
-            if len(name) > self.MAX_NAME_LENGTH:
-                raise ValidationError(f"Environment name too long (max {self.MAX_NAME_LENGTH} characters)")
-
-            name = name.strip()
-            if not name:
-                raise ValidationError("Environment name cannot be empty or whitespace")
-
+            name = self._validate_name(name)
             updates.append("name = ?")
             params.append(name)
 
-        # Validate and add description update
         if description is not None:
-            if not isinstance(description, str):
-                raise ValidationError("Environment description must be a string")
-
-            if len(description) > self.MAX_DESCRIPTION_LENGTH:
-                raise ValidationError(f"Environment description too long (max {self.MAX_DESCRIPTION_LENGTH} characters)")
-
+            description = self._validate_description(description)
             updates.append("description = ?")
             params.append(description)
 
-        # Validate and add variables update
         if variables is not None:
             sanitized_variables = self._validate_variables(variables)
             updates.append("variables = ?")
             params.append(json.dumps(sanitized_variables))
 
         if secret_keys is not None:
-            if not isinstance(secret_keys, list):
-                raise ValidationError("secret_keys must be a list")
-            if len(secret_keys) > self.MAX_VARIABLE_COUNT:
-                raise SecurityError(f"Too many secret_keys (max {self.MAX_VARIABLE_COUNT})")
-            for item in secret_keys:
-                if not isinstance(item, str):
-                    raise ValidationError("Each secret_keys entry must be a string")
-                if len(item) > self.MAX_VARIABLE_KEY_LENGTH:
-                    raise ValidationError(
-                        f"Secret key name too long (max {self.MAX_VARIABLE_KEY_LENGTH} characters)"
-                    )
+            validated_keys = self._validate_secret_keys(secret_keys)
             updates.append("secret_keys = ?")
-            params.append(json.dumps(list(secret_keys)))
+            params.append(json.dumps(validated_keys))
 
         if not updates:
             logger.warning(f"No updates provided for environment {environment_id}")
@@ -259,7 +310,7 @@ class EnvironmentManager:
 
         except Exception as e:
             if "UNIQUE constraint failed" in str(e):
-                raise StorageError(f"Environment name '{name}' already exists")
+                raise StorageError(f"Environment name already exists")
             raise StorageError(f"Failed to update environment: {e}")
 
     def set_active_environment(self, environment_id: int) -> None:
@@ -317,8 +368,10 @@ class EnvironmentManager:
             raise StorageError(f"Failed to delete environment: {e}")
 
     def interpolate_variables(self, text: str, max_iterations: int = 10) -> str:
-        """
-        Replace {{variable}} placeholders with values from active environment
+        """Replace {{variable}} placeholders with values from active environment.
+
+        Performs iterative replacement to support variables referencing other variables,
+        with protection against infinite loops and expansion attacks.
 
         Args:
             text: Text with {{variable}} placeholders
@@ -329,13 +382,13 @@ class EnvironmentManager:
 
         Raises:
             ValidationError: If input is invalid
-            SecurityError: If interpolation would cause infinite loop
+            SecurityError: If interpolation would cause infinite loop or excessive expansion
         """
         if not isinstance(text, str):
             raise ValidationError("Text must be a string")
 
-        if len(text) > 1_000_000:  # 1MB text limit
-            raise SecurityError("Text too large for variable interpolation")
+        if len(text) > self.MAX_TEXT_SIZE:
+            raise SecurityError(f"Text too large for variable interpolation (max {self.MAX_TEXT_SIZE} bytes)")
 
         env = self.get_active_environment()
         if not env:
@@ -345,30 +398,37 @@ class EnvironmentManager:
         if not variables:
             return text
 
-        # Perform interpolation with iteration limit to prevent infinite loops
-        # (e.g., if variable values contain references to other variables)
-        iteration = 0
-        original_text = text
-
-        while iteration < max_iterations:
-            iteration += 1
+        # Perform interpolation with iteration limit
+        original_length = len(text)
+        
+        for iteration in range(max_iterations):
             previous_text = text
 
-            # Replace variables
+            # Replace each variable placeholder
             for key, value in variables.items():
                 placeholder = f"{{{{{key}}}}}"
                 if placeholder in text:
                     text = text.replace(placeholder, value)
 
-            # If no changes were made, we're done
+            # If no changes were made, interpolation is complete
             if text == previous_text:
-                break
+                return text
 
-            # Check for excessive expansion (potential DoS)
-            if len(text) > len(original_text) * 100:
-                raise SecurityError("Variable interpolation caused excessive text expansion")
+            # Prevent expansion attacks (text growing too large)
+            if len(text) > original_length * self.MAX_EXPANSION_RATIO:
+                logger.error(
+                    "Variable interpolation exceeded expansion ratio (%.1fx original)",
+                    len(text) / original_length,
+                )
+                raise SecurityError(
+                    f"Interpolation caused excessive text expansion "
+                    f"({len(text)} vs {original_length * self.MAX_EXPANSION_RATIO} byte limit)"
+                )
 
-        if iteration >= max_iterations:
-            logger.warning(f"Variable interpolation reached max iterations ({max_iterations})")
+        # Reached max iterations without convergence
+        logger.warning(
+            "Variable interpolation reached max iterations (%d) without convergence",
+            max_iterations,
+        )
 
         return text
