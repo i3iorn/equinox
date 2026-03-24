@@ -57,20 +57,26 @@ def get_or_create_key(key_path: Optional[Path] = None) -> bytes:
     key_path.parent.mkdir(parents=True, exist_ok=True)
 
     if key_path.exists():
+        logger.debug("Loading encryption key from %s", key_path)
         key = key_path.read_bytes()
         if len(key) != 32:
+            logger.error("Encryption key is corrupt: expected 32 bytes, got %d", len(key))
             raise RuntimeError(
                 f"Corrupt encryption key at {key_path} "
                 f"(expected 32 bytes, got {len(key)})"
             )
+        logger.debug("Encryption key loaded successfully (%d bytes)", len(key))
         return key
 
+    logger.info("Generating new encryption key at %s", key_path)
     key = os.urandom(32)
     key_path.write_bytes(key)
     try:
         os.chmod(key_path, 0o600)
+        logger.debug("Encryption key file permissions set to 0o600")
     except (OSError, NotImplementedError):
         logger.warning("Could not set restrictive permissions on %s", key_path)
+    logger.info("Encryption key generated and saved successfully")
     return key
 
 
