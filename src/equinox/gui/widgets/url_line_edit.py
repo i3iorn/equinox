@@ -171,6 +171,19 @@ class UrlLineEdit(QLineEdit):
                     except Exception:
                         pass
 
+                    # Path parameters set in the PathParamsTable should take
+                    # precedence for variables that appear in the URL path.
+                    # Use get_all_data() to include empty values (tests and
+                    # save/load flows rely on round-tripping empty entries).
+                    try:
+                        if rp is not None and getattr(rp, 'path_params_table', None) is not None:
+                            path_params = rp.path_params_table.get_all_data()
+                            # Ensure path params override any previously-set vars
+                            if path_params:
+                                variables.update(path_params)
+                    except Exception:
+                        pass
+
                     # Finally run the same interpolation routine
                     try:
                         resolved = VariableInterpolator.interpolate(token, variables)
