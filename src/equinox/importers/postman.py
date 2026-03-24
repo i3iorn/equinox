@@ -99,14 +99,19 @@ class PostmanImporter:
             ValidationError: If collection is invalid
             SecurityError: If collection contains malicious content
         """
+        logger.info("Importing Postman collection from file: %s", file_path)
         self._validate_file(file_path)
 
         try:
+            logger.debug("Reading JSON from %s", file_path)
             with open(file_path, "r", encoding="utf-8") as f:
                 collection_data = json.load(f)
+            logger.debug("Successfully parsed JSON from file")
         except json.JSONDecodeError as exc:
+            logger.error("Invalid JSON in file: %s", exc)
             raise ValidationError(f"Invalid JSON: {exc}")
         except Exception as exc:
+            logger.error("Failed to read file %s: %s", file_path, exc)
             raise ValidationError(f"Failed to read file: {exc}")
 
         return self.import_dict(collection_data)
@@ -171,13 +176,17 @@ class PostmanImporter:
             ValidationError: If file is invalid
         """
         if not file_path.exists():
+            logger.error("Postman file not found: %s", file_path)
             raise ValidationError(f"File not found: {file_path}")
 
         if file_path.suffix.lower() != ".json":
+            logger.error("Postman file is not JSON: %s", file_path)
             raise ValidationError("File must be a JSON file")
 
         size = file_path.stat().st_size
+        logger.debug("Postman file size: %d bytes", size)
         if size > self.MAX_COLLECTION_SIZE:
+            logger.error("Postman file too large: %d bytes (max: %d)", size, self.MAX_COLLECTION_SIZE)
             raise ValidationError(
                 f"Collection file too large: {size} bytes "
                 f"(max: {self.MAX_COLLECTION_SIZE} bytes)"
