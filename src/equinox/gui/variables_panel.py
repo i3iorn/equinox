@@ -26,7 +26,7 @@ from PyQt6.QtWidgets import (
 from PyQt6.QtCore import Qt, pyqtSignal, QSettings
 
 
-from equinox.storage import Database, VariableGroupManager
+from equinox.storage import Database, VariableGroupManager, EnvironmentManager
 
 
 class VariableDialog(QDialog):
@@ -288,6 +288,25 @@ class VariablesPanel(QWidget):
             self.variables_table.setItem(row, 0, key_item)
             self.variables_table.setItem(row, 1, value_item)
             self.variables_table.setItem(row, 2, desc_item)
+
+            # Tooltip: show raw value and the interpolated result using the
+            # currently active environment. This gives users a quick preview
+            # of what {{vars}} will resolve to in practice when hovered.
+            try:
+                env_mgr = EnvironmentManager(self.db)
+                interpolated = env_mgr.interpolate_variables(var["value"]) if var.get("value") else ""
+                raw = var.get("value") or ""
+                if interpolated != raw:
+                    tip = f"Raw: {raw}\nInterpolated: {interpolated}"
+                else:
+                    tip = raw
+                # Attach tooltip to the value cell (hovering the value shows resolved text)
+                value_item.setToolTip(tip)
+                # Also attach a helpful tooltip to the key so hovering the name shows resolved value
+                key_item.setToolTip(f"{var['key']} → {interpolated}")
+            except Exception:
+                # Non-fatal: if interpolation fails, leave default tooltips
+                pass
 
     def _on_variable_selected(self):
         """Handle variable selection"""

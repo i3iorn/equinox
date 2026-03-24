@@ -72,6 +72,13 @@ class TestPreferencesDialog:
         dlg._proxy_port.setValue(8080)
         dlg._accept()
         _process()
+        # Cleanup: restore defaults and persist to avoid leaving global QSettings
+        # (tests run in the same environment and QSettings on Windows persists
+        # into the registry; ensure proxy is cleared so subsequent tests / runs
+        # don't pick up a leftover proxy configuration).
+        dlg._restore_defaults()
+        dlg._accept()
+        _process()
 
     def test_update_preview(self):
         from equinox.gui.dialogs.preferences_dialog import PreferencesDialog
