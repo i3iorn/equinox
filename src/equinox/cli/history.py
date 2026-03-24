@@ -296,7 +296,7 @@ def history_search(
         )
     except Exception as exc:
         click.secho(f"✗ Search failed: {exc}", fg="red", err=True)
-        raise click.Exit(1)
+        raise SystemExit(1)
 
     if not entries:
         click.echo("No matching history entries found")

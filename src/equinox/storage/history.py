@@ -554,6 +554,8 @@ class HistoryManager:
         raise ValidationError(
             f"{label} must be in ISO-8601 format (e.g., 2026-03-23T16:20:00Z)"
         )
+
+    def _escape_like(self, text: str) -> str:
         r"""Escape SQL LIKE metacharacters (``%``, ``_``, ``\``) so they
         match literally when used with ``ESCAPE '\'``."""
         return text.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
