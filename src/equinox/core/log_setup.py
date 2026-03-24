@@ -9,20 +9,32 @@ Call ``configure_logging()`` once at application startup.  After that every
 
 Log file is rotated at **10 MB** and up to **5** old files are kept.
 
-Example log line::
+Example log lines::
 
-    {"ts":"2026-02-20T14:23:01.234Z","level":"INFO","logger":"equinox.gui.request_panel",
-     "msg":"GET https://api.example.com/users","elapsed_ms":142,"status":200}
+    {"ts":"2026-02-20T14:23:01.234Z","app_corr_id":"abc123def456","level":"INFO","logger":"equinox.gui.request_panel","msg":"GET https://api.example.com/users","elapsed_ms":142,"status":200}
+    {"ts":"2026-02-20T14:23:01.500Z","app_corr_id":"abc123def456","level":"DEBUG","logger":"equinox.gui.request_panel","msg":"Variable interpolation completed","thread":"QThread-1"}
+    {"ts":"2026-02-20T14:23:02.100Z","app_corr_id":"abc123def456","level":"ERROR","logger":"equinox.core.client","msg":"Request timeout","method":"POST","url":"https://api.example.com/data","error_type":"TimeoutError"}
 """
 
 import json
 import logging
 import logging.handlers
 import sys
-import traceback
+import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
+
+# Global application correlation ID — set on first call to configure_logging()
+_app_corr_id: Optional[str] = None
+
+
+def get_app_corr_id() -> str:
+    """Return the application correlation ID, generating one if needed."""
+    global _app_corr_id
+    if _app_corr_id is None:
+        _app_corr_id = uuid.uuid4().hex[:12]  # 12-char hex string
+    return _app_corr_id
 
 
 # ── JSON formatter ────────────────────────────────────────────────────────────
@@ -38,12 +50,19 @@ class _JsonFormatter(logging.Formatter):
 
     def format(self, record: logging.LogRecord) -> str:  # type: ignore[override]
         doc: dict = {
-            "ts":     datetime.fromtimestamp(record.created, tz=timezone.utc)
-                      .strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z",
-            "level":  record.levelname,
-            "logger": record.name,
-            "msg":    record.getMessage(),
+            "ts":          datetime.fromtimestamp(record.created, tz=timezone.utc)
+                          .strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z",
+            "app_corr_id": get_app_corr_id(),
+            "level":       record.levelname,
+            "logger":      record.name,
+            "msg":         record.getMessage(),
         }
+
+        # Add process and thread info for concurrent debugging
+        if record.processName != "MainProcess":
+            doc["process"] = record.processName
+        if record.threadName != "MainThread":
+            doc["thread"] = record.threadName
 
         # Copy structured fields attached via ``extra=``
         for field in self._EXTRA_FIELDS:
@@ -55,7 +74,7 @@ class _JsonFormatter(logging.Formatter):
         if record.exc_info:
             doc["exc"] = self.formatException(record.exc_info)
 
-        return json.dumps(doc, ensure_ascii=False, default=str)
+        return json.dumps(doc, ensure_ascii=True, default=str)
 
 
 # ── Human-readable console formatter ─────────────────────────────────────────
@@ -106,6 +125,11 @@ def configure_logging(
     Returns:
         Path to the active log file.
     """
+    global _app_corr_id
+    
+    # Initialize app correlation ID on first call
+    _app_corr_id = uuid.uuid4().hex[:12]
+    
     if log_dir is None:
         log_dir = Path.home() / ".equinox" / "logs"
     log_dir.mkdir(parents=True, exist_ok=True)
@@ -140,7 +164,7 @@ def configure_logging(
         logging.getLogger(noisy).setLevel(logging.WARNING)
 
     logger = logging.getLogger(__name__)
-    logger.info("Logging initialised — writing to %s", log_file)
+    logger.info("Logging initialised — app_corr_id=%s writing to %s", _app_corr_id, log_file)
 
     return log_file
 
