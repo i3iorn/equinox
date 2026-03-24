@@ -26,7 +26,11 @@ from PyQt6.QtWidgets import (
 from PyQt6.QtCore import Qt, pyqtSignal, QSettings
 
 
+import os
+import re
+
 from equinox.storage import Database, VariableGroupManager, EnvironmentManager
+from equinox.core.interpolation import VariableInterpolator
 
 
 class VariableDialog(QDialog):
@@ -293,13 +297,72 @@ class VariablesPanel(QWidget):
             # currently active environment. This gives users a quick preview
             # of what {{vars}} will resolve to in practice when hovered.
             try:
-                env_mgr = EnvironmentManager(self.db)
-                interpolated = env_mgr.interpolate_variables(var["value"]) if var.get("value") else ""
+                # Build an effective variables map mirroring the request-time
+                # resolution precedence: active environment -> OS env -> session
+                # vars -> path params (path params override prior values).
+                variables = {}
+
+                # Active environment variables
+                try:
+                    env_mgr = EnvironmentManager(self.db)
+                    active = env_mgr.get_active_environment()
+                    if active:
+                        variables.update(active.get("variables", {}))
+                except Exception:
+                    pass
+
+                # Filter OS environment to variable-like names
+                try:
+                    valid_var_pattern = re.compile(r'^[a-zA-Z0-9_-]+$')
+                    os_env_filtered = {
+                        k: v for k, v in os.environ.items()
+                        if isinstance(v, str) and valid_var_pattern.match(k)
+                    }
+                    if os_env_filtered:
+                        variables.update(os_env_filtered)
+                except Exception:
+                    pass
+
+                # Session vars and path params from RequestPanel (override env)
+                try:
+                    win = self.window()
+                    rp = getattr(win, "request_panel", None)
+                    if rp is not None:
+                        try:
+                            session_vars = rp.get_session_vars()
+                            variables.update(session_vars)
+                        except Exception:
+                            pass
+
+                        try:
+                            if getattr(rp, 'path_params_table', None) is not None:
+                                path_params = rp.path_params_table.get_all_data()
+                                if path_params:
+                                    variables.update(path_params)
+                        except Exception:
+                            pass
+                except Exception:
+                    pass
+
                 raw = var.get("value") or ""
+                if raw:
+                    try:
+                        interpolated = VariableInterpolator.interpolate(raw, variables)
+                    except Exception:
+                        # Fall back to active-env-only interpolation for robustness
+                        try:
+                            env_mgr = EnvironmentManager(self.db)
+                            interpolated = env_mgr.interpolate_variables(raw)
+                        except Exception:
+                            interpolated = raw
+                else:
+                    interpolated = ""
+
                 if interpolated != raw:
                     tip = f"Raw: {raw}\nInterpolated: {interpolated}"
                 else:
                     tip = raw
+
                 # Attach tooltip to the value cell (hovering the value shows resolved text)
                 value_item.setToolTip(tip)
                 # Also attach a helpful tooltip to the key so hovering the name shows resolved value
