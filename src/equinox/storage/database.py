@@ -173,8 +173,10 @@ class Database:
         """
         conn = sqlite3.connect(self.db_path, timeout=_CONNECTION_TIMEOUT_SECONDS)
         try:
+            logger.debug("Setting database PRAGMAs: journal_mode=WAL, secure_delete=ON")
             conn.execute("PRAGMA journal_mode = WAL")
             conn.execute("PRAGMA secure_delete = ON")
+            logger.debug("Database PRAGMAs configured successfully")
         finally:
             conn.close()
 
@@ -218,13 +220,14 @@ class Database:
             conn.execute("PRAGMA foreign_keys = ON")
             yield conn
         except sqlite3.Error as exc:
-            logger.error(f"Database connection error: {exc}")
+            logger.error("Database connection error: %s", exc, exc_info=False)
             raise StorageError(f"Database connection failed: {exc}")
         finally:
             if conn is not None:
                 try:
                     conn.close()
-                except Exception:
+                except Exception as exc:
+                    logger.debug("Error closing connection: %s", exc, exc_info=False)
                     pass
 
     @contextmanager
@@ -247,6 +250,7 @@ class Database:
             ``fetchone``, ``fetchall``, and ``insert`` methods.
         """
         with self.lock:
+            logger.debug("Starting database transaction")
             conn = sqlite3.connect(
                 self.db_path,
                 check_same_thread=False,
@@ -259,10 +263,14 @@ class Database:
             try:
                 yield _TransactionHelper(conn)
                 conn.execute("COMMIT")
-            except Exception:
+                logger.debug("Transaction committed successfully")
+            except Exception as exc:
+                logger.warning("Transaction failed, rolling back: %s", exc, exc_info=False)
                 try:
                     conn.execute("ROLLBACK")
-                except Exception:
+                    logger.debug("Transaction rolled back")
+                except Exception as rollback_exc:
+                    logger.error("Failed to rollback transaction: %s", rollback_exc, exc_info=False)
                     pass
                 raise
             finally:
