@@ -15,12 +15,15 @@ from dotenv import load_dotenv
 from equinox import __version__
 from equinox.storage import Database, EnvironmentManager, get_db as _storage_get_db
 
+logger = logging.getLogger(__name__)
+
 
 # ── Shared helpers (imported by sub-modules) ─────────────────────────────────
 
 
 def get_db() -> Database:
     """Get database instance (delegates to shared storage factory)."""
+    logger.debug("Retrieving database instance")
     return _storage_get_db()
 
 
@@ -34,9 +37,14 @@ def load_environment_variables(env_file: Path = None):
         env_file = Path.cwd() / ".env"
     if env_file.exists():
         try:
+            logger.debug("Loading environment variables from %s", env_file)
             load_dotenv(env_file, override=False)
+            logger.info("Environment variables loaded from %s", env_file)
         except Exception as e:
+            logger.warning("Failed to load environment file %s: %s", env_file, e)
             click.echo(f"Warning: Failed to load {env_file}: {e}", err=True)
+    else:
+        logger.debug("Environment file not found at %s, skipping", env_file)
 
 
 def get_interpolation_variables(db: Database, collection_id: int = None) -> dict:
@@ -49,14 +57,17 @@ def get_interpolation_variables(db: Database, collection_id: int = None) -> dict
     """
     import re
     variables = {}
+    logger.debug("Collecting interpolation variables (collection_id=%s)", collection_id)
 
     try:
         env_manager = EnvironmentManager(db)
         active_env = env_manager.get_active_environment()
         if active_env and isinstance(active_env.get("variables"), dict):
             variables.update(active_env["variables"])
+            logger.debug("Added %d active environment variables", len(active_env["variables"]))
     except Exception as exc:
-        click.echo("Could not load environment variables: %s", exc)
+        logger.debug("Could not load active environment variables: %s", exc)
+        click.echo(f"Could not load environment variables: {exc}", err=True)
 
     if collection_id is not None:
         try:
@@ -64,16 +75,22 @@ def get_interpolation_variables(db: Database, collection_id: int = None) -> dict
             collection_manager = CollectionManager(db)
             collection_vars = collection_manager.get_all_collection_variables(collection_id)
             variables.update(collection_vars)
+            logger.debug("Added %d collection variables for collection %d", len(collection_vars), collection_id)
         except Exception as exc:
-            click.echo("Could not load collection variables for %d: %s", collection_id, exc)
+            logger.debug("Could not load collection variables for collection %d: %s", collection_id, exc)
+            click.echo(f"Could not load collection variables for {collection_id}: {exc}", err=True)
 
     # Only include EQUINOX_* vars, and filter other OS env vars to valid names
     # (Windows has vars like PROGRAMFILES(X86) which are invalid for interpolation)
     valid_var_pattern = re.compile(r'^[a-zA-Z0-9_-]+$')
+    os_vars_added = 0
     for k, v in os.environ.items():
         if k.startswith("EQUINOX_") or valid_var_pattern.match(k):
             variables[k] = v
+            os_vars_added += 1
 
+    logger.debug("Added %d OS environment variables (valid names only)", os_vars_added)
+    logger.debug("Total interpolation variables collected: %d", len(variables))
     return variables
 
 
@@ -96,6 +113,10 @@ def cli(ctx, debug, env_file):
             format="%(asctime)s %(levelname)s %(name)s: %(message)s",
             stream=sys.stderr,
         )
+        logger.debug("Debug mode enabled")
+    logger.debug("Equinox CLI started (version=%s)", __version__)
+    if env_file:
+        logger.debug("Loading environment file: %s", env_file)
     load_environment_variables(Path(env_file) if env_file else None)
 
 
