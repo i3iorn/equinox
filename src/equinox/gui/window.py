@@ -76,31 +76,55 @@ class MainWindow(QMainWindow):
         geo = self._settings.value("window/geometry")
         if isinstance(geo, QByteArray):
             self.restoreGeometry(geo)
+            logger.debug("Restored window geometry")
         state = self._settings.value("window/state")
         if isinstance(state, QByteArray):
             self.restoreState(state)
+            logger.debug("Restored window state")
         ms = self._settings.value("splitter/main")
         if ms is not None:
             try:
-                self._main_splitter.setSizes([int(x) for x in ms])
-            except Exception:
-                logger.debug("Failed to restore main splitter sizes", exc_info=True)
+                sizes = [int(x) for x in ms]
+                self._main_splitter.setSizes(sizes)
+                logger.debug("Restored main splitter sizes: %s", sizes)
+            except Exception as e:
+                logger.debug("Failed to restore main splitter sizes: %s", e, exc_info=True)
+        else:
+            logger.debug("No saved main splitter sizes found in QSettings")
         rs = self._settings.value("splitter/req_resp")
         if rs is not None:
             try:
-                self._req_resp_splitter.setSizes([int(x) for x in rs])
-            except Exception:
-                logger.debug("Failed to restore req/resp splitter sizes", exc_info=True)
+                sizes = [int(x) for x in rs]
+                self._req_resp_splitter.setSizes(sizes)
+                logger.debug("Restored req/resp splitter sizes: %s", sizes)
+            except Exception as e:
+                logger.debug("Failed to restore req/resp splitter sizes: %s", e, exc_info=True)
+        else:
+            logger.debug("No saved req/resp splitter sizes found in QSettings")
         tab_idx = self._settings.value("left_tabs/index", 0, type=int)
         self._left_tabs.setCurrentIndex(tab_idx)
+        logger.debug("Restored left tabs index: %d", tab_idx)
 
     def _save_layout(self) -> None:
         """Persist window geometry and splitter sizes."""
-        self._settings.setValue("window/geometry", self.saveGeometry())
-        self._settings.setValue("window/state", self.saveState())
-        self._settings.setValue("splitter/main", self._main_splitter.sizes())
-        self._settings.setValue("splitter/req_resp", self._req_resp_splitter.sizes())
-        self._settings.setValue("left_tabs/index", self._left_tabs.currentIndex())
+        try:
+            self._settings.setValue("window/geometry", self.saveGeometry())
+            logger.debug("Saved window geometry")
+            self._settings.setValue("window/state", self.saveState())
+            logger.debug("Saved window state")
+            main_sizes = list(self._main_splitter.sizes())
+            self._settings.setValue("splitter/main", main_sizes)
+            logger.debug("Saved main splitter sizes: %s", main_sizes)
+            req_resp_sizes = list(self._req_resp_splitter.sizes())
+            self._settings.setValue("splitter/req_resp", req_resp_sizes)
+            logger.debug("Saved req/resp splitter sizes: %s", req_resp_sizes)
+            tab_idx = self._left_tabs.currentIndex()
+            self._settings.setValue("left_tabs/index", tab_idx)
+            logger.debug("Saved left tabs index: %d", tab_idx)
+            self._settings.sync()  # Ensure settings are written to disk
+            logger.debug("Layout settings synchronized to disk")
+        except Exception as e:
+            logger.error("Failed to save layout: %s", e, exc_info=True)
 
     def closeEvent(self, event) -> None:  # type: ignore[override]
         logger.info("MainWindow closeEvent triggered - autosaving and persisting layout")
@@ -191,6 +215,20 @@ class MainWindow(QMainWindow):
 
         rp.session_vars_changed.connect(self.variables_panel.refresh_session_vars)
         self.variables_panel.clear_session_requested.connect(rp.clear_session_vars)
+
+        # Connect splitter moved signals to save layout in real-time
+        self._main_splitter.splitterMoved.connect(self._on_splitter_moved)
+        self._req_resp_splitter.splitterMoved.connect(self._on_splitter_moved)
+        logger.debug("Connected splitter movement signals for real-time layout saving")
+
+    def _on_splitter_moved(self, pos: int, index: int) -> None:
+        """Handle splitter movement and save layout."""
+        sender = self.sender()
+        if sender is self._main_splitter:
+            logger.debug("Main splitter moved (pos=%d, index=%d), saving layout", pos, index)
+        elif sender is self._req_resp_splitter:
+            logger.debug("Req/Resp splitter moved (pos=%d, index=%d), saving layout", pos, index)
+        self._save_layout()
 
     # ── Request / history handlers ────────────────────────────────────
 
