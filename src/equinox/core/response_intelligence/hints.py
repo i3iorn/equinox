@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import re
 from typing import Dict, List, Tuple
+from equinox.core import urls
 
 from equinox.core.response_intelligence.base import Analyzer
 from equinox.core.response_intelligence.models import (
@@ -152,16 +153,10 @@ class NPlusOneDetectionAnalyzer(Analyzer):
 
     @staticmethod
     def _normalise(url: str) -> str:
-        """Collapse numeric/UUID segments for grouping."""
-        path = url.split("?", 1)[0]
-        if "://" in path:
-            path = "/" + path.split("://", 1)[1].split("/", 1)[-1]
-        path = re.sub(
-            r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}",
-            "{id}", path, flags=re.IGNORECASE,
-        )
-        path = re.sub(r"/\d+(?=/|$)", "/{id}", path)
-        return path
+        """Collapse numeric/UUID segments for grouping using centralised URL helpers."""
+        parts = urls.normalized_parts(url)
+        segs = parts.get("path_segments") or []
+        return "/" + "/".join(segs) if segs else "/"
 
 
 class ResponseEncodingIssuesAnalyzer(Analyzer):

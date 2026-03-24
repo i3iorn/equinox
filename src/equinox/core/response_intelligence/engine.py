@@ -1,8 +1,8 @@
 """Analysis engine — discovers and runs all analyzers."""
 
 import logging
-import re
 from typing import Dict, List, Optional, Set
+from equinox.core import urls
 
 from equinox.core.response_intelligence.base import Analyzer
 from equinox.core.response_intelligence.models import (
@@ -16,28 +16,16 @@ logger = logging.getLogger(__name__)
 # Priority for sorting: critical first
 _SEVERITY_ORDER = {Severity.CRITICAL: 0, Severity.WARNING: 1, Severity.INFO: 2}
 
-# Regex used to normalise URL paths for endpoint grouping.
-_UUID_RE = re.compile(
-    r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}",
-    re.IGNORECASE,
-)
-_NUMERIC_SEGMENT_RE = re.compile(r"/\d+(?=/|$)")
-
-
 def normalize_url_pattern(url: str) -> str:
-    """Collapse numeric/UUID path segments so the same endpoint groups together.
+    """Return a path-only normalized pattern for *url*.
 
-    ``/users/123/posts/456`` → ``/users/{id}/posts/{id}``
-    Query string is stripped.
+    Delegates to `equinox.core.urls.normalized_parts()` and builds a
+    path like ``/users/{id}/posts/{id}``. Query string and scheme/netloc
+    are stripped.
     """
-    # Strip query/fragment
-    path = url.split("?", 1)[0].split("#", 1)[0]
-    # Strip scheme + authority (keep path only)
-    if "://" in path:
-        path = "/" + path.split("://", 1)[1].split("/", 1)[-1]
-    path = _UUID_RE.sub("{id}", path)
-    path = _NUMERIC_SEGMENT_RE.sub("/{id}", path)
-    return path
+    parts = urls.normalized_parts(url)
+    segs = parts.get("path_segments") or []
+    return "/" + "/".join(segs) if segs else "/"
 
 
 class AnalysisEngine:

@@ -777,7 +777,9 @@ class HistoryManager:
         best-effort and does not prevent history writes.
         """
         try:
-            parts = urls.normalized_parts(url)
+            # Ensure placeholders are expanded (best-effort) before indexing
+            expanded_url = urls.expand_placeholders(url, None)
+            parts = urls.normalized_parts(expanded_url)
             normalized_url = parts.get("normalized_url")
             path_segments = parts.get("path_segments") or []
             query_params = parts.get("query_params") or {}

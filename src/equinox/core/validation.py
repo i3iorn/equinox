@@ -11,7 +11,8 @@ import json
 import socket
 import concurrent.futures
 from typing import Any, Dict, Optional, Tuple
-from urlps import parse_url_unsafe as _urlps_parse
+from equinox.core import urls
+from urllib.parse import urlparse
 from pathlib import Path
 
 from equinox.core.exceptions import ValidationError
@@ -133,39 +134,43 @@ class Validator:
         # Run the basic string checks first
         url = cls.validate_url(url)
 
+        # Prefer the central URL helpers: expand placeholders (defensive) and
+        # obtain normalized parts for robust parsing + normalization behavior.
+        expanded = urls.expand_placeholders(url, None)
         try:
-            parsed = _urlps_parse(url)
+            parts = urls.normalized_parts(expanded)
         except Exception as e:
-            err_msg = str(e).lower()
             _logger.warning(
-                "URL parsing failed",
-                extra={"error": str(e), "url_length": len(url)}
+                "URL parsing failed via urls.normalized_parts",
+                extra={"error": str(e), "url_length": len(expanded)}
             )
-            if "host" in err_msg:
-                raise ValidationError("URL must contain a hostname")
             raise ValidationError(f"Invalid URL format: {e}")
 
-        if parsed.scheme not in cls.VALID_URL_SCHEMES:
+        scheme = parts.get("scheme") or ""
+        netloc = parts.get("netloc") or ""
+
+        if scheme not in cls.VALID_URL_SCHEMES:
             _logger.warning(
                 "URL validation failed: invalid scheme",
-                extra={"scheme": parsed.scheme, "allowed_schemes": list(cls.VALID_URL_SCHEMES)}
+                extra={"scheme": scheme, "allowed_schemes": list(cls.VALID_URL_SCHEMES)}
             )
             raise ValidationError(
-                f"Invalid URL scheme: {parsed.scheme}. "
+                f"Invalid URL scheme: {scheme}. "
                 f"Allowed schemes: {', '.join(cls.VALID_URL_SCHEMES)}"
             )
 
-        if not parsed.netloc:
+        if not netloc:
             _logger.warning("URL validation failed: missing hostname")
             raise ValidationError("URL must contain a hostname")
 
-        hostname = parsed.host
-        if hostname:
-            cls._check_ssrf(hostname)
+        # Use stdlib urlparse to extract the hostname (handles userinfo/ports cleanly)
+        parsed_host = urlparse(expanded).hostname
+        if parsed_host:
+            cls._check_ssrf(parsed_host)
 
         _logger.debug(
             "URL validation passed",
-            extra={"scheme": parsed.scheme, "host": hostname or "unknown"}
+            extra={"scheme": scheme, "host": parsed_host or "unknown"}
         )
         return url
 

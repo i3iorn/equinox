@@ -7,6 +7,7 @@ from datetime import datetime
 import json
 
 from equinox.core.time import utc_now
+from equinox.core import urls
 
 logger = logging.getLogger(__name__)
 
@@ -199,23 +200,25 @@ class Request:
             parts.extend(["-d", self.body])
             logger.debug("Added request body to curl command (length=%d)", len(self.body))
 
-        # URL with params
-        url = self.url
+        # URL with params — expand placeholders first (if any path_params present)
+        url = urls.expand_placeholders(self.url, self.path_params or None)
         if self.params:
             logger.debug("Encoding %d query parameters into URL", len(self.params))
+            # If the URL still looks like a template or is non-absolute, fall back to string concatenation
             if "{{" in url or (not url.startswith("http://") and not url.startswith("https://")):
-                # Template URL — can't parse with urlps yet, use string concat
                 qs = "&".join(f"{k}={v}" for k, v in self.params.items())
                 sep = "&" if "?" in url else "?"
                 url = f"{url}{sep}{qs}"
                 logger.debug("Using string concatenation for template URL")
             else:
-                from urlps import parse_url_unsafe
-                u = parse_url_unsafe(url)
-                for k, v in self.params.items():
-                    u = u.with_query_param(str(k), str(v))
-                url = str(u)
-                logger.debug("Using urlps to encode query parameters")
+                # Use stdlib urllib to safely merge query params for non-template URLs
+                from urllib.parse import urlparse, parse_qsl, urlencode, urlunparse
+                parsed = urlparse(url)
+                existing_q = dict(parse_qsl(parsed.query, keep_blank_values=True))
+                existing_q.update({str(k): str(v) for k, v in self.params.items()})
+                new_query = urlencode(existing_q, doseq=False)
+                url = urlunparse((parsed.scheme, parsed.netloc, parsed.path, parsed.params, new_query, parsed.fragment))
+                logger.debug("Using urllib to encode query parameters")
 
         parts.append(url)
         

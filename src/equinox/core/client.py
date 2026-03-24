@@ -22,6 +22,7 @@ from equinox.core.redact import redact_body, redact_url
 from equinox.auth.base import AuthStrategy
 from equinox.core.interceptors import InterceptorChain, RequestResponseLogger
 from equinox.core.audit import get_audit_logger
+from equinox.core import urls
 
 logger = logging.getLogger(__name__)
 
@@ -588,7 +589,9 @@ class HTTPClient:
 
     def _validate_request(self, request: Request) -> None:
         """Validate all components of the request before sending."""
-        Validator.validate_resolved_url(request.url)
+        # Expand placeholders from request.path_params (if any) before resolved validation.
+        resolved_url = urls.expand_placeholders(request.url, getattr(request, "path_params", None) or None)
+        Validator.validate_resolved_url(resolved_url)
         Validator.validate_method(request.method)
 
         if request.headers:
