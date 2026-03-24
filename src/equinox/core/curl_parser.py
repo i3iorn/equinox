@@ -3,6 +3,7 @@
 import re
 import shlex
 from typing import Optional
+from equinox.core import urls
 
 
 def parse_curl(curl_cmd: str) -> dict:
@@ -111,6 +112,9 @@ def parse_curl(curl_cmd: str) -> dict:
         method = "GET"
     if method is None:
         method = "GET" if body is None else "POST"
+
+    # Pass through central placeholder expansion (no-op when no variables provided)
+    url = urls.expand_placeholders(url, None)
 
     return {
         "method": method,

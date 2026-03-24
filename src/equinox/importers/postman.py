@@ -14,6 +14,7 @@ from equinox.core.request import Request
 from equinox.core.exceptions import ValidationError, SecurityError
 from equinox.core.validation import Validator
 from equinox.storage.collections import CollectionManager
+from equinox.core import urls
 
 logger = logging.getLogger(__name__)
 
@@ -42,33 +43,13 @@ def _extract_collection_variables(collection_data: Dict[str, Any]) -> Dict[str, 
 
 
 def _resolve_postman_variable(value: str, variables: Dict[str, str]) -> str:
-    """Resolve Postman ``{{variable}}`` expressions with up to 5 passes.
+    """Delegate Postman variable resolution to central VariableInterpolator via urls.expand_placeholders.
 
-    Multiple passes handle chained references, e.g. ``{{baseUrl}}`` where
-    ``baseUrl = "{{scheme}}://{{host}}"``.  Unresolvable references are left
-    as-is so users can supply them via an active Equinox environment at runtime.
-
-    Args:
-        value:     String potentially containing ``{{varName}}`` tokens.
-        variables: Collection-level variables.
-
-    Returns:
-        String with known variables substituted.
+    Keeps behaviour: unresolvable placeholders are left unchanged. Uses the
+    central interpolation implementation which includes security limits and
+    chained-reference handling.
     """
-    import re
-
-    _PATTERN = re.compile(r"\{\{([^}]+)\}\}")
-
-    def replace(match: "re.Match[str]") -> str:  # type: ignore[type-arg]
-        return variables.get(match.group(1), match.group(0))
-
-    for _ in range(5):
-        new_value = _PATTERN.sub(replace, value)
-        if new_value == value:
-            break  # no more substitutions possible
-        value = new_value
-
-    return value
+    return urls.expand_placeholders(value, variables or {})
 
 
 class PostmanImporter:

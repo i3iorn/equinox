@@ -37,6 +37,7 @@ from equinox.storage.database import Database
 from equinox.core.exceptions import ValidationError
 from equinox.core.redact import redact_headers
 from equinox.core.validation import Validator
+from equinox.core import urls
 
 logger = logging.getLogger(__name__)
 
@@ -204,12 +205,13 @@ class CurlExporter:
         if request.body:
             curl_cmd.append(f"-d {CurlExporter._shell_quote(request.body)}")
 
-        # Add query params
+        # Add query params — expand placeholders first for preview
+        base_url = urls.expand_placeholders(request.url, getattr(request, "path_params", None) or None)
         if request.params:
             param_str = "&".join(f"{k}={v}" for k, v in request.params.items())
-            url = f"{request.url}?{param_str}" if "?" not in request.url else f"{request.url}&{param_str}"
+            url = f"{base_url}?{param_str}" if "?" not in base_url else f"{base_url}&{param_str}"
         else:
-            url = request.url
+            url = base_url
 
         # Add URL at end
         curl_cmd.append(CurlExporter._shell_quote(url))
@@ -304,9 +306,18 @@ class PostmanExporter:
                 path_params = _safe_json_parse(req.get("path_params", "{}"))  # Improvement #5
                 auth_data = req.get("auth")
                 
-                # Parse URL safely (Improvement #3)
-                url_parts = _parse_url_safe(req.get("url", ""))
-                
+                # Parse URL safely after expanding placeholders (Improvement #3)
+                expanded = urls.expand_placeholders(req.get("url", ""), None)
+                parsed = urlparse(expanded)
+                url_parts = {
+                    "scheme": parsed.scheme or "https",
+                    "hostname": parsed.hostname or "",
+                    "port": str(parsed.port) if parsed.port else "",
+                    "path": parsed.path or "/",
+                    "query": parsed.query or "",
+                    "netloc": parsed.netloc or "",
+                }
+
                 item = {
                     "name": req.get("name", "Unnamed"),
                     "request": {
@@ -474,10 +485,11 @@ class OpenAPIExporter:
                 url = req.get("url", "")
                 method = req.get("method", "GET").lower()
                 
-                # Parse URL safely (Improvement #3)
-                url_parts = _parse_url_safe(url)
-                path = url_parts["path"] or "/"
-                
+                # Parse URL safely after expanding placeholders (Improvement #3)
+                expanded = urls.expand_placeholders(url, None)
+                parsed = urlparse(expanded)
+                path = parsed.path or "/"
+
                 # Safe JSON parsing (Improvement #9)
                 headers = _safe_json_parse(req.get("headers", "{}"))
                 params = _safe_json_parse(req.get("params", "{}"))
