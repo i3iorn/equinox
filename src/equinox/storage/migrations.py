@@ -399,6 +399,25 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_response_schemas_pattern
     ON response_schemas(url_pattern, method);
 """,
     ),
+    Migration(
+        version=21,
+        description="Add history_index table for normalized URL indexing",
+        sql="""
+CREATE TABLE IF NOT EXISTS history_index (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    history_id INTEGER UNIQUE NOT NULL,
+    method TEXT NOT NULL,
+    normalized_url TEXT NOT NULL,
+    path_segments TEXT NOT NULL,
+    query_params TEXT NOT NULL,
+    body_hash TEXT,
+    response_success INTEGER NOT NULL DEFAULT 0,
+    executed_at TEXT,
+    FOREIGN KEY(history_id) REFERENCES history(id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_history_index_method_norm ON history_index(method, normalized_url);
+""",
+    ),
 ]
 
 # ─────────────────────────────────────────────────────────────────────────────

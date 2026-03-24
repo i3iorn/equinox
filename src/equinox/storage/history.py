@@ -2,6 +2,7 @@
 
 import json
 import logging
+import hashlib
 import re
 from typing import List, Dict, Any, Optional, Pattern, Tuple
 from collections import namedtuple
@@ -11,6 +12,7 @@ from equinox.storage.database import Database
 from equinox.core.request import Request, Response
 from equinox.core.exceptions import StorageError, ValidationError, SecurityError
 from equinox.storage.utils import require_positive_int as _require_positive_int_impl
+from equinox.core import urls
 
 logger = logging.getLogger(__name__)
 
@@ -115,6 +117,11 @@ class HistoryManager:
                 "Saved history entry id=%d: %s %s status=%s elapsed=%.2fs",
                 history_id, method, sanitized_url, status_code or "error", elapsed or 0
             )
+            try:
+                # Populate normalized index for faster intelligent matching/search
+                self._index_history_row(history_id, method, sanitized_url, status_code, response_body)
+            except Exception as idx_exc:
+                logger.debug("Failed to index history row %s: %s", history_id, idx_exc)
             return history_id
 
         except Exception as insert_exc:
@@ -755,6 +762,60 @@ class HistoryManager:
             return name.strip().lower(), val.strip().lower()
         
         return header.strip().lower(), ""
+
+    def _index_history_row(
+        self,
+        history_id: int,
+        method: str,
+        url: str,
+        status_code: Optional[int],
+        response_body: Any,
+    ) -> None:
+        """Create or update a normalized index row for a history entry.
+
+        This method intentionally swallows transient errors so indexing is
+        best-effort and does not prevent history writes.
+        """
+        try:
+            parts = urls.normalized_parts(url)
+            normalized_url = parts.get("normalized_url")
+            path_segments = parts.get("path_segments") or []
+            query_params = parts.get("query_params") or {}
+
+            # Body hash for quick comparisons
+            body_hash = None
+            if response_body is not None:
+                if isinstance(response_body, (bytes, bytearray)):
+                    body_bytes = bytes(response_body)
+                else:
+                    body_bytes = str(response_body).encode("utf-8")
+                body_hash = hashlib.sha256(body_bytes).hexdigest()
+
+            response_success = 1 if (isinstance(status_code, int) and 200 <= status_code < 300) else 0
+
+            executed_at_row = self.db.fetchone("SELECT executed_at FROM history WHERE id = ?", (history_id,))
+            executed_at = executed_at_row.get("executed_at") if executed_at_row else None
+
+            self.db.insert(
+                """
+                INSERT INTO history_index
+                (history_id, method, normalized_url, path_segments, query_params, body_hash, response_success, executed_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    history_id,
+                    method,
+                    normalized_url,
+                    json.dumps(path_segments),
+                    json.dumps(query_params),
+                    body_hash,
+                    response_success,
+                    executed_at,
+                ),
+            )
+        except Exception as exc:
+            # Best-effort indexing — do not raise
+            logger.debug("Indexing history row failed: %s", exc)
 
 
 # ── Module-level helpers ──────────────────────────────────────────────────────
