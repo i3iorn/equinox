@@ -10,7 +10,7 @@ from equinox.storage.collections.auth import CollectionAuthMixin
 from equinox.storage.collections.variables import CollectionVariablesMixin
 from equinox.storage.database import Database
 from equinox.core.request import Request
-from equinox.core.exceptions import StorageError, ValidationError
+from equinox.core.exceptions import StorageError, ValidationError, DuplicateError
 from equinox.storage.utils import require_positive_int, safe_json_loads, safe_json_dumps
 from equinox.core.exceptions import SecurityError
 
@@ -133,9 +133,10 @@ class CollectionManager(
             )
             logger.info(f"Created collection '{name}' with ID {collection_id}")
             return collection_id
+        except DuplicateError:
+            # Database layer raises DuplicateError for unique constraint
+            raise StorageError(f"Collection '{name}' already exists")
         except Exception as exc:
-            if "UNIQUE constraint failed" in str(exc):
-                raise StorageError(f"Collection '{name}' already exists")
             raise StorageError(f"Failed to create collection: {exc}")
 
     def get_collection(self, collection_id: int) -> Optional[Dict[str, Any]]:
@@ -186,9 +187,9 @@ class CollectionManager(
                 (name, description, collection_id),
             )
             logger.info("Updated collection id=%d: name=%s", collection_id, name)
+        except DuplicateError:
+            raise StorageError(f"A collection named '{name}' already exists")
         except Exception as exc:
-            if "UNIQUE constraint" in str(exc):
-                raise StorageError(f"A collection named '{name}' already exists")
             raise StorageError(f"Failed to update collection: {exc}")
 
     def rename_collection(self, collection_id: int, new_name: str) -> None:
@@ -218,9 +219,9 @@ class CollectionManager(
                 (new_name, collection_id),
             )
             logger.info(f"Renamed collection {collection_id} to '{new_name}'")
+        except DuplicateError:
+            raise StorageError(f"A collection named '{new_name}' already exists")
         except Exception as exc:
-            if "UNIQUE constraint" in str(exc):
-                raise StorageError(f"A collection named '{new_name}' already exists")
             raise StorageError(f"Failed to rename collection: {exc}")
 
     def rename_request(self, request_id: int, new_name: str) -> None:
