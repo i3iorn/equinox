@@ -36,8 +36,9 @@ _HEX_RE = re.compile(r"^[0-9a-fA-F]{8,}$")
 
 
 def _normalize_segment(seg: str) -> str:
+    # Treat UUID-looking segments as generic IDs for matching purposes
     if _UUID_RE.match(seg):
-        return "{uuid}"
+        return "{id}"
     if _NUMERIC_RE.match(seg):
         return "{id}"
     if _HEX_RE.match(seg):
