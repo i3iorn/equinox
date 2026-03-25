@@ -22,6 +22,7 @@ from equinox.core.redact import redact_body, redact_url
 from equinox.auth.base import AuthStrategy
 from equinox.core.interceptors import InterceptorChain, RequestResponseLogger
 from equinox.core.audit import get_audit_logger
+from equinox.core.rate_limiter import RateLimiter
 from equinox.core import urls
 
 logger = logging.getLogger(__name__)
@@ -184,8 +185,7 @@ class HTTPClient:
 
         self._client: Optional[httpx.Client] = None
 
-        self._rate_limit_lock = Lock()
-        self._request_times: List[float] = []
+        # legacy fields removed — rate limiting is handled by RateLimiter
 
         self._active_requests = 0
         self._request_lock = Lock()
@@ -193,6 +193,8 @@ class HTTPClient:
         self.interceptors = InterceptorChain()
         self.logger = RequestResponseLogger()
         self._audit = get_audit_logger()
+        # Encapsulated rate limiter (uses audit logger for violation events)
+        self._rate_limiter = RateLimiter(self.max_rate_per_minute, window_seconds=self.RATE_LIMIT_WINDOW_SECONDS, audit_logger=self._audit)
         self._error_handlers = self._build_error_handlers()
 
     def __enter__(self):
@@ -370,27 +372,8 @@ class HTTPClient:
         return {}
 
     def _check_rate_limit(self) -> None:
-        """Raise RateLimitError if the per-minute request quota is exhausted."""
-        if self.max_rate_per_minute <= 0:
-            return
-
-        with self._rate_limit_lock:
-            now = time.time()
-            self._request_times = [
-                t for t in self._request_times
-                if now - t < self.RATE_LIMIT_WINDOW_SECONDS
-            ]
-
-            if len(self._request_times) >= self.max_rate_per_minute:
-                self._audit.log_security_violation(
-                    "rate_limit",
-                    {"limit": self.max_rate_per_minute},
-                )
-                raise RateLimitError(
-                    f"Rate limit exceeded: {self.max_rate_per_minute} requests per minute"
-                )
-
-            self._request_times.append(now)
+        """Delegate rate-limit enforcement to the encapsulated RateLimiter."""
+        self._rate_limiter.try_acquire()
 
     def _check_concurrent_limit(self) -> None:
         """Raise RequestError if the concurrent request cap is reached."""

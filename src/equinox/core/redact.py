@@ -88,3 +88,49 @@ def redact_url(url: str) -> str:
     result = _URL_SECRET_PARAMS.sub(r"\g<1>" + _REDACTED, result)
     return result
 
+
+# Payload-sensitive keys (used for auditing/sanitization)
+SENSITIVE_PAYLOAD_KEYS = frozenset({
+    "password",
+    "token",
+    "secret",
+    "api_key",
+    "bearer",
+    "authorization",
+    "credential",
+    "private_key",
+    "client_secret",
+    "access_token",
+    "refresh_token",
+})
+
+
+def sanitize_details(details: dict, *, max_string_len: int = 200) -> dict:
+    """Return a sanitized copy of *details* by redacting sensitive keys and
+    truncating long strings.
+
+    This is recursive and will preserve non-sensitive structure while
+    redacting values whose keys match entries from
+    :data:`SENSITIVE_PAYLOAD_KEYS`.
+    """
+    def _sanitize(obj):
+        if isinstance(obj, dict):
+            out = {}
+            for k, v in obj.items():
+                k_lower = k.lower()
+                if any(s in k_lower for s in SENSITIVE_PAYLOAD_KEYS):
+                    out[k] = _REDACTED
+                else:
+                    out[k] = _sanitize(v)
+            return out
+        if isinstance(obj, (list, tuple)):
+            return [_sanitize(i) for i in obj]
+        if isinstance(obj, str):
+            if len(obj) > max_string_len:
+                return obj[:max_string_len] + "..."
+            return obj
+        return obj
+
+    return _sanitize(details)
+
+

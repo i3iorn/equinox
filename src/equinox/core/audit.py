@@ -17,7 +17,7 @@ from typing import Optional, Dict, Any
 from enum import Enum
 
 from equinox.core.time import utc_now
-from equinox.core.redact import redact_url, redact_body
+from equinox.core.redact import redact_url, redact_body, sanitize_details
 
 logger = logging.getLogger(__name__)
 
@@ -140,44 +140,9 @@ class AuditLogger:
         Returns:
             Sanitized details
         """
-        sanitized = {}
-
-        # List of keys that should be redacted
-        sensitive_keys = {
-            "password",
-            "token",
-            "secret",
-            "api_key",
-            "bearer",
-            "authorization",
-            "credential",
-            "private_key",
-            "client_secret",
-            "access_token",
-            "refresh_token",
-        }
-
-        for key, value in details.items():
-            key_lower = key.lower()
-
-            # Check if key is sensitive
-            if any(sensitive in key_lower for sensitive in sensitive_keys):
-                sanitized[key] = "[REDACTED]"
-            elif isinstance(value, dict):
-                sanitized[key] = self._sanitize_details(value)
-            elif isinstance(value, (list, tuple)):
-                sanitized[key] = [
-                    self._sanitize_details(item) if isinstance(item, dict) else item
-                    for item in value
-                ]
-            else:
-                # Truncate long strings
-                if isinstance(value, str) and len(value) > 200:
-                    sanitized[key] = value[:200] + "..."
-                else:
-                    sanitized[key] = value
-
-        return sanitized
+        # Delegate to central redact.sanitize_details to keep behavior
+        # consistent across modules (audit, logging, exports).
+        return sanitize_details(details, max_string_len=200)
 
     def log_auth_success(self, auth_type: str, user: Optional[str] = None):
         """Log successful authentication."""

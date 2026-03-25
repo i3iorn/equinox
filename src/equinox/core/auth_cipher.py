@@ -15,16 +15,14 @@ automatically with restrictive permissions.
 
 import base64
 import logging
-import os
 from pathlib import Path
 from typing import Optional
 
 from cryptography.fernet import Fernet, InvalidToken
 
-logger = logging.getLogger(__name__)
+from equinox.core import crypto
 
-_EQUINOX_DIR = Path.home() / ".equinox"
-_KEY_PATH = _EQUINOX_DIR / ".key"
+logger = logging.getLogger(__name__)
 
 # Module-level singleton — created lazily by _get_fernet().
 _fernet: Optional[Fernet] = None
@@ -34,50 +32,13 @@ _ENC_PREFIX = "enc:"
 
 
 def get_or_create_key(key_path: Optional[Path] = None) -> bytes:
-    """Read or generate a 32-byte encryption key at *key_path*.
+    """Compatibility wrapper that delegates to :mod:`equinox.core.crypto`.
 
-    This is the canonical key-management function for the entire
-    application.  Both ``auth_cipher`` and
-    :class:`~equinox.core.secure_storage.SecureStorage` delegate here
-    so the logic is never duplicated.
-
-    Args:
-        key_path: Path to the key file.  Defaults to ``~/.equinox/.key``.
-
-    Returns:
-        32 raw bytes suitable for deriving a Fernet key via
-        ``base64.urlsafe_b64encode``.
-
-    Raises:
-        RuntimeError: If an existing key file is corrupt.
+    Keeps the original public function name so callers in the codebase
+    continue to work while the canonical implementation lives in
+    :mod:`equinox.core.crypto`.
     """
-    if key_path is None:
-        key_path = _KEY_PATH
-
-    key_path.parent.mkdir(parents=True, exist_ok=True)
-
-    if key_path.exists():
-        logger.debug("Loading encryption key from %s", key_path)
-        key = key_path.read_bytes()
-        if len(key) != 32:
-            logger.error("Encryption key is corrupt: expected 32 bytes, got %d", len(key))
-            raise RuntimeError(
-                f"Corrupt encryption key at {key_path} "
-                f"(expected 32 bytes, got {len(key)})"
-            )
-        logger.debug("Encryption key loaded successfully (%d bytes)", len(key))
-        return key
-
-    logger.info("Generating new encryption key at %s", key_path)
-    key = os.urandom(32)
-    key_path.write_bytes(key)
-    try:
-        os.chmod(key_path, 0o600)
-        logger.debug("Encryption key file permissions set to 0o600")
-    except (OSError, NotImplementedError):
-        logger.warning("Could not set restrictive permissions on %s", key_path)
-    logger.info("Encryption key generated and saved successfully")
-    return key
+    return crypto.get_or_create_raw_key(key_path)
 
 
 def _get_fernet() -> Fernet:
@@ -85,9 +46,8 @@ def _get_fernet() -> Fernet:
     global _fernet
     if _fernet is not None:
         return _fernet
-
     key = get_or_create_key()
-    _fernet = Fernet(base64.urlsafe_b64encode(key))
+    _fernet = crypto.make_fernet(key)
     return _fernet
 
 

@@ -27,7 +27,7 @@ from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 
 from equinox.core.exceptions import SecurityError, ValidationError
 from equinox.core.audit import get_audit_logger
-from equinox.core.auth_cipher import get_or_create_key as _get_or_create_key
+from equinox.core import crypto
 
 logger = logging.getLogger(__name__)
 
@@ -81,7 +81,7 @@ class SecureStorage:
         """
         key_path = self.storage_path.parent / ".key"
         try:
-            return _get_or_create_key(key_path)
+            return crypto.get_or_create_raw_key(key_path)
         except Exception as e:
             logger.error("Failed to load/generate encryption key: %s", type(e).__name__)
             raise SecurityError("Failed to load encryption key")
@@ -99,9 +99,7 @@ class SecureStorage:
         if self._cipher is None:
             try:
                 key = self._get_or_create_key()
-                # Convert key to Fernet format
-                fernet_key = base64.urlsafe_b64encode(key)
-                self._cipher = Fernet(fernet_key)
+                self._cipher = crypto.make_fernet(key)
             except Exception as e:
                 logger.error("Failed to create cipher: %s", type(e).__name__)
                 raise SecurityError("Failed to initialize encryption")
