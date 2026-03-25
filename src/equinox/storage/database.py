@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Optional, Any, List, Dict, Tuple, Mapping
 from contextlib import contextmanager
 
-from equinox.core.exceptions import StorageError, ValidationError
+from equinox.core.exceptions import StorageError, ValidationError, DuplicateError
 
 logger = logging.getLogger(__name__)
 
@@ -290,10 +290,19 @@ class Database:
             raise ValidationError("Query must be a non-empty string")
         if len(query) > self.MAX_QUERY_LENGTH:
             raise ValidationError(f"Query exceeds maximum length of {self.MAX_QUERY_LENGTH}")
-        if not isinstance(params, (tuple, list)):
-            raise ValidationError("Query parameters must be a tuple or list")
-        if len(params) > self.MAX_PARAMS:
-            raise ValidationError(f"Too many parameters (max: {self.MAX_PARAMS})")
+        # Accept mapping parameters for named placeholders and sequence for
+        # positional placeholders.
+        has_named = bool(QueryValidator.NAMED_PATTERN.search(query))
+        if has_named:
+            if not isinstance(params, Mapping):
+                raise ValidationError("Named placeholders require a mapping (dict-like)")
+            if len(params) > self.MAX_PARAMS:
+                raise ValidationError(f"Too many parameters (max: {self.MAX_PARAMS})")
+        else:
+            if not isinstance(params, (tuple, list)):
+                raise ValidationError("Query parameters must be a tuple or list")
+            if len(params) > self.MAX_PARAMS:
+                raise ValidationError(f"Too many parameters (max: {self.MAX_PARAMS})")
 
         QueryValidator.validate_placeholders(query, params)
 
@@ -320,6 +329,9 @@ class Database:
                 return cursor
         except sqlite3.IntegrityError as exc:
             logger.error(f"Integrity error: {exc}")
+            msg = str(exc)
+            if "UNIQUE" in msg.upper():
+                raise DuplicateError(f"Database unique constraint violated: {exc}")
             raise StorageError(f"Database integrity error: {exc}")
         except sqlite3.OperationalError as exc:
             logger.error(f"Operational error: {exc}")
@@ -407,6 +419,9 @@ class Database:
                 return cursor.lastrowid
         except sqlite3.IntegrityError as exc:
             logger.error(f"Integrity error during insert: {exc}")
+            msg = str(exc)
+            if "UNIQUE" in msg.upper():
+                raise DuplicateError(f"Failed to insert row (unique constraint): {exc}")
             raise StorageError(f"Failed to insert row (integrity constraint): {exc}")
         except sqlite3.Error as exc:
             logger.error(f"Database error during insert: {exc}")

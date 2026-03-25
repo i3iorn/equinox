@@ -10,7 +10,7 @@ import logging
 from typing import Any, Dict, List, Optional
 
 from equinox.storage.database import Database
-from equinox.storage.utils import _safe_json_loads, safe_json_dumps
+from equinox.storage.utils import safe_json_loads, safe_json_dumps
 from equinox.core.exceptions import SecurityError
 
 logger = logging.getLogger(__name__)
@@ -64,7 +64,7 @@ class ResponseIntelligenceManager:
                 ),
             )
         else:
-            values = _safe_json_loads(existing.get("elapsed_values") or "[]")
+            values = safe_json_loads(existing.get("elapsed_values") or "[]")
             if not isinstance(values, list):
                 values = []
             values.append(round(elapsed_ms, 2))
@@ -109,7 +109,7 @@ class ResponseIntelligenceManager:
             (url_pattern, method.upper()),
         )
         if rows:
-            schema = _safe_json_loads(rows[0].get("schema_json"))
+            schema = safe_json_loads(rows[0].get("schema_json"))
             return schema if schema else None
         return None
 

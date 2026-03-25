@@ -1,9 +1,8 @@
-import json
 import logging
 from typing import Dict, Any, List, Tuple
 
 from equinox.storage.database import Database
-from equinox.storage.utils import _safe_json_loads
+from equinox.storage.utils import safe_json_loads
 from equinox.core import urls
 
 logger = logging.getLogger(__name__)
@@ -103,14 +102,14 @@ class Recommender:
         for r in rows:
             try:
                 r = dict(r)
-                r["path_segments"] = _safe_json_loads(r.get("path_segments") or "[]")
+                r["path_segments"] = safe_json_loads(r.get("path_segments") or "[]")
                 if not isinstance(r["path_segments"], list):
                     r["path_segments"] = []
-                r["query_params"] = _safe_json_loads(r.get("query_params") or "{}")
+                r["query_params"] = safe_json_loads(r.get("query_params") or "{}")
                 if not isinstance(r["query_params"], dict):
                     r["query_params"] = {}
                 # request_headers is stored as JSON in history.request_headers
-                r["request_headers"] = _safe_json_loads(r.get("request_headers") or "{}")
+                r["request_headers"] = safe_json_loads(r.get("request_headers") or "{}")
                 if not isinstance(r["request_headers"], dict):
                     r["request_headers"] = {}
                 candidates.append(r)

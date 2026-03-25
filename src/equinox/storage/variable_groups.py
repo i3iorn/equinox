@@ -4,7 +4,7 @@ import logging
 from typing import List, Dict, Any, Optional
 
 from equinox.storage.database import Database
-from equinox.core.exceptions import StorageError, ValidationError, SecurityError
+from equinox.core.exceptions import StorageError, ValidationError, SecurityError, DuplicateError
 from equinox.storage.utils import (
     require_positive_int,
     validate_variable_key,
@@ -79,9 +79,9 @@ class VariableGroupManager:
             logger.info(f"Created variable group '{name}' with ID {group_id}")
             return group_id
 
+        except DuplicateError:
+            raise DuplicateError(f"Variable group '{name}' already exists")
         except Exception as e:
-            if "UNIQUE constraint failed" in str(e):
-                raise StorageError(f"Variable group '{name}' already exists")
             raise StorageError(f"Failed to create variable group: {e}")
 
     def get_group(self, group_id: int) -> Optional[Dict[str, Any]]:
@@ -166,9 +166,9 @@ class VariableGroupManager:
             self.db.execute(query, tuple(params))
             logger.info(f"Updated variable group '{group['name']}' (ID: {group_id})")
 
+        except DuplicateError:
+            raise DuplicateError(f"Variable group name '{name}' already exists")
         except Exception as e:
-            if "UNIQUE constraint failed" in str(e):
-                raise StorageError(f"Variable group name '{name}' already exists")
             raise StorageError(f"Failed to update variable group: {e}")
 
     def delete_group(self, group_id: int) -> None:

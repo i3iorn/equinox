@@ -3,15 +3,13 @@
 Supports any auth type: OAuth2, API Key, Basic Auth, Bearer Token.
 Each credential is stored as a name + auth_type discriminator + config JSON blob.
 """
-
-import json
 import logging
 from typing import Any, Dict, List, Optional
 
 from equinox.storage.database import Database
-from equinox.core.exceptions import StorageError, ValidationError, SecurityError
+from equinox.core.exceptions import StorageError, ValidationError, SecurityError, DuplicateError
 from equinox.core.auth_cipher import encrypt_auth_data, decrypt_auth_data
-from equinox.storage.utils import require_str as _require_str, _safe_json_loads, safe_json_dumps
+from equinox.storage.utils import require_str as _require_str, safe_json_loads, safe_json_dumps
 
 logger = logging.getLogger(__name__)
 
@@ -89,11 +87,9 @@ class SavedCredentialsManager:
                 "Created saved credential '%s' (type=%s, id=%d)", name, auth_type, row_id
             )
             return row_id
+        except DuplicateError:
+            raise DuplicateError(f"A saved credential named '{name}' already exists")
         except Exception as exc:
-            if "UNIQUE constraint" in str(exc):
-                raise StorageError(
-                    f"A saved credential named '{name}' already exists"
-                )
             raise StorageError(f"Failed to create saved credential: {exc}") from exc
 
     # ── Read ──────────────────────────────────────────────────────────
@@ -190,11 +186,9 @@ class SavedCredentialsManager:
                 tuple(params),
             )
             logger.info("Updated saved credential id=%d", cred_id)
+        except DuplicateError:
+            raise DuplicateError(f"A saved credential named '{name}' already exists")
         except Exception as exc:
-            if "UNIQUE constraint" in str(exc):
-                raise StorageError(
-                    f"A saved credential named '{name}' already exists"
-                )
             raise StorageError(f"Failed to update saved credential: {exc}") from exc
 
     def set_default(self, cred_id: int) -> None:
@@ -267,15 +261,11 @@ class SavedCredentialsManager:
         if not existing:
             logger.warning("Attempted to delete non-existent credential id=%d", cred_id)
             raise StorageError(f"Saved credential {cred_id} not found")
-        
+        # Single delete and a single info log. Earlier implementation contained
+        # duplicate deletes and an unreachable check; simplify to deterministic
+        # behaviour.
         self.db.execute("DELETE FROM saved_credentials WHERE id = ?", (cred_id,))
-        logger.info("Deleted saved credential id=%d (name=%s)", cred_id, existing.get("name"))
-        if not existing:
-            raise StorageError(f"Saved credential {cred_id} not found")
-        self.db.execute("DELETE FROM saved_credentials WHERE id = ?", (cred_id,))
-        logger.info(
-            "Deleted saved credential '%s' (id=%d)", existing["name"], cred_id
-        )
+        logger.info("Deleted saved credential '%s' (id=%d)", existing.get("name"), cred_id)
 
     # ── Auth strategy factory ─────────────────────────────────────────
 
@@ -348,7 +338,7 @@ class SavedCredentialsManager:
         d = dict(row)
         raw_config = d.get("config") or "{}"
         try:
-            d["config"] = _safe_json_loads(decrypt_auth_data(raw_config))
+            d["config"] = safe_json_loads(decrypt_auth_data(raw_config))
         except Exception:
             d["config"] = {}
         d["is_default"] = bool(d.get("is_default", 0))

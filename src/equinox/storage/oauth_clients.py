@@ -5,8 +5,8 @@ import logging
 from typing import Any, Dict, List, Optional
 
 from equinox.storage.database import Database
-from equinox.core.exceptions import StorageError, ValidationError
-from equinox.storage.utils import require_str as _require_str, _safe_json_loads
+from equinox.core.exceptions import StorageError, ValidationError, DuplicateError
+from equinox.storage.utils import require_str as _require_str, safe_json_loads
 
 logger = logging.getLogger(__name__)
 
@@ -94,9 +94,9 @@ class OAuthClientManager:
             )
             logger.info("Created OAuth2 client '%s' (id=%d)", name, row_id)
             return row_id
+        except DuplicateError:
+            raise DuplicateError(f"An OAuth2 client named '{name}' already exists")
         except Exception as exc:
-            if "UNIQUE constraint" in str(exc):
-                raise StorageError(f"An OAuth2 client named '{name}' already exists")
             raise StorageError(f"Failed to create OAuth2 client: {exc}") from exc
 
     # ── Read ──────────────────────────────────────────────────────────
@@ -188,9 +188,9 @@ class OAuthClientManager:
                 tuple(params),
             )
             logger.info("Updated OAuth2 client id=%d", client_id)
+        except DuplicateError:
+            raise DuplicateError(f"An OAuth2 client named '{name}' already exists")
         except Exception as exc:
-            if "UNIQUE constraint" in str(exc):
-                raise StorageError(f"An OAuth2 client named '{name}' already exists")
             raise StorageError(f"Failed to update OAuth2 client: {exc}") from exc
 
     def set_default(self, client_id: int) -> None:
@@ -238,7 +238,7 @@ class OAuthClientManager:
     @staticmethod
     def _decode(row) -> Dict[str, Any]:
         d = dict(row)
-        d["extra_params"] = _safe_json_loads(d.get("extra_params") or "{}")
+        d["extra_params"] = safe_json_loads(d.get("extra_params") or "{}")
         d["is_default"] = bool(d.get("is_default", 0))
         return d
 

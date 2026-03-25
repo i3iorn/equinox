@@ -6,8 +6,8 @@ import re
 from typing import List, Dict, Any, Optional
 
 from equinox.storage.database import Database
-from equinox.core.exceptions import StorageError, ValidationError, SecurityError
-from equinox.storage.utils import require_positive_int, validate_variable_key, validate_variable_value, _safe_json_loads, safe_json_dumps
+from equinox.core.exceptions import StorageError, ValidationError, SecurityError, DuplicateError
+from equinox.storage.utils import require_positive_int, validate_variable_key, validate_variable_value, safe_json_loads, safe_json_dumps
 from equinox.core.exceptions import SecurityError
 
 logger = logging.getLogger(__name__)
@@ -188,10 +188,9 @@ class EnvironmentManager:
             logger.info(f"Created environment '{name}' with ID {environment_id} and {len(sanitized_variables)} variables")
             return environment_id
 
+        except DuplicateError:
+            raise DuplicateError(f"Environment '{name}' already exists")
         except Exception as e:
-            # Check for unique constraint violation
-            if "UNIQUE constraint failed" in str(e):
-                raise StorageError(f"Environment '{name}' already exists")
             raise StorageError(f"Failed to create environment: {e}")
 
     def _decode_row(self, row: Dict[str, Any]) -> Dict[str, Any]:
@@ -203,8 +202,8 @@ class EnvironmentManager:
         Returns:
             Same row dict with variables and secret_keys parsed as Python objects
         """
-        row["variables"] = _safe_json_loads(row.get("variables"), row_id=row.get("id"))
-        secret_keys = _safe_json_loads(row.get("secret_keys") or "[]", row_id=row.get("id"))
+        row["variables"] = safe_json_loads(row.get("variables"), row_id=row.get("id"))
+        secret_keys = safe_json_loads(row.get("secret_keys") or "[]", row_id=row.get("id"))
         if not isinstance(secret_keys, list):
             logger.error("Failed to parse secret_keys for environment %s", row.get("id"))
             secret_keys = []
@@ -315,9 +314,9 @@ class EnvironmentManager:
             self.db.execute(query, tuple(params))
             logger.info(f"Updated environment '{environment['name']}' (ID: {environment_id})")
 
+        except DuplicateError:
+            raise DuplicateError(f"Environment name already exists")
         except Exception as e:
-            if "UNIQUE constraint failed" in str(e):
-                raise StorageError(f"Environment name already exists")
             raise StorageError(f"Failed to update environment: {e}")
 
     def set_active_environment(self, environment_id: int) -> None:

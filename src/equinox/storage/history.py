@@ -13,9 +13,9 @@ from equinox.core.request import Request, Response
 from equinox.core.exceptions import StorageError, ValidationError, SecurityError
 from equinox.storage.utils import (
     require_positive_int as _require_positive_int_impl,
-    _coerce_body_to_str,
-    _safe_json_dumps,
-    _safe_json_loads,
+    coerce_body_to_str,
+    safe_json_dumps,
+    safe_json_loads,
 )
 from equinox.core import urls
 
@@ -398,7 +398,7 @@ class HistoryManager:
             raise ValidationError("Request headers must be a dictionary")
 
         sanitized = redact_headers(headers)
-        headers_json = _safe_json_dumps(sanitized, max_len=self.MAX_HEADERS_SIZE)
+        headers_json = safe_json_dumps(sanitized, max_len=self.MAX_HEADERS_SIZE)
         return headers_json
 
     def _prepare_body(self, body: Any) -> Optional[str]:
@@ -437,7 +437,7 @@ class HistoryManager:
         response_headers = dict(response.headers) if response.headers else {}
         sanitized_response_headers = redact_headers(response_headers)
         try:
-            response_headers_json = _safe_json_dumps(
+            response_headers_json = safe_json_dumps(
                 sanitized_response_headers, max_len=self.MAX_HEADERS_SIZE
             )
         except SecurityError:
@@ -472,7 +472,7 @@ class HistoryManager:
         """
         # Delegate to module-level coercion helper for a single canonical
         # implementation used across the module.
-        return _coerce_body_to_str(body, strict=strict)
+        return coerce_body_to_str(body, strict=strict)
 
     def _truncate_error(self, error: Optional[str]) -> Optional[str]:
         """Coerce and truncate an error message string."""
@@ -498,7 +498,7 @@ class HistoryManager:
                 row[col] = {}
                 continue
             try:
-                row[col] = _safe_json_loads(row[col], row_id=row_id)
+                row[col] = safe_json_loads(row[col], row_id=row_id)
             except Exception:
                 # _safe_json_loads already logs; fall back to empty dict
                 row[col] = {}
@@ -692,7 +692,7 @@ class HistoryManager:
     @staticmethod
     def _matches_body_regex(row: Dict[str, Any], compiled_regex: "re.Pattern[str]") -> bool:
         """Return True if the response body matches the regex pattern."""
-        body = _coerce_body_to_str(row.get("response_body") or "")
+        body = coerce_body_to_str(row.get("response_body") or "") or ""
         return bool(compiled_regex.search(body))
 
     @staticmethod
@@ -705,19 +705,19 @@ class HistoryManager:
         
         If jsonpath_value is given, the first match must equal that value.
         """
-        body = _coerce_body_to_str(row.get("response_body") or "")
+        body = coerce_body_to_str(row.get("response_body") or "") or ""
         # Parse JSON body for JSONPath matching. Use the safe loader so
         # a corrupted JSON string doesn't raise; treat parse-failure as no-match.
         try:
-            data = _safe_json_loads(body)
-            # _safe_json_loads returns {} on failure; if body is non-empty and
+            data = safe_json_loads(body)
+            # safe_json_loads returns {} on failure; if body is non-empty and
             # parsing produced an empty dict, treat as parse failure to preserve
             # previous behavior (which returned False on JSONDecodeError).
             if body and body.strip() and data == {}:
                 return False
         except Exception:
             return False
-        
+
         matches = parsed_jsonpath.find(data)
         if not matches:
             return False
@@ -737,7 +737,7 @@ class HistoryManager:
         resp_headers = row.get("response_headers") or {}
         if isinstance(resp_headers, str):
             # Use safe loader to avoid noisy exceptions on malformed DB values
-            resp_headers = _safe_json_loads(resp_headers, row_id=row.get("id"))
+            resp_headers = safe_json_loads(resp_headers, row_id=row.get("id"))
             if not isinstance(resp_headers, dict):
                 resp_headers = {}
         
@@ -834,12 +834,8 @@ class HistoryManager:
                     normalized_url,
                     # Serialize path_segments / query_params using safe dumps
                     # with conservative size limits to avoid bloating the index.
-                    (lambda obj: _safe_json_dumps(obj, max_len=4096))(
-                        path_segments
-                    ),
-                    (lambda obj: _safe_json_dumps(obj, max_len=8192))(
-                        query_params
-                    ),
+                    (lambda obj: safe_json_dumps(obj, max_len=4096))(path_segments),
+                    (lambda obj: safe_json_dumps(obj, max_len=8192))(query_params),
                     body_hash,
                     response_success,
                     executed_at,

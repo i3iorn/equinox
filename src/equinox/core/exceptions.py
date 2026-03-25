@@ -39,6 +39,15 @@ class StorageError(EquinoxError):
     pass
 
 
+class DuplicateError(StorageError):
+    """Raised when a unique constraint or duplicate-key violation occurs in storage.
+
+    Subclasses :class:`StorageError` so existing code that catches StorageError
+    remains compatible, but callers can catch DuplicateError for more granular
+    handling.
+    """
+    pass
+
 class PluginError(EquinoxError):
     """Plugin loading or execution error."""
     pass
