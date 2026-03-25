@@ -1,6 +1,7 @@
 """HAR (HTTP Archive) importer — creates a collection from a .har file."""
 
 import json
+from equinox.storage.utils import safe_json_loads
 import logging
 from pathlib import Path
 from typing import Optional
@@ -65,9 +66,12 @@ class HARImporter:
             raise ValueError(f"Cannot read HAR file: {exc}") from exc
 
         try:
+            # Use strict json.loads here so that invalid JSON raises a ValueError
             har = json.loads(text)
-        except json.JSONDecodeError as exc:
-            raise ValueError(f"Invalid JSON in HAR file: {exc}") from exc
+        except ValueError as exc:
+            raise ValueError("Invalid JSON in HAR file") from exc
+        if not isinstance(har, dict):
+            raise ValueError("Invalid JSON in HAR file: top-level object is not a mapping")
 
         try:
             log = har["log"]

@@ -7,7 +7,8 @@ from typing import List, Dict, Any, Optional
 
 from equinox.storage.database import Database
 from equinox.core.exceptions import StorageError, ValidationError, SecurityError
-from equinox.storage.utils import require_positive_int, validate_variable_key, validate_variable_value
+from equinox.storage.utils import require_positive_int, validate_variable_key, validate_variable_value, _safe_json_loads, safe_json_dumps
+from equinox.core.exceptions import SecurityError
 
 logger = logging.getLogger(__name__)
 
@@ -176,9 +177,13 @@ class EnvironmentManager:
 
 
         try:
+            try:
+                vars_json = safe_json_dumps(sanitized_variables, max_len=200_000)
+            except SecurityError as exc:
+                raise SecurityError(f"Environment variables too large: {exc}") from exc
             environment_id = self.db.insert(
                 "INSERT INTO environments (name, description, variables) VALUES (?, ?, ?)",
-                (name, description, json.dumps(sanitized_variables)),
+                (name, description, vars_json),
             )
             logger.info(f"Created environment '{name}' with ID {environment_id} and {len(sanitized_variables)} variables")
             return environment_id
@@ -198,16 +203,12 @@ class EnvironmentManager:
         Returns:
             Same row dict with variables and secret_keys parsed as Python objects
         """
-        try:
-            row["variables"] = json.loads(row["variables"])
-        except (json.JSONDecodeError, TypeError):
-            logger.error("Failed to parse variables for environment %s", row.get("id"))
-            row["variables"] = {}
-        try:
-            row["secret_keys"] = json.loads(row.get("secret_keys") or "[]")
-        except (json.JSONDecodeError, TypeError):
+        row["variables"] = _safe_json_loads(row.get("variables"), row_id=row.get("id"))
+        secret_keys = _safe_json_loads(row.get("secret_keys") or "[]", row_id=row.get("id"))
+        if not isinstance(secret_keys, list):
             logger.error("Failed to parse secret_keys for environment %s", row.get("id"))
-            row["secret_keys"] = []
+            secret_keys = []
+        row["secret_keys"] = secret_keys
         return row
 
     def get_environment(self, environment_id: int) -> Optional[Dict[str, Any]]:
@@ -290,12 +291,18 @@ class EnvironmentManager:
         if variables is not None:
             sanitized_variables = self._validate_variables(variables)
             updates.append("variables = ?")
-            params.append(json.dumps(sanitized_variables))
+            try:
+                params.append(safe_json_dumps(sanitized_variables, max_len=200_000))
+            except SecurityError as exc:
+                raise SecurityError(f"Environment variables too large: {exc}") from exc
 
         if secret_keys is not None:
             validated_keys = self._validate_secret_keys(secret_keys)
             updates.append("secret_keys = ?")
-            params.append(json.dumps(validated_keys))
+            try:
+                params.append(safe_json_dumps(validated_keys, max_len=10_000))
+            except SecurityError:
+                params.append(json.dumps(validated_keys)[:10000])
 
         if not updates:
             logger.warning(f"No updates provided for environment {environment_id}")

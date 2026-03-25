@@ -4,17 +4,26 @@ import json
 import logging
 import hashlib
 import re
-from typing import List, Dict, Any, Optional, Pattern, Tuple
+from typing import List, Dict, Any, Optional, Tuple
 from collections import namedtuple
 
 from equinox.core.redact import redact_headers, redact_url
 from equinox.storage.database import Database
 from equinox.core.request import Request, Response
 from equinox.core.exceptions import StorageError, ValidationError, SecurityError
-from equinox.storage.utils import require_positive_int as _require_positive_int_impl
+from equinox.storage.utils import (
+    require_positive_int as _require_positive_int_impl,
+    _coerce_body_to_str,
+    _safe_json_dumps,
+    _safe_json_loads,
+)
 from equinox.core import urls
 
 logger = logging.getLogger(__name__)
+
+# Indexing guards for history_index payload sizes
+MAX_INDEX_PATH_SEGMENTS = 64
+MAX_INDEX_QUERY_PARAMS = 128
 
 # Response fields as a named tuple for clarity
 ResponseFields = namedtuple(
@@ -119,14 +128,16 @@ class HistoryManager:
             )
             try:
                 # Populate normalized index for faster intelligent matching/search
-                self._index_history_row(history_id, method, sanitized_url, status_code, response_body)
+                # Pass the raw response object where available so hashing uses raw bytes
+                self._index_history_row(history_id, method, sanitized_url, status_code, response)
             except Exception as idx_exc:
                 logger.debug("Failed to index history row %s: %s", history_id, idx_exc)
             return history_id
 
         except Exception as insert_exc:
             logger.error("Failed to save history entry: %s", insert_exc)
-            raise StorageError(f"Failed to save history: {insert_exc}")
+            # Preserve original traceback context for easier debugging
+            raise StorageError(f"Failed to save history: {insert_exc}") from insert_exc
 
     def delete_history(self, history_id: int) -> None:
         """Delete a history entry by ID.
@@ -387,12 +398,7 @@ class HistoryManager:
             raise ValidationError("Request headers must be a dictionary")
 
         sanitized = redact_headers(headers)
-        headers_json = json.dumps(sanitized)
-
-        if len(headers_json) > self.MAX_HEADERS_SIZE:
-            raise SecurityError(
-                f"Request headers too large (max {self.MAX_HEADERS_SIZE} bytes)"
-            )
+        headers_json = _safe_json_dumps(sanitized, max_len=self.MAX_HEADERS_SIZE)
         return headers_json
 
     def _prepare_body(self, body: Any) -> Optional[str]:
@@ -430,11 +436,14 @@ class HistoryManager:
 
         response_headers = dict(response.headers) if response.headers else {}
         sanitized_response_headers = redact_headers(response_headers)
-        response_headers_json = json.dumps(sanitized_response_headers)
-
-        if len(response_headers_json) > self.MAX_HEADERS_SIZE:
+        try:
+            response_headers_json = _safe_json_dumps(
+                sanitized_response_headers, max_len=self.MAX_HEADERS_SIZE
+            )
+        except SecurityError:
             logger.warning("Response headers too large, storing truncated version")
-            response_headers_json = response_headers_json[:self.MAX_HEADERS_SIZE] + "..."
+            # Fallback: best-effort truncated representation
+            response_headers_json = json.dumps(sanitized_response_headers)[: self.MAX_HEADERS_SIZE] + "..."
 
         response_body = self._decode_body(response.body)
         response_body = self._prepare_body(response_body)
@@ -461,22 +470,9 @@ class HistoryManager:
         Raises:
             UnicodeDecodeError: If strict=True and decoding fails
         """
-        if body is None:
-            return None
-        
-        if isinstance(body, bytes):
-            try:
-                return body.decode("utf-8", errors="replace")
-            except Exception as exc:
-                if strict:
-                    raise
-                return ""
-        
-        if isinstance(body, str):
-            return body
-        
-        # Coerce other types to string
-        return str(body)
+        # Delegate to module-level coercion helper for a single canonical
+        # implementation used across the module.
+        return _coerce_body_to_str(body, strict=strict)
 
     def _truncate_error(self, error: Optional[str]) -> Optional[str]:
         """Coerce and truncate an error message string."""
@@ -502,12 +498,9 @@ class HistoryManager:
                 row[col] = {}
                 continue
             try:
-                row[col] = json.loads(row[col])
-            except (json.JSONDecodeError, TypeError) as exc:
-                if row_id is not None:
-                    logger.error(
-                        "Failed to parse %s for history %d: %s", col, row_id, exc
-                    )
+                row[col] = _safe_json_loads(row[col], row_id=row_id)
+            except Exception:
+                # _safe_json_loads already logs; fall back to empty dict
                 row[col] = {}
 
     # ── Validation helpers ────────────────────────────────────────────────────
@@ -699,7 +692,7 @@ class HistoryManager:
     @staticmethod
     def _matches_body_regex(row: Dict[str, Any], compiled_regex: "re.Pattern[str]") -> bool:
         """Return True if the response body matches the regex pattern."""
-        body = _decode_bytes_body(row.get("response_body") or "")
+        body = _coerce_body_to_str(row.get("response_body") or "")
         return bool(compiled_regex.search(body))
 
     @staticmethod
@@ -712,10 +705,17 @@ class HistoryManager:
         
         If jsonpath_value is given, the first match must equal that value.
         """
-        body = _decode_bytes_body(row.get("response_body") or "")
+        body = _coerce_body_to_str(row.get("response_body") or "")
+        # Parse JSON body for JSONPath matching. Use the safe loader so
+        # a corrupted JSON string doesn't raise; treat parse-failure as no-match.
         try:
-            data = json.loads(body)
-        except (json.JSONDecodeError, TypeError):
+            data = _safe_json_loads(body)
+            # _safe_json_loads returns {} on failure; if body is non-empty and
+            # parsing produced an empty dict, treat as parse failure to preserve
+            # previous behavior (which returned False on JSONDecodeError).
+            if body and body.strip() and data == {}:
+                return False
+        except Exception:
             return False
         
         matches = parsed_jsonpath.find(data)
@@ -736,9 +736,9 @@ class HistoryManager:
         """Return True if any response header matches the name/value filter."""
         resp_headers = row.get("response_headers") or {}
         if isinstance(resp_headers, str):
-            try:
-                resp_headers = json.loads(resp_headers)
-            except (json.JSONDecodeError, TypeError):
+            # Use safe loader to avoid noisy exceptions on malformed DB values
+            resp_headers = _safe_json_loads(resp_headers, row_id=row.get("id"))
+            if not isinstance(resp_headers, dict):
                 resp_headers = {}
         
         for key, value in resp_headers.items():
@@ -769,7 +769,7 @@ class HistoryManager:
         method: str,
         url: str,
         status_code: Optional[int],
-        response_body: Any,
+        response_obj: Any,
     ) -> None:
         """Create or update a normalized index row for a history entry.
 
@@ -784,14 +784,38 @@ class HistoryManager:
             path_segments = parts.get("path_segments") or []
             query_params = parts.get("query_params") or {}
 
-            # Body hash for quick comparisons
+            # Guard index payload sizes to avoid storing huge JSON blobs
+            if len(path_segments) > MAX_INDEX_PATH_SEGMENTS:
+                path_segments = path_segments[:MAX_INDEX_PATH_SEGMENTS]
+            if isinstance(query_params, dict) and len(query_params) > MAX_INDEX_QUERY_PARAMS:
+                # Keep only the first N keys deterministically
+                limited = {}
+                for i, (k, v) in enumerate(query_params.items()):
+                    if i >= MAX_INDEX_QUERY_PARAMS:
+                        break
+                    limited[k] = v
+                query_params = limited
+
+            # Body hash for quick comparisons. Prefer raw response bytes when
+            # available (keeps hashing deterministic even when stored body is truncated).
             body_hash = None
-            if response_body is not None:
-                if isinstance(response_body, (bytes, bytearray)):
-                    body_bytes = bytes(response_body)
-                else:
-                    body_bytes = str(response_body).encode("utf-8")
-                body_hash = hashlib.sha256(body_bytes).hexdigest()
+            resp = response_obj
+            if resp is not None:
+                # Try to extract raw bytes from a Response-like object
+                raw = None
+                try:
+                    if hasattr(resp, "body") and isinstance(resp.body, (bytes, bytearray)):
+                        raw = bytes(resp.body)
+                    elif hasattr(resp, "content") and isinstance(resp.content, (bytes, bytearray)):
+                        raw = bytes(resp.content)
+                    else:
+                        # Fallback to provided object/string representation
+                        raw = str(resp).encode("utf-8")
+                except Exception:
+                    raw = None
+
+                if raw is not None:
+                    body_hash = hashlib.sha256(raw).hexdigest()
 
             response_success = 1 if (isinstance(status_code, int) and 200 <= status_code < 300) else 0
 
@@ -808,8 +832,14 @@ class HistoryManager:
                     history_id,
                     method,
                     normalized_url,
-                    json.dumps(path_segments),
-                    json.dumps(query_params),
+                    # Serialize path_segments / query_params using safe dumps
+                    # with conservative size limits to avoid bloating the index.
+                    (lambda obj: _safe_json_dumps(obj, max_len=4096))(
+                        path_segments
+                    ),
+                    (lambda obj: _safe_json_dumps(obj, max_len=8192))(
+                        query_params
+                    ),
                     body_hash,
                     response_success,
                     executed_at,
@@ -820,15 +850,5 @@ class HistoryManager:
             logger.debug("Indexing history row failed: %s", exc)
 
 
-# ── Module-level helpers ──────────────────────────────────────────────────────
 
-
-def _decode_bytes_body(body: Any) -> str:
-    """Coerce a bytes or str body to str for regex/JSON matching."""
-    if isinstance(body, bytes):
-        try:
-            return body.decode("utf-8", errors="replace")
-        except Exception:
-            return ""
-    return body or ""
-
+# module helpers moved to equinox.storage.utils

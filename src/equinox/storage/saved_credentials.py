@@ -9,9 +9,9 @@ import logging
 from typing import Any, Dict, List, Optional
 
 from equinox.storage.database import Database
-from equinox.core.exceptions import StorageError, ValidationError
+from equinox.core.exceptions import StorageError, ValidationError, SecurityError
 from equinox.core.auth_cipher import encrypt_auth_data, decrypt_auth_data
-from equinox.storage.utils import require_str as _require_str
+from equinox.storage.utils import require_str as _require_str, _safe_json_loads, safe_json_dumps
 
 logger = logging.getLogger(__name__)
 
@@ -71,7 +71,11 @@ class SavedCredentialsManager:
             raise ValidationError(
                 f"auth_type must be one of: {', '.join(AUTH_TYPES)}"
             )
-        config_json = encrypt_auth_data(json.dumps(config or {}))
+        try:
+            cfg = safe_json_dumps(config or {}, max_len=50_000)
+        except SecurityError as exc:
+            raise ValidationError(f"Credential config too large: {exc}") from exc
+        config_json = encrypt_auth_data(cfg)
         try:
             row_id = self.db.insert(
                 """
@@ -166,7 +170,11 @@ class SavedCredentialsManager:
             params.append(auth_type)
         if config is not None:
             updates.append("config = ?")
-            params.append(encrypt_auth_data(json.dumps(config)))
+            try:
+                cfg = safe_json_dumps(config, max_len=50_000)
+            except SecurityError as exc:
+                raise ValidationError(f"Credential config too large: {exc}") from exc
+            params.append(encrypt_auth_data(cfg))
         if description is not None:
             updates.append("description = ?")
             params.append(self._opt_str(description, "description", self.MAX_DESC_LEN))
@@ -338,10 +346,10 @@ class SavedCredentialsManager:
     @staticmethod
     def _decode(row) -> Dict[str, Any]:
         d = dict(row)
+        raw_config = d.get("config") or "{}"
         try:
-            raw_config = d.get("config") or "{}"
-            d["config"] = json.loads(decrypt_auth_data(raw_config))
-        except (json.JSONDecodeError, TypeError):
+            d["config"] = _safe_json_loads(decrypt_auth_data(raw_config))
+        except Exception:
             d["config"] = {}
         d["is_default"] = bool(d.get("is_default", 0))
         return d

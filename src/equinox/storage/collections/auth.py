@@ -1,11 +1,11 @@
 """Auth serialization and resolution methods for CollectionManager."""
 
-import json
 import logging
 from typing import Optional
 
 from equinox.core.auth_cipher import encrypt_auth_data, decrypt_auth_data
-from equinox.core.exceptions import StorageError
+from equinox.core.exceptions import StorageError, SecurityError
+from equinox.storage.utils import safe_json_loads, safe_json_dumps
 
 logger = logging.getLogger(__name__)
 
@@ -28,7 +28,14 @@ class CollectionAuthMixin:
             return None, None
         try:
             d = auth.to_dict()
-            return d.get("type"), encrypt_auth_data(json.dumps(d))
+            try:
+                blob = safe_json_dumps(d, max_len=50_000)
+            except SecurityError:
+                # fallback to plain dumps if the safe wrapper rejects the size
+                import json as _json
+
+                blob = _json.dumps(d)
+            return d.get("type"), encrypt_auth_data(blob)
         except Exception as exc:
             raise StorageError(
                 f"Failed to serialize auth ({type(auth).__name__}): {exc}"
@@ -45,8 +52,12 @@ class CollectionAuthMixin:
             return None
         from equinox.auth import BearerAuth, APIKeyAuth, BasicAuth, OAuth2Auth
         try:
-            d = json.loads(decrypt_auth_data(auth_data))
-        except (ValueError, TypeError):
+            # Use safe JSON loader for DB-stored auth blobs; malformed blobs
+            # should degrade to no-auth rather than raising during UI flows.
+            d = safe_json_loads(decrypt_auth_data(auth_data))
+            if not d:
+                return None
+        except Exception:
             return None
         t = d.get("type", auth_type)
         if t == "bearer":

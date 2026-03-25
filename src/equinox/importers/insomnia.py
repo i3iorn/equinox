@@ -1,6 +1,7 @@
 """Insomnia v4 collection importer."""
 
 import json
+from equinox.storage.utils import safe_json_loads
 import logging
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -53,7 +54,9 @@ class InsomniaImporter:
                 )
 
         text = path.read_text(encoding="utf-8")
-        data = json.loads(text)
+        data = safe_json_loads(text)
+        if not isinstance(data, dict):
+            raise ValueError("Invalid Insomnia export JSON")
         self._import_data(data)
 
     # ── Internal helpers ──────────────────────────────────────────────

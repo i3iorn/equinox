@@ -1,15 +1,9 @@
-"""Simple heuristic recommender for API requests based on local history.
-
-This is a minimal, explainable implementation intended as an MVP. It
-queries the `history_index` table (created by migrations) and computes
-similarity scores to produce header/query/body suggestions.
-"""
-
 import json
 import logging
 from typing import Dict, Any, List, Tuple
 
 from equinox.storage.database import Database
+from equinox.storage.utils import _safe_json_loads
 from equinox.core import urls
 
 logger = logging.getLogger(__name__)
@@ -109,12 +103,15 @@ class Recommender:
         for r in rows:
             try:
                 r = dict(r)
-                r["path_segments"] = json.loads(r.get("path_segments") or "[]")
-                r["query_params"] = json.loads(r.get("query_params") or "{}")
+                r["path_segments"] = _safe_json_loads(r.get("path_segments") or "[]")
+                if not isinstance(r["path_segments"], list):
+                    r["path_segments"] = []
+                r["query_params"] = _safe_json_loads(r.get("query_params") or "{}")
+                if not isinstance(r["query_params"], dict):
+                    r["query_params"] = {}
                 # request_headers is stored as JSON in history.request_headers
-                try:
-                    r["request_headers"] = json.loads(r.get("request_headers") or "{}")
-                except Exception:
+                r["request_headers"] = _safe_json_loads(r.get("request_headers") or "{}")
+                if not isinstance(r["request_headers"], dict):
                     r["request_headers"] = {}
                 candidates.append(r)
             except Exception:

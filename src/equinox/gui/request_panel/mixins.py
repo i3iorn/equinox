@@ -317,6 +317,66 @@ class _RequestSendMixin:
                 log_panel.log_error(self.current_request, result.message)
             _save_history_safe(self.db, self.current_request, error=result.message)
             self._persist_inherited_auth_tokens()
+            # Try to provide helpful hints from local history using Recommender
+            try:
+                from equinox.intelligence import Recommender
+                rec = Recommender(self.db)
+                probe = {"method": getattr(self.current_request, "method", ""), "url": getattr(self.current_request, "url", "")}
+                suggestions = rec.generate_suggestions(probe, top_n=5)
+                if suggestions:
+                            # Convert recommender suggestions into Response Intelligence Findings
+                            try:
+                                from equinox.core.response_intelligence.models import (
+                                    Category, Finding, Severity,
+                                )
+                                findings = []
+                                for s in suggestions:
+                                    stype = s.get("type")
+                                    if stype == "header":
+                                        title = f"Suggested header: {s.get('key')}"
+                                        desc = (
+                                            f"Set header {s.get('key')} = {s.get('suggested_value')} "
+                                            f"(confidence {s.get('confidence'):.2f})"
+                                        )
+                                    elif stype == "query":
+                                        title = f"Suggested query parameter: {s.get('key')}"
+                                        desc = (
+                                            f"Add query param {s.get('key')} "
+                                            f"(seen in {s.get('based_on')} requests, confidence {s.get('confidence'):.2f})"
+                                        )
+                                    else:
+                                        title = "Suggested change"
+                                        desc = str(s)
+
+                                    severity = Severity.WARNING if (s.get("confidence", 0) >= 0.75) else Severity.INFO
+                                    finding = Finding(
+                                        Category.HINTS,
+                                        severity,
+                                        title,
+                                        desc,
+                                        analyzer_id="recommender",
+                                        details=dict(s),
+                                    )
+                                    findings.append(finding)
+
+                                # Publish findings to the Intelligence panel if available
+                                try:
+                                    win = self.window()
+                                    rp = getattr(win, "response_panel", None)
+                                    if rp and hasattr(rp, "intelligence_panel"):
+                                        rp.intelligence_panel.display_findings(findings)
+                                        rp.set_intelligence_badge(len(findings))
+                                    else:
+                                        # Best-effort fallback
+                                        self._status_message("Suggestions available (open Intelligence panel)", 8000)
+                                except Exception:
+                                    logger.debug("Failed to publish recommender findings to Intelligence panel", exc_info=True)
+                            except Exception:
+                                # Keep original behavior silent on any conversion/display failure
+                                logger.debug("Failed to convert recommender suggestions to findings", exc_info=True)
+            except Exception:
+                # Don't let recommender errors affect the error flow
+                logger.debug("Recommender failed while generating hints", exc_info=True)
 
         elif isinstance(result, Exception):
             # Fallback for any exception that slipped through un-enriched
@@ -350,6 +410,65 @@ class _RequestSendMixin:
             if log_panel:
                 log_panel.log_response(self.current_request, response)
             _save_history_safe(self.db, self.current_request, response)
+
+            # If response indicates failure (HTTP 4xx/5xx), offer recommender hints
+            try:
+                if response.status_code >= 400:
+                    from equinox.intelligence import Recommender
+                    rec = Recommender(self.db)
+                    probe = {"method": getattr(self.current_request, "method", ""), "url": getattr(self.current_request, "url", "")}
+                    suggestions = rec.generate_suggestions(probe, top_n=5)
+                    if suggestions:
+                        # Convert recommender suggestions into Response Intelligence Findings
+                        try:
+                            from equinox.core.response_intelligence.models import (
+                                Category, Finding, Severity,
+                            )
+                            findings = []
+                            for s in suggestions:
+                                stype = s.get("type")
+                                if stype == "header":
+                                    title = f"Suggested header: {s.get('key')}"
+                                    desc = (
+                                        f"Set header {s.get('key')} = {s.get('suggested_value')} "
+                                        f"(confidence {s.get('confidence'):.2f})"
+                                    )
+                                elif stype == "query":
+                                    title = f"Suggested query parameter: {s.get('key')}"
+                                    desc = (
+                                        f"Add query param {s.get('key')} "
+                                        f"(seen in {s.get('based_on')} requests, confidence {s.get('confidence'):.2f})"
+                                    )
+                                else:
+                                    title = "Suggested change"
+                                    desc = str(s)
+
+                                severity = Severity.WARNING if (s.get("confidence", 0) >= 0.75) else Severity.INFO
+                                finding = Finding(
+                                    Category.HINTS,
+                                    severity,
+                                    title,
+                                    desc,
+                                    analyzer_id="recommender",
+                                    details=dict(s),
+                                )
+                                findings.append(finding)
+
+                            # Publish findings to the Intelligence panel if available
+                            try:
+                                win = self.window()
+                                rp = getattr(win, "response_panel", None)
+                                if rp and hasattr(rp, "intelligence_panel"):
+                                    rp.intelligence_panel.display_findings(findings)
+                                    rp.set_intelligence_badge(len(findings))
+                                else:
+                                    self._status_message("Suggestions available (open Intelligence panel)", 8000)
+                            except Exception:
+                                logger.debug("Failed to publish recommender findings to Intelligence panel", exc_info=True)
+                        except Exception:
+                            logger.debug("Failed to convert recommender suggestions to findings", exc_info=True)
+            except Exception:
+                logger.debug("Recommender failed during response handling", exc_info=True)
 
             # Save refreshed tokens back to DB so subsequent requests (and
             # navigation) reuse the cached token rather than fetching a new one.

@@ -6,7 +6,7 @@ from typing import Any, Dict, List, Optional
 
 from equinox.storage.database import Database
 from equinox.core.exceptions import StorageError, ValidationError
-from equinox.storage.utils import require_str as _require_str
+from equinox.storage.utils import require_str as _require_str, _safe_json_loads
 
 logger = logging.getLogger(__name__)
 
@@ -238,10 +238,7 @@ class OAuthClientManager:
     @staticmethod
     def _decode(row) -> Dict[str, Any]:
         d = dict(row)
-        try:
-            d["extra_params"] = json.loads(d.get("extra_params") or "{}")
-        except (json.JSONDecodeError, TypeError):
-            d["extra_params"] = {}
+        d["extra_params"] = _safe_json_loads(d.get("extra_params") or "{}")
         d["is_default"] = bool(d.get("is_default", 0))
         return d
 

@@ -18,6 +18,7 @@ from equinox.core.request import Request
 from equinox.core.exceptions import ValidationError, SecurityError
 from equinox.core.validation import Validator
 from equinox.storage.collections import CollectionManager
+from equinox.storage.utils import safe_json_loads
 
 logger = logging.getLogger(__name__)
 
@@ -169,9 +170,15 @@ class OpenAPIImporter:
             try:
                 spec_data = yaml.safe_load(content)
             except yaml.YAMLError:
-                spec_data = json.loads(content)
-        except json.JSONDecodeError as exc:
-            raise ValidationError(f"Invalid JSON/YAML: {exc}")
+                # Try strict JSON parse so invalid JSON is reported as such
+                try:
+                    spec_data = json.loads(content)
+                except ValueError:
+                    raise ValidationError("Invalid JSON")
+                if not isinstance(spec_data, dict):
+                    raise ValidationError("Invalid JSON")
+        except ValidationError:
+            raise
         except Exception as exc:
             raise ValidationError(f"Failed to read file: {exc}")
         return self.import_dict(spec_data)
@@ -713,9 +720,14 @@ def preview_spec(file_path: Path) -> Dict[str, Any]:
         try:
             spec_data = yaml.safe_load(content)
         except yaml.YAMLError:
-            spec_data = json.loads(content)
-    except json.JSONDecodeError as exc:
-        raise ValidationError(f"Invalid JSON/YAML: {exc}")
+            try:
+                spec_data = json.loads(content)
+            except ValueError:
+                raise ValidationError("Invalid JSON")
+            if not isinstance(spec_data, dict):
+                raise ValidationError("Invalid JSON")
+    except Exception as exc:
+        raise ValidationError(f"Could not read or parse spec file: {exc}") from exc
 
     info = spec_data.get("info", {})
     version = spec_data.get("openapi") or spec_data.get("swagger", "Unknown")

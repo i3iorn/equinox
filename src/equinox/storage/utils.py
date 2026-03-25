@@ -1,5 +1,8 @@
 """Shared validation utilities for storage managers."""
 
+import json
+from typing import Any, Optional, Dict
+
 from equinox.core.exceptions import ValidationError
 
 
@@ -73,4 +76,80 @@ def require_str(value, field: str, max_len: int, required: bool = True) -> str:
     if len(value) > max_len:
         raise ValidationError(f"'{field}' is too long (max {max_len} chars)")
     return value
+
+
+# Additional helpers used by storage modules for consistent JSON and body handling
+def _coerce_body_to_str(body: Any, strict: bool = False) -> Optional[str]:
+    """Coerce bytes/str/other body to a string suitable for indexing and matching.
+
+    Returns None when body is None. If strict=True then decoding errors raise;
+    otherwise decoding errors return an empty string.
+    """
+    if body is None:
+        return None
+
+    if isinstance(body, (bytes, bytearray)):
+        try:
+            return bytes(body).decode("utf-8", errors="strict" if strict else "replace")
+        except Exception:
+            if strict:
+                raise
+            return ""
+
+    if isinstance(body, str):
+        return body
+
+    # Coerce other types to string
+    try:
+        return str(body)
+    except Exception:
+        return ""
+
+
+def _safe_json_dumps(obj: Any, *, max_len: int) -> str:
+    """Serialize to JSON and enforce a maximum byte-length.
+
+    Raises SecurityError if the resulting JSON exceeds max_len.
+    """
+    s = json.dumps(obj)
+    if len(s) > max_len:
+        from equinox.core.exceptions import SecurityError as _SE
+
+        raise _SE(f"JSON serialization exceeds {max_len} bytes")
+    return s
+
+
+def _safe_json_loads(s: Optional[str], *, row_id: Optional[int] = None) -> Dict[str, Any]:
+    """Safely parse JSON string to dict. Logs parsing errors and returns {} on failure.
+
+    If row_id is provided, the parse error is logged with context.
+    """
+    if not s:
+        return {}
+    try:
+        return json.loads(s)
+    except (json.JSONDecodeError, TypeError) as exc:
+        import logging
+
+        logger = logging.getLogger(__name__)
+        if row_id is not None:
+            logger.error("Failed to parse JSON for history %s: %s", row_id, exc)
+        else:
+            logger.debug("Failed to parse JSON: %s", exc)
+        return {}
+
+
+# Public aliases (preferred by external modules). Keep the internal
+# underscore-prefixed names for backwards compatibility with older imports.
+def coerce_body_to_str(body: Any, strict: bool = False) -> Optional[str]:
+    return _coerce_body_to_str(body, strict=strict)
+
+
+def safe_json_dumps(obj: Any, *, max_len: int) -> str:
+    return _safe_json_dumps(obj, max_len=max_len)
+
+
+def safe_json_loads(s: Optional[str], *, row_id: Optional[int] = None) -> Dict[str, Any]:
+    return _safe_json_loads(s, row_id=row_id)
+
 

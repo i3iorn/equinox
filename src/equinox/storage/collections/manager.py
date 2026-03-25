@@ -11,7 +11,8 @@ from equinox.storage.collections.variables import CollectionVariablesMixin
 from equinox.storage.database import Database
 from equinox.core.request import Request
 from equinox.core.exceptions import StorageError, ValidationError
-from equinox.storage.utils import require_positive_int
+from equinox.storage.utils import require_positive_int, _safe_json_loads, safe_json_dumps
+from equinox.core.exceptions import SecurityError
 
 logger = logging.getLogger(__name__)
 
@@ -24,9 +25,17 @@ def _params_to_json(request: Request) -> str:
     Otherwise the plain ``params`` dict is stored for backward compatibility.
     """
     params_list = request.params_list
-    if params_list:
-        return json.dumps(params_list)
-    return json.dumps(request.params) if request.params else "[]"
+    try:
+        if params_list:
+            return safe_json_dumps(params_list, max_len=50_000)
+        return safe_json_dumps(request.params or {}, max_len=50_000) if request.params else "[]"
+    except SecurityError:
+        # Fallback: fall back to simple dumps truncated to limit
+        try:
+            s = json.dumps(params_list) if params_list else json.dumps(request.params or {})
+            return s[:50000] + "..."
+        except Exception:
+            return "[]"
 
 
 def _params_from_json(raw_str: str):
@@ -37,7 +46,7 @@ def _params_from_json(raw_str: str):
     """
     if not raw_str:
         return {}, []
-    raw = json.loads(raw_str)
+    raw = _safe_json_loads(raw_str)
     if isinstance(raw, list):
         params_list = raw
         params = {
@@ -321,8 +330,14 @@ class CollectionManager(
 
         req_name = self._resolve_request_name(name or request.name or f"{request.method} {request.url}")
         auth_type, auth_data = self._serialize_auth(request.auth)
-        captures_json   = json.dumps(request.captures)   if request.captures   else "[]"
-        assertions_json = json.dumps(request.assertions) if request.assertions else "[]"
+        try:
+            captures_json = safe_json_dumps(request.captures or [], max_len=50_000) if request.captures else "[]"
+        except SecurityError:
+            captures_json = json.dumps(request.captures)[:50000] + "..."
+        try:
+            assertions_json = safe_json_dumps(request.assertions or [], max_len=50_000) if request.assertions else "[]"
+        except SecurityError:
+            assertions_json = json.dumps(request.assertions)[:50000] + "..."
 
         try:
             req_id = self.db.insert(
@@ -340,7 +355,7 @@ class CollectionManager(
                     request.description or "",
                     request.method,
                     request.url,
-                    json.dumps(request.headers) if request.headers else "{}",
+                    (lambda obj: safe_json_dumps(obj, max_len=100_000) if obj else "{}")(request.headers),
                     _params_to_json(request),
                     request.body,
                     auth_type,
@@ -355,7 +370,7 @@ class CollectionManager(
                     request.timeout,
                     int(request.verify_ssl),
                     int(request.follow_redirects),
-                    json.dumps(request.path_params) if request.path_params else "{}",
+                    (lambda obj: safe_json_dumps(obj, max_len=50_000) if obj else "{}")(request.path_params),
                 ),
             )
             logger.info(f"Saved request '{req_name}' with ID {req_id} to collection {coll_id}")
@@ -447,26 +462,26 @@ class CollectionManager(
 
     def _row_to_request(self, row: Dict[str, Any]) -> Request:
         """Convert a database row to a Request object."""
-        headers = json.loads(row["headers"]) if row["headers"] else {}
+        headers = _safe_json_loads(row.get("headers")) if row.get("headers") else {}
         params, params_list = _params_from_json(row.get("params", ""))
         auth = self._deserialize_auth(row.get("auth_type"), row.get("auth_data"))
 
         try:
-            captures = json.loads(row["captures"]) if row.get("captures") else []
+            captures = _safe_json_loads(row.get("captures")) if row.get("captures") else []
             if not isinstance(captures, list):
                 captures = []
         except (ValueError, TypeError):
             captures = []
 
         try:
-            assertions = json.loads(row["assertions"]) if row.get("assertions") else []
+            assertions = _safe_json_loads(row.get("assertions")) if row.get("assertions") else []
             if not isinstance(assertions, list):
                 assertions = []
         except (ValueError, TypeError):
             assertions = []
 
         try:
-            path_params = json.loads(row["path_params"]) if row.get("path_params") else {}
+            path_params = _safe_json_loads(row.get("path_params")) if row.get("path_params") else {}
             if not isinstance(path_params, dict):
                 path_params = {}
         except (ValueError, TypeError):
@@ -516,8 +531,14 @@ class CollectionManager(
             raise ValidationError("Cannot update request without an ID")
 
         auth_type, auth_data = self._serialize_auth(request.auth)
-        captures_json   = json.dumps(request.captures)   if request.captures   else "[]"
-        assertions_json = json.dumps(request.assertions) if request.assertions else "[]"
+        try:
+            captures_json = safe_json_dumps(request.captures or [], max_len=50_000) if request.captures else "[]"
+        except SecurityError:
+            captures_json = json.dumps(request.captures)[:50000] + "..."
+        try:
+            assertions_json = safe_json_dumps(request.assertions or [], max_len=50_000) if request.assertions else "[]"
+        except SecurityError:
+            assertions_json = json.dumps(request.assertions)[:50000] + "..."
 
         try:
             self.db.execute(
@@ -537,7 +558,7 @@ class CollectionManager(
                     request.name or "",
                     request.method,
                     request.url,
-                    json.dumps(request.headers) if request.headers else "{}",
+                    (lambda obj: safe_json_dumps(obj, max_len=100_000) if obj else "{}")(request.headers),
                     _params_to_json(request),
                     request.body,
                     auth_type,
@@ -553,7 +574,7 @@ class CollectionManager(
                     request.post_script or "",
                     request.cert_path,
                     request.cert_key_path,
-                    json.dumps(request.path_params) if request.path_params else "{}",
+                    (lambda obj: safe_json_dumps(obj, max_len=50_000) if obj else "{}")(request.path_params),
                     request.id,
                 ),
             )
