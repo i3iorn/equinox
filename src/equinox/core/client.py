@@ -1052,39 +1052,11 @@ class HTTPClient:
             (multipart_files_list_or_None, list_of_opened_file_handles)
             The caller is responsible for closing all returned file handles.
         """
+        # Delegate to the centralized multipart builder helper
+        from equinox.core.multipart import build_multipart_files
+
         multipart_data = getattr(request, "multipart_data", None)
-        if not multipart_data:
-            logger.debug("No multipart data in request")
-            return None, []
-
-        logger.debug("Building multipart files from %d field(s)", len(multipart_data))
-        multipart_files: List[Tuple[str, Any]] = []
-        opened_file_handles: List[Any] = []
-
-        for field in multipart_data:
-            field_key = (field.get("key") or "").strip()
-            if not field_key:
-                continue
-
-            if field.get("type") == "file":
-                file_path = (field.get("value") or "").strip()
-                if file_path and os.path.isfile(file_path):
-                    from equinox.core.validation import Validator
-                    Validator.validate_file_path(file_path)
-                    file_handle = open(file_path, "rb")  # noqa: WPS515
-                    opened_file_handles.append(file_handle)
-                    logger.debug("Multipart: added file field %s = %s", field_key, Path(file_path).name)
-                    multipart_files.append((field_key, (Path(file_path).name, file_handle)))
-                else:
-                    logger.debug("Multipart: file not found for field %s, sending empty", field_key)
-                    multipart_files.append((field_key, (None, b"")))
-            else:
-                value_preview = (field.get("value", "")[:30] + "...") if len(field.get("value", "")) > 30 else field.get("value", "")
-                logger.debug("Multipart: added text field %s = %s", field_key, value_preview)
-                multipart_files.append((field_key, (None, field.get("value", ""))))
-
-        logger.debug("Multipart files ready: %d fields, %d file handles opened", len(multipart_files), len(opened_file_handles))
-        return multipart_files or None, opened_file_handles
+        return build_multipart_files(multipart_data)
 
     def get(self, url: str, **kwargs) -> Response:
         """Convenience method for GET request"""
