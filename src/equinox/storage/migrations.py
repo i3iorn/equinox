@@ -594,10 +594,10 @@ class MigrationRunner:
             if cur.fetchone() is None:
                 logger.debug("Target table %s for ALTER TABLE does not exist — skipping statement", table)
                 return
-            existing = {
-                row[1]
-                for row in conn.execute("PRAGMA table_info(?)", (table,)).fetchall()
-            }
+            # PRAGMA statements do not support parameter binding. Safely inline
+            # the table name by escaping single quotes to avoid SQL errors.
+            safe_table = table.replace("'", "''")
+            existing = {row[1] for row in conn.execute(f"PRAGMA table_info('{safe_table}')").fetchall()}
             # Fallback: some SQLite versions / wrappers don't allow parameter
             # substitution in PRAGMA; if the set is empty, run the non-parameterized
             # variant as a last resort.
