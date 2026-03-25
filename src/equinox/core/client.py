@@ -25,6 +25,7 @@ from equinox.core.audit import get_audit_logger
 from equinox.core.rate_limiter import RateLimiter
 from equinox.core import error_mapper
 from equinox.core import urls
+from equinox.core.cookies import CookieManager
 
 logger = logging.getLogger(__name__)
 
@@ -52,70 +53,9 @@ class _RedirectSafeAuth(httpx.Auth):
         yield request
 
 
-def _is_ssl_error(exc: Exception) -> bool:
-    """Return True if *exc* (typically ``httpx.ConnectError``) wraps an SSL failure.
-
-    In httpx ≥0.24 there is no dedicated ``SSLError``; SSL failures surface
-    as ``ConnectError`` whose cause chain contains an ``ssl.SSLError``.
-
-    Follows both ``__cause__`` and ``__context__`` (``raise exc from None``
-    clears ``__cause__`` but preserves ``__context__``).
-    """
-    seen: set = set()
-    stack = [exc]
-    while stack:
-        e = stack.pop()
-        eid = id(e)
-        if eid in seen:
-            continue
-        seen.add(eid)
-        if isinstance(e, ssl.SSLError):
-            return True
-        cause = getattr(e, "__cause__", None)
-        if cause is not None:
-            stack.append(cause)
-        context = getattr(e, "__context__", None)
-        if context is not None:
-            stack.append(context)
-    # Fallback: check the string representation
-    msg = str(exc).lower()
-    return "ssl" in msg or "certificate" in msg
-
-
-def _is_proxy_error(exc: Exception) -> bool:
-    """Return True if *exc* originated from a proxy connection attempt.
-
-    httpcore raises the same ``ConnectError`` for direct and proxied
-    connections.  We detect proxy involvement by checking whether any
-    traceback frame in the full exception graph originates from httpcore's
-    ``http_proxy`` module.
-
-    The walk follows both ``__cause__`` *and* ``__context__`` so that
-    ``raise exc from None`` (used in httpcore's connection pool) does not
-    silently break detection — Python clears ``__cause__`` but preserves
-    ``__context__`` in that case.  A *seen* set prevents infinite loops on
-    circular exception chains.
-    """
-    seen: set = set()
-    stack = [exc]
-    while stack:
-        e = stack.pop()
-        eid = id(e)
-        if eid in seen:
-            continue
-        seen.add(eid)
-        tb = e.__traceback__
-        while tb is not None:
-            if "http_proxy" in (tb.tb_frame.f_code.co_filename or ""):
-                return True
-            tb = tb.tb_next
-        cause = getattr(e, "__cause__", None)
-        if cause is not None:
-            stack.append(cause)
-        context = getattr(e, "__context__", None)
-        if context is not None:
-            stack.append(context)
-    return False
+# SSL/proxy detection and the HTTP error-handler list are provided by
+# the centralized ``error_mapper`` module.  The local implementations
+# were removed to avoid duplication; see ``equinox.core.error_mapper``.
 
 
 
@@ -148,7 +88,7 @@ class HTTPClient:
         proxy: Optional[str] = None,
         max_rate_per_minute: int = 60,
         max_concurrent_requests: int = 10,
-        cookie_manager: Optional[Any] = None,
+        cookie_manager: Optional[CookieManager] = None,
         cancel_event: Optional[threading.Event] = None,
     ):
         """Initialize HTTP client.
@@ -182,7 +122,7 @@ class HTTPClient:
         self.proxy = proxy
         self.max_rate_per_minute = max_rate_per_minute
         self.max_concurrent_requests = max_concurrent_requests
-        self._cookie_manager = cookie_manager
+        self._cookie_manager: Optional[CookieManager] = cookie_manager
         self._cancel_event = cancel_event
 
         self._client: Optional[httpx.Client] = None
@@ -460,123 +400,11 @@ class HTTPClient:
             Validator.validate_request_body(request.body, content_type)
 
     # ── Exception-to-error mapping for _send_internal ───────────────────
-    # Each entry: (exception_type, handler_fn).
-    # Ordered most-specific-first (Python matches the first handler).
-    # Built once in __init__ via _build_error_handlers(); lambdas capture
-    # ``self`` so instance attributes (proxy, timeout) are read at call time.
-
-    def _build_error_handlers(self):
-        """Build and return the (exc_type, handler_fn) list."""
-        return [
-            (
-                httpx.ConnectTimeout,
-                lambda exc, req: dict(
-                    error=RequestTimeoutError("Connection timed out", details={"url": redact_url(req.url)}),
-                    log_message=f"Connection timeout for {redact_url(req.url)}",
-                ),
-            ),
-            (
-                httpx.ReadTimeout,
-                lambda exc, req: dict(
-                    error=RequestTimeoutError("Server response timed out", details={"url": redact_url(req.url)}),
-                    log_message=f"Read timeout for {redact_url(req.url)}",
-                ),
-            ),
-            (
-                httpx.TimeoutException,
-                lambda exc, req: dict(
-                    error=RequestTimeoutError(
-                        f"Request timed out after {self.timeout} seconds",
-                        details={"url": redact_url(req.url), "timeout": self.timeout},
-                    ),
-                    audit_tag="timeout",
-                    log_message=f"Request timeout after {self.timeout}s for {redact_url(req.url)}",
-                ),
-            ),
-            (
-                httpx.ConnectError,
-                lambda exc, req: (
-                    dict(
-                        error=CertificateError(
-                            "SSL certificate verification failed. "
-                            "The server's certificate is invalid or untrusted.",
-                            details={"url": redact_url(req.url)},
-                        ),
-                        log_message=(
-                            f"SSL certificate verification failed for {redact_url(req.url)}"
-                            + (f": {exc}" if str(exc) else "")
-                        ),
-                    )
-                    if _is_ssl_error(exc)
-                    else (
-                        dict(
-                            error=RequestError(
-                                f"Failed to connect to proxy ({self.proxy}). "
-                                "Please check your proxy settings under Preferences.",
-                                details={"url": redact_url(req.url), "proxy": self.proxy},
-                            ),
-                            log_message=(
-                                f"Proxy connection error ({self.proxy})"
-                                + (f": {exc}" if str(exc) else "")
-                                + f" — for {redact_url(req.url)}"
-                            ),
-                        )
-                        if self.proxy and _is_proxy_error(exc)
-                        else dict(
-                            error=RequestError(
-                                "Failed to connect to server. "
-                                "Please check the URL and your network connection.",
-                                details={"url": redact_url(req.url)},
-                            ),
-                            log_message=(
-                                f"Connection error for {redact_url(req.url)}"
-                                + (f": {exc}" if str(exc) else "")
-                            ),
-                        )
-                    )
-                ),
-            ),
-            (
-                httpx.TooManyRedirects,
-                lambda exc, req: dict(
-                    error=RequestError(
-                        f"Too many redirects (max: {self.MAX_REDIRECTS})",
-                        details={"url": redact_url(req.url)},
-                    ),
-                    log_message=f"Too many redirects for {redact_url(req.url)}",
-                ),
-            ),
-            (
-                httpx.HTTPStatusError,
-                lambda exc, req: dict(
-                    error=RequestError(
-                        f"HTTP error: {exc.response.status_code}",
-                        details={"url": redact_url(req.url), "status": exc.response.status_code},
-                    ),
-                    log_message=f"HTTP error status {exc.response.status_code} for {redact_url(req.url)}",
-                ),
-            ),
-            (
-                httpx.HTTPError,
-                lambda exc, req: dict(
-                    error=RequestError(
-                        "HTTP request failed",
-                        details={"url": redact_url(req.url)},
-                    ),
-                    log_message=f"HTTP error for {redact_url(req.url)}",
-                ),
-            ),
-            (
-                UnicodeEncodeError,
-                lambda exc, req: dict(
-                    error=RequestError(
-                        "Request body contains invalid characters",
-                        details={},
-                    ),
-                    log_message="Encoding error in request body",
-                ),
-            ),
-        ]
+    # The concrete handlers are built by the centralized ``error_mapper``
+    # module in order to avoid duplicated detection logic across the
+    # codebase.  ``self._error_handlers`` is initialized in ``__init__`` via
+    # ``error_mapper.build_error_handlers(self)`` and should be used by
+    # _send_internal's exception-dispatch logic.
 
     def _send_internal(self, request: Request, auth: Optional[AuthStrategy] = None) -> Response:
         """Send the request through the interceptor chain, applying auth and error handling.

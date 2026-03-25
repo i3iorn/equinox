@@ -2,6 +2,7 @@
 
 import logging
 import threading
+from typing import Optional
 
 from PyQt6.QtWidgets import (
     QDialog,
@@ -17,6 +18,7 @@ from PyQt6.QtWidgets import (
 from PyQt6.QtCore import QThread, pyqtSignal
 
 from equinox.core.client import HTTPClient
+from equinox.core.cookies import CookieManager
 from equinox.core.redact import redact_body
 from equinox.core.request import Request, Response
 from equinox.core.error_enrichment import RichError, enrich_exception
@@ -109,7 +111,7 @@ class RequestWorker(QThread):
 
     finished = pyqtSignal(object)
 
-    def __init__(self, request: Request, parent=None, cookie_manager=None):
+    def __init__(self, request: Request, parent=None, cookie_manager: Optional[CookieManager]=None):
         super().__init__(parent)
         self.request = request
         self._cancelled = False
@@ -159,7 +161,7 @@ class RequestWorker(QThread):
 class BenchmarkDialog(QDialog):
     """Run the current request N times and display timing statistics."""
 
-    def __init__(self, request: Request, parent=None, cookie_manager=None):
+    def __init__(self, request: Request, parent=None, cookie_manager: Optional[CookieManager]=None):
         super().__init__(parent)
         self._request = request
         self._cookie_manager = cookie_manager

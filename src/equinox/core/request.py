@@ -152,20 +152,12 @@ class Request:
             auth_type = data["auth_type"]
             logger.debug("Reconstructing auth from dict: type=%s", auth_type)
             try:
-                if auth_type == "OAuth2Auth":
-                    from equinox.auth.oauth2 import OAuth2Auth
-                    request.auth = OAuth2Auth.from_dict(data["auth"])
-                elif auth_type == "BasicAuth":
-                    from equinox.auth.basic import BasicAuth
-                    request.auth = BasicAuth.from_dict(data["auth"])
-                elif auth_type == "BearerAuth":
-                    from equinox.auth.bearer import BearerAuth
-                    request.auth = BearerAuth.from_dict(data["auth"])
-                elif auth_type == "APIKeyAuth":
-                    from equinox.auth.api_key import APIKeyAuth
-                    request.auth = APIKeyAuth.from_dict(data["auth"])
-                else:
-                    logger.warning("Unknown auth type: %s", auth_type)
+                # Delegate to the auth factory to keep this module focused on
+                # the Request model (single responsibility) and avoid
+                # duplicating the auth-type -> constructor mapping.
+                from equinox.auth.factory import auth_from_dict
+
+                request.auth = auth_from_dict(auth_type, data["auth"])
             except Exception as auth_exc:
                 logger.error("Failed to reconstruct auth %s: %s", auth_type, auth_exc)
         

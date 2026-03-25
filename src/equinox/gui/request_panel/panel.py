@@ -45,6 +45,7 @@ from equinox.core.request import Request
 from equinox.core.error_enrichment import RichError, enrich_exception  # noqa: F401 (used in mixin layer)
 from equinox.storage import Database, HistoryManager, CollectionManager
 from equinox.gui.workers import RequestWorker, BenchmarkDialog, DEFAULT_TIMEOUT  # noqa: F401 (RequestWorker used as type annotation)
+from equinox.core.cookies import CookieManager
 from equinox.gui.request_panel.mixins import (  # noqa: F401
     _RequestSendMixin,
     _RequestAuthMixin,
@@ -108,11 +109,11 @@ class RequestPanel(_RequestSendMixin, _RequestAuthMixin, _RequestBodyMixin, QWid
         except Exception:
             logger.debug("Could not show status message: %s", text)
 
-    def __init__(self, db: Database, parent=None, cookie_manager=None):
+    def __init__(self, db: Database, parent=None, cookie_manager: Optional[CookieManager]=None):
         super().__init__(parent)
         logger.debug("RequestPanel.__init__ starting")
         self.db = db
-        self._cookie_manager = cookie_manager
+        self._cookie_manager: Optional[CookieManager] = cookie_manager
         self.current_request: Optional[Request] = None
         self._auth = None
         self._inherited_auth = None

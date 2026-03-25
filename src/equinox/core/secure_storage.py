@@ -79,7 +79,13 @@ class SecureStorage:
         Raises:
             SecurityError: If key generation fails
         """
-        key_path = self.storage_path.parent / ".key"
+        # Prefer a key placed next to the storage file (legacy behaviour).
+        # If no local key exists, fall back to the canonical default key
+        # path returned by :func:`crypto.default_key_path()` so the
+        # application has a single authoritative location for the master
+        # encryption key going forward.
+        local_key_path = self.storage_path.parent / ".key"
+        key_path = local_key_path if local_key_path.exists() else crypto.default_key_path()
         try:
             return crypto.get_or_create_raw_key(key_path)
         except Exception as e:
