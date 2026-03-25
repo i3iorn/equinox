@@ -125,27 +125,101 @@ class PostmanImporter:
             logger.info("Found %d collection variable(s): %s",
                         len(col_variables), list(col_variables.keys()))
 
-        collection_id = self.collection_manager.create_collection(
-            name=collection_name,
-            description=collection_description,
-        )
-        logger.info("Created collection: %s (ID: %d)", collection_name, collection_id)
-
-        for var_name, var_value in col_variables.items():
-            try:
-                self.collection_manager.add_variable(
-                    collection_id, var_name, var_value,
-                    description="Imported from Postman collection variable",
-                )
-                logger.debug("Added collection variable: %s=%s", var_name, var_value)
-            except Exception:
-                pass  # add_variable may not exist on all manager builds
-
+        # Collect request objects first, then perform a single transactional
+        # import to improve performance and ensure atomicity.
         items = collection_data.get("item", [])
-        request_count = self._import_items(items, collection_id, col_variables=col_variables)
-        logger.info("Imported %d requests", request_count)
+        requests: List[Request] = self._collect_items(items, folder_name="", col_variables=col_variables)
 
-        return collection_id
+        try:
+            with self.collection_manager.db.transaction() as tx:
+                # Create collection inside same transaction
+                col_id = tx.insert(
+                    "INSERT INTO collections (name, description) VALUES (?, ?)",
+                    (collection_name, collection_description),
+                )
+                logger.info("Created collection: %s (ID: %d)", collection_name, col_id)
+
+                # Persist collection-level variables
+                for var_name, var_value in col_variables.items():
+                    try:
+                        tx.execute(
+                            "INSERT OR IGNORE INTO collection_variables (collection_id, key, value, description) VALUES (?, ?, ?, ?)",
+                            (col_id, var_name, var_value, "Imported from Postman collection variable"),
+                        )
+                        logger.debug("Added collection variable: %s=%s", var_name, var_value)
+                    except Exception:
+                        logger.debug("Failed to add collection variable %s", var_name, exc_info=True)
+
+                # Insert requests
+                coll = self.collection_manager
+                for request in requests:
+                    req_name = coll._resolve_request_name(request.name or f"{request.method} {request.url}")
+                    auth_type, auth_data = None, None
+                    captures_json = coll._serialize_list_field(getattr(request, 'captures', None), max_len=50_000)
+                    assertions_json = coll._serialize_list_field(getattr(request, 'assertions', None), max_len=50_000)
+                    headers_json = coll._serialize_json_field(getattr(request, 'headers', None), max_len=100_000, default="{}")
+                    # params may be provided as params_list or params dict
+                    try:
+                        from equinox.storage.collections.manager import _params_to_json
+
+                        params_json = _params_to_json(request)
+                    except Exception:
+                        params_json = "[]"
+                    path_params_json = coll._serialize_json_field(getattr(request, 'path_params', None), max_len=50_000, default="{}")
+                    timeout = getattr(request, 'timeout', None) or coll.DEFAULT_TIMEOUT
+                    verify_ssl = int(getattr(request, 'verify_ssl', True))
+                    follow_redirects = int(getattr(request, 'follow_redirects', True))
+                    sql = """
+                    INSERT INTO requests
+                    (collection_id, name, description, method, url, headers, params, body,
+                     auth_type, auth_data, captures, assertions, pre_script, post_script,
+                     cert_path, cert_key_path, folder, timeout, verify_ssl, follow_redirects,
+                     path_params)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """
+                    tx.insert(
+                        sql,
+                        (
+                            col_id,
+                            req_name,
+                            request.description or "",
+                            request.method,
+                            request.url,
+                            headers_json,
+                            params_json,
+                            request.body,
+                            auth_type,
+                            auth_data,
+                            captures_json,
+                            assertions_json,
+                            getattr(request, 'pre_script', '') or '',
+                            getattr(request, 'post_script', '') or '',
+                            getattr(request, 'cert_path', None),
+                            getattr(request, 'cert_key_path', None),
+                            getattr(request, 'folder', None),
+                            timeout,
+                            verify_ssl,
+                            follow_redirects,
+                            path_params_json,
+                        ),
+                    )
+        except Exception as exc:
+            logger.error("Failed to import Postman collection transactionally: %s", exc, exc_info=True)
+            # Fall back: create a collection via manager and insert requests individually
+            collection_id = self.collection_manager.create_collection(name=collection_name, description=collection_description)
+            for var_name, var_value in col_variables.items():
+                try:
+                    self.collection_manager.add_variable(collection_id, var_name, var_value, description="Imported from Postman collection variable")
+                except Exception:
+                    pass
+            for request in requests:
+                try:
+                    self.collection_manager.save_request(request, collection_id)
+                except Exception:
+                    logger.debug("Failed to save individual request during fallback", exc_info=True)
+            return collection_id
+
+        return col_id
 
     def _validate_file(self, file_path: Path) -> None:
         """Validate collection file.
@@ -278,6 +352,36 @@ class PostmanImporter:
                 )
 
         return count
+
+    def _collect_items(
+        self,
+        items: List[Dict[str, Any]],
+        folder_name: str = "",
+        col_variables: Optional[Dict[str, str]] = None,
+    ) -> List[Request]:
+        """Walk items and return a flat list of parsed :class:`Request` objects.
+
+        This mirrors :meth:`_import_items` but does not persist — useful for
+        batching inserts inside a single transaction.
+        """
+        if col_variables is None:
+            col_variables = {}
+
+        requests: List[Request] = []
+
+        for item in items:
+            if "request" in item:
+                try:
+                    request = self._parse_request(item, folder_name, col_variables)
+                    requests.append(request)
+                except (ValidationError, SecurityError) as exc:
+                    logger.warning("Skipping invalid request during collection: %s", exc)
+            elif "item" in item:
+                folder = item.get("name", "Untitled Folder")
+                prefix = f"{folder_name}/{folder}" if folder_name else folder
+                requests.extend(self._collect_items(item["item"], prefix, col_variables))
+
+        return requests
 
     def _parse_request(
         self,

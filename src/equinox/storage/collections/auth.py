@@ -52,12 +52,28 @@ class CollectionAuthMixin:
             return None
         from equinox.auth import BearerAuth, APIKeyAuth, BasicAuth, OAuth2Auth
         try:
-            # Use safe JSON loader for DB-stored auth blobs; malformed blobs
-            # should degrade to no-auth rather than raising during UI flows.
-            d = safe_json_loads(decrypt_auth_data(auth_data))
+            # Decryption failures are considered security-sensitive and should
+            # be surfaced to callers so they can prompt for recovery / key
+            # rotation.  JSON errors (malformed blobs) are still treated as
+            # 'no auth' to avoid breaking UI flows.
+            from equinox.core.exceptions import SecurityError as _SEC
+
+            try:
+                raw = decrypt_auth_data(auth_data)
+            except _SEC:
+                logger.exception("Auth decryption failed for auth_data column")
+                # Propagate so higher-level code (CLI/GUI) can surface a clear error
+                raise
+
+            d = safe_json_loads(raw)
             if not d:
                 return None
+        except SecurityError:
+            # Let SecurityError bubble up to callers — do not swallow.
+            raise
         except Exception:
+            # Malformed JSON or other non-security errors degrade to no-auth
+            logger.debug("Malformed auth JSON in DB row — treating as no auth", exc_info=True)
             return None
         t = d.get("type", auth_type)
         if t == "bearer":

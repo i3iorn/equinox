@@ -586,10 +586,29 @@ class MigrationRunner:
         )
         if m:
             table, column = m.group(1), m.group(2)
+            # Ensure the target table actually exists before querying its info.
+            cur = conn.execute(
+                "SELECT name FROM sqlite_master WHERE type='table' AND name=?",
+                (table,),
+            )
+            if cur.fetchone() is None:
+                logger.debug("Target table %s for ALTER TABLE does not exist — skipping statement", table)
+                return
             existing = {
                 row[1]
-                for row in conn.execute(f"PRAGMA table_info({table})").fetchall()
+                for row in conn.execute("PRAGMA table_info(?)", (table,)).fetchall()
             }
+            # Fallback: some SQLite versions / wrappers don't allow parameter
+            # substitution in PRAGMA; if the set is empty, run the non-parameterized
+            # variant as a last resort.
+            if not existing:
+                try:
+                    existing = {
+                        row[1]
+                        for row in conn.execute(f"PRAGMA table_info({table})").fetchall()
+                    }
+                except Exception:
+                    existing = set()
             if column in existing:
                 logger.debug("Column %s.%s already exists — skipping", table, column)
                 return

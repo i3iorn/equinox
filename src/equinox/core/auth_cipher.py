@@ -21,6 +21,7 @@ from typing import Optional
 from cryptography.fernet import Fernet, InvalidToken
 
 from equinox.core import crypto
+from equinox.core.exceptions import SecurityError
 
 logger = logging.getLogger(__name__)
 
@@ -79,12 +80,15 @@ def decrypt_auth_data(stored: str) -> str:
         try:
             plaintext = f.decrypt(stored[len(_ENC_PREFIX):].encode("ascii"))
             return plaintext.decode("utf-8")
-        except InvalidToken:
-            logger.error(
-                "Failed to decrypt auth data — key mismatch or corrupt data. "
-                "Returning empty object."
-            )
-            return "{}"
+        except InvalidToken as exc:
+            # Surface decryption failures loudly — returning a silent empty
+            # blob hides key-rotation problems and corrupt data.  Callers
+            # should handle SecurityError explicitly.
+            logger.exception(
+                "Failed to decrypt auth data — key mismatch or corrupt data.")
+            raise SecurityError(
+                "Failed to decrypt stored auth data: key mismatch or corrupt data"
+            ) from exc
     # Legacy plaintext
     return stored
 

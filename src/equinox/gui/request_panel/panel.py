@@ -233,6 +233,14 @@ class RequestPanel(_RequestSendMixin, _RequestAuthMixin, _RequestBodyMixin, QWid
     def _clear_dirty(self) -> None:
         self._dirty = False
 
+    def send(self) -> None:
+        """Public wrapper for sending the current request.
+
+        External callers (e.g. other GUI panels) should call this instead of
+        invoking the private ``_send_request`` method directly.
+        """
+        self._send_request()
+
     def _setup_dirty_tracking(self) -> None:
         """Connect change signals on all editor widgets to mark dirty."""
         def safe_connect(get_signal, slot, name=None):

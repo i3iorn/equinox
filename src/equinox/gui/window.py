@@ -262,8 +262,8 @@ class MainWindow(QMainWindow):
         """Load a request into the editor then fire it immediately."""
         self.request_panel.autosave_current()
         self.request_panel.load_request(request)
-        # TODO: replace with request_panel.send() once a public method is added
-        self.request_panel._send_request()  # noqa: SLF001
+        # Use the public API to send the request
+        self.request_panel.send()
 
     # ── Intelligence analysis ─────────────────────────────────────────
 
@@ -372,7 +372,7 @@ class MainWindow(QMainWindow):
             return
         request = self._request_from_history(entry)
         self.request_panel.load_request(request)
-        self.request_panel._send_request()  # noqa: SLF001
+        self.request_panel.send()
 
     def _new_request(self) -> None:
         """Autosave current request then clear the editor for a new one."""
