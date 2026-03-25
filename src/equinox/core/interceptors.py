@@ -263,8 +263,10 @@ class RequestResponseLogger:
 
         if include_body and request.body:
             log_data["body"] = redact_body(request.body[:1000], max_length=1000)
-
-        self.logger.log(level, json.dumps(log_data))
+        # Log structured data via logging extras so the global JSON formatter
+        # can produce consistent records.
+        msg = f"request_sent: {request.method} {redact_url(request.url)}"
+        self.logger.log(level, msg, extra=log_data)
 
     def log_response(
         self,
@@ -297,8 +299,8 @@ class RequestResponseLogger:
         if include_body and response.body:
             body_preview = response.body[:1000] if isinstance(response.body, str) else str(response.body)[:1000]
             log_data["body"] = redact_body(body_preview, max_length=1000)
-
-        self.logger.log(level, json.dumps(log_data))
+        msg = f"response_received: {request.method} {redact_url(request.url)} {response.status_code}"
+        self.logger.log(level, msg, extra=log_data)
 
     def log_error(
         self,
@@ -324,8 +326,8 @@ class RequestResponseLogger:
             "error_message": error_msg,
             "timestamp": utc_now().isoformat(),
         }
-
-        self.logger.log(level, json.dumps(log_data))
+        msg = f"request_failed: {request.method} {redact_url(request.url)}"
+        self.logger.log(level, msg, extra=log_data)
 
 
 class LoggingRequestInterceptor(RequestInterceptor):

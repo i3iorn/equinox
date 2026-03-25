@@ -44,8 +44,9 @@ class _JsonFormatter(logging.Formatter):
 
     # Fields copied verbatim from the LogRecord if present as ``extra`` kwargs
     _EXTRA_FIELDS = (
-        "method", "url", "status", "elapsed_ms",
-        "size_bytes", "error_type", "request_id",
+        "event", "method", "url", "headers", "params", "timeout", "verify_ssl",
+        "status_code", "reason", "elapsed_time_seconds", "elapsed_ms",
+        "size_bytes", "error_type", "error_message", "request_id", "timestamp",
     )
 
     def format(self, record: logging.LogRecord) -> str:  # type: ignore[override]
@@ -69,6 +70,15 @@ class _JsonFormatter(logging.Formatter):
             val = getattr(record, field, None)
             if val is not None:
                 doc[field] = val
+
+        # Also support a top-level ``payload`` extra where callers might
+        # pass a dict of structured fields. Merge it into the output.
+        payload = getattr(record, "payload", None)
+        if isinstance(payload, dict):
+            for k, v in payload.items():
+                # Do not override primary fields
+                if k not in doc:
+                    doc[k] = v
 
         # Attach exception info if present
         if record.exc_info:

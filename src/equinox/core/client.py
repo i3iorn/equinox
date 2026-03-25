@@ -23,6 +23,7 @@ from equinox.auth.base import AuthStrategy
 from equinox.core.interceptors import InterceptorChain, RequestResponseLogger
 from equinox.core.audit import get_audit_logger
 from equinox.core.rate_limiter import RateLimiter
+from equinox.core import error_mapper
 from equinox.core import urls
 
 logger = logging.getLogger(__name__)
@@ -117,6 +118,7 @@ def _is_proxy_error(exc: Exception) -> bool:
     return False
 
 
+
 class HTTPClient:
     """HTTP Client for making requests with security features.
 
@@ -195,7 +197,8 @@ class HTTPClient:
         self._audit = get_audit_logger()
         # Encapsulated rate limiter (uses audit logger for violation events)
         self._rate_limiter = RateLimiter(self.max_rate_per_minute, window_seconds=self.RATE_LIMIT_WINDOW_SECONDS, audit_logger=self._audit)
-        self._error_handlers = self._build_error_handlers()
+        # Build error handlers via centralized error_mapper
+        self._error_handlers = error_mapper.build_error_handlers(self)
 
     def __enter__(self):
         if self.proxy:
@@ -216,146 +219,15 @@ class HTTPClient:
             self._client = None
 
     def _check_proxy_reachable(self) -> None:
-        """Verify the configured proxy is accepting TCP connections.
+        # Delegate to core.proxy.check_proxy_reachable to centralize platform
+        # specific socket/select handling and make it easier to test.
+        from equinox.core.proxy import check_proxy_reachable
 
-        Uses a non-blocking ``connect()`` + ``select()`` checking **both** the
-        writable and exceptional file-descriptor sets.
-
-        Cross-platform behaviour of non-blocking connect() on a refused port:
-
-        * **Unix** — socket appears in the *writable* set; ``SO_ERROR`` is
-          ``ECONNREFUSED``.
-        * **Windows** — socket appears in the *exceptional* set; ``SO_ERROR``
-          is ``WSAECONNREFUSED`` (10061).  Our previous implementation only
-          checked the writable set, so Windows refused connections always
-          looked like timeouts.
-
-        A blocking ``settimeout()`` socket was tried as an alternative but
-        Windows also delays the RST on loopback for ~3 s, so it timed out too.
-
-        Raises:
-            RequestError: If the proxy actively refuses the connection.
-        """
-        import errno
-        import select as _select
-        import socket
-        from urllib.parse import urlparse
-
-        parsed = urlparse(self.proxy)
-        host = parsed.hostname
-        port = parsed.port or 8080
-        if not host:
-            logger.debug("Proxy check skipped: no hostname in proxy URL")
+        if not self.proxy:
+            logger.debug("Proxy check skipped: no proxy configured")
             return
 
-        logger.debug(
-            "Proxy details: scheme=%s hostname=%s port=%d netloc=%s",
-            parsed.scheme, host, port, parsed.netloc,
-        )
-
-        # On Windows, loopback RSTs may take ~3 s — use a generous timeout so
-        # the select() actually has a chance to observe the refusal.
-        is_loopback = host in ("127.0.0.1", "::1", "localhost")
-        connect_timeout = 3.5 if is_loopback else 1.5
-        _REFUSED = {errno.ECONNREFUSED, getattr(errno, "WSAECONNREFUSED", 10061)}
-
-        logger.debug(
-            "Pre-flight proxy reachability check: %s:%s (timeout=%.1fs, loopback=%s)",
-            host, port, connect_timeout, is_loopback,
-        )
-
-        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        sock.setblocking(False)
-        try:
-            logger.debug("Attempting non-blocking connect to %s:%s", host, port)
-            sock.connect((host, port))
-            # Immediate success — very unusual on non-blocking, but handle it.
-            logger.debug("Proxy pre-flight: %s:%s connected immediately", host, port)
-
-        except BlockingIOError as bio_err:
-            logger.debug(
-                "Proxy pre-flight: BlockingIOError on connect (expected): %s", bio_err,
-            )
-            # EINPROGRESS / WSAEWOULDBLOCK — wait for the OS verdict.
-            # Check BOTH writable (Unix success/fail) AND exceptional (Windows fail).
-            _, writable, exceptional = _select.select(
-                [], [sock], [sock], connect_timeout
-            )
-            logger.debug(
-                "Proxy pre-flight select() after %.1fs: writable=%s exceptional=%s",
-                connect_timeout, bool(writable), bool(exceptional),
-            )
-
-            if exceptional or writable:
-                err = sock.getsockopt(socket.SOL_SOCKET, socket.SO_ERROR)
-                logger.debug(
-                    "Proxy pre-flight SO_ERROR for %s:%s = %d", host, port, err,
-                )
-                if err in _REFUSED:
-                    logger.warning(
-                        "Proxy pre-flight failed — %s:%s refused connection (errno %d). "
-                        "Proxy is not running or not accepting connections on this port.",
-                        host, port, err,
-                    )
-                    raise RequestError(
-                        f"Failed to connect to proxy ({self.proxy}). "
-                        "The proxy server is not running or refusing connections. "
-                        "Please check your proxy settings under Preferences and ensure "
-                        "the proxy server is running and configured correctly.",
-                        details={
-                            "proxy": self.proxy,
-                            "host": host,
-                            "port": port,
-                            "errno": err,
-                            "error_type": "connection_refused",
-                        },
-                    )
-                if err != 0:
-                    logger.debug(
-                        "Proxy pre-flight: SO_ERROR %d for %s:%s (errno name: %s) — deferring to httpx",
-                        err, host, port, errno.errorcode.get(err, "unknown"),
-                    )
-                else:
-                    logger.debug("Proxy pre-flight: %s:%s is reachable", host, port)
-            else:
-                logger.debug(
-                    "Proxy pre-flight: select() timed out for %s:%s (%.1fs) — deferring to httpx",
-                    host, port, connect_timeout,
-                )
-
-        except OSError as os_err:
-            errno_name = errno.errorcode.get(os_err.errno, "unknown")
-            logger.debug(
-                "Proxy pre-flight OSError for %s:%s (errno %d = %s): %s",
-                host, port, os_err.errno, errno_name, os_err,
-            )
-            if os_err.errno in _REFUSED:
-                logger.warning(
-                    "Proxy pre-flight failed — %s:%s refused connection (errno %d = %s)",
-                    host, port, os_err.errno, errno_name,
-                )
-                raise RequestError(
-                    f"Failed to connect to proxy ({self.proxy}). "
-                    "The proxy server is not running or refusing connections. "
-                    "Please check your proxy settings under Preferences and ensure "
-                    "the proxy server is running and configured correctly.",
-                    details={
-                        "proxy": self.proxy,
-                        "host": host,
-                        "port": port,
-                        "errno": os_err.errno,
-                        "errno_name": errno_name,
-                        "error_type": "connection_refused",
-                    },
-                )
-            logger.debug(
-                "Proxy pre-flight socket error for %s:%s (errno %d = %s, will defer to httpx): %s",
-                host, port, os_err.errno, errno_name, os_err,
-            )
-
-        finally:
-            sock.close()
-            logger.debug("Proxy pre-flight: socket closed for %s:%s", host, port)
+        check_proxy_reachable(self.proxy)
 
     def _build_ssl_context(self) -> Any:
         """Build an SSL context enforcing TLS 1.2+ minimum, or False to skip verification."""
