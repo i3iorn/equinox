@@ -390,14 +390,33 @@ class HistoryPanel(QWidget):
             self.history_selected.emit(history_id)
 
     def _open_selected(self):
+        # Emit only the first "real" selected history entry (ignore separators)
         sel = self.list_widget.selectedItems()
-        if sel:
-            self.history_selected.emit(sel[0].data(Qt.ItemDataRole.UserRole))
+        for it in sel:
+            hid = it.data(Qt.ItemDataRole.UserRole)
+            if hid is not None:
+                try:
+                    self.history_selected.emit(int(hid))
+                except Exception:
+                    # Log but do not crash the UI if the stored value is unexpected
+                    from logging import getLogger
+
+                    getLogger(__name__).debug("_open_selected: invalid history id %r", hid, exc_info=True)
+                return
 
     def _replay_selected(self):
+        # Similar to _open_selected — find the first real entry and emit its id
         sel = self.list_widget.selectedItems()
-        if sel:
-            self.history_replay.emit(sel[0].data(Qt.ItemDataRole.UserRole))
+        for it in sel:
+            hid = it.data(Qt.ItemDataRole.UserRole)
+            if hid is not None:
+                try:
+                    self.history_replay.emit(int(hid))
+                except Exception:
+                    from logging import getLogger
+
+                    getLogger(__name__).debug("_replay_selected: invalid history id %r", hid, exc_info=True)
+                return
 
     def _delete_selected(self) -> None:
         """Delete all currently selected history entries (#14)."""

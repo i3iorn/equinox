@@ -314,11 +314,38 @@ class MainWindow(QMainWindow):
     @staticmethod
     def _request_from_history(entry: dict) -> Request:
         """Build a Request from a history DB row."""
+        # Defensive coercion: stored history rows may contain legacy types
+        headers = entry.get("request_headers") or {}
+        if not isinstance(headers, dict):
+            try:
+                headers = dict(headers)
+            except Exception:
+                logger.debug("_request_from_history: could not coerce headers to dict, defaulting to {}", exc_info=True)
+                headers = {}
+
+        params = entry.get("request_params") or {}
+        if not isinstance(params, dict):
+            try:
+                params = dict(params)
+            except Exception:
+                logger.debug("_request_from_history: could not coerce params to dict, defaulting to {}", exc_info=True)
+                params = {}
+
+        body = entry.get("request_body")
+        if isinstance(body, bytes):
+            try:
+                body = body.decode("utf-8")
+            except Exception:
+                body = body.decode("utf-8", errors="replace")
+        elif body is not None and not isinstance(body, str):
+            body = str(body)
+
         return Request(
-            method=entry["method"],
-            url=entry["url"],
-            headers=entry.get("request_headers") or {},
-            body=entry.get("request_body"),
+            method=entry.get("method", "GET"),
+            url=entry.get("url", ""),
+            headers=headers,
+            params=params,
+            body=body,
         )
 
     def _fetch_history_entry(self, history_id: int) -> Optional[dict]:
@@ -326,43 +353,80 @@ class MainWindow(QMainWindow):
         return HistoryManager(self.db).get_history(history_id)
 
     def _load_history_entry(self, history_id: int) -> None:
-        self.request_panel.autosave_current()
+        # Use guarded operations to avoid crashing the UI when history rows
+        # contain unexpected types or malformed data. Log and surface a
+        # non-fatal error to the user instead of letting an exception bubble.
+        try:
+            self.request_panel.autosave_current()
 
-        entry = self._fetch_history_entry(history_id)
-        if not entry:
-            return
+            entry = self._fetch_history_entry(history_id)
+            if not entry:
+                logger.debug("_load_history_entry: no history entry found for id=%s", history_id)
+                return
 
-        request = self._request_from_history(entry)
-        self.request_panel.load_request(request)
-
-        if entry.get("status_code"):
-            raw_body = entry.get("response_body") or ""
-            if isinstance(raw_body, str):
-                body_bytes = raw_body.encode("utf-8")
-            elif isinstance(raw_body, bytes):
-                body_bytes = raw_body
-            else:
-                body_bytes = b""
-
-            # Guard fromisoformat against NULL / malformed timestamps in the DB
-            timestamp: Optional[datetime] = None
+            request = self._request_from_history(entry)
             try:
-                executed_at = entry.get("executed_at")
-                if executed_at:
-                    timestamp = datetime.fromisoformat(executed_at)
-            except (TypeError, ValueError):
-                logger.debug("Could not parse executed_at: %s", entry.get("executed_at"))
+                self.request_panel.load_request(request)
+            except Exception:
+                # Loading the request UI should not crash the whole app
+                logger.error("Failed to load request from history id=%s", history_id, exc_info=True)
 
-            response = Response(
-                status_code=entry["status_code"],
-                reason=entry.get("reason") or "",
-                headers=entry.get("response_headers") or {},
-                body=body_bytes,
-                elapsed=entry.get("elapsed") or 0.0,
-                request=request,
-                timestamp=timestamp,
-            )
-            self.response_panel.display_response(response)
+            if entry.get("status_code") is not None:
+                raw_body = entry.get("response_body") or ""
+                if isinstance(raw_body, str):
+                    body_bytes = raw_body.encode("utf-8")
+                elif isinstance(raw_body, bytes):
+                    body_bytes = raw_body
+                else:
+                    try:
+                        body_bytes = str(raw_body).encode("utf-8")
+                    except Exception:
+                        body_bytes = b""
+
+                # Guard fromisoformat against NULL / malformed timestamps in the DB
+                timestamp: Optional[datetime] = None
+                try:
+                    executed_at = entry.get("executed_at")
+                    if executed_at:
+                        timestamp = datetime.fromisoformat(executed_at)
+                except (TypeError, ValueError):
+                    logger.debug("Could not parse executed_at: %s", entry.get("executed_at"))
+
+                headers = entry.get("response_headers") or {}
+                if not isinstance(headers, dict):
+                    try:
+                        headers = dict(headers)
+                    except Exception:
+                        logger.debug("_load_history_entry: could not coerce response headers to dict, defaulting to {}", exc_info=True)
+                        headers = {}
+
+                try:
+                    response = Response(
+                        status_code=int(entry.get("status_code") or 0),
+                        reason=entry.get("reason") or "",
+                        headers=headers,
+                        body=body_bytes,
+                        elapsed=float(entry.get("elapsed") or 0.0),
+                        request=request,
+                        timestamp=timestamp,
+                    )
+                    self.response_panel.display_response(response)
+                except Exception:
+                    logger.error("Failed to construct/display Response for history id=%s", history_id, exc_info=True)
+        except Exception:
+            # Catch-all to ensure the UI remains responsive even on unexpected DB
+            # schema or corrupted rows.
+            logger.error("Unhandled error while loading history entry id=%s", history_id, exc_info=True)
+            try:
+                from PyQt6.QtWidgets import QMessageBox
+
+                QMessageBox.critical(
+                    self, "Error",
+                    f"Failed to load history entry {history_id}. See log for details."
+                )
+            except Exception:
+                # If even the message box fails, just log; we must not crash.
+                logger.debug("Also failed to show error dialog for history load failure", exc_info=True)
 
     def _replay_history_entry(self, history_id: int) -> None:
         """Re-run a history entry exactly as originally sent."""
