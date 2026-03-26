@@ -28,13 +28,14 @@ from equinox.gui.workers import DEFAULT_TIMEOUT
 logger = logging.getLogger(__name__)
 
 
-class _RequestBodyMixin:
+class RequestBodyMixin:
     """Methods for captures, assertions, multipart, body-type handling, load, and clear."""
 
     # ── Shared tab-building helpers ───────────────────────────────────
 
+    @staticmethod
     def _build_action_tab_shell(
-        self, title: str, add_slot, remove_slot
+        title: str, add_slot, remove_slot
     ) -> tuple:
         """Build the common outer shell for Captures / Assertions tabs.
 

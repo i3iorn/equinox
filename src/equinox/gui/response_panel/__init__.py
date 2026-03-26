@@ -166,6 +166,9 @@ class ResponsePanel(QWidget):
         self.body_text = ReadOnlyText()
         self._body_highlighter = None  # set dynamically per content-type
         self._search_bar = SearchBar(self.body_text, body_container)
+        # Register a callback so JSONPath mode can ask us to display a filtered
+        # representation of the JSON body (only matched values are shown).
+        self._search_bar.set_filter_callback(self._on_jsonpath_filter)
         body_vbox.addWidget(self.body_text, 1)
         body_vbox.addWidget(self._search_bar)
         self._body_tab_idx = self.tabs.addTab(body_container, "Body")
@@ -562,6 +565,36 @@ class ResponsePanel(QWidget):
         if self.current_response is not None:
             self._body_warning.setVisible(False)
             self.body_text.set_code(self._pretty_body(self.current_response))
+
+    def _on_jsonpath_filter(self, filtered_text: Optional[str]) -> None:
+        """Receive filtered JSON text from the SearchBar and update the body view.
+
+        If filtered_text is None the original body representation is restored.
+        """
+        try:
+            if filtered_text is None:
+                # Restore the original body view for the current response
+                if self.current_response is None:
+                    self.body_text.clear()
+                    return
+                if self.current_response.size > self._LARGE_BODY_THRESHOLD and self._body_warning.isVisible():
+                    # Large-body warning was active and full body not loaded
+                    self.body_text.clear()
+                else:
+                    self.body_text.set_code(self._pretty_body(self.current_response))
+            else:
+                # Show the filtered JSON representation
+                self._body_warning.setVisible(False)
+                self.body_text.set_code(filtered_text)
+        except Exception:
+            # On any error, fall back to original representation
+            try:
+                if self.current_response is not None:
+                    self.body_text.set_code(self._pretty_body(self.current_response))
+                else:
+                    self.body_text.clear()
+            except Exception:
+                self.body_text.clear()
 
     def _on_hdrs_filter_changed(self, text: str) -> None:
         """Filter the response headers table (#8)."""

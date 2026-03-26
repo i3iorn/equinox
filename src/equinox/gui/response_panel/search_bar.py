@@ -1,7 +1,7 @@
 """Inline find-bar for a QTextEdit — shown/hidden with Ctrl+F."""
 
 import json
-from typing import Optional
+from typing import Optional, Callable
 
 from PyQt6.QtCore import QRegularExpression
 from PyQt6.QtGui import QTextCharFormat, QColor, QTextCursor, QTextDocument
@@ -40,6 +40,10 @@ class SearchBar(QWidget):
         self._json_obj = None           # set via set_json_doc()
         self._matches: list = []        # list[QTextCursor] — from _collect_matches
         self._current_idx: int = -1
+        # Optional callback to receive filtered body text when JSONPath is active.
+        # The callback signature: cb(filtered_text: Optional[str]) -> None. If
+        # filtered_text is None the caller should reset to the original body.
+        self._filter_cb: Optional[Callable[[Optional[str]], None]] = None
         self.setVisible(False)
 
         # ── Outer layout: main row + optional JSONPath result strip ───
@@ -141,6 +145,19 @@ class SearchBar(QWidget):
         if self._jp_btn.isChecked() and self.isVisible():
             self._on_text_changed(self._input.text())
 
+        # If JSON doc is cleared, notify any filter callback to reset the body
+        if obj is None and self._filter_cb:
+            self._filter_cb(None)
+
+    def set_filter_callback(self, cb: Optional[Callable[[Optional[str]], None]]) -> None:
+        """Register a callback to receive filtered body text.
+
+        The callback will be invoked with a JSON string when JSONPath mode is
+        active, and with None to signal the caller should restore the original
+        body text.
+        """
+        self._filter_cb = cb
+
     def show_and_focus(self) -> None:
         self.setVisible(True)
         self._input.selectAll()
@@ -186,7 +203,11 @@ class SearchBar(QWidget):
             self._jp_result_label.setVisible(False)
             if not self._regex_btn.isChecked():
                 self._input.setPlaceholderText("Find in body…")
+        # Re-run the search. If JSONPath was turned off, ensure any active
+        # JSONPath body filter is cleared by notifying the callback.
         self._on_text_changed(self._input.text())
+        if not checked and self._filter_cb:
+            self._filter_cb(None)
 
     # ── Core search logic ─────────────────────────────────────────────
 
@@ -194,6 +215,9 @@ class SearchBar(QWidget):
         self._collect_matches()
         self._current_idx = 0 if self._matches else -1
         self._apply_highlights()
+        # If JSONPath mode is not active, ensure any body filter is reset.
+        if self._filter_cb and not self._jp_btn.isChecked():
+            self._filter_cb(None)
 
     def _collect_matches(self) -> None:
         """Dispatch to the appropriate match collector for the active mode."""
@@ -353,6 +377,27 @@ class SearchBar(QWidget):
 
         self._matches = text_matches
         self._current_idx = 0 if text_matches else -1
+
+        # Build a filtered JSON representation of the matched results and
+        # notify the ResponsePanel (or other caller) via the filter callback.
+        if self._filter_cb:
+            try:
+                if not raw_matches:
+                    # No matches → provide an empty list representation
+                    filtered = json.dumps([], indent=2, ensure_ascii=False)
+                else:
+                    # If only one match, present the single value; otherwise
+                    # present a list of matched values which is the most
+                    # intuitive "filtered" view for multiple hits.
+                    if len(values) == 1:
+                        filtered = json.dumps(values[0], indent=2, ensure_ascii=False)
+                    else:
+                        filtered = json.dumps(values, indent=2, ensure_ascii=False)
+                self._filter_cb(filtered)
+            except Exception:
+                # If JSON serialization fails, reset the filter to avoid
+                # presenting partial/invalid content.
+                self._filter_cb(None)
 
     # ── Highlight rendering ───────────────────────────────────────────
 

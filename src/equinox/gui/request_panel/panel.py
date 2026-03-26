@@ -51,7 +51,7 @@ from equinox.gui.request_panel.mixins import (  # noqa: F401
     _RequestAuthMixin,
     _save_history_safe,
 )
-from equinox.gui.request_panel.body_mixin import _RequestBodyMixin  # noqa: F401
+from equinox.gui.request_panel.body_mixin import RequestBodyMixin  # noqa: F401
 from equinox.gui.request_panel.save_dialog import SaveRequestDialog
 from equinox.gui.request_panel.toolbar import TabToolbar
 
@@ -83,7 +83,7 @@ _HEADER_PRESETS = [
 # Request panel
 # ─────────────────────────────────────────────────────────────────────────────
 
-class RequestPanel(_RequestSendMixin, _RequestAuthMixin, _RequestBodyMixin, QWidget):
+class RequestPanel(_RequestSendMixin, _RequestAuthMixin, RequestBodyMixin, QWidget):
     """Panel for building and sending HTTP requests."""
 
     response_received = pyqtSignal(object)
@@ -348,8 +348,8 @@ class RequestPanel(_RequestSendMixin, _RequestAuthMixin, _RequestBodyMixin, QWid
         self.tabs.addTab(self._build_params_tab(), "Params")
         self.tabs.addTab(self._build_body_tab(), "Body")
         self.tabs.addTab(self._create_auth_tab(), "Auth")           # defined in _RequestAuthMixin
-        self.tabs.addTab(self._create_captures_tab(), "Captures")   # defined in _RequestBodyMixin
-        self.tabs.addTab(self._create_assertions_tab(), "Assertions")  # defined in _RequestBodyMixin
+        self.tabs.addTab(self._create_captures_tab(), "Captures")   # defined in RequestBodyMixin
+        self.tabs.addTab(self._create_assertions_tab(), "Assertions")  # defined in RequestBodyMixin
         self.tabs.addTab(self._create_scripts_tab(), "Scripts")
         self.tabs.addTab(self._create_settings_tab(), "Settings")
         self.tabs.addTab(self._build_notes_tab(), "Notes")
@@ -524,7 +524,7 @@ class RequestPanel(_RequestSendMixin, _RequestAuthMixin, _RequestBodyMixin, QWid
             ["none", "raw (JSON)", "raw (XML)", "raw (text)",
              "form-urlencoded", "multipart/form-data", "GraphQL"]
         )
-        # _on_body_type_changed is defined in _RequestBodyMixin
+        # _on_body_type_changed is defined in RequestBodyMixin
         self.body_type_combo.currentIndexChanged.connect(self._on_body_type_changed)
         type_bar.addWidget(QLabel("Type:"))
         type_bar.addWidget(self.body_type_combo)
@@ -542,7 +542,7 @@ class RequestPanel(_RequestSendMixin, _RequestAuthMixin, _RequestBodyMixin, QWid
         self._body_search_input.setPlaceholderText("Find in body…")
         self._body_search_input.setFixedHeight(26)
         self._body_search_input.setClearButtonEnabled(True)
-        # _body_find_next / _body_highlight_all are defined in _RequestBodyMixin
+        # _body_find_next / _body_highlight_all are defined in RequestBodyMixin
         self._body_search_input.returnPressed.connect(self._body_find_next)
         self._body_search_input.textChanged.connect(self._body_highlight_all)
 
@@ -564,7 +564,7 @@ class RequestPanel(_RequestSendMixin, _RequestAuthMixin, _RequestBodyMixin, QWid
         next_btn.setText("▼")
         next_btn.setFixedSize(24, 24)
         next_btn.setToolTip("Find next match")
-        # _body_find_prev / _body_find_next are defined in _RequestBodyMixin
+        # _body_find_prev / _body_find_next are defined in RequestBodyMixin
         prev_btn.clicked.connect(self._body_find_prev)
         next_btn.clicked.connect(self._body_find_next)
 
@@ -602,7 +602,7 @@ class RequestPanel(_RequestSendMixin, _RequestAuthMixin, _RequestBodyMixin, QWid
         # ── Multipart form-data editor ────────────────────────────────────
         # Toolbar immediately above the table so controls stay adjacent.
         # _multipart_add_row / _multipart_remove_row / _multipart_browse_file
-        # are defined in _RequestBodyMixin
+        # are defined in RequestBodyMixin
         self._mp_toolbar = TabToolbar("", include_file_btn=True, parent=self)
         self._mp_toolbar.add_clicked.connect(self._multipart_add_row)
         self._mp_toolbar.remove_clicked.connect(self._multipart_remove_row)
