@@ -149,13 +149,9 @@ cli.add_command(import_cmd, "import")
 @cli.command()
 def gui():
     """Launch GUI application"""
-    try:
-        from equinox.gui.app import main as gui_main
+    from equinox.gui.app import main as gui_main
 
-        gui_main()
-    except ImportError:
-        click.echo("GUI dependencies not installed. Install with: pip install equinox[gui]")
-        sys.exit(1)
+    gui_main()
 
 
 if __name__ == "__main__":

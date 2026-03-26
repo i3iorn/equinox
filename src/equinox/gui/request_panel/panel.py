@@ -715,7 +715,7 @@ class RequestPanel(_RequestSendMixin, _RequestAuthMixin, RequestBodyMixin, QWidg
         layout.addWidget(splitter, 1)
 
         # ── Python syntax highlighting for script editors ─────────────
-        from equinox.gui.syntax_highlighter import PythonHighlighter
+        from equinox.gui.syntax_highlighter.python_highlighter import PythonHighlighter
         self._pre_highlighter = PythonHighlighter(self.pre_script_editor.document())
         self._post_highlighter = PythonHighlighter(self.post_script_editor.document())
 

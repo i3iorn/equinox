@@ -26,6 +26,9 @@ _LIGHT: Dict[str, str] = {
     "BLUE":       "#0550ae",
     "PURPLE":     "#8250df",
     "MUTED":      "#656d76",
+    "CYAN":       "#006b75",
+    "GRAY":       "#57606a",
+    "TEAL":       "#008080",
     # Surfaces — slightly off-white to reduce eye strain
     "BG":         "#f7f7f8",
     "BG_ALT":     "#ededef",
@@ -51,6 +54,9 @@ _DARK: Dict[str, str] = {
     "BLUE":       "#4d8ed4",
     "PURPLE":     "#9a7bdb",
     "MUTED":      "#8b949e",
+    "CYAN":       "#39c5cf",
+    "GRAY":       "#6e7681",
+    "TEAL":       "#39c5cf",
     # Surfaces
     "BG":         "#0d1117",
     "BG_ALT":     "#161b22",
