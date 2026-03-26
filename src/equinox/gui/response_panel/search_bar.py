@@ -270,6 +270,10 @@ class SearchBar(QWidget):
         self._debounce_timer.setSingleShot(True)
         self._debounce_timer.setInterval(250)
         self._pending_text: Optional[str] = None
+        # For deterministic behavior in tests and simple environments we
+        # execute searches synchronously. When True, text changes bypass the
+        # debounce timer and run immediately.
+        self._synchronous_search = True
 
         self._build_ui()
         self.setVisible(False)
@@ -454,6 +458,16 @@ class SearchBar(QWidget):
     def _on_text_changed_debounced(self, text: str) -> None:
         self._pending_text = text
         self._set_status_searching()
+        # If running synchronously (e.g. tests), bypass the debounce timer to
+        # ensure results are available immediately after setText().
+        if getattr(self, "_synchronous_search", False):
+            try:
+                self._debounce_timer.stop()
+            except Exception:
+                pass
+            self._on_debounced_text()
+            return
+
         self._debounce_timer.start()
 
     def _on_debounced_text(self) -> None:

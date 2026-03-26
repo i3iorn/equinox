@@ -265,7 +265,11 @@ class RequestResponseLogger:
             log_data["body"] = redact_body(request.body[:1000], max_length=1000)
         # Log structured data via logging extras so the global JSON formatter
         # can produce consistent records.
-        msg = f"request_sent: {request.method} {redact_url(request.url)}"
+        # Emit the full structured payload as the log message so test harnesses
+        # and simple handlers that inspect LogRecord.message can parse the
+        # JSON directly. We still pass `extra` to allow more advanced
+        # formatters/handlers to pick up structured fields.
+        msg = json.dumps(log_data, ensure_ascii=False)
         self.logger.log(level, msg, extra=log_data)
 
     def log_response(
@@ -299,7 +303,7 @@ class RequestResponseLogger:
         if include_body and response.body:
             body_preview = response.body[:1000] if isinstance(response.body, str) else str(response.body)[:1000]
             log_data["body"] = redact_body(body_preview, max_length=1000)
-        msg = f"response_received: {request.method} {redact_url(request.url)} {response.status_code}"
+        msg = json.dumps(log_data, ensure_ascii=False)
         self.logger.log(level, msg, extra=log_data)
 
     def log_error(
@@ -326,7 +330,7 @@ class RequestResponseLogger:
             "error_message": error_msg,
             "timestamp": utc_now().isoformat(),
         }
-        msg = f"request_failed: {request.method} {redact_url(request.url)}"
+        msg = json.dumps(log_data, ensure_ascii=False)
         self.logger.log(level, msg, extra=log_data)
 
 

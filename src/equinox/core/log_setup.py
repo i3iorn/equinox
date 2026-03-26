@@ -45,7 +45,7 @@ class _JsonFormatter(logging.Formatter):
     # Fields copied verbatim from the LogRecord if present as ``extra`` kwargs
     _EXTRA_FIELDS = (
         "event", "method", "url", "headers", "params", "timeout", "verify_ssl",
-        "status_code", "reason", "elapsed_time_seconds", "elapsed_ms",
+        "status", "status_code", "reason", "elapsed_time_seconds", "elapsed_ms",
         "size_bytes", "error_type", "error_message", "request_id", "timestamp",
     )
 
