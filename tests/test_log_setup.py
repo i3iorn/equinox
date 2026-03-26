@@ -1,7 +1,7 @@
 ﻿"""Tests for log_setup module."""
 import json, logging, pytest
 from pathlib import Path
-from equinox.core.log_setup import configure_logging, get_log_file, _JsonFormatter
+from equinox.core.log_setup import configure_logging, get_log_file, JsonFormatter
 class TestLogSetup:
     def test_configure_creates_log_file(self, tmp_path):
         log_dir = tmp_path / 'logs'
@@ -42,7 +42,7 @@ class TestLogSetup:
         assert str(result).endswith('equinox.log')
 class TestJsonFormatter:
     def test_formats_valid_json(self):
-        fmt = _JsonFormatter()
+        fmt = JsonFormatter()
         record = logging.LogRecord('test', logging.INFO, '', 0, 'hello', (), None)
         output = fmt.format(record)
         doc = json.loads(output)
@@ -50,7 +50,7 @@ class TestJsonFormatter:
         assert doc['level'] == 'INFO'
         assert 'ts' in doc
     def test_includes_exception(self):
-        fmt = _JsonFormatter()
+        fmt = JsonFormatter()
         try:
             raise ValueError('boom')
         except ValueError:

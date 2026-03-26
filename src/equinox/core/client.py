@@ -1,21 +1,32 @@
-"""HTTP Client implementation using httpx"""
+"""
+Refactored HTTP Client implementation using httpx.
+
+Goals:
+- Strong separation of concerns
+- DRY retry / error / concurrency logic
+- Stability and debuggability
+"""
+
 import json
 import os
 import ssl
 import threading
-
-import httpx
 import time
 import logging
 from pathlib import Path
-from typing import Optional, Dict, Any, List, Tuple
-from threading import Lock
+from typing import Optional, Dict, Any, List, Tuple, Callable
+
+import httpx
 
 from equinox.core.time import utc_now
 from equinox.core.request import Request, Response
 from equinox.core.exceptions import (
-    EquinoxError, RequestError, RequestTimeoutError, RateLimitError,
-    CertificateError, ValidationError
+    EquinoxError,
+    RequestError,
+    RequestTimeoutError,
+    RateLimitError,
+    CertificateError,
+    ValidationError,
 )
 from equinox.core.validation import Validator
 from equinox.core.redact import redact_body, redact_url
@@ -28,6 +39,11 @@ from equinox.core import urls
 from equinox.core.cookies import CookieManager
 
 logger = logging.getLogger(__name__)
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Redirect-safe auth wrapper
+# ──────────────────────────────────────────────────────────────────────────────
 
 
 class _RedirectSafeAuth(httpx.Auth):
@@ -53,10 +69,494 @@ class _RedirectSafeAuth(httpx.Auth):
         yield request
 
 
-# SSL/proxy detection and the HTTP error-handler list are provided by
-# the centralized ``error_mapper`` module.  The local implementations
-# were removed to avoid duplication; see ``equinox.core.error_mapper``.
+# ──────────────────────────────────────────────────────────────────────────────
+# Concurrency guard
+# ──────────────────────────────────────────────────────────────────────────────
 
+
+class ConcurrencyGuard:
+    def __init__(self, max_concurrent: int) -> None:
+        self._max = max_concurrent
+        self._active = 0
+        self._lock = threading.Lock()
+
+    def acquire(self) -> None:
+        with self._lock:
+            if self._active >= self._max:
+                raise RequestError(
+                    f"Too many concurrent requests: {self._active}/{self._max}"
+                )
+            self._active += 1
+            logger.debug("ConcurrencyGuard acquired: active=%d", self._active)
+
+    def release(self) -> None:
+        with self._lock:
+            self._active = max(0, self._active - 1)
+            logger.debug("ConcurrencyGuard released: active=%d", self._active)
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Retry policy (timeouts + HTTP overload)
+# ──────────────────────────────────────────────────────────────────────────────
+
+
+class RetryPolicy:
+    def __init__(
+        self,
+        timeout_retries: int,
+        http_retries: int,
+        retryable_status_codes: Optional[set] = None,
+        retry_after_cap_seconds: float = 60.0,
+        interruptible_sleep: Optional[Callable[[float], None]] = None,
+    ) -> None:
+        self._timeout_retries = max(1, timeout_retries)
+        self._http_retries = max(0, http_retries)
+        self._retryable_status_codes = retryable_status_codes or {429, 503, 504}
+        self._retry_after_cap_seconds = retry_after_cap_seconds
+        self._sleep = interruptible_sleep or time.sleep
+
+    def _sleep_backoff(self, attempt: int) -> None:
+        wait_seconds = 2 ** attempt  # 1s, 2s, 4s, ...
+        logger.warning(
+            "Request timed out (attempt %d/%d), retrying in %ds",
+            attempt + 1,
+            self._timeout_retries,
+            wait_seconds,
+        )
+        self._sleep(wait_seconds)
+
+    def _parse_retry_after(self, response: Response) -> float:
+        if not response.headers:
+            return 1.0
+        try:
+            retry_after = float(response.headers.get("retry-after", 1))
+        except (ValueError, TypeError):
+            retry_after = 1.0
+        return min(retry_after, self._retry_after_cap_seconds)
+
+    def execute(self, func: Callable[[], Response]) -> Response:
+        # Timeout retries
+        last_error: Optional[Exception] = None
+        for attempt in range(self._timeout_retries):
+            try:
+                logger.debug(
+                    "RetryPolicy: timeout attempt %d/%d",
+                    attempt + 1,
+                    self._timeout_retries,
+                )
+                return func()
+            except RequestTimeoutError as exc:
+                last_error = exc
+                if attempt < self._timeout_retries - 1:
+                    self._sleep_backoff(attempt)
+                else:
+                    logger.error(
+                        "Request timed out on final attempt %d/%d, giving up",
+                        attempt + 1,
+                        self._timeout_retries,
+                    )
+                    raise
+
+        if last_error:
+            raise last_error  # type: ignore[unreachable]
+
+        # Fallback (should not be reached)
+        return func()
+
+    def execute_with_http_overload(self, func: Callable[[], Response]) -> Response:
+        """Execute with timeout retries + HTTP overload retries."""
+        response = self.execute(func)
+
+        if response.status_code not in self._retryable_status_codes:
+            return response
+
+        logger.debug(
+            "RetryPolicy: HTTP overload status=%d (retryable=%s)",
+            response.status_code,
+            response.status_code in self._retryable_status_codes,
+        )
+
+        for attempt in range(self._http_retries):
+            retry_after = self._parse_retry_after(response)
+            logger.warning(
+                "Received %d (attempt %d/%d), retrying after %.1fs",
+                response.status_code,
+                attempt + 1,
+                self._http_retries,
+                retry_after,
+            )
+            self._sleep(retry_after)
+            response = func()
+            logger.debug(
+                "HTTP overload retry attempt %d/%d completed, status=%d",
+                attempt + 1,
+                self._http_retries,
+                response.status_code,
+            )
+            if response.status_code not in self._retryable_status_codes:
+                break
+
+        return response
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Auth applier
+# ──────────────────────────────────────────────────────────────────────────────
+
+
+class AuthApplier:
+    def apply(
+        self,
+        request: Request,
+        headers: Dict[str, str],
+        explicit_auth: Optional[AuthStrategy],
+        proxy: Optional[str],
+    ) -> Dict[str, str]:
+        """Apply auth strategy and return the headers that were added.
+
+        Raises:
+            RequestError: If authentication fails.
+        """
+        auth_strategy = explicit_auth or request.auth
+        if not auth_strategy:
+            return {}
+
+        snapshot = set(headers.keys())
+        try:
+            if proxy and hasattr(auth_strategy, "_proxy"):
+                auth_strategy._proxy = proxy
+            logger.debug("Applying auth strategy: %s", type(auth_strategy).__name__)
+            auth_strategy.apply(request, headers)
+        except Exception as auth_exc:
+            safe_msg = redact_body(str(auth_exc), max_length=200) or "unknown error"
+            logger.error(
+                "Authentication failed (%s): %s — %s",
+                type(auth_exc).__name__,
+                type(auth_strategy).__name__,
+                safe_msg,
+            )
+            if proxy and (
+                "10061" in safe_msg
+                or "connection refused" in safe_msg.lower()
+                or "econnrefused" in safe_msg.lower()
+            ):
+                raise RequestError(
+                    f"OAuth2 token refresh failed — proxy ({proxy}) is not reachable. "
+                    "Please check your proxy settings under Preferences.",
+                    details={"proxy": proxy},
+                )
+            raise RequestError(f"Authentication failed: {safe_msg}")
+
+        auth_headers = {k: headers[k] for k in headers if k not in snapshot}
+        if auth_headers:
+            logger.debug(
+                "Auth applied (%s): %s",
+                type(auth_strategy).__name__,
+                ", ".join(auth_headers.keys()),
+            )
+        return auth_headers
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Cookie handler
+# ──────────────────────────────────────────────────────────────────────────────
+
+
+class CookieHandler:
+    def __init__(self, manager: Optional[CookieManager]) -> None:
+        self._manager = manager
+
+    def get_httpx_cookies(self) -> dict:
+        if self._manager is not None:
+            return self._manager.to_httpx_cookies()
+        return {}
+
+    def update_from_response(self, response: Optional[Response], url: str) -> None:
+        if self._manager is None or response is None:
+            logger.debug("CookieHandler: no manager or response, skipping update")
+            return
+        try:
+            headers = dict(response.headers) if response else {}
+            if headers.get("set-cookie"):
+                logger.debug("CookieHandler: updating cookie jar from Set-Cookie")
+                self._manager.update_from_response(headers, url)
+            else:
+                logger.debug("CookieHandler: no Set-Cookie header present")
+        except Exception as exc:
+            logger.debug("CookieHandler: update failed: %s", exc)
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Httpx dispatcher
+# ──────────────────────────────────────────────────────────────────────────────
+
+
+class HttpxDispatcher:
+    def __init__(
+        self,
+        timeout: float,
+        follow_redirects: bool,
+        verify_ssl: bool,
+        proxy: Optional[str],
+        cookie_handler: CookieHandler,
+    ) -> None:
+        self._timeout = timeout
+        self._follow_redirects = follow_redirects
+        self._verify_ssl = verify_ssl
+        self._proxy = proxy
+        self._cookie_handler = cookie_handler
+        self._client: Optional[httpx.Client] = None
+
+    # SSL context builder
+    def _build_ssl_context(self) -> Any:
+        if not self._verify_ssl:
+            return False
+        ssl_context = ssl.create_default_context()
+        ssl_context.minimum_version = ssl.TLSVersion.TLSv1_2
+        return ssl_context
+
+    def _ensure_client(self) -> httpx.Client:
+        if self._client is None:
+            logger.debug("HttpxDispatcher: creating shared httpx.Client")
+            self._client = httpx.Client(
+                timeout=self._timeout,
+                follow_redirects=self._follow_redirects,
+                verify=self._build_ssl_context(),
+                proxy=self._proxy,
+                cookies=self._cookie_handler.get_httpx_cookies(),
+            )
+        return self._client
+
+    def close(self) -> None:
+        if self._client is not None:
+            logger.debug("HttpxDispatcher: closing shared httpx.Client")
+            self._client.close()
+            self._client = None
+
+    # Multipart builder (simple, DRY)
+    def _build_multipart_files(
+        self, request: Request
+    ) -> Tuple[Optional[Dict[str, Any]], List[Any]]:
+        """Build httpx-compatible multipart files from request.files (if any).
+
+        Expected shape:
+            request.files = {
+                "field": ("filename", file_bytes_or_fileobj, "content/type")
+            }
+        """
+        if not getattr(request, "files", None):
+            return None, []
+
+        files: Dict[str, Any] = {}
+        opened_handles: List[Any] = []
+
+        for field, value in request.files.items():
+            # value can be:
+            # - (filename, fileobj/bytes, content_type)
+            # - Path / str (path)
+            if isinstance(value, (str, Path)):
+                fh = open(value, "rb")
+                opened_handles.append(fh)
+                files[field] = (os.path.basename(str(value)), fh)
+            elif isinstance(value, tuple) and len(value) in (2, 3):
+                files[field] = value
+            else:
+                raise ValidationError(f"Unsupported file spec for field '{field}'")
+
+        return files, opened_handles
+
+    def _wrap_response(self, raw: httpx.Response, request: Request, elapsed: float) -> Response:
+        return Response(
+            status_code=raw.status_code,
+            reason=self._extract_reason_phrase(raw),
+            headers=dict(raw.headers),
+            body=raw.content,
+            elapsed=elapsed,
+            request=request,
+            timestamp=utc_now(),
+        )
+
+    @staticmethod
+    def _extract_reason_phrase(raw: httpx.Response) -> str:
+        # httpx doesn't expose reason phrase directly; approximate from status code
+        return raw.reason_phrase or httpx.codes.get_reason_phrase(raw.status_code) or ""
+
+    def execute(
+        self,
+        request: Request,
+        headers: Dict[str, str],
+        auth_headers: Optional[Dict[str, str]] = None,
+    ) -> Response:
+        """Execute the request using httpx, handling redirects and multipart."""
+        client = self._ensure_client()
+
+        logger.debug(
+            "HttpxDispatcher: sending %s request to %s",
+            request.method,
+            Validator.sanitize_for_display(request.url, 100),
+        )
+        start_time = time.time()
+
+        httpx_auth: Optional[_RedirectSafeAuth] = None
+        if auth_headers:
+            for key in auth_headers:
+                headers.pop(key, None)
+            httpx_auth = _RedirectSafeAuth(auth_headers)
+
+        multipart_files, opened_handles = self._build_multipart_files(request)
+
+        try:
+            raw = client.request(
+                method=request.method,
+                url=request.url,
+                headers=headers,
+                params=request.params,
+                content=(
+                    request.body.encode("utf-8")
+                    if (request.body and not multipart_files)
+                    else None
+                ),
+                files=multipart_files or None,
+                timeout=request.timeout or self._timeout,
+                follow_redirects=(
+                    request.follow_redirects
+                    if request.follow_redirects is not None
+                    else self._follow_redirects
+                ),
+                auth=httpx_auth,
+            )
+        finally:
+            for fh in opened_handles:
+                try:
+                    fh.close()
+                except Exception:
+                    pass
+
+        if raw.history:
+            chain = " → ".join(
+                f"{r.status_code} {r.headers.get('location', '?')}" for r in raw.history
+            )
+            logger.info(
+                "Request followed %d redirect(s): %s → %d",
+                len(raw.history),
+                chain,
+                raw.status_code,
+            )
+
+        elapsed = time.time() - start_time
+        logger.debug(
+            "HttpxDispatcher: request completed in %.2fs with status %d",
+            elapsed,
+            raw.status_code,
+        )
+        return self._wrap_response(raw, request, elapsed)
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Request pipeline (interceptors + audit + error mapping)
+# ──────────────────────────────────────────────────────────────────────────────
+
+
+class RequestPipeline:
+    def __init__(
+        self,
+        interceptors: InterceptorChain,
+        audit_logger,
+        error_handlers,
+    ) -> None:
+        self._interceptors = interceptors
+        self._audit = audit_logger
+        self._error_handlers = error_handlers
+
+    def _handle_error(
+        self,
+        request: Request,
+        error: Exception,
+    ) -> None:
+        audit_tag: Optional[str] = None
+        log_message: Optional[str] = None
+
+        if isinstance(error, EquinoxError):
+            # Already a domain error, just log and re-raise
+            audit_tag = type(error).__name__
+            log_message = str(error)
+        else:
+            # Map via error_handlers
+            for exc_type, handler_fn in self._error_handlers:
+                if isinstance(error, exc_type):
+                    logger.debug("Error matched handler for %s", exc_type.__name__)
+                    kwargs = handler_fn(error, request)
+                    mapped_error = kwargs.get("error")
+                    audit_tag = kwargs.get("audit_tag")
+                    log_message = kwargs.get("log_message")
+                    if audit_tag:
+                        self._audit.log_request(
+                            request.method, request.url, error=audit_tag
+                        )
+                    if log_message:
+                        logger.warning("Error log message: %s", log_message)
+                    processed = self._interceptors.process_error(request, mapped_error)
+                    if processed is not None:
+                        raise processed
+                    return  # suppressed
+            # Fallback
+            safe_msg = redact_body(str(error), max_length=500) or ""
+            fallback = RequestError(
+                f"Request failed: {type(error).__name__}: {safe_msg}",
+                details={"error": type(error).__name__},
+            )
+            audit_tag = type(error).__name__
+            log_message = (
+                f"Unexpected error during request: {type(error).__name__}: {safe_msg}"
+            )
+            self._audit.log_request(request.method, request.url, error=audit_tag)
+            logger.warning("Error log message: %s", log_message)
+            processed = self._interceptors.process_error(request, fallback)
+            if processed is not None:
+                raise processed
+
+    def execute(
+        self,
+        request: Request,
+        dispatch: Callable[[Request], Response],
+    ) -> Response:
+        logger.debug("RequestPipeline: starting")
+        try:
+            logger.debug("RequestPipeline: running pre-request interceptors")
+            request = self._interceptors.process_request(request)
+
+            response = dispatch(request)
+
+            logger.debug("RequestPipeline: running post-response interceptors")
+            response = self._interceptors.process_response(request, response)
+
+            logger.debug("RequestPipeline: logging successful request to audit trail")
+            self._audit.log_request(
+                request.method, redact_url(request.url), status_code=response.status_code
+            )
+
+            logger.debug(
+                "RequestPipeline: completed method=%s status=%d elapsed=%.2fs",
+                request.method,
+                response.status_code,
+                response.elapsed,
+            )
+            return response
+
+        except Exception as exc:
+            logger.debug(
+                "RequestPipeline: caught exception type=%s message=%s",
+                type(exc).__name__,
+                str(exc)[:200],
+            )
+            self._handle_error(request, exc)
+            # If error was suppressed by interceptors, raise a generic error
+            raise RequestError("Request was suppressed by an interceptor")
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# HTTPClient façade
+# ──────────────────────────────────────────────────────────────────────────────
 
 
 class HTTPClient:
@@ -65,8 +565,9 @@ class HTTPClient:
     Features:
     - Input validation
     - Rate limiting
-    - Timeout controls
+    - Timeout & HTTP overload retries
     - SSL/TLS verification
+    - Concurrency control
     - Comprehensive error handling
     """
 
@@ -91,29 +592,22 @@ class HTTPClient:
         cookie_manager: Optional[CookieManager] = None,
         cancel_event: Optional[threading.Event] = None,
     ):
-        """Initialize HTTP client.
-
-        Args:
-            timeout: Request timeout in seconds (0.1 to 300)
-            follow_redirects: Whether to follow redirects
-            verify_ssl: Whether to verify SSL certificates
-            proxy: Proxy URL (e.g., 'http://localhost:8080')
-            max_rate_per_minute: Maximum requests per minute (0 = unlimited)
-            max_concurrent_requests: Maximum concurrent requests
-            cookie_manager:
-            cancel_event:
-
-        Raises:
-            ValidationError: If parameters are invalid
-        """
         if not isinstance(timeout, (int, float)) or timeout <= 0:
             raise ValidationError("Timeout must be a positive number")
 
         if timeout < self.MIN_TIMEOUT:
-            logger.warning(f"Timeout {timeout}s is very low, using minimum {self.MIN_TIMEOUT}s")
+            logger.warning(
+                "Timeout %ss is very low, using minimum %ss",
+                timeout,
+                self.MIN_TIMEOUT,
+            )
             timeout = self.MIN_TIMEOUT
         elif timeout > self.MAX_TIMEOUT:
-            logger.warning(f"Timeout {timeout}s exceeds maximum, using {self.MAX_TIMEOUT}s")
+            logger.warning(
+                "Timeout %ss exceeds maximum, using %ss",
+                timeout,
+                self.MAX_TIMEOUT,
+            )
             timeout = self.MAX_TIMEOUT
 
         self.timeout = timeout
@@ -121,46 +615,54 @@ class HTTPClient:
         self.verify_ssl = verify_ssl
         self.proxy = proxy
         self.max_rate_per_minute = max_rate_per_minute
-        self.max_concurrent_requests = max_concurrent_requests
-        self._cookie_manager: Optional[CookieManager] = cookie_manager
         self._cancel_event = cancel_event
-
-        self._client: Optional[httpx.Client] = None
-
-        # legacy fields removed — rate limiting is handled by RateLimiter
-
-        self._active_requests = 0
-        self._request_lock = Lock()
 
         self.interceptors = InterceptorChain()
         self.logger = RequestResponseLogger()
         self._audit = get_audit_logger()
-        # Encapsulated rate limiter (uses audit logger for violation events)
-        self._rate_limiter = RateLimiter(self.max_rate_per_minute, window_seconds=self.RATE_LIMIT_WINDOW_SECONDS, audit_logger=self._audit)
-        # Build error handlers via centralized error_mapper
-        self._error_handlers = error_mapper.build_error_handlers(self)
-
-    def __enter__(self):
-        if self.proxy:
-            logger.debug("Opening HTTPClient with proxy: %s", self.proxy)
-            self._check_proxy_reachable()
-        self._client = httpx.Client(
+        self._rate_limiter = RateLimiter(
+            self.max_rate_per_minute,
+            window_seconds=self.RATE_LIMIT_WINDOW_SECONDS,
+            audit_logger=self._audit,
+        )
+        self._cookie_handler = CookieHandler(cookie_manager)
+        self._dispatcher = HttpxDispatcher(
             timeout=self.timeout,
             follow_redirects=self.follow_redirects,
-            verify=self._build_ssl_context(),
+            verify_ssl=self.verify_ssl,
             proxy=self.proxy,
-            cookies=self._get_current_cookies(),
+            cookie_handler=self._cookie_handler,
         )
+        self._concurrency = ConcurrencyGuard(max_concurrent_requests)
+        self._auth_applier = AuthApplier()
+        self._retry_policy = RetryPolicy(
+            timeout_retries=self.MAX_RETRIES,
+            http_retries=self.MAX_HTTP_RETRIES,
+            retryable_status_codes=self.RETRYABLE_STATUS_CODES,
+            retry_after_cap_seconds=self.RETRY_AFTER_CAP_SECONDS,
+            interruptible_sleep=self._interruptible_sleep,
+        )
+        self._error_handlers = error_mapper.build_error_handlers(self)
+        self._pipeline = RequestPipeline(
+            interceptors=self.interceptors,
+            audit_logger=self._audit,
+            error_handlers=self._error_handlers,
+        )
+
+    # Context manager delegates to dispatcher
+    def __enter__(self):
+        if self.proxy:
+            logger.debug("HTTPClient: opening with proxy %s", self.proxy)
+            self._check_proxy_reachable()
+        # Ensure dispatcher client is created
+        self._dispatcher._ensure_client()
         return self
 
     def __exit__(self, exc_type, exc_val, exc_tb):
-        if self._client:
-            self._client.close()
-            self._client = None
+        self._dispatcher.close()
 
+    # Proxy reachability
     def _check_proxy_reachable(self) -> None:
-        # Delegate to core.proxy.check_proxy_reachable to centralize platform
-        # specific socket/select handling and make it easier to test.
         from equinox.core.proxy import check_proxy_reachable
 
         if not self.proxy:
@@ -169,155 +671,8 @@ class HTTPClient:
 
         check_proxy_reachable(self.proxy)
 
-    def _build_ssl_context(self) -> Any:
-        """Build an SSL context enforcing TLS 1.2+ minimum, or False to skip verification."""
-        if not self.verify_ssl:
-            return False
-        ssl_context = ssl.create_default_context()
-        ssl_context.minimum_version = ssl.TLSVersion.TLSv1_2
-        return ssl_context
-
-    def _get_current_cookies(self) -> dict:
-        """Return the current cookie jar as an httpx-compatible dict."""
-        if self._cookie_manager is not None:
-            return self._cookie_manager.to_httpx_cookies()
-        return {}
-
-    def _check_rate_limit(self) -> None:
-        """Delegate rate-limit enforcement to the encapsulated RateLimiter."""
-        self._rate_limiter.try_acquire()
-
-    def _check_concurrent_limit(self) -> None:
-        """Raise RequestError if the concurrent request cap is reached."""
-        with self._request_lock:
-            if self._active_requests >= self.max_concurrent_requests:
-                raise RequestError(
-                    f"Too many concurrent requests: "
-                    f"{self._active_requests}/{self.max_concurrent_requests}"
-                )
-            self._active_requests += 1
-
-    def _release_concurrent_slot(self) -> None:
-        """Decrement the active-request counter, never below zero."""
-        with self._request_lock:
-            self._active_requests = max(0, self._active_requests - 1)
-
-    def send(self, request: Request, auth: Optional[AuthStrategy] = None) -> Response:
-        """Send HTTP request with validation and security checks.
-
-        Args:
-            request: Request object
-            auth: Optional auth strategy
-
-        Returns:
-            Response object
-
-        Raises:
-            ValidationError: If request validation fails
-            RateLimitError: If rate limit exceeded
-            RequestError: If request fails
-            TimeoutError: If request times out
-            CertificateError: If SSL verification fails
-        """
-        logger.debug(
-            "send() called: method=%s url=%s auth=%s",
-            request.method,
-            Validator.sanitize_for_display(request.url, 80),
-            type(auth).__name__ if auth else "None",
-        )
-
-        try:
-            self._validate_request(request)
-            logger.debug("Request validation passed for %s", request.method)
-        except ValidationError as validation_error:
-            logger.error("Request validation failed: %s", type(validation_error).__name__)
-            raise
-
-        try:
-            logger.debug("Checking rate limit (max=%d/min)", self.max_rate_per_minute)
-            self._check_rate_limit()
-            logger.debug("Rate limit check passed")
-        except RateLimitError as rate_error:
-            logger.warning("Rate limit exceeded: %s", rate_error)
-            raise
-
-        try:
-            logger.debug(
-                "Checking concurrent request limit (active=%d, max=%d)",
-                self._active_requests, self.max_concurrent_requests,
-            )
-            self._check_concurrent_limit()
-            logger.debug("Concurrent request limit check passed")
-        except RequestError as concurrent_error:
-            logger.warning("Concurrent request limit exceeded: %s", concurrent_error)
-            raise
-
-        try:
-            response = self._send_with_timeout_retries(request, auth)
-            response = self._retry_on_server_overload(request, auth, response)
-            if response is None:
-                raise RequestError(
-                    "Request was suppressed by an interceptor",
-                    details={"url": request.url},
-                )
-            logger.debug("send() completed successfully: status=%d", response.status_code)
-            return response
-        finally:
-            self._release_concurrent_slot()
-            logger.debug("Concurrent request slot released (active=%d)", self._active_requests)
-
-    def _send_with_timeout_retries(
-        self,
-        request: Request,
-        auth: Optional[AuthStrategy],
-    ) -> Optional[Response]:
-        """Send the request, retrying on transient TimeoutErrors with exponential backoff.
-
-        Non-retriable errors (SSL, rate-limit, validation) propagate immediately.
-        """
-        last_error: Optional[Exception] = None
-        response: Optional[Response] = None
-
-        for attempt in range(self.MAX_RETRIES):
-            try:
-                logger.debug(
-                    "_send_with_timeout_retries: attempt %d/%d",
-                    attempt + 1, self.MAX_RETRIES,
-                )
-                response = self._send_once(request, auth)
-                logger.debug("Request succeeded on attempt %d/%d", attempt + 1, self.MAX_RETRIES)
-                return response
-            except RequestTimeoutError as timeout_error:
-                last_error = timeout_error
-                if attempt < self.MAX_RETRIES - 1:
-                    wait_seconds = 2 ** attempt  # 1s, 2s, 4s
-                    logger.warning(
-                        "Request timed out (attempt %d/%d), retrying in %ds",
-                        attempt + 1, self.MAX_RETRIES, wait_seconds,
-                    )
-                    self._interruptible_sleep(wait_seconds)
-                else:
-                    logger.error(
-                        "Request timed out on final attempt %d/%d, giving up",
-                        attempt + 1, self.MAX_RETRIES,
-                    )
-                    raise
-
-        if last_error is not None and response is None:
-            raise last_error  # unreachable — satisfies type checkers
-
-        return response
-
+    # Interruptible sleep
     def _interruptible_sleep(self, seconds: float) -> None:
-        """Sleep for *seconds*, but wake immediately if the cancel event fires.
-
-        Uses ``threading.Event.wait`` instead of ``time.sleep`` so that
-        ``RequestWorker.cancel()`` can interrupt a retry backoff instantly
-        rather than waiting for the full sleep to expire.
-
-        Raises:
-            RequestError: If the cancel event was set during the sleep.
-        """
         if self._cancel_event is not None:
             cancelled = self._cancel_event.wait(timeout=seconds)
             if cancelled:
@@ -325,67 +680,11 @@ class HTTPClient:
         else:
             time.sleep(seconds)
 
-    def _retry_on_server_overload(
-        self,
-        request: Request,
-        auth: Optional[AuthStrategy],
-        response: Optional[Response],
-    ) -> Optional[Response]:
-        """Retry the request when the server signals overload (429/503/504).
-
-        Respects the Retry-After header, capped at 60 seconds.
-        """
-        if response is None or response.status_code not in self.RETRYABLE_STATUS_CODES:
-            return response
-
-        logger.debug(
-            "_retry_on_server_overload: status=%d (retryable=%s)",
-            response.status_code,
-            response.status_code in self.RETRYABLE_STATUS_CODES,
-        )
-
-        for attempt in range(self.MAX_HTTP_RETRIES):
-            retry_after = self._parse_retry_after(response)
-            logger.warning(
-                "Received %d (attempt %d/%d), retrying after %.1fs",
-                response.status_code, attempt + 1, self.MAX_HTTP_RETRIES, retry_after,
-            )
-            self._interruptible_sleep(retry_after)
-            response = self._send_once(request, auth)
-            logger.debug(
-                "Retry attempt %d/%d completed, status=%d",
-                attempt + 1, self.MAX_HTTP_RETRIES, response.status_code if response else 0,
-            )
-            if response is None or response.status_code not in self.RETRYABLE_STATUS_CODES:
-                break
-
-        return response
-
-    def _parse_retry_after(self, response: Response) -> float:
-        """Extract the Retry-After wait duration from a response, capped at 60s."""
-        if not response.headers:
-            return 1.0
-        try:
-            retry_after = float(response.headers.get("retry-after", 1))
-        except (ValueError, TypeError):
-            retry_after = 1.0
-        return min(retry_after, self.RETRY_AFTER_CAP_SECONDS)
-
-    def _send_once(
-        self,
-        request: Request,
-        auth: Optional[AuthStrategy],
-    ) -> Optional[Response]:
-        """Send the request exactly once, using a managed or standalone client."""
-        if self._client is None:
-            with self:
-                return self._send_internal(request, auth)
-        return self._send_internal(request, auth)
-
+    # Validation
     def _validate_request(self, request: Request) -> None:
-        """Validate all components of the request before sending."""
-        # Expand placeholders from request.path_params (if any) before resolved validation.
-        resolved_url = urls.expand_placeholders(request.url, getattr(request, "path_params", None) or None)
+        resolved_url = urls.expand_placeholders(
+            request.url, getattr(request, "path_params", None) or None
+        )
         Validator.validate_resolved_url(resolved_url)
         Validator.validate_method(request.method)
 
@@ -396,399 +695,57 @@ class HTTPClient:
             Validator.validate_query_params(request.params)
 
         if request.body:
-            content_type = request.headers.get('Content-Type')
+            content_type = request.headers.get("Content-Type")
             Validator.validate_request_body(request.body, content_type)
 
-    # ── Exception-to-error mapping for _send_internal ───────────────────
-    # The concrete handlers are built by the centralized ``error_mapper``
-    # module in order to avoid duplicated detection logic across the
-    # codebase.  ``self._error_handlers`` is initialized in ``__init__`` via
-    # ``error_mapper.build_error_handlers(self)`` and should be used by
-    # _send_internal's exception-dispatch logic.
-
-    def _send_internal(self, request: Request, auth: Optional[AuthStrategy] = None) -> Response:
-        """Send the request through the interceptor chain, applying auth and error handling.
-
-        Uses a data-driven error map so each exception type is handled
-        consistently without repetitive ``except`` blocks.
-        """
-        logger.debug("_send_internal() starting")
-        try:
-            logger.debug("Running pre-request interceptors")
-            request = self.interceptors.process_request(request)
-            headers = dict(request.headers) if request.headers else {}
-            
-            logger.debug("Applying authentication (strategy=%s)", type(auth or request.auth).__name__)
-            auth_headers = self._apply_auth(request, headers, auth)
-            if auth_headers:
-                logger.debug("Auth headers applied: %s", list(auth_headers.keys()))
-
-            logger.debug("Dispatching request via httpx")
-            response = self._dispatch_request(request, headers, auth_headers)
-            
-            logger.debug("Updating cookie jar from response")
-            self._update_cookie_jar(request, response)
-            
-            logger.debug("Running post-response interceptors")
-            response = self.interceptors.process_response(request, response)
-            
-            logger.debug("Logging successful request to audit trail")
-            self._audit.log_request(
-                request.method, redact_url(request.url), status_code=response.status_code
-            )
-            logger.debug(
-                "_send_internal() completed: method=%s status=%d elapsed=%.2fs",
-                request.method, response.status_code, response.elapsed,
-            )
-            return response
-
-        except Exception as exc:
-            logger.debug(
-                "_send_internal() caught exception: type=%s message=%s",
-                type(exc).__name__, str(exc)[:100],
-            )
-            # Let our own exceptions (auth errors, validation, etc.)
-            # propagate with their original message intact.
-            if isinstance(exc, EquinoxError):
-                logger.debug("Exception is EquinoxError subclass, re-raising: %s", exc)
-                raise
-
-            # Walk the handler list; first matching type wins
-            for exc_type, handler_fn in self._error_handlers:
-                if isinstance(exc, exc_type):
-                    logger.debug(
-                        "Exception matched handler for %s", exc_type.__name__,
-                    )
-                    kwargs = handler_fn(exc, request)
-                    return self._handle_error(request, **kwargs)
-
-            # Generic fallback for truly unexpected errors
-            logger.warning(
-                "No handler matched for exception type %s, using fallback",
-                type(exc).__name__,
-            )
-            safe_msg = redact_body(str(exc), max_length=500) or ""
-            return self._handle_error(
-                request,
-                error=RequestError(
-                    f"Request failed: {type(exc).__name__}: {safe_msg}",
-                    details={"error": type(exc).__name__},
-                ),
-                audit_tag=f"{type(exc).__name__}",
-                log_message=(
-                    f"Unexpected error during request: "
-                    f"{type(exc).__name__}: {safe_msg}"
-                ),
-            )
-
-    def _apply_auth(
-        self,
-        request: Request,
-        headers: Dict[str, str],
-        explicit_auth: Optional[AuthStrategy],
-    ) -> Dict[str, str]:
-        """Apply the auth strategy and return the auth-injected headers separately.
-
-        Auth headers (e.g. ``Authorization``) are added to *headers* for
-        backward compatibility, but also returned in a separate dict so the
-        caller can pass them through httpx's native ``auth`` mechanism to
-        survive cross-origin redirects.
-
-        Returns:
-            Dict of headers that were added by the auth strategy (empty if
-            no auth is configured).
-
-        Raises:
-            RequestError: If authentication fails.
-        """
-        auth_strategy = explicit_auth or request.auth
-        if not auth_strategy:
-            return {}
-
-        snapshot = set(headers.keys())
-        try:
-            # Forward the active proxy so OAuth2 token fetches (and any future
-            # auth strategy that honours _proxy) route through the same proxy
-            # as the main request.  Attribute injection is safe — strategies
-            # that don't use _proxy simply ignore it.
-            if self.proxy and hasattr(auth_strategy, "_proxy"):
-                auth_strategy._proxy = self.proxy
-            logger.debug("Applying auth strategy: %s", type(auth_strategy).__name__)
-            auth_strategy.apply(request, headers)
-        except Exception as auth_exc:
-            # Redact the exception message — it may contain tokens or passwords
-            safe_msg = redact_body(str(auth_exc), max_length=200) or "unknown error"
-            logger.error(
-                "Authentication failed (%s): %s — %s",
-                type(auth_exc).__name__,
-                type(auth_strategy).__name__,
-                safe_msg,
-            )
-            # When the failure is caused by a dead proxy, surface that fact
-            # directly rather than burying it inside "Authentication failed: …"
-            if self.proxy and (
-                "10061" in safe_msg
-                or "connection refused" in safe_msg.lower()
-                or "econnrefused" in safe_msg.lower()
-            ):
-                raise RequestError(
-                    f"OAuth2 token refresh failed — proxy ({self.proxy}) is not reachable. "
-                    "Please check your proxy settings under Preferences.",
-                    details={"proxy": self.proxy},
-                )
-            raise RequestError(f"Authentication failed: {safe_msg}")
-
-        # Identify which headers were added by the auth strategy
-        auth_headers = {k: headers[k] for k in headers if k not in snapshot}
-        if auth_headers:
-            logger.debug(
-                "Auth applied (%s): %s",
-                type(auth_strategy).__name__,
-                ", ".join(auth_headers.keys()),
-            )
-        return auth_headers
-
-    def _dispatch_request(
-        self,
-        request: Request,
-        headers: Dict[str, str],
-        auth_headers: Optional[Dict[str, str]] = None,
-    ) -> Response:
-        """Choose the right httpx client (cert-aware or standard) and execute the request."""
-        cert_path = getattr(request, "cert_path", None)
-        if cert_path:
-            logger.debug("_dispatch_request: using client certificate at %s", cert_path)
-            return self._execute_with_client_certificate(request, headers, cert_path, auth_headers)
-        logger.debug("_dispatch_request: using standard httpx client")
-        return self._execute_httpx(self._client, request, headers, auth_headers)
-
-    def _execute_with_client_certificate(
-        self,
-        request: Request,
-        headers: Dict[str, str],
-        cert_path: str,
-        auth_headers: Optional[Dict[str, str]] = None,
-    ) -> Response:
-        """Execute the request using a per-request httpx.Client with a client certificate.
-
-        A separate client is required because httpx does not support per-call cert overrides.
-        """
-        cert_key_path = getattr(request, "cert_key_path", None)
-        cert_arg = (cert_path, cert_key_path) if cert_key_path else cert_path
+    # Public API
+    def send(self, request: Request, auth: Optional[AuthStrategy] = None) -> Response:
         logger.debug(
-            "_execute_with_client_certificate: creating cert client for %s (key=%s)",
-            cert_path, cert_key_path or "none",
-        )
-
-        with httpx.Client(
-            timeout=self.timeout,
-            follow_redirects=self.follow_redirects,
-            verify=self._build_ssl_context(),
-            proxy=self.proxy,
-            cert=cert_arg,
-            cookies=self._get_current_cookies(),
-        ) as cert_client:
-            logger.debug("Cert client created successfully, executing request")
-            response = self._execute_httpx(cert_client, request, headers, auth_headers)
-            logger.debug("Request completed, cert client will be closed on context exit")
-            return response
-
-    def _update_cookie_jar(self, request: Request, response: Optional[Response]) -> None:
-        """Persist any Set-Cookie headers from the response into the cookie manager."""
-        if self._cookie_manager is None or response is None:
-            logger.debug("_update_cookie_jar: no cookie manager or response, skipping")
-            return
-        try:
-            response_headers = dict(response.headers) if response else {}
-            if response_headers.get("set-cookie"):
-                logger.debug("Updating cookie jar from Set-Cookie header")
-                self._cookie_manager.update_from_response(response_headers, request.url)
-                logger.debug("Cookie jar updated successfully")
-            else:
-                logger.debug("No Set-Cookie header in response")
-        except Exception as cookie_exc:
-            logger.debug("Cookie jar update failed: %s", cookie_exc)
-
-    def _handle_error(
-        self,
-        request: Request,
-        error: Exception,
-        audit_tag: Optional[str] = None,
-        log_message: Optional[str] = None,
-    ) -> Optional[Response]:
-        """Pass an error through the interceptor chain.
-
-        If an interceptor suppresses the error (returns None), this method returns None.
-        Otherwise it re-raises the (potentially transformed) error.
-        """
-        if audit_tag:
-            logger.debug("Logging error to audit trail: tag=%s", audit_tag)
-            self._audit.log_request(request.method, request.url, error=audit_tag)
-
-        if log_message:
-            logger.warning("Error log message: %s", log_message)
-
-        logger.debug("Processing error through interceptor chain: type=%s", type(error).__name__)
-        processed_error = self.interceptors.process_error(request, error)
-        if processed_error is not None:
-            logger.debug("Interceptor returned error, re-raising: %s", type(processed_error).__name__)
-            raise processed_error
-        logger.debug("Interceptor suppressed error, returning None")
-        return None
-
-    def _execute_httpx(
-        self,
-        client: httpx.Client,
-        request: Request,
-        headers: Dict[str, str],
-        auth_headers: Optional[Dict[str, str]] = None,
-    ) -> Response:
-        """Execute the httpx request and build a Response object.
-
-        When *auth_headers* is provided, they are passed through httpx's
-        native ``auth`` parameter via :class:`_RedirectSafeAuth` so the
-        ``Authorization`` header survives cross-origin redirects (httpx
-        strips manual ``Authorization`` headers on redirect by default).
-        """
-        logger.debug(
-            "Sending %s request to %s",
+            "HTTPClient.send() called: method=%s url=%s auth=%s",
             request.method,
-            Validator.sanitize_for_display(request.url, 100),
+            Validator.sanitize_for_display(request.url, 80),
+            type(auth).__name__ if auth else "None",
         )
-        start_time = time.time()
 
-        # Pass auth headers through httpx's native auth mechanism so they
-        # survive cross-origin redirects (scheme/host/port changes).
-        httpx_auth: Optional[_RedirectSafeAuth] = None
-        if auth_headers:
-            # Remove auth headers from the regular headers dict — they'll
-            # be injected by the auth flow on every leg of the redirect chain.
-            for key in auth_headers:
-                headers.pop(key, None)
-            httpx_auth = _RedirectSafeAuth(auth_headers)
+        # Validation
+        self._validate_request(request)
 
-        multipart_files, opened_file_handles = self._build_multipart_files(request)
+        # Rate limiting
+        logger.debug(
+            "HTTPClient: checking rate limit (max=%d/min)", self.max_rate_per_minute
+        )
+        self._rate_limiter.try_acquire()
+
+        # Concurrency
+        self._concurrency.acquire()
         try:
-            raw = client.request(
-                method=request.method,
-                url=request.url,
-                headers=headers,
-                params=request.params,
-                content=(
-                    request.body.encode("utf-8")
-                    if (request.body and not multipart_files)
-                    else None
-                ),
-                files=multipart_files or None,
-                timeout=request.timeout or self.timeout,
-                follow_redirects=(
-                    request.follow_redirects
-                    if request.follow_redirects is not None
-                    else self.follow_redirects
-                ),
-                auth=httpx_auth,
+            return self._pipeline.execute(
+                request,
+                dispatch=lambda req: self._dispatch_with_retries(req, auth),
             )
         finally:
-            for file_handle in opened_file_handles:
-                file_handle.close()
+            self._concurrency.release()
 
-        # Log redirect chain for diagnostics
-        if raw.history:
-            chain = " → ".join(
-                f"{r.status_code} {r.headers.get('location', '?')}"
-                for r in raw.history
-            )
-            logger.info(
-                "Request followed %d redirect(s): %s → %d",
-                len(raw.history), chain, raw.status_code,
-            )
-
-        elapsed = time.time() - start_time
-        logger.debug(
-            "Request completed in %.2fs with status %d", elapsed, raw.status_code
-        )
-        return Response(
-            status_code=raw.status_code,
-            reason=self._extract_reason_phrase(raw),
-            headers=dict(raw.headers),
-            body=raw.content,
-            elapsed=elapsed,
-            request=request,
-            timestamp=utc_now(),
-            sent_headers=dict(raw.request.headers),
-            sent_url=str(raw.request.url),
-            timings={"total_ms": round(elapsed * 1000, 2)},
-        )
-
-    @staticmethod
-    def _extract_reason_phrase(raw_response: httpx.Response) -> str:
-        """Extract the reason phrase from the raw httpx response, with a fallback.
-
-        When ``reason_phrase`` is ``None`` (e.g. HTTP/2), attempt to extract
-        a ``statusText`` key from the response body — but only from the
-        already-consumed content to avoid double-reading the stream.
-        """
-        reason = raw_response.reason_phrase
-        if reason is None:
-            try:
-                content_object = raw_response.json()
-                if isinstance(content_object, dict) and "statusText" in content_object:
-                    reason = content_object["statusText"]
-            except (json.JSONDecodeError, UnicodeDecodeError, ValueError):
-                pass
-        return reason or ""
-
-    def _build_multipart_files(
+    # Internal dispatch with retries
+    def _dispatch_with_retries(
         self,
         request: Request,
-    ) -> Tuple[Optional[List[Tuple[str, Any]]], List]:
-        """Build the httpx ``files`` list from multipart_data, opening file handles.
+        auth: Optional[AuthStrategy],
+    ) -> Response:
+        def _single_call() -> Response:
+            headers = dict(request.headers) if request.headers else {}
+            auth_headers = self._auth_applier.apply(
+                request=request,
+                headers=headers,
+                explicit_auth=auth,
+                proxy=self.proxy,
+            )
+            response = self._dispatcher.execute(
+                request=request,
+                headers=headers,
+                auth_headers=auth_headers,
+            )
+            self._cookie_handler.update_from_response(response, request.url)
+            return response
 
-        Returns a list of ``(field_name, (filename, data))`` tuples rather
-        than a dict so that multiple fields with the **same key** are
-        preserved (common in file-upload forms).
-
-        Returns:
-            (multipart_files_list_or_None, list_of_opened_file_handles)
-            The caller is responsible for closing all returned file handles.
-        """
-        # Delegate to the centralized multipart builder helper
-        from equinox.core.multipart import build_multipart_files
-
-        multipart_data = getattr(request, "multipart_data", None)
-        return build_multipart_files(multipart_data)
-
-    def get(self, url: str, **kwargs) -> Response:
-        """Convenience method for GET request"""
-        request = Request(method="GET", url=url, **kwargs)
-        return self.send(request)
-
-    def post(self, url: str, body: Optional[str] = None, **kwargs) -> Response:
-        """Convenience method for POST request"""
-        request = Request(method="POST", url=url, body=body, **kwargs)
-        return self.send(request)
-
-    def put(self, url: str, body: Optional[str] = None, **kwargs) -> Response:
-        """Convenience method for PUT request"""
-        request = Request(method="PUT", url=url, body=body, **kwargs)
-        return self.send(request)
-
-    def patch(self, url: str, body: Optional[str] = None, **kwargs) -> Response:
-        """Convenience method for PATCH request"""
-        request = Request(method="PATCH", url=url, body=body, **kwargs)
-        return self.send(request)
-
-    def delete(self, url: str, **kwargs) -> Response:
-        """Convenience method for DELETE request"""
-        request = Request(method="DELETE", url=url, **kwargs)
-        return self.send(request)
-
-    def head(self, url: str, **kwargs) -> Response:
-        """Convenience method for HEAD request"""
-        request = Request(method="HEAD", url=url, **kwargs)
-        return self.send(request)
-
-    def options(self, url: str, **kwargs) -> Response:
-        """Convenience method for OPTIONS request"""
-        request = Request(method="OPTIONS", url=url, **kwargs)
-        return self.send(request)
+        return self._retry_policy.execute_with_http_overload(_single_call)
