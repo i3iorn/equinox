@@ -1,57 +1,317 @@
-"""Inline find-bar for a QTextEdit — shown/hidden with Ctrl+F."""
-
 import json
-from typing import Optional, Callable
+import logging
+import re
+from dataclasses import dataclass
+from enum import Enum, auto
+from typing import Any, Callable, List, Optional, Sequence, Tuple
 
-from PyQt6.QtCore import QRegularExpression, QTimer
-from PyQt6.QtGui import QTextCharFormat, QColor, QTextCursor, QTextDocument
+from PyQt6.QtCore import (
+    QObject,
+    QRunnable,
+    QRegularExpression,
+    QThreadPool,
+    QTimer,
+    pyqtSignal,
+)
+from PyQt6.QtGui import QColor, QTextCharFormat, QTextCursor, QTextDocument
 from PyQt6.QtWidgets import (
-    QWidget, QTextEdit, QHBoxLayout, QVBoxLayout,
-    QLineEdit, QLabel, QToolButton,
+    QHBoxLayout,
+    QLabel,
+    QLineEdit,
+    QToolButton,
+    QVBoxLayout,
+    QWidget,
+    QTextEdit,
 )
 
 from equinox.gui.theme import Colors
+
+logger = logging.getLogger(__name__)
+
+# Maximum number of matches to highlight to avoid UI overload
+MAX_MATCHES = 200
+
+
+class _CancelToken:
+    """Simple cancellation token object passed to background runnables."""
+
+    def __init__(self) -> None:
+        self.cancelled = False
+
+
+class _SearchSignals(QObject):
+    """Signals emitted by the background search runnable."""
+
+    result = pyqtSignal(int, object, object, str)
+    partial_result = pyqtSignal(int, object, object, str, bool)
+
+
+class SearchMode(Enum):
+    TEXT = auto()
+    REGEX = auto()
+    JSONPATH = auto()
+
+
+@dataclass
+class _SearchJobConfig:
+    job_id: int
+    mode: SearchMode
+    term: str
+    case_sensitive: bool
+    doc_text: str
+    json_obj: Any
+    cancel_token: _CancelToken
+
+
+class _SearchRunnable(QRunnable):
+    """Background worker that performs the actual search on plain text, regex, or JSONPath."""
+
+    def __init__(self, config: _SearchJobConfig) -> None:
+        super().__init__()
+        self._config = config
+        self.signals = _SearchSignals()
+
+    def run(self) -> None:
+        cfg = self._config
+        term = cfg.term or ""
+        if not term:
+            # No term → no matches
+            self._emit_result([], [], "")
+            return
+
+        try:
+            if cfg.mode is SearchMode.JSONPATH:
+                offsets, values, preview = self._search_jsonpath()
+            elif cfg.mode is SearchMode.REGEX:
+                offsets, values, preview = self._search_regex()
+            else:
+                offsets, values, preview = self._search_text()
+        except Exception:
+            logger.exception("Unhandled error in search worker")
+            self._emit_result([], [], "")
+            return
+
+        # For now we emit a single partial (done=True) and a final result.
+        # This keeps the interface compatible while keeping the worker simple.
+        self._emit_partial(offsets, values, preview, done=True)
+        self._emit_result(offsets, values, preview)
+
+    # ── Emit helpers ─────────────────────────────────────────────────
+
+    def _emit_result(
+        self,
+        offsets: Sequence[Tuple[int, int]],
+        values: Sequence[Any],
+        preview: str,
+    ) -> None:
+        self.signals.result.emit(
+            self._config.job_id,
+            list(offsets),
+            list(values),
+            preview,
+        )
+
+    def _emit_partial(
+        self,
+        offsets: Sequence[Tuple[int, int]],
+        values: Sequence[Any],
+        preview: str,
+        done: bool,
+    ) -> None:
+        self.signals.partial_result.emit(
+            self._config.job_id,
+            list(offsets),
+            list(values),
+            preview,
+            done,
+        )
+
+    # ── Core search implementations ──────────────────────────────────
+
+    def _search_text(self) -> Tuple[List[Tuple[int, int]], List[Any], str]:
+        """Literal substring search using Python string operations."""
+        cfg = self._config
+        text = cfg.doc_text
+        term = cfg.term
+        if not cfg.case_sensitive:
+            text_lower = text.lower()
+            term_lower = term.lower()
+        else:
+            text_lower = text
+            term_lower = term
+
+        offsets: List[Tuple[int, int]] = []
+        start = 0
+        while not cfg.cancel_token.cancelled and len(offsets) < MAX_MATCHES:
+            idx = text_lower.find(term_lower, start)
+            if idx == -1:
+                break
+            end = idx + len(term)
+            offsets.append((idx, end))
+            start = end
+
+        return offsets, [], ""
+
+    def _search_regex(self) -> Tuple[List[Tuple[int, int]], List[Any], str]:
+        """Regular-expression search using QRegularExpression (Qt6 compatible)."""
+        cfg = self._config
+        pattern = cfg.term
+
+        try:
+            re_options = QRegularExpression.PatternOption(0)
+            if not cfg.case_sensitive:
+                re_options |= QRegularExpression.PatternOption.CaseInsensitiveOption
+            re_pattern = QRegularExpression(pattern, re_options)
+            if not re_pattern.isValid():
+                return [], [], "invalid regex"
+        except Exception:
+            return [], [], "invalid regex"
+
+        text = cfg.doc_text
+        offsets: List[Tuple[int, int]] = []
+        it = re_pattern.globalMatch(text)
+        while it.hasNext() and not cfg.cancel_token.cancelled and len(offsets) < MAX_MATCHES:
+            match = it.next()
+            s = match.capturedStart()
+            e = match.capturedEnd()
+            if s < 0 or e < 0:
+                continue
+            offsets.append((s, e))
+
+        return offsets, [], ""
+
+    def _search_jsonpath(self) -> Tuple[List[Tuple[int, int]], List[Any], str]:
+        """Evaluate a JSONPath expression and map primitive values back into the text."""
+        cfg = self._config
+        if cfg.json_obj is None:
+            # This case is normally handled in the UI before starting the job,
+            # but we guard here as well.
+            return [], [], "No JSON document available — send a request that returns JSON first."
+
+        try:
+            from jsonpath_ng.ext import parse as _jp_parse  # type: ignore[import]
+        except ImportError:
+            return [], [], "⚠ jsonpath-ng is not installed. Run: pip install jsonpath-ng"
+
+        try:
+            jp_expr = _jp_parse(cfg.term)
+            raw_matches = jp_expr.find(cfg.json_obj)
+        except Exception as exc:
+            return [], [], f"⚠ {exc}"
+
+        values = [m.value for m in raw_matches]
+        # Build preview string
+        if values:
+            previews: List[str] = []
+            for v in values[:6]:
+                s = json.dumps(v, ensure_ascii=False)
+                previews.append(s if len(s) <= 50 else s[:47] + "…")
+            preview = "  ·  ".join(previews)
+            if len(values) > 6:
+                preview += f"  … (+{len(values) - 6} more)"
+            preview = f"→ {preview}"
+        else:
+            preview = "(path matched no values)"
+
+        # Map primitive values back into the pretty-printed JSON text
+        text = cfg.doc_text
+        offsets: List[Tuple[int, int]] = []
+        seen_terms: set[str] = set()
+        for v in values:
+            if cfg.cancel_token.cancelled or len(offsets) >= MAX_MATCHES:
+                break
+            if isinstance(v, (dict, list)):
+                continue
+            term = json.dumps(v, ensure_ascii=False)
+            if term in seen_terms:
+                continue
+            seen_terms.add(term)
+
+            start = 0
+            while not cfg.cancel_token.cancelled and len(offsets) < MAX_MATCHES:
+                idx = text.find(term, start)
+                if idx == -1:
+                    break
+                end = idx + len(term)
+                offsets.append((idx, end))
+                start = end
+
+        return offsets, values, preview
 
 
 class SearchBar(QWidget):
     """Inline find-bar for a QTextEdit — shown/hidden with Ctrl+F.
 
-    Three mutually-exclusive search modes are available via toggle buttons on
-    the right side of the bar:
+    Three mutually-exclusive search modes are available via toggle buttons:
 
-    * **Plain text** (default) — literal substring match.  The ``Aa`` button
-      enables case-sensitive searching; without it the search is
-      case-insensitive.
-    * **Regex** (``.*``) — ``QRegularExpression``-based search; the same ``Aa``
-      button controls case-sensitivity.  Mutually exclusive with JSONPath mode.
-    * **JSONPath** (``$.``) — the expression is evaluated against the JSON
-      document supplied via :meth:`set_json_doc`.  Primitive matched values
-      (strings, numbers, booleans, null) are highlighted in the text editor;
-      a compact result strip below the bar shows the resolved values.
-      Mutually exclusive with Regex mode.
-
-    Requires ``jsonpath-ng`` for JSONPath mode (already in project
-    requirements); gracefully shows an error message when not installed.
+    * Plain text (default) — literal substring match. The “Aa” button controls case-sensitivity.
+    * Regex (.*) — QRegularExpression-based search; “Aa” controls case-sensitivity.
+    * JSONPath ($.) — expression evaluated against a JSON document supplied via set_json_doc().
     """
 
-    def __init__(self, target: QTextEdit, parent: Optional[QWidget] = None):
+    def __init__(self, target: QTextEdit, parent: Optional[QWidget] = None) -> None:
         super().__init__(parent)
         self._target = target
-        self._json_obj = None           # set via set_json_doc()
-        self._matches: list = []        # list[QTextCursor] — from _collect_matches
+        self._json_obj: Any = None
+        self._offsets: List[Tuple[int, int]] = []
         self._current_idx: int = -1
-        # Optional callback to receive filtered body text when JSONPath is active.
-        # The callback signature: cb(filtered_text: Optional[str]) -> None. If
-        # filtered_text is None the caller should reset to the original body.
+
+        self._job_counter = 0
+        self._current_job_id = 0
+        self._current_cancel_token: Optional[_CancelToken] = None
         self._filter_cb: Optional[Callable[[Optional[str]], None]] = None
+
+        self._thread_pool = QThreadPool.globalInstance()
+
+        self._debounce_timer = QTimer(self)
+        self._debounce_timer.setSingleShot(True)
+        self._debounce_timer.setInterval(250)
+        self._pending_text: Optional[str] = None
+
+        self._build_ui()
         self.setVisible(False)
 
-        # ── Outer layout: main row + optional JSONPath result strip ───
+    # ── Public API ───────────────────────────────────────────────────
+
+    def set_json_doc(self, obj: Any) -> None:
+        """Provide the parsed JSON object for JSONPath evaluation."""
+        self._json_obj = obj
+        if self._jp_btn.isChecked() and self.isVisible():
+            self._start_search_job(self._input.text())
+
+        if obj is None and self._filter_cb:
+            self._filter_cb(None)
+
+    def set_filter_callback(
+        self,
+        cb: Optional[Callable[[Optional[str]], None]],
+    ) -> None:
+        """Register a callback to receive filtered body text (JSONPath mode)."""
+        self._filter_cb = cb
+
+    def show_and_focus(self) -> None:
+        self.setVisible(True)
+        self._start_search_job(self._input.text())
+        self._input.selectAll()
+        self._input.setFocus()
+
+    def hide(self) -> None:  # type: ignore[override]
+        self.setVisible(False)
+        self._offsets = []
+        self._current_idx = -1
+        self._target.setExtraSelections([])
+        self._jp_result_label.setVisible(False)
+        if self._filter_cb:
+            self._filter_cb(None)
+        self._target.setFocus()
+
+    # ── UI construction ──────────────────────────────────────────────
+
+    def _build_ui(self) -> None:
         outer = QVBoxLayout(self)
         outer.setContentsMargins(2, 2, 2, 2)
         outer.setSpacing(2)
 
-        # ── Main row ──────────────────────────────────────────────────
         row = QHBoxLayout()
         row.setContentsMargins(0, 0, 0, 0)
         row.setSpacing(4)
@@ -60,34 +320,44 @@ class SearchBar(QWidget):
         self._input.setPlaceholderText("Find in body…")
         self._input.setFixedHeight(24)
         self._input.returnPressed.connect(self._find_next)
-        # Debounce text changes to avoid blocking the UI on large documents.
-        self._debounce_timer = QTimer(self)
-        self._debounce_timer.setSingleShot(True)
-        self._debounce_timer.setInterval(250)  # ms
+
         self._debounce_timer.timeout.connect(self._on_debounced_text)
-        self._pending_text: Optional[str] = None
         self._input.textChanged.connect(self._on_text_changed_debounced)
 
         self._match_label = QLabel("")
         self._match_label.setObjectName("mutedLabel")
         self._match_label.setMinimumWidth(90)
 
+        self._spinner = QLabel("⏳")
+        self._spinner.setObjectName("mutedLabel")
+        self._spinner.setVisible(False)
+
+        self._cancel_search_btn = QToolButton()
+        self._cancel_search_btn.setText("✖")
+        self._cancel_search_btn.setFixedSize(20, 20)
+        self._cancel_search_btn.setToolTip("Cancel current search")
+        self._cancel_search_btn.setVisible(False)
+        self._cancel_search_btn.clicked.connect(self._on_cancel_search)
+
         prev_btn = QToolButton()
         prev_btn.setText("▲")
         prev_btn.setFixedSize(24, 24)
         prev_btn.setToolTip("Find previous (Shift+Enter)")
+        prev_btn.clicked.connect(self._find_prev)
+
         next_btn = QToolButton()
         next_btn.setText("▼")
         next_btn.setFixedSize(24, 24)
         next_btn.setToolTip("Find next (Enter)")
+        next_btn.clicked.connect(self._find_next)
 
-        # Mode toggles — Aa and .* can combine; .* and $. are mutually exclusive
         self._case_btn = QToolButton()
         self._case_btn.setText("Aa")
         self._case_btn.setFixedSize(28, 24)
         self._case_btn.setCheckable(True)
         self._case_btn.setChecked(False)
         self._case_btn.setToolTip("Match case")
+        self._case_btn.toggled.connect(self._on_mode_changed)
 
         self._regex_btn = QToolButton()
         self._regex_btn.setText(".*")
@@ -95,6 +365,7 @@ class SearchBar(QWidget):
         self._regex_btn.setCheckable(True)
         self._regex_btn.setChecked(False)
         self._regex_btn.setToolTip("Use regular expression")
+        self._regex_btn.toggled.connect(self._on_regex_toggled)
 
         self._jp_btn = QToolButton()
         self._jp_btn.setText("$.")
@@ -105,23 +376,20 @@ class SearchBar(QWidget):
             "JSONPath filter — evaluate a JSONPath expression against the JSON body\n"
             "Example: $.users[*].name"
         )
+        self._jp_btn.toggled.connect(self._on_jsonpath_toggled)
 
         close_btn = QToolButton()
         close_btn.setText("✕")
         close_btn.setFixedSize(24, 24)
         close_btn.setStyleSheet(f"color: {Colors.FG_MUTED};")
         close_btn.setToolTip("Close search bar (Esc)")
-
-        prev_btn.clicked.connect(self._find_prev)
-        next_btn.clicked.connect(self._find_next)
         close_btn.clicked.connect(self.hide)
-        self._case_btn.toggled.connect(self._on_mode_changed)
-        self._regex_btn.toggled.connect(self._on_regex_toggled)
-        self._jp_btn.toggled.connect(self._on_jsonpath_toggled)
 
         row.addWidget(QLabel("Find:"))
         row.addWidget(self._input, 1)
         row.addWidget(self._match_label)
+        row.addWidget(self._spinner)
+        row.addWidget(self._cancel_search_btn)
         row.addWidget(prev_btn)
         row.addWidget(next_btn)
         row.addWidget(self._case_btn)
@@ -130,7 +398,6 @@ class SearchBar(QWidget):
         row.addWidget(close_btn)
         outer.addLayout(row)
 
-        # ── JSONPath result strip (shown only in JSONPath mode) ───────
         self._jp_result_label = QLabel("")
         self._jp_result_label.setObjectName("mutedLabel")
         self._jp_result_label.setWordWrap(True)
@@ -138,60 +405,20 @@ class SearchBar(QWidget):
         self._jp_result_label.setVisible(False)
         outer.addWidget(self._jp_result_label)
 
-    # ── Public API ────────────────────────────────────────────────────
+    # ── Mode handling ────────────────────────────────────────────────
 
-    def set_json_doc(self, obj) -> None:
-        """Provide the parsed JSON object for JSONPath evaluation.
-
-        Call this after every response that contains JSON, passing the result
-        of ``response.json()``.  Pass ``None`` to clear (non-JSON response).
-        If the bar is currently in JSONPath mode the results update immediately.
-        """
-        self._json_obj = obj
-        if self._jp_btn.isChecked() and self.isVisible():
-            self._on_text_changed(self._input.text())
-
-        # If JSON doc is cleared, notify any filter callback to reset the body
-        if obj is None and self._filter_cb:
-            self._filter_cb(None)
-
-    def set_filter_callback(self, cb: Optional[Callable[[Optional[str]], None]]) -> None:
-        """Register a callback to receive filtered body text.
-
-        The callback will be invoked with a JSON string when JSONPath mode is
-        active, and with None to signal the caller should restore the original
-        body text.
-        """
-        self._filter_cb = cb
-
-    def show_and_focus(self) -> None:
-        self.setVisible(True)
-        # Ensure matches are computed immediately so the first hit is selected
-        # and visible when the bar opens.
-        self._on_text_changed(self._input.text())
-        self._input.selectAll()
-        self._input.setFocus()
-        # Update the match counter label after computing matches.
-        self._update_label()
-
-    def hide(self) -> None:  # type: ignore[override]
-        self.setVisible(False)
-        self._matches = []
-        self._current_idx = -1
-        self._target.setExtraSelections([])
-        self._jp_result_label.setVisible(False)
-        self._target.setFocus()
-
-    # ── Mode toggle handlers ──────────────────────────────────────────
+    def _current_mode(self) -> SearchMode:
+        if self._jp_btn.isChecked():
+            return SearchMode.JSONPATH
+        if self._regex_btn.isChecked():
+            return SearchMode.REGEX
+        return SearchMode.TEXT
 
     def _on_mode_changed(self) -> None:
-        """Re-run the search when Aa (case) toggle changes."""
-        self._on_text_changed(self._input.text())
+        self._start_search_job(self._input.text())
 
     def _on_regex_toggled(self, checked: bool) -> None:
-        """Ensure Regex and JSONPath modes are mutually exclusive."""
         if checked:
-            # Turn off JSONPath if it was on
             self._jp_btn.blockSignals(True)
             self._jp_btn.setChecked(False)
             self._jp_btn.blockSignals(False)
@@ -200,12 +427,10 @@ class SearchBar(QWidget):
         else:
             if not self._jp_btn.isChecked():
                 self._input.setPlaceholderText("Find in body…")
-        self._on_text_changed(self._input.text())
+        self._start_search_job(self._input.text())
 
     def _on_jsonpath_toggled(self, checked: bool) -> None:
-        """Ensure JSONPath and Regex modes are mutually exclusive."""
         if checked:
-            # Turn off Regex if it was on
             self._regex_btn.blockSignals(True)
             self._regex_btn.setChecked(False)
             self._regex_btn.blockSignals(False)
@@ -214,238 +439,222 @@ class SearchBar(QWidget):
             self._jp_result_label.setVisible(False)
             if not self._regex_btn.isChecked():
                 self._input.setPlaceholderText("Find in body…")
-        # Re-run the search. If JSONPath was turned off, ensure any active
-        # JSONPath body filter is cleared by notifying the callback.
-        self._on_text_changed(self._input.text())
+
         if not checked and self._filter_cb:
             self._filter_cb(None)
 
-    # ── Core search logic ─────────────────────────────────────────────
+        self._start_search_job(self._input.text())
 
-    def _on_text_changed(self, _text: str) -> None:
-        self._collect_matches()
-        self._current_idx = 0 if self._matches else -1
-        self._apply_highlights()
-        # If JSONPath mode is not active, ensure any body filter is reset.
-        if self._filter_cb and not self._jp_btn.isChecked():
-            self._filter_cb(None)
-
-    def _collect_matches(self) -> None:
-        """Dispatch to the appropriate match collector for the active mode."""
-        term = self._input.text()
-        if not term:
-            self._matches = []
-            self._match_label.setText("")
-            self._jp_result_label.setVisible(False)
-            self._target.setExtraSelections([])
-            return
-
-        if self._jp_btn.isChecked():
-            self._collect_matches_jsonpath(term)
-        elif self._regex_btn.isChecked():
-            self._collect_matches_regex(term)
-        else:
-            self._collect_matches_text(term)
+    # ── Debounced text handling ──────────────────────────────────────
 
     def _on_text_changed_debounced(self, text: str) -> None:
-        """Start/restart the debounce timer and show a lightweight UI hint.
-
-        The actual heavy search work runs after the user pauses typing. This
-        avoids freezing the main thread on large documents while the user is
-        actively typing.
-        """
         self._pending_text = text
-        # Show immediate feedback in the match label while waiting
-        self._match_label.setText("searching…")
+        self._set_status_searching()
         self._debounce_timer.start()
 
     def _on_debounced_text(self) -> None:
-        """Called when the debounce timer fires; perform the actual search."""
         text = self._pending_text or ""
-        # Delegate to the existing handler which expects the new text param
-        self._on_text_changed(text)
-        # Update match counter after completing the search
-        self._update_label()
+        self._start_search_job(text)
 
-    def _collect_matches_text(self, term: str) -> None:
-        """Literal substring search, optionally case-sensitive."""
-        flags = QTextDocument.FindFlag(0)
-        if self._case_btn.isChecked():
-            flags |= QTextDocument.FindFlag.FindCaseSensitively
+    # ── Search orchestration ─────────────────────────────────────────
 
-        doc = self._target.document()
-        cursor = QTextCursor(doc)
-        matches = []
-        while True:
-            cursor = doc.find(term, cursor, flags)
-            if cursor.isNull():
-                break
-            matches.append(QTextCursor(cursor))
-
-        self._matches = matches
-        count = len(matches)
-        self._match_label.setText(
-            f"{count} match{'es' if count != 1 else ''}" if count else "no matches"
-        )
-
-    def _collect_matches_regex(self, pattern: str) -> None:
-        """Regular-expression search using QRegularExpression (Qt6 compatible)."""
+    def _snapshot_doc_text(self) -> str:
         try:
-            re_options = QRegularExpression.PatternOption(0)
-            if not self._case_btn.isChecked():
-                re_options |= QRegularExpression.PatternOption.CaseInsensitiveOption
-            re_pattern = QRegularExpression(pattern, re_options)
-            if not re_pattern.isValid():
-                self._matches = []
-                self._match_label.setText("invalid regex")
-                return
+            return self._target.toPlainText()
         except Exception:
-            self._matches = []
-            self._match_label.setText("invalid regex")
-            return
+            logger.exception("Failed to read document text")
+            return ""
 
-        doc = self._target.document()
-        cursor = QTextCursor(doc)
-        matches = []
-        try:
-            while True:
-                cursor = doc.find(re_pattern, cursor)
-                if cursor.isNull():
-                    break
-                matches.append(QTextCursor(cursor))
-        except Exception:
-            self._matches = []
-            self._match_label.setText("invalid regex")
-            return
+    def _start_search_job(self, text: str) -> None:
+        mode = self._current_mode()
 
-        self._matches = matches
-        count = len(matches)
-        self._match_label.setText(
-            f"{count} match{'es' if count != 1 else ''}" if count else "no matches"
-        )
-
-    def _collect_matches_jsonpath(self, expr: str) -> None:
-        """Evaluate a JSONPath expression and highlight matched primitive values.
-
-        Steps:
-        1. Parse and evaluate *expr* against ``_json_obj`` using jsonpath-ng.
-        2. Show a compact preview of the resolved values in the result strip.
-        3. For each *primitive* matched value, search the text editor for its
-           JSON serialization (``"John"`` / ``42`` / ``true`` / ``null``) and
-           collect those cursors as normal text-search matches so the ▲/▼
-           navigation buttons work.  Complex (dict/list) values are skipped
-           for text highlighting because they span multiple lines in a
-           pretty-printed body.
-        """
-        if self._json_obj is None:
-            self._matches = []
+        # JSONPath with no JSON document → handle immediately, no worker
+        if mode is SearchMode.JSONPATH and self._json_obj is None:
+            self._offsets = []
+            self._current_idx = -1
+            self._target.setExtraSelections([])
             self._match_label.setText("no JSON")
             self._jp_result_label.setText(
                 "No JSON document available — send a request that returns JSON first."
             )
             self._jp_result_label.setVisible(True)
-            return
-
-        # ── Parse and evaluate ────────────────────────────────────────
-        try:
-            from jsonpath_ng.ext import parse as _jp_parse  # noqa: PLC0415
-            jp_expr = _jp_parse(expr)
-            raw_matches = jp_expr.find(self._json_obj)
-        except ImportError:
-            self._matches = []
-            self._match_label.setText("jsonpath-ng missing")
-            self._jp_result_label.setText(
-                "⚠ jsonpath-ng is not installed.  Run:  pip install jsonpath-ng"
-            )
-            self._jp_result_label.setVisible(True)
-            return
-        except Exception as exc:
-            self._matches = []
-            self._match_label.setText("expression error")
-            self._jp_result_label.setText(f"⚠ {exc}")
-            self._jp_result_label.setVisible(True)
-            return
-
-        values = [m.value for m in raw_matches]
-        count = len(values)
-        self._match_label.setText(
-            f"{count} match{'es' if count != 1 else ''}" if count else "no matches"
-        )
-
-        # ── Result strip ──────────────────────────────────────────────
-        if values:
-            previews = []
-            for v in values[:6]:
-                s = json.dumps(v, ensure_ascii=False)
-                previews.append(s if len(s) <= 50 else s[:47] + "…")
-            preview = "  ·  ".join(previews)
-            if count > 6:
-                preview += f"  … (+{count - 6} more)"
-            self._jp_result_label.setText(f"→ {preview}")
-        else:
-            self._jp_result_label.setText("(path matched no values)")
-        self._jp_result_label.setVisible(True)
-
-        # ── Text-editor highlights for primitive values ───────────────
-        doc = self._target.document()
-        text_matches = []
-        seen_terms: set = set()          # deduplicate identical serializations
-        for v in values:
-            if isinstance(v, (dict, list)):
-                continue                 # skip — multi-line in pretty-print
-            term = json.dumps(v, ensure_ascii=False)
-            if term in seen_terms:
-                continue
-            seen_terms.add(term)
-            cursor = QTextCursor(doc)
-            while True:
-                cursor = doc.find(
-                    term, cursor, QTextDocument.FindFlag.FindCaseSensitively
-                )
-                if cursor.isNull():
-                    break
-                text_matches.append(QTextCursor(cursor))
-
-        self._matches = text_matches
-        self._current_idx = 0 if text_matches else -1
-
-        # Build a filtered JSON representation of the matched results and
-        # notify the ResponsePanel (or other caller) via the filter callback.
-        if self._filter_cb:
-            try:
-                if not raw_matches:
-                    # No matches → provide an empty list representation
-                    filtered = json.dumps([], indent=2, ensure_ascii=False)
-                else:
-                    # If only one match, present the single value; otherwise
-                    # present a list of matched values which is the most
-                    # intuitive "filtered" view for multiple hits.
-                    if len(values) == 1:
-                        filtered = json.dumps(values[0], indent=2, ensure_ascii=False)
-                    else:
-                        filtered = json.dumps(values, indent=2, ensure_ascii=False)
-                self._filter_cb(filtered)
-            except Exception:
-                # If JSON serialization fails, reset the filter to avoid
-                # presenting partial/invalid content.
+            if self._filter_cb:
                 self._filter_cb(None)
+            self._spinner.setVisible(False)
+            self._cancel_search_btn.setVisible(False)
+            return
 
-    # ── Highlight rendering ───────────────────────────────────────────
+        # Cancel previous job
+        if self._current_cancel_token is not None:
+            self._current_cancel_token.cancelled = True
 
-    def _apply_highlights(self) -> None:
-        """Repaint extra selections: current match in orange, others in yellow."""
-        if not self._matches:
+        self._job_counter += 1
+        job_id = self._job_counter
+        self._current_job_id = job_id
+
+        self._spinner.setVisible(True)
+        self._cancel_search_btn.setVisible(True)
+
+        cancel_token = _CancelToken()
+        self._current_cancel_token = cancel_token
+
+        cfg = _SearchJobConfig(
+            job_id=job_id,
+            mode=mode,
+            term=text,
+            case_sensitive=self._case_btn.isChecked(),
+            doc_text=self._snapshot_doc_text(),
+            json_obj=self._json_obj,
+            cancel_token=cancel_token,
+        )
+        runnable = _SearchRunnable(cfg)
+        runnable.signals.result.connect(self._on_search_result)
+        runnable.signals.partial_result.connect(self._on_search_partial)
+
+        try:
+            self._thread_pool.start(runnable)
+        except Exception:
+            logger.exception("Failed to start search runnable; falling back to synchronous run")
+            runnable.run()
+
+    def _on_search_result(
+        self,
+        job_id: int,
+        offsets: object,
+        values: object,
+        preview: str,
+    ) -> None:
+        if job_id != self._current_job_id:
+            return
+
+        offs = list(offsets) if offsets else []
+        self._offsets = [(int(s), int(e)) for s, e in offs]
+        self._current_idx = 0 if self._offsets else -1
+
+        self._update_match_label(len(self._offsets), preview)
+        self._update_jsonpath_preview(preview, values)
+
+        self._update_highlights_window()
+
+        self._spinner.setVisible(False)
+        self._cancel_search_btn.setVisible(False)
+
+    def _on_search_partial(
+        self,
+        job_id: int,
+        offsets_chunk: object,
+        values_chunk: object,
+        preview: str,
+        done: bool,
+    ) -> None:
+        if job_id != self._current_job_id:
+            return
+
+        new_offs = list(offsets_chunk) if offsets_chunk else []
+        remaining = MAX_MATCHES - len(self._offsets)
+        if remaining > 0:
+            self._offsets.extend([(int(s), int(e)) for s, e in new_offs[:remaining]])
+
+        if self._current_idx == -1 and self._offsets:
+            self._current_idx = 0
+
+        self._update_match_label(len(self._offsets), preview)
+        self._update_jsonpath_preview(preview, values_chunk)
+
+        self._update_highlights_window()
+
+        if done:
+            self._spinner.setVisible(False)
+            self._cancel_search_btn.setVisible(False)
+
+    def _on_cancel_search(self) -> None:
+        if self._current_cancel_token is not None:
+            self._current_cancel_token.cancelled = True
+
+        self._job_counter += 1
+        self._current_job_id = self._job_counter
+        self._spinner.setVisible(False)
+        self._cancel_search_btn.setVisible(False)
+        self._match_label.setText("cancelled")
+
+    # ── Status / label helpers ───────────────────────────────────────
+
+    def _set_status_searching(self) -> None:
+        self._match_label.setText("searching…")
+
+    def _update_match_label(self, count: int, preview: str) -> None:
+        # Special cases for regex / JSONPath errors encoded in preview
+        if preview == "invalid regex":
+            self._match_label.setText("invalid regex")
+            return
+        if preview.startswith("⚠ jsonpath-ng is not installed"):
+            self._match_label.setText("jsonpath-ng missing")
+            return
+        if preview.startswith("⚠ "):
+            self._match_label.setText("expression error")
+            return
+
+        if count:
+            self._match_label.setText(
+                f"{count} match{'es' if count != 1 else ''}"
+            )
+        else:
+            self._match_label.setText("no matches")
+
+    def _update_jsonpath_preview(self, preview: str, values: object) -> None:
+        if self._current_mode() is not SearchMode.JSONPATH:
+            self._jp_result_label.setVisible(False)
+            if self._filter_cb:
+                self._filter_cb(None)
+            return
+
+        if not preview:
+            self._jp_result_label.setVisible(False)
+        else:
+            self._jp_result_label.setText(preview)
+            self._jp_result_label.setVisible(True)
+
+        # Build filtered JSON representation for the callback
+        if self._filter_cb is None:
+            return
+
+        vals = list(values) if values else []
+        try:
+            if not vals:
+                filtered = json.dumps([], indent=2, ensure_ascii=False)
+            elif len(vals) == 1:
+                filtered = json.dumps(vals[0], indent=2, ensure_ascii=False)
+            else:
+                filtered = json.dumps(vals, indent=2, ensure_ascii=False)
+        except Exception:
+            logger.exception("Failed to build filtered JSON for JSONPath results")
+            filtered = None
+
+        self._filter_cb(filtered)
+
+    # ── Highlighting and navigation ──────────────────────────────────
+
+    def _update_highlights_window(self) -> None:
+        if not self._offsets or self._current_idx < 0:
             self._target.setExtraSelections([])
             return
 
         dim_fmt = QTextCharFormat()
         dim_fmt.setBackground(QColor(Colors.HIGHLIGHT))
-
         cur_fmt = QTextCharFormat()
-        cur_fmt.setBackground(QColor("#e8a030"))  # orange — visible on both themes
+        cur_fmt.setBackground(QColor("#e8a030"))
 
-        selections = []
-        for i, cur in enumerate(self._matches):
+        selections: List[QTextEdit.ExtraSelection] = []
+        radius = 5
+        start_idx = max(0, self._current_idx - radius)
+        end_idx = min(len(self._offsets), self._current_idx + radius + 1)
+
+        doc = self._target.document()
+        for i in range(start_idx, end_idx):
+            s, e = self._offsets[i]
+            cur = QTextCursor(doc)
+            cur.setPosition(s)
+            cur.setPosition(e, QTextCursor.MoveMode.KeepAnchor)
             sel = QTextEdit.ExtraSelection()
             sel.cursor = cur
             sel.format = cur_fmt if i == self._current_idx else dim_fmt
@@ -453,39 +662,26 @@ class SearchBar(QWidget):
 
         self._target.setExtraSelections(selections)
 
-        if 0 <= self._current_idx < len(self._matches):
-            cur = self._matches[self._current_idx]
-            self._target.setTextCursor(cur)
-            # Prefer using QTextEdit.centerCursor() which recent Qt versions
-            # implement to center the cursor in the viewport. Fallback to
-            # ensureCursorVisible() if unavailable or on error.
-            try:
-                # centerCursor centers the visible area on the cursor
-                self._target.centerCursor()
-            except Exception:
-                self._target.ensureCursorVisible()
-
-    def _update_label(self) -> None:
-        count = len(self._matches)
-        if count == 0:
-            self._match_label.setText("no matches")
-        else:
-            self._match_label.setText(
-                f"{self._current_idx + 1} / {count} match{'es' if count != 1 else ''}"
-            )
-
-    # ── Navigation ────────────────────────────────────────────────────
+        s, e = self._offsets[self._current_idx]
+        cur = QTextCursor(doc)
+        cur.setPosition(s)
+        cur.setPosition(e, QTextCursor.MoveMode.KeepAnchor)
+        self._target.setTextCursor(cur)
+        try:
+            self._target.centerCursor()
+        except Exception:
+            self._target.ensureCursorVisible()
 
     def _find_next(self) -> None:
-        if not self._matches:
+        if not self._offsets:
             return
-        self._current_idx = (self._current_idx + 1) % len(self._matches)
-        self._apply_highlights()
-        self._update_label()
+        self._current_idx = (self._current_idx + 1) % len(self._offsets)
+        self._update_highlights_window()
+        self._update_match_label(len(self._offsets), "")
 
     def _find_prev(self) -> None:
-        if not self._matches:
+        if not self._offsets:
             return
-        self._current_idx = (self._current_idx - 1) % len(self._matches)
-        self._apply_highlights()
-        self._update_label()
+        self._current_idx = (self._current_idx - 1) % len(self._offsets)
+        self._update_highlights_window()
+        self._update_match_label(len(self._offsets), "")

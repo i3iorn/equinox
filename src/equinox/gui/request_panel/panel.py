@@ -542,7 +542,7 @@ class RequestPanel(_RequestSendMixin, _RequestAuthMixin, RequestBodyMixin, QWidg
         self._body_search_input.setPlaceholderText("Find in body…")
         self._body_search_input.setFixedHeight(26)
         self._body_search_input.setClearButtonEnabled(True)
-        # _body_find_next / _body_highlight_all are defined in RequestBodyMixin
+
         self._body_search_input.returnPressed.connect(self._body_find_next)
         self._body_search_input.textChanged.connect(self._body_highlight_all)
 
@@ -564,7 +564,7 @@ class RequestPanel(_RequestSendMixin, _RequestAuthMixin, RequestBodyMixin, QWidg
         next_btn.setText("▼")
         next_btn.setFixedSize(24, 24)
         next_btn.setToolTip("Find next match")
-        # _body_find_prev / _body_find_next are defined in RequestBodyMixin
+
         prev_btn.clicked.connect(self._body_find_prev)
         next_btn.clicked.connect(self._body_find_next)
 
