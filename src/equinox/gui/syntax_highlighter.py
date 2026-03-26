@@ -1,271 +1,396 @@
-"""Syntax highlighting for QTextEdit widgets — JSON, Python, XML, HTML, YAML."""
+from __future__ import annotations
 
 import re
+from dataclasses import dataclass
+from typing import Iterable, List, Pattern
+
 from PyQt6.QtGui import QSyntaxHighlighter, QTextCharFormat, QColor, QFont
 from equinox.gui.theme import Colors
 
-# Shared format for {{variable}} placeholders — applied by all highlighters.
-def _variable_fmt() -> QTextCharFormat:
+
+@dataclass(frozen=True)
+class RegexRule:
+    """Single regex + format rule used by regex-based highlighters."""
+
+    pattern: Pattern[str]
+    fmt: QTextCharFormat
+
+
+def _make_format(
+    *,
+    foreground: str | None = None,
+    bold: bool = False,
+    italic: bool = False,
+) -> QTextCharFormat:
     fmt = QTextCharFormat()
-    fmt.setForeground(QColor(Colors.AMBER))
-    fmt.setFontWeight(QFont.Weight.Bold)
+    if foreground is not None:
+        fmt.setForeground(QColor(foreground))
+    if bold:
+        fmt.setFontWeight(QFont.Weight.Bold)
+    if italic:
+        fmt.setFontItalic(True)
     return fmt
 
-_VARIABLE_PATTERN = re.compile(r'\{\{[\w.\-/: ]+\}\}')
+
+def _variable_fmt() -> QTextCharFormat:
+    """Shared format for {{variable}} placeholders — applied by all highlighters."""
+    return _make_format(foreground=Colors.AMBER, bold=True)
 
 
-class JsonHighlighter(QSyntaxHighlighter):
+_VARIABLE_PATTERN: Pattern[str] = re.compile(r"\{\{[\w.\-/: ]+\}\}")
+
+
+class RegexHighlighterBase(QSyntaxHighlighter):
+    """Base class for simple regex-driven syntax highlighters.
+
+    Subclasses implement `_build_rules` to return a sequence of RegexRule
+    instances. Variable placeholders `{{var}}` are highlighted last so they
+    override other formats.
+    """
+
+    def __init__(self, parent=None) -> None:
+        super().__init__(parent)
+        self._rules: List[RegexRule] = list(self._build_rules())
+        self._var_fmt: QTextCharFormat = _variable_fmt()
+
+    # Subclasses override this
+    def _build_rules(self) -> Iterable[RegexRule]:
+        return []
+
+    def highlightBlock(self, text: str) -> None:  # type: ignore[override]
+        # Apply language-specific rules
+        for rule in self._rules:
+            for match in rule.pattern.finditer(text):
+                start = match.start()
+                length = match.end() - start
+                self.setFormat(start, length, rule.fmt)
+
+        # Apply {{variable}} placeholders last so they override other formats
+        for match in _VARIABLE_PATTERN.finditer(text):
+            start = match.start()
+            length = match.end() - start
+            self.setFormat(start, length, self._var_fmt)
+
+
+class JsonHighlighter(RegexHighlighterBase):
     """Lightweight JSON syntax highlighter using regex rules.
 
     Highlights keys, strings, numbers, booleans, null, braces, and {{variables}}.
     """
 
-    def __init__(self, parent=None):
-        super().__init__(parent)
-        self._rules = self._build_rules()
-        self._var_fmt = _variable_fmt()
-
-    def _build_rules(self):
-        rules = []
+    def _build_rules(self) -> Iterable[RegexRule]:
+        rules: List[RegexRule] = []
 
         # JSON key (string followed by colon)
-        key_fmt = QTextCharFormat()
-        key_fmt.setForeground(QColor(Colors.BLUE))
-        key_fmt.setFontWeight(QFont.Weight.Bold)
-        rules.append((re.compile(r'"([^"\\]|\\.)*"\s*(?=:)'), key_fmt))
+        key_fmt = _make_format(foreground=Colors.BLUE, bold=True)
+        rules.append(
+            RegexRule(
+                pattern=re.compile(r'"([^"\\]|\\.)*"\s*(?=:)'),
+                fmt=key_fmt,
+            )
+        )
 
         # String value
-        str_fmt = QTextCharFormat()
-        str_fmt.setForeground(QColor(Colors.GREEN))
-        rules.append((re.compile(r'"([^"\\]|\\.)*"'), str_fmt))
+        str_fmt = _make_format(foreground=Colors.GREEN)
+        rules.append(
+            RegexRule(
+                pattern=re.compile(r'"([^"\\]|\\.)*"'),
+                fmt=str_fmt,
+            )
+        )
 
         # Number
-        num_fmt = QTextCharFormat()
-        num_fmt.setForeground(QColor(Colors.PURPLE))
-        rules.append((re.compile(r'\b-?(?:0|[1-9]\d*)(?:\.\d+)?(?:[eE][+-]?\d+)?\b'), num_fmt))
+        num_fmt = _make_format(foreground=Colors.PURPLE)
+        rules.append(
+            RegexRule(
+                pattern=re.compile(
+                    r"\b-?(?:0|[1-9]\d*)(?:\.\d+)?(?:[eE][+-]?\d+)?\b"
+                ),
+                fmt=num_fmt,
+            )
+        )
 
         # Boolean / null
-        kw_fmt = QTextCharFormat()
-        kw_fmt.setForeground(QColor(Colors.AMBER))
-        kw_fmt.setFontWeight(QFont.Weight.Bold)
-        rules.append((re.compile(r'\b(?:true|false|null)\b'), kw_fmt))
+        kw_fmt = _make_format(foreground=Colors.AMBER, bold=True)
+        rules.append(
+            RegexRule(
+                pattern=re.compile(r"\b(?:true|false|null)\b"),
+                fmt=kw_fmt,
+            )
+        )
 
         # Braces / brackets
-        brace_fmt = QTextCharFormat()
-        brace_fmt.setForeground(QColor(Colors.FG_MUTED))
-        brace_fmt.setFontWeight(QFont.Weight.Bold)
-        rules.append((re.compile(r'[{}\[\]]'), brace_fmt))
+        brace_fmt = _make_format(foreground=Colors.FG_MUTED, bold=True)
+        rules.append(
+            RegexRule(
+                pattern=re.compile(r"[{}\[\]]"),
+                fmt=brace_fmt,
+            )
+        )
 
         return rules
 
-    def highlightBlock(self, text: str) -> None:
-        for pattern, fmt in self._rules:
-            for match in pattern.finditer(text):
-                start = match.start()
-                length = match.end() - start
-                self.setFormat(start, length, fmt)
-        # {{variable}} placeholders — applied last so they override other formats
-        for match in _VARIABLE_PATTERN.finditer(text):
-            self.setFormat(match.start(), match.end() - match.start(), self._var_fmt)
 
-
-class PythonHighlighter(QSyntaxHighlighter):
+class PythonHighlighter(RegexHighlighterBase):
     """Lightweight Python syntax highlighter using regex rules.
 
     Highlights keywords, strings, comments, numbers, and builtins.
     """
 
-    def __init__(self, parent=None):
-        super().__init__(parent)
-        self._rules = self._build_rules()
-        self._var_fmt = _variable_fmt()
-
-    def _build_rules(self):
-        rules = []
+    def _build_rules(self) -> Iterable[RegexRule]:
+        rules: List[RegexRule] = []
 
         # Keywords
-        kw_fmt = QTextCharFormat()
-        kw_fmt.setForeground(QColor(Colors.BLUE))
-        kw_fmt.setFontWeight(QFont.Weight.Bold)
+        kw_fmt = _make_format(foreground=Colors.BLUE, bold=True)
         kw_pattern = (
-            r"\b(if|else|elif|for|while|def|class|return|import|from|with|as|"
+            r"\b("
+            r"if|else|elif|for|while|def|class|return|import|from|with|as|"
             r"try|except|finally|raise|pass|break|continue|in|not|and|or|"
-            r"lambda|yield|True|False|None)\b"
+            r"lambda|yield|True|False|None"
+            r")\b"
         )
-        rules.append((re.compile(kw_pattern), kw_fmt))
+        rules.append(
+            RegexRule(
+                pattern=re.compile(kw_pattern),
+                fmt=kw_fmt,
+            )
+        )
 
         # Built-in functions
-        builtin_fmt = QTextCharFormat()
-        builtin_fmt.setForeground(QColor(Colors.AMBER))
+        builtin_fmt = _make_format(foreground=Colors.AMBER)
         builtin_pattern = (
-            r"\b(print|len|str|int|float|list|dict|set|tuple|range|enumerate|"
+            r"\b("
+            r"print|len|str|int|float|list|dict|set|tuple|range|enumerate|"
             r"zip|map|filter|type|isinstance|getattr|setattr|hasattr|repr|"
-            r"vars|dir|abs|min|max|sum|any|all)\b"
+            r"vars|dir|abs|min|max|sum|any|all"
+            r")\b"
         )
-        rules.append((re.compile(builtin_pattern), builtin_fmt))
+        rules.append(
+            RegexRule(
+                pattern=re.compile(builtin_pattern),
+                fmt=builtin_fmt,
+            )
+        )
 
         # Double-quoted strings
-        str_fmt = QTextCharFormat()
-        str_fmt.setForeground(QColor(Colors.GREEN))
-        rules.append((re.compile(r'"[^"\\]*(?:\\.[^"\\]*)*"'), str_fmt))
+        str_fmt = _make_format(foreground=Colors.GREEN)
+        rules.append(
+            RegexRule(
+                pattern=re.compile(r'"[^"\\]*(?:\\.[^"\\]*)*"'),
+                fmt=str_fmt,
+            )
+        )
         # Single-quoted strings
-        rules.append((re.compile(r"'[^'\\]*(?:\\.[^'\\]*)*'"), str_fmt))
+        rules.append(
+            RegexRule(
+                pattern=re.compile(r"'[^'\\]*(?:\\.[^'\\]*)*'"),
+                fmt=str_fmt,
+            )
+        )
 
         # Numbers
-        num_fmt = QTextCharFormat()
-        num_fmt.setForeground(QColor(Colors.PURPLE))
-        rules.append((re.compile(r"\b\d+\.?\d*\b"), num_fmt))
+        num_fmt = _make_format(foreground=Colors.PURPLE)
+        rules.append(
+            RegexRule(
+                pattern=re.compile(r"\b\d+\.?\d*\b"),
+                fmt=num_fmt,
+            )
+        )
 
         # Comments — must come last so they override other formats
-        comment_fmt = QTextCharFormat()
-        comment_fmt.setForeground(QColor(Colors.FG_MUTED))
-        comment_fmt.setFontItalic(True)
-        rules.append((re.compile(r"#[^\n]*"), comment_fmt))
+        comment_fmt = _make_format(foreground=Colors.FG_MUTED, italic=True)
+        rules.append(
+            RegexRule(
+                pattern=re.compile(r"#[^\n]*"),
+                fmt=comment_fmt,
+            )
+        )
 
         return rules
 
-    def highlightBlock(self, text: str) -> None:
-        for pattern, fmt in self._rules:
-            for match in pattern.finditer(text):
-                start = match.start()
-                length = match.end() - start
-                self.setFormat(start, length, fmt)
-        for match in _VARIABLE_PATTERN.finditer(text):
-            self.setFormat(match.start(), match.end() - match.start(), self._var_fmt)
 
-
-class XmlHighlighter(QSyntaxHighlighter):
+class XmlHighlighter(RegexHighlighterBase):
     """Lightweight XML/HTML syntax highlighter.
 
     Highlights tags, attributes, attribute values, comments, and CDATA.
     """
 
-    def __init__(self, parent=None):
-        super().__init__(parent)
-        self._rules = self._build_rules()
-        self._var_fmt = _variable_fmt()
-
-    def _build_rules(self):
-        rules = []
+    def _build_rules(self) -> Iterable[RegexRule]:
+        rules: List[RegexRule] = []
 
         # XML comment  <!-- ... -->
-        comment_fmt = QTextCharFormat()
-        comment_fmt.setForeground(QColor(Colors.FG_MUTED))
-        comment_fmt.setFontItalic(True)
-        rules.append((re.compile(r'<!--.*?-->', re.DOTALL), comment_fmt))
+        comment_fmt = _make_format(foreground=Colors.FG_MUTED, italic=True)
+        rules.append(
+            RegexRule(
+                pattern=re.compile(r"<!--.*?-->", re.DOTALL),
+                fmt=comment_fmt,
+            )
+        )
 
         # CDATA section
-        cdata_fmt = QTextCharFormat()
-        cdata_fmt.setForeground(QColor(Colors.FG_MUTED))
-        rules.append((re.compile(r'<!\[CDATA\[.*?\]\]>', re.DOTALL), cdata_fmt))
+        cdata_fmt = _make_format(foreground=Colors.FG_MUTED)
+        rules.append(
+            RegexRule(
+                pattern=re.compile(r"<!\[CDATA\[.*?\]\]>", re.DOTALL),
+                fmt=cdata_fmt,
+            )
+        )
 
         # DOCTYPE / processing instruction
-        pi_fmt = QTextCharFormat()
-        pi_fmt.setForeground(QColor(Colors.PURPLE))
-        rules.append((re.compile(r'<[?!][^>]*>'), pi_fmt))
+        pi_fmt = _make_format(foreground=Colors.PURPLE)
+        rules.append(
+            RegexRule(
+                pattern=re.compile(r"<[?!][^>]*>"),
+                fmt=pi_fmt,
+            )
+        )
 
         # Tag name  <tagName  or  </tagName
-        tag_fmt = QTextCharFormat()
-        tag_fmt.setForeground(QColor(Colors.BLUE))
-        tag_fmt.setFontWeight(QFont.Weight.Bold)
-        rules.append((re.compile(r'</?[\w:-]+'), tag_fmt))
-        rules.append((re.compile(r'/?>'), tag_fmt))
+        tag_fmt = _make_format(foreground=Colors.BLUE, bold=True)
+        rules.append(
+            RegexRule(
+                pattern=re.compile(r"</?[\w:-]+"),
+                fmt=tag_fmt,
+            )
+        )
+        rules.append(
+            RegexRule(
+                pattern=re.compile(r"/?>"),
+                fmt=tag_fmt,
+            )
+        )
 
         # Attribute name
-        attr_fmt = QTextCharFormat()
-        attr_fmt.setForeground(QColor(Colors.AMBER))
-        rules.append((re.compile(r'\b[\w:-]+='), attr_fmt))
+        attr_fmt = _make_format(foreground=Colors.AMBER)
+        rules.append(
+            RegexRule(
+                pattern=re.compile(r"\b[\w:-]+="),
+                fmt=attr_fmt,
+            )
+        )
 
         # Attribute value (double or single quoted)
-        val_fmt = QTextCharFormat()
-        val_fmt.setForeground(QColor(Colors.GREEN))
-        rules.append((re.compile(r'"[^"]*"'), val_fmt))
-        rules.append((re.compile(r"'[^']*'"), val_fmt))
+        val_fmt = _make_format(foreground=Colors.GREEN)
+        rules.append(
+            RegexRule(
+                pattern=re.compile(r'"[^"]*"'),
+                fmt=val_fmt,
+            )
+        )
+        rules.append(
+            RegexRule(
+                pattern=re.compile(r"'[^']*'"),
+                fmt=val_fmt,
+            )
+        )
 
         return rules
-
-    def highlightBlock(self, text: str) -> None:
-        for pattern, fmt in self._rules:
-            for match in pattern.finditer(text):
-                self.setFormat(match.start(), match.end() - match.start(), fmt)
-        for match in _VARIABLE_PATTERN.finditer(text):
-            self.setFormat(match.start(), match.end() - match.start(), self._var_fmt)
 
 
 # HTML uses the same grammar as XML.
 HtmlHighlighter = XmlHighlighter
 
 
-class YamlHighlighter(QSyntaxHighlighter):
+class YamlHighlighter(RegexHighlighterBase):
     """Lightweight YAML syntax highlighter.
 
     Highlights keys, strings, numbers, booleans, null, comments, and anchors.
     """
 
-    def __init__(self, parent=None):
-        super().__init__(parent)
-        self._rules = self._build_rules()
-        self._var_fmt = _variable_fmt()
-
-    def _build_rules(self):
-        rules = []
+    def _build_rules(self) -> Iterable[RegexRule]:
+        rules: List[RegexRule] = []
 
         # Comment
-        comment_fmt = QTextCharFormat()
-        comment_fmt.setForeground(QColor(Colors.FG_MUTED))
-        comment_fmt.setFontItalic(True)
-        rules.append((re.compile(r'#[^\n]*'), comment_fmt))
+        comment_fmt = _make_format(foreground=Colors.FG_MUTED, italic=True)
+        rules.append(
+            RegexRule(
+                pattern=re.compile(r"#[^\n]*"),
+                fmt=comment_fmt,
+            )
+        )
 
         # Document separator (--- or ...)
-        sep_fmt = QTextCharFormat()
-        sep_fmt.setForeground(QColor(Colors.PURPLE))
-        sep_fmt.setFontWeight(QFont.Weight.Bold)
-        rules.append((re.compile(r'^(---|\.\.\.)\s*$'), sep_fmt))
+        sep_fmt = _make_format(foreground=Colors.PURPLE, bold=True)
+        rules.append(
+            RegexRule(
+                pattern=re.compile(r"^(---|\.\.\.)\s*$"),
+                fmt=sep_fmt,
+            )
+        )
 
         # Anchor (&name) and alias (*name)
-        anchor_fmt = QTextCharFormat()
-        anchor_fmt.setForeground(QColor(Colors.PURPLE))
-        rules.append((re.compile(r'[&*][\w]+'), anchor_fmt))
+        anchor_fmt = _make_format(foreground=Colors.PURPLE)
+        rules.append(
+            RegexRule(
+                pattern=re.compile(r"[&*][\w]+"),
+                fmt=anchor_fmt,
+            )
+        )
 
-        # Tag  !!type
-        tag_fmt = QTextCharFormat()
-        tag_fmt.setForeground(QColor(Colors.PURPLE))
-        rules.append((re.compile(r'![\w/]+'), tag_fmt))
+        # Tag  !!type / !type
+        tag_fmt = _make_format(foreground=Colors.PURPLE)
+        rules.append(
+            RegexRule(
+                pattern=re.compile(r"![\w/]+"),
+                fmt=tag_fmt,
+            )
+        )
 
         # Mapping key  key:
-        key_fmt = QTextCharFormat()
-        key_fmt.setForeground(QColor(Colors.BLUE))
-        key_fmt.setFontWeight(QFont.Weight.Bold)
-        rules.append((re.compile(r'[\w.\-/]+(?=\s*:)'), key_fmt))
+        key_fmt = _make_format(foreground=Colors.BLUE, bold=True)
+        rules.append(
+            RegexRule(
+                pattern=re.compile(r"[\w.\-/]+(?=\s*:)"),
+                fmt=key_fmt,
+            )
+        )
 
         # Quoted string values
-        str_fmt = QTextCharFormat()
-        str_fmt.setForeground(QColor(Colors.GREEN))
-        rules.append((re.compile(r'"[^"\\]*(?:\\.[^"\\]*)*"'), str_fmt))
-        rules.append((re.compile(r"'[^']*'"), str_fmt))
+        str_fmt = _make_format(foreground=Colors.GREEN)
+        rules.append(
+            RegexRule(
+                pattern=re.compile(r'"[^"\\]*(?:\\.[^"\\]*)*"'),
+                fmt=str_fmt,
+            )
+        )
+        rules.append(
+            RegexRule(
+                pattern=re.compile(r"'[^']*'"),
+                fmt=str_fmt,
+            )
+        )
 
         # Boolean / null
-        kw_fmt = QTextCharFormat()
-        kw_fmt.setForeground(QColor(Colors.AMBER))
-        kw_fmt.setFontWeight(QFont.Weight.Bold)
-        rules.append((re.compile(r'\b(?:true|false|yes|no|null|~|True|False|Yes|No|Null|NULL|TRUE|FALSE)\b'), kw_fmt))
+        kw_fmt = _make_format(foreground=Colors.AMBER, bold=True)
+        rules.append(
+            RegexRule(
+                pattern=re.compile(
+                    r"\b(?:true|false|yes|no|null|~|"
+                    r"True|False|Yes|No|Null|NULL|TRUE|FALSE)\b"
+                ),
+                fmt=kw_fmt,
+            )
+        )
 
         # Number
-        num_fmt = QTextCharFormat()
-        num_fmt.setForeground(QColor(Colors.PURPLE))
-        rules.append((re.compile(r'\b-?(?:0[xX][0-9a-fA-F]+|0[oO][0-7]+|[0-9]+(?:\.[0-9]+)?(?:[eE][+-]?[0-9]+)?)\b'), num_fmt))
+        num_fmt = _make_format(foreground=Colors.PURPLE)
+        rules.append(
+            RegexRule(
+                pattern=re.compile(
+                    r"\b-?(?:0[xX][0-9a-fA-F]+|0[oO][0-7]+|"
+                    r"[0-9]+(?:\.[0-9]+)?(?:[eE][+-]?[0-9]+)?)\b"
+                ),
+                fmt=num_fmt,
+            )
+        )
 
         # List indicator
-        list_fmt = QTextCharFormat()
-        list_fmt.setForeground(QColor(Colors.FG_MUTED))
-        list_fmt.setFontWeight(QFont.Weight.Bold)
-        rules.append((re.compile(r'^[ \t]*-(?= )'), list_fmt))
+        list_fmt = _make_format(foreground=Colors.FG_MUTED, bold=True)
+        rules.append(
+            RegexRule(
+                pattern=re.compile(r"^[ \t]*-(?= )"),
+                fmt=list_fmt,
+            )
+        )
 
         return rules
-
-    def highlightBlock(self, text: str) -> None:
-        for pattern, fmt in self._rules:
-            for match in pattern.finditer(text):
-                self.setFormat(match.start(), match.end() - match.start(), fmt)
-        for match in _VARIABLE_PATTERN.finditer(text):
-            self.setFormat(match.start(), match.end() - match.start(), self._var_fmt)

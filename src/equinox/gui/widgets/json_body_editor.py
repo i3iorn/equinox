@@ -1,538 +1,424 @@
-"""JSON body editor with bracket-matching, auto-indent, line numbers, and more."""
+"""
+Refactored JSON body editor:
+- Uses unified syntax highlighter (JsonHighlighter)
+- Cleaner structure, DRY, better separation of concerns
+"""
 
 import json as _json
-from PyQt6.QtWidgets import QWidget, QPlainTextEdit
+from PyQt6.QtWidgets import QWidget, QPlainTextEdit, QTextEdit
 from PyQt6.QtCore import Qt, QSize
 from PyQt6.QtGui import QTextCursor, QPainter, QColor, QTextCharFormat
 
-_OPEN_CLOSE = {"{": "}", "[": "]", '"': '"', "(": ")"}
-_CLOSE_CHARS = set(_OPEN_CLOSE.values())
+from equinox.gui.syntax_highlighter import JsonHighlighter
 
+
+# ---------------------------------------------------------------------------
+# Line Number Area
+# ---------------------------------------------------------------------------
 
 class LineNumberArea(QWidget):
-    """Line number display for JSON editor."""
-    
+    """Line number display for JsonBodyEditor."""
+
     def __init__(self, editor):
         super().__init__(editor)
         self.editor = editor
-    
+
     def sizeHint(self) -> QSize:
-        """Return width of line number area."""
         return QSize(self.editor.line_number_area_width(), 0)
-    
+
     def paintEvent(self, event):
-        """Paint line numbers."""
         painter = QPainter(self)
         painter.fillRect(event.rect(), QColor(240, 240, 240))
-        
+
         block = self.editor.firstVisibleBlock()
         block_number = block.blockNumber()
-        top = self.editor.blockBoundingGeometry(block).translated(self.editor.contentOffset()).top()
+        top = self.editor.blockBoundingGeometry(block).translated(
+            self.editor.contentOffset()
+        ).top()
         bottom = top + self.editor.blockBoundingRect(block).height()
-        
+
         font = self.editor.font()
         font.setPointSize(font.pointSize() - 1)
         painter.setFont(font)
         painter.setPen(QColor(128, 128, 128))
-        
+
         while block.isValid() and top <= event.rect().bottom():
             if block.isVisible() and bottom >= event.rect().top():
-                number = str(block_number + 1)
-                painter.drawText(0, int(top), self.editor.line_number_area_width() - 4,
-                               int(self.editor.blockBoundingRect(block).height()),
-                               Qt.AlignmentFlag.AlignRight, number)
-            
+                painter.drawText(
+                    0,
+                    int(top),
+                    self.editor.line_number_area_width() - 4,
+                    int(self.editor.blockBoundingRect(block).height()),
+                    Qt.AlignmentFlag.AlignRight,
+                    str(block_number + 1),
+                )
+
             block = block.next()
             top = bottom
             bottom = top + self.editor.blockBoundingRect(block).height()
             block_number += 1
 
 
-class JsonBodyEditor(QPlainTextEdit):
-    """QPlainTextEdit with JSON-friendly editing helpers:
+# ---------------------------------------------------------------------------
+# JsonBodyEditor
+# ---------------------------------------------------------------------------
 
-    Features:
-    - Auto-close ``{``, ``[``, ``(`` and ``"`` (inserts matching closer)
-    - Smart ``"``-handling: skip over if already before a quote
-    - Tab inserts 4 spaces (never hard tab)
-    - Enter auto-indents with smart bracket handling
-    - Backspace removes matching auto-close pairs
-    - **NEW: Smart bracket/quote wrapping for selected text**
-    - **NEW: Auto-format/beautify JSON (Ctrl+Shift+F)**
-    - **NEW: Line numbers display**
-    - **NEW: Bracket matching highlighting**
-    - **NEW: Comment support (// and /* */)**
+_OPEN_CLOSE = {"{": "}", "[": "]", '"': '"', "(": ")"}
+_CLOSE_CHARS = set(_OPEN_CLOSE.values())
+
+
+class JsonBodyEditor(QPlainTextEdit):
+    """JSON‑friendly editor with:
+    - Auto‑close brackets/quotes
+    - Auto‑indent
+    - Smart wrapping
+    - Auto‑format JSON (Ctrl+Shift+F)
+    - Comment toggling (Ctrl+/)
+    - Line numbers
+    - Bracket matching
+    - Uses unified JsonHighlighter
     """
 
     _INDENT_SIZE = 4
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        
-        # Line number area
+
+        # Line numbers
         self.line_number_area = LineNumberArea(self)
         self.blockCountChanged.connect(self._update_line_number_area_width)
         self.updateRequest.connect(self._update_line_number_area)
         self._update_line_number_area_width(0)
-        
-        # Visual settings
-        self._bracket_pairs = {}  # Cache bracket positions for highlighting
-        self.cursorPositionChanged.connect(self._on_cursor_position_changed)
+
+        # Syntax highlighting (NEW)
+        self._highlighter = JsonHighlighter(self.document())
+
+        # Bracket matching
+        self.cursorPositionChanged.connect(self._highlight_matching_bracket)
+
+    # ------------------------------------------------------------------
+    # Line numbers
+    # ------------------------------------------------------------------
 
     def line_number_area_width(self) -> int:
-        """Calculate width needed for line numbers."""
         digits = len(str(self.document().blockCount())) + 1
         return 4 + digits * 8
 
     def _update_line_number_area_width(self, _):
-        """Update left margin to accommodate line numbers."""
         self.setViewportMargins(self.line_number_area_width(), 0, 0, 0)
 
     def _update_line_number_area(self, rect, dy):
-        """Update line number area when viewport scrolls."""
         if dy:
             self.line_number_area.scroll(0, dy)
         else:
-            self.line_number_area.update(0, rect.y(), self.line_number_area.width(), rect.height())
-        
+            self.line_number_area.update(
+                0, rect.y(), self.line_number_area.width(), rect.height()
+            )
+
         if rect.contains(self.viewport().rect()):
             self._update_line_number_area_width(0)
 
     def resizeEvent(self, event):
-        """Resize line number area with editor."""
         super().resizeEvent(event)
         cr = self.contentsRect()
-        self.line_number_area.setGeometry(cr.left(), cr.top(),
-                                         self.line_number_area_width(), cr.height())
+        self.line_number_area.setGeometry(
+            cr.left(), cr.top(), self.line_number_area_width(), cr.height()
+        )
 
-    def _on_cursor_position_changed(self):
-        """Highlight matching bracket when cursor moves."""
-        self._highlight_matching_bracket()
+    # ------------------------------------------------------------------
+    # Bracket matching
+    # ------------------------------------------------------------------
 
     def _highlight_matching_bracket(self):
-        """Find and highlight matching bracket/brace at cursor using ExtraSelection."""
         cursor = self.textCursor()
         text = self.toPlainText()
         pos = cursor.position()
-        
-        # Clear previous highlights
+
         self.setExtraSelections([])
-        
+
         if pos <= 0 or pos > len(text):
             return
-        
-        char = text[pos - 1] if pos > 0 else ""
-        
-        # Find matching bracket
-        matching_pos = None
+
+        char = text[pos - 1]
+        match_pos = None
+
+        # Opening bracket
         if char in _OPEN_CLOSE:
-            matching_char = _OPEN_CLOSE[char]
-            # Find closing bracket
-            count = 1
-            search_pos = pos
-            while search_pos < len(text) and count > 0:
-                if text[search_pos] == char:
-                    count += 1
-                elif text[search_pos] == matching_char:
-                    count -= 1
-                    if count == 0:
-                        matching_pos = search_pos
-                        break
-                search_pos += 1
+            match_pos = self._find_matching_forward(text, pos - 1, char, _OPEN_CLOSE[char])
+
+        # Closing bracket
         elif char in _CLOSE_CHARS:
-            # Find opening bracket
-            opening = None
-            for k, v in _OPEN_CLOSE.items():
-                if v == char:
-                    opening = k
-                    break
-            if opening:
-                count = 1
-                search_pos = pos - 2
-                while search_pos >= 0 and count > 0:
-                    if text[search_pos] == char:
-                        count += 1
-                    elif text[search_pos] == opening:
-                        count -= 1
-                        if count == 0:
-                            matching_pos = search_pos
-                            break
-                    search_pos -= 1
-        
-        # Highlight matching bracket using ExtraSelection
-        if matching_pos is not None:
+            opener = next((k for k, v in _OPEN_CLOSE.items() if v == char), None)
+            if opener:
+                match_pos = self._find_matching_backward(text, pos - 1, opener, char)
+
+        if match_pos is not None:
             fmt = QTextCharFormat()
             fmt.setBackground(QColor(200, 200, 0, 100))
-            fmt.setForeground(QColor(0, 0, 0))
-            
-            # Highlight both brackets
-            sel1 = self._make_selection(pos - 1, fmt)
-            sel2 = self._make_selection(matching_pos, fmt)
-            
-            self.setExtraSelections([sel1, sel2])
+
+            self.setExtraSelections([
+                self._make_selection(pos - 1, fmt),
+                self._make_selection(match_pos, fmt),
+            ])
+
+    def _find_matching_forward(self, text, start, open_char, close_char):
+        depth = 1
+        for i in range(start + 1, len(text)):
+            if text[i] == open_char:
+                depth += 1
+            elif text[i] == close_char:
+                depth -= 1
+                if depth == 0:
+                    return i
+        return None
+
+    def _find_matching_backward(self, text, start, open_char, close_char):
+        depth = 1
+        for i in range(start - 1, -1, -1):
+            if text[i] == close_char:
+                depth += 1
+            elif text[i] == open_char:
+                depth -= 1
+                if depth == 0:
+                    return i
+        return None
 
     def _make_selection(self, pos, fmt):
-        """Create an ExtraSelection for a single character."""
-        from PyQt6.QtWidgets import QTextEdit
         cursor = QTextCursor(self.document())
         cursor.setPosition(pos)
-        cursor.movePosition(QTextCursor.MoveOperation.NextCharacter, QTextCursor.MoveMode.KeepAnchor)
-        
-        selection = QTextEdit.ExtraSelection()
-        selection.cursor = cursor
-        selection.format = fmt
-        return selection
+        cursor.movePosition(QTextCursor.MoveOperation.NextCharacter,
+                            QTextCursor.MoveMode.KeepAnchor)
+        sel = QTextEdit.ExtraSelection()
+        sel.cursor = cursor
+        sel.format = fmt
+        return sel
 
-    def keyPressEvent(self, event) -> None:  # type: ignore[override]
+    # ------------------------------------------------------------------
+    # Key handling
+    # ------------------------------------------------------------------
+
+    def keyPressEvent(self, event):
         key = event.key()
-        modifiers = event.modifiers()
-        
-        # Ctrl+Shift+F → auto-format JSON
-        if key == Qt.Key.Key_F and modifiers & (Qt.KeyboardModifier.ControlModifier | Qt.KeyboardModifier.ShiftModifier) == (Qt.KeyboardModifier.ControlModifier | Qt.KeyboardModifier.ShiftModifier):
-            self._auto_format_json()
-            return
-        
-        # Ctrl+/ → toggle comment
-        if key == Qt.Key.Key_Slash and modifiers & Qt.KeyboardModifier.ControlModifier:
-            self._toggle_comment()
-            return
-        
+        mods = event.modifiers()
         cursor = self.textCursor()
 
-        # Handle smart wrapping for selected text with brackets/quotes
-        if self._handle_wrap_selection(event.text(), cursor):
+        # Auto‑format JSON
+        if key == Qt.Key.Key_F and mods == (
+            Qt.KeyboardModifier.ControlModifier | Qt.KeyboardModifier.ShiftModifier
+        ):
+            self._auto_format_json()
             return
 
-        if self._handle_tab(key, modifiers, cursor):
+        # Toggle comment
+        if key == Qt.Key.Key_Slash and mods == Qt.KeyboardModifier.ControlModifier:
+            self._toggle_comment()
             return
-        if self._handle_enter(key, modifiers, cursor):
+
+        # Smart wrapping
+        if cursor.hasSelection() and event.text() in _OPEN_CLOSE:
+            self._wrap_selection(event.text(), cursor)
             return
-        if self._handle_backspace(key, modifiers, cursor):
+
+        # Tab / Shift+Tab
+        if key == Qt.Key.Key_Tab:
+            if mods & Qt.KeyboardModifier.ShiftModifier:
+                self._dedent_selection()
+            else:
+                self._indent_selection_or_insert_spaces(cursor)
             return
-        if self._handle_auto_close(event.text(), cursor):
+
+        # Enter
+        if key in (Qt.Key.Key_Return, Qt.Key.Key_Enter) and not mods:
+            self._handle_enter(cursor)
             return
-        if self._handle_skip_close(event.text(), cursor):
-            return
+
+        # Backspace
+        if key == Qt.Key.Key_Backspace and not mods:
+            if self._handle_backspace(cursor):
+                return
+
+        # Auto‑close
+        if event.text() in _OPEN_CLOSE:
+            if self._handle_auto_close(event.text(), cursor):
+                return
+
+        # Skip‑over
+        if event.text() in _CLOSE_CHARS:
+            if self._handle_skip_close(event.text(), cursor):
+                return
 
         super().keyPressEvent(event)
 
-    # ── Key handlers ──────────────────────────────────────────────────
+    # ------------------------------------------------------------------
+    # Key helpers
+    # ------------------------------------------------------------------
 
-    def _handle_wrap_selection(self, text: str, cursor: QTextCursor) -> bool:
-        """Wrap selected text with matching brackets/quotes."""
-        if not cursor.hasSelection() or text not in _OPEN_CLOSE:
-            return False
-        
-        # Get selected text
+    def _wrap_selection(self, opener, cursor):
+        closer = _OPEN_CLOSE[opener]
         selected = cursor.selectedText()
-        closer = _OPEN_CLOSE[text]
-        
-        # Replace selection with wrapped text
-        cursor.removeSelectedText()
-        cursor.insertText(text + selected + closer)
-        
-        # Move cursor to just after selection
+        cursor.insertText(opener + selected + closer)
         cursor.movePosition(QTextCursor.MoveOperation.PreviousCharacter)
         self.setTextCursor(cursor)
-        return True
 
-    def _handle_tab(self, key: int, modifiers, cursor: QTextCursor) -> bool:
-        """Tab / Shift+Tab → indent / dedent."""
-        if key == Qt.Key.Key_Tab:
-            if modifiers & Qt.KeyboardModifier.ShiftModifier:
-                # Shift+Tab: dedent
-                self.decrease_indent()
-            else:
-                # Tab: indent
-                if cursor.hasSelection():
-                    self._increase_indent()
-                else:
-                    # Insert 4 spaces at cursor
-                    cursor.insertText(" " * self._INDENT_SIZE)
-            return True
-        return False
-
-    def _handle_enter(self, key: int, modifiers, cursor: QTextCursor) -> bool:
-        """Enter / Return → auto-indent and auto-comma in JSON."""
-        if key not in (Qt.Key.Key_Return, Qt.Key.Key_Enter) or modifiers:
-            return False
-
-        block_text = cursor.block().text()
-        leading_indent = len(block_text) - len(block_text.lstrip())
-        stripped = block_text.rstrip()
-        
-        # Check if we should add a comma (we're in JSON and line doesn't end with comma/bracket)
-        should_add_comma = (
-            stripped and 
-            not stripped.endswith((",", "{", "[", "}", "]", ":")) and
-            self._is_in_json_structure(cursor)
-        )
-        
-        # Add comma if needed
-        if should_add_comma:
-            # Move cursor to end of current text (before any trailing whitespace)
-            insert_pos = cursor.block().position() + len(block_text)
-            cursor.setPosition(insert_pos)
-            cursor.insertText(",")
-            # Get fresh cursor for further processing
-            cursor = self.textCursor()
-        
-        extra = self._INDENT_SIZE if stripped.endswith(("{", "[")) else 0
-        new_indent = " " * (leading_indent + extra)
-
-        # If the character immediately after the cursor is a closer that
-        # matches the opener at the end of the line, put the closer on its
-        # own line at the original indent level (Postman/VSCode behaviour).
-        char_after = self._char_after_cursor(cursor)
-        if extra and char_after in ("}", "]"):
-            cursor.insertText(f"\n{new_indent}\n{' ' * leading_indent}")
-            # move cursor back up into the inner line
-            new_cursor = self.textCursor()
-            new_cursor.movePosition(QTextCursor.MoveOperation.Up)
-            new_cursor.movePosition(QTextCursor.MoveOperation.EndOfLine)
-            self.setTextCursor(new_cursor)
-        else:
-            cursor.insertText(f"\n{new_indent}")
-        return True
-
-    def _handle_backspace(self, key: int, modifiers, cursor: QTextCursor) -> bool:
-        """Backspace → remove auto-close pair or dedent."""
-        if key != Qt.Key.Key_Backspace or modifiers:
-            return False
-        
+    def _indent_selection_or_insert_spaces(self, cursor):
         if cursor.hasSelection():
-            # Let default backspace handle selection deletion
-            return False
-        
-        char_before = self._char_before_cursor(cursor)
-        char_after = self._char_after_cursor(cursor)
-        
-        # Remove matching pair
-        if char_before and char_after and _OPEN_CLOSE.get(char_before) == char_after:
+            self._indent_selection()
+        else:
+            cursor.insertText(" " * self._INDENT_SIZE)
+
+    def _indent_selection(self):
+        cursor = self.textCursor()
+        start = self.document().findBlock(cursor.selectionStart())
+        end = self.document().findBlock(cursor.selectionEnd() - 1)
+
+        block = start
+        while block.isValid() and block.blockNumber() <= end.blockNumber():
+            if block.text().strip():
+                c = QTextCursor(block)
+                c.insertText(" " * self._INDENT_SIZE)
+            block = block.next()
+
+    def _dedent_selection(self):
+        cursor = self.textCursor()
+        start = self.document().findBlock(cursor.selectionStart())
+        end = self.document().findBlock(cursor.selectionEnd() - 1)
+
+        block = start
+        while block.isValid() and block.blockNumber() <= end.blockNumber():
+            text = block.text()
+            if text.startswith(" " * self._INDENT_SIZE):
+                c = QTextCursor(block)
+                for _ in range(self._INDENT_SIZE):
+                    c.deleteChar()
+            block = block.next()
+
+    def _handle_enter(self, cursor):
+        block_text = cursor.block().text()
+        indent = len(block_text) - len(block_text.lstrip())
+        extra = self._INDENT_SIZE if block_text.rstrip().endswith(("{", "[")) else 0
+        cursor.insertText("\n" + " " * (indent + extra))
+
+    def _handle_backspace(self, cursor):
+        before = self._char_before(cursor)
+        after = self._char_after(cursor)
+        if before and after and _OPEN_CLOSE.get(before) == after:
             cursor.deletePreviousChar()
             cursor.deleteChar()
             return True
-        
-        # If at line start with spaces, dedent by INDENT_SIZE
-        block_text = cursor.block().text()
-        pos_in_block = cursor.positionInBlock()
-        if pos_in_block > 0 and block_text[:pos_in_block].strip() == "":
-            dedent = min(self._INDENT_SIZE, pos_in_block % self._INDENT_SIZE or self._INDENT_SIZE)
-            for _ in range(dedent):
-                cursor.deletePreviousChar()
-            return True
-        
         return False
 
-    def _handle_auto_close(self, text: str, cursor: QTextCursor) -> bool:
-        """Auto-close openers like ``{``, ``[``, ``"``."""
-        if text not in _OPEN_CLOSE:
-            return False
-        closer = _OPEN_CLOSE[text]
-        if text == '"' and self._char_after_cursor(cursor) == '"':
-            # Already sitting before a closing quote — jump over it
+    def _handle_auto_close(self, ch, cursor):
+        closer = _OPEN_CLOSE[ch]
+        if ch == '"' and self._char_after(cursor) == '"':
             cursor.movePosition(QTextCursor.MoveOperation.NextCharacter)
             self.setTextCursor(cursor)
             return True
-        cursor.insertText(text + closer)
+        cursor.insertText(ch + closer)
         cursor.movePosition(QTextCursor.MoveOperation.PreviousCharacter)
         self.setTextCursor(cursor)
         return True
 
-    def _handle_skip_close(self, text: str, cursor: QTextCursor) -> bool:
-        """Closing char: skip-over instead of inserting duplicate."""
-        if text in _CLOSE_CHARS and self._char_after_cursor(cursor) == text:
+    def _handle_skip_close(self, ch, cursor):
+        if self._char_after(cursor) == ch:
             cursor.movePosition(QTextCursor.MoveOperation.NextCharacter)
             self.setTextCursor(cursor)
             return True
         return False
 
-    # ── Advanced features ─────────────────────────────────────────────
+    # ------------------------------------------------------------------
+    # Comment toggling
+    # ------------------------------------------------------------------
 
-    def _auto_format_json(self) -> None:
-        """Auto-format JSON with proper indentation. Ctrl+Shift+F"""
-        try:
-            text = self.toPlainText().strip()
-            if not text:
-                return
-            
-            # Parse and reformat
-            parsed = _json.loads(text)
-            formatted = _json.dumps(parsed, indent=self._INDENT_SIZE, ensure_ascii=False)
-            
-            cursor = self.textCursor()
-            cursor.select(QTextCursor.SelectionType.Document)
-            cursor.removeSelectedText()
-            cursor.insertText(formatted)
-            
-            # Move cursor to beginning
-            cursor.movePosition(QTextCursor.MoveOperation.Start)
-            self.setTextCursor(cursor)
-        except Exception:
-            # Invalid JSON — silently skip formatting
-            pass
-
-    def _toggle_comment(self) -> None:
-        """Toggle comment for current line(s). Ctrl+/"""
+    def _toggle_comment(self):
         cursor = self.textCursor()
-        
         if cursor.hasSelection():
-            # Comment/uncomment selected lines
             self._toggle_comment_lines(cursor)
         else:
-            # Toggle current line
             block = cursor.block()
-            self._toggle_comment_line(block, cursor)
+            self._toggle_comment_line(block)
 
-    def _toggle_comment_lines(self, cursor: QTextCursor) -> None:
-        """Toggle comment for multiple lines."""
-        start_block = self.document().findBlock(cursor.selectionStart())
-        end_block = self.document().findBlock(cursor.selectionEnd() - 1)
-        
-        # Check if any line is uncommented
-        block = start_block
-        has_uncommented = False
-        while block.isValid() and block.blockNumber() <= end_block.blockNumber():
-            text = block.text().strip()
-            if text and not text.startswith("//"):
-                has_uncommented = True
+    def _toggle_comment_lines(self, cursor):
+        start = self.document().findBlock(cursor.selectionStart())
+        end = self.document().findBlock(cursor.selectionEnd() - 1)
+
+        # Determine mode: comment or uncomment
+        block = start
+        uncomment = True
+        while block.isValid() and block.blockNumber() <= end.blockNumber():
+            if not block.text().lstrip().startswith("//"):
+                uncomment = False
                 break
             block = block.next()
-        
-        # Toggle all lines
-        block = start_block
-        while block.isValid() and block.blockNumber() <= end_block.blockNumber():
-            if has_uncommented:
-                self._comment_line(block)
-            else:
+
+        block = start
+        while block.isValid() and block.blockNumber() <= end.blockNumber():
+            if uncomment:
                 self._uncomment_line(block)
+            else:
+                self._comment_line(block)
             block = block.next()
 
-    def _toggle_comment_line(self, block, cursor: QTextCursor) -> None:
-        """Toggle comment for a single line."""
-        text = block.text().strip()
+    def _toggle_comment_line(self, block):
+        text = block.text().lstrip()
         if text.startswith("//"):
             self._uncomment_line(block)
-        elif text:
+        else:
             self._comment_line(block)
 
-    def _comment_line(self, block) -> None:
-        """Add // comment to a line."""
+    def _comment_line(self, block):
         cursor = QTextCursor(block)
-        # Find first non-space character
-        text = block.text()
-        indent = len(text) - len(text.lstrip())
+        indent = len(block.text()) - len(block.text().lstrip())
         cursor.movePosition(QTextCursor.MoveOperation.StartOfBlock)
         cursor.movePosition(QTextCursor.MoveOperation.Right, QTextCursor.MoveMode.MoveAnchor, indent)
         cursor.insertText("// ")
 
-    def _uncomment_line(self, block) -> None:
-        """Remove // comment from a line."""
+    def _uncomment_line(self, block):
         text = block.text()
         indent = len(text) - len(text.lstrip())
         stripped = text[indent:]
-        
+
         if stripped.startswith("// "):
-            cursor = QTextCursor(block)
-            cursor.movePosition(QTextCursor.MoveOperation.StartOfBlock)
-            cursor.movePosition(QTextCursor.MoveOperation.Right, QTextCursor.MoveMode.MoveAnchor, indent)
-            for _ in range(3):  # Remove "// "
-                cursor.deleteChar()
+            remove = 3
         elif stripped.startswith("//"):
-            cursor = QTextCursor(block)
-            cursor.movePosition(QTextCursor.MoveOperation.StartOfBlock)
-            cursor.movePosition(QTextCursor.MoveOperation.Right, QTextCursor.MoveMode.MoveAnchor, indent)
-            for _ in range(2):  # Remove "//"
-                cursor.deleteChar()
+            remove = 2
+        else:
+            return
 
-    def _increase_indent(self) -> None:
-        """Increase indent for selected lines."""
-        cursor = self.textCursor()
-        start_block = self.document().findBlock(cursor.selectionStart())
-        end_block = self.document().findBlock(cursor.selectionEnd() - 1)
-        
-        block = start_block
-        while block.isValid() and block.blockNumber() <= end_block.blockNumber():
-            text = block.text()
-            if text.strip():  # Only indent non-empty lines
-                cursor = QTextCursor(block)
-                cursor.movePosition(QTextCursor.MoveOperation.StartOfBlock)
-                cursor.insertText(" " * self._INDENT_SIZE)
-            block = block.next()
+        cursor = QTextCursor(block)
+        cursor.movePosition(QTextCursor.MoveOperation.StartOfBlock)
+        cursor.movePosition(QTextCursor.MoveOperation.Right, QTextCursor.MoveMode.MoveAnchor, indent)
+        for _ in range(remove):
+            cursor.deleteChar()
 
-    def decrease_indent(self) -> None:
-        """Decrease indent for selected lines (Shift+Tab)."""
-        cursor = self.textCursor()
-        if cursor.hasSelection():
-            start_block = self.document().findBlock(cursor.selectionStart())
-            end_block = self.document().findBlock(cursor.selectionEnd() - 1)
-            
-            block = start_block
-            while block.isValid() and block.blockNumber() <= end_block.blockNumber():
-                text = block.text()
-                if text.startswith(" " * self._INDENT_SIZE):
-                    cursor = QTextCursor(block)
-                    cursor.movePosition(QTextCursor.MoveOperation.StartOfBlock)
-                    for _ in range(self._INDENT_SIZE):
-                        cursor.deleteChar()
-                block = block.next()
+    # ------------------------------------------------------------------
+    # JSON formatting
+    # ------------------------------------------------------------------
 
-    # ── Helpers ───────────────────────────────────────────────────────
+    def _auto_format_json(self):
+        try:
+            text = self.toPlainText().strip()
+            if not text:
+                return
+            parsed = _json.loads(text)
+            formatted = _json.dumps(parsed, indent=self._INDENT_SIZE, ensure_ascii=False)
+            self.setPlainText(formatted)
+        except Exception:
+            pass
+
+    # ------------------------------------------------------------------
+    # Helpers
+    # ------------------------------------------------------------------
 
     @staticmethod
-    def _char_before_cursor(cursor: QTextCursor) -> str:
-        clone = QTextCursor(cursor)
-        clone.movePosition(QTextCursor.MoveOperation.PreviousCharacter, QTextCursor.MoveMode.KeepAnchor)
-        return clone.selectedText()
+    def _char_before(cursor):
+        c = QTextCursor(cursor)
+        c.movePosition(QTextCursor.MoveOperation.PreviousCharacter,
+                       QTextCursor.MoveMode.KeepAnchor)
+        return c.selectedText()
 
     @staticmethod
-    def _char_after_cursor(cursor: QTextCursor) -> str:
-        clone = QTextCursor(cursor)
-        clone.movePosition(QTextCursor.MoveOperation.NextCharacter, QTextCursor.MoveMode.KeepAnchor)
-        return clone.selectedText()
-
-    def _is_in_json_structure(self, cursor: QTextCursor) -> bool:
-        """Check if cursor position is inside a JSON object or array."""
-        text = self.toPlainText()
-        pos = cursor.position()
-        
-        # Count brackets up to cursor position
-        brace_depth = 0
-        bracket_depth = 0
-        in_string = False
-        escape_next = False
-        
-        for i in range(min(pos, len(text))):
-            char = text[i]
-            
-            # Handle string escaping
-            if escape_next:
-                escape_next = False
-                continue
-            
-            if char == "\\":
-                escape_next = True
-                continue
-            
-            # Toggle string state
-            if char == '"':
-                in_string = not in_string
-                continue
-            
-            # Skip bracket counting inside strings
-            if in_string:
-                continue
-            
-            # Count brackets
-            if char == "{":
-                brace_depth += 1
-            elif char == "}":
-                brace_depth -= 1
-            elif char == "[":
-                bracket_depth += 1
-            elif char == "]":
-                bracket_depth -= 1
-        
-        # We're in a JSON structure if we have unclosed braces or brackets
-        return brace_depth > 0 or bracket_depth > 0
-
+    def _char_after(cursor):
+        c = QTextCursor(cursor)
+        c.movePosition(QTextCursor.MoveOperation.NextCharacter,
+                       QTextCursor.MoveMode.KeepAnchor)
+        return c.selectedText()
