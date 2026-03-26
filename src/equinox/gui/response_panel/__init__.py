@@ -22,6 +22,7 @@ from PyQt6.QtWidgets import (
 )
 from PyQt6.QtCore import Qt, QRunnable, QThreadPool, QObject, pyqtSignal
 from PyQt6.QtGui import QKeySequence, QShortcut
+import logging
 
 from equinox.core.codegen import GENERATORS, generate_code
 from equinox.core.request import Response
@@ -32,6 +33,8 @@ from equinox.gui.response_panel.read_only_text import ReadOnlyText
 from equinox.gui.response_panel.search_bar import SearchBar
 from equinox.gui.syntax_highlighter import JsonHighlighter, XmlHighlighter, YamlHighlighter
 from equinox.gui.theme import Colors, get_mono_font
+
+logger = logging.getLogger(__name__)
 
 
 # ---------------------------------------------------------------------------
@@ -426,23 +429,69 @@ class ResponsePanel(QWidget):
         """
         Main entry point: display a new HTTP response.
         """
-        self.current_response = response
+        try:
+            self.current_response = response
 
-        self._update_status_bar(response)
-        self._apply_highlighter(response.headers.get("content-type", ""))
+            self._update_status_bar(response)
+            try:
+                self._apply_highlighter(response.headers.get("content-type", ""))
+            except Exception:
+                # Highlighter creation should never crash the UI — log and continue
+                logger.exception("_apply_highlighter raised an exception for content-type=%s", response.headers.get("content-type", ""))
 
-        self._display_body(response)
-        self._display_json_tree(response)
-        self._display_headers(response)
-        self._display_timings(response)
-        self._load_cookies_tab(response.headers)
-        self._display_sent_request(response)
+            # Body / JSON tree / headers etc. — each has internal guards but protect the whole flow
+            try:
+                self._display_body(response)
+            except Exception:
+                logger.exception("_display_body failed for response; falling back to raw text")
+                try:
+                    # Fallback: clear and show raw text
+                    self.body_text.clear()
+                    self.body_text.set_code(getattr(response, "text", ""))
+                except Exception:
+                    logger.exception("Fallback body display also failed")
 
-        # Switch view
-        if self._prefer_json_view and self._view_json_act.isEnabled():
-            self._switch_to_json_view()
-        else:
-            self._switch_to_raw_view()
+            try:
+                self._display_json_tree(response)
+            except Exception:
+                logger.exception("_display_json_tree failed")
+
+            try:
+                self._display_headers(response)
+            except Exception:
+                logger.exception("_display_headers failed")
+
+            try:
+                self._display_timings(response)
+            except Exception:
+                logger.exception("_display_timings failed")
+
+            try:
+                self._load_cookies_tab(response.headers)
+            except Exception:
+                logger.exception("_load_cookies_tab failed")
+
+            try:
+                self._display_sent_request(response)
+            except Exception:
+                logger.exception("_display_sent_request failed")
+
+            # Switch view
+            if self._prefer_json_view and self._view_json_act.isEnabled():
+                self._switch_to_json_view()
+            else:
+                self._switch_to_raw_view()
+        except Exception:
+            # Catch-all: ensure we log the traceback and surface a non-fatal error
+            logger.exception("Unhandled exception in ResponsePanel.display_response")
+            try:
+                QMessageBox.critical(
+                    self,
+                    "Display Error",
+                    "An unexpected error occurred while displaying the response. See logs for details.",
+                )
+            except Exception:
+                logger.debug("Also failed to show error dialog after display_response exception", exc_info=True)
 
     def set_intelligence_badge(self, count: int) -> None:
         """Set a badge showing the number of intelligence findings."""
@@ -709,8 +758,19 @@ class ResponsePanel(QWidget):
             if cur_marker != marker:
                 return
             self._loading_label.setVisible(False)
-            self.body_text.set_code(formatted_text)
+            try:
+                self.body_text.set_code(formatted_text)
+            except Exception:
+                logger.exception("Failed to set pretty-printed body on UI; falling back")
+                try:
+                    if self.current_response is not None:
+                        self.body_text.set_code(self._pretty_body(self.current_response))
+                    else:
+                        self.body_text.clear()
+                except Exception:
+                    logger.exception("Fallback setting of body also failed")
         except Exception:
+            logger.exception("Unhandled exception in _on_pretty_result")
             self._loading_label.setVisible(False)
             try:
                 if self.current_response is not None:
@@ -718,7 +778,7 @@ class ResponsePanel(QWidget):
                 else:
                     self.body_text.clear()
             except Exception:
-                self.body_text.clear()
+                logger.exception("Fallback in _on_pretty_result also failed")
 
     # ------------------------------------------------------------------
     # JSONPath filter callback
@@ -886,13 +946,25 @@ class ResponsePanel(QWidget):
         ct = (content_type or "").lower()
         doc = self.body_text.document()
 
-        if "json" in ct:
-            self._body_highlighter = JsonHighlighter(doc)
-        elif any(x in ct for x in ("xml", "html", "svg")):
-            self._body_highlighter = XmlHighlighter(doc)
-        elif "yaml" in ct or "yml" in ct:
-            self._body_highlighter = YamlHighlighter(doc)
-        else:
+        try:
+            if "json" in ct:
+                self._body_highlighter = JsonHighlighter(doc)
+            elif any(x in ct for x in ("xml", "html", "svg")):
+                self._body_highlighter = XmlHighlighter(doc)
+            elif "yaml" in ct or "yml" in ct:
+                self._body_highlighter = YamlHighlighter(doc)
+            else:
+                self._body_highlighter = None
+        except Exception:
+            # Highlighter creation failed (e.g. bad document or regex error).
+            # Log and continue without syntax highlighting to avoid crashing UI.
+            logger.exception("Failed to create highlighter for content-type=%s; skipping highlighting", content_type)
+            try:
+                # Ensure no partially-initialized highlighter remains attached
+                if self._body_highlighter is not None:
+                    self._body_highlighter.setDocument(None)
+            except Exception:
+                logger.exception("Error while cleaning up failed highlighter")
             self._body_highlighter = None
 
     # ------------------------------------------------------------------

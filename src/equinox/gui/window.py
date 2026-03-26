@@ -410,6 +410,7 @@ class MainWindow(QMainWindow):
                         request=request,
                         timestamp=timestamp,
                     )
+                    logger.debug("Displaying history response id=%s (status=%s size=%s)", history_id, entry.get("status_code"), len(body_bytes))
                     self.response_panel.display_response(response)
                 except Exception:
                     logger.error("Failed to construct/display Response for history id=%s", history_id, exc_info=True)

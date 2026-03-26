@@ -13,6 +13,9 @@ from PyQt6.QtGui import QColor, QFont, QAction
 
 from equinox.gui.theme import Colors
 from equinox.storage import Database, HistoryManager
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 class HistoryPanel(QWidget):
@@ -386,22 +389,24 @@ class HistoryPanel(QWidget):
 
     def _on_item_double_clicked(self, item: QListWidgetItem):
         history_id = item.data(Qt.ItemDataRole.UserRole)
+        logger.debug("HistoryPanel: itemDoubleClicked id=%r", history_id)
         if history_id:
-            self.history_selected.emit(history_id)
+            try:
+                self.history_selected.emit(int(history_id))
+            except Exception:
+                logger.exception("Failed to emit history_selected for id=%r", history_id)
 
     def _open_selected(self):
         # Emit only the first "real" selected history entry (ignore separators)
         sel = self.list_widget.selectedItems()
         for it in sel:
             hid = it.data(Qt.ItemDataRole.UserRole)
+            logger.debug("HistoryPanel._open_selected: found candidate id=%r", hid)
             if hid is not None:
                 try:
                     self.history_selected.emit(int(hid))
                 except Exception:
-                    # Log but do not crash the UI if the stored value is unexpected
-                    from logging import getLogger
-
-                    getLogger(__name__).debug("_open_selected: invalid history id %r", hid, exc_info=True)
+                    logger.exception("_open_selected: invalid history id %r", hid)
                 return
 
     def _replay_selected(self):
