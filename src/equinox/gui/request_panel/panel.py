@@ -597,7 +597,6 @@ class RequestPanel(_RequestSendMixin, _RequestAuthMixin, RequestBodyMixin, QWidg
         self.body_text = proxy
         self.body_text.setPlaceholderText('{ "key": "value" }')
         self.body_text.setFont(get_mono_font())
-        self._body_highlighter = JsonHighlighter(self.body_text.document())
 
         # ── Multipart form-data editor ────────────────────────────────────
         # Toolbar immediately above the table so controls stay adjacent.
