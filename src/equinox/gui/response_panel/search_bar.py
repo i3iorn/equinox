@@ -3,7 +3,7 @@
 import json
 from typing import Optional, Callable
 
-from PyQt6.QtCore import QRegularExpression
+from PyQt6.QtCore import QRegularExpression, QTimer
 from PyQt6.QtGui import QTextCharFormat, QColor, QTextCursor, QTextDocument
 from PyQt6.QtWidgets import (
     QWidget, QTextEdit, QHBoxLayout, QVBoxLayout,
@@ -60,7 +60,13 @@ class SearchBar(QWidget):
         self._input.setPlaceholderText("Find in body…")
         self._input.setFixedHeight(24)
         self._input.returnPressed.connect(self._find_next)
-        self._input.textChanged.connect(self._on_text_changed)
+        # Debounce text changes to avoid blocking the UI on large documents.
+        self._debounce_timer = QTimer(self)
+        self._debounce_timer.setSingleShot(True)
+        self._debounce_timer.setInterval(250)  # ms
+        self._debounce_timer.timeout.connect(self._on_debounced_text)
+        self._pending_text: Optional[str] = None
+        self._input.textChanged.connect(self._on_text_changed_debounced)
 
         self._match_label = QLabel("")
         self._match_label.setObjectName("mutedLabel")
@@ -160,8 +166,13 @@ class SearchBar(QWidget):
 
     def show_and_focus(self) -> None:
         self.setVisible(True)
+        # Ensure matches are computed immediately so the first hit is selected
+        # and visible when the bar opens.
+        self._on_text_changed(self._input.text())
         self._input.selectAll()
         self._input.setFocus()
+        # Update the match counter label after computing matches.
+        self._update_label()
 
     def hide(self) -> None:  # type: ignore[override]
         self.setVisible(False)
@@ -235,6 +246,26 @@ class SearchBar(QWidget):
             self._collect_matches_regex(term)
         else:
             self._collect_matches_text(term)
+
+    def _on_text_changed_debounced(self, text: str) -> None:
+        """Start/restart the debounce timer and show a lightweight UI hint.
+
+        The actual heavy search work runs after the user pauses typing. This
+        avoids freezing the main thread on large documents while the user is
+        actively typing.
+        """
+        self._pending_text = text
+        # Show immediate feedback in the match label while waiting
+        self._match_label.setText("searching…")
+        self._debounce_timer.start()
+
+    def _on_debounced_text(self) -> None:
+        """Called when the debounce timer fires; perform the actual search."""
+        text = self._pending_text or ""
+        # Delegate to the existing handler which expects the new text param
+        self._on_text_changed(text)
+        # Update match counter after completing the search
+        self._update_label()
 
     def _collect_matches_text(self, term: str) -> None:
         """Literal substring search, optionally case-sensitive."""
@@ -423,8 +454,16 @@ class SearchBar(QWidget):
         self._target.setExtraSelections(selections)
 
         if 0 <= self._current_idx < len(self._matches):
-            self._target.setTextCursor(self._matches[self._current_idx])
-            self._target.ensureCursorVisible()
+            cur = self._matches[self._current_idx]
+            self._target.setTextCursor(cur)
+            # Prefer using QTextEdit.centerCursor() which recent Qt versions
+            # implement to center the cursor in the viewport. Fallback to
+            # ensureCursorVisible() if unavailable or on error.
+            try:
+                # centerCursor centers the visible area on the cursor
+                self._target.centerCursor()
+            except Exception:
+                self._target.ensureCursorVisible()
 
     def _update_label(self) -> None:
         count = len(self._matches)

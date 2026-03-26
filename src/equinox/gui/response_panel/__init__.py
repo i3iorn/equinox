@@ -15,7 +15,7 @@ from PyQt6.QtWidgets import (
     QMenu, QDialog, QComboBox, QPlainTextEdit, QListWidget, QListWidgetItem,
     QMessageBox, QFileDialog,
 )
-from PyQt6.QtCore import Qt
+from PyQt6.QtCore import Qt, QRunnable, QThreadPool, QObject, pyqtSignal
 from PyQt6.QtGui import QKeySequence, QShortcut
 
 from equinox.core.codegen import GENERATORS, generate_code
@@ -27,6 +27,45 @@ from equinox.gui.response_panel.read_only_text import ReadOnlyText
 from equinox.gui.response_panel.search_bar import SearchBar
 from equinox.gui.syntax_highlighter import JsonHighlighter, XmlHighlighter, YamlHighlighter
 from equinox.gui.theme import Colors, get_mono_font
+
+
+class _WorkerSignals(QObject):
+    result = pyqtSignal(object, str)  # (marker, formatted_text)
+
+
+class _PrettyPrintRunnable(QRunnable):
+    def __init__(self, response, marker):
+        super().__init__()
+        self.response = response
+        self.marker = marker
+        self.signals = _WorkerSignals()
+
+    def run(self) -> None:
+        text = None
+        try:
+            if getattr(self.response, "is_json", False):
+                try:
+                    text = json.dumps(self.response.json(), indent=2, ensure_ascii=False)
+                except Exception:
+                    text = None
+            if text is None:
+                ct = self.response.headers.get("content-type", "").lower()
+                if "xml" in ct or "html" in ct or "svg" in ct:
+                    try:
+                        import xml.dom.minidom
+
+                        text = xml.dom.minidom.parseString(self.response.text.encode()).toprettyxml(indent="  ")
+                    except Exception:
+                        text = None
+            if text is None:
+                text = self.response.text
+        except Exception:
+            text = self.response.text if getattr(self.response, "text", None) is not None else ""
+
+        try:
+            self.signals.result.emit(self.marker, text)
+        except Exception:
+            pass
 
 
 class ResponsePanel(QWidget):
@@ -43,6 +82,9 @@ class ResponsePanel(QWidget):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(6, 4, 6, 4)
         layout.setSpacing(4)
+
+        # Thread pool for background formatting of large bodies
+        self._thread_pool = QThreadPool.globalInstance()
 
         # ── Status bar ────────────────────────────────────────────────
         status_row = QHBoxLayout()
@@ -162,6 +204,12 @@ class ResponsePanel(QWidget):
         warn_row.addWidget(load_btn)
         self._body_warning.setVisible(False)
         body_vbox.addWidget(self._body_warning)
+
+        # Loading indicator shown while background formatting is in progress
+        self._loading_label = QLabel("Loading…")
+        self._loading_label.setObjectName("mutedLabel")
+        self._loading_label.setVisible(False)
+        body_vbox.addWidget(self._loading_label)
 
         self.body_text = ReadOnlyText()
         self._body_highlighter = None  # set dynamically per content-type
@@ -562,9 +610,40 @@ class ResponsePanel(QWidget):
 
     def _load_large_body(self) -> None:
         """User confirmed loading a large body (#10)."""
-        if self.current_response is not None:
-            self._body_warning.setVisible(False)
-            self.body_text.set_code(self._pretty_body(self.current_response))
+        if self.current_response is None:
+            return
+
+        # Show loading indicator and format the body off the UI thread
+        self._body_warning.setVisible(False)
+        self._loading_label.setVisible(True)
+
+        marker = getattr(self.current_response, "sent_url", None) or getattr(self.current_response.request, "url", None)
+        runnable = _PrettyPrintRunnable(self.current_response, marker)
+        runnable.signals.result.connect(self._on_pretty_result)
+        self._thread_pool.start(runnable)
+
+    def _on_pretty_result(self, marker: object, formatted_text: str) -> None:
+        """Handle formatted body results from background worker.
+
+        Only apply the result if it corresponds to the currently-displayed
+        response (marker matches the current response URL).
+        """
+        try:
+            cur_marker = getattr(self.current_response, "sent_url", None) or getattr(self.current_response.request, "url", None)
+            if cur_marker != marker:
+                # Response changed while formatting — ignore result
+                return
+            self._loading_label.setVisible(False)
+            self.body_text.set_code(formatted_text)
+        except Exception:
+            self._loading_label.setVisible(False)
+            try:
+                if self.current_response is not None:
+                    self.body_text.set_code(self._pretty_body(self.current_response))
+                else:
+                    self.body_text.clear()
+            except Exception:
+                self.body_text.clear()
 
     def _on_jsonpath_filter(self, filtered_text: Optional[str]) -> None:
         """Receive filtered JSON text from the SearchBar and update the body view.
