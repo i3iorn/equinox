@@ -650,11 +650,20 @@ class SearchBar(QWidget):
         end_idx = min(len(self._offsets), self._current_idx + radius + 1)
 
         doc = self._target.document()
+        try:
+            max_pos = max(0, doc.characterCount() - 1)
+        except Exception:
+            max_pos = 0
         for i in range(start_idx, end_idx):
             s, e = self._offsets[i]
+            # Clamp offsets to document bounds to avoid out-of-range errors
+            s_clamped = max(0, min(s, max_pos))
+            e_clamped = max(0, min(e, max_pos))
+            if s_clamped >= e_clamped:
+                continue
             cur = QTextCursor(doc)
-            cur.setPosition(s)
-            cur.setPosition(e, QTextCursor.MoveMode.KeepAnchor)
+            cur.setPosition(s_clamped)
+            cur.setPosition(e_clamped, QTextCursor.MoveMode.KeepAnchor)
             sel = QTextEdit.ExtraSelection()
             sel.cursor = cur
             sel.format = cur_fmt if i == self._current_idx else dim_fmt
@@ -663,6 +672,8 @@ class SearchBar(QWidget):
         self._target.setExtraSelections(selections)
 
         s, e = self._offsets[self._current_idx]
+        s = max(0, min(s, max_pos))
+        e = max(0, min(e, max_pos))
         cur = QTextCursor(doc)
         cur.setPosition(s)
         cur.setPosition(e, QTextCursor.MoveMode.KeepAnchor)

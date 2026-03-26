@@ -326,10 +326,23 @@ class RequestBodyMixin:
         target, start: int, end: int, fmt: QTextCharFormat
     ) -> "QTextEdit.ExtraSelection":
         """Build a :class:`QTextEdit.ExtraSelection` spanning [*start*, *end*)."""
+        # Guard against out-of-range positions which can occur when the
+        # underlying document has changed since offsets were computed.
+        try:
+            doc = target.document()
+            max_pos = max(0, doc.characterCount() - 1)
+        except Exception:
+            return None
+
+        s = max(0, min(start, max_pos))
+        e = max(0, min(end, max_pos))
+        if s >= e:
+            return None
+
         sel = QTextEdit.ExtraSelection()
         cursor = target.textCursor()
-        cursor.setPosition(start)
-        cursor.setPosition(end, QTextCursor.MoveMode.KeepAnchor)
+        cursor.setPosition(s)
+        cursor.setPosition(e, QTextCursor.MoveMode.KeepAnchor)
         sel.cursor = cursor
         sel.format = fmt
         return sel
@@ -352,12 +365,17 @@ class RequestBodyMixin:
                 positions = self._find_jsonpath_positions(term)
                 if positions and target is not None:
                     pos = positions[0]
-                    cursor = target.textCursor()
-                    cursor.setPosition(pos)
-                    cursor.setPosition(
-                        min(pos + 50, len(doc_text)), QTextCursor.MoveMode.KeepAnchor
-                    )
-                    target.setTextCursor(cursor)
+                    try:
+                        doc = target.document()
+                        max_pos = max(0, doc.characterCount() - 1)
+                        p = max(0, min(pos, max_pos))
+                        q = max(0, min(pos + 50, max_pos))
+                        cursor = target.textCursor()
+                        cursor.setPosition(p)
+                        cursor.setPosition(q, QTextCursor.MoveMode.KeepAnchor)
+                        target.setTextCursor(cursor)
+                    except Exception:
+                        pass
                 return
 
             fmt = QTextCharFormat()
@@ -368,9 +386,9 @@ class RequestBodyMixin:
                 try:
                     for m in re.finditer(term, doc_text, self._re_flags):
                         if target is not None:
-                            selections.append(
-                                self._make_extra_selection(target, m.start(), m.end(), fmt)
-                            )
+                            sel = self._make_extra_selection(target, m.start(), m.end(), fmt)
+                            if sel is not None:
+                                selections.append(sel)
                 except re.error:
                     pass
             elif term:
@@ -383,9 +401,9 @@ class RequestBodyMixin:
                 start = 0
                 while (idx := haystack.find(needle, start)) != -1:
                     if target is not None:
-                        selections.append(
-                            self._make_extra_selection(target, idx, idx + len(needle), fmt)
-                        )
+                        sel = self._make_extra_selection(target, idx, idx + len(needle), fmt)
+                        if sel is not None:
+                            selections.append(sel)
                     start = idx + max(1, len(needle))
 
             if target is not None:
@@ -450,10 +468,18 @@ class RequestBodyMixin:
                         return
                     m = matches[-1]
                     start, end = m.start(), m.end()
-                cursor = target.textCursor()
-                cursor.setPosition(start)
-                cursor.setPosition(end, QTextCursor.MoveMode.KeepAnchor)
-                target.setTextCursor(cursor)
+                try:
+                    doc = target.document()
+                    max_pos = max(0, doc.characterCount() - 1)
+                    s = max(0, min(start, max_pos))
+                    e = max(0, min(end, max_pos))
+                    if s < e:
+                        cursor = target.textCursor()
+                        cursor.setPosition(s)
+                        cursor.setPosition(e, QTextCursor.MoveMode.KeepAnchor)
+                        target.setTextCursor(cursor)
+                except Exception:
+                    pass
                 return
 
             # ── Plain text via Qt (native wrap-around) ────────────────

@@ -226,7 +226,8 @@ class JsonHighlighter(QSyntaxHighlighter):
 
         self.formats = {
             "STRING": _make_format(Colors.GREEN),
-            "TIMESTAMP": _make_format(Colors.BLUE, italic=True),
+            "UPPER_STRING": _make_format(Colors.GREEN, bold=True),
+            "TIMESTAMP": _make_format(Colors.TEAL, italic=True),
             "NUMBER": _make_format(Colors.PURPLE),
 
             "TRUE": _make_format(Colors.AMBER, bold=True),

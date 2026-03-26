@@ -156,10 +156,15 @@ class JsonBodyEditor(QPlainTextEdit):
             fmt = QTextCharFormat()
             fmt.setBackground(QColor(200, 200, 0, 100))
 
-            self.setExtraSelections([
-                self._make_selection(pos - 1, fmt),
-                self._make_selection(match_pos, fmt),
-            ])
+            sels = []
+            s1 = self._make_selection(pos - 1, fmt)
+            s2 = self._make_selection(match_pos, fmt)
+            if s1 is not None:
+                sels.append(s1)
+            if s2 is not None:
+                sels.append(s2)
+            if sels:
+                self.setExtraSelections(sels)
 
     def _find_matching_forward(self, text, start, open_char, close_char):
         depth = 1
@@ -184,10 +189,19 @@ class JsonBodyEditor(QPlainTextEdit):
         return None
 
     def _make_selection(self, pos, fmt):
-        cursor = QTextCursor(self.document())
-        cursor.setPosition(pos)
-        cursor.movePosition(QTextCursor.MoveOperation.NextCharacter,
-                            QTextCursor.MoveMode.KeepAnchor)
+        doc = self.document()
+        try:
+            max_pos = max(0, doc.characterCount() - 1)
+        except Exception:
+            return None
+
+        p = max(0, min(pos, max_pos))
+        if p >= max_pos and max_pos == 0:
+            return None
+
+        cursor = QTextCursor(doc)
+        cursor.setPosition(p)
+        cursor.movePosition(QTextCursor.MoveOperation.NextCharacter, QTextCursor.MoveMode.KeepAnchor)
         sel = QTextEdit.ExtraSelection()
         sel.cursor = cursor
         sel.format = fmt
