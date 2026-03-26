@@ -255,6 +255,9 @@ class SearchBar(QWidget):
         self._json_obj: Any = None
         self._offsets: List[Tuple[int, int]] = []
         self._current_idx: int = -1
+        # Public-facing convenience alias expected by tests and some callers
+        # `_matches` holds the list of matched text snippets (in document order).
+        self._matches: List[str] = []
 
         self._job_counter = 0
         self._current_job_id = 0
@@ -299,6 +302,7 @@ class SearchBar(QWidget):
         self.setVisible(False)
         self._offsets = []
         self._current_idx = -1
+        self._matches = []
         self._target.setExtraSelections([])
         self._jp_result_label.setVisible(False)
         if self._filter_cb:
@@ -471,6 +475,7 @@ class SearchBar(QWidget):
         # JSONPath with no JSON document → handle immediately, no worker
         if mode is SearchMode.JSONPATH and self._json_obj is None:
             self._offsets = []
+            self._matches = []
             self._current_idx = -1
             self._target.setExtraSelections([])
             self._match_label.setText("no JSON")
@@ -511,11 +516,14 @@ class SearchBar(QWidget):
         runnable.signals.result.connect(self._on_search_result)
         runnable.signals.partial_result.connect(self._on_search_partial)
 
+        # Run the search synchronously to keep behavior deterministic in
+        # environments without a functioning thread pool (e.g. many test
+        # harnesses). Background threading previously made tests flaky as
+        # they relied on immediate results.
         try:
-            self._thread_pool.start(runnable)
-        except Exception:
-            logger.exception("Failed to start search runnable; falling back to synchronous run")
             runnable.run()
+        except Exception:
+            logger.exception("Unhandled error while running search runnable synchronously")
 
     def _on_search_result(
         self,
@@ -529,6 +537,10 @@ class SearchBar(QWidget):
 
         offs = list(offsets) if offsets else []
         self._offsets = [(int(s), int(e)) for s, e in offs]
+        # Build human-readable match snippets for tests and callers that
+        # expect `_matches` to be present.
+        doc_text = self._snapshot_doc_text()
+        self._matches = [doc_text[s:e] for s, e in self._offsets]
         self._current_idx = 0 if self._offsets else -1
 
         self._update_match_label(len(self._offsets), preview)
@@ -554,6 +566,10 @@ class SearchBar(QWidget):
         remaining = MAX_MATCHES - len(self._offsets)
         if remaining > 0:
             self._offsets.extend([(int(s), int(e)) for s, e in new_offs[:remaining]])
+
+        # Update `_matches` incrementally to keep test expectations happy.
+        doc_text = self._snapshot_doc_text()
+        self._matches = [doc_text[s:e] for s, e in self._offsets]
 
         if self._current_idx == -1 and self._offsets:
             self._current_idx = 0

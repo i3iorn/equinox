@@ -432,7 +432,11 @@ class ResponsePanel(QWidget):
         try:
             self.current_response = response
 
+            logger.debug("ResponsePanel.display_response: starting for response (status=%s size=%s)", getattr(response, 'status_code', None), getattr(response, 'size', None))
+
             self._update_status_bar(response)
+
+            logger.debug("ResponsePanel.display_response: applying highlighter")
             try:
                 self._apply_highlighter(response.headers.get("content-type", ""))
             except Exception:
@@ -440,6 +444,7 @@ class ResponsePanel(QWidget):
                 logger.exception("_apply_highlighter raised an exception for content-type=%s", response.headers.get("content-type", ""))
 
             # Body / JSON tree / headers etc. — each has internal guards but protect the whole flow
+            logger.debug("ResponsePanel.display_response: about to call _display_body")
             try:
                 self._display_body(response)
             except Exception:
@@ -451,32 +456,38 @@ class ResponsePanel(QWidget):
                 except Exception:
                     logger.exception("Fallback body display also failed")
 
+            logger.debug("ResponsePanel.display_response: about to call _display_json_tree")
             try:
                 self._display_json_tree(response)
             except Exception:
                 logger.exception("_display_json_tree failed")
 
+            logger.debug("ResponsePanel.display_response: about to call _display_headers")
             try:
                 self._display_headers(response)
             except Exception:
                 logger.exception("_display_headers failed")
 
+            logger.debug("ResponsePanel.display_response: about to call _display_timings")
             try:
                 self._display_timings(response)
             except Exception:
                 logger.exception("_display_timings failed")
 
+            logger.debug("ResponsePanel.display_response: about to call _load_cookies_tab")
             try:
                 self._load_cookies_tab(response.headers)
             except Exception:
                 logger.exception("_load_cookies_tab failed")
 
+            logger.debug("ResponsePanel.display_response: about to call _display_sent_request")
             try:
                 self._display_sent_request(response)
             except Exception:
                 logger.exception("_display_sent_request failed")
 
             # Switch view
+            logger.debug("ResponsePanel.display_response: switching view (prefer_json=%s view_json_enabled=%s)", self._prefer_json_view, getattr(self, '_view_json_act', None) and self._view_json_act.isEnabled())
             if self._prefer_json_view and self._view_json_act.isEnabled():
                 self._switch_to_json_view()
             else:

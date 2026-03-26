@@ -67,13 +67,29 @@ class JsonTree(QWidget):
 
     def load_json(self, obj) -> None:
         """Load a Python object (from json.loads) into the tree."""
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.debug("JsonTree.load_json: loading JSON top-level type=%s", type(obj))
         self._last_obj = obj
+        # guard: avoid creating excessive QTreeWidgetItems which may crash Qt
+        self._node_count = 0
+        MAX_NODES = 20000
         self.tree.clear()
         root = self.tree.invisibleRootItem()
 
         def _add(parent_item, value):
+            # stop early if we've created too many nodes
+            if getattr(self, "_node_count", 0) >= MAX_NODES:
+                QTreeWidgetItem(parent_item, ["...", "(truncated)"])
+                return
+            # incremental node count
+            # Note: we count items before recursing to avoid deep recursion explosion
             if isinstance(value, dict):
                 for k, v in value.items():
+                    if getattr(self, "_node_count", 0) >= MAX_NODES:
+                        QTreeWidgetItem(parent_item, ["...", "(truncated)"])
+                        return
+                    self._node_count += 1
                     if isinstance(v, (dict, list)):
                         child = QTreeWidgetItem(parent_item, [str(k), ""])
                         _add(child, v)
@@ -82,7 +98,11 @@ class JsonTree(QWidget):
                         child = QTreeWidgetItem(parent_item, [str(k), json.dumps(v, ensure_ascii=False)])
             elif isinstance(value, list):
                 for i, v in enumerate(value):
+                    if getattr(self, "_node_count", 0) >= MAX_NODES:
+                        QTreeWidgetItem(parent_item, ["...", "(truncated)"])
+                        return
                     key = f"[{i}]"
+                    self._node_count += 1
                     if isinstance(v, (dict, list)):
                         child = QTreeWidgetItem(parent_item, [key, ""])
                         _add(child, v)
@@ -92,14 +112,23 @@ class JsonTree(QWidget):
                 # Fallback for primitives at the root
                 QTreeWidgetItem(parent_item, ["", json.dumps(value, ensure_ascii=False)])
 
-        # If the top-level object is a primitive, create one root item
-        if isinstance(obj, (dict, list)):
-            _add(root, obj)
-        else:
-            QTreeWidgetItem(root, ["value", json.dumps(obj, ensure_ascii=False)])
+        try:
+            # If the top-level object is a primitive, create one root item
+            if isinstance(obj, (dict, list)):
+                _add(root, obj)
+            else:
+                QTreeWidgetItem(root, ["value", json.dumps(obj, ensure_ascii=False)])
 
-        self.tree.expandToDepth(0)
-        self._show_placeholder(False)
+            self.tree.expandToDepth(0)
+            self._show_placeholder(False)
+        except Exception:
+            logger.exception("JsonTree.load_json: failed while populating tree")
+            # clear partially-constructed tree and show placeholder
+            try:
+                self.tree.clear()
+            except Exception:
+                pass
+            self._show_placeholder(True)
 
     def _on_expand_all(self) -> None:
         self.tree.expandAll()

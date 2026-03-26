@@ -209,6 +209,10 @@ class Database:
             StorageError: If connection fails
         """
         conn = None
+        # Only catch errors that occur while establishing the connection itself.
+        # Do NOT catch sqlite3.Error raised by callers using the yielded connection;
+        # those should propagate so higher-level callers (e.g. insert/execute)
+        # can perform more specific handling (IntegrityError -> DuplicateError).
         try:
             conn = sqlite3.connect(
                 self.db_path,
@@ -216,12 +220,14 @@ class Database:
                 timeout=_CONNECTION_TIMEOUT_SECONDS,
                 isolation_level='DEFERRED'
             )
-            conn.row_factory = sqlite3.Row
-            conn.execute("PRAGMA foreign_keys = ON")
-            yield conn
         except sqlite3.Error as exc:
             logger.error("Database connection error: %s", exc, exc_info=False)
             raise StorageError(f"Database connection failed: {exc}")
+
+        try:
+            conn.row_factory = sqlite3.Row
+            conn.execute("PRAGMA foreign_keys = ON")
+            yield conn
         finally:
             if conn is not None:
                 try:
