@@ -1,19 +1,13 @@
-"""Structured logging setup for Equinox.
+"""
+Structured logging setup for Equinox.
 
-Call ``configure_logging()`` once at application startup.  After that every
-``logging.getLogger(name)`` call produces records that:
+Call `configure_logging()` once at application startup. After that every
+`logging.getLogger(name)` call produces records that:
 
-* Are written to ``~/.equinox/logs/equinox.log`` as newline-delimited JSON
-  (one record per line — easy to ``grep``, ingest into Splunk/ELK, etc.)
-* Are also printed to *stderr* in a compact human-readable format.
+* Are written to `~/.equinox/logs/equinox.log` as newline-delimited JSON.
+* Are also printed to stderr in a compact human-readable format.
 
-Log file is rotated at **10 MB** and up to **5** old files are kept.
-
-Example log lines::
-
-    {"ts":"2026-02-20T14:23:01.234Z","app_corr_id":"abc123def456","level":"INFO","logger":"equinox.gui.request_panel","msg":"GET https://api.example.com/users","elapsed_ms":142,"status":200}
-    {"ts":"2026-02-20T14:23:01.500Z","app_corr_id":"abc123def456","level":"DEBUG","logger":"equinox.gui.request_panel","msg":"Variable interpolation completed","thread":"QThread-1"}
-    {"ts":"2026-02-20T14:23:02.100Z","app_corr_id":"abc123def456","level":"ERROR","logger":"equinox.core.client","msg":"Request timeout","method":"POST","url":"https://api.example.com/data","error_type":"TimeoutError"}
+Log file is rotated at 10 MB and up to 5 old files are kept.
 """
 
 import json
@@ -23,9 +17,13 @@ import sys
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Dict, Any
 
-# Global application correlation ID — set on first call to configure_logging()
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Global application correlation ID
+# ──────────────────────────────────────────────────────────────────────────────
+
 _app_corr_id: Optional[str] = None
 
 
@@ -33,82 +31,86 @@ def get_app_corr_id() -> str:
     """Return the application correlation ID, generating one if needed."""
     global _app_corr_id
     if _app_corr_id is None:
-        _app_corr_id = uuid.uuid4().hex[:12]  # 12-char hex string
+        _app_corr_id = uuid.uuid4().hex[:12]
     return _app_corr_id
 
 
-# ── JSON formatter ────────────────────────────────────────────────────────────
+# ──────────────────────────────────────────────────────────────────────────────
+# JSON formatter
+# ──────────────────────────────────────────────────────────────────────────────
 
-class _JsonFormatter(logging.Formatter):
+class JsonFormatter(logging.Formatter):
     """Formats log records as single-line JSON objects."""
 
-    # Fields copied verbatim from the LogRecord if present as ``extra`` kwargs
-    _EXTRA_FIELDS = (
+    EXTRA_FIELDS = {
         "event", "method", "url", "headers", "params", "timeout", "verify_ssl",
         "status", "status_code", "reason", "elapsed_time_seconds", "elapsed_ms",
         "size_bytes", "error_type", "error_message", "request_id", "timestamp",
-    )
+    }
 
     def format(self, record: logging.LogRecord) -> str:  # type: ignore[override]
-        doc: dict = {
-            "ts":          datetime.fromtimestamp(record.created, tz=timezone.utc)
-                          .strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z",
+        doc: Dict[str, Any] = {
+            "ts": datetime.fromtimestamp(record.created, tz=timezone.utc)
+                  .strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z",
             "app_corr_id": get_app_corr_id(),
-            "level":       record.levelname,
-            "logger":      record.name,
-            "msg":         record.getMessage(),
+            "level": record.levelname,
+            "logger": record.name,
+            "msg": record.getMessage(),
         }
 
-        # Add process and thread info for concurrent debugging
+        # Process/thread info
         if record.processName != "MainProcess":
             doc["process"] = record.processName
         if record.threadName != "MainThread":
             doc["thread"] = record.threadName
 
-        # Copy structured fields attached via ``extra=``
-        for field in self._EXTRA_FIELDS:
-            val = getattr(record, field, None)
-            if val is not None:
-                doc[field] = val
+        # Structured extras
+        for field in self.EXTRA_FIELDS:
+            if hasattr(record, field):
+                value = getattr(record, field)
+                if value is not None:
+                    doc[field] = value
 
-        # Also support a top-level ``payload`` extra where callers might
-        # pass a dict of structured fields. Merge it into the output.
+        # Merge payload dict
         payload = getattr(record, "payload", None)
         if isinstance(payload, dict):
             for k, v in payload.items():
-                # Do not override primary fields
-                if k not in doc:
-                    doc[k] = v
+                doc.setdefault(k, v)
 
-        # Attach exception info if present
+        # Exception info
         if record.exc_info:
             doc["exc"] = self.formatException(record.exc_info)
 
-        return json.dumps(doc, ensure_ascii=True, default=str)
+        return json.dumps(doc, ensure_ascii=False, default=str)
 
 
-# ── Human-readable console formatter ─────────────────────────────────────────
+# ──────────────────────────────────────────────────────────────────────────────
+# Console formatter
+# ──────────────────────────────────────────────────────────────────────────────
 
-class _ConsoleFormatter(logging.Formatter):
-    _COLOURS = {
-        "DEBUG":    "\033[37m",    # grey
-        "INFO":     "\033[32m",    # green
-        "WARNING":  "\033[33m",    # yellow
-        "ERROR":    "\033[31m",    # red
-        "CRITICAL": "\033[35m",    # magenta
+class ConsoleFormatter(logging.Formatter):
+    COLOURS = {
+        "DEBUG":    "\033[37m",
+        "INFO":     "\033[32m",
+        "WARNING":  "\033[33m",
+        "ERROR":    "\033[31m",
+        "CRITICAL": "\033[35m",
     }
-    _RESET = "\033[0m"
-    _supports_colour = sys.stderr.isatty() if hasattr(sys.stderr, "isatty") else False
+    RESET = "\033[0m"
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.supports_colour = getattr(sys.stderr, "isatty", lambda: False)()
 
     def format(self, record: logging.LogRecord) -> str:  # type: ignore[override]
-        ts   = datetime.fromtimestamp(record.created).strftime("%H:%M:%S.%f")[:-3]
-        lvl  = record.levelname[:5]
-        name = record.name.split(".")[-1]    # last component only
-        msg  = record.getMessage()
+        ts = datetime.fromtimestamp(record.created).strftime("%H:%M:%S.%f")[:-3]
+        lvl = record.levelname[:5]
+        name = record.name.rsplit(".", 1)[-1]
+        msg = record.getMessage()
 
-        if self._supports_colour:
-            colour = self._COLOURS.get(record.levelname, "")
-            line = f"{colour}{ts} {lvl:<5}{self._RESET} [{name}] {msg}"
+        if self.supports_colour:
+            colour = self.COLOURS.get(record.levelname, "")
+            line = f"{colour}{ts} {lvl:<5}{self.RESET} [{name}] {msg}"
         else:
             line = f"{ts} {lvl:<5} [{name}] {msg}"
 
@@ -118,72 +120,60 @@ class _ConsoleFormatter(logging.Formatter):
         return line
 
 
-# ── Public API ────────────────────────────────────────────────────────────────
+# ──────────────────────────────────────────────────────────────────────────────
+# Public API
+# ──────────────────────────────────────────────────────────────────────────────
 
 def configure_logging(
     log_dir: Optional[Path] = None,
     level: int = logging.DEBUG,
     console_level: int = logging.WARNING,
 ) -> Path:
-    """Configure application-wide logging.
-
-    Args:
-        log_dir:       Directory for log files.  Defaults to ``~/.equinox/logs``.
-        level:         Minimum level written to the log *file*.
-        console_level: Minimum level printed to *stderr*.
-
-    Returns:
-        Path to the active log file.
-    """
+    """Configure application-wide logging."""
     global _app_corr_id
-    
-    # Initialize app correlation ID on first call
     _app_corr_id = uuid.uuid4().hex[:12]
-    
-    if log_dir is None:
-        log_dir = Path.home() / ".equinox" / "logs"
+
+    log_dir = log_dir or (Path.home() / ".equinox" / "logs")
     log_dir.mkdir(parents=True, exist_ok=True)
 
     log_file = log_dir / "equinox.log"
 
     root = logging.getLogger()
-    root.setLevel(logging.DEBUG)   # handlers filter individually
-
-    # Avoid duplicate handlers when called more than once (e.g. in tests)
+    root.setLevel(logging.DEBUG)
     root.handlers.clear()
 
-    # ── Rotating file handler (JSON) ──────────────────────────────────
+    # File handler
     file_handler = logging.handlers.RotatingFileHandler(
         log_file,
-        maxBytes=10 * 1024 * 1024,   # 10 MB
+        maxBytes=10 * 1024 * 1024,
         backupCount=5,
         encoding="utf-8",
     )
     file_handler.setLevel(level)
-    file_handler.setFormatter(_JsonFormatter())
+    file_handler.setFormatter(JsonFormatter())
     root.addHandler(file_handler)
 
-    # ── Stderr console handler (human-readable) ───────────────────────
+    # Console handler
     console_handler = logging.StreamHandler(sys.stderr)
     console_handler.setLevel(console_level)
-    console_handler.setFormatter(_ConsoleFormatter())
+    console_handler.setFormatter(ConsoleFormatter())
     root.addHandler(console_handler)
 
-    # Silence very chatty third-party loggers
+    # Quiet noisy libs
     for noisy in ("httpx", "httpcore", "urllib3", "charset_normalizer"):
         logging.getLogger(noisy).setLevel(logging.WARNING)
 
-    logger = logging.getLogger(__name__)
-    logger.info("Logging initialised — app_corr_id=%s writing to %s", _app_corr_id, log_file)
+    logging.getLogger(__name__).info(
+        "Logging initialised — app_corr_id=%s writing to %s",
+        _app_corr_id, log_file
+    )
 
     return log_file
 
 
 def get_log_file() -> Optional[Path]:
-    """Return the path of the current log file, or *None* if not yet configured."""
-    root = logging.getLogger()
-    for handler in root.handlers:
+    """Return the path of the current log file, or None if not configured."""
+    for handler in logging.getLogger().handlers:
         if isinstance(handler, logging.handlers.RotatingFileHandler):
             return Path(handler.baseFilename)
     return None
-
