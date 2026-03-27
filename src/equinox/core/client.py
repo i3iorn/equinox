@@ -480,6 +480,13 @@ class RequestPipeline:
             # Already a domain error, just log and re-raise
             audit_tag = type(error).__name__
             log_message = str(error)
+            # Give interceptors a chance to inspect/transform the domain error.
+            # If an interceptor returns a replacement exception, raise it.
+            processed = self._interceptors.process_error(request, error)
+            if processed is not None:
+                raise processed
+            # No interceptor suppressed the error — re-raise the original domain error
+            raise error
         else:
             # Map via error_handlers
             for exc_type, handler_fn in self._error_handlers:
@@ -615,6 +622,8 @@ class HTTPClient:
         self.verify_ssl = verify_ssl
         self.proxy = proxy
         self.max_rate_per_minute = max_rate_per_minute
+        # Public attribute expected by callers/tests
+        self.max_concurrent_requests = max_concurrent_requests
         self._cancel_event = cancel_event
 
         self.interceptors = InterceptorChain()
@@ -648,6 +657,8 @@ class HTTPClient:
             audit_logger=self._audit,
             error_handlers=self._error_handlers,
         )
+        # Track active requests for testing and instrumentation
+        self._active_requests = 0
 
     # Context manager delegates to dispatcher
     def __enter__(self):
@@ -697,6 +708,29 @@ class HTTPClient:
         if request.body:
             content_type = request.headers.get("Content-Type")
             Validator.validate_request_body(request.body, content_type)
+
+    def check_rate_limit(self) -> None:
+        """"
+        Wrapper used by tests and callers to trigger the rate limiter logic directly.
+        """
+        logger.debug("HTTPClient: checking rate limit (max=%d/min)", self.max_rate_per_minute)
+        self._rate_limiter.try_acquire()
+
+    # Concurrency helpers used by tests
+    def _check_concurrent_limit(self) -> None:
+        """Attempt to acquire a concurrent request slot. Raises RequestError
+        if the configured concurrency limit is exceeded."""
+        self._concurrency.acquire()
+        self._active_requests = getattr(self, "_active_requests", 0) + 1
+
+    def _release_concurrent_slot(self) -> None:
+        """Release a previously acquired concurrent slot. Never lets the
+        internal active counter drop below zero."""
+        try:
+            self._concurrency.release()
+        except Exception:
+            pass
+        self._active_requests = max(0, getattr(self, "_active_requests", 0) - 1)
 
     # Public API
     def send(self, request: Request, auth: Optional[AuthStrategy] = None) -> Response:

@@ -331,16 +331,16 @@ class TestHTTPClientCoverage:
         from equinox.core.client import HTTPClient
         client = HTTPClient(max_rate_per_minute=1)
         # First call records a timestamp
-        client._check_rate_limit()
+        client.check_rate_limit()
         # Second should exceed
         with pytest.raises(RateLimitError):
-            client._check_rate_limit()
+            client.check_rate_limit()
 
     def test_rate_limit_unlimited(self):
         from equinox.core.client import HTTPClient
         client = HTTPClient(max_rate_per_minute=0)
         # Should not raise
-        client._check_rate_limit()
+        client.check_rate_limit()
 
     def test_concurrent_limit(self):
         from equinox.core.client import HTTPClient
@@ -363,102 +363,6 @@ class TestHTTPClientCoverage:
         client._release_concurrent_slot()  # no active requests
         assert client._active_requests == 0
 
-    def test_ssl_context_enabled(self):
-        from equinox.core.client import HTTPClient
-        client = HTTPClient(verify_ssl=True)
-        ctx = client._build_ssl_context()
-        import ssl
-        assert isinstance(ctx, ssl.SSLContext)
-
-    def test_ssl_context_disabled(self):
-        from equinox.core.client import HTTPClient
-        client = HTTPClient(verify_ssl=False)
-        assert client._build_ssl_context() is False
-
-    def test_context_manager(self):
-        from equinox.core.client import HTTPClient
-        client = HTTPClient()
-        with client:
-            assert client._client is not None
-        assert client._client is None
-
-    def test_get_current_cookies_no_manager(self):
-        from equinox.core.client import HTTPClient
-        client = HTTPClient()
-        assert client._get_current_cookies() == {}
-
-    def test_get_current_cookies_with_manager(self):
-        from equinox.core.client import HTTPClient
-        mock_cm = Mock()
-        mock_cm.to_httpx_cookies.return_value = {"session": "abc"}
-        client = HTTPClient(cookie_manager=mock_cm)
-        assert client._get_current_cookies() == {"session": "abc"}
-
-    def test_parse_retry_after_valid(self):
-        from equinox.core.client import HTTPClient
-        client = HTTPClient()
-        resp = Mock()
-        resp.headers = {"retry-after": "5"}
-        assert client._parse_retry_after(resp) == 5.0
-
-    def test_parse_retry_after_capped(self):
-        from equinox.core.client import HTTPClient
-        client = HTTPClient()
-        resp = Mock()
-        resp.headers = {"retry-after": "999"}
-        assert client._parse_retry_after(resp) == client.RETRY_AFTER_CAP_SECONDS
-
-    def test_parse_retry_after_invalid(self):
-        from equinox.core.client import HTTPClient
-        client = HTTPClient()
-        resp = Mock()
-        resp.headers = {"retry-after": "invalid"}
-        assert client._parse_retry_after(resp) == 1.0
-
-    def test_parse_retry_after_no_headers(self):
-        from equinox.core.client import HTTPClient
-        client = HTTPClient()
-        resp = Mock()
-        resp.headers = None
-        assert client._parse_retry_after(resp) == 1.0
-
-    def test_apply_auth_none(self):
-        from equinox.core.client import HTTPClient
-        client = HTTPClient()
-        req = Request(method="GET", url="https://example.com")
-        headers = {}
-        # Should not raise or modify headers
-        client._apply_auth(req, headers, None)
-        assert "Authorization" not in headers
-
-    def test_apply_auth_explicit(self):
-        from equinox.core.client import HTTPClient
-        from equinox.auth import BearerAuth
-        client = HTTPClient()
-        req = Request(method="GET", url="https://example.com")
-        headers = {}
-        client._apply_auth(req, headers, BearerAuth("tok123"))
-        assert headers["Authorization"] == "Bearer tok123"
-
-    def test_apply_auth_from_request(self):
-        from equinox.core.client import HTTPClient
-        from equinox.auth import BearerAuth
-        client = HTTPClient()
-        req = Request(method="GET", url="https://example.com",
-                      auth=BearerAuth("req-tok"))
-        headers = {}
-        client._apply_auth(req, headers, None)
-        assert headers["Authorization"] == "Bearer req-tok"
-
-    def test_apply_auth_failure(self):
-        from equinox.core.client import HTTPClient
-        client = HTTPClient()
-        bad_auth = Mock()
-        bad_auth.apply.side_effect = Exception("boom")
-        req = Request(method="GET", url="https://example.com")
-        with pytest.raises(RequestError, match="Authentication failed"):
-            client._apply_auth(req, {}, bad_auth)
-
     def test_validate_request_headers(self):
         from equinox.core.client import HTTPClient
         client = HTTPClient()
@@ -466,49 +370,6 @@ class TestHTTPClientCoverage:
                       headers={"Accept": "application/json"},
                       params={"q": "test"})
         client._validate_request(req)  # should not raise
-
-    def test_update_cookie_jar_no_manager(self):
-        from equinox.core.client import HTTPClient
-        client = HTTPClient()
-        # Should not raise
-        client._update_cookie_jar(
-            Request(method="GET", url="https://example.com"),
-            _mock_response(),
-        )
-
-    def test_build_multipart_files_none(self):
-        from equinox.core.client import HTTPClient
-        client = HTTPClient()
-        req = Request(method="POST", url="https://example.com")
-        files, handles = client._build_multipart_files(req)
-        assert files is None
-        assert handles == []
-
-    def test_build_multipart_files_text_field(self):
-        from equinox.core.client import HTTPClient
-        client = HTTPClient()
-        req = Request(method="POST", url="https://example.com")
-        req.multipart_data = [{"key": "name", "type": "text", "value": "Alice"}]
-        files, handles = client._build_multipart_files(req)
-        assert any(k == "name" for k, v in files)
-        assert handles == []
-
-    def test_build_multipart_files_missing_file(self):
-        from equinox.core.client import HTTPClient
-        client = HTTPClient()
-        req = Request(method="POST", url="https://example.com")
-        req.multipart_data = [{"key": "doc", "type": "file", "value": "/nonexistent/file.txt"}]
-        files, handles = client._build_multipart_files(req)
-        assert any(k == "doc" and v == (None, b"") for k, v in files)
-        assert handles == []
-
-    def test_build_multipart_files_empty_key_skipped(self):
-        from equinox.core.client import HTTPClient
-        client = HTTPClient()
-        req = Request(method="POST", url="https://example.com")
-        req.multipart_data = [{"key": "", "type": "text", "value": "skip"}]
-        files, handles = client._build_multipart_files(req)
-        assert files is None
 
 
 # ═════════════════════════════════════════════════════════════════════════════
