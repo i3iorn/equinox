@@ -15,7 +15,7 @@ from PyQt6.QtGui import QFont, QColor
 
 from equinox.core.time import utc_now
 from equinox.gui.theme import Colors, get_mono_font
-from equinox.core.redact import redact_headers
+from equinox.core.redact import redact_headers, redact_body, redact_url
 
 # Python logger — routes GUI traffic to the structured log file as well
 _py_logger = logging.getLogger("equinox.gui.traffic")
@@ -96,28 +96,30 @@ class LoggingPanel(QWidget):
     # ── Public log methods ────────────────────────────────────────────
 
     def log_request(self, request) -> None:
+        safe_url = redact_url(request.url) if request.url else ""
         entry = {
             "type": "request",
             "timestamp": utc_now().isoformat(timespec="milliseconds"),
             "method": request.method,
-            "url": request.url,
-            "headers": dict(request.headers or {}),
+            "url": safe_url,
+            "headers": redact_headers(dict(request.headers or {})),
             "params": dict(request.params or {}),
-            "body": request.body if request.body else None,
+            "body": redact_body(request.body, max_length=2000) if request.body else None,
         }
         _py_logger.debug(
-            "→ %s %s", request.method, request.url,
-            extra={"method": request.method, "url": request.url},
+            "→ %s %s", request.method, safe_url,
+            extra={"method": request.method, "url": safe_url},
         )
         self._push(entry)
 
     def log_response(self, request, response) -> None:
         elapsed_ms = int(response.elapsed * 1000)
+        safe_url = redact_url(request.url) if request.url else ""
         entry = {
             "type": "response",
             "timestamp": utc_now().isoformat(timespec="milliseconds"),
             "method": request.method,
-            "url": request.url,
+            "url": safe_url,
             "status": response.status_code,
             "reason": response.reason,
             "elapsed_ms": elapsed_ms,
@@ -128,10 +130,10 @@ class LoggingPanel(QWidget):
         _py_logger.log(
             level,
             "← %d %s  %s  (%d ms)",
-            response.status_code, response.reason, request.url, elapsed_ms,
+            response.status_code, response.reason, safe_url, elapsed_ms,
             extra={
                 "method": request.method,
-                "url": request.url,
+                "url": safe_url,
                 "status": response.status_code,
                 "elapsed_ms": elapsed_ms,
                 "size_bytes": response.size,
@@ -140,21 +142,23 @@ class LoggingPanel(QWidget):
         self._push(entry)
 
     def log_error(self, request, error) -> None:
+        safe_url = redact_url(getattr(request, "url", "?"))
+        safe_error = redact_body(str(error), max_length=500) or str(error)
         entry = {
             "type": "error",
             "timestamp": utc_now().isoformat(timespec="milliseconds"),
             "method": getattr(request, "method", "?"),
-            "url": getattr(request, "url", "?"),
-            "error": str(error),
+            "url": safe_url,
+            "error": safe_error,
         }
         _py_logger.warning(
             "✗ %s %s — %s",
             getattr(request, "method", "?"),
-            getattr(request, "url", "?"),
-            error,
+            safe_url,
+            safe_error,
             extra={
                 "method": getattr(request, "method", "?"),
-                "url": getattr(request, "url", "?"),
+                "url": safe_url,
                 "error_type": type(error).__name__,
             },
         )
