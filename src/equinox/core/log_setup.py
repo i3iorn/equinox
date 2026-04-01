@@ -13,6 +13,7 @@ Log file is rotated at 10 MB and up to 5 old files are kept.
 import json
 import logging
 import logging.handlers
+import os
 import sys
 import uuid
 from datetime import datetime, timezone
@@ -35,9 +36,18 @@ def get_app_corr_id() -> str:
     return _app_corr_id
 
 
+def generate_request_id() -> str:
+    """Generate a short unique ID for correlating log entries within a single request."""
+    return uuid.uuid4().hex[:12]
+
+
 # ──────────────────────────────────────────────────────────────────────────────
 # JSON formatter
 # ──────────────────────────────────────────────────────────────────────────────
+
+# Safety cap — prevents a single log line from consuming excessive disk / memory.
+MAX_LOG_PAYLOAD_SIZE = 8192  # 8 KB per serialised JSON log line
+
 
 class JsonFormatter(logging.Formatter):
     """Formats log records as single-line JSON objects."""
@@ -46,6 +56,7 @@ class JsonFormatter(logging.Formatter):
         "event", "method", "url", "headers", "params", "timeout", "verify_ssl",
         "status", "status_code", "reason", "elapsed_time_seconds", "elapsed_ms",
         "size_bytes", "error_type", "error_message", "request_id", "timestamp",
+        "collection_id", "environment_id", "auth_type",
     }
 
     def format(self, record: logging.LogRecord) -> str:  # type: ignore[override]
@@ -58,6 +69,11 @@ class JsonFormatter(logging.Formatter):
             "msg": record.getMessage(),
         }
 
+        # Per-request correlation id
+        req_id = getattr(record, "request_id", None)
+        if req_id:
+            doc["request_id"] = req_id
+
         # Process/thread info
         if record.processName != "MainProcess":
             doc["process"] = record.processName
@@ -66,6 +82,8 @@ class JsonFormatter(logging.Formatter):
 
         # Structured extras
         for field in self.EXTRA_FIELDS:
+            if field == "request_id":
+                continue  # already handled above
             if hasattr(record, field):
                 value = getattr(record, field)
                 if value is not None:
@@ -81,7 +99,13 @@ class JsonFormatter(logging.Formatter):
         if record.exc_info:
             doc["exc"] = self.formatException(record.exc_info)
 
-        return json.dumps(doc, ensure_ascii=False, default=str)
+        result = json.dumps(doc, ensure_ascii=False, default=str)
+
+        # Safety cap — truncate excessively large log lines
+        if len(result) > MAX_LOG_PAYLOAD_SIZE:
+            result = result[:MAX_LOG_PAYLOAD_SIZE - 20] + ',"_truncated":true}'
+
+        return result
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -108,16 +132,39 @@ class ConsoleFormatter(logging.Formatter):
         name = record.name.rsplit(".", 1)[-1]
         msg = record.getMessage()
 
+        # Include per-request correlation id when available
+        req_id = getattr(record, "request_id", None)
+        rid_tag = f" [{req_id}]" if req_id else ""
+
         if self.supports_colour:
             colour = self.COLOURS.get(record.levelname, "")
-            line = f"{colour}{ts} {lvl:<5}{self.RESET} [{name}] {msg}"
+            line = f"{colour}{ts} {lvl:<5}{self.RESET} [{name}]{rid_tag} {msg}"
         else:
-            line = f"{ts} {lvl:<5} [{name}] {msg}"
+            line = f"{ts} {lvl:<5} [{name}]{rid_tag} {msg}"
 
         if record.exc_info:
             line += "\n" + self.formatException(record.exc_info)
 
         return line
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Log level resolver
+# ──────────────────────────────────────────────────────────────────────────────
+
+_LEVEL_NAMES = {
+    "DEBUG": logging.DEBUG,
+    "INFO": logging.INFO,
+    "WARNING": logging.WARNING,
+    "ERROR": logging.ERROR,
+    "CRITICAL": logging.CRITICAL,
+}
+
+
+def _resolve_level(env_var: str, default: int) -> int:
+    """Return a logging level from an environment variable, falling back to *default*."""
+    raw = os.environ.get(env_var, "").upper().strip()
+    return _LEVEL_NAMES.get(raw, default)
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -129,9 +176,18 @@ def configure_logging(
     level: int = logging.DEBUG,
     console_level: int = logging.WARNING,
 ) -> Path:
-    """Configure application-wide logging."""
+    """Configure application-wide logging.
+
+    Log levels can be overridden via environment variables:
+    * ``EQUINOX_LOG_LEVEL``         — file log level (default DEBUG)
+    * ``EQUINOX_CONSOLE_LOG_LEVEL`` — stderr log level (default WARNING)
+    """
     global _app_corr_id
     _app_corr_id = uuid.uuid4().hex[:12]
+
+    # Allow environment variable overrides
+    level = _resolve_level("EQUINOX_LOG_LEVEL", level)
+    console_level = _resolve_level("EQUINOX_CONSOLE_LOG_LEVEL", console_level)
 
     log_dir = log_dir or (Path.home() / ".equinox" / "logs")
     log_dir.mkdir(parents=True, exist_ok=True)
@@ -177,3 +233,4 @@ def get_log_file() -> Optional[Path]:
         if isinstance(handler, logging.handlers.RotatingFileHandler):
             return Path(handler.baseFilename)
     return None
+
