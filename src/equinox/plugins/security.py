@@ -88,7 +88,7 @@ class PluginManifest:
                 perm = Permission(perm_str)
                 permissions.add(perm)
             except ValueError:
-                logger.warning(f"Unknown permission: {perm_str}")
+                logger.warning("Unknown permission: %s", perm_str)
 
         return cls(
             name=data["name"],
@@ -257,7 +257,7 @@ class PluginSandbox:
         if self._start_time:
             elapsed_ms = (time.time() - self._start_time) * 1000
             logger.debug(
-                f"Plugin '{self.manifest.name}' execution time: {elapsed_ms:.2f}ms"
+                "Plugin '%s' execution time: %.2fms", self.manifest.name, elapsed_ms
             )
             self._start_time = None
 
@@ -426,6 +426,25 @@ def validate_plugin_file(plugin_path: Path) -> bool:
     _DANGEROUS_MODULES = frozenset({
         "subprocess", "shutil", "ctypes", "multiprocessing",
         "signal", "resource", "pty", "fcntl", "termios",
+        # Additional modules that can bypass sandbox restrictions:
+        "importlib",    # dynamic import bypasses AST checks
+        "code",         # interactive interpreter
+        "codeop",       # compile helpers
+        "dis",          # bytecode disassembly / introspection
+        "inspect",      # frame/source introspection
+        "gc",           # garbage collector — gc.get_objects() leaks all live objects
+        "_thread",      # low-level thread API
+        "socket",       # raw network access outside HTTP proxy
+        "http",         # direct HTTP client/server
+        "xmlrpc",       # XML-RPC client/server
+        "pickle",       # arbitrary code execution via deserialization
+        "shelve",       # uses pickle internally
+        "marshal",      # bytecode (de)serialization
+        "builtins",     # full builtins access
+        "io",           # raw file I/O bypasses sandbox file checks
+        "webbrowser",   # can open arbitrary URLs / commands
+        "zipimport",    # import from zips — bypass AST validation
+        "runpy",        # run modules — bypass AST validation
     })
 
     _DANGEROUS_FUNCTIONS = frozenset({

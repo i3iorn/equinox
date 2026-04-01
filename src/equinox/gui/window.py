@@ -662,13 +662,20 @@ class MainWindow(QMainWindow):
                 self, "Log File", "No log file found yet — send a request first."
             )
             return
+
+        # SECURITY: validate the path before handing it to OS open commands
+        resolved = log_path.resolve()
+        if not str(resolved).endswith(".log"):
+            logger.warning("Refusing to open non-log file: %s", resolved)
+            return
+
         try:
             if os.name == "nt":
-                os.startfile(str(log_path))  # type: ignore[attr-defined]
+                os.startfile(str(resolved))  # type: ignore[attr-defined]
             elif sys.platform == "darwin":
-                subprocess.Popen(["open", str(log_path)])
+                subprocess.Popen(["open", str(resolved)])  # noqa: S603
             else:
-                subprocess.Popen(["xdg-open", str(log_path)])
+                subprocess.Popen(["xdg-open", str(resolved)])  # noqa: S603
         except Exception as exc:
             QMessageBox.information(
                 self, "Log File",

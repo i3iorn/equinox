@@ -249,13 +249,19 @@ class LoggingPanel(QWidget):
                 "No log file found yet — send a request first to generate entries."
             )
             return
+
+        # SECURITY: validate the resolved path before handing it to OS commands
+        resolved = log_path.resolve()
+        if not str(resolved).endswith(".log"):
+            return
+
         try:
             if os.name == "nt":
-                os.startfile(str(log_path))
+                os.startfile(str(resolved))
             elif os.path.exists("/usr/bin/open"):   # macOS
-                subprocess.Popen(["open", str(log_path)])
+                subprocess.Popen(["open", str(resolved)])  # noqa: S603
             else:
-                subprocess.Popen(["xdg-open", str(log_path)])
+                subprocess.Popen(["xdg-open", str(resolved)])  # noqa: S603
         except Exception as exc:
             QMessageBox.information(
                 self, "Log File",

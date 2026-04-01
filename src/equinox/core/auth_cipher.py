@@ -7,14 +7,15 @@ Encrypted values carry an ``enc:`` prefix so the reader can transparently
 fall back to plaintext for databases created before encryption was enabled
 (graceful migration — no schema change required).
 
-The encryption key is the **same** 32-byte key used by
-:class:`~equinox.core.secure_storage.SecureStorage` and is stored at
-``~/.equinox/.key``.  If the key file does not yet exist it is created
-automatically with restrictive permissions.
+Encryption uses Fernet (AES-128-CBC + HMAC-SHA256).  The 32-byte raw key
+is stored at ``~/.equinox/.key`` and is shared with
+:class:`~equinox.core.secure_storage.SecureStorage`.  If the key file does
+not yet exist it is created automatically with restrictive permissions.
 """
 
 import base64
 import logging
+import threading
 from pathlib import Path
 from typing import Optional
 
@@ -27,6 +28,7 @@ logger = logging.getLogger(__name__)
 
 # Module-level singleton — created lazily by _get_fernet().
 _fernet: Optional[Fernet] = None
+_fernet_lock = threading.Lock()
 
 # Prefix that distinguishes encrypted blobs from legacy plaintext JSON.
 _ENC_PREFIX = "enc:"
@@ -43,13 +45,20 @@ def get_or_create_key(key_path: Optional[Path] = None) -> bytes:
 
 
 def _get_fernet() -> Fernet:
-    """Return (and cache) a Fernet cipher backed by ``~/.equinox/.key``."""
+    """Return (and cache) a Fernet cipher backed by ``~/.equinox/.key``.
+
+    Thread-safe: uses double-checked locking to avoid races during
+    first initialisation while keeping the hot path lock-free.
+    """
     global _fernet
     if _fernet is not None:
         return _fernet
-    key = get_or_create_key()
-    _fernet = crypto.make_fernet(key)
-    return _fernet
+    with _fernet_lock:
+        if _fernet is not None:
+            return _fernet
+        key = get_or_create_key()
+        _fernet = crypto.make_fernet(key)
+        return _fernet
 
 
 # ── Public API ────────────────────────────────────────────────────────────────

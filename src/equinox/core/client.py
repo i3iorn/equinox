@@ -720,8 +720,8 @@ class HTTPClient:
         internal active counter drop below zero."""
         try:
             self._concurrency.release()
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.debug("Failed to release concurrency semaphore: %s", exc)
         self._active_requests = max(0, getattr(self, "_active_requests", 0) - 1)
 
     # Public API

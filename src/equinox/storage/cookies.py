@@ -182,7 +182,9 @@ class CookieJarManager:
         if not updates:
             return
         params.append(cookie_id)
-        self.db.execute(f"UPDATE cookies SET {', '.join(updates)} WHERE id = ?", tuple(params))
+        self.db.execute(
+            f"UPDATE cookies SET {', '.join(updates)} WHERE id = ?", tuple(params)
+        )
 
     def delete_cookie(self, cookie_id: int) -> None:
         """Delete a cookie by id."""

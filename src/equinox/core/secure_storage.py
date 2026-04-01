@@ -77,6 +77,12 @@ def _atomic_write(path: Path, data: bytes) -> None:
 
 
 def _wipe_bytes(b: Optional[bytes]) -> None:
+    """Best-effort overwrite of *b* in memory.
+
+    CPython may have copied the bytes elsewhere (interning, buffer copies)
+    so this is **not** a guarantee that the secret is erased from process
+    memory.  It reduces the window of exposure, however.
+    """
     if not b:
         return
     try:
@@ -85,7 +91,11 @@ def _wipe_bytes(b: Optional[bytes]) -> None:
         for i in range(len(b)):
             ptr[offset + i] = b"\x00"
     except Exception:
-        pass
+        logger.debug("_wipe_bytes: ctypes overwrite failed (non-critical)")
+    finally:
+        import gc
+        del b
+        gc.collect()
 
 
 def _validate_key_value(key: str, value: Optional[str] = None) -> None:

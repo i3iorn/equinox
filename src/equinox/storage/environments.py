@@ -183,7 +183,7 @@ class EnvironmentManager:
                 "INSERT INTO environments (name, description, variables) VALUES (?, ?, ?)",
                 (name, description, vars_json),
             )
-            logger.info(f"Created environment '{name}' with ID {environment_id} and {len(sanitized_variables)} variables")
+            logger.info("Created environment '%s' with ID %d and %d variables", name, environment_id, len(sanitized_variables))
             return environment_id
 
         except DuplicateError:
@@ -302,7 +302,7 @@ class EnvironmentManager:
                 raise SecurityError("Secret keys list too large") from None
 
         if not updates:
-            logger.warning(f"No updates provided for environment {environment_id}")
+            logger.warning("No updates provided for environment %d", environment_id)
             return
 
         try:
@@ -310,7 +310,7 @@ class EnvironmentManager:
             params.append(environment_id)
             query = f"UPDATE environments SET {', '.join(updates)} WHERE id = ?"
             self.db.execute(query, tuple(params))
-            logger.info(f"Updated environment '{environment['name']}' (ID: {environment_id})")
+            logger.info("Updated environment '%s' (ID: %d)", environment['name'], environment_id)
 
         except DuplicateError:
             raise DuplicateError(f"Environment name already exists")
@@ -341,7 +341,7 @@ class EnvironmentManager:
                 "UPDATE environments SET is_active = CASE WHEN id = ? THEN 1 ELSE 0 END",
                 (environment_id,),
             )
-            logger.info(f"Activated environment '{environment['name']}' (ID: {environment_id})")
+            logger.info("Activated environment '%s' (ID: %d)", environment['name'], environment_id)
 
         except Exception as e:
             raise StorageError(f"Failed to activate environment: {e}")
@@ -366,7 +366,7 @@ class EnvironmentManager:
 
         try:
             self.db.execute("DELETE FROM environments WHERE id = ?", (environment_id,))
-            logger.warning(f"Deleted environment '{environment['name']}' (ID: {environment_id})")
+            logger.warning("Deleted environment '%s' (ID: %d)", environment['name'], environment_id)
 
         except Exception as e:
             raise StorageError(f"Failed to delete environment: {e}")

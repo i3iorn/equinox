@@ -96,7 +96,7 @@ def _parse_url_safe(url: str) -> Dict[str, str]:
             "netloc": parsed.netloc or "",
         }
     except Exception as e:
-        logger.warning(f"Failed to parse URL {url}: {e}")
+        logger.warning("Failed to parse URL %s: %s", url, e)
         return {
             "scheme": "https",
             "hostname": "",
@@ -121,9 +121,9 @@ def _write_json_file(data: Dict[str, Any], file_path: Path) -> None:
         file_path.parent.mkdir(parents=True, exist_ok=True)
         with open(file_path, 'w', encoding='utf-8') as f:
             json.dump(data, f, indent=2, ensure_ascii=False)
-        logger.info(f"Exported to {file_path}")
+        logger.info("Exported to %s", file_path)
     except IOError as e:
-        logger.error(f"Failed to write {file_path}: {e}")
+        logger.error("Failed to write %s: %s", file_path, e)
         raise
 
 
@@ -167,7 +167,7 @@ class CurlExporter:
         try:
             Validator.validate_url(request.url)
         except ValidationError as e:
-            logger.error(f"Invalid URL in cURL export: {e}")
+            logger.error("Invalid URL in cURL export: %s", e)
             raise
 
         curl_cmd = ["curl", "-X", request.method]
@@ -202,29 +202,33 @@ class PostmanExporter:
     @staticmethod
     def _export_auth(auth_obj: Dict[str, Any]) -> Dict[str, Any]:
         """Convert auth object to Postman format. (Improvement #4)
-        
+
+        SECURITY: Secret values (tokens, passwords, client_secrets) are
+        redacted so exported files are safe to share / commit to VCS.
+
         Args:
             auth_obj: Auth dict from request
             
         Returns:
-            Postman auth dict
+            Postman auth dict with secrets redacted
         """
         if not auth_obj:
             return {}
-        
+
+        _REDACTED = "[REDACTED]"
         auth_type = auth_obj.get("type", "").lower()
         
         if auth_type == "bearer":
             return {
                 "type": "bearer",
-                "bearer": [{"key": "token", "value": auth_obj.get("token", ""), "type": "string"}]
+                "bearer": [{"key": "token", "value": _REDACTED, "type": "string"}]
             }
         elif auth_type == "apikey":
             return {
                 "type": "apikey",
                 "apikey": [
                     {"key": "key", "value": auth_obj.get("key", ""), "type": "string"},
-                    {"key": "value", "value": auth_obj.get("value", ""), "type": "string"},
+                    {"key": "value", "value": _REDACTED, "type": "string"},
                     {"key": "in", "value": auth_obj.get("in", "header"), "type": "string"},
                 ]
             }
@@ -233,7 +237,7 @@ class PostmanExporter:
                 "type": "basic",
                 "basic": [
                     {"key": "username", "value": auth_obj.get("username", ""), "type": "string"},
-                    {"key": "password", "value": auth_obj.get("password", ""), "type": "string"},
+                    {"key": "password", "value": _REDACTED, "type": "string"},
                 ]
             }
         elif auth_type == "oauth2":
@@ -325,7 +329,7 @@ class PostmanExporter:
                         if auth_export:
                             item["request"]["auth"] = auth_export
                     except Exception as e:
-                        logger.warning(f"Failed to export auth for request {req.get('name')}: {e}")
+                        logger.warning("Failed to export auth for request %s: %s", req.get('name'), e)
 
                 if req.get("body"):
                     # Content-Type inference (Improvement #11)
@@ -347,7 +351,7 @@ class PostmanExporter:
                     for v in var_list
                 ]
             except Exception as e:
-                logger.warning(f"Failed to export collection variables: {e}")
+                logger.warning("Failed to export collection variables: %s", e)
 
             return {
                 "info": {
@@ -360,7 +364,7 @@ class PostmanExporter:
                 "variable": variables
             }
         except Exception as e:
-            logger.error(f"Failed to export collection {collection_id}: {e}")
+            logger.error("Failed to export collection %s: %s", collection_id, e)
             raise
 
     @staticmethod
@@ -528,7 +532,7 @@ class OpenAPIExporter:
                         if auth_type:
                             operation["security"] = [{auth_type: []}]
                     except Exception as e:
-                        logger.warning(f"Failed to process auth for request {req.get('name')}: {e}")
+                        logger.warning("Failed to process auth for request %s: %s", req.get('name'), e)
 
                 paths[path][method] = operation
             
@@ -544,7 +548,7 @@ class OpenAPIExporter:
                             if scheme:
                                 security_schemes[auth_type] = scheme
                     except Exception as e:
-                        logger.warning(f"Failed to export auth scheme: {e}")
+                        logger.warning("Failed to export auth scheme: %s", e)
 
             spec = {
                 "openapi": "3.0.0",
@@ -561,7 +565,7 @@ class OpenAPIExporter:
             
             return spec
         except Exception as e:
-            logger.error(f"Failed to export collection {collection_id}: {e}")
+            logger.error("Failed to export collection %s: %s", collection_id, e)
             raise
 
     @staticmethod
@@ -786,7 +790,7 @@ class InsomniaExporter:
                 "resources": resources
             }
         except Exception as e:
-            logger.error(f"Failed to export collection {collection_id}: {e}")
+            logger.error("Failed to export collection %s: %s", collection_id, e)
             raise
 
     @staticmethod

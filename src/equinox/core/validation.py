@@ -9,6 +9,7 @@ import logging
 import re
 import json
 import socket
+import threading
 import concurrent.futures
 from typing import Any, Dict, Optional, Tuple
 from equinox.core import urls
@@ -23,6 +24,7 @@ _logger = logging.getLogger(__name__)
 # Lazy-initialised thread pool for DNS resolution in SSRF checks.
 # A single-worker pool avoids creating/tearing down threads on every call.
 _dns_pool: Optional[concurrent.futures.ThreadPoolExecutor] = None
+_dns_pool_lock = threading.Lock()
 
 # Canonical set of allowed HTTP methods — referenced by both
 # ``Request.__post_init__`` and ``Validator.validate_method`` so there
@@ -34,10 +36,15 @@ VALID_HTTP_METHODS = frozenset({
 
 
 def _get_dns_pool() -> concurrent.futures.ThreadPoolExecutor:
-    """Return a shared single-worker thread pool for DNS lookups."""
+    """Return a shared single-worker thread pool for DNS lookups.
+
+    Thread-safe: uses double-checked locking.
+    """
     global _dns_pool
     if _dns_pool is None:
-        _dns_pool = concurrent.futures.ThreadPoolExecutor(max_workers=1)
+        with _dns_pool_lock:
+            if _dns_pool is None:
+                _dns_pool = concurrent.futures.ThreadPoolExecutor(max_workers=1)
     return _dns_pool
 
 

@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import ast
 import builtins
+import multiprocessing
 import threading
 from dataclasses import dataclass, field
 from typing import Any, Dict, FrozenSet, Optional
@@ -293,28 +294,68 @@ class ScriptRunner:
         except Exception as exc:  # noqa: BLE001
             return ScriptResult(error=str(exc))
 
-        # Run exec() in a thread with a timeout to prevent infinite loops
-        error_container: list = [None]
+        # Run exec() in a subprocess so infinite loops can be killed.
+        # We use a multiprocessing.Queue to shuttle results / errors back.
+        result_queue: multiprocessing.Queue = multiprocessing.Queue()
 
-        def _exec_target() -> None:
+        def _exec_target(q: multiprocessing.Queue, code_obj: Any, g: Dict, l: Dict) -> None:  # noqa: E741
             try:
-                exec(code, globs, locs)  # noqa: S102  (intentional sandboxed exec)
+                exec(code_obj, g, l)  # noqa: S102  (intentional sandboxed exec)
+                q.put(("ok", l.get("env", {})))
             except Exception as exc:  # noqa: BLE001
-                error_container[0] = exc
+                q.put(("error", str(exc)))
 
-        t = threading.Thread(target=_exec_target, daemon=True)
-        t.start()
-        t.join(timeout=cls.EXECUTION_TIMEOUT)
-
-        if t.is_alive():
-            return ScriptResult(
-                error=f"Script timed out after {cls.EXECUTION_TIMEOUT}s"
+        try:
+            ctx = multiprocessing.get_context("spawn")
+            p = ctx.Process(
+                target=_exec_target,
+                args=(result_queue, code, globs, locs),
+                daemon=True,
             )
-        if error_container[0] is not None:
-            return ScriptResult(error=str(error_container[0]))
+            p.start()
+            p.join(timeout=cls.EXECUTION_TIMEOUT)
+
+            if p.is_alive():
+                # Forcefully terminate the runaway process
+                p.kill()
+                p.join(timeout=2.0)
+                return ScriptResult(
+                    error=f"Script timed out after {cls.EXECUTION_TIMEOUT}s"
+                )
+
+            if result_queue.empty():
+                return ScriptResult(error="Script process exited without producing a result")
+
+            status, payload = result_queue.get_nowait()
+            if status == "error":
+                return ScriptResult(error=payload)
+
+            new_env = payload
+        except (OSError, RuntimeError):
+            # Fallback to thread-based execution when multiprocessing is
+            # unavailable (e.g. frozen apps, restricted environments).
+            error_container: list = [None]
+
+            def _thread_exec() -> None:
+                try:
+                    exec(code, globs, locs)  # noqa: S102
+                except Exception as exc:  # noqa: BLE001
+                    error_container[0] = exc
+
+            t = threading.Thread(target=_thread_exec, daemon=True)
+            t.start()
+            t.join(timeout=cls.EXECUTION_TIMEOUT)
+
+            if t.is_alive():
+                return ScriptResult(
+                    error=f"Script timed out after {cls.EXECUTION_TIMEOUT}s"
+                )
+            if error_container[0] is not None:
+                return ScriptResult(error=str(error_container[0]))
+
+            new_env = locs.get("env", {})
 
         # Collect any new or changed env entries, coercing values to str
-        new_env: Dict[str, str] = locs.get("env", {})  # type: ignore[assignment]
         changed = {
             k: str(v)
             for k, v in new_env.items()

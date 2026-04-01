@@ -87,9 +87,21 @@ class PluginManager:
             logger.debug("Loading plugin module: %s", plugin_manifest.name)
             module = importlib.util.module_from_spec(spec)
             sys.modules[plugin_manifest.name] = module
-            spec.loader.exec_module(module)
+
+            # SECURITY: activate sandbox *before* exec_module so execution
+            # time limits are enforced from the very first statement.
+            sandbox.start_execution()
+            try:
+                spec.loader.exec_module(module)
+            except Exception:
+                sandbox.end_execution()
+                # Remove partially-loaded module to avoid poisoning sys.modules
+                sys.modules.pop(plugin_manifest.name, None)
+                raise
+            sandbox.end_execution()
 
             if not hasattr(module, "PluginClass"):
+                sys.modules.pop(plugin_manifest.name, None)
                 logger.error("Plugin does not define PluginClass: %s", plugin_manifest.name)
                 raise PluginError(f"Plugin must define 'PluginClass': {plugin_manifest.name}")
 
@@ -97,6 +109,7 @@ class PluginManager:
             plugin = plugin_class(self.context)
 
             if not isinstance(plugin, Plugin):
+                sys.modules.pop(plugin_manifest.name, None)
                 logger.error("PluginClass does not inherit from Plugin: %s", plugin_manifest.name)
                 raise PluginError(f"PluginClass must inherit from Plugin: {plugin_manifest.name}")
 

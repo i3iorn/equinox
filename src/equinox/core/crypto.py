@@ -2,6 +2,11 @@
 
 This module consolidates key file location, atomic creation, permission
 handling and Fernet construction so callers don't duplicate semantics.
+
+Fernet uses AES-128-CBC for encryption and HMAC-SHA256 for authentication.
+The 32-byte raw key is split by Fernet into a 16-byte signing key and a
+16-byte encryption key.  Despite the 256-bit input, the *AES* key size
+is 128 bits.
 """
 
 import os
