@@ -1,6 +1,5 @@
 """Environment management"""
 
-import json
 import logging
 import re
 from typing import List, Dict, Any, Optional
@@ -8,7 +7,6 @@ from typing import List, Dict, Any, Optional
 from equinox.storage.database import Database
 from equinox.core.exceptions import StorageError, ValidationError, SecurityError, DuplicateError
 from equinox.storage.utils import require_positive_int, validate_variable_key, validate_variable_value, safe_json_loads, safe_json_dumps
-from equinox.core.exceptions import SecurityError
 
 logger = logging.getLogger(__name__)
 
@@ -203,7 +201,7 @@ class EnvironmentManager:
             Same row dict with variables and secret_keys parsed as Python objects
         """
         row["variables"] = safe_json_loads(row.get("variables"), row_id=row.get("id"))
-        secret_keys = safe_json_loads(row.get("secret_keys") or "[]", row_id=row.get("id"))
+        secret_keys = safe_json_loads(row.get("secret_keys") or "[]", default=[], row_id=row.get("id"))
         if not isinstance(secret_keys, list):
             logger.error("Failed to parse secret_keys for environment %s", row.get("id"))
             secret_keys = []
@@ -301,7 +299,7 @@ class EnvironmentManager:
             try:
                 params.append(safe_json_dumps(validated_keys, max_len=10_000))
             except SecurityError:
-                params.append(json.dumps(validated_keys)[:10000])
+                raise SecurityError("Secret keys list too large") from None
 
         if not updates:
             logger.warning(f"No updates provided for environment {environment_id}")

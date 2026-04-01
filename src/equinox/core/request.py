@@ -55,7 +55,8 @@ class MultipartField(TypedDict):
 # Helpers
 # =========================================================
 
-VALID_METHODS = {"GET", "POST", "PUT", "DELETE", "PATCH", "HEAD", "OPTIONS"}
+# Canonical set lives in validation.py — import to keep a single source of truth.
+from equinox.core.validation import VALID_HTTP_METHODS as VALID_METHODS
 
 
 def _short(s: str, max_len: int = 60) -> str:

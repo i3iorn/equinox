@@ -1,12 +1,11 @@
 """OAuth2 client management — named, reusable OAuth2 credentials."""
 
-import json
 import logging
 from typing import Any, Dict, List, Optional
 
 from equinox.storage.database import Database
 from equinox.core.exceptions import StorageError, ValidationError, DuplicateError
-from equinox.storage.utils import require_str as _require_str, safe_json_loads
+from equinox.storage.utils import require_str as _require_str, safe_json_loads, safe_json_dumps
 
 logger = logging.getLogger(__name__)
 
@@ -79,7 +78,7 @@ class OAuthClientManager:
                 f"grant_type must be one of: {', '.join(GRANT_TYPES)}"
             )
 
-        extra_json = json.dumps(extra_params or {})
+        extra_json = safe_json_dumps(extra_params or {})
 
         try:
             row_id = self.db.insert(
@@ -172,7 +171,7 @@ class OAuthClientManager:
             params.append(grant_type)
         if extra_params is not None:
             updates.append("extra_params = ?")
-            params.append(json.dumps(extra_params))
+            params.append(safe_json_dumps(extra_params))
         if description is not None:
             updates.append("description = ?")
             params.append(self._validate_str(description, "description", self.MAX_DESC_LEN, required=False))

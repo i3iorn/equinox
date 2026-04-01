@@ -5,13 +5,11 @@ used by the percentile, anomaly, and drift analyzers.
 """
 
 import hashlib
-import json
 import logging
 from typing import Any, Dict, List, Optional
 
 from equinox.storage.database import Database
-from equinox.storage.utils import safe_json_loads, safe_json_dumps
-from equinox.core.exceptions import SecurityError
+from equinox.storage.utils import safe_json_dumps, safe_json_loads
 
 logger = logging.getLogger(__name__)
 
@@ -45,10 +43,7 @@ class ResponseIntelligenceManager:
         """Append a new timing sample and update aggregate stats."""
         existing = self.get_endpoint_stats(url_pattern, method)
         if existing is None:
-            try:
-                vals = safe_json_dumps([elapsed_ms], max_len=10_000)
-            except SecurityError:
-                vals = json.dumps([elapsed_ms])[:10000]
+            vals = safe_json_dumps([elapsed_ms], max_len=10_000)
             self.db.execute(
                 """INSERT INTO endpoint_stats
                    (url_pattern, method, call_count, total_elapsed,
@@ -64,7 +59,7 @@ class ResponseIntelligenceManager:
                 ),
             )
         else:
-            values = safe_json_loads(existing.get("elapsed_values") or "[]")
+            values = safe_json_loads(existing.get("elapsed_values") or "[]", default=[])
             if not isinstance(values, list):
                 values = []
             values.append(round(elapsed_ms, 2))
@@ -76,10 +71,7 @@ class ResponseIntelligenceManager:
             new_min = min(existing.get("min_elapsed") or elapsed_ms, elapsed_ms)
             new_max = max(existing.get("max_elapsed") or elapsed_ms, elapsed_ms)
 
-            try:
-                vals = safe_json_dumps(values, max_len=50_000)
-            except SecurityError:
-                vals = json.dumps(values)[:50000]
+            vals = safe_json_dumps(values, max_len=50_000)
             self.db.execute(
                 """UPDATE endpoint_stats
                    SET call_count = ?, total_elapsed = ?,
@@ -117,10 +109,7 @@ class ResponseIntelligenceManager:
         self, url_pattern: str, method: str, schema: Dict[str, str]
     ) -> None:
         """Insert or replace the schema fingerprint for an endpoint."""
-        try:
-            schema_json = safe_json_dumps(schema, max_len=200_000)
-        except SecurityError:
-            schema_json = json.dumps(schema, sort_keys=True)[:200000]
+        schema_json = safe_json_dumps(schema, max_len=200_000)
         schema_hash = hashlib.sha256(schema_json.encode()).hexdigest()[:16]
 
         existing = self.db.fetchall(

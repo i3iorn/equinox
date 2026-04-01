@@ -150,58 +150,10 @@ class PostmanImporter:
                     except Exception:
                         logger.debug("Failed to add collection variable %s", var_name, exc_info=True)
 
-                # Insert requests
-                coll = self.collection_manager
+                # Insert requests via the manager's centralised method
                 for request in requests:
-                    req_name = coll._resolve_request_name(request.name or f"{request.method} {request.url}")
-                    auth_type, auth_data = None, None
-                    captures_json = coll._serialize_list_field(getattr(request, 'captures', None), max_len=50_000)
-                    assertions_json = coll._serialize_list_field(getattr(request, 'assertions', None), max_len=50_000)
-                    headers_json = coll._serialize_json_field(getattr(request, 'headers', None), max_len=100_000, default="{}")
-                    # params may be provided as params_list or params dict
-                    try:
-                        from equinox.storage.collections.manager import _params_to_json
-
-                        params_json = _params_to_json(request)
-                    except Exception:
-                        params_json = "[]"
-                    path_params_json = coll._serialize_json_field(getattr(request, 'path_params', None), max_len=50_000, default="{}")
-                    timeout = getattr(request, 'timeout', None) or coll.DEFAULT_TIMEOUT
-                    verify_ssl = int(getattr(request, 'verify_ssl', True))
-                    follow_redirects = int(getattr(request, 'follow_redirects', True))
-                    sql = """
-                    INSERT INTO requests
-                    (collection_id, name, description, method, url, headers, params, body,
-                     auth_type, auth_data, captures, assertions, pre_script, post_script,
-                     cert_path, cert_key_path, folder, timeout, verify_ssl, follow_redirects,
-                     path_params)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                    """
-                    tx.insert(
-                        sql,
-                        (
-                            col_id,
-                            req_name,
-                            request.description or "",
-                            request.method,
-                            request.url,
-                            headers_json,
-                            params_json,
-                            request.body,
-                            auth_type,
-                            auth_data,
-                            captures_json,
-                            assertions_json,
-                            getattr(request, 'pre_script', '') or '',
-                            getattr(request, 'post_script', '') or '',
-                            getattr(request, 'cert_path', None),
-                            getattr(request, 'cert_key_path', None),
-                            getattr(request, 'folder', None),
-                            timeout,
-                            verify_ssl,
-                            follow_redirects,
-                            path_params_json,
-                        ),
+                    self.collection_manager.insert_request_row(
+                        request, col_id, tx=tx,
                     )
         except Exception as exc:
             logger.error("Failed to import Postman collection transactionally: %s", exc, exc_info=True)

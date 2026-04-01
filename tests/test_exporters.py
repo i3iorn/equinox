@@ -1,13 +1,15 @@
 ﻿import json, pytest, platform
 from unittest.mock import patch, MagicMock
 from equinox.importers.exporters import (
-    CurlExporter, PostmanExporter, OpenAPIExporter, InsomniaExporter, HARExporter,
-    _safe_json_parse, _decode_body, _get_iso_timestamp, _parse_url_safe, _write_json_file
+    CurlExporter, PostmanExporter, OpenAPIExporter, InsomniaExporter, HARExporter, _get_iso_timestamp, _parse_url_safe,
+    _write_json_file, _json_to_dict
 )
 from equinox.core.request import Request, Response
 from equinox.core.exceptions import ValidationError
 from equinox.storage.database import Database
 from equinox.storage.collections import CollectionManager
+from equinox.storage.utils import coerce_body_to_str
+
 
 @pytest.fixture
 def db(tmp_path):
@@ -32,47 +34,47 @@ def populated_db(db):
 class TestUtilityFunctions:
     """Test utility functions for safe parsing, encoding, and timestamp handling."""
     
-    def test_safe_json_parse_valid(self):
+    def test_json_to_dict_valid(self):
         """Improvement #9: Safe JSON parsing with valid input."""
-        result = _safe_json_parse('{"key": "value"}')
+        result = _json_to_dict('{"key": "value"}')
         assert result == {"key": "value"}
     
-    def test_safe_json_parse_invalid_with_default(self):
+    def test_json_to_dict_invalid_with_default(self):
         """Improvement #9: Fallback to default on invalid JSON."""
-        result = _safe_json_parse('invalid json', default={"fallback": "value"})
+        result = _json_to_dict('invalid json', default={"fallback": "value"})
         assert result == {"fallback": "value"}
     
-    def test_safe_json_parse_empty_string(self):
+    def test_json_to_dict_empty_string(self):
         """Improvement #9: Handle empty JSON string."""
-        result = _safe_json_parse('', default={"empty": True})
+        result = _json_to_dict('', default={"empty": True})
         assert result == {"empty": True}
     
-    def test_safe_json_parse_malformed(self):
+    def test_json_to_dict_malformed(self):
         """Improvement #9: Handle malformed JSON gracefully."""
-        result = _safe_json_parse('{key": "value}', default={})
+        result = _json_to_dict('{key": "value}', default={})
         assert result == {}
     
-    def test_decode_body_bytes(self):
+    def testcoerce_body_to_str_bytes(self):
         """Improvement #7: Decode bytes body consistently."""
         body = b"test response"
-        result = _decode_body(body)
+        result = coerce_body_to_str(body)
         assert result == "test response"
     
-    def test_decode_body_string(self):
+    def testcoerce_body_to_str_string(self):
         """Improvement #7: Handle string body."""
         body = "test response"
-        result = _decode_body(body)
+        result = coerce_body_to_str(body)
         assert result == "test response"
     
-    def test_decode_body_none(self):
+    def testcoerce_body_to_str_none(self):
         """Improvement #7: Handle None body."""
-        result = _decode_body(None)
+        result = coerce_body_to_str(None)
         assert result == ""
     
-    def test_decode_body_utf8_with_replacements(self):
+    def testcoerce_body_to_str_utf8_with_replacements(self):
         """Improvement #7: Handle invalid UTF-8 gracefully."""
         body = b"\xff\xfe invalid utf-8"
-        result = _decode_body(body)
+        result = coerce_body_to_str(body)
         assert isinstance(result, str)
         assert len(result) > 0
     

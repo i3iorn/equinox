@@ -1,9 +1,12 @@
 """Shared validation utilities for storage managers."""
 
 import json
-from typing import Any, Optional, Dict
+import logging
+from typing import Any, Optional
 
 from equinox.core.exceptions import ValidationError
+
+logger = logging.getLogger(__name__)
 
 
 def require_positive_int(value, label: str) -> None:
@@ -78,8 +81,10 @@ def require_str(value, field: str, max_len: int, required: bool = True) -> str:
     return value
 
 
-# Additional helpers used by storage modules for consistent JSON and body handling
-def _coerce_body_to_str(body: Any, strict: bool = False) -> Optional[str]:
+# ── JSON helpers ───────────────────────────────────────────────────────────
+
+
+def coerce_body_to_str(body: Any, strict: bool = False) -> Optional[str]:
     """Coerce bytes/str/other body to a string suitable for indexing and matching.
 
     Returns None when body is None. If strict=True then decoding errors raise;
@@ -106,50 +111,66 @@ def _coerce_body_to_str(body: Any, strict: bool = False) -> Optional[str]:
         return ""
 
 
-def _safe_json_dumps(obj: Any, *, max_len: int) -> str:
-    """Serialize to JSON and enforce a maximum byte-length.
+def safe_json_dumps(
+    obj: Any,
+    *,
+    max_len: Optional[int] = None,
+    indent: Optional[int] = None,
+    ensure_ascii: bool = True,
+    sort_keys: bool = False,
+) -> str:
+    """Serialize *obj* to a JSON string with optional safety limits.
 
-    Raises SecurityError if the resulting JSON exceeds max_len.
+    Args:
+        obj: Object to serialize.
+        max_len: If set, raise :class:`~equinox.core.exceptions.SecurityError`
+            when the resulting string exceeds this length.
+        indent: JSON indentation level (``None`` for compact output).
+        ensure_ascii: Escape non-ASCII characters (default ``True``).
+        sort_keys: Sort dictionary keys in the output.
+
+    Returns:
+        JSON string.
+
+    Raises:
+        SecurityError: If *max_len* is set and the output exceeds it.
     """
-    s = json.dumps(obj)
-    if len(s) > max_len:
+    s = json.dumps(obj, indent=indent, ensure_ascii=ensure_ascii, sort_keys=sort_keys)
+    if max_len is not None and len(s) > max_len:
         from equinox.core.exceptions import SecurityError as _SE
 
         raise _SE(f"JSON serialization exceeds {max_len} bytes")
     return s
 
 
-def _safe_json_loads(s: Optional[str], *, row_id: Optional[int] = None) -> Dict[str, Any]:
-    """Safely parse JSON string to dict. Logs parsing errors and returns {} on failure.
+def safe_json_loads(
+    s: Optional[str],
+    *,
+    default: Any = None,
+    row_id: Optional[int] = None,
+) -> Any:
+    """Safely parse a JSON string, returning *default* on failure.
 
-    If row_id is provided, the parse error is logged with context.
+    Args:
+        s: JSON string to parse (``None`` and empty strings return *default*).
+        default: Value to return when *s* is empty/None or cannot be parsed.
+            Defaults to ``None``; callers should pass ``{}``, ``[]``, etc. as
+            appropriate for the column type.
+        row_id: If provided, parse errors are logged at ERROR level with this
+            context; otherwise they are logged at DEBUG level.
+
+    Returns:
+        Parsed JSON value, or *default* on failure.
     """
+    if default is None:
+        default = {}
     if not s:
-        return {}
+        return default
     try:
         return json.loads(s)
     except (json.JSONDecodeError, TypeError) as exc:
-        import logging
-
-        logger = logging.getLogger(__name__)
         if row_id is not None:
-            logger.error("Failed to parse JSON for history %s: %s", row_id, exc)
+            logger.error("Failed to parse JSON for row %s: %s", row_id, exc)
         else:
             logger.debug("Failed to parse JSON: %s", exc)
-        return {}
-
-
-# Public aliases (preferred by external modules). Keep the internal
-# underscore-prefixed names for backwards compatibility with older imports.
-def coerce_body_to_str(body: Any, strict: bool = False) -> Optional[str]:
-    return _coerce_body_to_str(body, strict=strict)
-
-
-def safe_json_dumps(obj: Any, *, max_len: int) -> str:
-    return _safe_json_dumps(obj, max_len=max_len)
-
-
-def safe_json_loads(s: Optional[str], *, row_id: Optional[int] = None) -> Dict[str, Any]:
-    return _safe_json_loads(s, row_id=row_id)
-
-
+        return default

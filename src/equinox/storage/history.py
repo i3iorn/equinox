@@ -1,6 +1,5 @@
 """Request history management"""
 
-import json
 import logging
 import hashlib
 import re
@@ -442,8 +441,8 @@ class HistoryManager:
             )
         except SecurityError:
             logger.warning("Response headers too large, storing truncated version")
-            # Fallback: best-effort truncated representation
-            response_headers_json = json.dumps(sanitized_response_headers)[: self.MAX_HEADERS_SIZE] + "..."
+            # Best-effort truncated representation
+            response_headers_json = safe_json_dumps(sanitized_response_headers)[:self.MAX_HEADERS_SIZE] + "..."
 
         response_body = self._decode_body(response.body)
         response_body = self._prepare_body(response_body)

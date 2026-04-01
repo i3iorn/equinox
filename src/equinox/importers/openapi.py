@@ -11,15 +11,13 @@ import re
 import yaml
 import logging
 from dataclasses import dataclass, field
-from typing import Dict, Any, List, Optional, Tuple
+from typing import Dict, Any, List, Optional
 from pathlib import Path
 
 from equinox.core.request import Request
 from equinox.core.exceptions import ValidationError, SecurityError
 from equinox.core.validation import Validator
 from equinox.storage.collections import CollectionManager
-from equinox.storage.collections.manager import _params_to_json
-from equinox.storage.utils import safe_json_loads
 
 logger = logging.getLogger(__name__)
 
@@ -426,51 +424,8 @@ class OpenAPIImporter:
             try:
                 with self.collection_manager.db.transaction() as tx:
                     for request in ops:
-                        coll = self.collection_manager
-                        coll_id = collection_id
-                        req_name = coll._resolve_request_name(request.name or f"{request.method} {request.url}")
-                        auth_type, auth_data = None, None
-                        captures_json = coll._serialize_list_field(getattr(request, 'captures', None), max_len=50_000)
-                        assertions_json = coll._serialize_list_field(getattr(request, 'assertions', None), max_len=50_000)
-                        headers_json = coll._serialize_json_field(getattr(request, 'headers', None), max_len=100_000, default="{}")
-                        params_json = _params_to_json(request)
-                        path_params_json = coll._serialize_json_field(getattr(request, 'path_params', None), max_len=50_000, default="{}")
-                        timeout = getattr(request, 'timeout', None) or coll.DEFAULT_TIMEOUT
-                        verify_ssl = int(getattr(request, 'verify_ssl', True))
-                        follow_redirects = int(getattr(request, 'follow_redirects', True))
-                        sql = """
-                        INSERT INTO requests
-                        (collection_id, name, description, method, url, headers, params, body,
-                         auth_type, auth_data, captures, assertions, pre_script, post_script,
-                         cert_path, cert_key_path, folder, timeout, verify_ssl, follow_redirects,
-                         path_params)
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                        """
-                        tx.insert(
-                            sql,
-                            (
-                                coll_id,
-                                req_name,
-                                request.description or "",
-                                request.method,
-                                request.url,
-                                headers_json,
-                                params_json,
-                                request.body,
-                                auth_type,
-                                auth_data,
-                                captures_json,
-                                assertions_json,
-                                getattr(request, 'pre_script', '') or '',
-                                getattr(request, 'post_script', '') or '',
-                                getattr(request, 'cert_path', None),
-                                getattr(request, 'cert_key_path', None),
-                                getattr(request, 'folder', None),
-                                timeout,
-                                verify_ssl,
-                                follow_redirects,
-                                path_params_json,
-                            ),
+                        self.collection_manager.insert_request_row(
+                            request, collection_id, tx=tx,
                         )
                         count += 1
             except Exception as exc:

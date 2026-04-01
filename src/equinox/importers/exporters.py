@@ -1,4 +1,4 @@
-"""Export functionality for collections, requests, and responses.
+﻿"""Export functionality for collections, requests, and responses.
 
 Supports multiple export formats:
 - Postman Collection Format (v2.1)
@@ -38,51 +38,28 @@ from equinox.core.exceptions import ValidationError
 from equinox.core.redact import redact_headers
 from equinox.core.validation import Validator
 from equinox.core import urls
+from equinox.storage.utils import safe_json_loads, coerce_body_to_str
 
 logger = logging.getLogger(__name__)
 
 
-# ============================================================================
-# UTILITY FUNCTIONS (Improvements #6, #7, #8, #9, #12)
-# ============================================================================
+def _json_to_dict(raw: str, default: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    """Parse JSON string to dict, handling both dict and list (params_list) formats.
 
-def _safe_json_parse(data: str, default: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
-    """Parse JSON with fallback to default. (Improvement #9)
-    
-    Args:
-        data: JSON string to parse
-        default: Default dict if parsing fails
-        
-    Returns:
-        Parsed dict or default
+    Delegates to the canonical :func:`~equinox.storage.utils.safe_json_loads`
+    for actual JSON parsing.  When the stored value is a list (params_list
+    format with ``{key, value, enabled}`` objects) it is converted to a plain
+    ``{key: value}`` dict for export use.
     """
-    if default is None:
-        default = {}
-    try:
-        result = json.loads(data) if data else default
-        # If result is a list (params_list format), convert to dict
-        if isinstance(result, list):
-            return {item.get("key", ""): item.get("value", "") for item in result if isinstance(item, dict)}
-        return result if isinstance(result, dict) else default
-    except (json.JSONDecodeError, TypeError) as e:
-        logger.warning(f"Failed to parse JSON: {data!r} — {e}")
-        return default
-
-
-def _decode_body(body: Optional[bytes | str]) -> str:
-    """Safely decode body to string. (Improvement #7)
-    
-    Args:
-        body: Response body (bytes or str)
-        
-    Returns:
-        Decoded string
-    """
-    if body is None:
-        return ""
-    if isinstance(body, bytes):
-        return body.decode('utf-8', errors='replace')
-    return str(body)
+    default = default or {}
+    parsed = safe_json_loads(raw, default=default)
+    if isinstance(parsed, list):
+        return {
+            item.get("key", ""): item.get("value", "")
+            for item in parsed
+            if isinstance(item, dict)
+        }
+    return parsed if isinstance(parsed, dict) else default
 
 
 def _get_iso_timestamp(dt: Optional[datetime] = None) -> str:
@@ -195,7 +172,7 @@ class CurlExporter:
 
         curl_cmd = ["curl", "-X", request.method]
 
-        # Add headers — redact sensitive values so exports are safe to share
+        # Add headers â€” redact sensitive values so exports are safe to share
         if request.headers:
             safe_headers = redact_headers(request.headers)
             for key, value in safe_headers.items():
@@ -205,7 +182,7 @@ class CurlExporter:
         if request.body:
             curl_cmd.append(f"-d {CurlExporter._shell_quote(request.body)}")
 
-        # Add query params — expand placeholders first for preview
+        # Add query params â€” expand placeholders first for preview
         base_url = urls.expand_placeholders(request.url, getattr(request, "path_params", None) or None)
         if request.params:
             param_str = "&".join(f"{k}={v}" for k, v in request.params.items())
@@ -301,9 +278,9 @@ class PostmanExporter:
 
             for req in requests:
                 # Safe JSON parsing (Improvement #9)
-                headers = _safe_json_parse(req.get("headers", "{}"))
-                params = _safe_json_parse(req.get("params", "{}"))
-                path_params = _safe_json_parse(req.get("path_params", "{}"))  # Improvement #5
+                headers = _json_to_dict(req.get("headers", "{}"))
+                params = _json_to_dict(req.get("params", "{}"))
+                path_params = _json_to_dict(req.get("path_params", "{}"))  # Improvement #5
                 auth_data = req.get("auth")
                 
                 # Parse URL safely after expanding placeholders (Improvement #3)
@@ -343,7 +320,7 @@ class PostmanExporter:
                 # Add auth if present (Improvement #4)
                 if auth_data:
                     try:
-                        auth_obj = _safe_json_parse(auth_data)
+                        auth_obj = _json_to_dict(auth_data)
                         auth_export = PostmanExporter._export_auth(auth_obj)
                         if auth_export:
                             item["request"]["auth"] = auth_export
@@ -491,9 +468,9 @@ class OpenAPIExporter:
                 path = parsed.path or "/"
 
                 # Safe JSON parsing (Improvement #9)
-                headers = _safe_json_parse(req.get("headers", "{}"))
-                params = _safe_json_parse(req.get("params", "{}"))
-                path_params = _safe_json_parse(req.get("path_params", "{}"))  # Improvement #5
+                headers = _json_to_dict(req.get("headers", "{}"))
+                params = _json_to_dict(req.get("params", "{}"))
+                path_params = _json_to_dict(req.get("path_params", "{}"))  # Improvement #5
                 auth_data = req.get("auth")
 
                 if path not in paths:
@@ -546,7 +523,7 @@ class OpenAPIExporter:
                 # Add auth to operation if present (Improvement #4)
                 if auth_data:
                     try:
-                        auth_obj = _safe_json_parse(auth_data)
+                        auth_obj = _json_to_dict(auth_data)
                         auth_type = auth_obj.get("type", "").lower()
                         if auth_type:
                             operation["security"] = [{auth_type: []}]
@@ -560,7 +537,7 @@ class OpenAPIExporter:
                 auth_data = req.get("auth")
                 if auth_data:
                     try:
-                        auth_obj = _safe_json_parse(auth_data)
+                        auth_obj = _json_to_dict(auth_data)
                         auth_type = auth_obj.get("type", "").lower()
                         if auth_type and auth_type not in security_schemes:
                             scheme = OpenAPIExporter._export_openapi_auth(auth_obj)
@@ -628,7 +605,7 @@ class HARExporter:
         safe_resp_headers = redact_headers(dict(response.headers) if response.headers else {})
         
         # Consistent body encoding (Improvement #7)
-        resp_body = _decode_body(response.body) if response.body else ""
+        resp_body = coerce_body_to_str(response.body) if response.body else ""
 
         req_content_type = (request.headers or {}).get("Content-Type", "application/x-www-form-urlencoded") if request.headers else "application/x-www-form-urlencoded"
 
@@ -667,7 +644,7 @@ class HARExporter:
                 "content": {
                     "size": len(response.body) if response.body else 0,
                     "mimeType": (response.headers or {}).get("Content-Type", "application/octet-stream") if response.headers else "application/octet-stream",
-                    "text": resp_body  # Uses consistent _decode_body (Improvement #7)
+                    "text": resp_body  # Uses canonical coerce_body_to_str (Improvement #7)
                 },
                 "redirectURL": (response.headers or {}).get("Location", "") if response.headers else "",
                 "headersSize": sum(len(f"{k}: {v}\r\n") for k, v in safe_resp_headers.items()),
@@ -759,8 +736,8 @@ class InsomniaExporter:
 
             for idx, req in enumerate(requests):
                 # Safe JSON parsing (Improvement #9)
-                headers = _safe_json_parse(req.get("headers", "{}"))
-                params = _safe_json_parse(req.get("params", "{}"))
+                headers = _json_to_dict(req.get("headers", "{}"))
+                params = _json_to_dict(req.get("params", "{}"))
                 
                 # Content-Type inference (Improvement #11)
                 content_type = headers.get("Content-Type", "application/json")

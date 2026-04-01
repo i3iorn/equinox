@@ -24,6 +24,14 @@ _logger = logging.getLogger(__name__)
 # A single-worker pool avoids creating/tearing down threads on every call.
 _dns_pool: Optional[concurrent.futures.ThreadPoolExecutor] = None
 
+# Canonical set of allowed HTTP methods — referenced by both
+# ``Request.__post_init__`` and ``Validator.validate_method`` so there
+# is a single source of truth.
+VALID_HTTP_METHODS = frozenset({
+    'GET', 'POST', 'PUT', 'PATCH', 'DELETE',
+    'HEAD', 'OPTIONS', 'TRACE', 'CONNECT',
+})
+
 
 def _get_dns_pool() -> concurrent.futures.ThreadPoolExecutor:
     """Return a shared single-worker thread pool for DNS lookups."""
@@ -570,12 +578,7 @@ class Validator:
 
         method = method.upper().strip()
 
-        valid_methods = {
-            'GET', 'POST', 'PUT', 'PATCH', 'DELETE',
-            'HEAD', 'OPTIONS', 'TRACE', 'CONNECT'
-        }
-
-        if method not in valid_methods:
+        if method not in VALID_HTTP_METHODS:
             raise ValidationError(f"Invalid HTTP method: {method}")
 
         return method
