@@ -312,7 +312,9 @@ class RequestPanel(_RequestSendMixin, _RequestAuthMixin, RequestBodyMixin, QWidg
         completer.setFilterMode(Qt.MatchFlag.MatchContains)
         completer.setMaxVisibleItems(12)
         self.url_input.setCompleter(completer)
-        self._refresh_url_completer()
+        # Defer the DB fetch so it doesn't block the main thread during window init.
+        from PyQt6.QtCore import QTimer
+        QTimer.singleShot(0, self._refresh_url_completer)
 
     def _refresh_url_completer(self) -> None:
         """Populate the completer model from recent history URLs."""
