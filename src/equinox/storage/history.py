@@ -329,20 +329,20 @@ class HistoryManager:
         return rows
 
     def get_stats(self) -> Dict[str, Any]:
-        """Return aggregate history statistics."""
-        total = self.db.fetchone("SELECT COUNT(*) as count FROM history")
-        successful = self.db.fetchone(
-            "SELECT COUNT(*) as count FROM history "
-            "WHERE status_code IS NOT NULL AND status_code < 400"
-        )
-        failed = self.db.fetchone(
-            "SELECT COUNT(*) as count FROM history "
-            "WHERE status_code >= 400 OR error IS NOT NULL"
+        """Return aggregate history statistics (single DB round-trip)."""
+        row = self.db.fetchone(
+            "SELECT "
+            "  COUNT(*)                                              AS total, "
+            "  SUM(CASE WHEN status_code IS NOT NULL "
+            "           AND status_code < 400 THEN 1 ELSE 0 END)   AS successful, "
+            "  SUM(CASE WHEN status_code >= 400 "
+            "           OR error IS NOT NULL   THEN 1 ELSE 0 END)   AS failed "
+            "FROM history"
         )
         return {
-            "total": total["count"] if total else 0,
-            "successful": successful["count"] if successful else 0,
-            "failed": failed["count"] if failed else 0,
+            "total":      row["total"]      if row else 0,
+            "successful": row["successful"] if row else 0,
+            "failed":     row["failed"]     if row else 0,
         }
 
     # ── save_history helpers ──────────────────────────────────────────────────
@@ -523,36 +523,23 @@ class HistoryManager:
     @staticmethod
     def _validate_iso_timestamp(timestamp: str, label: str) -> None:
         """Validate that a timestamp string is in ISO-8601 format.
-        
+
         Raises:
             ValidationError: If the timestamp is not in valid ISO-8601 format
         """
         if not isinstance(timestamp, str):
             raise ValidationError(f"{label} must be a string")
-        
-        # Allow common ISO-8601 formats:
-        # - 2026-03-23
-        # - 2026-03-23T16:20:00
-        # - 2026-03-23T16:20:00Z
-        # - 2026-03-23T16:20:00+00:00
-        import datetime
-        formats = [
-            "%Y-%m-%d",
-            "%Y-%m-%dT%H:%M:%S",
-            "%Y-%m-%dT%H:%M:%SZ",
-            "%Y-%m-%dT%H:%M:%S%z",
-        ]
-        
-        for fmt in formats:
-            try:
-                datetime.datetime.strptime(timestamp, fmt)
-                return
-            except ValueError:
-                continue
-        
-        raise ValidationError(
-            f"{label} must be in ISO-8601 format (e.g., 2026-03-23T16:20:00Z)"
-        )
+
+        # Strip a trailing Z so fromisoformat() handles UTC-zulu notation
+        # (Python < 3.11 doesn't recognise the Z suffix natively).
+        normalised = timestamp.rstrip("Z")
+        try:
+            from datetime import datetime as _dt
+            _dt.fromisoformat(normalised)
+        except ValueError:
+            raise ValidationError(
+                f"{label} must be in ISO-8601 format (e.g., 2026-03-23T16:20:00Z)"
+            )
 
     def _escape_like(self, text: str) -> str:
         r"""Escape SQL LIKE metacharacters (``%``, ``_``, ``\``) so they

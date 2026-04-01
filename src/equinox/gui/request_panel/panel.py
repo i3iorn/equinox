@@ -114,6 +114,8 @@ class RequestPanel(_RequestSendMixin, _RequestAuthMixin, RequestBodyMixin, QWidg
         logger.debug("RequestPanel.__init__ starting")
         self.db = db
         self._cookie_manager: Optional[CookieManager] = cookie_manager
+
+        self._collection_mgr: CollectionManager = CollectionManager(db)
         self.current_request: Optional[Request] = None
         self._auth = None
         self._inherited_auth = None
@@ -178,7 +180,7 @@ class RequestPanel(_RequestSendMixin, _RequestAuthMixin, RequestBodyMixin, QWidg
             return
         try:
             start = time.time()
-            mgr = CollectionManager(self.db)
+            mgr = self._collection_mgr
             updated = Request(
                 method=self.method_combo.currentText(),
                 url=self.url_input.text().strip(),
@@ -1175,7 +1177,7 @@ class RequestPanel(_RequestSendMixin, _RequestAuthMixin, RequestBodyMixin, QWidg
 
         try:
             start = time.time()
-            mgr = CollectionManager(self.db)
+            mgr = self._collection_mgr
             request = Request(
                 method=method, url=url, headers=headers,
                 params=params, params_list=params_list,

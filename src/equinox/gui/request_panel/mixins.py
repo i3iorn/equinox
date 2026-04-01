@@ -133,9 +133,7 @@ class _RequestSendMixin:
         # These override environment variables but are overridden by OS env / session.
         if self.current_request and self.current_request.collection_id:
             try:
-                from equinox.storage import CollectionManager
-                col_mgr = CollectionManager(self.db)
-                col_vars = col_mgr.get_all_collection_variables(
+                col_vars = self._collection_mgr.get_all_collection_variables(
                     self.current_request.collection_id
                 )
                 variables.update(col_vars)
@@ -209,8 +207,7 @@ class _RequestSendMixin:
         inherited_source = None
         if effective_auth is None and self.current_request and self.current_request.collection_id:
             try:
-                from equinox.storage import CollectionManager
-                collection_manager = CollectionManager(self.db)
+                collection_manager = self._collection_mgr
                 # Build a lightweight probe with no auth so that
                 # resolve_effective_auth walks the full hierarchy
                 # (folder → collection) instead of short-circuiting
@@ -566,8 +563,7 @@ class _RequestSendMixin:
         if not auth.access_token:
             return
         try:
-            from equinox.storage import CollectionManager
-            mgr = CollectionManager(self.db)
+            mgr = self._collection_mgr
             req = self.current_request
             if not req or not req.collection_id:
                 return
@@ -604,8 +600,7 @@ class _RequestSendMixin:
         if not req or not getattr(req, "id", None):
             return
         try:
-            from equinox.storage import CollectionManager
-            mgr = CollectionManager(self.db)
+            mgr = self._collection_mgr
             mgr.update_request_auth(req.id, self._auth)
             logger.debug("Persisted own-auth OAuth2 token for request %d", req.id)
         except Exception as exc:
@@ -655,8 +650,7 @@ class _RequestAuthMixin:
         if not req or not req.collection_id:
             return
         try:
-            from equinox.storage import CollectionManager
-            mgr = CollectionManager(self.db)
+            mgr = self._collection_mgr
             if source == "collection":
                 mgr.set_collection_auth(req.collection_id, auth)
             elif source.startswith("folder:"):
@@ -795,8 +789,7 @@ class _RequestAuthMixin:
         self._inherited_auth_source = None
         if self.current_request and getattr(self.current_request, "collection_id", None):
             try:
-                from equinox.storage import CollectionManager
-                mgr = CollectionManager(self.db)
+                mgr = self._collection_mgr
                 probe = Request(
                     method="GET", url="",
                     collection_id=self.current_request.collection_id,
