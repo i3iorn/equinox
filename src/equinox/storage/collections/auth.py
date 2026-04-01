@@ -149,6 +149,9 @@ class CollectionAuthMixin:
         2. The request's folder auth, then each parent folder up to root.
         3. The collection's auth.
 
+        Uses a single UNION query to fetch all candidate rows in one round-trip
+        instead of issuing one query per folder-path segment.
+
         Returns:
             A 2-tuple ``(auth_object, source_label)`` where *source_label*
             is ``"request"``, ``"folder:<path>"``, or ``"collection"``
@@ -161,17 +164,56 @@ class CollectionAuthMixin:
         if not collection_id:
             return None, None
 
+        # Build ancestor list deepest-first (e.g. "A/B/C" → ["A/B/C", "A/B", "A"])
+        ancestors: list = []
         folder = request.folder
         if folder:
             parts = folder.split("/")
             for depth in range(len(parts), 0, -1):
-                ancestor = "/".join(parts[:depth])
-                auth = self.get_folder_auth(collection_id, ancestor)
+                ancestors.append("/".join(parts[:depth]))
+
+        # Single UNION query: fetch all matching folder rows + the collection row.
+        if ancestors:
+            placeholders = ",".join("?" * len(ancestors))
+            query = (
+                f"SELECT 'folder' AS source, path, auth_type, auth_data "
+                f"FROM collection_folders "
+                f"WHERE collection_id=? AND path IN ({placeholders}) "
+                f"AND auth_type IS NOT NULL "
+                f"UNION ALL "
+                f"SELECT 'collection' AS source, NULL AS path, auth_type, auth_data "
+                f"FROM collections "
+                f"WHERE id=? AND auth_type IS NOT NULL"
+            )
+            rows = self.db.fetchall(query, (collection_id, *ancestors, collection_id))
+        else:
+            rows = self.db.fetchall(
+                "SELECT 'collection' AS source, NULL AS path, auth_type, auth_data "
+                "FROM collections WHERE id=? AND auth_type IS NOT NULL",
+                (collection_id,),
+            )
+
+        if not rows:
+            return None, None
+
+        # Index folder rows by path for O(1) lookup
+        folder_rows = {r["path"]: r for r in rows if r["source"] == "folder"}
+        collection_row = next((r for r in rows if r["source"] == "collection"), None)
+
+        # Return deepest matching folder auth first
+        for ancestor in ancestors:
+            row = folder_rows.get(ancestor)
+            if row:
+                auth = self._deserialize_auth(row["auth_type"], row["auth_data"])
                 if auth is not None:
                     return auth, f"folder:{ancestor}"
 
-        auth = self.get_collection_auth(collection_id)
-        if auth is not None:
-            return auth, "collection"
+        # Fall back to collection auth
+        if collection_row:
+            auth = self._deserialize_auth(
+                collection_row["auth_type"], collection_row["auth_data"]
+            )
+            if auth is not None:
+                return auth, "collection"
 
         return None, None
