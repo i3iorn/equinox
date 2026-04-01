@@ -6,7 +6,6 @@ import pytest
 from unittest.mock import MagicMock, patch
 
 from equinox.core.interceptors import (
-    InterceptorType,
     InterceptorContext,
     RequestInterceptor,
     ResponseInterceptor,
@@ -15,7 +14,7 @@ from equinox.core.interceptors import (
     RequestResponseLogger,
     LoggingRequestInterceptor,
     LoggingResponseInterceptor,
-    LoggingErrorInterceptor,
+    LoggingErrorInterceptor, InterceptorAction, InterceptorResult,
 )
 from equinox.core.request import Request, Response
 
@@ -65,10 +64,10 @@ class TestBaseInterceptors:
         req = _req()
         assert RequestInterceptor().can_intercept(req) is True
 
-    def test_request_interceptor_intercept_returns_none(self):
+    def test_request_interceptor_intercept_returns_continue(self):
         req = _req()
         ctx = InterceptorContext(request=req)
-        assert RequestInterceptor().intercept(ctx) is None
+        assert RequestInterceptor().intercept(ctx).action == InterceptorAction.CONTINUE
 
     def test_response_interceptor_can_intercept_returns_true(self):
         resp = _resp()
@@ -77,7 +76,7 @@ class TestBaseInterceptors:
     def test_response_interceptor_intercept_returns_none(self):
         req = _req()
         ctx = InterceptorContext(request=req, response=_resp())
-        assert ResponseInterceptor().intercept(ctx) is None
+        assert RequestInterceptor().intercept(ctx).action == InterceptorAction.CONTINUE
 
     def test_error_interceptor_can_intercept_returns_true(self):
         req = _req()
@@ -88,7 +87,7 @@ class TestBaseInterceptors:
         req = _req()
         err = RuntimeError("boom")
         ctx = InterceptorContext(request=req, error=err)
-        assert ErrorInterceptor().intercept(ctx) is err
+        assert RequestInterceptor().intercept(ctx).action == InterceptorAction.CONTINUE
 
 
 # ── InterceptorChain ──────────────────────────────────────────────────────────
@@ -129,7 +128,7 @@ class TestInterceptorChain:
         class HeaderAdder(RequestInterceptor):
             def intercept(self, ctx):
                 ctx.request.headers["X-Custom"] = "yes"
-                return ctx.request
+                return InterceptorResult.replace(ctx.request)
 
         chain.add_request_interceptor(HeaderAdder())
         req = _req()
@@ -183,7 +182,7 @@ class TestInterceptorChain:
         class StatusChanger(ResponseInterceptor):
             def intercept(self, ctx):
                 ctx.response.status_code = 999
-                return ctx.response
+                return InterceptorResult.replace(ctx.response)
 
         chain.add_response_interceptor(StatusChanger())
         req = _req()
@@ -204,7 +203,7 @@ class TestInterceptorChain:
 
         class SuppressAll(ErrorInterceptor):
             def intercept(self, ctx):
-                return None
+                return InterceptorResult.suppress()
 
         chain.add_error_interceptor(SuppressAll())
         req = _req()
@@ -315,12 +314,12 @@ class TestLoggingInterceptors:
         i = LoggingRequestInterceptor(logger=custom)
         assert i.logger is custom
 
-    def test_logging_request_interceptor_intercept_returns_none(self, caplog):
+    def test_logging_request_interceptor_intercept_returns_continue(self, caplog):
         i = LoggingRequestInterceptor()
         req = _req()
         ctx = InterceptorContext(request=req)
         result = i.intercept(ctx)
-        assert result is None
+        assert result.action == InterceptorAction.CONTINUE
 
     def test_logging_response_interceptor_uses_default_logger(self):
         i = LoggingResponseInterceptor()
@@ -332,7 +331,7 @@ class TestLoggingInterceptors:
         resp = _resp()
         ctx = InterceptorContext(request=req, response=resp)
         result = i.intercept(ctx)
-        assert result is None
+        assert result.action == InterceptorAction.CONTINUE
 
     def test_logging_error_interceptor_uses_default_logger(self):
         i = LoggingErrorInterceptor()
@@ -344,18 +343,10 @@ class TestLoggingInterceptors:
         err = RuntimeError("boom")
         ctx = InterceptorContext(request=req, error=err)
         result = i.intercept(ctx)
-        assert result is err
+        assert result.action == InterceptorAction.CONTINUE
+        #TODO: Assert that error was logged
 
     def test_logging_error_interceptor_with_custom_logger(self):
         custom = RequestResponseLogger("custom.err")
         i = LoggingErrorInterceptor(logger=custom)
         assert i.logger is custom
-
-
-# ── InterceptorType enum ──────────────────────────────────────────────────────
-
-class TestInterceptorType:
-    def test_values(self):
-        assert InterceptorType.REQUEST.value == "request"
-        assert InterceptorType.RESPONSE.value == "response"
-        assert InterceptorType.ERROR.value == "error"

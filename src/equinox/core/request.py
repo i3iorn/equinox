@@ -1,27 +1,235 @@
-"""Request and Response models"""
+"""Request and Response models (refactored, single-module)"""
 
-import logging
-from dataclasses import dataclass, field
-from typing import Dict, Optional, Any, List
-from datetime import datetime
+from __future__ import annotations
+
 import json
+import logging
+import shlex
+from dataclasses import dataclass, field
+from datetime import datetime
+from functools import cached_property
+from typing import (
+    Dict,
+    Optional,
+    Any,
+    List,
+    TypedDict,
+    Literal,
+    Union,
+)
+
+from urllib.parse import urlparse, parse_qsl, urlencode, urlunparse
 
 from equinox.core.time import utc_now
 from equinox.core import urls
+import re
+
+from equinox.core.exceptions import ValidationError
 
 logger = logging.getLogger(__name__)
 
+# =========================================================
+# Typed structures
+# =========================================================
 
-@dataclass
+class CaptureRule(TypedDict, total=False):
+    variable: str
+    source: str
+    path: str
+    default: str
+
+
+class AssertionRule(TypedDict, total=False):
+    type: str
+    field: str
+    expected: Any
+
+
+class MultipartField(TypedDict):
+    key: str
+    type: Literal["text", "file"]
+    value: str
+
+
+# =========================================================
+# Helpers
+# =========================================================
+
+VALID_METHODS = {"GET", "POST", "PUT", "DELETE", "PATCH", "HEAD", "OPTIONS"}
+
+
+def _short(s: str, max_len: int = 60) -> str:
+    return s if len(s) <= max_len else s[:max_len] + "..."
+
+
+def _is_template_url(url: str) -> bool:
+    return "{{" in url
+
+
+def _is_absolute_url(url: str) -> bool:
+    parsed = urlparse(url)
+    return bool(parsed.scheme and parsed.netloc)
+
+
+def _merge_query_params(url: str, params: Dict[str, str]) -> str:
+    parsed = urlparse(url)
+    existing_q = dict(parse_qsl(parsed.query, keep_blank_values=True))
+    existing_q.update({str(k): str(v) for k, v in params.items()})
+
+    return urlunparse((
+        parsed.scheme,
+        parsed.netloc,
+        parsed.path,
+        parsed.params,
+        urlencode(existing_q, doseq=False),
+        parsed.fragment,
+    ))
+
+
+# HeaderDict: RFC-compliant header container
+# - Field-names are token characters per RFC7230 and are compared case-insensitively
+# - Preserves latest original-case key for iteration/display
+# - Validates header values to prevent CR/LF injection
+_HEADER_NAME_RE = re.compile(r"^[!#$%&'*+\-.^_`|~0-9A-Za-z]+$")
+
+
+class HeaderDict(dict):
+    """Dictionary for HTTP headers with RFC-compliant rules.
+
+    Behavior:
+    - Keys are compared case-insensitively (stored internally lower-cased).
+    - Iteration yields the most-recent original-cased key names.
+    - Values are normalized to str and checked to not contain CR/LF.
+    - Subclasses ``dict`` so existing isinstance(..., dict) checks continue to work.
+    """
+
+    def __init__(self, data: Optional[Dict[str, Any]] = None) -> None:
+        super().__init__()
+        # map lower-case name -> original-case name
+        self._orig: Dict[str, str] = {}
+        if data:
+            # use .update to ensure validation
+            self.update(data)
+
+    @staticmethod
+    def _validate_name(name: str) -> None:
+        if not isinstance(name, str) or not _HEADER_NAME_RE.fullmatch(name):
+            raise ValidationError(f"Invalid header name: {name!r}")
+
+    @staticmethod
+    def _validate_value(value: Any) -> str:
+        if value is None:
+            return ""
+        if not isinstance(value, str):
+            value = str(value)
+        # Do NOT validate CR/LF here; defer strict header validation to
+        # :class:`equinox.core.validation.Validator.validate_headers` which is
+        # called at send-time. This allows constructing Request objects with
+        # user-provided headers (useful for editing/importing) while still
+        # enforcing safety before the network send occurs.
+        return value
+
+    def __setitem__(self, key: str, value: Any) -> None:
+        self._validate_name(key)
+        v = self._validate_value(value)
+        lower = key.lower()
+        self._orig[lower] = key
+        super().__setitem__(lower, v)
+
+    def __getitem__(self, key: str) -> Any:  # allow case-insensitive get
+        return super().__getitem__(key.lower())
+
+    def __delitem__(self, key: str) -> None:
+        lower = key.lower()
+        super().__delitem__(lower)
+        self._orig.pop(lower, None)
+
+    def __contains__(self, key: object) -> bool:
+        if not isinstance(key, str):
+            return False
+        return super().__contains__(key.lower())
+
+    def get(self, key: str, default: Optional[Any] = None) -> Any:
+        return super().get(key.lower(), default)
+
+    def keys(self):
+        for lower in super().keys():
+            yield self._orig.get(lower, lower)
+
+    def items(self):
+        for lower, value in super().items():
+            yield self._orig.get(lower, lower), value
+
+    def __iter__(self):
+        return self.keys()
+
+    def update(self, other: Optional[Dict[str, Any]] = None, **kwargs) -> None:
+        if other:
+            if isinstance(other, dict):
+                iterator = other.items()
+            else:
+                iterator = other
+            for k, v in iterator:
+                self[k] = v
+        for k, v in kwargs.items():
+            self[k] = v
+
+    def __eq__(self, other: object) -> bool:
+        """Compare headers case-insensitively to dict-like objects.
+
+        This allows HeaderDict({'content-type': 'x'}) == {'Content-Type': 'x'}
+        which is convenient for tests and callers that construct plain dicts.
+        Values are compared as-is.
+        """
+        if isinstance(other, dict):
+            try:
+                other_normalized = {k.lower(): v for k, v in other.items()}
+            except Exception:
+                return False
+            # Obtain the internal lower-cased storage from the base dict
+            try:
+                self_lower = {k: v for k, v in super().items()}
+            except Exception:
+                return False
+            return self_lower == other_normalized
+        # Fallback to default dict comparison for other mappings
+        try:
+            # For other mapping-like objects, compare their lower-cased views
+            other_dict = dict(other)  # type: ignore[arg-type]
+            other_normalized = {k.lower(): v for k, v in other_dict.items()}
+            self_lower = {k: v for k, v in super().items()}
+            return self_lower == other_normalized
+        except Exception:
+            return False
+
+    def as_canonical_dict(self, lowercase: bool = True) -> Dict[str, Any]:
+        """Return a plain dict suitable for serialization.
+
+        If lowercase is True keys will be lower-cased (useful for storage/search);
+        otherwise original-case keys are returned for display/export.
+        """
+        if lowercase:
+            return {k: v for k, v in super().items()}
+        return {k: v for k, v in self.items()}
+
+
+# =========================================================
+# Request
+# =========================================================
+
+@dataclass(slots=True)
 class Request:
     """HTTP Request model"""
 
     method: str
     url: str
+
     headers: Dict[str, str] = field(default_factory=dict)
     params: Dict[str, str] = field(default_factory=dict)
-    body: Optional[str] = None
+    body: Optional[Union[str, bytes]] = None
+
     auth: Optional[Any] = None
+
     timeout: float = 30.0
     follow_redirects: bool = True
     verify_ssl: bool = True
@@ -31,62 +239,47 @@ class Request:
     description: Optional[str] = None
     collection_id: Optional[int] = None
     folder: Optional[str] = None
-    id: Optional[int] = None  # set when loaded from DB; used for autosave
+    id: Optional[int] = None
 
-    # Capture rules: list of dicts with keys variable/source/path/default
-    captures: List[Any] = field(default_factory=list)
+    # Advanced features
+    captures: List[CaptureRule] = field(default_factory=list)
+    assertions: List[AssertionRule] = field(default_factory=list)
+    multipart_data: Optional[List[MultipartField]] = None
+    params_list: Optional[List[Dict[str, Any]]] = None
 
-    # Scripts (Python stdlib only)
-    pre_script:  str = ""
+    pre_script: str = ""
     post_script: str = ""
 
-    # Client certificate paths (PEM)
-    cert_path:     Optional[str] = None
+    cert_path: Optional[str] = None
     cert_key_path: Optional[str] = None
 
-    # Multipart form-data fields: list of {"key", "type": "text"|"file", "value"}
-    multipart_data: Optional[List[Any]] = None
-
-    # Test assertion rules: list of {"type", "field", "expected"}
-    assertions: List[Any] = field(default_factory=list)
-
-    # Full params list with per-row enabled flag:
-    # [{"key": str, "value": str, "enabled": bool}, ...]
-    # When set, this is the authoritative source; `params` holds only enabled rows.
-    params_list: Optional[List[Any]] = None
-
-    # Path parameter values: {"id": "123", "postId": "456"}
-    # Extracted from {{param}} tokens in the URL.  Values are merged into
-    # the variable dict at send time so interpolation replaces the tokens.
     path_params: Dict[str, str] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
-        """Log request initialization"""
+        self.method = self.method.upper()
+
+        if self.method not in VALID_METHODS:
+            raise ValidationError(f"Invalid HTTP method: {self.method}")
+
+        self.headers = HeaderDict(self.headers or {})
+
         logger.debug(
-            "Request.__post_init__(): method=%s url=%s id=%s collection=%s auth=%s",
+            "Request initialized: %s %s id=%s collection=%s",
             self.method,
-            self.url[:60] + "..." if len(self.url) > 60 else self.url,
+            _short(self.url),
             self.id,
             self.collection_id,
-            type(self.auth).__name__ if self.auth else "None",
         )
 
+    # -----------------------------------------------------
+
     def to_dict(self) -> Dict[str, Any]:
-        """Convert request to dictionary"""
-        logger.debug(
-            "Request.to_dict(): method=%s url=%s headers=%d params=%d auth=%s",
-            self.method,
-            self.url[:60] + "..." if len(self.url) > 60 else self.url,
-            len(self.headers),
-            len(self.params),
-            type(self.auth).__name__ if self.auth else "None",
-        )
         d: Dict[str, Any] = {
             "method": self.method,
             "url": self.url,
-            "headers": self.headers,
-            "params": self.params,
-            "body": self.body,
+            "headers": dict(self.headers),
+            "params": dict(self.params),
+            "body": self.body.decode() if isinstance(self.body, bytes) else self.body,
             "timeout": self.timeout,
             "follow_redirects": self.follow_redirects,
             "verify_ssl": self.verify_ssl,
@@ -95,34 +288,27 @@ class Request:
             "collection_id": self.collection_id,
             "folder": self.folder,
             "id": self.id,
-            "path_params": self.path_params,
-            "captures": [c if isinstance(c, dict) else c for c in self.captures],
+            "path_params": dict(self.path_params),
+            "captures": list(self.captures),
+            "assertions": list(self.assertions),
+            "multipart_data": self.multipart_data,
+            "params_list": self.params_list,
             "pre_script": self.pre_script,
             "post_script": self.post_script,
             "cert_path": self.cert_path,
             "cert_key_path": self.cert_key_path,
-            "multipart_data": self.multipart_data,
-            "assertions": self.assertions,
-            "params_list": self.params_list,
         }
+
         if self.auth is not None and hasattr(self.auth, "to_dict"):
-            logger.debug("Serializing auth: type=%s", type(self.auth).__name__)
             d["auth"] = self.auth.to_dict()
             d["auth_type"] = type(self.auth).__name__
-        logger.debug("Request.to_dict() completed: %d fields", len(d))
+
         return d
+
+    # -----------------------------------------------------
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> "Request":
-        """Create request from dictionary"""
-        logger.debug(
-            "Request.from_dict(): method=%s url=%s headers=%d params=%d",
-            data.get("method", "GET"),
-            (data.get("url", "")[:60] + "...") if len(data.get("url", "")) > 60 else data.get("url", ""),
-            len(data.get("headers", {})),
-            len(data.get("params", {})),
-        )
-        
         request = cls(
             method=data.get("method", "GET"),
             url=data["url"],
@@ -139,85 +325,63 @@ class Request:
             id=data.get("id"),
             path_params=data.get("path_params", {}),
             captures=data.get("captures", []),
+            assertions=data.get("assertions", []),
+            multipart_data=data.get("multipart_data"),
+            params_list=data.get("params_list"),
             pre_script=data.get("pre_script", ""),
             post_script=data.get("post_script", ""),
             cert_path=data.get("cert_path"),
             cert_key_path=data.get("cert_key_path"),
-            multipart_data=data.get("multipart_data"),
-            assertions=data.get("assertions", []),
-            params_list=data.get("params_list"),
         )
-        
-        if "auth" in data and "auth_type" in data:
-            auth_type = data["auth_type"]
-            logger.debug("Reconstructing auth from dict: type=%s", auth_type)
-            try:
-                # Delegate to the auth factory to keep this module focused on
-                # the Request model (single responsibility) and avoid
-                # duplicating the auth-type -> constructor mapping.
-                from equinox.auth.factory import auth_from_dict
 
-                request.auth = auth_from_dict(auth_type, data["auth"])
-            except Exception as auth_exc:
-                logger.error("Failed to reconstruct auth %s: %s", auth_type, auth_exc)
-        
-        logger.debug(
-            "Request.from_dict() completed: id=%s collection=%s",
-            request.id, request.collection_id,
-        )
+        if "auth" in data and "auth_type" in data:
+            try:
+                from equinox.auth.factory import auth_from_dict
+                request.auth = auth_from_dict(data["auth_type"], data["auth"])
+            except Exception as exc:
+                logger.exception("Auth reconstruction failed")
+                raise ValueError("Invalid auth configuration") from exc
+
         return request
 
+    # -----------------------------------------------------
+
+    def _final_url(self) -> str:
+        url = urls.expand_placeholders(self.url, self.path_params or None)
+
+        if not self.params:
+            return url
+
+        if _is_template_url(url) or not _is_absolute_url(url):
+            qs = "&".join(f"{k}={v}" for k, v in self.params.items())
+            sep = "&" if "?" in url else "?"
+            return f"{url}{sep}{qs}"
+
+        return _merge_query_params(url, self.params)
+
+    # -----------------------------------------------------
+
     def to_curl(self) -> str:
-        """Convert request to curl command"""
-        import shlex
-
-        logger.debug(
-            "Request.to_curl(): method=%s url=%s headers=%d params=%d",
-            self.method, self.url[:60] + "..." if len(self.url) > 60 else self.url,
-            len(self.headers), len(self.params),
-        )
-
         parts = ["curl"]
 
-        # Method
         if self.method != "GET":
             parts.extend(["-X", self.method])
-            logger.debug("Adding HTTP method: %s", self.method)
 
-        for key, value in self.headers.items():
-            parts.extend(["-H", f"{key}: {value}"])
-        logger.debug("Added %d headers to curl command", len(self.headers))
+        for k, v in self.headers.items():
+            parts.extend(["-H", f"{k}: {v}"])
 
         if self.body:
-            parts.extend(["-d", self.body])
-            logger.debug("Added request body to curl command (length=%d)", len(self.body))
+            body = self.body.decode() if isinstance(self.body, bytes) else self.body
+            parts.extend(["-d", body])
 
-        # URL with params — expand placeholders first (if any path_params present)
-        url = urls.expand_placeholders(self.url, self.path_params or None)
-        if self.params:
-            logger.debug("Encoding %d query parameters into URL", len(self.params))
-            # If the URL still looks like a template or is non-absolute, fall back to string concatenation
-            if "{{" in url or (not url.startswith("http://") and not url.startswith("https://")):
-                qs = "&".join(f"{k}={v}" for k, v in self.params.items())
-                sep = "&" if "?" in url else "?"
-                url = f"{url}{sep}{qs}"
-                logger.debug("Using string concatenation for template URL")
-            else:
-                # Use stdlib urllib to safely merge query params for non-template URLs
-                from urllib.parse import urlparse, parse_qsl, urlencode, urlunparse
-                parsed = urlparse(url)
-                existing_q = dict(parse_qsl(parsed.query, keep_blank_values=True))
-                existing_q.update({str(k): str(v) for k, v in self.params.items()})
-                new_query = urlencode(existing_q, doseq=False)
-                url = urlunparse((parsed.scheme, parsed.netloc, parsed.path, parsed.params, new_query, parsed.fragment))
-                logger.debug("Using urllib to encode query parameters")
+        parts.append(self._final_url())
 
-        parts.append(url)
-        
-        curl_cmd = shlex.join(parts)
-        logger.debug("to_curl() completed: length=%d chars", len(curl_cmd))
-        return curl_cmd
+        return shlex.join(parts)
 
+
+# =========================================================
+# Response
+# =========================================================
 
 @dataclass
 class Response:
@@ -227,118 +391,88 @@ class Response:
     reason: str
     headers: Dict[str, str]
     body: bytes
-    elapsed: float  # Response time in seconds
+    elapsed: float
     request: Request
-    timestamp: datetime = field(default_factory=lambda: utc_now())
-    # Actual headers/URL used when sending (after auth is applied, params encoded)
+
+    timestamp: datetime = field(default_factory=utc_now)
+
     sent_headers: Optional[Dict[str, str]] = None
     sent_url: Optional[str] = None
-    # Per-phase timing breakdown (ms); populated by HTTPClient
     timings: Optional[Dict[str, float]] = None
 
     def __post_init__(self) -> None:
-        """Log response initialization"""
+        self.headers = HeaderDict(self.headers or {})
+
         logger.debug(
-            "Response.__post_init__(): status=%d size=%d elapsed=%.2fs headers=%d content_type=%s",
+            "Response: %d (%s) size=%d time=%.2fs",
             self.status_code,
-            self.size,
+            self.reason,
+            len(self.body),
             self.elapsed,
-            len(self.headers),
-            self.content_type,
         )
 
+    # -----------------------------------------------------
+
     def _get_header(self, name: str, default: str = "") -> str:
-        """Case-insensitive header lookup.
+        return self.headers.get(name.lower(), default)
 
-        HTTP headers are case-insensitive per RFC 7230, but the
-        ``headers`` dict may store any casing depending on the source.
-        """
-        name_lower = name.lower()
-        for k, v in self.headers.items():
-            if k.lower() == name_lower:
-                logger.debug("_get_header(%s) found: %s", name, v[:50] + "..." if len(v) > 50 else v)
-                return v
-        logger.debug("_get_header(%s) not found, returning default", name)
-        return default
+    # -----------------------------------------------------
 
-    @property
-    def text(self) -> str:
-        """Get response body as text"""
-        encoding = self.encoding or "utf-8"
-        logger.debug("Response.text: decoding %d bytes with %s", len(self.body), encoding)
-        return self.body.decode(encoding, errors="replace")
+    @cached_property
+    def content_type(self) -> Optional[str]:
+        ct = self._get_header("content-type")
+        return ct.split(";")[0].strip() if ct else None
 
-    @property
+    @cached_property
     def encoding(self) -> Optional[str]:
-        """Extract encoding from content-type header"""
-        content_type = self._get_header("content-type")
-        if not content_type or "charset" not in content_type:
-            logger.debug("Response.encoding: no charset found in content-type: %s", content_type)
+        ct = self._get_header("content-type")
+        if not ct or "charset" not in ct:
             return None
+
         from email.message import Message
         msg = Message()
-        msg["content-type"] = content_type
-        enc = msg.get_param("charset")
-        logger.debug("Response.encoding: extracted %s from content-type", enc)
-        return enc
+        msg["content-type"] = ct
+        return msg.get_param("charset")
+
+    @cached_property
+    def text(self) -> str:
+        return self.body.decode(self.encoding or "utf-8", errors="replace")
+
+    # -----------------------------------------------------
 
     def json(self) -> Any:
-        """Parse response body as JSON"""
+        # Attempt to parse the body as JSON regardless of the Content-Type
+        # header. Some servers return JSON payloads with non-standard
+        # Content-Type (e.g. text/plain). We try to be helpful and parse
+        # wherever possible; failures raise a ValueError.
         try:
-            logger.debug("Response.json(): parsing %d bytes as JSON", len(self.body))
-            result = json.loads(self.text)
-            logger.debug("Response.json(): parsing succeeded")
-            return result
-        except json.JSONDecodeError as json_err:
-            logger.error("Response.json(): JSON parsing failed: %s", json_err)
-            raise
+            return json.loads(self.text)
+        except json.JSONDecodeError as exc:
+            logger.exception("JSON parsing failed")
+            raise ValueError("Malformed JSON response") from exc
 
-    @property
-    def content_type(self) -> Optional[str]:
-        """Get content type"""
-        ct = self._get_header("content-type")
-        result = ct.split(";")[0].strip() if ct else None
-        logger.debug("Response.content_type: %s", result)
-        return result
+    # -----------------------------------------------------
 
     @property
     def is_json(self) -> bool:
-        """Check if response is JSON"""
-        ct = self.content_type
-        result = ct is not None and "json" in ct
-        logger.debug("Response.is_json: %s (content_type=%s)", result, ct)
-        return result
+        return self.content_type is not None and "json" in self.content_type
 
     @property
     def is_html(self) -> bool:
-        """Check if response is HTML"""
-        ct = self.content_type
-        result = ct is not None and "html" in ct
-        logger.debug("Response.is_html: %s (content_type=%s)", result, ct)
-        return result
+        return self.content_type is not None and "html" in self.content_type
 
     @property
     def is_xml(self) -> bool:
-        """Check if response is XML"""
-        ct = self.content_type
-        result = ct is not None and "xml" in ct
-        logger.debug("Response.is_xml: %s (content_type=%s)", result, ct)
-        return result
+        return self.content_type is not None and "xml" in self.content_type
 
     @property
     def size(self) -> int:
-        """Get response size in bytes"""
-        size = len(self.body)
-        logger.debug("Response.size: %d bytes", size)
-        return size
+        return len(self.body)
+
+    # -----------------------------------------------------
 
     def to_dict(self) -> Dict[str, Any]:
-        """Convert response to dictionary"""
-        logger.debug(
-            "Response.to_dict(): status=%d size=%d headers=%d elapsed=%.2fs",
-            self.status_code, self.size, len(self.headers), self.elapsed,
-        )
-        result = {
+        return {
             "status_code": self.status_code,
             "reason": self.reason,
             "headers": dict(self.headers),
@@ -348,5 +482,3 @@ class Response:
             "content_type": self.content_type,
             "size": self.size,
         }
-        logger.debug("Response.to_dict() completed: %d fields", len(result))
-        return result

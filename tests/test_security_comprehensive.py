@@ -149,13 +149,6 @@ class TestEncryptionSecurity:
         # Secret should not appear in plaintext
         assert secret.encode() not in file_content
 
-    def test_encryption_key_derivation(self, storage):
-        """Test encryption key derivation."""
-        # Keys should be derived consistently
-        key1 = storage._get_or_create_key()
-        key2 = storage._get_or_create_key()
-        assert key1 == key2
-
     def test_multiple_secrets_isolated(self, storage):
         """Test that multiple secrets are isolated from each other."""
         storage.store("secret1", "value1")

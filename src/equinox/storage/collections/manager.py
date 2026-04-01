@@ -375,7 +375,13 @@ class CollectionManager(
                     request.description or "",
                     request.method,
                     request.url,
-                    self._serialize_json_field(request.headers, max_len=100_000, default="{}"),
+                    self._serialize_json_field(
+                        request.headers.as_canonical_dict(lowercase=False)
+                        if hasattr(request.headers, "as_canonical_dict")
+                        else (request.headers or {}),
+                        max_len=100_000,
+                        default="{}",
+                    ),
                     _params_to_json(request),
                     request.body,
                     auth_type,
@@ -572,7 +578,15 @@ class CollectionManager(
                     request.name or "",
                     request.method,
                     request.url,
-                    self._serialize_json_field(request.headers, max_len=100_000, default="{}"),
+                    # See note above — preserve original-case header keys when
+                    # serializing requests for storage.
+                    self._serialize_json_field(
+                        request.headers.as_canonical_dict(lowercase=False)
+                        if hasattr(request.headers, "as_canonical_dict")
+                        else (request.headers or {}),
+                        max_len=100_000,
+                        default="{}",
+                    ),
                     _params_to_json(request),
                     request.body,
                     auth_type,

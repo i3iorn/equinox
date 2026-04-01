@@ -247,7 +247,7 @@ class TestExportImport:
 
         pw = STRONG_PW
         salt = b"0123456789abcdef"  # 16 bytes
-        key = SecureStorage._derive_pbkdf2_key(pw, salt)
+        key = SecureStorage._derive_pbkdf2(pw, salt)
         cipher = Fernet(key)
 
         payload = json.dumps({"legacy_key": {"value": "legacy_val", "metadata": {}}})

@@ -165,7 +165,7 @@ class TestImportRequestDetails:
         }
         importer._import_data(data)
         req = mock_manager.save_request.call_args[0][0]
-        assert req.headers == {"Accept": "application/json"}
+        assert req.headers == {"accept": "application/json"}
 
     def test_params_parsed(self, importer, mock_manager):
         data = {

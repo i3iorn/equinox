@@ -1,14 +1,19 @@
-"""Request/Response interceptor system and logging API.
+"""
+Request/Response interceptor system and structured logging.
 
-Provides middleware-like interceptors for request/response lifecycle
-and comprehensive structured logging for debugging and auditing.
+Features:
+- Explicit interceptor control flow
+- Safe mutation via context helpers
+- Structured logging abstraction
+- Robust body handling
+- Extensible + future-proof design
 """
 
 import logging
 import json
-from typing import Optional, List, Any, Dict
+from typing import Optional, List, Any, Dict, Generic, TypeVar
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import datetime
 from enum import Enum
 
 from equinox.core.time import utc_now
@@ -16,200 +21,169 @@ from equinox.core.request import Request, Response
 from equinox.core.redact import redact_headers, redact_body, redact_url
 
 
-class InterceptorType(Enum):
-    """Types of interceptors."""
-    REQUEST = "request"
-    RESPONSE = "response"
-    ERROR = "error"
+# =========================
+# Interceptor Core Types
+# =========================
+
+T = TypeVar("T")
+
+
+class InterceptorAction(Enum):
+    CONTINUE = "continue"
+    STOP = "stop"
+    REPLACE = "replace"
+    SUPPRESS = "suppress"
 
 
 @dataclass
+class InterceptorResult(Generic[T]):
+    action: InterceptorAction
+    value: Optional[T] = None
+
+    @classmethod
+    def continue_(cls):
+        return cls(InterceptorAction.CONTINUE)
+
+    @classmethod
+    def stop(cls):
+        return cls(InterceptorAction.STOP)
+
+    @classmethod
+    def replace(cls, value: T):
+        return cls(InterceptorAction.REPLACE, value)
+
+    @classmethod
+    def suppress(cls):
+        return cls(InterceptorAction.SUPPRESS)
+
+
+# =========================
+# Context
+# =========================
+
+@dataclass
 class InterceptorContext:
-    """Context passed to interceptors."""
     request: Request
     response: Optional[Response] = None
     error: Optional[Exception] = None
-    timestamp: Optional[datetime] = None
+    timestamp: datetime = field(default_factory=utc_now)
     metadata: Dict[str, Any] = field(default_factory=dict)
 
-    def __post_init__(self):
-        self.timestamp = utc_now(self.timestamp)
+    def replace_request(self, request: Request) -> None:
+        self.request = request
 
+    def replace_response(self, response: Response) -> None:
+        self.response = response
+
+    def replace_error(self, error: Exception) -> None:
+        self.error = error
+
+
+# =========================
+# Base Interceptors
+# =========================
 
 class RequestInterceptor:
-    """Base class for request interceptors.
-
-    Interceptors can inspect and modify requests before they're sent.
-    """
-
     def can_intercept(self, request: Request) -> bool:
-        """Check if this interceptor should handle the request.
+        """Return True only when the provided object is a Request instance.
 
-        Args:
-            request: Request to check
-
-        Returns:
-            True if interceptor should handle this request
+        Defensive runtime type-checking prevents interceptors from being
+        invoked with unexpected values (e.g. None or wrong types). Subclasses
+        may override to implement more specific guards.
         """
-        return True
+        return isinstance(request, Request)
 
-    def intercept(self, context: InterceptorContext) -> Optional[Request]:
-        """Intercept and potentially modify a request.
-
-        Args:
-            context: Interceptor context with request
-
-        Returns:
-            Modified request or None to use original
-        """
-        return None
+    def intercept(self, context: InterceptorContext) -> InterceptorResult[Request]:
+        return InterceptorResult.continue_()
 
 
 class ResponseInterceptor:
-    """Base class for response interceptors.
-
-    Interceptors can inspect and modify responses after they're received.
-    """
-
     def can_intercept(self, response: Response) -> bool:
-        """Check if this interceptor should handle the response.
+        """Return True only when the provided object is a Response instance.
 
-        Args:
-            response: Response to check
-
-        Returns:
-            True if interceptor should handle this response
+        The interceptor chain may pass an Optional[Response]; guard against
+        None and non-Response values here so concrete interceptors can rely
+        on a valid response object in their intercept() implementation.
         """
-        return True
+        return isinstance(response, Response)
 
-    def intercept(self, context: InterceptorContext) -> Optional[Response]:
-        """Intercept and potentially modify a response.
-
-        Args:
-            context: Interceptor context with response
-
-        Returns:
-            Modified response or None to use original
-        """
-        return None
+    def intercept(self, context: InterceptorContext) -> InterceptorResult[Response]:
+        return InterceptorResult.continue_()
 
 
 class ErrorInterceptor:
-    """Base class for error interceptors.
-
-    Interceptors can handle and potentially suppress errors.
-    """
-
     def can_intercept(self, error: Exception, request: Request) -> bool:
-        """Check if this interceptor should handle the error.
+        """Return True only when error is an Exception and request is a Request.
 
-        Args:
-            error: Exception that occurred
-            request: Request that caused the error
-
-        Returns:
-            True if interceptor should handle this error
+        This avoids accidentally handling non-exception values or invalid
+        request objects. Concrete implementations can extend this check.
         """
-        return True
+        return isinstance(error, Exception) and isinstance(request, Request)
 
-    def intercept(self, context: InterceptorContext) -> Optional[Exception]:
-        """Intercept and potentially suppress an error.
+    def intercept(self, context: InterceptorContext) -> InterceptorResult[Exception]:
+        return InterceptorResult.continue_()
 
-        Args:
-            context: Interceptor context with error
 
-        Returns:
-            Exception to re-raise, or None to suppress
-        """
-        return context.error
-
+# =========================
+# Interceptor Chain
+# =========================
 
 class InterceptorChain:
-    """Manages a chain of interceptors."""
-
     def __init__(self):
-        """Initialize empty interceptor chain."""
         self.request_interceptors: List[RequestInterceptor] = []
         self.response_interceptors: List[ResponseInterceptor] = []
         self.error_interceptors: List[ErrorInterceptor] = []
 
     def add_request_interceptor(self, interceptor: RequestInterceptor) -> None:
-        """Add a request interceptor.
-
-        Args:
-            interceptor: Request interceptor to add
-        """
         self.request_interceptors.append(interceptor)
 
     def add_response_interceptor(self, interceptor: ResponseInterceptor) -> None:
-        """Add a response interceptor.
-
-        Args:
-            interceptor: Response interceptor to add
-        """
         self.response_interceptors.append(interceptor)
 
     def add_error_interceptor(self, interceptor: ErrorInterceptor) -> None:
-        """Add an error interceptor.
-
-        Args:
-            interceptor: Error interceptor to add
-        """
         self.error_interceptors.append(interceptor)
 
+    # -------- Request --------
+
     def process_request(self, request: Request) -> Request:
-        """Process request through all interceptors.
-
-        Args:
-            request: Request to process
-
-        Returns:
-            Processed request
-        """
         context = InterceptorContext(request=request)
 
         for interceptor in self.request_interceptors:
             if not interceptor.can_intercept(context.request):
                 continue
 
-            modified = interceptor.intercept(context)
-            if modified is not None:
-                context.request = modified
+            result = interceptor.intercept(context)
+
+            if result.action == InterceptorAction.REPLACE:
+                context.replace_request(result.value)
+
+            elif result.action == InterceptorAction.STOP:
+                break
 
         return context.request
 
+    # -------- Response --------
+
     def process_response(self, request: Request, response: Response) -> Response:
-        """Process response through all interceptors.
-
-        Args:
-            request: Original request
-            response: Response to process
-
-        Returns:
-            Processed response
-        """
         context = InterceptorContext(request=request, response=response)
 
         for interceptor in self.response_interceptors:
             if not interceptor.can_intercept(context.response):
                 continue
 
-            modified = interceptor.intercept(context)
-            if modified is not None:
-                context.response = modified
+            result = interceptor.intercept(context)
+
+            if result.action == InterceptorAction.REPLACE:
+                context.replace_response(result.value)
+
+            elif result.action == InterceptorAction.STOP:
+                break
 
         return context.response
 
+    # -------- Error --------
+
     def process_error(self, request: Request, error: Exception) -> Optional[Exception]:
-        """Process error through all interceptors.
-
-        Args:
-            request: Request that caused error
-            error: Exception to process
-
-        Returns:
-            Exception to re-raise, or None to suppress
-        """
         context = InterceptorContext(request=request, error=error)
 
         for interceptor in self.error_interceptors:
@@ -217,24 +191,54 @@ class InterceptorChain:
                 continue
 
             result = interceptor.intercept(context)
-            if result is None:
-                # Error was suppressed
+
+            if result.action == InterceptorAction.SUPPRESS:
                 return None
-            context.error = result
+
+            if result.action == InterceptorAction.REPLACE:
+                context.replace_error(result.value)
+
+            elif result.action == InterceptorAction.STOP:
+                break
 
         return context.error
 
 
+# =========================
+# Logging Utilities
+# =========================
+
+def _safe_body_preview(body: Any, limit: int = 1000) -> str:
+    if body is None:
+        return ""
+
+    if isinstance(body, (bytes, bytearray)):
+        return body[:limit].decode(errors="replace")
+
+    return str(body)[:limit]
+
+
+class StructuredLogger:
+    def __init__(self, logger: logging.Logger):
+        self.logger = logger
+
+    def log(self, level: int, event: str, payload: Dict[str, Any]) -> None:
+        data = {
+            "event": event,
+            "timestamp": utc_now().isoformat(),
+            **payload,
+        }
+
+        self.logger.log(level, json.dumps(data, ensure_ascii=False), extra=data)
+
+
+# =========================
+# Request/Response Logger
+# =========================
+
 class RequestResponseLogger:
-    """Structured logging for requests and responses."""
-
     def __init__(self, logger_name: str = "equinox.requests"):
-        """Initialize request/response logger.
-
-        Args:
-            logger_name: Logger name
-        """
-        self.logger = logging.getLogger(logger_name)
+        self._logger = StructuredLogger(logging.getLogger(logger_name))
 
     def log_request(
         self,
@@ -242,35 +246,22 @@ class RequestResponseLogger:
         level: int = logging.INFO,
         include_body: bool = False,
     ) -> None:
-        """Log a request.
-
-        Args:
-            request: Request to log
-            level: Logging level
-            include_body: Whether to include request body
-        """
-        safe_headers = redact_headers(request.headers or {})
-        log_data = {
-            "event": "request_sent",
+        payload = {
             "method": request.method,
             "url": redact_url(request.url),
-            "headers": safe_headers,
-            "params": dict(request.params) if request.params else {},
+            "headers": redact_headers(request.headers or {}),
+            "params": dict(request.params or {}),
             "timeout": request.timeout,
             "verify_ssl": request.verify_ssl,
-            "timestamp": utc_now().isoformat(),
         }
 
-        if include_body and request.body:
-            log_data["body"] = redact_body(request.body[:1000], max_length=1000)
-        # Log structured data via logging extras so the global JSON formatter
-        # can produce consistent records.
-        # Emit the full structured payload as the log message so test harnesses
-        # and simple handlers that inspect LogRecord.message can parse the
-        # JSON directly. We still pass `extra` to allow more advanced
-        # formatters/handlers to pick up structured fields.
-        msg = json.dumps(log_data, ensure_ascii=False)
-        self.logger.log(level, msg, extra=log_data)
+        if include_body:
+            payload["body"] = redact_body(
+                _safe_body_preview(request.body),
+                max_length=1000,
+            )
+
+        self._logger.log(level, "request_sent", payload)
 
     def log_response(
         self,
@@ -280,31 +271,22 @@ class RequestResponseLogger:
         level: int = logging.INFO,
         include_body: bool = False,
     ) -> None:
-        """Log a response.
-
-        Args:
-            request: Original request
-            response: Response received
-            elapsed_time: Time taken for request
-            level: Logging level
-            include_body: Whether to include response body
-        """
-        log_data = {
-            "event": "response_received",
+        payload = {
             "method": request.method,
             "url": redact_url(request.url),
             "status_code": response.status_code,
             "reason": response.reason,
             "elapsed_time_seconds": elapsed_time,
-            "headers": redact_headers(dict(response.headers) if response.headers else {}),
-            "timestamp": utc_now().isoformat(),
+            "headers": redact_headers(dict(response.headers or {})),
         }
 
-        if include_body and response.body:
-            body_preview = response.body[:1000] if isinstance(response.body, str) else str(response.body)[:1000]
-            log_data["body"] = redact_body(body_preview, max_length=1000)
-        msg = json.dumps(log_data, ensure_ascii=False)
-        self.logger.log(level, msg, extra=log_data)
+        if include_body:
+            payload["body"] = redact_body(
+                _safe_body_preview(response.body),
+                max_length=1000,
+            )
+
+        self._logger.log(level, "response_received", payload)
 
     def log_error(
         self,
@@ -312,76 +294,48 @@ class RequestResponseLogger:
         error: Exception,
         level: int = logging.ERROR,
     ) -> None:
-        """Log a request error.
-
-        Args:
-            request: Request that failed
-            error: Exception that occurred
-            level: Logging level
-        """
-        error_msg = str(error)
-        # Strip potential credential fragments from error messages
-        error_msg = redact_body(error_msg, max_length=500)
-        log_data = {
-            "event": "request_failed",
+        payload = {
             "method": request.method,
             "url": redact_url(request.url),
             "error_type": type(error).__name__,
-            "error_message": error_msg,
-            "timestamp": utc_now().isoformat(),
+            "error_message": redact_body(str(error), max_length=500),
         }
-        msg = json.dumps(log_data, ensure_ascii=False)
-        self.logger.log(level, msg, extra=log_data)
 
+        self._logger.log(level, "request_failed", payload)
+
+
+# =========================
+# Built-in Logging Interceptors
+# =========================
 
 class LoggingRequestInterceptor(RequestInterceptor):
-    """Built-in interceptor that logs all requests."""
-
     def __init__(self, logger: Optional[RequestResponseLogger] = None):
-        """Initialize logging interceptor.
-
-        Args:
-            logger: Logger to use (creates new if None)
-        """
         self.logger = logger or RequestResponseLogger()
 
-    def intercept(self, context: InterceptorContext) -> Optional[Request]:
-        """Log the request."""
+    def intercept(self, context: InterceptorContext) -> InterceptorResult[Request]:
         self.logger.log_request(context.request, include_body=True)
-        return None
+        return InterceptorResult.continue_()
 
 
 class LoggingResponseInterceptor(ResponseInterceptor):
-    """Built-in interceptor that logs all responses."""
-
     def __init__(self, logger: Optional[RequestResponseLogger] = None):
-        """Initialize logging interceptor.
-
-        Args:
-            logger: Logger to use (creates new if None)
-        """
         self.logger = logger or RequestResponseLogger()
 
-    def intercept(self, context: InterceptorContext) -> Optional[Response]:
-        """Log the response."""
+    def intercept(self, context: InterceptorContext) -> InterceptorResult[Response]:
         elapsed = context.response.elapsed if context.response else 0
-        self.logger.log_response(context.request, context.response, elapsed, include_body=True)
-        return None
+        self.logger.log_response(
+            context.request,
+            context.response,
+            elapsed,
+            include_body=True,
+        )
+        return InterceptorResult.continue_()
 
 
 class LoggingErrorInterceptor(ErrorInterceptor):
-    """Built-in interceptor that logs all errors."""
-
     def __init__(self, logger: Optional[RequestResponseLogger] = None):
-        """Initialize logging interceptor.
-
-        Args:
-            logger: Logger to use (creates new if None)
-        """
         self.logger = logger or RequestResponseLogger()
 
-    def intercept(self, context: InterceptorContext) -> Optional[Exception]:
-        """Log the error and re-raise it."""
+    def intercept(self, context: InterceptorContext) -> InterceptorResult[Exception]:
         self.logger.log_error(context.request, context.error)
-        return context.error
-
+        return InterceptorResult.continue_()
