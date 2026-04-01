@@ -133,7 +133,7 @@ class Database:
     Features:
     - Automatic parameterized queries
     - SQL injection prevention
-    - Thread-safe operations
+    - Thread-safe operations with a single persistent connection
     - Comprehensive error handling
     """
 
@@ -160,10 +160,32 @@ class Database:
 
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         self.lock = threading.Lock()
+        self._conn: Optional[sqlite3.Connection] = None
 
         logger.info("Initializing database at %s", self.db_path)
-        self._run_migrations()
+        # Set file-level PRAGMAs (journal_mode, secure_delete) via a temp
+        # connection before opening the persistent one.
         self._set_database_pragmas()
+        # Open the long-lived connection used by all execute/fetch/insert calls.
+        self._conn = self._new_connection()
+        self._run_migrations()
+
+    def _new_connection(self) -> sqlite3.Connection:
+        """Create, configure, and return a new SQLite connection.
+
+        Uses ``isolation_level=None`` (full manual / autocommit mode) so that
+        Python's DB-API does not silently inject ``BEGIN`` statements, giving
+        us explicit control over transaction boundaries.
+        """
+        conn = sqlite3.connect(
+            str(self.db_path),
+            check_same_thread=False,
+            timeout=_CONNECTION_TIMEOUT_SECONDS,
+            isolation_level=None,  # autocommit; transactions managed explicitly
+        )
+        conn.row_factory = sqlite3.Row
+        conn.execute("PRAGMA foreign_keys = ON")
+        return conn
 
     def _set_database_pragmas(self) -> None:
         """Set persistent database-level PRAGMAs once at startup.
@@ -203,38 +225,19 @@ class Database:
 
     @contextmanager
     def get_connection(self):
-        """Context manager that yields a configured SQLite connection.
+        """Context manager that yields the persistent database connection.
+
+        The connection is long-lived and must **not** be closed by the caller.
+        Acquires the database lock for the duration of the context so callers
+        can safely read or write without racing other threads.
 
         Raises:
-            StorageError: If connection fails
+            StorageError: If the persistent connection is unavailable.
         """
-        conn = None
-        # Only catch errors that occur while establishing the connection itself.
-        # Do NOT catch sqlite3.Error raised by callers using the yielded connection;
-        # those should propagate so higher-level callers (e.g. insert/execute)
-        # can perform more specific handling (IntegrityError -> DuplicateError).
-        try:
-            conn = sqlite3.connect(
-                self.db_path,
-                check_same_thread=False,
-                timeout=_CONNECTION_TIMEOUT_SECONDS,
-                isolation_level='DEFERRED'
-            )
-        except sqlite3.Error as exc:
-            logger.error("Database connection error: %s", exc, exc_info=False)
-            raise StorageError(f"Database connection failed: {exc}")
-
-        try:
-            conn.row_factory = sqlite3.Row
-            conn.execute("PRAGMA foreign_keys = ON")
-            yield conn
-        finally:
-            if conn is not None:
-                try:
-                    conn.close()
-                except Exception as exc:
-                    logger.debug("Error closing connection: %s", exc, exc_info=False)
-                    pass
+        with self.lock:
+            if self._conn is None:
+                self._conn = self._new_connection()
+            yield self._conn
 
     @contextmanager
     def transaction(self):
