@@ -5,7 +5,7 @@ from typing import Optional
 
 from equinox.core.auth_cipher import encrypt_auth_data, decrypt_auth_data
 from equinox.core.exceptions import StorageError, SecurityError
-from equinox.storage.utils import safe_json_loads, safe_json_dumps
+from equinox.storage.utils import safe_json_dumps, safe_json_loads
 
 logger = logging.getLogger(__name__)
 
@@ -28,13 +28,7 @@ class CollectionAuthMixin:
             return None, None
         try:
             d = auth.to_dict()
-            try:
-                blob = safe_json_dumps(d, max_len=50_000)
-            except SecurityError:
-                # fallback to plain dumps if the safe wrapper rejects the size
-                import json as _json
-
-                blob = _json.dumps(d)
+            blob = safe_json_dumps(d, max_len=50_000)
             return d.get("type"), encrypt_auth_data(blob)
         except Exception as exc:
             raise StorageError(
@@ -47,10 +41,13 @@ class CollectionAuthMixin:
 
         Handles both encrypted (``enc:…``) and legacy plaintext JSON
         transparently via :func:`decrypt_auth_data`.
+
+        Delegates the type→class dispatch to the unified
+        :func:`~equinox.auth.factory.auth_from_dict` registry so new auth
+        types only need to be registered in one place.
         """
         if not auth_type or not auth_data:
             return None
-        from equinox.auth import BearerAuth, APIKeyAuth, BasicAuth, OAuth2Auth
         try:
             # Decryption failures are considered security-sensitive and should
             # be surfaced to callers so they can prompt for recovery / key
@@ -75,22 +72,12 @@ class CollectionAuthMixin:
             # Malformed JSON or other non-security errors degrade to no-auth
             logger.debug("Malformed auth JSON in DB row — treating as no auth", exc_info=True)
             return None
+
+        # Use the embedded "type" key when available; fall back to the
+        # auth_type column stored alongside the blob.
+        from equinox.auth.factory import auth_from_dict
         t = d.get("type", auth_type)
-        if t == "bearer":
-            return BearerAuth.from_dict(d)
-        if t == "api_key":
-            return APIKeyAuth.from_dict(d)
-        if t == "basic":
-            return BasicAuth.from_dict(d)
-        if t == "oauth2":
-            return OAuth2Auth.from_dict(d)
-        if t == "aws_sigv4":
-            try:
-                from equinox.auth.aws_sigv4 import AWSSigV4Auth
-                return AWSSigV4Auth.from_dict(d)
-            except Exception:
-                pass
-        return None
+        return auth_from_dict(t, d)
 
     # ── Collection-level auth ─────────────────────────────────────────
 
