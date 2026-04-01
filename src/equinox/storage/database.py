@@ -36,7 +36,7 @@ class QueryValidator:
         elif has_named:
             QueryValidator._validate_named(query, params)
         else:
-            logger.debug(f"No placeholders found for {query}")
+            logger.debug("No placeholders found for query: %.100s", query)
 
     @staticmethod
     def _validate_positional(query: str, params: Tuple) -> None:
@@ -161,7 +161,7 @@ class Database:
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         self.lock = threading.Lock()
 
-        logger.info(f"Initializing database at {self.db_path}")
+        logger.info("Initializing database at %s", self.db_path)
         self._run_migrations()
         self._set_database_pragmas()
 
@@ -334,19 +334,19 @@ class Database:
                 conn.commit()
                 return cursor
         except sqlite3.IntegrityError as exc:
-            logger.error(f"Integrity error: {exc}")
+            logger.error("Integrity error: %s", exc)
             msg = str(exc)
             if "UNIQUE" in msg.upper():
                 raise DuplicateError(f"Database unique constraint violated: {exc}")
             raise StorageError(f"Database integrity error: {exc}")
         except sqlite3.OperationalError as exc:
-            logger.error(f"Operational error: {exc}")
+            logger.error("Operational error: %s", exc)
             raise StorageError(f"Database operational error: {exc}")
         except sqlite3.Error as exc:
-            logger.error(f"Database error: {exc}")
+            logger.error("Database error: %s", exc)
             raise StorageError(f"Database error: {exc}")
         except Exception as exc:
-            logger.error(f"Unexpected error during query execution: {exc}")
+            logger.error("Unexpected error during query execution: %s", exc)
             raise StorageError(f"Query execution failed: {exc}")
 
     def fetchone(self, query: str, params: Tuple = ()) -> Optional[Dict[str, Any]]:
@@ -371,7 +371,7 @@ class Database:
                 row = cursor.fetchone()
                 return dict(row) if row else None
         except sqlite3.Error as exc:
-            logger.error(f"Database error in fetchone: {exc}")
+            logger.error("Database error in fetchone: %s", exc)
             raise StorageError(f"Failed to fetch row: {exc}")
 
     def fetchall(self, query: str, params: Tuple = ()) -> List[Dict[str, Any]]:
@@ -396,7 +396,7 @@ class Database:
                 rows = cursor.fetchall()
                 return [dict(row) for row in rows]
         except sqlite3.Error as exc:
-            logger.error(f"Database error in fetchall: {exc}")
+            logger.error("Database error in fetchall: %s", exc)
             raise StorageError(f"Failed to fetch rows: {exc}")
 
     def insert(self, query: str, params: Tuple = ()) -> int:
@@ -424,16 +424,16 @@ class Database:
                 conn.commit()
                 return cursor.lastrowid
         except sqlite3.IntegrityError as exc:
-            logger.error(f"Integrity error during insert: {exc}")
+            logger.error("Integrity error during insert: %s", exc)
             msg = str(exc)
             if "UNIQUE" in msg.upper():
                 raise DuplicateError(f"Failed to insert row (unique constraint): {exc}")
             raise StorageError(f"Failed to insert row (integrity constraint): {exc}")
         except sqlite3.Error as exc:
-            logger.error(f"Database error during insert: {exc}")
+            logger.error("Database error during insert: %s", exc)
             raise StorageError(f"Failed to insert row: {exc}")
         except Exception as exc:
-            logger.error(f"Unexpected error during insert: {exc}")
+            logger.error("Unexpected error during insert: %s", exc)
             raise StorageError(f"Failed to insert row: {exc}")
 
     def close(self):

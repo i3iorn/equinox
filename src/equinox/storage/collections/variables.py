@@ -54,7 +54,7 @@ class CollectionVariablesMixin:
                 """,
                 (collection_id, key, value, description)
             )
-            logger.info(f"Added/updated variable '{key}' for collection {collection_id}")
+            logger.info("Added/updated variable %r for collection %d", key, collection_id)
             return var_id
         except Exception as exc:
             raise StorageError(f"Failed to add variable: {exc}")
@@ -79,7 +79,7 @@ class CollectionVariablesMixin:
                 "DELETE FROM collection_variables WHERE collection_id = ? AND key = ?",
                 (collection_id, key)
             )
-            logger.info(f"Removed variable '{key}' from collection {collection_id}")
+            logger.info("Removed variable %r from collection %d", key, collection_id)
         except Exception as exc:
             raise StorageError(f"Failed to remove variable: {exc}")
 
@@ -136,7 +136,7 @@ class CollectionVariablesMixin:
                 """,
                 (collection_id, group_id, priority)
             )
-            logger.info(f"Added variable group {group_id} to collection {collection_id}")
+            logger.info("Added variable group %d to collection %d", group_id, collection_id)
             return assoc_id
         except Exception as exc:
             raise StorageError(f"Failed to add variable group to collection: {exc}")
@@ -160,7 +160,7 @@ class CollectionVariablesMixin:
                 "DELETE FROM collection_variable_groups WHERE collection_id = ? AND group_id = ?",
                 (collection_id, group_id)
             )
-            logger.info(f"Removed variable group {group_id} from collection {collection_id}")
+            logger.info("Removed variable group %d from collection %d", group_id, collection_id)
         except Exception as exc:
             raise StorageError(f"Failed to remove variable group from collection: {exc}")
 

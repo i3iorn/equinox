@@ -107,12 +107,15 @@ def cli(ctx, debug, env_file):
     """Equinox - A local-first API testing tool"""
     ctx.ensure_object(dict)
     ctx.obj["DEBUG"] = debug
+
+    # Initialise structured logging for the CLI — same JSON log file as the
+    # GUI, plus human-readable stderr output.  --debug lowers the console
+    # level so users see verbose output without needing env vars.
+    from equinox.core.log_setup import configure_logging
+    console_level = logging.DEBUG if debug else logging.WARNING
+    configure_logging(console_level=console_level)
+
     if debug:
-        logging.basicConfig(
-            level=logging.DEBUG,
-            format="%(asctime)s %(levelname)s %(name)s: %(message)s",
-            stream=sys.stderr,
-        )
         logger.debug("Debug mode enabled")
     logger.debug("Equinox CLI started (version=%s)", __version__)
     if env_file:

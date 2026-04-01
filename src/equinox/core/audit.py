@@ -129,7 +129,7 @@ class AuditLogger:
             self.logger.info(log_line)
             logger.debug("Audit event logged: type=%s level=%s", event_type.value, level.value)
         except Exception as e:
-            logger.error(f"Failed to write audit log: {e}")
+            logger.error("Failed to write audit log: %s", e)
 
     def _sanitize_details(self, details: Dict[str, Any]) -> Dict[str, Any]:
         """Sanitize details to remove sensitive information.
@@ -286,7 +286,7 @@ class AuditLogger:
 
         if size_mb > max_size_mb:
             # Rotate log
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            timestamp = utc_now().strftime("%Y%m%d_%H%M%S")
             rotated_path = self.log_path.parent / f"audit_{timestamp}.log"
 
             try:

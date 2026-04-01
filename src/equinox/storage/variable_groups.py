@@ -76,7 +76,7 @@ class VariableGroupManager:
                 "INSERT INTO variable_groups (name, description) VALUES (?, ?)",
                 (name, description)
             )
-            logger.info(f"Created variable group '{name}' with ID {group_id}")
+            logger.info("Created variable group %r with ID %d", name, group_id)
             return group_id
 
         except DuplicateError:
@@ -156,7 +156,7 @@ class VariableGroupManager:
             params.append(description)
 
         if not updates:
-            logger.warning(f"No updates provided for variable group {group_id}")
+            logger.warning("No updates provided for variable group %d", group_id)
             return
 
         try:
@@ -164,7 +164,7 @@ class VariableGroupManager:
             params.append(group_id)
             query = f"UPDATE variable_groups SET {', '.join(updates)} WHERE id = ?"
             self.db.execute(query, tuple(params))
-            logger.info(f"Updated variable group '{group['name']}' (ID: {group_id})")
+            logger.info("Updated variable group %r (ID: %d)", group['name'], group_id)
 
         except DuplicateError:
             raise DuplicateError(f"Variable group name '{name}' already exists")
@@ -195,7 +195,7 @@ class VariableGroupManager:
             var_count = len(variables)
 
             self.db.execute("DELETE FROM variable_groups WHERE id = ?", (group_id,))
-            logger.warning(f"Deleted variable group '{group['name']}' (ID: {group_id}) and {var_count} variable(s)")
+            logger.warning("Deleted variable group %r (ID: %d) and %d variable(s)", group['name'], group_id, var_count)
 
         except Exception as e:
             raise StorageError(f"Failed to delete variable group: {e}")
@@ -256,7 +256,7 @@ class VariableGroupManager:
                 """,
                 (group_id, key, value, description)
             )
-            logger.info(f"Added/updated variable '{key}' in group {group_id}")
+            logger.info("Added/updated variable %r in group %d", key, group_id)
             return var_id
 
         except Exception as e:
@@ -285,7 +285,7 @@ class VariableGroupManager:
                 "DELETE FROM variable_group_items WHERE group_id = ? AND key = ?",
                 (group_id, key)
             )
-            logger.info(f"Removed variable '{key}' from group {group_id}")
+            logger.info("Removed variable %r from group %d", key, group_id)
 
         except Exception as e:
             raise StorageError(f"Failed to remove variable: {e}")

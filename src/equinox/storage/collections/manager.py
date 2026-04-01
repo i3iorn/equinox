@@ -205,7 +205,7 @@ class CollectionManager(
                 "INSERT INTO collections (name, description) VALUES (?, ?)",
                 (name, description)
             )
-            logger.info(f"Created collection '{name}' with ID {collection_id}")
+            logger.info("Created collection %r with ID %d", name, collection_id)
             return collection_id
         except DuplicateError:
             # Database layer raises DuplicateError for unique constraint
@@ -292,7 +292,7 @@ class CollectionManager(
                 "UPDATE collections SET name = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
                 (new_name, collection_id),
             )
-            logger.info(f"Renamed collection {collection_id} to '{new_name}'")
+            logger.info("Renamed collection %d to %r", collection_id, new_name)
         except DuplicateError:
             raise StorageError(f"A collection named '{new_name}' already exists")
         except Exception as exc:
@@ -324,7 +324,7 @@ class CollectionManager(
                 "UPDATE requests SET name = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
                 (new_name, request_id),
             )
-            logger.info(f"Renamed request {request_id} to '{new_name}'")
+            logger.info("Renamed request %d to %r", request_id, new_name)
         except Exception as exc:
             raise StorageError(f"Failed to rename request: {exc}")
 
@@ -368,7 +368,7 @@ class CollectionManager(
                     row.get("path_params", "{}"),
                 ),
             )
-            logger.info(f"Duplicated request {request_id} → {new_id} ('{copy_name}')")
+            logger.info("Duplicated request %d → %d (%r)", request_id, new_id, copy_name)
             return new_id
         except Exception as exc:
             raise StorageError(f"Failed to duplicate request: {exc}")
@@ -425,7 +425,7 @@ class CollectionManager(
 
         try:
             req_id = self.insert_request_row(request, coll_id, name_override=effective_name)
-            logger.info(f"Saved request '{effective_name}' with ID {req_id} to collection {coll_id}")
+            logger.info("Saved request %r with ID %d to collection %s", effective_name, req_id, coll_id)
             return req_id
         except StorageError:
             raise
@@ -465,7 +465,7 @@ class CollectionManager(
                 "UPDATE requests SET auth_type = ?, auth_data = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
                 (auth_type, auth_data, request_id),
             )
-            logger.info(f"Updated auth on request {request_id}")
+            logger.info("Updated auth on request %d", request_id)
         except Exception as exc:
             raise StorageError(f"Failed to update request auth: {exc}")
 
@@ -510,7 +510,7 @@ class CollectionManager(
 
         try:
             self.db.execute("DELETE FROM requests WHERE id = ?", (request_id,))
-            logger.info(f"Deleted request '{request.name}' (ID: {request_id})")
+            logger.info("Deleted request %r (ID: %d)", request.name, request_id)
         except Exception as exc:
             raise StorageError(f"Failed to delete request: {exc}")
 

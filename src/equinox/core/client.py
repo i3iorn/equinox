@@ -1,12 +1,3 @@
-"""
-Refactored HTTP Client implementation using httpx.
-
-Goals:
-- Strong separation of concerns
-- DRY retry / error / concurrency logic
-- Stability and debuggability
-"""
-
 import json
 import os
 import ssl
@@ -29,7 +20,7 @@ from equinox.core.exceptions import (
     ValidationError,
 )
 from equinox.core.validation import Validator
-from equinox.core.redact import redact_body, redact_url
+from equinox.core.redact import redact_body, redact_url, redact_headers
 from equinox.auth.base import AuthStrategy
 from equinox.core.interceptors import InterceptorChain, RequestResponseLogger
 from equinox.core.audit import get_audit_logger
@@ -37,6 +28,7 @@ from equinox.core.rate_limiter import RateLimiter
 from equinox.core import error_mapper
 from equinox.core import urls
 from equinox.core.cookies import CookieManager
+from equinox.core.log_setup import generate_request_id
 
 logger = logging.getLogger(__name__)
 
@@ -429,8 +421,8 @@ class HttpxDispatcher:
             for fh in opened_handles:
                 try:
                     fh.close()
-                except Exception:
-                    pass
+                except Exception as close_exc:
+                    logger.debug("Failed to close file handle: %s", close_exc)
 
         if raw.history:
             chain = " → ".join(
@@ -734,11 +726,13 @@ class HTTPClient:
 
     # Public API
     def send(self, request: Request, auth: Optional[AuthStrategy] = None) -> Response:
-        logger.debug(
-            "HTTPClient.send() called: method=%s url=%s auth=%s",
+        req_id = generate_request_id()
+        logger.info(
+            "HTTPClient.send(): method=%s url=%s auth=%s",
             request.method,
             Validator.sanitize_for_display(request.url, 80),
             type(auth).__name__ if auth else "None",
+            extra={"request_id": req_id, "method": request.method},
         )
 
         # Validation
@@ -746,7 +740,8 @@ class HTTPClient:
 
         # Rate limiting
         logger.debug(
-            "HTTPClient: checking rate limit (max=%d/min)", self.max_rate_per_minute
+            "HTTPClient: checking rate limit (max=%d/min)", self.max_rate_per_minute,
+            extra={"request_id": req_id},
         )
         self._rate_limiter.try_acquire()
 

@@ -4,11 +4,14 @@ This implementation is thread-safe and stores recent request timestamps in-memor
 It can optionally log a security violation via an AuditLogger when the limit is hit.
 """
 
+import logging
 import time
 import threading
 from typing import Optional
 
 from equinox.core.exceptions import RateLimitError
+
+logger = logging.getLogger(__name__)
 
 
 class RateLimiter:
@@ -36,8 +39,8 @@ class RateLimiter:
                 try:
                     if self._audit is not None:
                         self._audit.log_security_violation("rate_limit", {"limit": self.max_per_minute})
-                except Exception:
-                    pass
+                except Exception as exc:
+                    logger.debug("Failed to log rate-limit audit event: %s", exc)
                 raise RateLimitError(f"Rate limit exceeded: {self.max_per_minute} requests per minute")
             self._times.append(now)
 
