@@ -1,6 +1,5 @@
 """Collection management"""
 
-import json
 import logging
 from typing import List, Dict, Any, Optional
 
@@ -12,7 +11,6 @@ from equinox.storage.database import Database
 from equinox.core.request import Request
 from equinox.core.exceptions import StorageError, ValidationError, DuplicateError
 from equinox.storage.utils import require_positive_int, safe_json_loads, safe_json_dumps
-from equinox.core.exceptions import SecurityError
 
 logger = logging.getLogger(__name__)
 
@@ -25,17 +23,9 @@ def _params_to_json(request: Request) -> str:
     Otherwise the plain ``params`` dict is stored for backward compatibility.
     """
     params_list = request.params_list
-    try:
-        if params_list:
-            return safe_json_dumps(params_list, max_len=50_000)
-        return safe_json_dumps(request.params or {}, max_len=50_000) if request.params else "[]"
-    except SecurityError:
-        # Fallback: fall back to simple dumps truncated to limit
-        try:
-            s = json.dumps(params_list) if params_list else json.dumps(request.params or {})
-            return s[:50000] + "..."
-        except Exception:
-            return "[]"
+    if params_list:
+        return safe_json_dumps(params_list, max_len=50_000)
+    return safe_json_dumps(request.params or {}, max_len=50_000) if request.params else "[]"
 
 
 def _params_from_json(raw_str: str):
@@ -73,6 +63,17 @@ class CollectionManager(
     MAX_DESCRIPTION_LENGTH = 1000
     DEFAULT_TIMEOUT = 30.0
 
+    # Canonical INSERT for the requests table — single source of truth used by
+    # save_request, duplicate_request, insert_request_row, and importers.
+    REQUEST_INSERT_SQL = """
+        INSERT INTO requests
+        (collection_id, name, description, method, url, headers, params, body,
+         auth_type, auth_data, captures, assertions, pre_script, post_script,
+         cert_path, cert_key_path, folder, timeout, verify_ssl, follow_redirects,
+         path_params)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    """
+
     def __init__(self, db: Database):
         self.db = db
 
@@ -81,25 +82,98 @@ class CollectionManager(
     def _serialize_json_field(obj: Any, *, max_len: int, default: str = "{}") -> str:
         if not obj:
             return default
-        try:
-            return safe_json_dumps(obj, max_len=max_len)
-        except SecurityError:
-            try:
-                return json.dumps(obj)[:max_len] + "..."
-            except Exception:
-                return default
+        return safe_json_dumps(obj, max_len=max_len)
 
     @staticmethod
     def _serialize_list_field(obj: Any, *, max_len: int) -> str:
         if not obj:
             return "[]"
-        try:
-            return safe_json_dumps(obj, max_len=max_len)
-        except SecurityError:
-            try:
-                return json.dumps(obj)[:max_len] + "..."
-            except Exception:
-                return "[]"
+        return safe_json_dumps(obj, max_len=max_len)
+
+    # ── Centralised request INSERT helpers ─────────────────────────────
+
+    def _build_request_insert_params(
+        self,
+        request: Request,
+        collection_id: int,
+        *,
+        name_override: Optional[str] = None,
+    ) -> tuple:
+        """Build the 21-element parameter tuple for :attr:`REQUEST_INSERT_SQL`.
+
+        Args:
+            request: The Request object to persist.
+            collection_id: Target collection ID.
+            name_override: If set, used instead of ``request.name``.
+
+        Returns:
+            A tuple matching the ``?`` placeholders in :attr:`REQUEST_INSERT_SQL`.
+        """
+        raw_name = name_override or request.name or f"{request.method} {request.url}"
+        req_name = self._resolve_request_name(raw_name)
+        auth_type, auth_data = self._serialize_auth(request.auth)
+        captures_json = self._serialize_list_field(request.captures, max_len=50_000)
+        assertions_json = self._serialize_list_field(request.assertions, max_len=50_000)
+        headers_json = self._serialize_json_field(
+            request.headers.as_canonical_dict(lowercase=False)
+            if hasattr(request.headers, "as_canonical_dict")
+            else (request.headers or {}),
+            max_len=100_000,
+            default="{}",
+        )
+        return (
+            collection_id,
+            req_name,
+            request.description or "",
+            request.method,
+            request.url,
+            headers_json,
+            _params_to_json(request),
+            request.body,
+            auth_type,
+            auth_data,
+            captures_json,
+            assertions_json,
+            request.pre_script or "",
+            request.post_script or "",
+            request.cert_path,
+            request.cert_key_path,
+            request.folder or None,
+            request.timeout,
+            int(request.verify_ssl),
+            int(request.follow_redirects),
+            self._serialize_json_field(request.path_params, max_len=50_000, default="{}"),
+        )
+
+    def insert_request_row(
+        self,
+        request: Request,
+        collection_id: int,
+        *,
+        name_override: Optional[str] = None,
+        tx: Optional[Any] = None,
+    ) -> int:
+        """Insert a request row using the canonical 21-column INSERT.
+
+        This is the **single** place that maps a :class:`Request` to a DB row.
+        Both :meth:`save_request` and external importers should call this
+        instead of duplicating the SQL.
+
+        Args:
+            request: Request object to persist.
+            collection_id: Target collection ID.
+            name_override: Override the request's name for storage.
+            tx: Optional transaction helper from :meth:`Database.transaction`.
+                When provided the INSERT runs inside the caller's transaction.
+
+        Returns:
+            New request row ID.
+        """
+        params = self._build_request_insert_params(
+            request, collection_id, name_override=name_override,
+        )
+        inserter = tx if tx is not None else self.db
+        return inserter.insert(self.REQUEST_INSERT_SQL, params)
 
     def create_collection(self, name: str, description: str = "") -> int:
         """Create a new collection.
@@ -277,14 +351,7 @@ class CollectionManager(
             copy_name = copy_name[:self.MAX_NAME_LENGTH - 3] + "..."
         try:
             new_id = self.db.insert(
-                """
-                INSERT INTO requests
-                (collection_id, name, description, method, url, headers, params, body,
-                 auth_type, auth_data, captures, assertions, pre_script, post_script,
-                 cert_path, cert_key_path, folder, timeout, verify_ssl, follow_redirects,
-                 path_params)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """,
+                self.REQUEST_INSERT_SQL,
                 (
                     row["collection_id"], copy_name, row.get("description", ""),
                     row["method"], row["url"],
@@ -354,53 +421,14 @@ class CollectionManager(
         if coll_id is not None and not self.get_collection(coll_id):
             raise StorageError(f"Collection with ID {coll_id} does not exist")
 
-        req_name = self._resolve_request_name(name or request.name or f"{request.method} {request.url}")
-        auth_type, auth_data = self._serialize_auth(request.auth)
-        captures_json = self._serialize_list_field(request.captures, max_len=50_000)
-        assertions_json = self._serialize_list_field(request.assertions, max_len=50_000)
+        effective_name = name or request.name or f"{request.method} {request.url}"
 
         try:
-            req_id = self.db.insert(
-                """
-                INSERT INTO requests
-                (collection_id, name, description, method, url, headers, params, body,
-                 auth_type, auth_data, captures, assertions, pre_script, post_script,
-                 cert_path, cert_key_path, folder, timeout, verify_ssl, follow_redirects,
-                 path_params)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """,
-                (
-                    coll_id,
-                    req_name,
-                    request.description or "",
-                    request.method,
-                    request.url,
-                    self._serialize_json_field(
-                        request.headers.as_canonical_dict(lowercase=False)
-                        if hasattr(request.headers, "as_canonical_dict")
-                        else (request.headers or {}),
-                        max_len=100_000,
-                        default="{}",
-                    ),
-                    _params_to_json(request),
-                    request.body,
-                    auth_type,
-                    auth_data,
-                    captures_json,
-                    assertions_json,
-                    request.pre_script or "",
-                    request.post_script or "",
-                    request.cert_path,
-                    request.cert_key_path,
-                    request.folder or None,
-                    request.timeout,
-                    int(request.verify_ssl),
-                    int(request.follow_redirects),
-                    self._serialize_json_field(request.path_params, max_len=50_000, default="{}"),
-                ),
-            )
-            logger.info(f"Saved request '{req_name}' with ID {req_id} to collection {coll_id}")
+            req_id = self.insert_request_row(request, coll_id, name_override=effective_name)
+            logger.info(f"Saved request '{effective_name}' with ID {req_id} to collection {coll_id}")
             return req_id
+        except StorageError:
+            raise
         except Exception as exc:
             raise StorageError(f"Failed to save request: {exc}")
 
@@ -488,29 +516,20 @@ class CollectionManager(
 
     def _row_to_request(self, row: Dict[str, Any]) -> Request:
         """Convert a database row to a Request object."""
-        headers = safe_json_loads(row.get("headers")) if row.get("headers") else {}
+        headers = safe_json_loads(row.get("headers"), default={})
         params, params_list = _params_from_json(row.get("params", ""))
         auth = self._deserialize_auth(row.get("auth_type"), row.get("auth_data"))
 
-        try:
-            captures = safe_json_loads(row.get("captures")) if row.get("captures") else []
-            if not isinstance(captures, list):
-                captures = []
-        except (ValueError, TypeError):
+        captures = safe_json_loads(row.get("captures"), default=[])
+        if not isinstance(captures, list):
             captures = []
 
-        try:
-            assertions = safe_json_loads(row.get("assertions")) if row.get("assertions") else []
-            if not isinstance(assertions, list):
-                assertions = []
-        except (ValueError, TypeError):
+        assertions = safe_json_loads(row.get("assertions"), default=[])
+        if not isinstance(assertions, list):
             assertions = []
 
-        try:
-            path_params = safe_json_loads(row.get("path_params")) if row.get("path_params") else {}
-            if not isinstance(path_params, dict):
-                path_params = {}
-        except (ValueError, TypeError):
+        path_params = safe_json_loads(row.get("path_params"), default={})
+        if not isinstance(path_params, dict):
             path_params = {}
 
         return Request(
