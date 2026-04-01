@@ -4,6 +4,10 @@ import logging
 import threading
 from typing import Optional
 
+# Percentile thresholds used in benchmark result display and export.
+_P95 = 0.95
+_P99 = 0.99
+
 from PyQt6.QtWidgets import (
     QDialog,
     QVBoxLayout,
@@ -155,6 +159,67 @@ class RequestWorker(QThread):
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# Benchmark worker thread
+# ─────────────────────────────────────────────────────────────────────────────
+
+class BenchmarkWorker(QThread):
+    """Run the HTTP request loop off the main thread.
+
+    Signals
+    -------
+    progress(int)   — emitted after each request with the current iteration count.
+    finished(list, int) — emitted when done: (elapsed_times_seconds, error_count).
+    """
+
+    progress = pyqtSignal(int)
+    finished = pyqtSignal(list, int)
+
+    def __init__(
+        self,
+        request: Request,
+        n: int,
+        proxy: Optional[str],
+        cookie_manager: Optional[CookieManager],
+        parent=None,
+    ):
+        super().__init__(parent)
+        self._request = request
+        self._n = n
+        self._proxy = proxy
+        self._cookie_manager = cookie_manager
+        self._cancelled = False
+
+    def cancel(self) -> None:
+        self._cancelled = True
+
+    def run(self) -> None:
+        import time
+
+        times: list = []
+        errors = 0
+
+        for i in range(self._n):
+            if self._cancelled:
+                break
+            try:
+                client = HTTPClient(
+                    cookie_manager=self._cookie_manager,
+                    timeout=getattr(self._request, "timeout", DEFAULT_TIMEOUT),
+                    verify_ssl=getattr(self._request, "verify_ssl", True),
+                    follow_redirects=getattr(self._request, "follow_redirects", True),
+                    proxy=self._proxy,
+                )
+                t0 = time.monotonic()
+                client.send(self._request)
+                times.append(time.monotonic() - t0)
+            except Exception:
+                errors += 1
+            self.progress.emit(i + 1)
+
+        self.finished.emit(times, errors)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Benchmark dialog
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -169,6 +234,7 @@ class BenchmarkDialog(QDialog):
         self.setMinimumSize(420, 340)
         self._times: list = []
         self._errors: int = 0
+        self._worker: Optional[BenchmarkWorker] = None
         self._init_ui()
 
     def _init_ui(self) -> None:
@@ -183,9 +249,16 @@ class BenchmarkDialog(QDialog):
         form.addRow("Number of requests:", self._count_spin)
         layout.addLayout(form)
 
+        btn_row = QHBoxLayout()
         self._run_btn = QPushButton("Run Benchmark")
         self._run_btn.clicked.connect(self._run)
-        layout.addWidget(self._run_btn)
+        btn_row.addWidget(self._run_btn)
+
+        self._cancel_btn = QPushButton("Cancel")
+        self._cancel_btn.setEnabled(False)
+        self._cancel_btn.clicked.connect(self._cancel)
+        btn_row.addWidget(self._cancel_btn)
+        layout.addLayout(btn_row)
 
         self._progress = QProgressBar()
         self._progress.setVisible(False)
@@ -210,8 +283,6 @@ class BenchmarkDialog(QDialog):
         layout.addLayout(bottom_row)
 
     def _run(self) -> None:
-        import time
-        from PyQt6.QtWidgets import QApplication
         from PyQt6.QtCore import QSettings
 
         n = self._count_spin.value()
@@ -219,38 +290,43 @@ class BenchmarkDialog(QDialog):
         self._progress.setValue(0)
         self._progress.setVisible(True)
         self._run_btn.setEnabled(False)
+        self._cancel_btn.setEnabled(True)
+        self._export_btn.setEnabled(False)
         self._results.setPlainText("Running\u2026")
-        QApplication.processEvents()
 
+        # Resolve proxy on the main thread (safe for QSettings on all platforms)
         s = QSettings("Equinox", "Equinox")
         ph = (s.value("proxy/host") or "").strip()
         pp = int(s.value("proxy/port") or 0)
-        # Only use proxy if both host AND port are configured
         proxy = f"http://{ph}:{pp}" if (ph and pp > 0) else None
 
-        times: list = []
-        errors = 0
+        self._worker = BenchmarkWorker(
+            request=self._request,
+            n=n,
+            proxy=proxy,
+            cookie_manager=self._cookie_manager,
+            parent=self,
+        )
+        self._worker.progress.connect(self._on_progress)
+        self._worker.finished.connect(self._on_finished)
+        self._worker.start()
 
-        for i in range(n):
-            try:
-                client = HTTPClient(
-                    cookie_manager=self._cookie_manager,
-                    timeout=getattr(self._request, "timeout", DEFAULT_TIMEOUT),
-                    verify_ssl=getattr(self._request, "verify_ssl", True),
-                    follow_redirects=getattr(self._request, "follow_redirects", True),
-                    proxy=proxy,
-                )
-                t0 = time.monotonic()
-                client.send(self._request)
-                times.append(time.monotonic() - t0)
-            except Exception:
-                errors += 1
-            self._progress.setValue(i + 1)
-            QApplication.processEvents()
+    def _cancel(self) -> None:
+        if self._worker and self._worker.isRunning():
+            self._worker.cancel()
+            self._cancel_btn.setEnabled(False)
+            self._results.setPlainText("Cancelling\u2026")
 
+    def _on_progress(self, value: int) -> None:
+        self._progress.setValue(value)
+
+    def _on_finished(self, times: list, errors: int) -> None:
         self._run_btn.setEnabled(True)
+        self._cancel_btn.setEnabled(False)
         self._progress.setVisible(False)
+        self._worker = None
 
+        n = self._progress.maximum()
         if not times:
             self._results.setPlainText(f"All {n} request(s) failed.")
             return
@@ -261,8 +337,8 @@ class BenchmarkDialog(QDialog):
         times_s = sorted(times)
         n_ok = len(times_s)
         avg = sum(times_s) / n_ok
-        p95 = times_s[max(0, int(n_ok * 0.95) - 1)]
-        p99 = times_s[max(0, int(n_ok * 0.99) - 1)]
+        p95 = times_s[max(0, int(n_ok * _P95) - 1)]
+        p99 = times_s[max(0, int(n_ok * _P99) - 1)]
 
         self._results.setPlainText(
             f"Requests : {n}\n"
@@ -276,6 +352,11 @@ class BenchmarkDialog(QDialog):
             f"p99      : {p99 * 1000:.1f} ms\n"
         )
         self._export_btn.setEnabled(True)
+
+    def reject(self) -> None:
+        """Cancel any running benchmark before closing."""
+        self._cancel()
+        super().reject()
 
     def _export_results(self) -> None:
         """Export benchmark timing data to CSV or JSON chosen by the user."""
@@ -301,8 +382,8 @@ class BenchmarkDialog(QDialog):
             "min_ms":   round(times_s[0] * 1000, 3),
             "avg_ms":   round(avg * 1000, 3),
             "max_ms":   round(times_s[-1] * 1000, 3),
-            "p95_ms":   round(times_s[max(0, int(n_ok * 0.95) - 1)] * 1000, 3),
-            "p99_ms":   round(times_s[max(0, int(n_ok * 0.99) - 1)] * 1000, 3),
+            "p95_ms":   round(times_s[max(0, int(n_ok * _P95) - 1)] * 1000, 3),
+            "p99_ms":   round(times_s[max(0, int(n_ok * _P99) - 1)] * 1000, 3),
             "iterations": times_ms,
         }
 

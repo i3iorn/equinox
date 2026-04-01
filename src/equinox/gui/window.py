@@ -64,6 +64,13 @@ class MainWindow(QMainWindow):
         self.setWindowTitle("Equinox — API Testing")
         self.setGeometry(_WINDOW_X, _WINDOW_Y, _WINDOW_W, _WINDOW_H)
 
+        # Debounce splitter-drag saves: only flush to disk 350 ms after the
+        # user *stops* dragging, instead of on every pixel movement.
+        self._layout_save_timer = QTimer(self)
+        self._layout_save_timer.setSingleShot(True)
+        self._layout_save_timer.setInterval(350)
+        self._layout_save_timer.timeout.connect(self._save_layout)
+
         self._init_ui()
         self._create_menu_bar()
         self._create_status_bar()
@@ -129,6 +136,7 @@ class MainWindow(QMainWindow):
     def closeEvent(self, event) -> None:  # type: ignore[override]
         logger.info("MainWindow closeEvent triggered - autosaving and persisting layout")
         self.request_panel.autosave_current()
+        self._layout_save_timer.stop()  # cancel any pending debounced write
         self._save_layout()
         logger.info("MainWindow closed successfully")
         super().closeEvent(event)
@@ -222,13 +230,13 @@ class MainWindow(QMainWindow):
         logger.debug("Connected splitter movement signals for real-time layout saving")
 
     def _on_splitter_moved(self, pos: int, index: int) -> None:
-        """Handle splitter movement and save layout."""
+        """Handle splitter movement — debounced to avoid per-pixel disk flushes."""
         sender = self.sender()
-        if sender is self._main_splitter:
-            logger.debug("Main splitter moved (pos=%d, index=%d), saving layout", pos, index)
-        elif sender is self._req_resp_splitter:
-            logger.debug("Req/Resp splitter moved (pos=%d, index=%d), saving layout", pos, index)
-        self._save_layout()
+        if sender is not None:
+            name = "main" if sender is self._main_splitter else "req/resp"
+            logger.debug("%s splitter moved (pos=%d, index=%d)", name, pos, index)
+        # Restart the debounce timer; _save_layout fires 350 ms after the last event.
+        self._layout_save_timer.start()
 
     # ── Request / history handlers ────────────────────────────────────
 
