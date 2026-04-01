@@ -446,7 +446,9 @@ class _TransactionHelper:
     :meth:`Database.transaction`.
 
     All methods execute on the **same** connection so they participate in
-    the enclosing transaction.
+    the enclosing transaction.  Basic query validation mirrors
+    :meth:`Database._validate_query` to prevent accidental SQL injection
+    even within a transaction context.
     """
 
     __slots__ = ("_conn",)
@@ -454,27 +456,50 @@ class _TransactionHelper:
     def __init__(self, conn: sqlite3.Connection) -> None:
         self._conn = conn
 
+    @staticmethod
+    def _validate(query: str, params) -> None:
+        """Validate query and parameters before execution."""
+        if not query or not isinstance(query, str):
+            raise ValidationError("Query must be a non-empty string")
+        if len(query) > Database.MAX_QUERY_LENGTH:
+            raise ValidationError(
+                f"Query exceeds maximum length of {Database.MAX_QUERY_LENGTH}"
+            )
+        if isinstance(params, (tuple, list)) and len(params) > Database.MAX_PARAMS:
+            raise ValidationError(f"Too many parameters (max: {Database.MAX_PARAMS})")
+        elif isinstance(params, Mapping) and len(params) > Database.MAX_PARAMS:
+            raise ValidationError(f"Too many parameters (max: {Database.MAX_PARAMS})")
+        QueryValidator.validate_placeholders(query, params)
+
     def execute(self, query: str, params: Tuple = ()) -> sqlite3.Cursor:
         """Execute a query and return the cursor."""
+        self._validate(query, params)
         return self._conn.execute(query, params)
 
     def executemany(self, query: str, seq_of_params) -> sqlite3.Cursor:
         """Execute a query against all parameter sequences."""
+        if not query or not isinstance(query, str):
+            raise ValidationError("Query must be a non-empty string")
         return self._conn.executemany(query, seq_of_params)
 
     def fetchone(self, query: str, params: Tuple = ()) -> Optional[Dict[str, Any]]:
         """Execute a query and return a single row as a dict, or None."""
+        self._validate(query, params)
         cursor = self._conn.execute(query, params)
         row = cursor.fetchone()
         return dict(row) if row else None
 
     def fetchall(self, query: str, params: Tuple = ()) -> List[Dict[str, Any]]:
         """Execute a query and return all rows as dicts."""
+        self._validate(query, params)
         cursor = self._conn.execute(query, params)
         return [dict(r) for r in cursor.fetchall()]
 
     def insert(self, query: str, params: Tuple = ()) -> int:
         """Execute an INSERT and return the last row id."""
+        self._validate(query, params)
+        if not query.strip().upper().startswith('INSERT'):
+            raise ValidationError("Query must be an INSERT statement")
         cursor = self._conn.execute(query, params)
         return cursor.lastrowid
 
