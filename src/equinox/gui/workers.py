@@ -111,15 +111,26 @@ class RequestWorker(QThread):
     Emits ``finished(result)`` where *result* is either a :class:`Response`
     or an :class:`Exception`.  ``cancel()`` marks the result as stale so the
     GUI ignores it even if the TCP connection completes.
+
+    ``proxy`` **must** be resolved on the main thread (from QSettings) and
+    injected here — reading QSettings from a background thread is undefined
+    behaviour on Windows with the native registry backend.
     """
 
     finished = pyqtSignal(object)
 
-    def __init__(self, request: Request, parent=None, cookie_manager: Optional[CookieManager]=None):
+    def __init__(
+        self,
+        request: Request,
+        parent=None,
+        cookie_manager: Optional[CookieManager] = None,
+        proxy: Optional[str] = None,
+    ):
         super().__init__(parent)
         self.request = request
         self._cancelled = False
         self._cookie_manager = cookie_manager
+        self._proxy = proxy
         self._cancel_event = threading.Event()
 
     def cancel(self) -> None:
@@ -128,27 +139,20 @@ class RequestWorker(QThread):
 
     def run(self) -> None:
         try:
-            from PyQt6.QtCore import QSettings as _QS
-            _s = _QS("Equinox", "Equinox")
-            _ph = (_s.value("proxy/host") or "").strip()
-            _pp = int(_s.value("proxy/port") or 0)
-            
-            # Validate proxy settings - both host AND port must be set
-            # If port is 0 (the default), proxy is disabled regardless of host
-            if not _ph or _pp == 0:
-                _proxy = None
-                logger.debug("No proxy configured (proxy/host=%r, proxy/port=%r)", _ph or "(empty)", _pp or 0)
+            if self._proxy:
+                logger.info(
+                    "Using proxy: %s (if unexpected, clear proxy settings in Preferences)",
+                    self._proxy,
+                )
             else:
-                _proxy = f"http://{_ph}:{_pp}"
-                logger.debug("Proxy loaded from settings: %s", _proxy)
-                logger.info("Using proxy: %s (if this is unexpected, clear proxy settings in Preferences)", _proxy)
+                logger.debug("No proxy configured")
             client = HTTPClient(
                 cookie_manager=self._cookie_manager,
                 timeout=getattr(self.request, "timeout", DEFAULT_TIMEOUT),
                 verify_ssl=getattr(self.request, "verify_ssl", True),
                 follow_redirects=getattr(self.request, "follow_redirects", True),
-                proxy=_proxy,
-                cancel_event=self._cancel_event
+                proxy=self._proxy,
+                cancel_event=self._cancel_event,
             )
             response = client.send(self.request)
             if not self._cancelled:

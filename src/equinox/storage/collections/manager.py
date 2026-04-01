@@ -331,6 +331,11 @@ class CollectionManager(
     def duplicate_request(self, request_id: int, new_name: Optional[str] = None) -> int:
         """Duplicate a saved request within the same collection.
 
+        Loads the original request via :meth:`get_request` and inserts it via
+        :meth:`insert_request_row` so that **all** columns (including any added
+        in future migrations) are automatically copied without needing to update
+        this method.
+
         Args:
             request_id: Source request ID
             new_name: Name for the copy (defaults to "Copy of <original name>")
@@ -342,31 +347,19 @@ class CollectionManager(
             StorageError: If source request not found
         """
         require_positive_int(request_id, "Request ID")
-        row = self.db.fetchone("SELECT * FROM requests WHERE id = ?", (request_id,))
-        if not row:
+        source = self.get_request(request_id)
+        if not source:
             raise StorageError(f"Request {request_id} not found")
-        row = dict(row)
-        copy_name = new_name or f"Copy of {row['name']}"
+
+        copy_name = new_name or f"Copy of {source.name}"
         if len(copy_name) > self.MAX_NAME_LENGTH:
             copy_name = copy_name[:self.MAX_NAME_LENGTH - 3] + "..."
+
         try:
-            new_id = self.db.insert(
-                self.REQUEST_INSERT_SQL,
-                (
-                    row["collection_id"], copy_name, row.get("description", ""),
-                    row["method"], row["url"],
-                    row.get("headers", "{}"), row.get("params", "{}"),
-                    row.get("body"), row.get("auth_type"), row.get("auth_data"),
-                    row.get("captures", "[]"),
-                    row.get("assertions", "[]"),
-                    row.get("pre_script", ""), row.get("post_script", ""),
-                    row.get("cert_path"), row.get("cert_key_path"),
-                    row.get("folder") or None,
-                    row.get("timeout") or self.DEFAULT_TIMEOUT,
-                    row.get("verify_ssl", 1),
-                    row.get("follow_redirects", 1),
-                    row.get("path_params", "{}"),
-                ),
+            new_id = self.insert_request_row(
+                source,
+                source.collection_id,
+                name_override=copy_name,
             )
             logger.info("Duplicated request %d → %d (%r)", request_id, new_id, copy_name)
             return new_id

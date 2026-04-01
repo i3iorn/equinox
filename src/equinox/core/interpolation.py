@@ -26,6 +26,7 @@ import re
 import logging
 from typing import Dict, Any, Optional, TypeVar, Set, List
 from dataclasses import replace as _dc_replace
+import os as _os
 
 from equinox.core.exceptions import ValidationError, SecurityError
 
@@ -276,3 +277,78 @@ class VariableInterpolator:
             # Non-string inputs are considered to have no variables
             return False
         return bool(cls.VARIABLE_PATTERN.search(text))
+
+
+def collect_interpolation_variables(
+    db,
+    collection_id: "Optional[int]" = None,
+    session_vars: "Optional[Dict[str, str]]" = None,
+) -> "Dict[str, str]":
+    """Collect all variable sources into a single ordered dict.
+
+    Resolution order (each layer overrides the previous):
+    1. Active database environment variables
+    2. Collection-level variables (if *collection_id* is given)
+    3. OS environment variables with valid interpolation-safe names
+    4. *session_vars* (script-captured values, highest precedence)
+
+    This is the canonical implementation — both the CLI
+    (:func:`equinox.cli.main.get_interpolation_variables`) and the GUI
+    (:class:`~equinox.gui.request_panel.mixins._RequestSendMixin`) delegate
+    to this function so the resolution order is never inconsistent.
+
+    Args:
+        db: Open :class:`~equinox.storage.database.Database` instance.
+        collection_id: When provided, collection variables are included.
+        session_vars: Script-captured session variables (optional).
+
+    Returns:
+        Dict mapping variable name → string value.
+    """
+    # Lazy imports — avoid hard-coupling storage into the core package at
+    # import time; these modules may not be available in all test contexts.
+    from equinox.storage.environments import EnvironmentManager
+
+    variables: "Dict[str, str]" = {}
+
+    # 1. Active environment
+    try:
+        env_mgr = EnvironmentManager(db)
+        active = env_mgr.get_active_environment()
+        if active and isinstance(active.get("variables"), dict):
+            variables.update(active["variables"])
+            logger.debug("collect_interpolation_variables: %d env vars", len(active["variables"]))
+    except Exception as exc:
+        logger.warning("Failed to load active environment variables: %s", exc)
+
+    # 2. Collection variables
+    if collection_id is not None:
+        try:
+            from equinox.storage.collections import CollectionManager
+            col_mgr = CollectionManager(db)
+            col_vars = col_mgr.get_all_collection_variables(collection_id)
+            variables.update(col_vars)
+            logger.debug(
+                "collect_interpolation_variables: %d collection vars (coll=%d)",
+                len(col_vars), collection_id,
+            )
+        except Exception as exc:
+            logger.warning(
+                "Failed to load collection variables for collection %d: %s",
+                collection_id, exc,
+            )
+
+    # 3. OS environment variables — only names safe for {{VAR}} interpolation
+    valid_name = re.compile(r'^[a-zA-Z0-9_-]+$')
+    os_vars = {k: v for k, v in _os.environ.items() if isinstance(v, str) and valid_name.match(k)}
+    variables.update(os_vars)
+    logger.debug("collect_interpolation_variables: %d OS env vars", len(os_vars))
+
+    # 4. Session variables (highest precedence — script output)
+    if session_vars:
+        variables.update(session_vars)
+        logger.debug("collect_interpolation_variables: %d session vars", len(session_vars))
+
+    logger.debug("collect_interpolation_variables: %d total variables", len(variables))
+    return variables
+

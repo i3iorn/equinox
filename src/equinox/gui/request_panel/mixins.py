@@ -81,8 +81,6 @@ class _RequestSendMixin:
 
     def _send_request(self) -> None:
         from equinox.core.interpolation import VariableInterpolator
-        from equinox.storage import EnvironmentManager
-        import os
 
         url = self.url_input.text().strip()
         if not url:
@@ -119,41 +117,14 @@ class _RequestSendMixin:
         )
         headers = inject_content_type(body, body_type, headers)
 
-        # Variable interpolation
-        variables: Dict[str, str] = {}
-        try:
-            env_mgr = EnvironmentManager(self.db)
-            active = env_mgr.get_active_environment()
-            if active:
-                variables.update(active.get("variables", {}))
-        except Exception:
-            logger.warning("Failed to load environment variables", exc_info=True)
-
-        # Include inherited collection variables (groups + collection-specific)
-        # These override environment variables but are overridden by OS env / session.
-        if self.current_request and self.current_request.collection_id:
-            try:
-                col_vars = self._collection_mgr.get_all_collection_variables(
-                    self.current_request.collection_id
-                )
-                variables.update(col_vars)
-            except Exception:
-                logger.warning("Failed to load collection variables", exc_info=True)
-
-        # Filter OS environment variables: only include those with valid variable names
-        # (alphanumeric, underscore, hyphen). Windows has variables like PROGRAMFILES(X86)
-        # which are invalid for interpolation syntax.
-        import re
-        valid_var_pattern = re.compile(r'^[a-zA-Z0-9_-]+$')
-        os_env_filtered = {
-            k: v for k, v in os.environ.items()
-            if isinstance(v, str) and valid_var_pattern.match(k)
-        }
-        if os_env_filtered:
-            logger.debug("Adding %d valid OS environment variable(s)", len(os_env_filtered))
-            variables.update(os_env_filtered)
-        
-        variables.update(self._session_vars)  # captured session vars override env
+        # Variable interpolation — delegate to the canonical shared helper so
+        # the GUI and CLI always use the same resolution order.
+        from equinox.core.interpolation import collect_interpolation_variables
+        variables = collect_interpolation_variables(
+            self.db,
+            collection_id=getattr(self.current_request, "collection_id", None),
+            session_vars=self._session_vars,
+        )
 
         # ── Pre-request script ────────────────────────────────────────
         pre_src = self.pre_script_editor.toPlainText()
@@ -270,7 +241,19 @@ class _RequestSendMixin:
         # the user's edits must still be autosaved to the DB when navigating
         # away.  Clearing the flag here would silently discard changes.
 
-        self._worker = RequestWorker(request, self, cookie_manager=self._cookie_manager)
+        # Resolve proxy on the main thread — QSettings must NOT be accessed
+        # from a background QThread (UB on Windows with native registry format).
+        from PyQt6.QtCore import QSettings as _QSettings
+        _s = _QSettings("Equinox", "Equinox")
+        _ph = (_s.value("proxy/host") or "").strip()
+        _pp = int(_s.value("proxy/port") or 0)
+        _proxy = f"http://{_ph}:{_pp}" if (_ph and _pp > 0) else None
+
+        self._worker = RequestWorker(
+            request, self,
+            cookie_manager=self._cookie_manager,
+            proxy=_proxy,
+        )
         worker_ref = self._worker
         self._worker.finished.connect(
             lambda result, w=worker_ref: self._handle_response(result, w)

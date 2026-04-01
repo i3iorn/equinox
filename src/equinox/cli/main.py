@@ -5,15 +5,13 @@ Defines the top-level ``cli`` group, shared helpers (``get_db``,
 """
 
 import logging
-import os
-import sys
 from pathlib import Path
 
 import click
 from dotenv import load_dotenv
 
 from equinox import __version__
-from equinox.storage import Database, EnvironmentManager, get_db as _storage_get_db
+from equinox.storage import Database, get_db as _storage_get_db
 
 logger = logging.getLogger(__name__)
 
@@ -50,48 +48,17 @@ def load_environment_variables(env_file: Path = None):
 def get_interpolation_variables(db: Database, collection_id: int = None) -> dict:
     """Collect all available interpolation variables.
 
+    Delegates to :func:`equinox.core.interpolation.collect_interpolation_variables`
+    which is the single canonical implementation shared with the GUI.
+
     Sources (in precedence order, later overrides earlier):
     1. Active DB environment variables
     2. Inherited collection variables (groups + collection-specific)
-    3. ``EQUINOX_*`` environment variables (and other valid OS env vars)
+    3. OS environment variables with valid names
     """
-    import re
-    variables = {}
+    from equinox.core.interpolation import collect_interpolation_variables
     logger.debug("Collecting interpolation variables (collection_id=%s)", collection_id)
-
-    try:
-        env_manager = EnvironmentManager(db)
-        active_env = env_manager.get_active_environment()
-        if active_env and isinstance(active_env.get("variables"), dict):
-            variables.update(active_env["variables"])
-            logger.debug("Added %d active environment variables", len(active_env["variables"]))
-    except Exception as exc:
-        logger.debug("Could not load active environment variables: %s", exc)
-        click.echo(f"Could not load environment variables: {exc}", err=True)
-
-    if collection_id is not None:
-        try:
-            from equinox.storage import CollectionManager
-            collection_manager = CollectionManager(db)
-            collection_vars = collection_manager.get_all_collection_variables(collection_id)
-            variables.update(collection_vars)
-            logger.debug("Added %d collection variables for collection %d", len(collection_vars), collection_id)
-        except Exception as exc:
-            logger.debug("Could not load collection variables for collection %d: %s", collection_id, exc)
-            click.echo(f"Could not load collection variables for {collection_id}: {exc}", err=True)
-
-    # Only include EQUINOX_* vars, and filter other OS env vars to valid names
-    # (Windows has vars like PROGRAMFILES(X86) which are invalid for interpolation)
-    valid_var_pattern = re.compile(r'^[a-zA-Z0-9_-]+$')
-    os_vars_added = 0
-    for k, v in os.environ.items():
-        if k.startswith("EQUINOX_") or valid_var_pattern.match(k):
-            variables[k] = v
-            os_vars_added += 1
-
-    logger.debug("Added %d OS environment variables (valid names only)", os_vars_added)
-    logger.debug("Total interpolation variables collected: %d", len(variables))
-    return variables
+    return collect_interpolation_variables(db, collection_id=collection_id)
 
 
 # ── Top-level CLI group ──────────────────────────────────────────────────────

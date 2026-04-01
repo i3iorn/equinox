@@ -128,7 +128,6 @@ class RetryPolicy:
 
     def execute(self, func: Callable[[], Response]) -> Response:
         # Timeout retries
-        last_error: Optional[Exception] = None
         for attempt in range(self._timeout_retries):
             try:
                 logger.debug(
@@ -137,8 +136,7 @@ class RetryPolicy:
                     self._timeout_retries,
                 )
                 return func()
-            except RequestTimeoutError as exc:
-                last_error = exc
+            except RequestTimeoutError:
                 if attempt < self._timeout_retries - 1:
                     self._sleep_backoff(attempt)
                 else:
@@ -148,12 +146,8 @@ class RetryPolicy:
                         self._timeout_retries,
                     )
                     raise
-
-        if last_error:
-            raise last_error  # type: ignore[unreachable]
-
-        # Fallback (should not be reached)
-        return func()
+        # This line is only reached when _timeout_retries == 0 (misconfiguration).
+        raise RuntimeError("RetryPolicy: _timeout_retries must be >= 1")
 
     def execute_with_http_overload(self, func: Callable[[], Response]) -> Response:
         """Execute with timeout retries + HTTP overload retries."""
