@@ -244,8 +244,8 @@ class Database:
         """Context manager for multi-statement transactions.
 
         All statements executed via the yielded helper run on the **same**
-        connection inside a single ``BEGIN … COMMIT`` block.  If an exception
-        occurs the transaction is rolled back.
+        persistent connection inside a single ``BEGIN … COMMIT`` block.
+        If an exception occurs the transaction is rolled back.
 
         Usage::
 
@@ -260,14 +260,9 @@ class Database:
         """
         with self.lock:
             logger.debug("Starting database transaction")
-            conn = sqlite3.connect(
-                self.db_path,
-                check_same_thread=False,
-                timeout=_CONNECTION_TIMEOUT_SECONDS,
-                isolation_level=None,  # autocommit off — we manage manually
-            )
-            conn.row_factory = sqlite3.Row
-            conn.execute("PRAGMA foreign_keys = ON")
+            if self._conn is None:
+                self._conn = self._new_connection()
+            conn = self._conn
             conn.execute("BEGIN")
             try:
                 yield _TransactionHelper(conn)
@@ -280,10 +275,7 @@ class Database:
                     logger.debug("Transaction rolled back")
                 except Exception as rollback_exc:
                     logger.error("Failed to rollback transaction: %s", rollback_exc, exc_info=False)
-                    pass
                 raise
-            finally:
-                conn.close()
 
     def _validate_query(self, query: str, params: Tuple) -> None:
         """Validate query and parameters before execution.
@@ -332,10 +324,8 @@ class Database:
         self._validate_query(query, params)
 
         try:
-            with self.lock, self.get_connection() as conn:
-                cursor = conn.execute(query, params)
-                conn.commit()
-                return cursor
+            with self.lock:
+                return self._conn.execute(query, params)
         except sqlite3.IntegrityError as exc:
             logger.error("Integrity error: %s", exc)
             msg = str(exc)
@@ -369,8 +359,8 @@ class Database:
         self._validate_query(query, params)
 
         try:
-            with self.lock, self.get_connection() as conn:
-                cursor = conn.execute(query, params)
+            with self.lock:
+                cursor = self._conn.execute(query, params)
                 row = cursor.fetchone()
                 return dict(row) if row else None
         except sqlite3.Error as exc:
@@ -394,8 +384,8 @@ class Database:
         self._validate_query(query, params)
 
         try:
-            with self.lock, self.get_connection() as conn:
-                cursor = conn.execute(query, params)
+            with self.lock:
+                cursor = self._conn.execute(query, params)
                 rows = cursor.fetchall()
                 return [dict(row) for row in rows]
         except sqlite3.Error as exc:
@@ -422,9 +412,8 @@ class Database:
             raise ValidationError("Query must be an INSERT statement")
 
         try:
-            with self.lock, self.get_connection() as conn:
-                cursor = conn.execute(query, params)
-                conn.commit()
+            with self.lock:
+                cursor = self._conn.execute(query, params)
                 return cursor.lastrowid
         except sqlite3.IntegrityError as exc:
             logger.error("Integrity error during insert: %s", exc)
@@ -440,8 +429,15 @@ class Database:
             raise StorageError(f"Failed to insert row: {exc}")
 
     def close(self):
-        """No-op — connections are closed automatically in context managers."""
-        pass
+        """Close the persistent database connection."""
+        with self.lock:
+            if self._conn is not None:
+                try:
+                    self._conn.close()
+                except Exception as exc:
+                    logger.debug("Error closing persistent connection: %s", exc, exc_info=False)
+                finally:
+                    self._conn = None
 
 
 class _TransactionHelper:
