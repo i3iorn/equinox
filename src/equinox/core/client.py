@@ -313,6 +313,21 @@ class HttpxDispatcher:
             )
         return self._client
 
+    def _sync_cookies_to_client(self) -> None:
+        """Merge the latest CookieManager state into the live httpx.Client jar.
+
+        Called after every response so that cookies received via ``Set-Cookie``
+        are available for the next request without rebuilding the whole client.
+        """
+        if self._client is None:
+            return
+        try:
+            fresh = self._cookie_handler.get_httpx_cookies()
+            for name, value in fresh.items():
+                self._client.cookies.set(name, value)
+        except Exception as exc:
+            logger.debug("HttpxDispatcher: failed to sync cookies to client: %s", exc)
+
     def close(self) -> None:
         if self._client is not None:
             logger.debug("HttpxDispatcher: closing shared httpx.Client")
@@ -769,6 +784,9 @@ class HTTPClient:
                 auth_headers=auth_headers,
             )
             self._cookie_handler.update_from_response(response, request.url)
+            # Merge newly-received cookies back into the live httpx.Client jar
+            # so the next request (or retry) sends the updated cookies.
+            self._dispatcher._sync_cookies_to_client()
             return response
 
         return self._retry_policy.execute_with_http_overload(_single_call)

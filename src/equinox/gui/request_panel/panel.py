@@ -147,6 +147,11 @@ class RequestPanel(_RequestSendMixin, _RequestAuthMixin, RequestBodyMixin, QWidg
         send_shortcut.activated.connect(self._send_request)
         logger.debug("Registered Ctrl+Return send shortcut")
 
+        # Ctrl+S saves to collection from anywhere in the panel
+        save_shortcut = QShortcut(QKeySequence("Ctrl+S"), self)
+        save_shortcut.activated.connect(self._save_request)
+        logger.debug("Registered Ctrl+S save shortcut")
+
         # Ctrl+Shift+F formats JSON body (#6)
         fmt_shortcut = QShortcut(QKeySequence("Ctrl+Shift+F"), self)
         fmt_shortcut.activated.connect(self._format_json_body)
@@ -220,6 +225,10 @@ class RequestPanel(_RequestSendMixin, _RequestAuthMixin, RequestBodyMixin, QWidg
                 "method": req.method if req else None,
                 "url": req.url if req else None,
             })
+            # Surface the failure so the user knows edits may not be persisted.
+            self._status_message(
+                "⚠ Autosave failed — click Save to preserve changes", 8000
+            )
 
     # ── Session variable accessors ─────────────────────────────────────
 

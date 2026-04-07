@@ -22,12 +22,6 @@ from equinox.storage import Database, EnvironmentManager, HistoryManager, Collec
 from equinox.storage.cookies import CookieJarManager
 from equinox.gui.request_panel import RequestPanel
 from equinox.gui.response_panel import ResponsePanel
-from equinox.gui.collections_panel_pkg import CollectionsPanel
-from equinox.gui.history_panel import HistoryPanel
-from equinox.gui.variables_panel import VariablesPanel
-from equinox.gui.logging_panel import LoggingPanel
-from equinox.gui.cookies_panel import CookiesPanel
-from equinox.gui.websocket_panel import WebSocketPanel
 from equinox.gui.theme import (
     Colors, get_font_size, set_font_size, MIN_FONT_SIZE, MAX_FONT_SIZE,
     DEFAULT_FONT_SIZE, get_theme_mode, set_theme_mode, THEME_MODES, THEME_LABELS,
@@ -109,8 +103,14 @@ class MainWindow(QMainWindow):
         else:
             logger.debug("No saved req/resp splitter sizes found in QSettings")
         tab_idx = self._settings.value("left_tabs/index", 0, type=int)
+        # Block signals so setCurrentIndex doesn't fire _ensure_tab_initialized
+        # synchronously during __init__ — defer to the first event-loop iteration
+        # so the window is fully constructed before any panel DB queries run.
+        self._left_tabs.blockSignals(True)
         self._left_tabs.setCurrentIndex(tab_idx)
-        logger.debug("Restored left tabs index: %d", tab_idx)
+        self._left_tabs.blockSignals(False)
+        QTimer.singleShot(0, lambda: self._ensure_tab_initialized(self._left_tabs.currentIndex()))
+        logger.debug("Restored left tabs index: %d (initialization deferred)", tab_idx)
 
     def _save_layout(self) -> None:
         """Persist window geometry and splitter sizes."""
@@ -154,20 +154,22 @@ class MainWindow(QMainWindow):
         self._cookie_manager = CookieJarManager(self.db)
 
         # ── Left panel (Collections, History, …) ─────────────────────
+        # All six panels start as None and are created lazily on first tab click.
+        self.collections_panel = None
+        self.history_panel     = None
+        self.variables_panel   = None
+        self.logging_panel     = None
+        self.cookies_panel     = None
+        self.websocket_panel   = None
+        self._tabs_initialized: set = set()
+
         self._left_tabs = QTabWidget()
-        self.collections_panel = CollectionsPanel(self.db, self)
-        self.history_panel     = HistoryPanel(self.db, self)
-        self.variables_panel   = VariablesPanel(self.db, self)
-        self.logging_panel     = LoggingPanel(self)
-        self.cookies_panel     = CookiesPanel(self.db, self)
-        self.websocket_panel   = WebSocketPanel(self)
-        self._left_tabs.addTab(self.collections_panel, "Collections")
-        self._left_tabs.addTab(self.history_panel,     "History")
-        self._left_tabs.addTab(self.variables_panel,   "Variables")
-        self._left_tabs.addTab(self.logging_panel,     "Logs")
-        self._left_tabs.addTab(self.cookies_panel,     "Cookies")
-        self._left_tabs.addTab(self.websocket_panel,   "WebSocket")
+        for label in ("Collections", "History", "Variables", "Logs", "Cookies", "WebSocket"):
+            self._left_tabs.addTab(QWidget(), label)
         self._left_tabs.setMinimumWidth(_MIN_LEFT_W)
+        # Connect AFTER addTab so that addTab's internal currentChanged (index 0)
+        # does NOT fire _ensure_tab_initialized during construction.
+        self._left_tabs.currentChanged.connect(self._ensure_tab_initialized)
 
         # ── Right panel (Request / Response) ─────────────────────────
         right_widget = QWidget()
@@ -200,29 +202,95 @@ class MainWindow(QMainWindow):
 
         self._wire_signals()
 
+    # ── Lazy left-panel initialization ────────────────────────────────
+
+    _LEFT_TAB_LABELS = ("Collections", "History", "Variables", "Logs", "Cookies", "WebSocket")
+
+    def _ensure_tab_initialized(self, index: int) -> None:
+        """Create the real panel for *index* on first selection; swap the placeholder."""
+        if index in self._tabs_initialized:
+            return
+        factories = {
+            0: self._init_collections_panel,
+            1: self._init_history_panel,
+            2: self._init_variables_panel,
+            3: self._init_logging_panel,
+            4: self._init_cookies_panel,
+            5: self._init_websocket_panel,
+        }
+        factory = factories.get(index)
+        if factory is None:
+            return
+        self._tabs_initialized.add(index)
+        panel = factory()
+        # Swap placeholder for the real panel without retriggering currentChanged.
+        label = self._left_tabs.tabText(index)
+        self._left_tabs.blockSignals(True)
+        self._left_tabs.removeTab(index)
+        self._left_tabs.insertTab(index, panel, label)
+        self._left_tabs.setCurrentIndex(index)
+        self._left_tabs.blockSignals(False)
+        logger.debug("Lazy-initialized left panel index=%d (%s)", index, label)
+
+    def _init_collections_panel(self):
+        from equinox.gui.collections_panel_pkg import CollectionsPanel
+        self.collections_panel = CollectionsPanel(self.db, self)
+        rp = self.request_panel
+        self.collections_panel.request_selected.connect(self._load_request_guarded)
+        self.collections_panel.request_run.connect(self._run_request_directly)
+        self.collections_panel.collections_changed.connect(
+            lambda: self.collections_panel.refresh())
+        self.collections_panel.collections_changed.connect(rp.refresh_inherited_auth)
+        return self.collections_panel
+
+    def _init_history_panel(self):
+        from equinox.gui.history_panel import HistoryPanel
+        self.history_panel = HistoryPanel(self.db, self)
+        self.history_panel.history_selected.connect(self._load_history_entry)
+        self.history_panel.history_replay.connect(self._replay_history_entry)
+        return self.history_panel
+
+    def _init_variables_panel(self):
+        from equinox.gui.variables_panel import VariablesPanel
+        self.variables_panel = VariablesPanel(self.db, self)
+        rp = self.request_panel
+        rp.session_vars_changed.connect(self.variables_panel.refresh_session_vars)
+        self.variables_panel.clear_session_requested.connect(rp.clear_session_vars)
+        return self.variables_panel
+
+    def _init_logging_panel(self):
+        from equinox.gui.logging_panel import LoggingPanel
+        self.logging_panel = LoggingPanel(self)
+        return self.logging_panel
+
+    def _init_cookies_panel(self):
+        from equinox.gui.cookies_panel import CookiesPanel
+        self.cookies_panel = CookiesPanel(self.db, self)
+        return self.cookies_panel
+
+    def _init_websocket_panel(self):
+        from equinox.gui.websocket_panel import WebSocketPanel
+        self.websocket_panel = WebSocketPanel(self)
+        return self.websocket_panel
+
     def _wire_signals(self) -> None:
-        """Connect all cross-panel signals in one place."""
+        """Connect cross-panel signals for eagerly-created panels.
+
+        Lazy-panel signals (CollectionsPanel, HistoryPanel, VariablesPanel, etc.)
+        are connected in their respective _init_*_panel() methods.
+        """
         rp = self.request_panel
 
         rp.response_received.connect(self.response_panel.display_response)
         rp.response_received.connect(self._on_response_received)
         rp.response_received.connect(self._run_intelligence_analysis)
-        # Refresh side-panels after each response
-        rp.response_received.connect(lambda _r: self.cookies_panel.refresh())
-        rp.response_received.connect(lambda _r: self.history_panel.refresh())
-
-        self.collections_panel.request_selected.connect(self._load_request_guarded)
-        self.collections_panel.request_run.connect(self._run_request_directly)
-        self.collections_panel.collections_changed.connect(
-            lambda: self.collections_panel.refresh())
-        self.collections_panel.collections_changed.connect(
-            rp.refresh_inherited_auth)
-
-        self.history_panel.history_selected.connect(self._load_history_entry)
-        self.history_panel.history_replay.connect(self._replay_history_entry)
-
-        rp.session_vars_changed.connect(self.variables_panel.refresh_session_vars)
-        self.variables_panel.clear_session_requested.connect(rp.clear_session_vars)
+        # Refresh lazy side-panels after each response (guard for uninitialized panels)
+        rp.response_received.connect(
+            lambda _r: self.cookies_panel.refresh() if self.cookies_panel else None
+        )
+        rp.response_received.connect(
+            lambda _r: self.history_panel.refresh() if self.history_panel else None
+        )
 
         # Connect splitter moved signals to save layout in real-time
         self._main_splitter.splitterMoved.connect(self._on_splitter_moved)
@@ -514,11 +582,15 @@ class MainWindow(QMainWindow):
         # Collections
         col_menu = menubar.addMenu("&Collections")
         new_col = QAction("New &Collection", self)
-        new_col.triggered.connect(self.collections_panel.create_collection)
+        new_col.triggered.connect(
+            lambda: self.collections_panel.create_collection() if self.collections_panel else None
+        )
         col_menu.addAction(new_col)
         refresh_act = QAction("&Refresh", self)
         refresh_act.setShortcut("F5")
-        refresh_act.triggered.connect(self.collections_panel.refresh)
+        refresh_act.triggered.connect(
+            lambda: self.collections_panel.refresh() if self.collections_panel else None
+        )
         col_menu.addAction(refresh_act)
         col_menu.addSeparator()
         export_menu = col_menu.addMenu("&Export")
@@ -702,6 +774,7 @@ class MainWindow(QMainWindow):
         _SHORTCUTS = [
             ("Ctrl+N",       "New request (clear editor)"),
             ("Ctrl+Return",  "Send request"),
+            ("Ctrl+S",       "Save to Collection"),
             ("Ctrl+,",       "Open Preferences"),
             ("Ctrl+Q",       "Exit"),
             ("F5",           "Refresh collections"),
@@ -767,7 +840,8 @@ class MainWindow(QMainWindow):
         importer = importer_class(mgr)
         try:
             importer.import_file(Path(file_path))
-            self.collections_panel.refresh()
+            if self.collections_panel:
+                self.collections_panel.refresh()
             self.status_bar.showMessage(success_msg, 4000)
         except Exception as exc:
             QMessageBox.critical(self, "Import Error", f"Failed to import: {exc}")
@@ -870,7 +944,8 @@ class MainWindow(QMainWindow):
         from equinox.gui.dialogs.environment_dialog import EnvironmentDialog
         EnvironmentDialog(self.db, self).exec()
         # Single post-exec refresh covers both changed and cancelled/dismissed.
-        self.variables_panel.refresh()
+        if self.variables_panel:
+            self.variables_panel.refresh()
         self._refresh_env_label()
 
     def _manage_oauth_clients(self) -> None:

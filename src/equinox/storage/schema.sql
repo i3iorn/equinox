@@ -1,6 +1,6 @@
 -- Equinox Database Schema (reference only — not used at runtime)
 -- The migration system (migrations.py) manages the actual schema.
--- Last updated: migration v19
+-- Last updated: migration v21
 
 -- Schema version tracking
 CREATE TABLE IF NOT EXISTS schema_version (
@@ -199,3 +199,46 @@ CREATE INDEX IF NOT EXISTS idx_oauth_clients_default ON oauth_clients(is_default
 CREATE INDEX IF NOT EXISTS idx_saved_creds_type ON saved_credentials(auth_type);
 CREATE INDEX IF NOT EXISTS idx_saved_creds_default ON saved_credentials(is_default);
 CREATE INDEX IF NOT EXISTS idx_collection_folders_collection ON collection_folders(collection_id);
+
+-- Response Intelligence tables (v20)
+CREATE TABLE IF NOT EXISTS endpoint_stats (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    url_pattern     TEXT    NOT NULL,
+    method          TEXT    NOT NULL,
+    call_count      INTEGER DEFAULT 0,
+    total_elapsed   REAL    DEFAULT 0,
+    min_elapsed     REAL,
+    max_elapsed     REAL,
+    elapsed_values  TEXT    DEFAULT '[]',
+    updated_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_endpoint_stats_pattern
+    ON endpoint_stats(url_pattern, method);
+
+CREATE TABLE IF NOT EXISTS response_schemas (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    url_pattern     TEXT    NOT NULL,
+    method          TEXT    NOT NULL,
+    schema_hash     TEXT    NOT NULL,
+    schema_json     TEXT    NOT NULL,
+    captured_at     TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_response_schemas_pattern
+    ON response_schemas(url_pattern, method);
+
+-- History index table for normalized URL indexing (v21)
+CREATE TABLE IF NOT EXISTS history_index (
+    id               INTEGER PRIMARY KEY AUTOINCREMENT,
+    history_id       INTEGER UNIQUE NOT NULL,
+    method           TEXT    NOT NULL,
+    normalized_url   TEXT    NOT NULL,
+    path_segments    TEXT    NOT NULL,
+    query_params     TEXT    NOT NULL,
+    body_hash        TEXT,
+    response_success INTEGER NOT NULL DEFAULT 0,
+    executed_at      TEXT,
+    FOREIGN KEY (history_id) REFERENCES history(id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_history_index_method_norm
+    ON history_index(method, normalized_url);
+

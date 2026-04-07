@@ -284,6 +284,11 @@ class HistoryManager:
           JSONPath match must equal this string.
         * *header* – ``"Name: value"`` substring match in response headers.
 
+        When post-filters are active the method uses a cursor-based streaming
+        approach: it fetches rows in batches until *limit* post-filter matches
+        are collected or the cursor is exhausted, avoiding the empty-page
+        problem that arose when a fixed ``limit * 4`` pre-fetch was too small.
+
         Raises:
             ValidationError: On invalid limit/offset, bad regex, or bad JSONPath.
         """
@@ -305,28 +310,60 @@ class HistoryManager:
         )
 
         needs_post_filter = bool(compiled_regex or parsed_jsonpath or header)
-        fetch_limit = limit * 4 if needs_post_filter else limit
-
         where_clause = ("WHERE " + " AND ".join(conditions)) if conditions else ""
-        sql = f"SELECT * FROM history {where_clause} ORDER BY executed_at DESC LIMIT ? OFFSET ?"
-        params_list.extend([fetch_limit, offset])
 
-        rows = self.db.fetchall(sql, tuple(params_list))
-
-        for row in rows:
-            self._decode_json_headers(row)  # No row_id = silent mode
-
-        if needs_post_filter:
-            rows = self._apply_post_filters(
-                rows,
-                compiled_regex=compiled_regex,
-                parsed_jsonpath=parsed_jsonpath,
-                jsonpath_value=jsonpath_value,
-                header=header,
-                limit=limit,
+        if not needs_post_filter:
+            # Fast path: single SQL query with exact pagination.
+            sql = (
+                f"SELECT * FROM history {where_clause} "
+                f"ORDER BY executed_at DESC LIMIT ? OFFSET ?"
             )
+            params_list.extend([limit, offset])
+            rows = self.db.fetchall(sql, tuple(params_list))
+            for row in rows:
+                self._decode_json_headers(row)
+            return rows
 
-        return rows
+        # Slow path: stream batches and post-filter until we collect `limit` matches.
+        # Batch size starts at max(limit * 4, 200) and doubles on each empty batch
+        # to bound the number of round-trips for very selective post-filters.
+        _BATCH_MIN = max(limit * 4, 200)
+        result: List[Dict[str, Any]] = []
+        cursor_offset = offset
+        batch_size = _BATCH_MIN
+        header_name, header_val = self._parse_header_filter(header)
+
+        while len(result) < limit:
+            sql = (
+                f"SELECT * FROM history {where_clause} "
+                f"ORDER BY executed_at DESC LIMIT ? OFFSET ?"
+            )
+            batch_params = tuple(params_list) + (batch_size, cursor_offset)
+            batch = self.db.fetchall(sql, batch_params)
+            if not batch:
+                break  # cursor exhausted
+
+            for row in batch:
+                if len(result) >= limit:
+                    break
+                self._decode_json_headers(row)
+                if compiled_regex and not self._matches_body_regex(row, compiled_regex):
+                    continue
+                if parsed_jsonpath and not self._matches_jsonpath(
+                    row, parsed_jsonpath, jsonpath_value
+                ):
+                    continue
+                if header_name and not self._matches_header(row, header_name, header_val):
+                    continue
+                result.append(row)
+
+            if len(batch) < batch_size:
+                break  # SQL layer returned fewer rows than asked — cursor exhausted
+
+            cursor_offset += batch_size
+            batch_size = min(batch_size * 2, self.MAX_LIMIT)  # double, capped at MAX_LIMIT
+
+        return result
 
     def get_stats(self) -> Dict[str, Any]:
         """Return aggregate history statistics (single DB round-trip)."""
