@@ -13,7 +13,7 @@ def parse_dotenv(text: str) -> dict:
     Raises:
         ValueError: If the text exceeds the maximum allowed size.
     """
-    if len(text) > MAX_DOTENV_SIZE:
+    if len(text.encode("utf-8")) > MAX_DOTENV_SIZE:
         raise ValueError(
             f".env content exceeds maximum size ({MAX_DOTENV_SIZE} bytes)"
         )
