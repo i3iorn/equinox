@@ -88,6 +88,10 @@ class CollectionFoldersMixin:
         All requests whose folder equals *old_path* or starts with
         ``old_path/`` have the leading prefix replaced by *new_path*.
 
+        Both the ``requests`` and ``collection_folders`` tables are updated
+        inside a single transaction so a mid-flight crash cannot leave them
+        in inconsistent states.
+
         Args:
             collection_id: Collection to operate on.
             old_path: Current folder path (e.g. "Auth").
@@ -100,37 +104,38 @@ class CollectionFoldersMixin:
         old_path = _validate_folder_path(old_path, "Old folder")
         new_path = _validate_folder_path(new_path, "New folder")
 
-        # Batch-update request folders: replace old_path prefix with new_path.
-        # CASE handles both exact match and sub-folder prefix in one statement.
-        self.db.execute(
-            "UPDATE requests SET "
-            "folder = CASE "
-            "  WHEN folder = ? THEN ? "
-            "  ELSE ? || SUBSTR(folder, ?) "
-            "END, "
-            "updated_at = CURRENT_TIMESTAMP "
-            "WHERE collection_id = ? AND (folder = ? OR folder LIKE ?)",
-            (
-                old_path, new_path,                       # exact match
-                new_path, len(old_path) + 1,              # prefix replacement
-                collection_id, old_path, f"{old_path}/%", # WHERE
-            ),
-        )
+        with self.db.transaction() as tx:
+            # Batch-update request folders: replace old_path prefix with new_path.
+            # CASE handles both exact match and sub-folder prefix in one statement.
+            tx.execute(
+                "UPDATE requests SET "
+                "folder = CASE "
+                "  WHEN folder = ? THEN ? "
+                "  ELSE ? || SUBSTR(folder, ?) "
+                "END, "
+                "updated_at = CURRENT_TIMESTAMP "
+                "WHERE collection_id = ? AND (folder = ? OR folder LIKE ?)",
+                (
+                    old_path, new_path,                       # exact match
+                    new_path, len(old_path) + 1,              # prefix replacement
+                    collection_id, old_path, f"{old_path}/%", # WHERE
+                ),
+            )
 
-        # Batch-update collection_folders records in sync.
-        self.db.execute(
-            "UPDATE collection_folders SET "
-            "path = CASE "
-            "  WHEN path = ? THEN ? "
-            "  ELSE ? || SUBSTR(path, ?) "
-            "END "
-            "WHERE collection_id = ? AND (path = ? OR path LIKE ?)",
-            (
-                old_path, new_path,
-                new_path, len(old_path) + 1,
-                collection_id, old_path, f"{old_path}/%",
-            ),
-        )
+            # Batch-update collection_folders records in sync.
+            tx.execute(
+                "UPDATE collection_folders SET "
+                "path = CASE "
+                "  WHEN path = ? THEN ? "
+                "  ELSE ? || SUBSTR(path, ?) "
+                "END "
+                "WHERE collection_id = ? AND (path = ? OR path LIKE ?)",
+                (
+                    old_path, new_path,
+                    new_path, len(old_path) + 1,
+                    collection_id, old_path, f"{old_path}/%",
+                ),
+            )
 
         logger.info(
             "Renamed folder %r → %r in collection %d",
@@ -145,6 +150,9 @@ class CollectionFoldersMixin:
     ) -> None:
         """Delete a folder within a collection.
 
+        The request update/delete and the ``collection_folders`` cleanup run
+        inside a single transaction to prevent partial state on failure.
+
         Args:
             collection_id: Collection to operate on.
             folder_path: Folder path to delete (e.g. "Auth/OAuth").
@@ -157,36 +165,42 @@ class CollectionFoldersMixin:
         """
         require_positive_int(collection_id, "Collection ID")
         folder_path = _validate_folder_path(folder_path)
-        # Count affected requests for logging
-        count_row = self.db.fetchone(
-            "SELECT COUNT(*) AS cnt FROM requests WHERE collection_id=? AND "
-            "(folder=? OR folder LIKE ?)",
-            (collection_id, folder_path, f"{folder_path}/%"),
-        )
-        request_count = (count_row or {}).get("cnt", 0)
+
+        with self.db.transaction() as tx:
+            # Count affected requests for logging (inside transaction for consistency)
+            count_row = tx.fetchone(
+                "SELECT COUNT(*) AS cnt FROM requests WHERE collection_id=? AND "
+                "(folder=? OR folder LIKE ?)",
+                (collection_id, folder_path, f"{folder_path}/%"),
+            )
+            request_count = (count_row or {}).get("cnt", 0)
+            if request_count:
+                if move_to_root:
+                    tx.execute(
+                        "UPDATE requests SET folder=NULL, updated_at=CURRENT_TIMESTAMP "
+                        "WHERE collection_id=? AND (folder=? OR folder LIKE ?)",
+                        (collection_id, folder_path, f"{folder_path}/%"),
+                    )
+                else:
+                    tx.execute(
+                        "DELETE FROM requests WHERE collection_id=? AND "
+                        "(folder=? OR folder LIKE ?)",
+                        (collection_id, folder_path, f"{folder_path}/%"),
+                    )
+            # Always clean up explicit folder records (handles empty folders too)
+            tx.execute(
+                "DELETE FROM collection_folders WHERE collection_id=? AND (path=? OR path LIKE ?)",
+                (collection_id, folder_path, f"{folder_path}/%"),
+            )
+
         if request_count:
             if move_to_root:
-                self.db.execute(
-                    "UPDATE requests SET folder=NULL, updated_at=CURRENT_TIMESTAMP "
-                    "WHERE collection_id=? AND (folder=? OR folder LIKE ?)",
-                    (collection_id, folder_path, f"{folder_path}/%"),
-                )
                 logger.info(
                     "Moved %d request(s) from folder %r to root in collection %d",
                     request_count, folder_path, collection_id,
                 )
             else:
-                self.db.execute(
-                    "DELETE FROM requests WHERE collection_id=? AND "
-                    "(folder=? OR folder LIKE ?)",
-                    (collection_id, folder_path, f"{folder_path}/%"),
-                )
                 logger.info(
                     "Deleted %d request(s) in folder %r from collection %d",
                     request_count, folder_path, collection_id,
                 )
-        # Always clean up explicit folder records (handles empty folders too)
-        self.db.execute(
-            "DELETE FROM collection_folders WHERE collection_id=? AND (path=? OR path LIKE ?)",
-            (collection_id, folder_path, f"{folder_path}/%"),
-        )
