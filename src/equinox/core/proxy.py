@@ -10,7 +10,6 @@ import errno
 import select as _select
 import socket
 from urllib.parse import urlparse
-from pathlib import Path
 from typing import Optional
 
 from equinox.core.exceptions import RequestError
