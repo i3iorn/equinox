@@ -62,6 +62,15 @@ class HttpxDispatcher:
         """Pre-warm the shared ``httpx.Client`` (called from ``HTTPClient.__enter__``)."""
         self._ensure_client()
 
+    def flush_cookies(self, response: Response, url: str) -> None:
+        """Update the in-memory cookie jar from *response* and push to the httpx client.
+
+        Combines the two-step cookie sync into a single call so no caller needs
+        to reach into the dispatcher's private ``_sync_cookies_to_client``.
+        """
+        self._cookie_handler.update_from_response(response, url)
+        self._sync_cookies_to_client()
+
     def _sync_cookies_to_client(self) -> None:
         """Merge the latest CookieManager state into the live httpx.Client jar.
 

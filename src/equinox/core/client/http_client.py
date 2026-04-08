@@ -116,13 +116,12 @@ class HTTPClient:
             window_seconds=self.RATE_LIMIT_WINDOW_SECONDS,
             audit_logger=self._audit,
         )
-        self._cookie_handler = CookieHandler(cookie_manager)
         self._dispatcher = HttpxDispatcher(
             timeout=self.timeout,
             follow_redirects=self.follow_redirects,
             verify_ssl=self.verify_ssl,
             proxy=self.proxy,
-            cookie_handler=self._cookie_handler,
+            cookie_handler=CookieHandler(cookie_manager),
         )
         self._concurrency = ConcurrencyGuard(self.max_concurrent_requests)
         self._auth_applier = AuthApplier()
@@ -210,8 +209,7 @@ class HTTPClient:
             headers=headers,
             auth_headers=auth_headers,
         )
-        self._cookie_handler.update_from_response(response, request.url)
-        self._dispatcher._sync_cookies_to_client()
+        self._dispatcher.flush_cookies(response, request.url)
         return response
 
     def _dispatch_with_retries(
@@ -255,7 +253,7 @@ class HTTPClient:
         )
 
         self._validate_request(request)
-        self._rate_limiter.try_acquire()
+        self.check_rate_limit()
         self._check_concurrent_limit()
         try:
             return self._pipeline.execute(
