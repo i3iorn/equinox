@@ -548,11 +548,11 @@ class TestCliCollectionsCoverage:
     def test_collection_requests_with_data(self, runner, temp_db):
         from equinox.cli.main import cli
         runner.invoke(cli, ["collection", "create", "WithReqs"])
-        db = Database(temp_db)
-        mgr = CollectionManager(db)
-        col_id = mgr.list_collections()[0]["id"]
-        mgr.save_request(Request(method="GET", url="https://example.com", name="R1"),
-                         collection_id=col_id, name="R1")
+        with Database(temp_db) as db:
+            mgr = CollectionManager(db)
+            col_id = mgr.list_collections()[0]["id"]
+            mgr.save_request(Request(method="GET", url="https://example.com", name="R1"),
+                             collection_id=col_id, name="R1")
         result = runner.invoke(cli, ["collection", "requests", str(col_id)])
         assert result.exit_code == 0
         assert "R1" in result.output
@@ -562,11 +562,11 @@ class TestCliCollectionsCoverage:
         from equinox.cli.main import cli
         mock_client = MockHTTPClient.return_value
         mock_client.send.return_value = _mock_response()
-        db = Database(temp_db)
-        mgr = CollectionManager(db)
-        col_id = mgr.create_collection("RunMe")
-        mgr.save_request(Request(method="GET", url="https://example.com", name="R"),
-                         collection_id=col_id, name="R")
+        with Database(temp_db) as db:
+            mgr = CollectionManager(db)
+            col_id = mgr.create_collection("RunMe")
+            mgr.save_request(Request(method="GET", url="https://example.com", name="R"),
+                             collection_id=col_id, name="R")
         result = runner.invoke(cli, ["collection", "run", str(col_id)])
         assert result.exit_code == 0, result.output
         assert "passed" in result.output.lower()
@@ -576,11 +576,11 @@ class TestCliCollectionsCoverage:
         from equinox.cli.main import cli
         mock_client = MockHTTPClient.return_value
         mock_client.send.return_value = _mock_response(status=500)
-        db = Database(temp_db)
-        mgr = CollectionManager(db)
-        col_id = mgr.create_collection("FailMe")
-        mgr.save_request(Request(method="GET", url="https://example.com", name="R"),
-                         collection_id=col_id, name="R")
+        with Database(temp_db) as db:
+            mgr = CollectionManager(db)
+            col_id = mgr.create_collection("FailMe")
+            mgr.save_request(Request(method="GET", url="https://example.com", name="R"),
+                             collection_id=col_id, name="R")
         result = runner.invoke(cli, ["collection", "run", str(col_id)])
         assert result.exit_code != 0
 
@@ -594,13 +594,13 @@ class TestCliCollectionsCoverage:
         from equinox.cli.main import cli
         mock_client = MockHTTPClient.return_value
         mock_client.send.return_value = _mock_response(status=500)
-        db = Database(temp_db)
-        mgr = CollectionManager(db)
-        col_id = mgr.create_collection("Stop")
-        mgr.save_request(Request(method="GET", url="https://a.com", name="R1"),
-                         collection_id=col_id, name="R1")
-        mgr.save_request(Request(method="GET", url="https://b.com", name="R2"),
-                         collection_id=col_id, name="R2")
+        with Database(temp_db) as db:
+            mgr = CollectionManager(db)
+            col_id = mgr.create_collection("Stop")
+            mgr.save_request(Request(method="GET", url="https://a.com", name="R1"),
+                             collection_id=col_id, name="R1")
+            mgr.save_request(Request(method="GET", url="https://b.com", name="R2"),
+                             collection_id=col_id, name="R2")
         result = runner.invoke(cli, [
             "collection", "run", str(col_id), "--stop-on-error",
         ])
@@ -608,11 +608,11 @@ class TestCliCollectionsCoverage:
 
     def test_collection_export_postman(self, runner, temp_db, tmp_path):
         from equinox.cli.main import cli
-        db = Database(temp_db)
-        mgr = CollectionManager(db)
-        col_id = mgr.create_collection("Export Me")
-        mgr.save_request(Request(method="GET", url="https://example.com", name="R"),
-                         collection_id=col_id, name="R")
+        with Database(temp_db) as db:
+            mgr = CollectionManager(db)
+            col_id = mgr.create_collection("Export Me")
+            mgr.save_request(Request(method="GET", url="https://example.com", name="R"),
+                             collection_id=col_id, name="R")
         out = str(tmp_path / "export.json")
         result = runner.invoke(cli, [
             "collection", "export", str(col_id), "-f", "postman", "-o", out,
@@ -650,12 +650,12 @@ class TestCliCollectionsCoverage:
 class TestCliHistoryCoverage:
 
     def _seed_history(self, db_path):
-        db = Database(db_path)
-        from equinox.storage import HistoryManager
-        hm = HistoryManager(db)
-        req = Request(method="GET", url="https://example.com")
-        resp = _mock_response()
-        hm.save_history(req, resp)
+        with Database(db_path) as db:
+            from equinox.storage import HistoryManager
+            hm = HistoryManager(db)
+            req = Request(method="GET", url="https://example.com")
+            resp = _mock_response()
+            hm.save_history(req, resp)
 
     def test_history_export_json(self, runner, temp_db, tmp_path):
         from equinox.cli.main import cli

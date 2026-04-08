@@ -17,7 +17,8 @@ from equinox.importers.har import HARImporter
 @pytest.fixture
 def tmp_db(tmp_path):
     db = Database(str(tmp_path / "test.db"))
-    return db
+    yield db
+    db.close()
 
 
 @pytest.fixture

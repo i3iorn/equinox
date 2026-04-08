@@ -630,14 +630,14 @@ class TestIntelligenceMigration:
     def test_tables_created(self, tmp_path):
         from equinox.storage.database import Database
 
-        db = Database(str(tmp_path / "test.db"))
-        # Tables should exist after Database.__init__ runs migrations
-        rows = db.fetchall(
-            "SELECT name FROM sqlite_master WHERE type='table' AND name IN ('endpoint_stats', 'response_schemas')"
-        )
-        names = {r["name"] for r in rows}
-        assert "endpoint_stats" in names
-        assert "response_schemas" in names
+        with Database(str(tmp_path / "test.db")) as db:
+            # Tables should exist after Database.__init__ runs migrations
+            rows = db.fetchall(
+                "SELECT name FROM sqlite_master WHERE type='table' AND name IN ('endpoint_stats', 'response_schemas')"
+            )
+            names = {r["name"] for r in rows}
+            assert "endpoint_stats" in names
+            assert "response_schemas" in names
 
 
 # ── Storage manager test ──────────────────────────────────────────────
@@ -648,49 +648,49 @@ class TestResponseIntelligenceManager:
         from equinox.storage.database import Database
         from equinox.storage.response_intelligence import ResponseIntelligenceManager
 
-        db = Database(str(tmp_path / "test.db"))
-        mgr = ResponseIntelligenceManager(db)
+        with Database(str(tmp_path / "test.db")) as db:
+            mgr = ResponseIntelligenceManager(db)
 
-        # Initially empty
-        assert mgr.get_endpoint_stats("/users/{id}", "GET") is None
+            # Initially empty
+            assert mgr.get_endpoint_stats("/users/{id}", "GET") is None
 
-        # Insert
-        mgr.update_endpoint_stats("/users/{id}", "GET", 150.0)
-        stats = mgr.get_endpoint_stats("/users/{id}", "GET")
-        assert stats is not None
-        assert stats["call_count"] == 1
+            # Insert
+            mgr.update_endpoint_stats("/users/{id}", "GET", 150.0)
+            stats = mgr.get_endpoint_stats("/users/{id}", "GET")
+            assert stats is not None
+            assert stats["call_count"] == 1
 
-        # Update
-        mgr.update_endpoint_stats("/users/{id}", "GET", 200.0)
-        stats = mgr.get_endpoint_stats("/users/{id}", "GET")
-        assert stats["call_count"] == 2
-        values = json.loads(stats["elapsed_values"])
-        assert len(values) == 2
+            # Update
+            mgr.update_endpoint_stats("/users/{id}", "GET", 200.0)
+            stats = mgr.get_endpoint_stats("/users/{id}", "GET")
+            assert stats["call_count"] == 2
+            values = json.loads(stats["elapsed_values"])
+            assert len(values) == 2
 
     def test_schema_roundtrip(self, tmp_path):
         from equinox.storage.database import Database
         from equinox.storage.response_intelligence import ResponseIntelligenceManager
 
-        db = Database(str(tmp_path / "test.db"))
-        mgr = ResponseIntelligenceManager(db)
+        with Database(str(tmp_path / "test.db")) as db:
+            mgr = ResponseIntelligenceManager(db)
 
-        schema = {"name": "str", "age": "int"}
-        mgr.save_schema("/users/{id}", "GET", schema)
-        loaded = mgr.get_schema("/users/{id}", "GET")
-        assert loaded == schema
+            schema = {"name": "str", "age": "int"}
+            mgr.save_schema("/users/{id}", "GET", schema)
+            loaded = mgr.get_schema("/users/{id}", "GET")
+            assert loaded == schema
 
-        # Update
-        new_schema = {"name": "str", "age": "int", "role": "str"}
-        mgr.save_schema("/users/{id}", "GET", new_schema)
-        loaded = mgr.get_schema("/users/{id}", "GET")
-        assert loaded == new_schema
+            # Update
+            new_schema = {"name": "str", "age": "int", "role": "str"}
+            mgr.save_schema("/users/{id}", "GET", new_schema)
+            loaded = mgr.get_schema("/users/{id}", "GET")
+            assert loaded == new_schema
 
     def test_recent_history(self, tmp_path):
         from equinox.storage.database import Database
         from equinox.storage.response_intelligence import ResponseIntelligenceManager
 
-        db = Database(str(tmp_path / "test.db"))
-        mgr = ResponseIntelligenceManager(db)
-        rows = mgr.get_recent_history(limit=10)
-        assert isinstance(rows, list)
+        with Database(str(tmp_path / "test.db")) as db:
+            mgr = ResponseIntelligenceManager(db)
+            rows = mgr.get_recent_history(limit=10)
+            assert isinstance(rows, list)
 
