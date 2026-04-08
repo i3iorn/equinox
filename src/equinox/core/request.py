@@ -341,7 +341,7 @@ class Request:
                 request.auth = auth_from_dict(data["auth_type"], data["auth"])
             except Exception as exc:
                 logger.exception("Auth reconstruction failed")
-                raise ValueError("Invalid auth configuration") from exc
+                raise ValidationError("Invalid auth configuration") from exc
 
         return request
 
@@ -354,7 +354,9 @@ class Request:
             return url
 
         if _is_template_url(url) or not _is_absolute_url(url):
-            qs = "&".join(f"{k}={v}" for k, v in self.params.items())
+            # URL still contains unresolved placeholders or is relative — use
+            # urlencode so that param values with special characters are safe.
+            qs = urlencode(self.params)
             sep = "&" if "?" in url else "?"
             return f"{url}{sep}{qs}"
 
