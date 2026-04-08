@@ -173,24 +173,21 @@ class HistoryManager:
                 raise ValidationError("Days value too large (max 36500)")
 
             try:
-                count_row = self.db.fetchone(
-                    "SELECT COUNT(*) as count FROM history "
-                    "WHERE executed_at < datetime('now', '-' || ? || ' days')",
-                    (days,),
-                )
-                count = count_row["count"] if count_row else 0
-                self.db.execute(
-                    "DELETE FROM history WHERE executed_at < datetime('now', '-' || ? || ' days')",
-                    (days,),
-                )
+                with self.db.transaction() as tx:
+                    cursor = tx.execute(
+                        "DELETE FROM history"
+                        " WHERE executed_at < datetime('now', '-' || ? || ' days')",
+                        (days,),
+                    )
+                    count = cursor.rowcount
                 logger.warning("Deleted %d history entries older than %d days", count, days)
             except Exception as exc:
                 raise StorageError(f"Failed to clear old history: {exc}")
         else:
             try:
-                count_row = self.db.fetchone("SELECT COUNT(*) as count FROM history")
-                count = count_row["count"] if count_row else 0
-                self.db.execute("DELETE FROM history")
+                with self.db.transaction() as tx:
+                    cursor = tx.execute("DELETE FROM history")
+                    count = cursor.rowcount
                 logger.warning("Cleared all %d history entries", count)
             except Exception as exc:
                 raise StorageError(f"Failed to clear history: {exc}")
@@ -682,40 +679,6 @@ class HistoryManager:
         return conditions, params
 
     @staticmethod
-    def _apply_post_filters(
-        rows: List[Dict[str, Any]],
-        *,
-        compiled_regex: Optional["re.Pattern[str]"] = None,
-        parsed_jsonpath: Optional[Any] = None,
-        jsonpath_value: Optional[str] = None,
-        header: str = "",
-        limit: int = 100,
-    ) -> List[Dict[str, Any]]:
-        """Apply Python-side filters that cannot be expressed in SQL.
-        
-        Filters rows by regex body match, JSONPath match, and/or header match,
-        returning up to `limit` matching rows.
-        """
-        result: List[Dict[str, Any]] = []
-        header_name, header_val = HistoryManager._parse_header_filter(header)
-
-        for row in rows:
-            if len(result) >= limit:
-                break
-
-            # Apply all active filters (all must pass)
-            if compiled_regex and not HistoryManager._matches_body_regex(row, compiled_regex):
-                continue
-            if parsed_jsonpath and not HistoryManager._matches_jsonpath(row, parsed_jsonpath, jsonpath_value):
-                continue
-            if header_name and not HistoryManager._matches_header(row, header_name, header_val):
-                continue
-
-            result.append(row)
-
-        return result
-
-    @staticmethod
     def _matches_body_regex(row: Dict[str, Any], compiled_regex: "re.Pattern[str]") -> bool:
         """Return True if the response body matches the regex pattern."""
         body = coerce_body_to_str(row.get("response_body") or "") or ""
@@ -845,8 +808,11 @@ class HistoryManager:
 
             response_success = 1 if (isinstance(status_code, int) and 200 <= status_code < 300) else 0
 
-            executed_at_row = self.db.fetchone("SELECT executed_at FROM history WHERE id = ?", (history_id,))
-            executed_at = executed_at_row.get("executed_at") if executed_at_row else None
+            # Use a Python timestamp rather than querying the just-inserted row
+            # back from the DB — avoids a redundant round-trip.  The value will
+            # be within milliseconds of the CURRENT_TIMESTAMP stored in history.
+            from datetime import datetime as _dt
+            executed_at = _dt.utcnow().strftime("%Y-%m-%d %H:%M:%S")
 
             self.db.insert(
                 """
