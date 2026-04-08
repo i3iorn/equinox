@@ -428,7 +428,7 @@ class Database:
             logger.error("Unexpected error during insert: %s", exc)
             raise StorageError(f"Failed to insert row: {exc}")
 
-    def close(self):
+    def close(self) -> None:
         """Close the persistent database connection."""
         with self.lock:
             if self._conn is not None:
@@ -438,6 +438,34 @@ class Database:
                     logger.debug("Error closing persistent connection: %s", exc, exc_info=False)
                 finally:
                     self._conn = None
+
+    def __del__(self) -> None:
+        """Last-resort GC safety net — close the connection if the caller forgot.
+
+        Suppresses the ``ResourceWarning: unclosed database`` that Python emits
+        when a ``sqlite3.Connection`` is garbage-collected while still open.
+        Must never raise, because exceptions from ``__del__`` are silently
+        ignored by the interpreter (and may hide the real error).
+        """
+        try:
+            # Avoid acquiring the lock here: __del__ may run during interpreter
+            # shutdown when locks can deadlock.  Directly close if still open.
+            conn = getattr(self, "_conn", None)
+            if conn is not None:
+                conn.close()
+                self._conn = None
+        except Exception:  # noqa: BLE001
+            pass
+
+    # ── Context-manager support ───────────────────────────────────────────────
+
+    def __enter__(self) -> "Database":
+        """Return *self* so ``with Database(...) as db:`` works."""
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb) -> None:
+        """Close the connection on context exit (clean or exceptional)."""
+        self.close()
 
 
 class _TransactionHelper:
