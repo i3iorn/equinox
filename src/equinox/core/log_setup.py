@@ -196,6 +196,12 @@ def configure_logging(
 
     root = logging.getLogger()
     root.setLevel(logging.DEBUG)
+    # Close existing handlers before removing them to avoid file-descriptor leaks.
+    for _h in list(root.handlers):
+        try:
+            _h.close()
+        except Exception:
+            pass
     root.handlers.clear()
 
     # File handler
