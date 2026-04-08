@@ -6,6 +6,21 @@ from typing import Optional
 from equinox.core import urls
 
 
+# Flags that consume the next token as their value.  Defined at module level
+# so the set is not recreated on every iteration of the parse loop.
+_VALUE_FLAGS = frozenset({
+    "-o", "--output",
+    "-A", "--user-agent",
+    "-e", "--referer",
+    "-m", "--max-time", "--connect-timeout",
+    "-c", "--cookie-jar",
+    "-b", "--cookie",
+    "--proxy", "-x",
+    "--cacert", "--cert", "--key",
+    "--max-redirs",
+})
+
+
 def parse_curl(curl_cmd: str) -> dict:
     """Parse a cURL command string and return a dict suitable for building a Request.
 
@@ -89,12 +104,7 @@ def parse_curl(curl_cmd: str) -> dict:
             pass  # follow_redirects is True by default
 
         elif tok.startswith("-"):
-            # Unknown flag — skip; if it takes an argument, skip that too
-            # Heuristic: single-letter flags that take args: -o, -A, -e, -m, -c, -b...
-            _VALUE_FLAGS = {"-o", "--output", "-A", "--user-agent", "-e", "--referer",
-                            "-m", "--max-time", "--connect-timeout", "-c", "--cookie-jar",
-                            "-b", "--cookie", "--proxy", "-x", "--cacert", "--cert",
-                            "--key", "--max-redirs"}
+            # Unknown flag — skip; if it takes an argument, skip that too.
             if tok in _VALUE_FLAGS and i + 1 < len(tokens):
                 i += 1  # skip value
 
