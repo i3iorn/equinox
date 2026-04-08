@@ -165,10 +165,10 @@ class TestMigrationRunner:
 class TestMigrationIntegrationWithDatabase:
 
     def test_new_database_fully_migrated(self, tmp_path):
-        db = Database(str(tmp_path / "new.db"))
-        runner = MigrationRunner(db)
-        assert runner.version == MIGRATIONS[-1].version
-        assert runner.pending() == []
+        with Database(str(tmp_path / "new.db")) as db:
+            runner = MigrationRunner(db)
+            assert runner.version == MIGRATIONS[-1].version
+            assert runner.pending() == []
 
     def test_database_usable_after_migration(self, db):
         from equinox.storage import CollectionManager

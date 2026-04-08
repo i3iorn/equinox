@@ -291,11 +291,11 @@ class TestRequestRunCLI:
         from equinox.storage.database import Database
         from equinox.storage.collections import CollectionManager
         from equinox.core.request import Request
-        db = Database(temp_db)
-        mgr = CollectionManager(db)
-        col_id = mgr.list_collections()[0]["id"]
-        req = Request(method="GET", url="https://example.com", name="My Test")
-        req_id = mgr.save_request(req, collection_id=col_id, name="My Test")
+        with Database(temp_db) as db:
+            mgr = CollectionManager(db)
+            col_id = mgr.list_collections()[0]["id"]
+            req = Request(method="GET", url="https://example.com", name="My Test")
+            req_id = mgr.save_request(req, collection_id=col_id, name="My Test")
 
         result = runner.invoke(
             cli,
