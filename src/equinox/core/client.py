@@ -496,8 +496,10 @@ class RequestPipeline:
             processed = self._interceptors.process_error(request, error)
             if processed is not None:
                 raise processed
-            # No interceptor suppressed the error — re-raise the original domain error
-            raise error
+            # Interceptor suppressed the error (returned None) — return so that
+            # execute() raises its generic "suppressed" RequestError instead of
+            # re-raising the original domain error.
+            return
         else:
             # Map via error_handlers
             for exc_type, handler_fn in self._error_handlers:
