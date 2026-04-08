@@ -229,6 +229,7 @@ class Validator:
         except ValueError:
             # Not a literal IP — try DNS resolution with a tight timeout
             # to avoid stalling on slow/unresponsive DNS servers.
+            future = None
             try:
                 pool = _get_dns_pool()
                 future = pool.submit(
@@ -244,8 +245,14 @@ class Validator:
                             f"Hostname '{hostname}' resolves to private IP {ip_str} "
                             f"(SSRF protection)"
                         )
-            except (socket.gaierror, OSError, concurrent.futures.TimeoutError):
-                pass  # DNS resolution failed or timed out — allow (will fail at connect time)
+            except (socket.gaierror, OSError):
+                pass  # DNS resolution failed — allow (will fail at connect time)
+            except concurrent.futures.TimeoutError:
+                # Cancel the future so the single-worker pool is freed for the
+                # next request rather than being blocked by the stalled lookup.
+                if future is not None:
+                    future.cancel()
+                # DNS timed out — allow (will fail at connect time)
 
     # Headers that httpx manages internally — setting them manually may
     # cause unexpected behaviour, but an API testing tool should allow it
@@ -291,8 +298,7 @@ class Validator:
             if strict:
                 raise ValidationError(f"Cannot manually set header: {name}")
             else:
-                import logging as _logging
-                _logging.getLogger(__name__).warning(
+                _logger.warning(
                     "Header '%s' is normally managed by the HTTP transport layer "
                     "— overriding it may cause unexpected behaviour.", name,
                 )
@@ -481,7 +487,9 @@ class Validator:
 
         # Check both raw path and URL-decoded form for traversal patterns
         # (e.g. "..%2F" is URL-encoded "../")
-        from urlps._parser import unquote_plus as _unquote
+        # Use stdlib urllib.parse — urlps is optional and its private _parser
+        # module is an implementation detail that could change between releases.
+        from urllib.parse import unquote_plus as _unquote
         paths_to_check = [path, _unquote(path)]
         for candidate in paths_to_check:
             for pattern in cls.PATH_TRAVERSAL_PATTERNS:
