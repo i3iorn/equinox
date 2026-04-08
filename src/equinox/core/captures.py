@@ -50,7 +50,9 @@ class CaptureResult:
 class CaptureEngine:
     """Apply capture rules to an HTTP response."""
 
-    # ── Public API ────────────────────────────────────────────────────
+    # Pre-compiled path-segment regex used by _extract_json.
+    # Each segment is: word_chars optionally followed by [digits].
+    _SEG = re.compile(r'^(\w+)(?:\[(\d+)\])?$')
 
     @classmethod
     def apply_all(cls, captures: List[Capture], response: Any) -> List[CaptureResult]:
@@ -133,11 +135,10 @@ class CaptureEngine:
 
         # Tokenise: split on ".", then handle optional "[n]" suffix per token.
         # Each token matches: word_chars optionally followed by [digits].
-        _SEG = re.compile(r'^(\w+)(?:\[(\d+)\])?$')
-
+        # _SEG is defined at class level to avoid recompilation on every call.
         segments: List[tuple] = []
         for part in path.split("."):
-            m = _SEG.match(part)
+            m = CaptureEngine._SEG.match(part)
             if not m:
                 raise ValueError(f"Invalid JSON path segment: {part!r}")
             key = m.group(1)
@@ -179,9 +180,15 @@ class CaptureEngine:
             response: Response object with a ``headers`` dict.
 
         Returns:
-            Header value string, or empty string if not found.
+            Header value string.
+
+        Raises:
+            KeyError: The header was not present in the response.
         """
-        return response.headers.get(name.lower(), "")
+        value = response.headers.get(name.lower())
+        if value is None:
+            raise KeyError(f"Header {name!r} not found in response")
+        return value
 
     MAX_REGEX_PATTERN_LENGTH = 500
     _REGEX_TIMEOUT_SECONDS = 5.0
