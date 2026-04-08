@@ -7,6 +7,7 @@ from equinox.storage.database import Database
 from equinox.core.exceptions import StorageError, ValidationError, SecurityError, DuplicateError
 from equinox.storage.utils import (
     require_positive_int,
+    require_str,
     validate_variable_key,
     validate_variable_value,
 )
@@ -48,23 +49,10 @@ class VariableGroupManager:
             SecurityError: If limits exceeded
             StorageError: If creation fails
         """
-        # Validate name
-        if not name or not isinstance(name, str):
-            raise ValidationError("Variable group name must be a non-empty string")
-
-        if len(name) > self.MAX_NAME_LENGTH:
-            raise ValidationError(f"Variable group name too long (max {self.MAX_NAME_LENGTH} characters)")
-
-        name = name.strip()
-        if not name:
-            raise ValidationError("Variable group name cannot be empty or whitespace")
-
-        # Validate description
-        if not isinstance(description, str):
-            raise ValidationError("Variable group description must be a string")
-
-        if len(description) > self.MAX_DESCRIPTION_LENGTH:
-            raise ValidationError(f"Variable group description too long (max {self.MAX_DESCRIPTION_LENGTH} characters)")
+        name = require_str(name, "Variable group name", self.MAX_NAME_LENGTH)
+        description = require_str(
+            description, "Variable group description", self.MAX_DESCRIPTION_LENGTH, required=False
+        )
 
         # Check group count limit
         count_result = self.db.fetchone("SELECT COUNT(*) as count FROM variable_groups")
@@ -120,10 +108,8 @@ class VariableGroupManager:
             ValidationError: If input is invalid
             StorageError: If group doesn't exist or update fails
         """
-        # Validate group_id
         require_positive_int(group_id, "Variable group ID")
 
-        # Check group exists
         group = self.get_group(group_id)
         if not group:
             raise StorageError(f"Variable group with ID {group_id} does not exist")
@@ -132,26 +118,14 @@ class VariableGroupManager:
         params = []
 
         if name is not None:
-            if not isinstance(name, str):
-                raise ValidationError("Variable group name must be a string")
-
-            if len(name) > self.MAX_NAME_LENGTH:
-                raise ValidationError(f"Variable group name too long (max {self.MAX_NAME_LENGTH} characters)")
-
-            name = name.strip()
-            if not name:
-                raise ValidationError("Variable group name cannot be empty or whitespace")
-
+            name = require_str(name, "Variable group name", self.MAX_NAME_LENGTH)
             updates.append("name = ?")
             params.append(name)
 
         if description is not None:
-            if not isinstance(description, str):
-                raise ValidationError("Variable group description must be a string")
-
-            if len(description) > self.MAX_DESCRIPTION_LENGTH:
-                raise ValidationError(f"Variable group description too long (max {self.MAX_DESCRIPTION_LENGTH} characters)")
-
+            description = require_str(
+                description, "Variable group description", self.MAX_DESCRIPTION_LENGTH, required=False
+            )
             updates.append("description = ?")
             params.append(description)
 
@@ -181,21 +155,25 @@ class VariableGroupManager:
             ValidationError: If group_id is invalid
             StorageError: If group doesn't exist or deletion fails
         """
-        # Validate group_id
         require_positive_int(group_id, "Variable group ID")
 
-        # Check group exists
         group = self.get_group(group_id)
         if not group:
             raise StorageError(f"Variable group with ID {group_id} does not exist")
 
         try:
-            # Count variables
-            variables = self.list_group_variables(group_id)
-            var_count = len(variables)
+            # Count variables with a single COUNT query rather than fetching all rows
+            count_row = self.db.fetchone(
+                "SELECT COUNT(*) AS cnt FROM variable_group_items WHERE group_id = ?",
+                (group_id,),
+            )
+            var_count = (count_row or {}).get("cnt", 0)
 
             self.db.execute("DELETE FROM variable_groups WHERE id = ?", (group_id,))
-            logger.warning("Deleted variable group %r (ID: %d) and %d variable(s)", group['name'], group_id, var_count)
+            logger.warning(
+                "Deleted variable group %r (ID: %d) and %d variable(s)",
+                group['name'], group_id, var_count,
+            )
 
         except Exception as e:
             raise StorageError(f"Failed to delete variable group: {e}")
