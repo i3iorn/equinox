@@ -153,16 +153,17 @@ class VariableInterpolator:
                     f"excessive text expansion: Variable interpolation caused excessive expansion "
                     f"({len(text)} bytes vs {original_length * cls.MAX_EXPANSION_RATIO} max)"
                 )
-            
-            # Double-check absolute size limit
-            if len(text.encode("utf-8")) > cls.MAX_OUTPUT_BYTES:
+
+            # Double-check absolute size limit — encode once and reuse.
+            text_encoded = text.encode("utf-8")
+            if len(text_encoded) > cls.MAX_OUTPUT_BYTES:
                 logger.warning(
                     "Variable interpolation output exceeds maximum absolute size: %d bytes > %d bytes",
-                    len(text.encode("utf-8")), cls.MAX_OUTPUT_BYTES,
+                    len(text_encoded), cls.MAX_OUTPUT_BYTES,
                 )
                 raise SecurityError(
                     f"Variable interpolation output exceeds maximum size "
-                    f"({len(text.encode('utf-8'))} bytes, max {cls.MAX_OUTPUT_BYTES} bytes)"
+                    f"({len(text_encoded)} bytes, max {cls.MAX_OUTPUT_BYTES} bytes)"
                 )
 
         # Reached max iterations without convergence
