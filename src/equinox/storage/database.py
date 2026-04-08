@@ -4,7 +4,7 @@ import sqlite3
 import threading
 import logging
 from pathlib import Path
-from typing import Optional, Any, List, Dict, Tuple, Mapping
+from typing import Optional, Any, List, Dict, Tuple, Mapping, Union
 from contextlib import contextmanager
 
 from equinox.core.exceptions import StorageError, ValidationError, DuplicateError
