@@ -1,9 +1,12 @@
+"""Timeout and HTTP-overload retry policies for the HTTP client."""
+import logging
 import time
 from typing import Optional, Callable
 
-from equinox import Response
-from equinox.core import RequestTimeoutError
-from equinox.core.client import logger
+from equinox.core.request import Response
+from equinox.core.exceptions import RequestTimeoutError
+
+logger = logging.getLogger(__name__)
 
 
 class RetryPolicy:

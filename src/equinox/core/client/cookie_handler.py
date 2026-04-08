@@ -1,8 +1,11 @@
+"""Cookie jar bridge between CookieManager and the httpx transport."""
+import logging
 from typing import Optional
 
-from equinox import Response
-from equinox.core.client import logger
+from equinox.core.request import Response
 from equinox.core.cookies import CookieManager
+
+logger = logging.getLogger(__name__)
 
 
 class CookieHandler:

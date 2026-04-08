@@ -1,10 +1,13 @@
+"""Request/response pipeline: interceptors, audit logging, and error mapping."""
+import logging
 from typing import Optional, Callable
 
-from equinox import Request, Response
-from equinox.core import EquinoxError, RequestError
-from equinox.core.client import logger
+from equinox.core.request import Request, Response
+from equinox.core.exceptions import EquinoxError, RequestError
 from equinox.core.interceptors import InterceptorChain
 from equinox.core.redact import redact_body, redact_url
+
+logger = logging.getLogger(__name__)
 
 
 class RequestPipeline:

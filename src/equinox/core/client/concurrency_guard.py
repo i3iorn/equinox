@@ -1,7 +1,10 @@
+"""Concurrency slot guard for the HTTP client."""
+import logging
 import threading
 
-from equinox.core import RequestError
-from equinox.core.client import logger
+from equinox.core.exceptions import RequestError
+
+logger = logging.getLogger(__name__)
 
 
 class ConcurrencyGuard:

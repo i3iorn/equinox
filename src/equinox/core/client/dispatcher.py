@@ -1,3 +1,9 @@
+"""httpx transport layer for the Equinox HTTP client.
+
+Owns the shared ``httpx.Client`` lifecycle, multipart file handling,
+SSL context construction, and response wrapping.
+"""
+import logging
 import os
 import ssl
 import time
@@ -6,11 +12,14 @@ from typing import Optional, Any, Tuple, Dict, List
 
 import httpx
 
-from equinox import Request, Response
-from equinox.core.client import CookieHandler, logger, _RedirectSafeAuth
+from equinox.core.request import Request, Response
+from equinox.core.client.cookie_handler import CookieHandler
+from equinox.core.client.auth_redirect import _RedirectSafeAuth
 from equinox.core.exceptions import ValidationError
 from equinox.core.time import utc_now
 from equinox.core.validation import Validator
+
+logger = logging.getLogger(__name__)
 
 
 class HttpxDispatcher:
@@ -48,6 +57,10 @@ class HttpxDispatcher:
                 cookies=self._cookie_handler.get_httpx_cookies(),
             )
         return self._client
+
+    def open(self) -> None:
+        """Pre-warm the shared ``httpx.Client`` (called from ``HTTPClient.__enter__``)."""
+        self._ensure_client()
 
     def _sync_cookies_to_client(self) -> None:
         """Merge the latest CookieManager state into the live httpx.Client jar.
