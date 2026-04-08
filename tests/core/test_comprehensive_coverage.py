@@ -1320,7 +1320,9 @@ class TestRequestComprehensive:
             "auth": {"invalid": True},
             "auth_type": "NonExistentAuth",
         }
-        with pytest.raises(ValueError, match="Invalid auth"):
+        # Now raises ValidationError (domain exception) instead of ValueError
+        from equinox.core.exceptions import ValidationError
+        with pytest.raises((ValidationError, ValueError), match="Invalid auth"):
             Request.from_dict(d)
 
 

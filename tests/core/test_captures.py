@@ -102,9 +102,13 @@ class TestExtractHeader:
         assert CaptureEngine._extract_header("Content-Type", resp) == "application/json"
         assert CaptureEngine._extract_header("CONTENT-TYPE", resp) == "application/json"
 
-    def test_missing_header_returns_empty_string(self):
+    def test_missing_header_raises_key_error(self):
+        """_extract_header should raise KeyError for absent headers so that
+        apply_all records success=False instead of silently returning ''.
+        """
         resp = _make_response()
-        assert CaptureEngine._extract_header("x-missing", resp) == ""
+        with pytest.raises(KeyError, match="x-missing"):
+            CaptureEngine._extract_header("x-missing", resp)
 
     def test_custom_header(self):
         resp = _make_response(headers={"x-request-id": "req-42"})
