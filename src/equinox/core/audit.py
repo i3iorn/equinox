@@ -11,6 +11,7 @@ This module provides comprehensive audit logging for:
 
 import logging
 import json
+import threading
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional, Dict, Any
@@ -307,17 +308,14 @@ class AuditLogger:
 
 # Global audit logger instance
 _audit_logger: Optional[AuditLogger] = None
+_audit_logger_lock = threading.Lock()
 
 
 def get_audit_logger() -> AuditLogger:
-    """Get global audit logger instance.
-
-    Returns:
-        AuditLogger instance
-    """
+    """Get or create the global audit logger instance (thread-safe)."""
     global _audit_logger
-
     if _audit_logger is None:
-        _audit_logger = AuditLogger()
-
+        with _audit_logger_lock:
+            if _audit_logger is None:
+                _audit_logger = AuditLogger()
     return _audit_logger
