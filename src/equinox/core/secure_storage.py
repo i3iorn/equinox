@@ -8,6 +8,7 @@ import base64
 import logging
 import tempfile
 import ctypes
+import threading
 
 from pathlib import Path
 from typing import Optional, Dict, Any, List, TypedDict
@@ -132,6 +133,9 @@ class SecureStorage:
 
         self._cipher: Optional[Fernet] = None
         self._audit = get_audit_logger()
+        # Protects all read-modify-write operations so concurrent calls from
+        # multiple threads do not silently clobber each other's changes.
+        self._lock = threading.Lock()
 
     # =====================================================
     # Key + Cipher
@@ -209,21 +213,22 @@ class SecureStorage:
     ) -> None:
         _validate_key_value(key, value)
 
-        storage = self._load()
+        with self._lock:
+            storage = self._load()
+            storage[key] = {
+                "value": value,
+                "metadata": metadata or {},
+            }
+            self._save(storage)
 
-        storage[key] = {
-            "value": value,
-            "metadata": metadata or {},
-        }
-
-        self._save(storage)
         self._audit.log_credential_access("store", key)
 
     def retrieve(self, key: str) -> Optional[str]:
         _validate_key_value(key)
 
-        storage = self._load()
-        entry = storage.get(key)
+        with self._lock:
+            storage = self._load()
+            entry = storage.get(key)
 
         if entry is None:
             return None
@@ -234,22 +239,23 @@ class SecureStorage:
     def delete(self, key: str) -> bool:
         _validate_key_value(key)
 
-        storage = self._load()
-
-        if key not in storage:
-            return False
-
-        del storage[key]
-        self._save(storage)
+        with self._lock:
+            storage = self._load()
+            if key not in storage:
+                return False
+            del storage[key]
+            self._save(storage)
 
         self._audit.log_credential_access("delete", key)
         return True
 
     def list_keys(self) -> List[str]:
-        return list(self._load().keys())
+        with self._lock:
+            return list(self._load().keys())
 
     def clear(self) -> None:
-        self._save({})
+        with self._lock:
+            self._save({})
         logger.warning("All credentials cleared")
 
     # =====================================================
@@ -259,7 +265,8 @@ class SecureStorage:
     def export_encrypted(self, path: Path, password: str) -> None:
         self._validate_password(password)
 
-        storage = self._load()
+        with self._lock:
+            storage = self._load()
         key: Optional[bytes] = None
 
         try:
@@ -332,9 +339,10 @@ class SecureStorage:
         if not isinstance(imported, dict):
             raise ValidationError("Invalid payload")
 
-        storage = self._load()
-        storage.update(imported)
-        self._save(storage)
+        with self._lock:
+            storage = self._load()
+            storage.update(imported)
+            self._save(storage)
 
         self._audit.log_credential_access("import", str(path))
         return len(imported)
