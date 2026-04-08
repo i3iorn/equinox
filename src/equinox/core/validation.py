@@ -392,18 +392,19 @@ class Validator:
                 f"(max: {cls.MAX_BODY_SIZE} bytes)"
             )
 
-        # Validate JSON if content type indicates JSON
         if content_type and 'json' in content_type.lower():
             if isinstance(body, str):
                 try:
                     json.loads(body)
-                except json.JSONDecodeError as e:
-                    raise ValidationError(f"Invalid JSON body: {e}")
+                except json.JSONDecodeError as original_err:
+                    # Strip trailing commas before `}` or `]` and retry once.
+                    _normalised = re.sub(r",(\s*[}\]])", r"\1", body)
+                    try:
+                        json.loads(_normalised)
+                        # Normalised body is valid — trailing commas only; proceed.
+                    except json.JSONDecodeError:
+                        raise ValidationError(f"Invalid JSON body: {original_err}")
 
-        # Check for SQL injection patterns in string bodies.
-        # These are heuristic detections only — we do not block because the
-        # body might legitimately contain SQL (e.g., a query editor app).
-        # Log a warning so security teams can audit suspicious traffic.
         if isinstance(body, str):
             import logging as _logging
             _sql_logger = _logging.getLogger(__name__)

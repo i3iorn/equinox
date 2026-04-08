@@ -23,6 +23,7 @@ class TestPostmanImporter:
         yield db
 
         # Cleanup
+        db.close()
         Path(db_path).unlink(missing_ok=True)
 
     @pytest.fixture

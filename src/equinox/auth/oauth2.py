@@ -11,6 +11,7 @@ import httpx
 
 from equinox.auth.base import AuthStrategy, _validate_credential
 from equinox.core.exceptions import AuthError
+from equinox.core.redact import mask_secret
 from equinox.core.secure_storage import SecureStorage
 from equinox.core.audit import get_audit_logger, AuditEventType, AuditLevel
 from equinox.core.time import utc_now
@@ -183,10 +184,7 @@ class OAuth2Auth(AuthStrategy):
 
     def get_token_info(self) -> Dict[str, Any]:
         """Return a safe summary of the current token state."""
-        token_preview = (
-            f"{self.access_token[:8]}..." if self.access_token and len(self.access_token) > 8
-            else "None"
-        )
+        token_preview = mask_secret(self.access_token) if self.access_token else "None"
         return {
             "access_token": token_preview,
             "has_refresh_token": bool(self.refresh_token),

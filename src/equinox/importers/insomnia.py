@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from equinox.core.request import Request
+from equinox.importers._utils import validate_import_file
 
 logger = logging.getLogger(__name__)
 
@@ -46,12 +47,10 @@ class InsomniaImporter:
             OSError: If the file cannot be read.
         """
         path = Path(path)
-        if path.exists():
-            size = path.stat().st_size
-            if size > self.MAX_FILE_SIZE:
-                raise ValueError(
-                    f"Insomnia file too large: {size} bytes (max {self.MAX_FILE_SIZE})"
-                )
+        try:
+            validate_import_file(path, self.MAX_FILE_SIZE, label="Insomnia file")
+        except Exception as exc:
+            raise ValueError(str(exc)) from exc
 
         text = path.read_text(encoding="utf-8")
         data = safe_json_loads(text)

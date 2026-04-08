@@ -374,25 +374,27 @@ class EnvironmentManager:
     def interpolate_variables(self, text: str, max_iterations: int = 10) -> str:
         """Replace {{variable}} placeholders with values from active environment.
 
-        Performs iterative replacement to support variables referencing other variables,
-        with protection against infinite loops and expansion attacks.
+        Delegates to :class:`~equinox.core.interpolation.VariableInterpolator`
+        which provides cycle detection, expansion-ratio guards, and size limits.
 
         Args:
-            text: Text with {{variable}} placeholders
-            max_iterations: Maximum number of interpolation passes (prevents infinite loops)
+            text: Text with {{variable}} placeholders.
+            max_iterations: Maximum interpolation passes (prevents infinite loops).
 
         Returns:
-            Text with variables replaced
+            Text with variables replaced.
 
         Raises:
-            ValidationError: If input is invalid
-            SecurityError: If interpolation would cause infinite loop or excessive expansion
+            ValidationError: If input is invalid.
+            SecurityError: If interpolation would cause infinite loop or excessive expansion.
         """
         if not isinstance(text, str):
             raise ValidationError("Text must be a string")
 
         if len(text) > self.MAX_TEXT_SIZE:
-            raise SecurityError(f"Text too large for variable interpolation (max {self.MAX_TEXT_SIZE} bytes)")
+            raise SecurityError(
+                f"Text too large for variable interpolation (max {self.MAX_TEXT_SIZE} bytes)"
+            )
 
         env = self.get_active_environment()
         if not env:
@@ -402,37 +404,5 @@ class EnvironmentManager:
         if not variables:
             return text
 
-        # Perform interpolation with iteration limit
-        original_length = len(text)
-        
-        for iteration in range(max_iterations):
-            previous_text = text
-
-            # Replace each variable placeholder
-            for key, value in variables.items():
-                placeholder = f"{{{{{key}}}}}"
-                if placeholder in text:
-                    text = text.replace(placeholder, value)
-
-            # If no changes were made, interpolation is complete
-            if text == previous_text:
-                return text
-
-            # Prevent expansion attacks (text growing too large)
-            if len(text) > original_length * self.MAX_EXPANSION_RATIO:
-                logger.error(
-                    "Variable interpolation exceeded expansion ratio (%.1fx original)",
-                    len(text) / original_length,
-                )
-                raise SecurityError(
-                    f"Interpolation caused excessive text expansion "
-                    f"({len(text)} vs {original_length * self.MAX_EXPANSION_RATIO} byte limit)"
-                )
-
-        # Reached max iterations without convergence
-        logger.warning(
-            "Variable interpolation reached max iterations (%d) without convergence",
-            max_iterations,
-        )
-
-        return text
+        from equinox.core.interpolation import VariableInterpolator
+        return VariableInterpolator.interpolate(text, variables, max_iterations=max_iterations)

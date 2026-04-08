@@ -406,8 +406,10 @@ class HttpxDispatcher:
 
         multipart_files, opened_handles = self._build_multipart_files(request)
 
+        user_set_content_type = any(k.lower() == "content-type" for k in headers)
+
         try:
-            raw = client.request(
+            httpx_request = client.build_request(
                 method=request.method,
                 url=request.url,
                 headers=headers,
@@ -419,6 +421,14 @@ class HttpxDispatcher:
                 ),
                 files=multipart_files or None,
                 timeout=request.timeout or self._timeout,
+            )
+
+            if not user_set_content_type and not multipart_files:
+                if "content-type" in httpx_request.headers:
+                    del httpx_request.headers["content-type"]
+
+            raw = client.send(
+                httpx_request,
                 follow_redirects=(
                     request.follow_redirects
                     if request.follow_redirects is not None

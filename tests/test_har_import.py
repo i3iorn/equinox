@@ -218,7 +218,7 @@ class TestHARErrorHandling:
 
     def test_missing_file_raises(self, mgr, tmp_path):
         p = tmp_path / "nonexistent.har"
-        with pytest.raises(ValueError, match="Cannot read"):
+        with pytest.raises(ValueError, match="HAR file not found"):
             HARImporter(mgr).import_file(p)
 
     def test_malformed_entry_skipped_gracefully(self, mgr, tmp_path):

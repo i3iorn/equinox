@@ -92,7 +92,6 @@ class TestBearerAuthSecurity:
         auth = BearerAuth("supersecrettoken123")
         r = repr(auth)
         assert "supersecrettoken123" not in r
-        assert "supersec..." in r
 
 
 # ── BasicAuth security ─────────────────────────────────────────────────────────

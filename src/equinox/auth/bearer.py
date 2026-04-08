@@ -3,6 +3,7 @@
 from typing import Dict, Any
 from equinox.auth.base import AuthStrategy, _validate_credential
 from equinox.core.exceptions import AuthError
+from equinox.core.redact import mask_secret
 
 
 class BearerAuth(AuthStrategy):
@@ -41,5 +42,4 @@ class BearerAuth(AuthStrategy):
             raise AuthError(f"Invalid bearer auth data: missing key {exc}") from exc
 
     def __repr__(self) -> str:
-        masked_token = f"{self.token[:8]}..." if len(self.token) > 8 else "***"
-        return f"BearerAuth(token={masked_token})"
+        return f"BearerAuth(token={mask_secret(self.token)})"

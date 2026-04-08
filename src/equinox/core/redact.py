@@ -105,6 +105,26 @@ SENSITIVE_PAYLOAD_KEYS = frozenset({
 })
 
 
+def mask_secret(value: Optional[str], *, keep: int = 8) -> str:
+    """Return a safe display preview of a secret string.
+
+    Shows the first *keep* characters followed by ``"…"`` when the secret is
+    long enough, otherwise returns ``"***"``.
+
+    Args:
+        value: The secret string to preview (``None`` becomes ``"***"``).
+        keep:  Number of leading characters to keep visible (default 8).
+
+    Returns:
+        A short preview string safe for display in logs and UI labels.
+    """
+    if not value:
+        return "***"
+    if len(value) > keep:
+        return value[:keep] + "…"
+    return "***"
+
+
 def sanitize_details(details: dict, *, max_string_len: int = 200) -> dict:
     """Return a sanitized copy of *details* by redacting sensitive keys and
     truncating long strings.

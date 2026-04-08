@@ -18,8 +18,12 @@ from equinox.core.request import Request
 from equinox.core.exceptions import ValidationError, SecurityError
 from equinox.core.validation import Validator
 from equinox.storage.collections import CollectionManager
+from equinox.importers._utils import validate_import_file
 
 logger = logging.getLogger(__name__)
+
+# HTTP methods recognised by the OpenAPI specification (all lowercase).
+_HTTP_METHODS = ["get", "post", "put", "patch", "delete", "head", "options"]
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -135,6 +139,57 @@ def _resolve_servers_swagger2(spec_data: Dict[str, Any]) -> List[ServerInfo]:
     ]
 
 
+def _load_spec_file(file_path: Path) -> Dict[str, Any]:
+    """Read and parse an OpenAPI spec file (YAML or JSON).
+
+    Args:
+        file_path: Path to the spec file.
+
+    Returns:
+        Parsed spec as a dict.
+
+    Raises:
+        ValidationError: If the file cannot be read or parsed.
+    """
+    try:
+        content = file_path.read_text(encoding="utf-8")
+        try:
+            spec_data = yaml.safe_load(content)
+        except yaml.YAMLError:
+            try:
+                spec_data = json.loads(content)
+            except ValueError:
+                raise ValidationError("Invalid JSON")
+            if not isinstance(spec_data, dict):
+                raise ValidationError("Invalid JSON")
+    except ValidationError:
+        raise
+    except Exception as exc:
+        raise ValidationError(f"Failed to read file: {exc}")
+    return spec_data
+
+
+def _count_operations(paths: Dict[str, Any], extra: Optional[Dict[str, Any]] = None) -> int:
+    """Count total HTTP operations across *paths* (and optional *extra* paths such as webhooks).
+
+    Args:
+        paths: OpenAPI ``paths`` object.
+        extra: Optional additional path map (e.g. OAS 3.1 ``webhooks``).
+
+    Returns:
+        Total operation count.
+    """
+    count = 0
+    for path_data in paths.values():
+        if isinstance(path_data, dict):
+            count += sum(1 for m in _HTTP_METHODS if m in path_data)
+    if extra and isinstance(extra, dict):
+        for wh_data in extra.values():
+            if isinstance(wh_data, dict):
+                count += sum(1 for m in _HTTP_METHODS if m in wh_data)
+    return count
+
+
 class OpenAPIImporter:
     """Import OpenAPI/Swagger specifications with validation and sanitization.
 
@@ -163,24 +218,7 @@ class OpenAPIImporter:
     def import_file(self, file_path: Path) -> int:
         """Import OpenAPI spec from file.  Returns the *first* collection ID."""
         self._validate_file(file_path)
-        try:
-            with open(file_path, "r", encoding="utf-8") as fh:
-                content = fh.read()
-            try:
-                spec_data = yaml.safe_load(content)
-            except yaml.YAMLError:
-                # Try strict JSON parse so invalid JSON is reported as such
-                try:
-                    spec_data = json.loads(content)
-                except ValueError:
-                    raise ValidationError("Invalid JSON")
-                if not isinstance(spec_data, dict):
-                    raise ValidationError("Invalid JSON")
-        except ValidationError:
-            raise
-        except Exception as exc:
-            raise ValidationError(f"Failed to read file: {exc}")
-        return self.import_dict(spec_data)
+        return self.import_dict(_load_spec_file(file_path))
 
     def import_dict(self, spec_data: Dict[str, Any]) -> int:
         """Import OpenAPI spec from a dictionary.
@@ -281,26 +319,13 @@ class OpenAPIImporter:
 
 
     def _validate_file(self, file_path: Path) -> None:
-        """Validate spec file.
-
-        Args:
-            file_path: Path to file
-
-        Raises:
-            ValidationError: If file is invalid
-        """
-        if not file_path.exists():
-            raise ValidationError(f"File not found: {file_path}")
-
-        if file_path.suffix.lower() not in [".json", ".yaml", ".yml"]:
-            raise ValidationError("File must be JSON or YAML")
-
-        size = file_path.stat().st_size
-        if size > self.MAX_SPEC_SIZE:
-            raise ValidationError(
-                f"Spec file too large: {size} bytes "
-                f"(max: {self.MAX_SPEC_SIZE} bytes)"
-            )
+        """Validate spec file exists, has a supported extension, and is not too large."""
+        validate_import_file(
+            file_path,
+            self.MAX_SPEC_SIZE,
+            allowed_extensions=[".json", ".yaml", ".yml"],
+            label="OpenAPI spec file",
+        )
 
     def _validate_spec(self, spec_data: Dict[str, Any]) -> None:
         """Validate OpenAPI spec structure.
@@ -335,17 +360,8 @@ class OpenAPIImporter:
             )
 
         # Count total operations (paths + webhooks for OAS 3.1)
-        http_methods = ["get", "post", "put", "patch", "delete", "head", "options"]
-        operation_count = 0
-        for path_data in paths.values():
-            if isinstance(path_data, dict):
-                operation_count += sum(1 for m in http_methods if m in path_data)
-
         webhooks = spec_data.get("webhooks") or {}
-        if isinstance(webhooks, dict):
-            for wh_data in webhooks.values():
-                if isinstance(wh_data, dict):
-                    operation_count += sum(1 for m in http_methods if m in wh_data)
+        operation_count = _count_operations(paths, extra=webhooks if isinstance(webhooks, dict) else None)
 
         if operation_count > self.MAX_OPERATIONS:
             raise ValidationError(
@@ -406,9 +422,7 @@ class OpenAPIImporter:
             if not isinstance(path_item, dict):
                 continue
 
-            http_methods = ["get", "post", "put", "patch", "delete", "head", "options"]
-
-            for method in http_methods:
+            for method in _HTTP_METHODS:
                 if method in path_item:
                     operation = path_item[method]
                     try:
@@ -434,31 +448,6 @@ class OpenAPIImporter:
         return count
 
 
-    def _get_base_url(self, spec_data: Dict[str, Any], version: str) -> str:
-        """Get base URL from spec.
-
-        Args:
-            spec_data: Spec data
-            version: OpenAPI version
-
-        Returns:
-            Base URL
-        """
-        if version.startswith("3."):
-            servers = spec_data.get("servers", [])
-            if servers and isinstance(servers, list) and len(servers) > 0:
-                server = servers[0]
-                if isinstance(server, dict) and "url" in server:
-                    return server["url"]
-        elif version == "2.0":
-            schemes = spec_data.get("schemes", ["https"])
-            host = spec_data.get("host", "api.example.com")
-            base_path = spec_data.get("basePath", "")
-
-            scheme = schemes[0] if schemes else "https"
-            return f"{scheme}://{host}{base_path}"
-
-        return "https://api.example.com"
 
     def _parse_operation(
         self,
@@ -726,17 +715,7 @@ def preview_spec(file_path: Path) -> Dict[str, Any]:
         Dict with spec info including resolved servers.
     """
     try:
-        with open(file_path, "r", encoding="utf-8") as fh:
-            content = fh.read()
-        try:
-            spec_data = yaml.safe_load(content)
-        except yaml.YAMLError:
-            try:
-                spec_data = json.loads(content)
-            except ValueError:
-                raise ValidationError("Invalid JSON")
-            if not isinstance(spec_data, dict):
-                raise ValidationError("Invalid JSON")
+        spec_data = _load_spec_file(file_path)
     except Exception as exc:
         raise ValidationError(f"Could not read or parse spec file: {exc}") from exc
 
@@ -744,11 +723,11 @@ def preview_spec(file_path: Path) -> Dict[str, Any]:
     version = spec_data.get("openapi") or spec_data.get("swagger", "Unknown")
 
     paths = spec_data.get("paths", {})
-    operation_count = 0
-    for path_data in paths.values():
-        if isinstance(path_data, dict):
-            methods = ["get", "post", "put", "patch", "delete", "head", "options"]
-            operation_count += sum(1 for m in methods if m in path_data)
+    webhooks = spec_data.get("webhooks") or {}
+    operation_count = _count_operations(
+        paths,
+        extra=webhooks if isinstance(webhooks, dict) else None,
+    )
 
     # Resolve servers
     version_str = str(version)

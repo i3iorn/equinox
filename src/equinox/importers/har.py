@@ -9,6 +9,7 @@ from urllib.parse import urlparse, urlencode
 
 from equinox.storage.collections import CollectionManager
 from equinox.core.request import Request
+from equinox.importers._utils import validate_import_file
 
 logger = logging.getLogger(__name__)
 
@@ -53,12 +54,10 @@ class HARImporter:
             ValueError: If the file cannot be parsed or is not valid HAR.
         """
         path = Path(path)
-        if path.exists():
-            size = path.stat().st_size
-            if size > self.MAX_FILE_SIZE:
-                raise ValueError(
-                    f"HAR file too large: {size} bytes (max {self.MAX_FILE_SIZE})"
-                )
+        try:
+            validate_import_file(path, self.MAX_FILE_SIZE, label="HAR file")
+        except Exception as exc:
+            raise ValueError(str(exc)) from exc
 
         try:
             text = path.read_text(encoding="utf-8")

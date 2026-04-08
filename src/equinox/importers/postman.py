@@ -15,6 +15,7 @@ from equinox.core.exceptions import ValidationError, SecurityError
 from equinox.core.validation import Validator
 from equinox.storage.collections import CollectionManager
 from equinox.core import urls
+from equinox.importers._utils import validate_import_file
 
 logger = logging.getLogger(__name__)
 
@@ -174,30 +175,13 @@ class PostmanImporter:
         return col_id
 
     def _validate_file(self, file_path: Path) -> None:
-        """Validate collection file.
-
-        Args:
-            file_path: Path to file
-
-        Raises:
-            ValidationError: If file is invalid
-        """
-        if not file_path.exists():
-            logger.error("Postman file not found: %s", file_path)
-            raise ValidationError(f"File not found: {file_path}")
-
-        if file_path.suffix.lower() != ".json":
-            logger.error("Postman file is not JSON: %s", file_path)
-            raise ValidationError("File must be a JSON file")
-
-        size = file_path.stat().st_size
-        logger.debug("Postman file size: %d bytes", size)
-        if size > self.MAX_COLLECTION_SIZE:
-            logger.error("Postman file too large: %d bytes (max: %d)", size, self.MAX_COLLECTION_SIZE)
-            raise ValidationError(
-                f"Collection file too large: {size} bytes "
-                f"(max: {self.MAX_COLLECTION_SIZE} bytes)"
-            )
+        """Validate collection file exists, is JSON, and is not too large."""
+        validate_import_file(
+            file_path,
+            self.MAX_COLLECTION_SIZE,
+            allowed_extensions=[".json"],
+            label="Postman collection file",
+        )
 
     def _validate_collection(self, collection_data: Dict[str, Any]) -> None:
         """Validate collection structure.
@@ -239,71 +223,12 @@ class PostmanImporter:
             )
 
         items = collection_data.get("item", [])
-        request_count = self._count_requests(items)
+        request_count = _count_requests_recursive(items)
         if request_count > self.MAX_REQUESTS:
             raise ValidationError(
                 f"Too many requests: {request_count} (max: {self.MAX_REQUESTS})"
             )
 
-    def _count_requests(self, items: List[Dict[str, Any]]) -> int:
-        """Count total requests in items.
-
-        Args:
-            items: List of items
-
-        Returns:
-            Total request count
-        """
-        count = 0
-
-        for item in items:
-            if "request" in item:
-                count += 1
-            elif "item" in item:
-                count += self._count_requests(item["item"])
-
-        return count
-
-    def _import_items(
-        self,
-        items: List[Dict[str, Any]],
-        collection_id: int,
-        folder_name: str = "",
-        col_variables: Optional[Dict[str, str]] = None,
-    ) -> int:
-        """Import items (requests and folders) recursively.
-
-        Args:
-            items:         List of Postman items.
-            collection_id: Target collection ID.
-            folder_name:   Accumulated folder path prefix.
-            col_variables: Collection-level variable values for URL resolution.
-
-        Returns:
-            Number of requests imported.
-        """
-        if col_variables is None:
-            col_variables = {}
-
-        count = 0
-
-        for item in items:
-            if "request" in item:
-                try:
-                    request = self._parse_request(item, folder_name, col_variables)
-                    self.collection_manager.save_request(request, collection_id)
-                    count += 1
-                except (ValidationError, SecurityError) as exc:
-                    logger.warning("Skipping invalid request: %s", exc)
-
-            elif "item" in item:
-                folder = item.get("name", "Untitled Folder")
-                prefix = f"{folder_name}/{folder}" if folder_name else folder
-                count += self._import_items(
-                    item["item"], collection_id, prefix, col_variables
-                )
-
-        return count
 
     def _collect_items(
         self,

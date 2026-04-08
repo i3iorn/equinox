@@ -10,7 +10,7 @@ from equinox.storage.collections.variables import CollectionVariablesMixin
 from equinox.storage.database import Database
 from equinox.core.request import Request
 from equinox.core.exceptions import StorageError, ValidationError, DuplicateError
-from equinox.storage.utils import require_positive_int, safe_json_loads, safe_json_dumps
+from equinox.storage.utils import require_positive_int, require_str, safe_json_loads, safe_json_dumps
 
 logger = logging.getLogger(__name__)
 
@@ -62,6 +62,28 @@ class CollectionManager(
     MAX_NAME_LENGTH = 200
     MAX_DESCRIPTION_LENGTH = 1000
     DEFAULT_TIMEOUT = 30.0
+
+    # ── Private validation helpers ──────────────────────────────────────
+
+    def _validate_name(self, name: str, label: str = "name", *, required: bool = True) -> str:
+        """Validate and strip a name field using the shared ``require_str`` utility.
+
+        Args:
+            name:     The raw name value to validate.
+            label:    Human-readable field name for error messages.
+            required: When True, empty/whitespace-only strings are rejected.
+
+        Returns:
+            Stripped, valid name string.
+
+        Raises:
+            ValidationError: If validation fails.
+        """
+        return require_str(name, label, self.MAX_NAME_LENGTH, required=required)
+
+    def _validate_description(self, description: str, label: str = "description") -> str:
+        """Validate and strip a description field (not required)."""
+        return require_str(description, label, self.MAX_DESCRIPTION_LENGTH, required=False)
 
     # Canonical INSERT for the requests table — single source of truth used by
     # save_request, duplicate_request, insert_request_row, and importers.
@@ -189,16 +211,8 @@ class CollectionManager(
             ValidationError: If input is invalid
             StorageError: If creation fails
         """
-        if not name or not isinstance(name, str):
-            raise ValidationError("Collection name must be a non-empty string")
-        if len(name) > self.MAX_NAME_LENGTH:
-            raise ValidationError(f"Collection name too long (max {self.MAX_NAME_LENGTH} characters)")
-        if len(description) > self.MAX_DESCRIPTION_LENGTH:
-            raise ValidationError(f"Collection description too long (max {self.MAX_DESCRIPTION_LENGTH} characters)")
-
-        name = name.strip()
-        if not name:
-            raise ValidationError("Collection name cannot be empty or whitespace")
+        name = self._validate_name(name, "Collection name")
+        description = self._validate_description(description, "Collection description")
 
         try:
             collection_id = self.db.insert(
@@ -238,19 +252,8 @@ class CollectionManager(
             StorageError: If collection not found or name taken
         """
         require_positive_int(collection_id, "Collection ID")
-
-        if not name or not isinstance(name, str):
-            raise ValidationError("Collection name must be a non-empty string")
-        name = name.strip()
-        if not name:
-            raise ValidationError("Collection name cannot be empty or whitespace")
-        if len(name) > self.MAX_NAME_LENGTH:
-            raise ValidationError(f"Collection name too long (max {self.MAX_NAME_LENGTH} characters)")
-
-        if not isinstance(description, str):
-            raise ValidationError("Collection description must be a string")
-        if len(description) > self.MAX_DESCRIPTION_LENGTH:
-            raise ValidationError(f"Collection description too long (max {self.MAX_DESCRIPTION_LENGTH} characters)")
+        name = self._validate_name(name, "Collection name")
+        description = self._validate_description(description, "Collection description")
 
         if not self.get_collection(collection_id):
             raise StorageError(f"Collection with ID {collection_id} does not exist")
@@ -278,13 +281,7 @@ class CollectionManager(
             StorageError: If collection not found or name taken
         """
         require_positive_int(collection_id, "Collection ID")
-        if not isinstance(new_name, str):
-            raise ValidationError("Collection name must be a string")
-        new_name = new_name.strip()
-        if not new_name:
-            raise ValidationError("Collection name cannot be empty")
-        if len(new_name) > self.MAX_NAME_LENGTH:
-            raise ValidationError(f"Collection name too long (max {self.MAX_NAME_LENGTH} characters)")
+        new_name = self._validate_name(new_name, "Collection name")
         if not self.get_collection(collection_id):
             raise StorageError(f"Collection {collection_id} not found")
         try:
@@ -310,13 +307,7 @@ class CollectionManager(
             StorageError: If request not found
         """
         require_positive_int(request_id, "Request ID")
-        if not isinstance(new_name, str):
-            raise ValidationError("Request name must be a string")
-        new_name = new_name.strip()
-        if not new_name:
-            raise ValidationError("Request name cannot be empty")
-        if len(new_name) > self.MAX_NAME_LENGTH:
-            raise ValidationError(f"Request name too long (max {self.MAX_NAME_LENGTH} characters)")
+        new_name = self._validate_name(new_name, "Request name")
         if not self.get_request(request_id):
             raise StorageError(f"Request {request_id} not found")
         try:

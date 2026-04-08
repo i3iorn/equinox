@@ -150,6 +150,7 @@ class Database:
             ValidationError: If db_path is invalid
             StorageError: If database initialization fails
         """
+        self._conn: Optional[sqlite3.Connection] = None
         if not db_path or not isinstance(db_path, str):
             raise ValidationError("Database path must be a non-empty string")
 
@@ -160,7 +161,6 @@ class Database:
 
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         self.lock = threading.Lock()
-        self._conn: Optional[sqlite3.Connection] = None
 
         logger.info("Initializing database at %s", self.db_path)
         # Set file-level PRAGMAs (journal_mode, secure_delete) via a temp
@@ -235,7 +235,7 @@ class Database:
             StorageError: If the persistent connection is unavailable.
         """
         with self.lock:
-            if self._conn is None:
+            if not hasattr(self, "_conn") or self._conn is None:
                 self._conn = self._new_connection()
             yield self._conn
 

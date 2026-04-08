@@ -145,7 +145,7 @@ class HistoryManager:
             ValidationError: If history_id is invalid
             StorageError: If entry doesn't exist or deletion fails
         """
-        self._require_positive_int(history_id, "History ID")
+        _require_positive_int_impl(history_id, "History ID")
 
         try:
             cursor = self.db.execute("DELETE FROM history WHERE id = ?", (history_id,))
@@ -168,7 +168,7 @@ class HistoryManager:
             StorageError: If deletion fails
         """
         if days is not None:
-            self._require_positive_int(days, "Days")
+            _require_positive_int_impl(days, "Days")
             if days > 36500:
                 raise ValidationError("Days value too large (max 36500)")
 
@@ -203,7 +203,7 @@ class HistoryManager:
         Raises:
             ValidationError: If history_id is invalid
         """
-        self._require_positive_int(history_id, "History ID")
+        _require_positive_int_impl(history_id, "History ID")
 
         row = self.db.fetchone("SELECT * FROM history WHERE id = ?", (history_id,))
         if row:
@@ -228,7 +228,7 @@ class HistoryManager:
         self._validate_pagination(limit, offset)
 
         if request_id is not None:
-            self._require_positive_int(request_id, "Request ID")
+            _require_positive_int_impl(request_id, "Request ID")
             query = "SELECT * FROM history WHERE request_id = ? ORDER BY executed_at DESC LIMIT ? OFFSET ?"
             params = (request_id, limit, offset)
         else:
@@ -376,11 +376,19 @@ class HistoryManager:
             "           OR error IS NOT NULL   THEN 1 ELSE 0 END)   AS failed "
             "FROM history"
         )
-        return {
-            "total":      row["total"]      if row else 0,
-            "successful": row["successful"] if row else 0,
-            "failed":     row["failed"]     if row else 0,
-        }
+
+        if row:
+            return {
+                "total":      row.get("total") or 0,
+                "successful": row.get("successful") or 0,
+                "failed":     row.get("failed") or 0,
+            }
+        else:
+            return {
+                "total": 0,
+                "successful": 0,
+                "failed": 0,
+            }
 
     # ── save_history helpers ──────────────────────────────────────────────────
 
@@ -540,11 +548,6 @@ class HistoryManager:
                 row[col] = {}
 
     # ── Validation helpers ────────────────────────────────────────────────────
-
-    @staticmethod
-    def _require_positive_int(value: Any, label: str) -> None:
-        """Raise ValidationError unless value is a positive integer."""
-        _require_positive_int_impl(value, label)
 
     def _validate_pagination(self, limit: int, offset: int) -> None:
         """Validate limit/offset pagination parameters."""

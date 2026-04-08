@@ -75,7 +75,7 @@ def auth_from_dict(auth_type: str, data: Dict[str, Any]) -> Optional[Any]:
     loader = AUTH_REGISTRY.get(auth_type)
     if loader is None:
         logger.warning("Unknown auth type in auth_from_dict: %s", auth_type)
-        return None
+        raise ValueError(f"Unknown auth type: {auth_type}")
     try:
         cls = loader()
         return cls.from_dict(data)

@@ -647,7 +647,7 @@ class HARExporter:
                 "cookies": [],
                 "content": {
                     "size": len(response.body) if response.body else 0,
-                    "mimeType": (response.headers or {}).get("Content-Type", "application/octet-stream") if response.headers else "application/octet-stream",
+                    "mimeType": (response.headers or {}).get("Content-Type", "application/octet-stream") if response.headers else "application/json",
                     "text": resp_body  # Uses canonical coerce_body_to_str (Improvement #7)
                 },
                 "redirectURL": (response.headers or {}).get("Location", "") if response.headers else "",

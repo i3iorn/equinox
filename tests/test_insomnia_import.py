@@ -365,7 +365,7 @@ class TestImportFile:
 
     def test_file_not_found(self, importer, tmp_path):
         path = tmp_path / "nonexistent.json"
-        with pytest.raises(OSError):
+        with pytest.raises(ValueError):
             importer.import_file(path)
 
 

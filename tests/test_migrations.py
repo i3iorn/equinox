@@ -35,6 +35,7 @@ class TestMigrationRunner:
         # Don't call _run_migrations yet
         runner = MigrationRunner(db)
         assert runner.version == 0
+        db.close()
 
     def test_run_is_idempotent(self, db):
         runner = MigrationRunner(db)
@@ -79,6 +80,7 @@ class TestMigrationRunner:
         # Run should only apply the pending ones
         runner.run()
         assert runner.version == MIGRATIONS[-1].version
+        db.close()
 
     def test_migrations_ordered_by_version(self):
         versions = [m.version for m in MIGRATIONS]

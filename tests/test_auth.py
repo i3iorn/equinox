@@ -326,7 +326,8 @@ class TestAuthStorage:
         db = Database(db_path)
         yield db
 
-        # Cleanup
+        # Close the connection before cleanup so Windows releases the file lock
+        db.close()
         Path(db_path).unlink(missing_ok=True)
 
     @pytest.fixture

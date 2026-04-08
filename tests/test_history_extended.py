@@ -230,6 +230,7 @@ class TestGetStats:
 
     def test_stats_empty(self, mgr):
         stats = mgr.get_stats()
+        print(stats)
         assert stats["total"] == 0
         assert stats["successful"] == 0
         assert stats["failed"] == 0

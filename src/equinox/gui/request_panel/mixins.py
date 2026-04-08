@@ -20,6 +20,7 @@ from PyQt6.QtWidgets import (
 )
 
 from equinox.core.time import utc_now
+from equinox.core.redact import mask_secret
 from equinox.gui.theme import Colors
 from equinox.core.request import Request, Response
 from equinox.core.error_enrichment import RichError, enrich_exception
@@ -815,7 +816,7 @@ class _RequestAuthMixin:
             self.auth_type_label.setText(f"Auth: Basic{inherited_label}")
             self.auth_details_label.setText(f"Username: {display_auth.username}")
         elif isinstance(display_auth, BearerAuth):
-            preview = display_auth.token[:8] + "…" if len(display_auth.token) > 8 else "***"
+            preview = mask_secret(display_auth.token)
             self.auth_type_label.setText(f"Auth: Bearer Token{inherited_label}")
             self.auth_details_label.setText(f"Token: {preview}")
         elif isinstance(display_auth, OAuth2Auth):

@@ -753,7 +753,7 @@ class TestOpenAPICoverage:
     def test_validate_file_wrong_extension(self, importer, tmp_path):
         f = tmp_path / "spec.txt"
         f.write_text("{}")
-        with pytest.raises(ValidationError, match="JSON or YAML"):
+        with pytest.raises(ValidationError, match=r"unsupported extension"):
             importer._validate_file(f)
 
     def test_validate_file_too_large(self, importer, tmp_path):

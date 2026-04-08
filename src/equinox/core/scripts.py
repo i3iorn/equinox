@@ -187,6 +187,35 @@ def _validate_ast(source: str, filename: str) -> ast.Module:
     return tree
 
 
+# ── Subprocess exec target ────────────────────────────────────────────────────
+
+def _subprocess_exec_target(
+    q: "multiprocessing.Queue[Any]",
+    source: str,
+    extra_locals: Dict[str, Any],
+    session_vars: Dict[str, str],
+    filename: str,
+) -> None:
+    """Top-level subprocess target for sandboxed script execution.
+
+    **Must** be a module-level function — not a nested/local one — so that the
+    'spawn' multiprocessing start method used on Windows can pickle it by
+    qualified name (``equinox.core.scripts._subprocess_exec_target``).
+
+    All arguments are plain picklable types (str / dict).  ``SAFE_BUILTINS``
+    is *not* passed; it is reconstructed when this module is imported inside
+    the child process.
+    """
+    try:
+        globs: Dict[str, Any] = {"__builtins__": SAFE_BUILTINS}
+        locs: Dict[str, Any] = {"env": dict(session_vars)}
+        locs.update(extra_locals)
+        exec(compile(source, filename, "exec"), globs, locs)  # noqa: S102
+        q.put(("ok", locs.get("env", {})))
+    except Exception as exc:  # noqa: BLE001
+        q.put(("error", str(exc)))
+
+
 # ── Result dataclass ──────────────────────────────────────────────────────────
 
 
@@ -296,20 +325,23 @@ class ScriptRunner:
 
         # Run exec() in a subprocess so infinite loops can be killed.
         # We use a multiprocessing.Queue to shuttle results / errors back.
-        result_queue: multiprocessing.Queue = multiprocessing.Queue()
-
-        def _exec_target(q: multiprocessing.Queue, code_obj: Any, g: Dict, l: Dict) -> None:  # noqa: E741
-            try:
-                exec(code_obj, g, l)  # noqa: S102  (intentional sandboxed exec)
-                q.put(("ok", l.get("env", {})))
-            except Exception as exc:  # noqa: BLE001
-                q.put(("error", str(exc)))
+        #
+        # IMPORTANT: on Windows the 'spawn' start method requires every object
+        # passed to the child process to be picklable.  That rules out:
+        #   • Local/nested functions (no qualified __module__.__qualname__)
+        #   • Lambdas (same reason)
+        #   • Compiled code objects mixed with non-picklable builtins
+        #
+        # Solution: use the module-level ``_subprocess_exec_target`` and pass
+        # only plain picklable types (str + dict).  The child process imports
+        # this module and reconstructs SAFE_BUILTINS from scratch.
 
         try:
             ctx = multiprocessing.get_context("spawn")
+            result_queue: multiprocessing.Queue = ctx.Queue()
             p = ctx.Process(
-                target=_exec_target,
-                args=(result_queue, code, globs, locs),
+                target=_subprocess_exec_target,
+                args=(result_queue, script, extra_locals, session_vars, filename),
                 daemon=True,
             )
             p.start()

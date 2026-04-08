@@ -21,6 +21,7 @@ class TestVariableGroups:
         yield db
 
         # Cleanup
+        db.close()
         Path(db_path).unlink(missing_ok=True)
 
     @pytest.fixture
@@ -222,6 +223,7 @@ class TestCollectionVariables:
         yield db
 
         # Cleanup
+        db.close()
         Path(db_path).unlink(missing_ok=True)
 
     @pytest.fixture
