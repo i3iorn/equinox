@@ -241,13 +241,30 @@ class SavedCredentialsManager:
     _MAX_COPY_ATTEMPTS = 100
 
     def _unique_copy_name(self, base_name: str) -> str:
-        """Return a unique 'base_name (Copy)' / 'base_name (Copy 2)' label."""
+        """Return a unique 'base_name (Copy)' / 'base_name (Copy 2)' label.
+
+        Uses a single SQL query to fetch all matching names, then picks the
+        first unused suffix in Python — avoiding up to 101 round-trips.
+        """
+        # Escape LIKE metacharacters in the base name so special characters
+        # (%, _, \) in credential names are treated as literals.
+        escaped = (
+            base_name.replace("\\", "\\\\")
+            .replace("%", "\\%")
+            .replace("_", "\\_")
+        )
+        rows = self.db.fetchall(
+            "SELECT name FROM saved_credentials WHERE name LIKE ? ESCAPE '\\'",
+            (f"{escaped} (Copy%",),
+        )
+        existing = {r["name"] for r in rows}
+
         candidate = f"{base_name} (Copy)"
-        if not self.get_by_name(candidate):
+        if candidate not in existing:
             return candidate
         for n in range(2, self._MAX_COPY_ATTEMPTS + 2):
             candidate = f"{base_name} (Copy {n})"
-            if not self.get_by_name(candidate):
+            if candidate not in existing:
                 return candidate
         raise StorageError(
             f"Could not generate unique name after {self._MAX_COPY_ATTEMPTS} attempts"
@@ -339,6 +356,11 @@ class SavedCredentialsManager:
         raw_config = d.get("config") or "{}"
         try:
             d["config"] = safe_json_loads(decrypt_auth_data(raw_config))
+        except SecurityError:
+            # Decryption failures indicate key mismatch or tampering — propagate
+            # rather than silently returning an empty config, which would mask a
+            # security-relevant event (consistent with CollectionAuthMixin).
+            raise
         except Exception:
             d["config"] = {}
         d["is_default"] = bool(d.get("is_default", 0))
