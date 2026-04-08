@@ -1,5 +1,6 @@
 """Assertion evaluation helpers — used by both the GUI and CLI."""
 
+from datetime import timedelta
 from typing import Tuple
 
 
@@ -52,7 +53,11 @@ def evaluate_assertion(rule: dict, response) -> Tuple[bool, str]:
 
         elif a_type == "elapsed_lt":
             threshold = float(expected)
-            elapsed_ms = response.elapsed * 1000
+            elapsed_val = response.elapsed
+            if isinstance(elapsed_val, timedelta):
+                elapsed_ms = elapsed_val.total_seconds() * 1000
+            else:
+                elapsed_ms = float(elapsed_val) * 1000
             passed = elapsed_ms < threshold
             return passed, f"elapsed < {threshold} ms  (got {elapsed_ms:.1f} ms)"
 
