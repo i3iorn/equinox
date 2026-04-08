@@ -2,6 +2,7 @@
 
 import json
 from typing import Optional
+from urllib.parse import urlencode
 
 from equinox.core.request import Request
 
@@ -21,14 +22,14 @@ def _escape_go_string(s: str) -> str:
     return s.replace("\\", "\\\\").replace('"', '\\"').replace("\n", "\\n").replace("\r", "\\r").replace("\t", "\\t")
 
 
-def _escape_ruby_single(s: str) -> str:
-    """Escape a string for use inside Ruby single-quoted string literals."""
+def _escape_single_quoted(s: str) -> str:
+    """Escape a string for use inside single-quoted string literals (Ruby/PHP)."""
     return s.replace("\\", "\\\\").replace("'", "\\\\'")
 
 
-def _escape_php_single(s: str) -> str:
-    """Escape a string for use inside PHP single-quoted string literals."""
-    return s.replace("\\", "\\\\").replace("'", "\\\\'")
+# Backward-compatible aliases so existing callers are not broken.
+_escape_ruby_single = _escape_single_quoted
+_escape_php_single = _escape_single_quoted
 
 
 def _inject_auth_into_headers(request: Request, headers: dict) -> None:
@@ -56,6 +57,32 @@ def _auth_kwarg_for_basic(request: Request) -> Optional[str]:
     return None
 
 
+def _build_url_with_params(url: str, params: dict) -> str:
+    """Append URL-encoded query params to *url*."""
+    if not params:
+        return url
+    qs = urlencode(params)
+    sep = "&" if "?" in url else "?"
+    return f"{url}{sep}{qs}"
+
+
+def _python_body_lines(request: Request) -> tuple:
+    """Return (extra_lines, body_arg) for Python-based generators."""
+    extra: list = []
+    body_arg = ""
+    if request.body:
+        try:
+            parsed = json.loads(request.body)
+            extra.append(f"json_body = {json.dumps(parsed, indent=4)}")
+            extra.append("")
+            body_arg = "json=json_body"
+        except (json.JSONDecodeError, ValueError):
+            extra.append(f"body = {request.body!r}")
+            extra.append("")
+            body_arg = "data=body"
+    return extra, body_arg
+
+
 class PythonRequestsGenerator:
     """Generate Python code using the ``requests`` library."""
 
@@ -74,17 +101,8 @@ class PythonRequestsGenerator:
             lines.append(f"params = {json.dumps(request.params, indent=4)}")
             lines.append("")
 
-        body_arg = ""
-        if request.body:
-            try:
-                parsed = json.loads(request.body)
-                lines.append(f"json_body = {json.dumps(parsed, indent=4)}")
-                lines.append("")
-                body_arg = "json=json_body"
-            except (json.JSONDecodeError, ValueError):
-                lines.append(f"body = {request.body!r}")
-                lines.append("")
-                body_arg = "data=body"
+        body_lines, body_arg = _python_body_lines(request)
+        lines.extend(body_lines)
 
         method = request.method.lower()
         args = [f'"{request.url}"']
@@ -102,7 +120,6 @@ class PythonRequestsGenerator:
         lines.append("print(response.status_code)")
         lines.append("print(response.text)")
         return "\n".join(lines)
-
 
 
 class PythonHttpxGenerator:
@@ -123,17 +140,8 @@ class PythonHttpxGenerator:
             lines.append(f"params = {json.dumps(request.params, indent=4)}")
             lines.append("")
 
-        body_arg = ""
-        if request.body:
-            try:
-                parsed = json.loads(request.body)
-                lines.append(f"json_body = {json.dumps(parsed, indent=4)}")
-                lines.append("")
-                body_arg = "json=json_body"
-            except (json.JSONDecodeError, ValueError):
-                lines.append(f"body = {request.body!r}")
-                lines.append("")
-                body_arg = "data=body"
+        body_lines, body_arg = _python_body_lines(request)
+        lines.extend(body_lines)
 
         method = request.method.lower()
         args = [f'"{request.url}"']
@@ -154,7 +162,6 @@ class PythonHttpxGenerator:
         return "\n".join(lines)
 
 
-
 class JavaScriptFetchGenerator:
     """Generate JavaScript code using the Fetch API."""
 
@@ -164,11 +171,7 @@ class JavaScriptFetchGenerator:
         headers = dict(request.headers or {})
         _inject_auth_into_headers(request, headers)
 
-        url = request.url
-        if request.params:
-            qs = "&".join(f"{k}={v}" for k, v in request.params.items())
-            sep = "&" if "?" in url else "?"
-            url = f"{url}{sep}{qs}"
+        url = _build_url_with_params(request.url, request.params or {})
 
         body_line = None
         if request.body:
@@ -249,7 +252,6 @@ class GoHttpGenerator:
         return "\n".join(lines)
 
 
-
 class RubyNetHttpGenerator:
     """Generate Ruby code using the standard ``net/http`` library."""
 
@@ -261,13 +263,9 @@ class RubyNetHttpGenerator:
             "",
         ]
 
-        url = request.url
-        if request.params:
-            qs = "&".join(f"{k}={v}" for k, v in request.params.items())
-            sep = "&" if "?" in url else "?"
-            url = f"{url}{sep}{qs}"
+        url = _build_url_with_params(request.url, request.params or {})
 
-        lines.append(f"uri = URI('{_escape_ruby_single(url)}')")
+        lines.append(f"uri = URI('{_escape_single_quoted(url)}')")
         lines.append("http = Net::HTTP.new(uri.host, uri.port)")
         lines.append("http.use_ssl = uri.scheme == 'https'")
         lines.append("")
@@ -283,7 +281,7 @@ class RubyNetHttpGenerator:
         headers = dict(request.headers or {})
         _inject_auth_into_headers(request, headers)
         for k, v in headers.items():
-            lines.append(f"request['{_escape_ruby_single(k)}'] = '{_escape_ruby_single(v)}'")
+            lines.append(f"request['{_escape_single_quoted(k)}'] = '{_escape_single_quoted(v)}'")
 
         if request.body:
             try:
@@ -301,23 +299,18 @@ class RubyNetHttpGenerator:
         return "\n".join(lines)
 
 
-
 class PhpCurlGenerator:
     """Generate PHP code using the cURL extension."""
 
     def generate(self, request: Request) -> str:
         lines = ["<?php", ""]
 
-        url = request.url
-        if request.params:
-            qs = "&".join(f"{k}={v}" for k, v in request.params.items())
-            sep = "&" if "?" in url else "?"
-            url = f"{url}{sep}{qs}"
+        url = _build_url_with_params(request.url, request.params or {})
 
-        lines.append(f"$url = '{_escape_php_single(url)}';")
+        lines.append(f"$url = '{_escape_single_quoted(url)}';")
         lines.append("$ch = curl_init($url);")
         lines.append("")
-        lines.append(f"curl_setopt($ch, CURLOPT_CUSTOMREQUEST, '{_escape_php_single(request.method)}');")
+        lines.append(f"curl_setopt($ch, CURLOPT_CUSTOMREQUEST, '{_escape_single_quoted(request.method)}');")
         lines.append("curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);")
 
         if not getattr(request, "verify_ssl", True):
@@ -326,11 +319,11 @@ class PhpCurlGenerator:
         headers = dict(request.headers or {})
         _inject_auth_into_headers(request, headers)
         if headers:
-            header_list = [f"'{_escape_php_single(k)}: {_escape_php_single(v)}'" for k, v in headers.items()]
+            header_list = [f"'{_escape_single_quoted(k)}: {_escape_single_quoted(v)}'" for k, v in headers.items()]
             lines.append(f"curl_setopt($ch, CURLOPT_HTTPHEADER, [{', '.join(header_list)}]);")
 
         if request.body:
-            safe = _escape_php_single(request.body)
+            safe = _escape_single_quoted(request.body)
             lines.append(f"curl_setopt($ch, CURLOPT_POSTFIELDS, '{safe}');")
 
         lines.append("")
@@ -341,7 +334,6 @@ class PhpCurlGenerator:
         lines.append("echo $status . \"\\n\";")
         lines.append("echo $response . \"\\n\";")
         return "\n".join(lines)
-
 
 
 GENERATORS: dict = {
