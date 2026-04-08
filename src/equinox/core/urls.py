@@ -13,11 +13,10 @@ High-level policy:
 
 from __future__ import annotations
 
-import json
 import re
 import logging
-from typing import Dict, List, Optional, Tuple
-from urllib.parse import urlparse, parse_qs, urlunparse
+from typing import Any, Dict, List, Optional, Tuple
+from urllib.parse import urlparse, parse_qs
 
 try:
     import urlps  # type: ignore
@@ -36,20 +35,50 @@ _HEX_RE = re.compile(r"^[0-9a-fA-F]{8,}$")
 
 
 def _normalize_segment(seg: str) -> str:
-    # Treat UUID-looking segments as generic IDs for matching purposes
-    if _UUID_RE.match(seg):
-        return "{id}"
-    if _NUMERIC_RE.match(seg):
+    """Replace ID-like path segments with a generic placeholder.
+
+    UUID and numeric segments become ``{id}``; long hex strings become
+    ``{hash}``.  All other segments are lowercased.  This lets structurally
+    identical paths with different IDs compare as equal.
+    """
+    if _UUID_RE.match(seg) or _NUMERIC_RE.match(seg):
         return "{id}"
     if _HEX_RE.match(seg):
         return "{hash}"
     return seg.lower()
 
 
+def _parse_url(url: str) -> Tuple[str, str, str, str]:
+    """Return ``(scheme, netloc, path, query)`` for *url*.
+
+    Uses ``urlps`` when available for robust parsing; falls back to
+    ``urllib.parse`` transparently.
+    """
+    if _HAS_URLPS:
+        try:
+            p = urlps.parse(url)  # type: ignore[attr-defined]
+            return p.scheme or "", p.netloc or "", p.path or "", p.query or ""
+        except Exception:
+            pass
+    p = urlparse(url)
+    return p.scheme, p.netloc, p.path, p.query
+
+
+def _build_canonical_url(
+    scheme: str, netloc: str, path: str, query_params: Dict[str, str]
+) -> str:
+    """Build a canonical URL with a deterministically-sorted query string."""
+    query = ""
+    if query_params:
+        query = "?" + "&".join(f"{k}={query_params[k]}" for k in sorted(query_params))
+    authority = f"{scheme}://{netloc}" if scheme else netloc
+    return f"{authority}{path}{query}"
+
+
 def expand_placeholders(url: str, variables: Optional[Dict[str, str]] = None) -> str:
     """Expand {{var}} placeholders in *url* using VariableInterpolator.
 
-    If *variables* is None, the input is returned unchanged.
+    If *variables* is None or empty, the input is returned unchanged.
     """
     if not variables:
         return url
@@ -57,11 +86,10 @@ def expand_placeholders(url: str, variables: Optional[Dict[str, str]] = None) ->
         return VariableInterpolator.interpolate(url, variables)
     except Exception as exc:
         logger.debug("Placeholder expansion failed for url %r: %s", url, exc)
-        # Fall back to raw url if interpolation fails
         return url
 
 
-def normalized_parts(url: str, variables: Optional[Dict[str, str]] = None) -> Dict[str, object]:
+def normalized_parts(url: str, variables: Optional[Dict[str, str]] = None) -> Dict[str, Any]:
     """Return normalized_url, path_segments, and query_params for *url*.
 
     Normalization rules are intentionally conservative and reversible: only
@@ -69,73 +97,42 @@ def normalized_parts(url: str, variables: Optional[Dict[str, str]] = None) -> Di
     replaced with placeholders.
     """
     expanded = expand_placeholders(url or "", variables)
+    scheme, netloc, path, query = _parse_url(expanded)
 
-    # Prefer urlps when available for robust parsing
-    if _HAS_URLPS:
-        try:
-            parsed = urlps.parse(expanded)  # type: ignore[attr-defined]
-            scheme = parsed.scheme or ""
-            netloc = parsed.netloc or ""
-            path = parsed.path or ""
-            query = parsed.query or ""
-        except Exception:
-            parsed = urlparse(expanded)
-            scheme = parsed.scheme
-            netloc = parsed.netloc
-            path = parsed.path
-            query = parsed.query
-    else:
-        parsed = urlparse(expanded)
-        scheme = parsed.scheme
-        netloc = parsed.netloc
-        path = parsed.path
-        query = parsed.query
-
-    # Split and normalise path segments
     raw_segments = [s for s in path.split("/") if s]
     norm_segments: List[str] = [_normalize_segment(s) for s in raw_segments]
-
-    # Build normalized path
     normalized_path = "/" + "/".join(norm_segments) if norm_segments else "/"
 
-    # Parse query params into a deterministic dict (first value only)
     parsed_qs = parse_qs(query, keep_blank_values=True)
     query_params = {k: (v[0] if v else "") for k, v in sorted(parsed_qs.items())}
 
-    # Build a canonical normalized URL (scheme + netloc + normalized_path + sorted query)
-    canonical_query = ""
-    if query_params:
-        pairs = [f"{k}={query_params[k]}" for k in sorted(query_params.keys())]
-        canonical_query = "?" + "&".join(pairs)
-
-    netloc_part = netloc.lower()
-    normalized_url = f"{scheme}://{netloc_part}{normalized_path}{canonical_query}" if scheme else f"{netloc_part}{normalized_path}{canonical_query}"
+    netloc_lower = netloc.lower()
+    normalized_url = _build_canonical_url(scheme, netloc_lower, normalized_path, query_params)
 
     return {
         "normalized_url": normalized_url,
         "path_segments": norm_segments,
         "query_params": query_params,
         "scheme": scheme,
-        "netloc": netloc_part,
+        "netloc": netloc_lower,
     }
 
 
 def normalize_url(url: str, variables: Optional[Dict[str, str]] = None) -> str:
+    """Return the canonical normalized URL string for *url*.
+
+    Convenience wrapper around :func:`normalized_parts` when only the
+    normalized URL string is needed.
+    """
     return normalized_parts(url, variables)["normalized_url"]
 
 
 def base_path(normalized_url: str) -> str:
-    """Return a base path prefix suitable for candidate filtering.
+    """Return the first path segment — used as a prefix for candidate filtering.
 
-    For example, /users/{id}/posts -> /users
+    For example: ``/users/{id}/posts`` → ``/users``.
     """
-    try:
-        parsed = urlparse(normalized_url)
-        path = parsed.path or ""
-    except Exception:
-        # If input is already a path-like normalized_url
-        parts = normalized_url.split("?")[0]
-        path = parts
+    path = urlparse(normalized_url).path
     segs = [s for s in path.split("/") if s]
     return "/" + segs[0] if segs else "/"
 

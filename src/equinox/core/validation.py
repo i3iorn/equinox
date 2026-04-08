@@ -13,7 +13,7 @@ import threading
 import concurrent.futures
 from typing import Any, Dict, Optional, Tuple
 from equinox.core import urls
-from urllib.parse import urlparse
+from urllib.parse import urlparse, unquote_plus
 from pathlib import Path
 
 from equinox.core.exceptions import ValidationError
@@ -51,7 +51,8 @@ def _get_dns_pool() -> concurrent.futures.ThreadPoolExecutor:
 class Validator:
     """Zero-trust input validator."""
 
-    # URL validation patterns
+    # ── Limits ────────────────────────────────────────────────────────────────
+
     VALID_URL_SCHEMES = {'http', 'https'}
     MAX_URL_LENGTH = 2048
     MAX_HEADER_LENGTH = 8192
@@ -63,8 +64,12 @@ class Validator:
     MAX_VARIABLE_NAME_LENGTH = 128
     MAX_VARIABLE_VALUE_LENGTH = 4096
 
-    # Dangerous patterns
-    SQL_INJECTION_PATTERNS = [
+    # ── Security patterns (precompiled at class-definition time) ──────────────
+    #
+    # Compiling once here avoids repeated compilation on every validation call.
+    # The string literals are kept as inline comments for readability.
+
+    _SQL_INJECTION_RE: Tuple = tuple(re.compile(p, re.IGNORECASE) for p in (
         r"(\bUNION\b.*\bSELECT\b)",
         r"(\bDROP\b.*\bTABLE\b)",
         r"(\bINSERT\b.*\bINTO\b)",
@@ -73,36 +78,88 @@ class Validator:
         r"(--|\#|\/\*|\*\/)",
         r"(\bOR\b.*=.*)",
         r"(;.*\b(DROP|DELETE|INSERT|UPDATE)\b)",
-    ]
+    ))
 
-    COMMAND_INJECTION_PATTERNS = [
+    _COMMAND_INJECTION_RE: Tuple = tuple(re.compile(p) for p in (
         r"[;&|`$]",
         r"\$\{[^}]*\}",
         r"\$\([^)]*\)",
         r"`[^`]*`",
-    ]
+    ))
 
-    XSS_PATTERNS = [
+    # All XSS patterns — used for body/general checks.
+    _XSS_RE: Tuple = tuple(re.compile(p, re.IGNORECASE) for p in (
         r"<script[^>]*>.*?</script>",
         r"javascript:",
         r"on\w+\s*=",
         r"<iframe",
         r"<object",
         r"<embed",
-    ]
+    ))
 
-    PATH_TRAVERSAL_PATTERNS = [
+    # XSS patterns safe for URL/header checks.
+    # The HTML-only patterns (iframe, object, embed) would produce false
+    # positives on valid API endpoint paths, so they are excluded here.
+    _URL_XSS_RE: Tuple = _XSS_RE[:3]
+
+    _PATH_TRAVERSAL_RE: Tuple = tuple(re.compile(p) for p in (
         r"\.\.[/\\]",          # ../ or ..\ anywhere in path (cross-platform)
         r"(^|[/\\])\.\.$",     # trailing .. as a path component (e.g. "dir/..")
         r"^\.\.?$",            # bare "." or ".." as the entire path
         r"~/",                 # home-relative shorthand
-    ]
+    ))
 
-    # Only the first 3 XSS patterns are relevant to URL/header checks
-    # (script tags, javascript: scheme, inline event handlers).
-    # The remaining patterns (iframe, object, embed) are HTML-only and
-    # would cause false positives on valid API URLs/query params.
-    _URL_SAFE_XSS_PATTERN_COUNT = 3
+    # Headers that httpx manages internally — setting them manually may
+    # cause unexpected behaviour, but an API testing tool should allow it
+    # when ``strict=False``.
+    _MANAGED_HEADERS = frozenset({
+        'host', 'connection', 'content-length',
+        'transfer-encoding', 'upgrade',
+    })
+
+    # Cloud metadata endpoints that should always be blocked.
+    _METADATA_HOSTS: frozenset = frozenset({
+        "169.254.169.254",     # AWS / GCP / Azure metadata
+        "metadata.google.internal",
+        "metadata.goog",
+    })
+
+    # ── Private helpers ───────────────────────────────────────────────────────
+
+    @staticmethod
+    def _require_nonempty_str(value: Any, field_name: str) -> None:
+        """Raise ``ValidationError`` if *value* is not a non-empty string."""
+        if not value or not isinstance(value, str):
+            raise ValidationError(f"{field_name} must be a non-empty string")
+
+    @staticmethod
+    def _check_crlf(value: str, field_name: str) -> None:
+        """Raise ``ValidationError`` if *value* contains CR or LF characters."""
+        if '\r' in value or '\n' in value:
+            raise ValidationError(
+                f"{field_name} contains invalid characters (CRLF)"
+            )
+
+    @classmethod
+    def _validate_json_body(cls, body: str) -> None:
+        """Raise ``ValidationError`` if *body* is not valid JSON.
+
+        Tolerates a single common deviation: trailing commas before ``}`` or
+        ``]`` (e.g. ``{"a": 1,}``).  Any other structural error is reported
+        using the original parse exception for a precise error message.
+        """
+        try:
+            json.loads(body)
+        except json.JSONDecodeError as original_err:
+            # Strip trailing commas and retry once
+            normalised = re.sub(r",(\s*[}\]])", r"\1", body)
+            try:
+                json.loads(normalised)
+                # Normalised body is valid — trailing commas only; proceed.
+            except json.JSONDecodeError:
+                raise ValidationError(f"Invalid JSON body: {original_err}")
+
+    # ── Public validators ─────────────────────────────────────────────────────
 
     @classmethod
     def validate_url(cls, url: str) -> str:
@@ -116,9 +173,7 @@ class Validator:
         For full structural validation with ``urlps`` after variable
         interpolation, use :meth:`validate_resolved_url`.
         """
-        if not url or not isinstance(url, str):
-            _logger.debug("URL validation failed: empty or non-string input", extra={"input_type": type(url).__name__})
-            raise ValidationError("URL must be a non-empty string")
+        cls._require_nonempty_str(url, "URL")
 
         url = url.strip()
 
@@ -129,10 +184,9 @@ class Validator:
             )
             raise ValidationError(f"URL exceeds maximum length of {cls.MAX_URL_LENGTH}")
 
-        # XSS / injection checks on the raw string
-        for pattern in cls.XSS_PATTERNS[:cls._URL_SAFE_XSS_PATTERN_COUNT]:
-            if re.search(pattern, url, re.IGNORECASE):
-                _logger.warning("URL validation failed: XSS pattern detected", extra={"pattern": pattern})
+        for rx in cls._URL_XSS_RE:
+            if rx.search(url):
+                _logger.warning("URL validation failed: XSS pattern detected")
                 raise ValidationError("URL contains potentially malicious content")
 
         _logger.debug("URL validation passed", extra={"url_length": len(url)})
@@ -146,11 +200,8 @@ class Validator:
         expanded — i.e. at send-time.  It performs full structural parsing
         (scheme, host, port, path) and rejects malformed URLs.
         """
-        # Run the basic string checks first
         url = cls.validate_url(url)
 
-        # Prefer the central URL helpers: expand placeholders (defensive) and
-        # obtain normalized parts for robust parsing + normalization behavior.
         expanded = urls.expand_placeholders(url, None)
         try:
             parts = urls.normalized_parts(expanded)
@@ -178,7 +229,6 @@ class Validator:
             _logger.warning("URL validation failed: missing hostname")
             raise ValidationError("URL must contain a hostname")
 
-        # Use stdlib urlparse to extract the hostname (handles userinfo/ports cleanly)
         parsed_host = urlparse(expanded).hostname
         if parsed_host:
             cls._check_ssrf(parsed_host)
@@ -188,13 +238,6 @@ class Validator:
             extra={"scheme": scheme, "host": parsed_host or "unknown"}
         )
         return url
-
-    # Cloud metadata endpoints that should always be blocked
-    _METADATA_HOSTS: frozenset = frozenset({
-        "169.254.169.254",     # AWS / GCP / Azure metadata
-        "metadata.google.internal",
-        "metadata.goog",
-    })
 
     @classmethod
     def _check_ssrf(cls, hostname: str) -> None:
@@ -209,7 +252,6 @@ class Validator:
         """
         hostname_lower = hostname.lower().rstrip(".")
 
-        # Block known metadata endpoints
         if hostname_lower in cls._METADATA_HOSTS:
             _logger.warning(
                 "SSRF protection: blocked metadata endpoint request",
@@ -219,7 +261,6 @@ class Validator:
                 f"Requests to metadata endpoint '{hostname}' are blocked (SSRF protection)"
             )
 
-        # Try to resolve and check if the IP is private
         try:
             addr = ipaddress.ip_address(hostname_lower)
             if addr.is_private or addr.is_loopback or addr.is_link_local:
@@ -227,8 +268,7 @@ class Validator:
                     f"Requests to private/internal IP '{hostname}' are blocked (SSRF protection)"
                 )
         except ValueError:
-            # Not a literal IP — try DNS resolution with a tight timeout
-            # to avoid stalling on slow/unresponsive DNS servers.
+            # Not a literal IP — try DNS resolution with a tight timeout.
             future = None
             try:
                 pool = _get_dns_pool()
@@ -248,19 +288,9 @@ class Validator:
             except (socket.gaierror, OSError):
                 pass  # DNS resolution failed — allow (will fail at connect time)
             except concurrent.futures.TimeoutError:
-                # Cancel the future so the single-worker pool is freed for the
-                # next request rather than being blocked by the stalled lookup.
                 if future is not None:
                     future.cancel()
                 # DNS timed out — allow (will fail at connect time)
-
-    # Headers that httpx manages internally — setting them manually may
-    # cause unexpected behaviour, but an API testing tool should allow it
-    # when ``strict=False``.
-    _MANAGED_HEADERS = frozenset({
-        'host', 'connection', 'content-length',
-        'transfer-encoding', 'upgrade',
-    })
 
     @classmethod
     def validate_header_name(cls, name: str, *, strict: bool = True) -> str:
@@ -280,20 +310,16 @@ class Validator:
         Raises:
             ValidationError: If header name is invalid
         """
-        if not name or not isinstance(name, str):
-            raise ValidationError("Header name must be a non-empty string")
+        cls._require_nonempty_str(name, "Header name")
 
         name = name.strip()
 
-        # Check length
         if len(name) > 256:
             raise ValidationError("Header name too long")
 
-        # Validate format (RFC 7230)
         if not re.match(r'^[a-zA-Z0-9!#$%&\'*+\-.^_`|~]+$', name):
             raise ValidationError(f"Invalid header name format: {name}")
 
-        # Managed headers
         if name.lower() in cls._MANAGED_HEADERS:
             if strict:
                 raise ValidationError(f"Cannot manually set header: {name}")
@@ -321,17 +347,13 @@ class Validator:
         if not isinstance(value, str):
             raise ValidationError("Header value must be a string")
 
-        # Check length
         if len(value) > cls.MAX_HEADER_LENGTH:
             raise ValidationError("Header value too long")
 
-        # Check for CRLF injection
-        if '\r' in value or '\n' in value:
-            raise ValidationError("Header value contains invalid characters (CRLF)")
+        cls._check_crlf(value, "Header value")
 
-        # Check for XSS patterns in headers
-        for pattern in cls.XSS_PATTERNS[:cls._URL_SAFE_XSS_PATTERN_COUNT]:
-            if re.search(pattern, value, re.IGNORECASE):
+        for rx in cls._URL_XSS_RE:
+            if rx.search(value):
                 raise ValidationError("Header value contains potentially malicious content")
 
         return value
@@ -381,7 +403,6 @@ class Validator:
         if body is None:
             return None
 
-        # Convert to string for size check
         if isinstance(body, dict):
             try:
                 body_str = json.dumps(body)
@@ -390,7 +411,6 @@ class Validator:
         else:
             body_str = str(body)
 
-        # Check size
         body_size = len(body_str.encode('utf-8'))
         if body_size > cls.MAX_BODY_SIZE:
             raise ValidationError(
@@ -398,25 +418,13 @@ class Validator:
                 f"(max: {cls.MAX_BODY_SIZE} bytes)"
             )
 
-        if content_type and 'json' in content_type.lower():
-            if isinstance(body, str):
-                try:
-                    json.loads(body)
-                except json.JSONDecodeError as original_err:
-                    # Strip trailing commas before `}` or `]` and retry once.
-                    _normalised = re.sub(r",(\s*[}\]])", r"\1", body)
-                    try:
-                        json.loads(_normalised)
-                        # Normalised body is valid — trailing commas only; proceed.
-                    except json.JSONDecodeError:
-                        raise ValidationError(f"Invalid JSON body: {original_err}")
+        if content_type and 'json' in content_type.lower() and isinstance(body, str):
+            cls._validate_json_body(body)
 
         if isinstance(body, str):
-            import logging as _logging
-            _sql_logger = _logging.getLogger(__name__)
-            for pattern in cls.SQL_INJECTION_PATTERNS:
-                if re.search(pattern, body, re.IGNORECASE):
-                    _sql_logger.warning(
+            for rx in cls._SQL_INJECTION_RE:
+                if rx.search(body):
+                    _logger.warning(
                         "Potential SQL injection pattern detected in request body"
                     )
                     break  # One warning per body is enough
@@ -444,25 +452,19 @@ class Validator:
 
         validated = {}
         for key, value in params.items():
-            # Validate key
             if not isinstance(key, str):
                 raise ValidationError("Parameter key must be a string")
 
             if len(key) > cls.MAX_PARAM_KEY_LENGTH:
                 raise ValidationError("Parameter key too long")
 
-            # Check for CRLF injection in keys (could allow header injection)
-            if '\r' in key or '\n' in key:
-                raise ValidationError(f"Parameter key contains invalid characters (CRLF): {key}")
+            cls._check_crlf(key, f"Parameter key '{key}'")
 
-            # Validate value
             value_str = str(value)
             if len(value_str) > cls.MAX_PARAM_VALUE_LENGTH:
                 raise ValidationError("Parameter value too long")
 
-            # Check for CRLF injection in values
-            if '\r' in value_str or '\n' in value_str:
-                raise ValidationError("Parameter value contains invalid characters (CRLF)")
+            cls._check_crlf(value_str, "Parameter value")
 
             validated[key] = value
 
@@ -482,27 +484,20 @@ class Validator:
         Raises:
             ValidationError: If path is invalid or attempts traversal
         """
-        if not path or not isinstance(path, str):
-            raise ValidationError("Path must be a non-empty string")
+        cls._require_nonempty_str(path, "Path")
 
         # Check both raw path and URL-decoded form for traversal patterns
         # (e.g. "..%2F" is URL-encoded "../")
-        # Use stdlib urllib.parse — urlps is optional and its private _parser
-        # module is an implementation detail that could change between releases.
-        from urllib.parse import unquote_plus as _unquote
-        paths_to_check = [path, _unquote(path)]
-        for candidate in paths_to_check:
-            for pattern in cls.PATH_TRAVERSAL_PATTERNS:
-                if re.search(pattern, candidate):
+        for candidate in (path, unquote_plus(path)):
+            for rx in cls._PATH_TRAVERSAL_RE:
+                if rx.search(candidate):
                     raise ValidationError(f"Path contains traversal pattern: {path}")
 
         try:
-            # Convert to Path and resolve
             file_path = Path(path).resolve()
         except Exception as e:
             raise ValidationError(f"Invalid path: {e}")
 
-        # If base_dir specified, ensure path is within it
         if base_dir:
             base_dir = base_dir.resolve()
             try:
@@ -526,30 +521,26 @@ class Validator:
         Raises:
             ValidationError: If variable is invalid
         """
-        if not name or not isinstance(name, str):
-            raise ValidationError("Variable name must be a non-empty string")
+        cls._require_nonempty_str(name, "Variable name")
 
         if not isinstance(value, str):
             raise ValidationError("Variable value must be a string")
 
-        # Validate name format (POSIX: letters, digits, underscore; must not start with digit)
         if not re.match(r'^[A-Za-z_][A-Za-z0-9_]*$', name):
             raise ValidationError(
                 f"Invalid variable name: {name}. "
                 "Must start with a letter or underscore and contain only letters, digits, and underscores"
             )
 
-        # Check length
         if len(name) > cls.MAX_VARIABLE_NAME_LENGTH:
             raise ValidationError("Variable name too long")
 
         if len(value) > cls.MAX_VARIABLE_VALUE_LENGTH:
             raise ValidationError("Variable value too long")
 
-        # Check for code injection patterns
-        for pattern in cls.COMMAND_INJECTION_PATTERNS:
-            if re.search(pattern, value):
-                raise ValidationError(f"Variable value contains potentially dangerous pattern")
+        for rx in cls._COMMAND_INJECTION_RE:
+            if rx.search(value):
+                raise ValidationError("Variable value contains potentially dangerous pattern")
 
         return name, value
 
@@ -567,7 +558,6 @@ class Validator:
         if not isinstance(text, str):
             text = str(text)
 
-        # Truncate if too long
         if len(text) > max_length:
             text = text[:max_length] + "..."
 
@@ -589,8 +579,7 @@ class Validator:
         Raises:
             ValidationError: If method is invalid
         """
-        if not method or not isinstance(method, str):
-            raise ValidationError("HTTP method must be a non-empty string")
+        cls._require_nonempty_str(method, "HTTP method")
 
         method = method.upper().strip()
 
