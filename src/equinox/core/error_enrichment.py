@@ -88,7 +88,7 @@ def _describe_connect_error(inner: str) -> str:
             "SSL/TLS error — the server's certificate could not be verified.\n"
             f"Details: {inner}"
         )
-    if "name or service not known" in lower or "nodename nor servname" in lower:
+    if "name or service not known" in lower or "nodename nor servname" in lower or "getaddrinfo failed" in lower:
         return "DNS lookup failed — check the hostname in the URL."
     if "connection refused" in lower:
         return "Connection refused — the server is not accepting connections on that port."
