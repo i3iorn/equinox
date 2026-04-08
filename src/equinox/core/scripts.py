@@ -144,7 +144,14 @@ def _validate_ast(source: str, filename: str) -> ast.Module:
     """
     from equinox.core.exceptions import SecurityError
 
-    tree = ast.parse(source, filename=filename, mode="exec")
+    try:
+        tree = ast.parse(source, filename=filename, mode="exec")
+    except RecursionError:
+        # Deeply nested expressions (e.g. thousands of nested calls) hit
+        # CPython's recursion limit during parsing before the AST walker runs.
+        # Treat this as a syntax error so the result is a ScriptResult.error
+        # rather than an unhandled exception propagating to the caller.
+        raise SyntaxError("Script is too deeply nested to parse safely")
 
     # Names that are blocked when used as function calls
     _BLOCKED_CALLS: frozenset = frozenset({
