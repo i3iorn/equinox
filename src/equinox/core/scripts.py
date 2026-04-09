@@ -353,7 +353,7 @@ class ScriptRunner:
         try:
             tree = _validate_ast(script, filename)
             code = compile(tree, filename, "exec")
-            logger.debug("Script AST validation passed", extra={"filename": filename})
+            logger.debug("Script AST validation passed: %s", filename)
         except Exception as exc:  # noqa: BLE001
             logger.warning("Script AST/compile error in %s: %s", filename, exc)
             return ScriptResult(error=str(exc))
@@ -435,6 +435,6 @@ class ScriptRunner:
             if k not in session_vars or session_vars.get(k) != str(v)
         }
         if changed:
-            logger.debug("Script set session vars: %s", list(changed.keys()),
-                         extra={"filename": filename, "changed_count": len(changed)})
+            logger.debug("Script set session vars: %s (script=%s, count=%d)",
+                         list(changed.keys()), filename, len(changed))
         return ScriptResult(output_vars=changed)

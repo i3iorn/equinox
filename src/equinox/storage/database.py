@@ -245,7 +245,7 @@ class Database:
             StorageError: If the persistent connection is unavailable.
         """
         with self.lock:
-            if self._conn is None:
+            if getattr(self, "_conn", None) is None:
                 self._conn = self._new_connection()
             yield self._conn
 
@@ -270,7 +270,7 @@ class Database:
         """
         with self.lock:
             logger.debug("Starting database transaction")
-            if self._conn is None:
+            if getattr(self, "_conn", None) is None:
                 self._conn = self._new_connection()
             conn = self._conn
             conn.execute("BEGIN")
@@ -292,7 +292,7 @@ class Database:
 
         Must be called while ``self.lock`` is held.
         """
-        if self._conn is None:
+        if getattr(self, "_conn", None) is None:
             raise StorageError("Database connection is closed")
         return self._conn
 

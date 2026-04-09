@@ -73,9 +73,12 @@ def require_str(value, field: str, max_len: int, required: bool = True) -> str:
         value = ""
     if not isinstance(value, str):
         raise ValidationError(f"'{field}' must be a string")
-    value = value.strip()
     if required and not value:
-        raise ValidationError(f"'{field}' is required")
+        raise ValidationError(f"'{field}' must be a non-empty string")
+    stripped = value.strip()
+    if required and not stripped:
+        raise ValidationError(f"'{field}' cannot be empty or whitespace")
+    value = stripped
     if len(value) > max_len:
         raise ValidationError(f"'{field}' is too long (max {max_len} chars)")
     return value
