@@ -9,6 +9,7 @@ import logging
 import tempfile
 import ctypes
 import threading
+import gc
 
 from pathlib import Path
 from typing import Optional, Dict, Any, List, TypedDict
@@ -16,6 +17,7 @@ from typing import Optional, Dict, Any, List, TypedDict
 from cryptography.fernet import Fernet
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
+from cryptography.hazmat.primitives.kdf.scrypt import Scrypt
 
 from equinox.core.exceptions import SecurityError, ValidationError
 from equinox.core.audit import get_audit_logger
@@ -23,9 +25,10 @@ from equinox.core import crypto
 
 logger = logging.getLogger(__name__)
 
-# =========================================================
+
+# ──────────────────────────────────────────────────────────────────────────────
 # Typed structures
-# =========================================================
+# ──────────────────────────────────────────────────────────────────────────────
 
 class CredentialEntry(TypedDict):
     value: str
@@ -40,25 +43,50 @@ class ExportPayloadV2(TypedDict):
     data: str
 
 
-# =========================================================
+# ──────────────────────────────────────────────────────────────────────────────
 # Constants
-# =========================================================
+# ──────────────────────────────────────────────────────────────────────────────
 
 MAX_KEY_LEN = 256
 MAX_VALUE_LEN = 10_000
 
-# =========================================================
+# File permissions: read/write for owner only
+_FILE_PERMISSIONS = 0o600
+
+# Derived key length for all KDF algorithms
+_KEY_LENGTH = 32
+
+# Scrypt parameters: cost (N), block size (r), parallelization (p)
+_SCRYPT_N = 2**17
+_SCRYPT_R = 8
+_SCRYPT_P = 1
+_SCRYPT_SALT_LEN = 32
+
+# PBKDF2 parameters
+_PBKDF2_ITERATIONS = 1_000_000
+
+# JSON serialization format (compact, no whitespace)
+_JSON_COMPACT = {"separators": (",", ":")}
+_JSON_PRETTY = {"indent": 2}
+
+# Export format version
+_EXPORT_VERSION_V2 = 2
+
+
+# ──────────────────────────────────────────────────────────────────────────────
 # Helpers
-# =========================================================
+# ──────────────────────────────────────────────────────────────────────────────
 
 def _ensure_permissions(path: Path) -> None:
+    """Set file permissions to owner-read/write only (0o600)."""
     try:
-        os.chmod(path, 0o600)
+        os.chmod(path, _FILE_PERMISSIONS)
     except (OSError, NotImplementedError):
         logger.debug("chmod not supported on this platform")
 
 
 def _atomic_write(path: Path, data: bytes) -> None:
+    """Write *data* to *path* atomically via a temporary file."""
     fd, tmp_path = tempfile.mkstemp(dir=str(path.parent), suffix=".tmp")
 
     try:
@@ -94,12 +122,12 @@ def _wipe_bytes(b: Optional[bytes]) -> None:
     except Exception:
         logger.debug("_wipe_bytes: ctypes overwrite failed (non-critical)")
     finally:
-        import gc
         del b
         gc.collect()
 
 
 def _validate_key_value(key: str, value: Optional[str] = None) -> None:
+    """Validate a credential key and optional value for length and type."""
     if not key or not isinstance(key, str):
         raise ValidationError("Credential key must be a non-empty string")
 
@@ -114,9 +142,25 @@ def _validate_key_value(key: str, value: Optional[str] = None) -> None:
             raise ValidationError("Credential value too long")
 
 
-# =========================================================
+def _serialize_json(obj: Any, pretty: bool = False) -> str:
+    """Serialize *obj* to JSON string (compact or pretty-printed)."""
+    kwargs = _JSON_PRETTY if pretty else _JSON_COMPACT
+    return json.dumps(obj, **kwargs)
+
+
+def _serialize_json_bytes(obj: Any, pretty: bool = False) -> bytes:
+    """Serialize *obj* to JSON bytes (compact or pretty-printed)."""
+    return _serialize_json(obj, pretty=pretty).encode("utf-8")
+
+
+def _encode_key_for_fernet(key: bytes) -> bytes:
+    """Base64-encode a derived key for use with Fernet."""
+    return base64.urlsafe_b64encode(key)
+
+
+# ──────────────────────────────────────────────────────────────────────────────
 # Secure Storage
-# =========================================================
+# ──────────────────────────────────────────────────────────────────────────────
 
 class SecureStorage:
     """Secure credential storage with encryption."""
@@ -137,11 +181,12 @@ class SecureStorage:
         # multiple threads do not silently clobber each other's changes.
         self._lock = threading.Lock()
 
-    # =====================================================
+    # ──────────────────────────────────────────────────────────────────────────
     # Key + Cipher
-    # =====================================================
+    # ──────────────────────────────────────────────────────────────────────────
 
     def _get_key(self) -> bytes:
+        """Load or create the master encryption key."""
         local = self.storage_path.parent / ".key"
         key_path = local if local.exists() else crypto.default_key_path()
 
@@ -152,6 +197,7 @@ class SecureStorage:
             raise SecurityError("Failed to load encryption key") from exc
 
     def _get_cipher(self) -> Fernet:
+        """Return a cached Fernet cipher, creating it on first call."""
         if self._cipher is None:
             try:
                 self._cipher = crypto.make_fernet(self._get_key())
@@ -160,11 +206,12 @@ class SecureStorage:
                 raise SecurityError("Failed to initialize encryption") from exc
         return self._cipher
 
-    # =====================================================
+    # ──────────────────────────────────────────────────────────────────────────
     # Storage I/O
-    # =====================================================
+    # ──────────────────────────────────────────────────────────────────────────
 
     def _load(self) -> Dict[str, CredentialEntry]:
+        """Load and decrypt credentials from storage."""
         if not self.storage_path.exists():
             return {}
 
@@ -188,10 +235,11 @@ class SecureStorage:
             raise SecurityError("Failed to decrypt credentials") from exc
 
     def _save(self, storage: Dict[str, CredentialEntry]) -> None:
+        """Encrypt and save credentials to storage."""
         try:
             cipher = self._get_cipher()
 
-            payload = json.dumps(storage, separators=(",", ":")).encode("utf-8")
+            payload = _serialize_json_bytes(storage)
             encrypted = cipher.encrypt(payload)
 
             _atomic_write(self.storage_path, encrypted)
@@ -201,9 +249,9 @@ class SecureStorage:
             logger.exception("Failed to save storage")
             raise SecurityError("Failed to encrypt credentials") from exc
 
-    # =====================================================
+    # ──────────────────────────────────────────────────────────────────────────
     # CRUD
-    # =====================================================
+    # ──────────────────────────────────────────────────────────────────────────
 
     def store(
         self,
@@ -211,6 +259,7 @@ class SecureStorage:
         value: str,
         metadata: Optional[Dict[str, Any]] = None,
     ) -> None:
+        """Store a credential."""
         _validate_key_value(key, value)
 
         with self._lock:
@@ -224,6 +273,7 @@ class SecureStorage:
         self._audit.log_credential_access("store", key)
 
     def retrieve(self, key: str) -> Optional[str]:
+        """Retrieve a credential by key."""
         _validate_key_value(key)
 
         with self._lock:
@@ -237,6 +287,7 @@ class SecureStorage:
         return entry.get("value")
 
     def delete(self, key: str) -> bool:
+        """Delete a credential; return True if it existed."""
         _validate_key_value(key)
 
         with self._lock:
@@ -250,19 +301,22 @@ class SecureStorage:
         return True
 
     def list_keys(self) -> List[str]:
+        """List all stored credential keys."""
         with self._lock:
             return list(self._load().keys())
 
     def clear(self) -> None:
+        """Clear all stored credentials."""
         with self._lock:
             self._save({})
         logger.warning("All credentials cleared")
 
-    # =====================================================
+    # ──────────────────────────────────────────────────────────────────────────
     # Export / Import
-    # =====================================================
+    # ──────────────────────────────────────────────────────────────────────────
 
     def export_encrypted(self, path: Path, password: str) -> None:
+        """Export credentials to an encrypted file."""
         self._validate_password(password)
 
         with self._lock:
@@ -270,23 +324,25 @@ class SecureStorage:
         key: Optional[bytes] = None
 
         try:
-            salt = os.urandom(32)
+            salt = os.urandom(_SCRYPT_SALT_LEN)
             key = self._derive_scrypt(password, salt)
 
             cipher = Fernet(key)
-            encrypted = cipher.encrypt(
-                json.dumps(storage, separators=(",", ":")).encode()
-            )
+            encrypted = cipher.encrypt(_serialize_json_bytes(storage))
 
             payload: ExportPayloadV2 = {
-                "version": 2,
+                "version": _EXPORT_VERSION_V2,
                 "kdf": "scrypt",
-                "kdf_params": {"n": 2**17, "r": 8, "p": 1},
-                "salt": base64.b64encode(salt).decode(),
-                "data": base64.b64encode(encrypted).decode(),
+                "kdf_params": {
+                    "n": _SCRYPT_N,
+                    "r": _SCRYPT_R,
+                    "p": _SCRYPT_P,
+                },
+                "salt": base64.b64encode(salt).decode("ascii"),
+                "data": base64.b64encode(encrypted).decode("ascii"),
             }
 
-            path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+            path.write_text(_serialize_json(payload, pretty=True), encoding="utf-8")
 
             self._audit.log_credential_access("export", str(path))
 
@@ -298,20 +354,18 @@ class SecureStorage:
             _wipe_bytes(key)
 
     def import_encrypted(self, path: Path, password: str) -> int:
+        """Import credentials from an encrypted file."""
         if not path.exists():
             raise ValidationError(f"File not found: {path}")
 
         try:
             payload = json.loads(path.read_text(encoding="utf-8"))
         except Exception as exc:
-            # Provide a clearer message for callers/tests when the file cannot
-            # be parsed/read as JSON.
             raise ValidationError("Cannot read export file") from exc
 
-        # Validate required export fields early so we return a clear
-        # ValidationError when fields are missing instead of a generic
-        # decryption error later on.
-        if payload.get("version", 1) >= 2:
+        # Validate required export fields early
+        version = payload.get("version", 1)
+        if version >= _EXPORT_VERSION_V2:
             if not payload.get("salt") or not payload.get("data"):
                 raise ValidationError("Export missing required fields")
 
@@ -321,7 +375,7 @@ class SecureStorage:
         key: Optional[bytes] = None
 
         try:
-            if payload.get("version", 1) >= 2:
+            if version >= _EXPORT_VERSION_V2:
                 key = self._derive_scrypt(password, salt)
             else:
                 key = self._derive_pbkdf2(password, salt)
@@ -347,42 +401,48 @@ class SecureStorage:
         self._audit.log_credential_access("import", str(path))
         return len(imported)
 
-    # =====================================================
+    # ──────────────────────────────────────────────────────────────────────────
     # Crypto helpers
-    # =====================================================
+    # ──────────────────────────────────────────────────────────────────────────
 
     @staticmethod
     def _validate_password(password: str) -> None:
+        """Validate password strength (≥12 chars, ≥3 character classes)."""
         if not password or len(password) < 12:
             raise ValidationError("Password must be at least 12 characters")
 
-        classes = sum([
-            any(c.isupper() for c in password),
-            any(c.islower() for c in password),
-            any(c.isdigit() for c in password),
-            any(not c.isalnum() for c in password),
-        ])
+        # Count character classes: uppercase, lowercase, digit, symbol
+        has_upper = any(c.isupper() for c in password)
+        has_lower = any(c.islower() for c in password)
+        has_digit = any(c.isdigit() for c in password)
+        has_symbol = any(not c.isalnum() for c in password)
+
+        classes = sum([has_upper, has_lower, has_digit, has_symbol])
 
         if classes < 3:
-            # Provide a friendly, testable message describing the requirement.
             raise ValidationError(
                 "Password too weak: must include at least 3 of uppercase, lowercase, digits, or symbols"
             )
 
     @staticmethod
     def _derive_scrypt(password: str, salt: bytes) -> bytes:
-        from cryptography.hazmat.primitives.kdf.scrypt import Scrypt
-
-        kdf = Scrypt(salt=salt, length=32, n=2**17, r=8, p=1)
-        return base64.urlsafe_b64encode(kdf.derive(password.encode()))
+        """Derive an encryption key using Scrypt."""
+        kdf = Scrypt(
+            salt=salt,
+            length=_KEY_LENGTH,
+            n=_SCRYPT_N,
+            r=_SCRYPT_R,
+            p=_SCRYPT_P,
+        )
+        return _encode_key_for_fernet(kdf.derive(password.encode()))
 
     @staticmethod
     def _derive_pbkdf2(password: str, salt: bytes) -> bytes:
+        """Derive an encryption key using PBKDF2-SHA256 (legacy)."""
         kdf = PBKDF2HMAC(
             algorithm=hashes.SHA256(),
-            length=32,
+            length=_KEY_LENGTH,
             salt=salt,
-            iterations=1_000_000,
+            iterations=_PBKDF2_ITERATIONS,
         )
-        return base64.urlsafe_b64encode(kdf.derive(password.encode()))
-
+        return _encode_key_for_fernet(kdf.derive(password.encode()))
