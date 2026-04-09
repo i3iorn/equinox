@@ -8,34 +8,46 @@ from equinox.core.redact import mask_secret
 
 logger = logging.getLogger(__name__)
 
+__all__ = ["BearerAuth"]
+
 
 class BearerAuth(AuthStrategy):
-    """Bearer token authentication"""
+    """Bearer token authentication strategy.
+
+    Sets the ``Authorization: Bearer <token>`` header on every request.
+
+    Example::
+
+        auth = BearerAuth(token="eyJhbGciOiJIUzI1NiJ9...")
+        # Adds:  Authorization: Bearer eyJhbGciOiJIUzI1NiJ9...
+    """
+
+    AUTH_TYPE = "bearer"
 
     def __init__(self, token: str):
-        """
-        Initialize bearer auth
+        """Initialise bearer auth.
 
         Args:
-            token: Bearer token
+            token: Bearer token string.
 
         Raises:
-            AuthError: If the token is empty, too long, or contains CRLF.
+            AuthError: If *token* is empty, too long, or contains CRLF characters.
         """
         self.token = _validate_credential(token, "Bearer token")
 
+    # ── AuthStrategy interface ────────────────────────────────────────────────
+
     def apply(self, request: Any, headers: Dict[str, str]) -> None:
-        """Add Authorization header with bearer token"""
+        """Set ``Authorization: Bearer <token>`` on *headers*."""
         headers["Authorization"] = f"Bearer {self.token}"
         logger.debug("BearerAuth applied (token length: %d)", len(self.token))
 
     def to_dict(self) -> Dict[str, Any]:
-        """Convert to dictionary"""
-        return {"type": "bearer", "token": self.token}
+        return {"type": self.AUTH_TYPE, "token": self.token}
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> "BearerAuth":
-        """Create from dictionary.
+        """Create from a serialised dictionary.
 
         Raises:
             AuthError: If required keys are missing or values are invalid.
@@ -43,7 +55,19 @@ class BearerAuth(AuthStrategy):
         try:
             return cls(token=data["token"])
         except KeyError as exc:
-            raise AuthError(f"Invalid bearer auth data: missing key {exc}") from exc
+            raise AuthError(
+                f"Invalid {cls.__name__} data: missing key {exc}"
+            ) from exc
+
+    # ── Dunder helpers ────────────────────────────────────────────────────────
+
+    def __eq__(self, other: object) -> bool:
+        if not isinstance(other, BearerAuth):
+            return NotImplemented
+        return self.token == other.token
+
+    def __hash__(self) -> int:
+        return hash(self.token)
 
     def __repr__(self) -> str:
-        return f"BearerAuth(token={mask_secret(self.token)})"
+        return f"BearerAuth(token={mask_secret(self.token)!r})"
