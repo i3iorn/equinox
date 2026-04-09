@@ -3,7 +3,7 @@
 import logging
 import json
 import re
-from typing import Optional, Dict
+from typing import List, Optional, Dict, Tuple
 
 from PyQt6.QtWidgets import (
     QWidget,
@@ -26,6 +26,18 @@ from equinox.core.assertions import evaluate_assertion as _evaluate_assertion
 from equinox.gui.workers import DEFAULT_TIMEOUT
 
 logger = logging.getLogger(__name__)
+
+# ── Module-level constants ────────────────────────────────────────────────────
+
+# Ordered tuples used to populate combo boxes — single source of truth.
+_CAPTURE_SOURCES: Tuple[str, ...] = ("json", "header", "regex", "status")
+_ASSERTION_TYPES: Tuple[str, ...] = (
+    "status", "body_contains", "header_value", "jsonpath", "elapsed_lt"
+)
+
+# Fallback selection width (chars) used when a JSONPath match length cannot be
+# determined (e.g. the value is not literally present in the serialised text).
+_JSONPATH_PREVIEW_CHARS: int = 50
 
 
 class RequestBodyMixin:
@@ -129,9 +141,7 @@ class RequestBodyMixin:
         row = self.assertions_table.rowCount()
         self.assertions_table.insertRow(row)
         type_combo = QComboBox()
-        type_combo.addItems([
-            "status", "body_contains", "header_value", "jsonpath", "elapsed_lt"
-        ])
+        type_combo.addItems(_ASSERTION_TYPES)
         self.assertions_table.setCellWidget(row, 0, type_combo)
         self.assertions_table.setItem(row, 1, QTableWidgetItem(""))
         self.assertions_table.setItem(row, 2, QTableWidgetItem(""))
@@ -179,16 +189,13 @@ class RequestBodyMixin:
             self.assertions_results_label.setText("—")
             return
         lines = []
-        all_pass = True
         for rule in rules:
             passed, msg = _evaluate_assertion(rule, response)
             icon = "✓" if passed else "✗"
             lines.append(f"{icon} {msg}")
-            if not passed:
-                all_pass = False
         self.assertions_results_label.setText("\n".join(lines) if lines else "—")
         # Update the tab title with pass/fail summary
-        passed_count = sum(1 for l in lines if l.startswith("✓"))
+        passed_count = sum(1 for line in lines if line.startswith("✓"))
         total = len(lines)
         for i in range(self.tabs.count()):
             if self.tabs.tabText(i).startswith("Assertions"):
@@ -203,7 +210,7 @@ class RequestBodyMixin:
         self.captures_table.insertRow(r)
         self.captures_table.setItem(r, 0, QTableWidgetItem(""))
         source_combo = QComboBox()
-        source_combo.addItems(["json", "header", "regex", "status"])
+        source_combo.addItems(_CAPTURE_SOURCES)
         self.captures_table.setCellWidget(r, 1, source_combo)
         self.captures_table.setItem(r, 2, QTableWidgetItem(""))
         self.captures_table.setItem(r, 3, QTableWidgetItem(""))
@@ -236,7 +243,7 @@ class RequestBodyMixin:
             self.captures_table.insertRow(r)
             self.captures_table.setItem(r, 0, QTableWidgetItem(cap.get("variable", "")))
             source_combo = QComboBox()
-            source_combo.addItems(["json", "header", "regex", "status"])
+            source_combo.addItems(_CAPTURE_SOURCES)
             src = cap.get("source", "json")
             idx = source_combo.findText(src)
             if idx >= 0:
@@ -324,7 +331,7 @@ class RequestBodyMixin:
     @staticmethod
     def _make_extra_selection(
         target, start: int, end: int, fmt: QTextCharFormat
-    ) -> "QTextEdit.ExtraSelection":
+    ) -> Optional["QTextEdit.ExtraSelection"]:
         """Build a :class:`QTextEdit.ExtraSelection` spanning [*start*, *end*)."""
         # Guard against out-of-range positions which can occur when the
         # underlying document has changed since offsets were computed.
@@ -364,12 +371,13 @@ class RequestBodyMixin:
             ):
                 positions = self._find_jsonpath_positions(term)
                 if positions and target is not None:
-                    pos = positions[0]
+                    start, length = positions[0]
+                    end = min(start + length, len(doc_text))
                     try:
                         doc = target.document()
                         max_pos = max(0, doc.characterCount() - 1)
-                        p = max(0, min(pos, max_pos))
-                        q = max(0, min(pos + 50, max_pos))
+                        p = max(0, min(start, max_pos))
+                        q = max(0, min(end, max_pos))
                         cursor = target.textCursor()
                         cursor.setPosition(p)
                         cursor.setPosition(q, QTextCursor.MoveMode.KeepAnchor)
@@ -428,18 +436,24 @@ class RequestBodyMixin:
                 return
             target, doc_text = self._body_editor_target()
 
-            # ── JSONPath (forward only) ───────────────────────────────
+            # ── JSONPath ──────────────────────────────────────────────
+            # Navigate to the first (forward) or last (backward) match.
             if getattr(self, '_body_jsonpath_cb', None) and self._body_jsonpath_cb.isChecked():
-                if forward:
-                    positions = self._find_jsonpath_positions(term)
-                    if positions and target is not None:
-                        pos = positions[0]
+                positions = self._find_jsonpath_positions(term)
+                if positions and target is not None:
+                    start, length = positions[0] if forward else positions[-1]
+                    end = min(start + length, len(doc_text))
+                    try:
+                        doc = target.document()
+                        max_pos = max(0, doc.characterCount() - 1)
+                        s = max(0, min(start, max_pos))
+                        e = max(0, min(end, max_pos))
                         cursor = target.textCursor()
-                        cursor.setPosition(pos)
-                        cursor.setPosition(
-                            min(pos + 50, len(doc_text)), QTextCursor.MoveMode.KeepAnchor
-                        )
+                        cursor.setPosition(s)
+                        cursor.setPosition(e, QTextCursor.MoveMode.KeepAnchor)
                         target.setTextCursor(cursor)
+                    except Exception:
+                        pass
                 return
 
             # ── Regex ─────────────────────────────────────────────────
@@ -511,16 +525,18 @@ class RequestBodyMixin:
     def _body_find_prev(self) -> None:
         self._body_navigate(forward=False)
 
-    def _find_jsonpath_positions(self, path: str) -> list:
+    def _find_jsonpath_positions(self, path: str) -> List[Tuple[int, int]]:
         """Small JSON-path evaluator supporting dot and bracket navigation.
 
-        Returns list of character offsets in the body text for matched values.
+        Returns a list of ``(start, length)`` pairs — character offsets and
+        byte-accurate lengths in the body text — for each matched value.
+        Using the length avoids the fixed ``+50`` heuristic that was used by
+        callers to guess where the selection should end.
         """
+        _, text = self._body_editor_target()
+        if not text:
+            return []
         try:
-            has_widget = getattr(self.body_text, '_has_widget', lambda: False)()
-            text = getattr(self.body_text, '_widget', None).toPlainText() if has_widget else getattr(self.body_text, '_buffer', '')
-            if not text:
-                return []
             obj = json.loads(text)
         except Exception:
             return []
@@ -549,24 +565,25 @@ class RequestBodyMixin:
                 steps.append(path[i:j])
                 i = j
 
-        matches = []
-        def walk(o, sidx):
+        matches: List[Tuple[int, int]] = []
+
+        def walk(o, sidx: int) -> None:
             if sidx >= len(steps):
                 try:
                     txt = json.dumps(o, ensure_ascii=False)
                     off = text.find(txt)
                     if off >= 0:
-                        matches.append(off)
+                        matches.append((off, len(txt)))
                 except Exception:
                     pass
                 return
             step = steps[sidx]
             if isinstance(step, int):
                 if isinstance(o, list) and 0 <= step < len(o):
-                    walk(o[step], sidx+1)
+                    walk(o[step], sidx + 1)
             else:
                 if isinstance(o, dict) and step in o:
-                    walk(o[step], sidx+1)
+                    walk(o[step], sidx + 1)
 
         walk(obj, 0)
         return matches
