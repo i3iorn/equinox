@@ -24,9 +24,9 @@ Security:
 import copy
 import re
 import logging
-from typing import Dict, Any, Optional, TypeVar, Set, List
-from dataclasses import replace as _dc_replace
-import os as _os
+import os
+from dataclasses import replace as dataclass_replace
+from typing import Dict, Any, Optional, TypeVar, List
 
 from equinox.core.exceptions import ValidationError, SecurityError
 
@@ -34,6 +34,17 @@ logger = logging.getLogger(__name__)
 
 # Generic type variable for request objects
 T = TypeVar('T')
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Module constants
+# ──────────────────────────────────────────────────────────────────────────────
+
+# Encoding used for byte-length calculations and UTF-8 validation.
+_TEXT_ENCODING: str = "utf-8"
+
+# Pattern for valid variable names — shared by key validation and OS env filtering.
+# Matches names that can appear inside {{...}} placeholders.
+_VARIABLE_NAME_RE: re.Pattern = re.compile(r'^[a-zA-Z0-9_-]+$')
 
 
 class VariableInterpolator:
@@ -43,7 +54,7 @@ class VariableInterpolator:
 
     MAX_ITERATIONS = 10
     MAX_EXPANSION_RATIO = 100
-    MAX_OUTPUT_BYTES = 1 * 1024 * 1024  # 1 MB absolute ceiling
+    MAX_OUTPUT_BYTES = 1024 * 1024  # 1 MB absolute ceiling
 
     @classmethod
     def interpolate(cls, text: str, variables: Dict[str, str], max_iterations: Optional[int] = None) -> str:
@@ -79,7 +90,7 @@ class VariableInterpolator:
 
         # Validate input size upfront (early exit for large inputs)
         try:
-            text_bytes = text.encode("utf-8")
+            text_bytes = text.encode(_TEXT_ENCODING)
             if len(text_bytes) > cls.MAX_OUTPUT_BYTES:
                 logger.warning(
                     "Input text exceeds maximum size: %d bytes > %d bytes max",
@@ -89,9 +100,11 @@ class VariableInterpolator:
                     f"Input text too large ({len(text_bytes)} bytes, "
                     f"max {cls.MAX_OUTPUT_BYTES} bytes)"
                 )
-        except UnicodeDecodeError as e:
-            logger.error("Invalid UTF-8 in input text: %s", e)
-            raise ValidationError(f"Invalid UTF-8 in input text: {e}")
+        except UnicodeEncodeError as e:
+            # str.encode() raises UnicodeEncodeError for lone surrogates and
+            # other characters that cannot be represented in the target encoding.
+            logger.error("Invalid text encoding in input: %s", e)
+            raise ValidationError(f"Invalid UTF-8 in input text: {e}") from e
 
         # Sanitize variables: only keep string keys/values with valid names.
         sanitized_variables: Dict[str, str] = {}
@@ -102,7 +115,7 @@ class VariableInterpolator:
             if not isinstance(value, str):
                 logger.debug("Skipping variable %r with non-string value type: %s", key, type(value).__name__)
                 continue
-            if not cls.VARIABLE_PATTERN.match(f"{{{{{key}}}}}"):
+            if not _VARIABLE_NAME_RE.match(key):
                 logger.debug("Skipping variable with invalid name: %r", key)
                 continue
             sanitized_variables[key] = value
@@ -110,23 +123,20 @@ class VariableInterpolator:
         # ── Early exit cases ──────────────────────────────────────────────────
         if not text:
             return text
-        
-        # Find needed variables (optimization: don't interpolate unused ones)
-        needed_vars = cls.find_variables(text)
-        if not needed_vars:
-            return text  # No placeholders found
-        
-        # Use sanitized variables for substitution so invalid variable names/values are ignored.
-        filtered_variables = sanitized_variables
+
+        # Skip interpolation entirely when there are no placeholders.
+        if not cls.find_variables(text):
+            return text
 
         # ── Interpolation loop ──────────────────────────────────────────────────
         iteration_limit = max_iterations or cls.MAX_ITERATIONS
         original_length = len(text)
+        expansion_limit = original_length * cls.MAX_EXPANSION_RATIO
 
         def substitute_variable(match: re.Match) -> str:
             """Replace matched {{variable}} with its value or leave unchanged."""
             var_name = match.group(1)
-            return filtered_variables.get(var_name, match.group(0))
+            return sanitized_variables.get(var_name, match.group(0))
 
         for iteration in range(iteration_limit):
             previous_text = text
@@ -141,21 +151,20 @@ class VariableInterpolator:
                 return text
 
             # Prevent expansion attacks
-            expansion_ratio = len(text) / original_length if original_length > 0 else 1.0
-            if len(text) > original_length * cls.MAX_EXPANSION_RATIO:
+            if len(text) > expansion_limit:
+                expansion_ratio = len(text) / original_length if original_length > 0 else 1.0
                 logger.warning(
                     "Variable interpolation caused excessive expansion: "
                     "ratio=%.2f, size=%d bytes (max %d bytes)",
-                    expansion_ratio, len(text), original_length * cls.MAX_EXPANSION_RATIO,
+                    expansion_ratio, len(text), expansion_limit,
                 )
-                # Include the expected test-friendly phrase 'excessive text expansion'
                 raise SecurityError(
                     f"excessive text expansion: Variable interpolation caused excessive expansion "
-                    f"({len(text)} bytes vs {original_length * cls.MAX_EXPANSION_RATIO} max)"
+                    f"({len(text)} bytes vs {expansion_limit} max)"
                 )
 
             # Double-check absolute size limit — encode once and reuse.
-            text_encoded = text.encode("utf-8")
+            text_encoded = text.encode(_TEXT_ENCODING)
             if len(text_encoded) > cls.MAX_OUTPUT_BYTES:
                 logger.warning(
                     "Variable interpolation output exceeds maximum absolute size: %d bytes > %d bytes",
@@ -204,7 +213,7 @@ class VariableInterpolator:
         # Shallow-copy the request; use dataclasses.replace for dataclasses,
         # fall back to copy.copy for anything else.
         try:
-            request = _dc_replace(request)
+            request = dataclass_replace(request)
         except TypeError:
             request = copy.copy(request)
 
@@ -282,9 +291,9 @@ class VariableInterpolator:
 
 def collect_interpolation_variables(
     db,
-    collection_id: "Optional[int]" = None,
-    session_vars: "Optional[Dict[str, str]]" = None,
-) -> "Dict[str, str]":
+    collection_id: Optional[int] = None,
+    session_vars: Optional[Dict[str, str]] = None,
+) -> Dict[str, str]:
     """Collect all variable sources into a single ordered dict.
 
     Resolution order (each layer overrides the previous):
@@ -310,7 +319,7 @@ def collect_interpolation_variables(
     # import time; these modules may not be available in all test contexts.
     from equinox.storage.environments import EnvironmentManager
 
-    variables: "Dict[str, str]" = {}
+    variables: Dict[str, str] = {}
 
     # 1. Active environment
     try:
@@ -340,8 +349,7 @@ def collect_interpolation_variables(
             )
 
     # 3. OS environment variables — only names safe for {{VAR}} interpolation
-    valid_name = re.compile(r'^[a-zA-Z0-9_-]+$')
-    os_vars = {k: v for k, v in _os.environ.items() if isinstance(v, str) and valid_name.match(k)}
+    os_vars = {k: v for k, v in os.environ.items() if isinstance(v, str) and _VARIABLE_NAME_RE.match(k)}
     variables.update(os_vars)
     logger.debug("collect_interpolation_variables: %d OS env vars", len(os_vars))
 
