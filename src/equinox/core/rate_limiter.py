@@ -7,10 +7,9 @@ It can optionally log a security violation via an AuditLogger when the limit is 
 import logging
 import time
 import threading
-from typing import List, Optional
+from typing import List, Optional, Protocol
 
 from equinox.core.exceptions import RateLimitError
-from equinox.core.log_setup import AuditLoggerLike
 
 logger = logging.getLogger(__name__)
 
@@ -23,6 +22,26 @@ _LIMIT_DISABLED: int = 0
 
 # Violation type key recognised by AuditLogger.log_security_violation().
 _AUDIT_VIOLATION_TYPE: str = "rate_limit"
+
+# =========================================================
+# Audit logger protocol
+# =========================================================
+
+
+class _AuditLoggerLike(Protocol):
+    """Structural interface required from the optional audit logger.
+
+    Only the single method called by RateLimiter is declared here. This keeps
+    the dependency lightweight and avoids importing the concrete AuditLogger,
+    preventing circular imports.
+    """
+
+    def log_security_violation(
+        self,
+        violation_type: str,
+        details: dict,
+        user: Optional[str] = None,
+    ) -> None: ...
 
 
 # =========================================================
@@ -48,7 +67,7 @@ class RateLimiter:
         self,
         max_per_minute: int,
         window_seconds: int = 60,
-        audit_logger: Optional[AuditLoggerLike] = None,
+        audit_logger: Optional[_AuditLoggerLike] = None,
     ) -> None:
         """Create a RateLimiter.
 

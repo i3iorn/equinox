@@ -18,7 +18,34 @@ import sys
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Optional, Dict, Any, Protocol
+from typing import Optional, Dict, Any
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Module constants
+# ──────────────────────────────────────────────────────────────────────────────
+
+# Correlation ID
+_CORR_ID_HEX_LENGTH: int = 12
+
+# Log file configuration
+_LOG_FILE_NAME: str = "equinox.log"
+_LOG_MAX_BYTES: int = 10 * 1024 * 1024   # 10 MB
+_LOG_BACKUP_COUNT: int = 5
+_LOG_ENCODING: str = "utf-8"
+
+# Safety cap — prevents a single log line from consuming excessive disk / memory.
+MAX_LOG_PAYLOAD_SIZE: int = 8192  # 8 KB per serialised JSON log line
+
+# Appended verbatim when a JSON line is truncated.  Length must fit within the
+# MAX_LOG_PAYLOAD_SIZE budget, so the cutoff is sized accordingly.
+_TRUNCATION_JSON_SUFFIX: str = ',"_truncated":true}'
+
+# Environment variable names for level overrides
+_ENV_FILE_LOG_LEVEL: str = "EQUINOX_LOG_LEVEL"
+_ENV_CONSOLE_LOG_LEVEL: str = "EQUINOX_CONSOLE_LOG_LEVEL"
+
+# Third-party loggers whose verbosity should be reduced to WARNING.
+_NOISY_LOGGERS: tuple = ("httpx", "httpcore", "urllib3", "charset_normalizer")
 
 # ──────────────────────────────────────────────────────────────────────────────
 # Global application correlation ID
@@ -31,22 +58,68 @@ def get_app_corr_id() -> str:
     """Return the application correlation ID, generating one if needed."""
     global _app_corr_id
     if _app_corr_id is None:
-        _app_corr_id = uuid.uuid4().hex[:12]
+        _app_corr_id = uuid.uuid4().hex[:_CORR_ID_HEX_LENGTH]
     return _app_corr_id
 
 
 def generate_request_id() -> str:
     """Generate a short unique ID for correlating log entries within a single request."""
-    return uuid.uuid4().hex[:12]
+    return uuid.uuid4().hex[:_CORR_ID_HEX_LENGTH]
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Timestamp helpers
+# ──────────────────────────────────────────────────────────────────────────────
+
+def _format_utc_timestamp(ts: float) -> str:
+    """Format an epoch timestamp as UTC ISO 8601 with millisecond precision.
+
+    Example: ``"2026-04-09T14:22:01.234Z"``
+
+    Args:
+        ts: Epoch time in seconds (e.g. from ``time.time()``).
+    """
+    # [:-3] drops the last 3 microsecond digits, leaving milliseconds.
+    return datetime.fromtimestamp(ts, tz=timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
+
+
+def _format_local_timestamp(ts: float) -> str:
+    """Format an epoch timestamp as local-time HH:MM:SS.mmm for console display.
+
+    Example: ``"14:22:01.234"``
+
+    Args:
+        ts: Epoch time in seconds.
+    """
+    return datetime.fromtimestamp(ts).strftime("%H:%M:%S.%f")[:-3]
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Serialisation helper
+# ──────────────────────────────────────────────────────────────────────────────
+
+def _safe_serialize(doc: Dict[str, Any]) -> str:
+    """Serialize *doc* to a JSON string, truncating if it exceeds MAX_LOG_PAYLOAD_SIZE.
+
+    When truncation is needed the suffix ``_TRUNCATION_JSON_SUFFIX`` is appended
+    so consumers can detect incomplete records.
+
+    Args:
+        doc: Dictionary to serialize.
+
+    Returns:
+        A valid JSON string that fits within MAX_LOG_PAYLOAD_SIZE bytes.
+    """
+    result = json.dumps(doc, ensure_ascii=False, default=str)
+    if len(result) > MAX_LOG_PAYLOAD_SIZE:
+        cutoff = MAX_LOG_PAYLOAD_SIZE - len(_TRUNCATION_JSON_SUFFIX)
+        result = result[:cutoff] + _TRUNCATION_JSON_SUFFIX
+    return result
 
 
 # ──────────────────────────────────────────────────────────────────────────────
 # JSON formatter
 # ──────────────────────────────────────────────────────────────────────────────
-
-# Safety cap — prevents a single log line from consuming excessive disk / memory.
-MAX_LOG_PAYLOAD_SIZE = 8192  # 8 KB per serialised JSON log line
-
 
 class JsonFormatter(logging.Formatter):
     """Formats log records as single-line JSON objects."""
@@ -59,13 +132,21 @@ class JsonFormatter(logging.Formatter):
     }
 
     def format(self, record: logging.LogRecord) -> str:  # type: ignore[override]
+        return _safe_serialize(self._build_log_doc(record))
+
+    def _build_log_doc(self, record: logging.LogRecord) -> Dict[str, Any]:
+        """Construct the structured log dictionary from *record*.
+
+        Populates base fields, optional request/process/thread ids, all known
+        EXTRA_FIELDS present on the record, a freeform payload dict, and
+        exception info when present.
+        """
         doc: Dict[str, Any] = {
-            "ts": datetime.fromtimestamp(record.created, tz=timezone.utc)
-                  .strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z",
-            "app_corr_id": get_app_corr_id(),
-            "level": record.levelname,
-            "logger": record.name,
-            "msg": record.getMessage(),
+            "ts":           _format_utc_timestamp(record.created),
+            "app_corr_id":  get_app_corr_id(),
+            "level":        record.levelname,
+            "logger":       record.name,
+            "msg":          record.getMessage(),
         }
 
         # Per-request correlation id
@@ -73,22 +154,21 @@ class JsonFormatter(logging.Formatter):
         if req_id:
             doc["request_id"] = req_id
 
-        # Process/thread info
+        # Process/thread info — omit in the common single-process/thread case
         if record.processName != "MainProcess":
             doc["process"] = record.processName
         if record.threadName != "MainThread":
             doc["thread"] = record.threadName
 
-        # Structured extras
+        # Structured extras from known fields
         for field in self.EXTRA_FIELDS:
             if field == "request_id":
                 continue  # already handled above
-            if hasattr(record, field):
-                value = getattr(record, field)
-                if value is not None:
-                    doc[field] = value
+            value = getattr(record, field, None)
+            if value is not None:
+                doc[field] = value
 
-        # Merge payload dict
+        # Merge freeform payload dict (non-destructive: existing keys win)
         payload = getattr(record, "payload", None)
         if isinstance(payload, dict):
             for k, v in payload.items():
@@ -98,13 +178,7 @@ class JsonFormatter(logging.Formatter):
         if record.exc_info:
             doc["exc"] = self.formatException(record.exc_info)
 
-        result = json.dumps(doc, ensure_ascii=False, default=str)
-
-        # Safety cap — truncate excessively large log lines
-        if len(result) > MAX_LOG_PAYLOAD_SIZE:
-            result = result[:MAX_LOG_PAYLOAD_SIZE - 20] + ',"_truncated":true}'
-
-        return result
+        return doc
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -126,12 +200,11 @@ class ConsoleFormatter(logging.Formatter):
         self.supports_colour = getattr(sys.stderr, "isatty", lambda: False)()
 
     def format(self, record: logging.LogRecord) -> str:  # type: ignore[override]
-        ts = datetime.fromtimestamp(record.created).strftime("%H:%M:%S.%f")[:-3]
+        ts = _format_local_timestamp(record.created)
         lvl = record.levelname[:5]
         name = record.name.rsplit(".", 1)[-1]
         msg = record.getMessage()
 
-        # Include per-request correlation id when available
         req_id = getattr(record, "request_id", None)
         rid_tag = f" [{req_id}]" if req_id else ""
 
@@ -152,11 +225,13 @@ class ConsoleFormatter(logging.Formatter):
 # ──────────────────────────────────────────────────────────────────────────────
 
 _LEVEL_NAMES = {
-    "DEBUG": logging.DEBUG,
-    "INFO": logging.INFO,
-    "WARNING": logging.WARNING,
-    "ERROR": logging.ERROR,
+    "DEBUG":    logging.DEBUG,
+    "INFO":     logging.INFO,
+    "WARN":     logging.WARNING,   # common alias
+    "WARNING":  logging.WARNING,
+    "ERROR":    logging.ERROR,
     "CRITICAL": logging.CRITICAL,
+    "FATAL":    logging.CRITICAL,  # common alias
 }
 
 
@@ -164,6 +239,62 @@ def _resolve_level(env_var: str, default: int) -> int:
     """Return a logging level from an environment variable, falling back to *default*."""
     raw = os.environ.get(env_var, "").upper().strip()
     return _LEVEL_NAMES.get(raw, default)
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# configure_logging helpers
+# ──────────────────────────────────────────────────────────────────────────────
+
+def _reset_root_logger() -> logging.Logger:
+    """Remove all existing handlers from the root logger and set level to DEBUG.
+
+    Closes each handler before removing it to prevent file-descriptor leaks.
+    """
+    root = logging.getLogger()
+    root.setLevel(logging.DEBUG)
+    for handler in list(root.handlers):
+        try:
+            handler.close()
+        except Exception:
+            pass
+    root.handlers.clear()
+    return root
+
+
+def _make_file_handler(log_file: Path, level: int) -> logging.handlers.RotatingFileHandler:
+    """Build a rotating file handler that writes newline-delimited JSON.
+
+    Args:
+        log_file: Absolute path to the log file.
+        level:    Minimum log level for this handler.
+    """
+    handler = logging.handlers.RotatingFileHandler(
+        log_file,
+        maxBytes=_LOG_MAX_BYTES,
+        backupCount=_LOG_BACKUP_COUNT,
+        encoding=_LOG_ENCODING,
+    )
+    handler.setLevel(level)
+    handler.setFormatter(JsonFormatter())
+    return handler
+
+
+def _make_console_handler(level: int) -> logging.StreamHandler:
+    """Build a stderr console handler with human-readable output.
+
+    Args:
+        level: Minimum log level for this handler.
+    """
+    handler = logging.StreamHandler(sys.stderr)
+    handler.setLevel(level)
+    handler.setFormatter(ConsoleFormatter())
+    return handler
+
+
+def _silence_noisy_loggers() -> None:
+    """Raise the log level of known verbose third-party libraries to WARNING."""
+    for name in _NOISY_LOGGERS:
+        logging.getLogger(name).setLevel(logging.WARNING)
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -180,53 +311,34 @@ def configure_logging(
     Log levels can be overridden via environment variables:
     * ``EQUINOX_LOG_LEVEL``         — file log level (default DEBUG)
     * ``EQUINOX_CONSOLE_LOG_LEVEL`` — stderr log level (default WARNING)
+
+    Args:
+        log_dir:       Directory for the rotating log file.
+                       Defaults to ``~/.equinox/logs``.
+        level:         Minimum level written to the log file.
+        console_level: Minimum level printed to stderr.
+
+    Returns:
+        Path to the active log file.
     """
     global _app_corr_id
-    _app_corr_id = uuid.uuid4().hex[:12]
+    _app_corr_id = uuid.uuid4().hex[:_CORR_ID_HEX_LENGTH]
 
-    # Allow environment variable overrides
-    level = _resolve_level("EQUINOX_LOG_LEVEL", level)
-    console_level = _resolve_level("EQUINOX_CONSOLE_LOG_LEVEL", console_level)
+    level = _resolve_level(_ENV_FILE_LOG_LEVEL, level)
+    console_level = _resolve_level(_ENV_CONSOLE_LOG_LEVEL, console_level)
 
     log_dir = log_dir or (Path.home() / ".equinox" / "logs")
     log_dir.mkdir(parents=True, exist_ok=True)
+    log_file = log_dir / _LOG_FILE_NAME
 
-    log_file = log_dir / "equinox.log"
-
-    root = logging.getLogger()
-    root.setLevel(logging.DEBUG)
-    # Close existing handlers before removing them to avoid file-descriptor leaks.
-    for _h in list(root.handlers):
-        try:
-            _h.close()
-        except Exception:
-            pass
-    root.handlers.clear()
-
-    # File handler
-    file_handler = logging.handlers.RotatingFileHandler(
-        log_file,
-        maxBytes=10 * 1024 * 1024,
-        backupCount=5,
-        encoding="utf-8",
-    )
-    file_handler.setLevel(level)
-    file_handler.setFormatter(JsonFormatter())
-    root.addHandler(file_handler)
-
-    # Console handler
-    console_handler = logging.StreamHandler(sys.stderr)
-    console_handler.setLevel(console_level)
-    console_handler.setFormatter(ConsoleFormatter())
-    root.addHandler(console_handler)
-
-    # Quiet noisy libs
-    for noisy in ("httpx", "httpcore", "urllib3", "charset_normalizer"):
-        logging.getLogger(noisy).setLevel(logging.WARNING)
+    root = _reset_root_logger()
+    root.addHandler(_make_file_handler(log_file, level))
+    root.addHandler(_make_console_handler(console_level))
+    _silence_noisy_loggers()
 
     logging.getLogger(__name__).info(
         "Logging initialised — app_corr_id=%s writing to %s",
-        _app_corr_id, log_file
+        _app_corr_id, log_file,
     )
 
     return log_file
@@ -239,18 +351,3 @@ def get_log_file() -> Optional[Path]:
             return Path(handler.baseFilename)
     return None
 
-
-class AuditLoggerLike(Protocol):
-    """Structural interface required from the optional audit logger.
-
-    Only the single method called by RateLimiter is declared here. This keeps
-    the dependency lightweight and avoids importing the concrete AuditLogger,
-    which prevents circular imports.
-    """
-
-    def log_security_violation(
-        self,
-        violation_type: str,
-        details: dict,
-        user: Optional[str] = None,
-    ) -> None: ...
