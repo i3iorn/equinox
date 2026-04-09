@@ -1,12 +1,14 @@
 import re
 from dataclasses import dataclass
 from enum import Enum
-from typing import Iterator, List, Optional
+from typing import Generator, List, Optional
 
 from PyQt6.QtGui import QSyntaxHighlighter
 
-from equinox.gui.syntax_highlighter.base import _make_format
+from equinox.gui.syntax_highlighter.base import _make_format, _variable_fmt, _VARIABLE_PATTERN
 from equinox.gui.theme import Colors
+
+__all__ = ["JsonHighlighter"]
 
 
 # ----------------------------------------------------------------------
@@ -49,7 +51,7 @@ class JsonLexer:
 
     # --------------------------------------------------------------
 
-    def tokenize_line(self, text: str, state: State) -> Iterator[Token]:
+    def tokenize_line(self, text: str, state: State) -> Generator[Token, None, State]:
         i = 0
         n = len(text)
         # When a string begins on this line we record the opening-quote
@@ -224,15 +226,16 @@ class JsonHighlighter(QSyntaxHighlighter):
 
         self.lexer = JsonLexer()
 
-        self.formats = {
-            "STRING": _make_format(Colors.GREEN),
-            "UPPER_STRING": _make_format(Colors.GREEN, bold=True),
-            "TIMESTAMP": _make_format(Colors.TEAL, italic=True),
-            "NUMBER": _make_format(Colors.PURPLE),
+        self._var_fmt = _variable_fmt()
 
-            "TRUE": _make_format(Colors.AMBER, bold=True),
+        self.formats = {
+            "STRING":    _make_format(Colors.GREEN),
+            "TIMESTAMP": _make_format(Colors.TEAL, italic=True),
+            "NUMBER":    _make_format(Colors.PURPLE),
+
+            "TRUE":  _make_format(Colors.AMBER, bold=True),
             "FALSE": _make_format(Colors.AMBER, bold=True),
-            "NULL": _make_format(Colors.AMBER, bold=True),
+            "NULL":  _make_format(Colors.AMBER, bold=True),
 
             "COMMENT": _make_format(Colors.GRAY, italic=True),
 
@@ -246,19 +249,33 @@ class JsonHighlighter(QSyntaxHighlighter):
 
             "KEY": _make_format(Colors.BLUE, bold=True),
 
-            "ERROR": _make_format(Colors.RED, bold=True),
+            "ERROR":        _make_format(Colors.RED, bold=True),
             "ERROR_STRING": _make_format(Colors.RED, underline=True),
             "ERROR_NUMBER": _make_format(Colors.RED, bold=True),
         }
 
     # --------------------------------------------------------------
 
-    def highlightBlock(self, text: str):
+    def highlightBlock(self, text: str) -> None:
         prev_state = self.previousBlockState()
 
-        state = State(prev_state) if prev_state != -1 else State.NORMAL
+        try:
+            initial_state = State(prev_state) if prev_state != -1 else State.NORMAL
+        except ValueError:
+            initial_state = State.NORMAL
 
-        tokens: List[Token] = list(self.lexer.tokenize_line(text, state))
+        # Drain the generator and capture its return value (the final state).
+        # list() / a for-loop would silently discard StopIteration.value, so we
+        # call next() explicitly to preserve it.
+        gen = self.lexer.tokenize_line(text, initial_state)
+        tokens: List[Token] = []
+        final_state = initial_state
+        try:
+            while True:
+                tokens.append(next(gen))
+        except StopIteration as exc:
+            if exc.value is not None:
+                final_state = exc.value
 
         for i, tok in enumerate(tokens):
             fmt = self.formats.get(tok.type, self.formats["ERROR"])
@@ -270,4 +287,9 @@ class JsonHighlighter(QSyntaxHighlighter):
 
             self.setFormat(tok.start, tok.end - tok.start, fmt)
 
-        self.setCurrentBlockState(state.value)
+        # Apply {{variable}} placeholders last so they override other formats,
+        # consistent with the rest of the highlighter suite.
+        for match in _VARIABLE_PATTERN.finditer(text):
+            self.setFormat(match.start(), match.end() - match.start(), self._var_fmt)
+
+        self.setCurrentBlockState(final_state.value)
