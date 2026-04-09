@@ -53,7 +53,7 @@ class TestHTTPClientIntegration:
             client.send(request)
 
 
-    @patch('equinox.core.client.httpx.Client')
+    @patch('equinox.core.client.dispatcher.httpx.Client')
     def test_response_time_tracking(self, mock_httpx_client):
         """Test that response time is tracked."""
         mock_response = Mock()

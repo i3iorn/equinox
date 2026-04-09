@@ -1,12 +1,32 @@
-"""Request and Response models (refactored, single-module)"""
+"""Request and Response models for HTTP communication.
+
+This module provides comprehensive HTTP request/response models with type safety,
+RFC-compliant header handling, and serialization support. The design follows
+a "fortress mentality" where inputs are validated at construction time (lenient)
+but strictly enforced at send/storage boundaries.
+
+Data flow:
+    User input → Request/Response models → Validator (at send-time) →
+    HTTPClient → Database (encrypted) → GUI/CLI render
+
+Key features:
+    - RFC 7230 compliant HeaderDict with case-insensitive comparisons
+    - Automatic header and method normalization
+    - Request serialization/deserialization with auth round-trip support
+    - Response content-type detection and JSON parsing
+    - Metadata tracking (timestamps, timings, request/response correlation)
+    - Support for advanced features (captures, assertions, scripts, multipart)
+"""
 
 from __future__ import annotations
 
 import json
 import logging
+import re
 import shlex
 from dataclasses import dataclass, field
 from datetime import datetime
+from email.message import Message
 from functools import cached_property
 from typing import (
     Dict,
@@ -22,17 +42,55 @@ from urllib.parse import urlparse, parse_qsl, urlencode, urlunparse
 
 from equinox.core.time import utc_now
 from equinox.core import urls
-import re
 
 from equinox.core.exceptions import ValidationError
 
 logger = logging.getLogger(__name__)
 
 # =========================================================
+# Module constants
+# =========================================================
+
+# Default values for Request fields
+_DEFAULT_TIMEOUT: float = 30.0
+_DEFAULT_METHOD: str = "GET"
+
+# Text encoding for response bodies
+_DEFAULT_ENCODING: str = "utf-8"
+_TEXT_DECODE_ERROR_MODE: str = "replace"
+
+# URL query string separators
+_QUERY_SEPARATOR: str = "?"
+_PARAM_SEPARATOR: str = "&"
+
+# Content-type header parsing
+_CONTENT_TYPE_HEADER: str = "content-type"
+_CHARSET_PARAMETER: str = "charset"
+
+# =========================================================
 # Typed structures
 # =========================================================
 
 class CaptureRule(TypedDict, total=False):
+    """Rule for capturing values from response bodies into variables.
+
+    Used in post-request scripts to extract data from responses and store in
+    collection or environment variables for use in subsequent requests.
+
+    Attributes:
+        variable: Name of the target variable to store the captured value.
+        source: Source of the value — "response_body", "response_header", etc.
+        path: JSONPath or similar accessor (e.g., "data.user.id", "X-Custom-Header").
+        default: Fallback value if the path does not match.
+
+    Example:
+        {
+            "variable": "user_id",
+            "source": "response_body",
+            "path": "data.id",
+            "default": "0"
+        }
+    """
     variable: str
     source: str
     path: str
@@ -40,12 +98,44 @@ class CaptureRule(TypedDict, total=False):
 
 
 class AssertionRule(TypedDict, total=False):
+    """Rule for asserting response properties for test automation.
+
+    Assertions are evaluated after receiving a response to verify correctness
+    and provide early failure detection in request chains.
+
+    Attributes:
+        type: Assertion type — "status_code", "header", "body_contains", "json_path", etc.
+        field: Optional field selector (e.g., header name, JSON path).
+        expected: Expected value or pattern to match against.
+
+    Example:
+        {
+            "type": "status_code",
+            "expected": 200
+        }
+    """
     type: str
     field: str
     expected: Any
 
 
 class MultipartField(TypedDict):
+    """Represents a single field in a multipart/form-data request body.
+
+    Multipart fields are used for file uploads or complex form submissions
+    where binary data needs to be transmitted alongside form fields.
+
+    Attributes:
+        key: Form field name.
+        type: Field type — "text" for plain text, "file" for file uploads.
+        value: Field value (text content or file path for "file" type).
+
+    Example (text):
+        {"key": "username", "type": "text", "value": "john_doe"}
+
+    Example (file):
+        {"key": "profile_pic", "type": "file", "value": "/path/to/image.jpg"}
+    """
     key: str
     type: Literal["text", "file"]
     value: str
@@ -59,20 +149,122 @@ class MultipartField(TypedDict):
 from equinox.core.validation import VALID_HTTP_METHODS as VALID_METHODS
 
 
+def _decode_body(body: Optional[Union[str, bytes]], encoding: str = _DEFAULT_ENCODING) -> str:
+    """Decode body to string, handling both str and bytes types.
+
+    Args:
+        body: Body content as str or bytes.
+        encoding: Character encoding to use for bytes decoding (default UTF-8).
+
+    Returns:
+        Decoded string, or empty string if body is None.
+    """
+    if body is None:
+        return ""
+    if isinstance(body, bytes):
+        return body.decode(encoding)
+    return body
+
+
+def _normalize_content_type(content_type_header: str) -> Optional[str]:
+    """Extract MIME type from Content-Type header, stripping parameters.
+
+    Handles "application/json; charset=utf-8" → "application/json".
+    Returns None if header is empty.
+
+    Args:
+        content_type_header: Full Content-Type header value.
+
+    Returns:
+        MIME type without parameters, or None if header is empty.
+    """
+    if not content_type_header:
+        return None
+    return content_type_header.split(";")[0].strip() or None
+
+
+def _parse_charset(content_type_header: str) -> Optional[str]:
+    """Extract charset parameter from Content-Type header.
+
+    Parses "application/json; charset=utf-8" → "utf-8".
+    Returns None if charset parameter is not present.
+
+    Args:
+        content_type_header: Full Content-Type header value.
+
+    Returns:
+        Charset name, or None if not found.
+    """
+    if not content_type_header or "charset" not in content_type_header:
+        return None
+
+    msg = Message()
+    msg["content-type"] = content_type_header
+    return msg.get_param(_CHARSET_PARAMETER)
+
+
 def _short(s: str, max_len: int = 60) -> str:
+    """Truncate a string to max_len characters, appending ellipsis if needed.
+
+    Useful for log messages and UI display where long URLs/bodies should be
+    summarized to avoid cluttering output.
+
+    Args:
+        s: String to truncate.
+        max_len: Maximum length before truncation (default 60).
+
+    Returns:
+        Original string if len(s) <= max_len, else s[:max_len] + "...".
+    """
     return s if len(s) <= max_len else s[:max_len] + "..."
 
 
 def _is_template_url(url: str) -> bool:
+    """Check if URL contains unresolved variable placeholders.
+
+    Template URLs have the form "{{VARIABLE}}" and must be resolved before
+    sending the request. This is used to defer URL validation until all
+    variables are interpolated.
+
+    Args:
+        url: URL string to check.
+
+    Returns:
+        True if URL contains "{{" (indicating template variables), False otherwise.
+    """
     return "{{" in url
 
 
 def _is_absolute_url(url: str) -> bool:
+    """Check if URL is absolute (has scheme and netloc).
+
+    Absolute URLs can be sent as-is; relative URLs need a base URL or scheme
+    prepended. This is used to determine URL merge strategy.
+
+    Args:
+        url: URL string to check.
+
+    Returns:
+        True if URL has both scheme (e.g., "http") and netloc (e.g., "example.com"),
+        False otherwise.
+    """
     parsed = urlparse(url)
     return bool(parsed.scheme and parsed.netloc)
 
 
 def _merge_query_params(url: str, params: Dict[str, str]) -> str:
+    """Merge query parameters into an absolute URL.
+
+    Handles existing query strings in the URL by combining with new params.
+    New parameters override existing ones with the same key.
+
+    Args:
+        url: Absolute URL (must have scheme and netloc).
+        params: Dictionary of query parameters to add/merge.
+
+    Returns:
+        URL with merged query parameters properly encoded.
+    """
     parsed = urlparse(url)
     existing_q = dict(parse_qsl(parsed.query, keep_blank_values=True))
     existing_q.update({str(k): str(v) for k, v in params.items()})
@@ -91,6 +283,7 @@ def _merge_query_params(url: str, params: Dict[str, str]) -> str:
 # - Field-names are token characters per RFC7230 and are compared case-insensitively
 # - Preserves latest original-case key for iteration/display
 # - Validates header values to prevent CR/LF injection
+# RFC 7230 Section 3.2 — token = 1*tchar
 _HEADER_NAME_RE = re.compile(r"^[!#$%&'*+\-.^_`|~0-9A-Za-z]+$")
 
 
@@ -182,22 +375,15 @@ class HeaderDict(dict):
         which is convenient for tests and callers that construct plain dicts.
         Values are compared as-is.
         """
-        if isinstance(other, dict):
+        if not isinstance(other, dict):
             try:
-                other_normalized = {k.lower(): v for k, v in other.items()}
+                other = dict(other)  # type: ignore[arg-type]
             except Exception:
                 return False
-            # Obtain the internal lower-cased storage from the base dict
-            try:
-                self_lower = {k: v for k, v in super().items()}
-            except Exception:
-                return False
-            return self_lower == other_normalized
-        # Fallback to default dict comparison for other mappings
+
+        # Normalize both dicts to lower-cased keys for comparison
         try:
-            # For other mapping-like objects, compare their lower-cased views
-            other_dict = dict(other)  # type: ignore[arg-type]
-            other_normalized = {k.lower(): v for k, v in other_dict.items()}
+            other_normalized = {k.lower(): v for k, v in other.items()}
             self_lower = {k: v for k, v in super().items()}
             return self_lower == other_normalized
         except Exception:
@@ -231,7 +417,7 @@ class Request:
 
     auth: Optional[Any] = None
 
-    timeout: float = 30.0
+    timeout: float = field(default=_DEFAULT_TIMEOUT)
     follow_redirects: bool = True
     verify_ssl: bool = True
 
@@ -280,7 +466,7 @@ class Request:
             "url": self.url,
             "headers": dict(self.headers),
             "params": dict(self.params),
-            "body": self.body.decode() if isinstance(self.body, bytes) else self.body,
+            "body": _decode_body(self.body),
             "timeout": self.timeout,
             "follow_redirects": self.follow_redirects,
             "verify_ssl": self.verify_ssl,
@@ -311,12 +497,12 @@ class Request:
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> "Request":
         request = cls(
-            method=data.get("method", "GET"),
+            method=data.get("method", _DEFAULT_METHOD),
             url=data["url"],
             headers=data.get("headers", {}),
             params=data.get("params", {}),
             body=data.get("body"),
-            timeout=data.get("timeout", 30.0),
+            timeout=data.get("timeout", _DEFAULT_TIMEOUT),
             follow_redirects=data.get("follow_redirects", True),
             verify_ssl=data.get("verify_ssl", True),
             name=data.get("name"),
@@ -357,7 +543,7 @@ class Request:
             # URL still contains unresolved placeholders or is relative — use
             # urlencode so that param values with special characters are safe.
             qs = urlencode(self.params)
-            sep = "&" if "?" in url else "?"
+            sep = _PARAM_SEPARATOR if _QUERY_SEPARATOR in url else _QUERY_SEPARATOR
             return f"{url}{sep}{qs}"
 
         return _merge_query_params(url, self.params)
@@ -367,14 +553,14 @@ class Request:
     def to_curl(self) -> str:
         parts = ["curl"]
 
-        if self.method != "GET":
+        if self.method != _DEFAULT_METHOD:
             parts.extend(["-X", self.method])
 
         for k, v in self.headers.items():
             parts.extend(["-H", f"{k}: {v}"])
 
         if self.body:
-            body = self.body.decode() if isinstance(self.body, bytes) else self.body
+            body = _decode_body(self.body)
             parts.extend(["-d", body])
 
         parts.append(self._final_url())
@@ -423,23 +609,17 @@ class Response:
 
     @cached_property
     def content_type(self) -> Optional[str]:
-        ct = self._get_header("content-type")
-        return ct.split(";")[0].strip() if ct else None
+        ct = self._get_header(_CONTENT_TYPE_HEADER)
+        return _normalize_content_type(ct)
 
     @cached_property
     def encoding(self) -> Optional[str]:
-        ct = self._get_header("content-type")
-        if not ct or "charset" not in ct:
-            return None
-
-        from email.message import Message
-        msg = Message()
-        msg["content-type"] = ct
-        return msg.get_param("charset")
+        ct = self._get_header(_CONTENT_TYPE_HEADER)
+        return _parse_charset(ct)
 
     @cached_property
     def text(self) -> str:
-        return self.body.decode(self.encoding or "utf-8", errors="replace")
+        return self.body.decode(self.encoding or _DEFAULT_ENCODING, errors=_TEXT_DECODE_ERROR_MODE)
 
     # -----------------------------------------------------
 
