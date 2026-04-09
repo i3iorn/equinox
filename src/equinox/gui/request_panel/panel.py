@@ -7,6 +7,7 @@ Logging strategy:
 - Errors: Full exception context with request details
 """
 
+import json
 import logging
 import time
 from typing import Optional, Dict, Tuple
@@ -17,6 +18,7 @@ from PyQt6.QtWidgets import (
     QHBoxLayout,
     QComboBox,
     QLineEdit,
+    QInputDialog,
     QPushButton,
     QTabWidget,
     QPlainTextEdit,
@@ -54,8 +56,11 @@ from equinox.gui.request_panel.mixins import (  # noqa: F401
 from equinox.gui.request_panel.body_mixin import RequestBodyMixin  # noqa: F401
 from equinox.gui.request_panel.save_dialog import SaveRequestDialog
 from equinox.gui.request_panel.toolbar import TabToolbar
+from equinox.gui.syntax_highlighter.python_highlighter import PythonHighlighter
 
 logger = logging.getLogger(__name__)
+
+__all__ = ["RequestPanel"]
 
 # Common header presets for the Headers tab toolbar
 _HEADER_PRESETS = [
@@ -77,6 +82,15 @@ _HEADER_PRESETS = [
     ("User-Agent: Equinox/1.0",               "User-Agent", "Equinox/1.0"),
 ]
 
+# HTML cheat-sheet shown in the collapsible Scripts tab section
+_SCRIPTS_CHEAT_TEXT = (
+    "<b>Context objects</b><br>"
+    "&nbsp;&nbsp;<code>env</code> — dict of active environment variables (read/write)<br>"
+    "&nbsp;&nbsp;<code>request</code> — dict: method, url, headers, body (pre-script only)<br>"
+    "&nbsp;&nbsp;<code>response</code> — dict: status_code, headers, body, json (post-script only)<br>"
+    "<br><b>Allowed modules</b><br>"
+    "&nbsp;&nbsp;json, re, base64, hashlib, hmac, datetime, time, math, uuid, urllib.parse"
+)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -211,7 +225,7 @@ class RequestPanel(_RequestSendMixin, _RequestAuthMixin, RequestBodyMixin, QWidg
                 path_params=self.path_params_table.get_all_data(),
             )
             mgr.update_request(updated)
-            self._dirty = False
+            self._clear_dirty()
             elapsed_ms = int((time.time() - start) * 1000)
             logger.info("Autosaved request", extra={
                 "request_id": req.id,
@@ -322,7 +336,6 @@ class RequestPanel(_RequestSendMixin, _RequestAuthMixin, RequestBodyMixin, QWidg
         completer.setMaxVisibleItems(12)
         self.url_input.setCompleter(completer)
         # Defer the DB fetch so it doesn't block the main thread during window init.
-        from PyQt6.QtCore import QTimer
         QTimer.singleShot(0, self._refresh_url_completer)
 
     def _refresh_url_completer(self) -> None:
@@ -525,7 +538,6 @@ class RequestPanel(_RequestSendMixin, _RequestAuthMixin, RequestBodyMixin, QWidg
         return w
 
     def _build_body_tab(self) -> QWidget:
-        from equinox.gui.syntax_highlighter import JsonHighlighter
         w = QWidget()
         layout = QVBoxLayout(w)
         layout.setContentsMargins(0, 4, 0, 0)
@@ -728,7 +740,6 @@ class RequestPanel(_RequestSendMixin, _RequestAuthMixin, RequestBodyMixin, QWidg
         layout.addWidget(splitter, 1)
 
         # ── Python syntax highlighting for script editors ─────────────
-        from equinox.gui.syntax_highlighter.python_highlighter import PythonHighlighter
         self._pre_highlighter = PythonHighlighter(self.pre_script_editor.document())
         self._post_highlighter = PythonHighlighter(self.post_script_editor.document())
 
@@ -739,15 +750,7 @@ class RequestPanel(_RequestSendMixin, _RequestAuthMixin, RequestBodyMixin, QWidg
         cheat_toggle.setFlat(True)
         layout.addWidget(cheat_toggle)
 
-        _CHEAT_TEXT = (
-            "<b>Context objects</b><br>"
-            "&nbsp;&nbsp;<code>env</code> — dict of active environment variables (read/write)<br>"
-            "&nbsp;&nbsp;<code>request</code> — dict: method, url, headers, body (pre-script only)<br>"
-            "&nbsp;&nbsp;<code>response</code> — dict: status_code, headers, body, json (post-script only)<br>"
-            "<br><b>Allowed modules</b><br>"
-            "&nbsp;&nbsp;json, re, base64, hashlib, hmac, datetime, time, math, uuid, urllib.parse"
-        )
-        cheat_label = QLabel(_CHEAT_TEXT)
+        cheat_label = QLabel(_SCRIPTS_CHEAT_TEXT)
         cheat_label.setTextFormat(Qt.TextFormat.RichText)
         cheat_label.setObjectName("mutedLabel")
         cheat_label.setVisible(False)
@@ -810,7 +813,7 @@ class RequestPanel(_RequestSendMixin, _RequestAuthMixin, RequestBodyMixin, QWidg
         cert_layout.addLayout(cert_row)
 
         key_row = QHBoxLayout()
-        key_row.addWidget(QLabel("Key file: "))
+        key_row.addWidget(QLabel("Key file:"))
         self.cert_key_input = QLineEdit()
         self.cert_key_input.setPlaceholderText("Path to private key file (leave blank if combined)")
         key_browse = QPushButton("Browse…")
@@ -854,7 +857,6 @@ class RequestPanel(_RequestSendMixin, _RequestAuthMixin, RequestBodyMixin, QWidg
 
     def _import_from_curl(self) -> None:
         """Open a dialog to paste a cURL command and populate the editor."""
-        from PyQt6.QtWidgets import QInputDialog
         from equinox.core.curl_parser import parse_curl
 
         logger.debug("cURL import dialog opened")
@@ -984,13 +986,15 @@ class RequestPanel(_RequestSendMixin, _RequestAuthMixin, RequestBodyMixin, QWidg
                 chk_item.setCheckState(state)
 
     def _insert_header_preset(self, key: str, value: str) -> None:
-        """Append a header preset row (or update existing key)."""
-        existing = self.headers_table.get_all_rows()
-        for row_data in existing:
-            if row_data.get("key", "").lower() == key.lower():
-                # Key already present — select the row so user can edit the value
-                logger.debug("Header preset not added (key already exists)", extra={
+        """Append a header preset row, or navigate to the existing row if the key is present."""
+        for row in range(self.headers_table.rowCount()):
+            key_item = self.headers_table.item(row, 1)
+            if key_item and key_item.text().strip().lower() == key.lower():
+                # Key already present — select its value cell so the user can edit it.
+                self.headers_table.setCurrentCell(row, 2)
+                logger.debug("Header preset key already exists, selected value cell", extra={
                     "header_key": key,
+                    "row": row,
                 })
                 return
         self.headers_table.add_row(key, value)
@@ -1109,8 +1113,6 @@ class RequestPanel(_RequestSendMixin, _RequestAuthMixin, RequestBodyMixin, QWidg
 
     def _format_json_body(self) -> None:
         """Pretty-print the JSON in the body editor."""
-        import json as _json
-        
         text = self.body_text.toPlainText()
         logger.debug("JSON formatting requested", extra={
             "body_length": len(text),
@@ -1118,8 +1120,8 @@ class RequestPanel(_RequestSendMixin, _RequestAuthMixin, RequestBodyMixin, QWidg
         
         try:
             start = time.time()
-            parsed = _json.loads(text)
-            formatted = _json.dumps(parsed, indent=2, ensure_ascii=False)
+            parsed = json.loads(text)
+            formatted = json.dumps(parsed, indent=2, ensure_ascii=False)
             self.body_text.setPlainText(formatted)
             elapsed_ms = int((time.time() - start) * 1000)
             
@@ -1128,7 +1130,7 @@ class RequestPanel(_RequestSendMixin, _RequestAuthMixin, RequestBodyMixin, QWidg
                 "formatted_length": len(formatted),
                 "elapsed_ms": elapsed_ms,
             })
-        except _json.JSONDecodeError as exc:
+        except json.JSONDecodeError as exc:
             logger.warning("JSON formatting failed: invalid JSON", extra={
                 "error": str(exc),
                 "line": exc.lineno,
@@ -1214,8 +1216,8 @@ class RequestPanel(_RequestSendMixin, _RequestAuthMixin, RequestBodyMixin, QWidg
             request.id = req_id
             request.collection_id = col_id
             self.current_request = request
-            self._dirty = False
-            
+            self._clear_dirty()
+
             logger.info("Request saved to collection", extra={
                 "request_id": req_id,
                 "collection_id": col_id,
@@ -1246,5 +1248,4 @@ class RequestPanel(_RequestSendMixin, _RequestAuthMixin, RequestBodyMixin, QWidg
                 "folder": folder,
             })
             QMessageBox.critical(self, "Save Failed", str(exc))
-
 
