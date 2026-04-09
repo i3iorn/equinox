@@ -7,7 +7,9 @@ Body/captures/assertions/multipart logic lives in ``body_mixin``.
 """
 
 import logging
-from typing import Dict
+import re
+from datetime import datetime
+from typing import Any, Dict
 
 from PyQt6.QtWidgets import (
     QWidget,
@@ -25,9 +27,13 @@ from equinox.gui.theme import Colors
 from equinox.core.request import Request, Response
 from equinox.core.error_enrichment import RichError, enrich_exception
 from equinox.storage import Database, HistoryManager
-from equinox.gui.workers import RequestWorker, DEFAULT_TIMEOUT
+from equinox.gui.workers import RequestWorker
 
 logger = logging.getLogger(__name__)
+
+# Prefix used when encoding the auth inheritance source as a string.
+# e.g. "folder:Api/v2" means the auth came from the folder named "Api/v2".
+_FOLDER_AUTH_PREFIX = "folder:"
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -57,7 +63,6 @@ class _RequestSendMixin:
 
     def _run_preflight_checks(self) -> list:
         """Return a list of advisory warning strings (empty = all clear)."""
-        import re
         warnings = []
         url = self.url_input.text().strip()
 
@@ -305,65 +310,7 @@ class _RequestSendMixin:
             _save_history_safe(self.db, _sent_request, error=result.message)
             self._persist_inherited_auth_tokens()
             # Try to provide helpful hints from local history using Recommender
-            try:
-                from equinox.intelligence import Recommender
-                rec = Recommender(self.db)
-                probe = {"method": getattr(_sent_request, "method", ""), "url": getattr(_sent_request, "url", "")}
-                suggestions = rec.generate_suggestions(probe, top_n=5)
-                if suggestions:
-                            # Convert recommender suggestions into Response Intelligence Findings
-                            try:
-                                from equinox.core.response_intelligence.models import (
-                                    Category, Finding, Severity,
-                                )
-                                findings = []
-                                for s in suggestions:
-                                    stype = s.get("type")
-                                    if stype == "header":
-                                        title = f"Suggested header: {s.get('key')}"
-                                        desc = (
-                                            f"Set header {s.get('key')} = {s.get('suggested_value')} "
-                                            f"(confidence {s.get('confidence'):.2f})"
-                                        )
-                                    elif stype == "query":
-                                        title = f"Suggested query parameter: {s.get('key')}"
-                                        desc = (
-                                            f"Add query param {s.get('key')} "
-                                            f"(seen in {s.get('based_on')} requests, confidence {s.get('confidence'):.2f})"
-                                        )
-                                    else:
-                                        title = "Suggested change"
-                                        desc = str(s)
-
-                                    severity = Severity.WARNING if (s.get("confidence", 0) >= 0.75) else Severity.INFO
-                                    finding = Finding(
-                                        Category.HINTS,
-                                        severity,
-                                        title,
-                                        desc,
-                                        analyzer_id="recommender",
-                                        details=dict(s),
-                                    )
-                                    findings.append(finding)
-
-                                # Publish findings to the Intelligence panel if available
-                                try:
-                                    win = self.window()
-                                    rp = getattr(win, "response_panel", None)
-                                    if rp and hasattr(rp, "intelligence_panel"):
-                                        rp.intelligence_panel.display_findings(findings)
-                                        rp.set_intelligence_badge(len(findings))
-                                    else:
-                                        # Best-effort fallback
-                                        self._status_message("Suggestions available (open Intelligence panel)", 8000)
-                                except Exception:
-                                    logger.debug("Failed to publish recommender findings to Intelligence panel", exc_info=True)
-                            except Exception:
-                                # Keep original behavior silent on any conversion/display failure
-                                logger.debug("Failed to convert recommender suggestions to findings", exc_info=True)
-            except Exception:
-                # Don't let recommender errors affect the error flow
-                logger.debug("Recommender failed while generating hints", exc_info=True)
+            self._publish_recommender_hints(_sent_request)
 
         elif isinstance(result, Exception):
             # Fallback for any exception that slipped through un-enriched
@@ -404,63 +351,8 @@ class _RequestSendMixin:
             _save_history_safe(self.db, _sent_request, response)
 
             # If response indicates failure (HTTP 4xx/5xx), offer recommender hints
-            try:
-                if response.status_code >= 400:
-                    from equinox.intelligence import Recommender
-                    rec = Recommender(self.db)
-                    probe = {"method": getattr(_sent_request, "method", ""), "url": getattr(_sent_request, "url", "")}
-                    suggestions = rec.generate_suggestions(probe, top_n=5)
-                    if suggestions:
-                        # Convert recommender suggestions into Response Intelligence Findings
-                        try:
-                            from equinox.core.response_intelligence.models import (
-                                Category, Finding, Severity,
-                            )
-                            findings = []
-                            for s in suggestions:
-                                stype = s.get("type")
-                                if stype == "header":
-                                    title = f"Suggested header: {s.get('key')}"
-                                    desc = (
-                                        f"Set header {s.get('key')} = {s.get('suggested_value')} "
-                                        f"(confidence {s.get('confidence'):.2f})"
-                                    )
-                                elif stype == "query":
-                                    title = f"Suggested query parameter: {s.get('key')}"
-                                    desc = (
-                                        f"Add query param {s.get('key')} "
-                                        f"(seen in {s.get('based_on')} requests, confidence {s.get('confidence'):.2f})"
-                                    )
-                                else:
-                                    title = "Suggested change"
-                                    desc = str(s)
-
-                                severity = Severity.WARNING if (s.get("confidence", 0) >= 0.75) else Severity.INFO
-                                finding = Finding(
-                                    Category.HINTS,
-                                    severity,
-                                    title,
-                                    desc,
-                                    analyzer_id="recommender",
-                                    details=dict(s),
-                                )
-                                findings.append(finding)
-
-                            # Publish findings to the Intelligence panel if available
-                            try:
-                                win = self.window()
-                                rp = getattr(win, "response_panel", None)
-                                if rp and hasattr(rp, "intelligence_panel"):
-                                    rp.intelligence_panel.display_findings(findings)
-                                    rp.set_intelligence_badge(len(findings))
-                                else:
-                                    self._status_message("Suggestions available (open Intelligence panel)", 8000)
-                            except Exception:
-                                logger.debug("Failed to publish recommender findings to Intelligence panel", exc_info=True)
-                        except Exception:
-                            logger.debug("Failed to convert recommender suggestions to findings", exc_info=True)
-            except Exception:
-                logger.debug("Recommender failed during response handling", exc_info=True)
+            if response.status_code >= 400:
+                self._publish_recommender_hints(_sent_request)
 
             # Save refreshed tokens back to DB so subsequent requests (and
             # navigation) reuse the cached token rather than fetching a new one.
@@ -511,7 +403,7 @@ class _RequestSendMixin:
             return
         try:
             from equinox.core.scripts import ScriptRunner
-            resp_dict: Dict = {
+            resp_dict: Dict[str, Any] = {
                 "status_code": response.status_code,
                 "headers": dict(response.headers),
                 "body": response.text if hasattr(response, "text") else "",
@@ -564,8 +456,8 @@ class _RequestSendMixin:
                 return
             if source == "collection":
                 mgr.set_collection_auth(req.collection_id, auth)
-            elif source.startswith("folder:"):
-                folder_path = source[7:]
+            elif source.startswith(_FOLDER_AUTH_PREFIX):
+                folder_path = source[len(_FOLDER_AUTH_PREFIX):]
                 mgr.set_folder_auth(req.collection_id, folder_path, auth)
             # Update display to show the fresh token info
             self._inherited_auth = auth
@@ -601,6 +493,81 @@ class _RequestSendMixin:
         except Exception as exc:
             logger.debug("Failed to persist own OAuth2 token: %s", exc)
 
+    def _publish_recommender_hints(self, request) -> None:
+        """Generate suggestions for *request* from local history and publish them.
+
+        Runs the :class:`~equinox.intelligence.Recommender`, converts results to
+        Intelligence :class:`~equinox.core.response_intelligence.models.Finding`
+        objects, and pushes them to the Intelligence panel.  All exceptions are
+        swallowed so this never interrupts the normal send/error flow.
+        """
+        try:
+            from equinox.intelligence import Recommender
+            rec = Recommender(self.db)
+            probe = {
+                "method": getattr(request, "method", ""),
+                "url": getattr(request, "url", ""),
+            }
+            suggestions = rec.generate_suggestions(probe, top_n=5)
+            if not suggestions:
+                return
+            try:
+                from equinox.core.response_intelligence.models import (
+                    Category, Finding, Severity,
+                )
+                findings = []
+                for s in suggestions:
+                    stype = s.get("type")
+                    if stype == "header":
+                        title = f"Suggested header: {s.get('key')}"
+                        desc = (
+                            f"Set header {s.get('key')} = {s.get('suggested_value')} "
+                            f"(confidence {s.get('confidence'):.2f})"
+                        )
+                    elif stype == "query":
+                        title = f"Suggested query parameter: {s.get('key')}"
+                        desc = (
+                            f"Add query param {s.get('key')} "
+                            f"(seen in {s.get('based_on')} requests, "
+                            f"confidence {s.get('confidence'):.2f})"
+                        )
+                    else:
+                        title = "Suggested change"
+                        desc = str(s)
+                    severity = (
+                        Severity.WARNING if s.get("confidence", 0) >= 0.75
+                        else Severity.INFO
+                    )
+                    findings.append(Finding(
+                        Category.HINTS,
+                        severity,
+                        title,
+                        desc,
+                        analyzer_id="recommender",
+                        details=dict(s),
+                    ))
+                try:
+                    win = self.window()
+                    rp = getattr(win, "response_panel", None)
+                    if rp and hasattr(rp, "intelligence_panel"):
+                        rp.intelligence_panel.display_findings(findings)
+                        rp.set_intelligence_badge(len(findings))
+                    else:
+                        self._status_message(
+                            "Suggestions available (open Intelligence panel)", 8000
+                        )
+                except Exception:
+                    logger.debug(
+                        "Failed to publish recommender findings to Intelligence panel",
+                        exc_info=True,
+                    )
+            except Exception:
+                logger.debug(
+                    "Failed to convert recommender suggestions to findings",
+                    exc_info=True,
+                )
+        except Exception:
+            logger.debug("Recommender failed", exc_info=True)
 
     def _set_sending_state(self, sending: bool) -> None:
         if sending:
@@ -648,8 +615,8 @@ class _RequestAuthMixin:
             mgr = self._collection_mgr
             if source == "collection":
                 mgr.set_collection_auth(req.collection_id, auth)
-            elif source.startswith("folder:"):
-                mgr.set_folder_auth(req.collection_id, source[7:], auth)
+            elif source.startswith(_FOLDER_AUTH_PREFIX):
+                mgr.set_folder_auth(req.collection_id, source[len(_FOLDER_AUTH_PREFIX):], auth)
             logger.debug("Saved dialog-fetched token to %s", source)
         except Exception as exc:
             logger.debug("Failed to save dialog token to source: %s", exc)
@@ -815,8 +782,8 @@ class _RequestAuthMixin:
         if not display_auth and getattr(self, "_inherited_auth", None):
             display_auth = self._inherited_auth
             source = getattr(self, "_inherited_auth_source", "") or ""
-            if source.startswith("folder:"):
-                inherited_label = f"  (inherited from folder \"{source[7:]}\")"
+            if source.startswith(_FOLDER_AUTH_PREFIX):
+                inherited_label = f"  (inherited from folder \"{source[len(_FOLDER_AUTH_PREFIX):]}\")"
             elif source == "collection":
                 inherited_label = "  (inherited from collection)"
 
@@ -831,7 +798,6 @@ class _RequestAuthMixin:
             self.auth_type_label.setText(f"Auth: Bearer Token{inherited_label}")
             self.auth_details_label.setText(f"Token: {preview}")
         elif isinstance(display_auth, OAuth2Auth):
-            from datetime import datetime, timezone
             self.auth_type_label.setText(f"Auth: OAuth 2.0{inherited_label}")
             self.auth_details_label.setText(
                 f"Token URL: {display_auth.token_url or '—'}\nClient ID: {display_auth.client_id or '—'}"
