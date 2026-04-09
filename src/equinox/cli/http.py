@@ -1,6 +1,7 @@
 """HTTP request commands — get, post, put, patch, delete."""
 
 import json
+import logging
 import sys
 from pathlib import Path
 
@@ -13,6 +14,8 @@ from equinox.core.interpolation import VariableInterpolator
 from equinox.auth import BearerAuth, APIKeyAuth, BasicAuth
 from equinox.storage import CollectionManager, HistoryManager
 from equinox.core.redact import redact_headers, redact_body
+
+logger = logging.getLogger(__name__)
 
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
@@ -200,6 +203,15 @@ def _send_request(ctx, method, url, body, headers, params, auth, timeout,
             body=body, auth=auth_obj, timeout=timeout, verify_ssl=not no_verify,
         )
 
+        logger.info("Sending %s %s", method, url, extra={
+            "method": method,
+            "url": url,
+            "header_count": len(header_dict),
+            "has_body": bool(body),
+            "timeout": timeout,
+            "verify_ssl": not no_verify,
+        })
+
         if save_name:
             collection_mgr = CollectionManager(db)
             request.name = save_name
@@ -213,10 +225,23 @@ def _send_request(ctx, method, url, body, headers, params, auth, timeout,
                 default_id = collections[0]["id"]
                 col_name = collections[0]["name"]
             req_id = collection_mgr.save_request(request, collection_id=default_id)
+            logger.info("Request saved to collection %r (id=%s, request_id=%s)",
+                        col_name, default_id, req_id)
             click.echo(f"✓ Request '{save_name}' saved with ID: {req_id} to collection '{col_name}'")
 
         client = HTTPClient(timeout=timeout, verify_ssl=not no_verify)
         response = client.send(request)
+
+        logger.info("Response received: HTTP %d %s in %.3fs",
+                    response.status_code, response.reason, response.elapsed,
+                    extra={
+                        "status_code": response.status_code,
+                        "reason": response.reason,
+                        "elapsed_s": round(response.elapsed, 4),
+                        "size_bytes": response.size,
+                        "method": method,
+                        "url": url,
+                    })
 
         HistoryManager(db).save_history(request, response)
 
@@ -224,19 +249,23 @@ def _send_request(ctx, method, url, body, headers, params, auth, timeout,
             out_path = Path(save_response_path)
             body_content = response.text if hasattr(response, "text") else str(response.body)
             out_path.write_text(body_content, encoding="utf-8")
+            logger.debug("Response body saved to %s (%d bytes)", out_path, len(body_content))
             click.echo(f"✓ Response saved to {out_path}")
 
         _print_response(response, ctx.obj.get("DEBUG", False), quiet=quiet, fmt=output_fmt)
 
         if assert_status or assert_contains or assert_header:
             all_pass = _run_assertions(assert_status, assert_contains, assert_header, response)
+            logger.info("CLI assertions: %s", "all passed" if all_pass else "one or more FAILED")
             if not all_pass:
                 sys.exit(2)
 
     except EquinoxError as exc:
+        logger.error("Request failed (%s): %s", type(exc).__name__, exc)
         click.echo(f"Error: {redact_body(str(exc))}", err=True)
         sys.exit(1)
     except Exception as exc:
+        logger.error("Unexpected error during CLI request: %s", exc, exc_info=True)
         if ctx.obj.get("DEBUG"):
             raise
         click.echo(f"Unexpected error: {redact_body(str(exc))}", err=True)

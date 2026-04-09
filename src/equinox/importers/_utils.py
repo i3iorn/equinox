@@ -4,10 +4,13 @@ Contains helpers that are common across all importer classes (OpenAPI, Postman,
 HAR, Insomnia) to avoid code duplication.
 """
 
+import logging
 from pathlib import Path
 from typing import Optional, Sequence
 
 from equinox.core.exceptions import ValidationError
+
+logger = logging.getLogger(__name__)
 
 
 def validate_import_file(
@@ -48,4 +51,5 @@ def validate_import_file(
         raise ValidationError(
             f"{label} too large: {size:,} bytes (max {max_bytes:,} bytes)"
         )
+    logger.debug("validate_import_file: OK path=%s size=%d", path, size)
 

@@ -1,12 +1,15 @@
 """Request history CLI commands."""
 
 import json
+import logging
 import sys
 from pathlib import Path
 
 import click
 
 from equinox.storage import HistoryManager
+
+logger = logging.getLogger(__name__)
 
 
 @click.group()
@@ -120,8 +123,13 @@ def history_export(fmt, output, limit):
         elif fmt == "har":
             _export_history_har(entries, out_path)
 
+        logger.info(
+            "history_export: wrote %d entries to %s (format=%s)",
+            len(entries), out_path, fmt,
+        )
         click.echo(f"✓ Exported {len(entries)} history entries to {out_path} ({fmt})")
     except Exception as exc:
+        logger.error("history_export failed (format=%s output=%s): %s", fmt, output, exc, exc_info=True)
         click.secho(f"✗ Export failed: {exc}", fg="red", err=True)
         raise click.Exit(1)
 
@@ -295,12 +303,16 @@ def history_search(
             limit=limit,
         )
     except Exception as exc:
+        logger.error("history_search failed: %s", exc, exc_info=True)
         click.secho(f"✗ Search failed: {exc}", fg="red", err=True)
         raise SystemExit(1)
 
     if not entries:
+        logger.debug("history_search: no entries matched filters")
         click.echo("No matching history entries found")
         return
+
+    logger.debug("history_search: found %d matching entries", len(entries))
 
     click.echo(f"Found {len(entries)} matching entries:\n")
     for entry in entries:

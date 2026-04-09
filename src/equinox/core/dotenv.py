@@ -1,5 +1,9 @@
 """Shared .env file parser used by both the CLI and GUI."""
 
+import logging
+
+logger = logging.getLogger(__name__)
+
 # Maximum size of a .env file to prevent memory exhaustion (1 MB).
 MAX_DOTENV_SIZE = 1 * 1024 * 1024
 
@@ -40,4 +44,5 @@ def parse_dotenv(text: str) -> dict:
                 value = value[:comment_idx].rstrip()
         if key:
             result[key] = value
+    logger.debug("parse_dotenv: loaded %d variable(s)", len(result))
     return result

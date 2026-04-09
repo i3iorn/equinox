@@ -1,10 +1,13 @@
 """Request and auth management CLI commands."""
 
+import logging
 import sys
 
 import click
 
 from equinox.storage import CollectionManager
+
+logger = logging.getLogger(__name__)
 
 
 @click.group()
@@ -78,9 +81,11 @@ def auth_basic(request_id, username, password):
         db = get_db()
         manager, req = _get_request_or_exit(db, request_id)
         manager.update_request_auth(request_id, BasicAuth(username=username, password=password))
+        logger.info("Set basic auth for request id=%s username=%r", request_id, username)
         click.echo(f"✓ Basic auth configured for request #{request_id} ({req.name})")
         click.echo(f"  Username: {username}")
     except Exception as exc:
+        logger.error("Failed to set basic auth for request id=%s: %s", request_id, exc)
         click.echo(f"Error setting basic auth: {exc}", err=True)
         sys.exit(1)
 
@@ -109,12 +114,15 @@ def auth_oauth2(request_id, token_url, client_id, client_secret, scope,
         )
         manager.update_request_auth(request_id, auth_obj)
 
+        logger.info("Set OAuth2 auth for request id=%s client_id=%r token_url=%r",
+                    request_id, client_id, token_url)
         click.echo(f"✓ OAuth2 configured for request #{request_id} ({req.name})")
         click.echo(f"  Token URL: {token_url}")
         click.echo(f"  Client ID: {client_id}")
         if scope:
             click.echo(f"  Scope: {scope}")
     except Exception as exc:
+        logger.error("Failed to set OAuth2 auth for request id=%s: %s", request_id, exc)
         click.echo(f"Error setting OAuth2: {exc}", err=True)
         sys.exit(1)
 
@@ -131,8 +139,10 @@ def auth_bearer(request_id, token):
         db = get_db()
         manager, req = _get_request_or_exit(db, request_id)
         manager.update_request_auth(request_id, BearerAuth(token=token))
+        logger.info("Set bearer auth for request id=%s", request_id)
         click.echo(f"✓ Bearer token configured for request #{request_id} ({req.name})")
     except Exception as exc:
+        logger.error("Failed to set bearer auth for request id=%s: %s", request_id, exc)
         click.echo(f"Error setting bearer token: {exc}", err=True)
         sys.exit(1)
 
@@ -152,9 +162,11 @@ def auth_api_key(request_id, key_name, key_value, location):
         db = get_db()
         manager, req = _get_request_or_exit(db, request_id)
         manager.update_request_auth(request_id, APIKeyAuth(key=key_name, value=key_value, location=location))
+        logger.info("Set API key auth for request id=%s key=%r location=%s", request_id, key_name, location)
         click.echo(f"✓ API key configured for request #{request_id} ({req.name})")
         click.echo(f"  Key: {key_name} ({location})")
     except Exception as exc:
+        logger.error("Failed to set API key auth for request id=%s: %s", request_id, exc)
         click.echo(f"Error setting API key: {exc}", err=True)
         sys.exit(1)
 
@@ -169,8 +181,10 @@ def auth_clear(request_id):
         db = get_db()
         manager, req = _get_request_or_exit(db, request_id)
         manager.update_request_auth(request_id, None)
+        logger.info("Cleared auth for request id=%s", request_id)
         click.echo(f"✓ Authentication cleared for request #{request_id} ({req.name})")
     except Exception as exc:
+        logger.error("Failed to clear auth for request id=%s: %s", request_id, exc)
         click.echo(f"Error clearing auth: {exc}", err=True)
         sys.exit(1)
 

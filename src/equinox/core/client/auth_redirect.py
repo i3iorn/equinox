@@ -1,6 +1,9 @@
+import logging
 from typing import Dict
 
 import httpx
+
+logger = logging.getLogger(__name__)
 
 
 class _RedirectSafeAuth(httpx.Auth):
@@ -21,6 +24,10 @@ class _RedirectSafeAuth(httpx.Auth):
         self._auth_headers = auth_headers
 
     def auth_flow(self, request: httpx.Request):
+        logger.debug(
+            "_RedirectSafeAuth: re-applying %d auth header(s) after redirect",
+            len(self._auth_headers),
+        )
         for key, value in self._auth_headers.items():
             request.headers[key] = value
         yield request

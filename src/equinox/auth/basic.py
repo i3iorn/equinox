@@ -1,9 +1,12 @@
 """Basic HTTP authentication"""
 
 import base64
+import logging
 from typing import Dict, Any
 from equinox.auth.base import AuthStrategy, _validate_credential
 from equinox.core.exceptions import AuthError
+
+logger = logging.getLogger(__name__)
 
 
 class BasicAuth(AuthStrategy):
@@ -29,6 +32,7 @@ class BasicAuth(AuthStrategy):
         credentials = f"{self.username}:{self.password}"
         encoded = base64.b64encode(credentials.encode()).decode()
         headers["Authorization"] = f"Basic {encoded}"
+        logger.debug("BasicAuth applied for user %r", self.username)
 
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary"""

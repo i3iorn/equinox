@@ -1,11 +1,14 @@
 """Collection management CLI commands."""
 import json
+import logging
+import sys
 
 import click
-import sys
 
 from equinox.storage import CollectionManager
 from equinox.core.redact import redact_body as _redact
+
+logger = logging.getLogger(__name__)
 
 
 @click.group()
@@ -41,6 +44,7 @@ def collection_create(name, description):
     db = get_db()
     manager = CollectionManager(db)
     collection_id = manager.create_collection(name, description or "")
+    logger.info("Created collection: id=%s name=%r", collection_id, name)
     click.echo(f"Collection created with ID: {collection_id}")
 
 
@@ -52,6 +56,7 @@ def collection_delete(collection_id):
     db = get_db()
     manager = CollectionManager(db)
     manager.delete_collection(collection_id)
+    logger.info("Deleted collection id=%s", collection_id)
     click.echo("Collection deleted")
 
 
@@ -78,6 +83,7 @@ def collection_run(collection_id, env_id, stop_on_error, timeout):
     manager = CollectionManager(db)
     col = manager.get_collection(collection_id)
     if not col:
+        logger.error("Collection %s not found for run", collection_id)
         click.secho(f"Collection {collection_id} not found", fg="red", err=True)
         raise click.Exit(1)
 
@@ -93,8 +99,14 @@ def collection_run(collection_id, env_id, stop_on_error, timeout):
         if env:
             variables.update(env.get("variables", {}))
         else:
+            logger.warning("Environment %s not found — running collection without variables", env_id)
             click.secho(f"Environment {env_id} not found — running without variables",
                         fg="yellow", err=True)
+
+    logger.info(
+        "Running collection id=%s name=%r (%d requests, env_id=%s)",
+        collection_id, col['name'], len(req_rows), env_id,
+    )
 
     click.echo(f"Running collection '{col['name']}' ({len(req_rows)} request(s))")
     if env_id:
@@ -147,6 +159,7 @@ def collection_run(collection_id, env_id, stop_on_error, timeout):
                 click.secho(f"       {sc} {resp.reason}  ({elapsed_ms} ms)", fg="red")
                 failed += 1
         except Exception as exc:
+            logger.error("Request '%s' [%s %s] error: %s", name, method, url, exc)
             click.secho(f"       ERROR: {_redact(str(exc))}", fg="red")
             failed += 1
 
@@ -158,9 +171,11 @@ def collection_run(collection_id, env_id, stop_on_error, timeout):
     click.echo()
     total = passed + failed
     if failed:
+        logger.warning("Collection run finished: %d/%d passed, %d failed", passed, total, failed)
         click.secho(f"Results: {passed}/{total} passed, {failed} failed", fg="red")
         raise click.Exit(1)
     else:
+        logger.info("Collection run finished: %d/%d passed", passed, total)
         click.secho(f"Results: {passed}/{total} passed", fg="green")
 
 
@@ -190,21 +205,25 @@ def collection_export(collection_id, format, output, title, version):
         if format == "postman":
             data = PostmanExporter.export_collection(db, collection_id)
             PostmanExporter.export_to_file(data, output_path)
+            logger.info("Exported collection %s to %s (postman)", collection_id, output_path)
             click.echo(f"✓ Collection exported to {output_path} (Postman format)")
         elif format == "openapi":
             if not title:
                 title = f"API Collection {collection_id}"
             data = OpenAPIExporter.export_collection(db, collection_id, title, version)
             OpenAPIExporter.export_to_file(data, output_path)
+            logger.info("Exported collection %s to %s (openapi)", collection_id, output_path)
             click.echo(f"✓ Collection exported to {output_path} (OpenAPI 3.0 format)")
         elif format == "insomnia":
             data = InsomniaExporter.export_collection(db, collection_id)
             InsomniaExporter.export_to_file(data, output_path)
+            logger.info("Exported collection %s to %s (insomnia)", collection_id, output_path)
             click.echo(f"✓ Collection exported to {output_path} (Insomnia format)")
         elif format == "har":
             click.echo("HAR export requires request/response history. "
                        "Use 'equinox history export' instead.")
     except Exception as exc:
+        logger.error("Export failed for collection %s (format=%s): %s", collection_id, format, exc)
         click.secho(f"✗ Export failed: {exc}", fg="red", err=True)
         raise click.Exit(1)
 

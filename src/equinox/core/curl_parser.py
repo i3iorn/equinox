@@ -1,9 +1,12 @@
 """Parse a cURL command string into a :class:`~equinox.core.request.Request`."""
 
+import logging
 import re
 import shlex
 from typing import Optional
 from equinox.core import urls
+
+logger = logging.getLogger(__name__)
 
 
 # Flags that consume the next token as their value.  Defined at module level
@@ -38,6 +41,7 @@ def parse_curl(curl_cmd: str) -> dict:
     """
     # Normalise multi-line curl commands (trailing backslash or caret continuation)
     normalised = curl_cmd.strip()
+    logger.debug("parse_curl: input length=%d", len(curl_cmd))
     normalised = re.sub(r'\\\s*\n\s*', ' ', normalised)   # Unix continuation
     normalised = re.sub(r'\^\s*\n\s*', ' ', normalised)   # Windows continuation
 
@@ -125,6 +129,9 @@ def parse_curl(curl_cmd: str) -> dict:
 
     # Pass through central placeholder expansion (no-op when no variables provided)
     url = urls.expand_placeholders(url, None)
+
+    logger.debug("parse_curl result: method=%s url=%r headers=%d has_body=%s verify_ssl=%s",
+                 method, url, len(headers), bool(body), verify_ssl)
 
     return {
         "method": method,

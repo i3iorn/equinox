@@ -1,8 +1,11 @@
 """API Key authentication"""
 
+import logging
 from typing import Dict, Any, Literal
 from equinox.auth.base import AuthStrategy, _validate_credential
 from equinox.core.exceptions import AuthError
+
+logger = logging.getLogger(__name__)
 
 
 class APIKeyAuth(AuthStrategy):
@@ -37,10 +40,12 @@ class APIKeyAuth(AuthStrategy):
         """Add API key to headers or query params"""
         if self.location == "header":
             headers[self.key] = self.value
+            logger.debug("APIKeyAuth applied: key=%r in header", self.key)
         elif self.location == "query":
             if not hasattr(request, "params"):
                 request.params = {}
             request.params[self.key] = self.value
+            logger.debug("APIKeyAuth applied: key=%r in query params", self.key)
 
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary"""

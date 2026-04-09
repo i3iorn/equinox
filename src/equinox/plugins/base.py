@@ -1,10 +1,13 @@
 """Base plugin classes"""
 
+import logging
 from abc import ABC, abstractmethod
 from typing import Dict, Any, Optional
 from dataclasses import dataclass
 
 from equinox.core.request import Request, Response
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -48,11 +51,11 @@ class Plugin(ABC):
 
     def activate(self) -> None:
         """Called when plugin is activated"""
-        pass
+        logger.info("Plugin activated: %s v%s", self.name, self.version)
 
     def deactivate(self) -> None:
         """Called when plugin is deactivated"""
-        pass
+        logger.info("Plugin deactivated: %s", self.name)
 
     def on_request(self, request: Request) -> Optional[Request]:
         """
@@ -87,7 +90,7 @@ class Plugin(ABC):
             request: Request object
             error: Exception that occurred
         """
-        pass
+        logger.debug("Plugin %s on_error: %s %s → %s", self.name, request.method, request.url, error)
 
 
 class AuthPlugin(Plugin):

@@ -1,10 +1,13 @@
 """Import commands — Postman and OpenAPI/Swagger."""
 
+import logging
 import sys
 
 import click
 
 from equinox.storage import CollectionManager
+
+logger = logging.getLogger(__name__)
 
 
 @click.group("import")
@@ -33,6 +36,7 @@ def import_postman(file_path, preview):
             if info['description']:
                 click.echo(f"Description: {info['description']}")
         except Exception as exc:
+            logger.error("Failed to preview Postman file %s: %s", file_path, exc)
             click.echo(f"Error: {exc}", err=True)
             sys.exit(1)
     else:
@@ -41,9 +45,12 @@ def import_postman(file_path, preview):
         manager = CollectionManager(db)
         importer = PostmanImporter(manager)
         try:
+            logger.info("Importing Postman collection from %s", file_path)
             collection_id = importer.import_file(file)
+            logger.info("Postman import complete: collection_id=%s", collection_id)
             click.echo(f"✓ Successfully imported to collection ID: {collection_id}")
         except Exception as exc:
+            logger.error("Postman import failed for %s: %s", file_path, exc, exc_info=True)
             click.echo(f"Error: {exc}", err=True)
             sys.exit(1)
 
@@ -70,6 +77,7 @@ def import_openapi(file_path, preview):
             if info['description']:
                 click.echo(f"Description: {info['description']}")
         except Exception as exc:
+            logger.error("Failed to preview OpenAPI spec %s: %s", file_path, exc)
             click.echo(f"Error: {exc}", err=True)
             sys.exit(1)
     else:
@@ -78,9 +86,12 @@ def import_openapi(file_path, preview):
         manager = CollectionManager(db)
         importer = OpenAPIImporter(manager)
         try:
+            logger.info("Importing OpenAPI spec from %s", file_path)
             collection_id = importer.import_file(file)
+            logger.info("OpenAPI import complete: collection_id=%s", collection_id)
             click.echo(f"✓ Successfully imported to collection ID: {collection_id}")
         except Exception as exc:
+            logger.error("OpenAPI import failed for %s: %s", file_path, exc, exc_info=True)
             click.echo(f"Error: {exc}", err=True)
             sys.exit(1)
 
@@ -98,8 +109,11 @@ def import_har(file_path):
     manager = CollectionManager(db)
     importer = HARImporter(manager)
     try:
+        logger.info("Importing HAR file from %s", file_path)
         collection_id = importer.import_file(file)
+        logger.info("HAR import complete: collection_id=%s", collection_id)
         click.echo(f"✓ Successfully imported HAR to collection ID: {collection_id}")
     except Exception as exc:
+        logger.error("HAR import failed for %s: %s", file_path, exc, exc_info=True)
         click.echo(f"Error: {exc}", err=True)
         sys.exit(1)

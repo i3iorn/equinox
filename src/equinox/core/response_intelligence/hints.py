@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import re
 from typing import Dict, List, Tuple
 from equinox.core import urls
@@ -13,6 +14,8 @@ from equinox.core.response_intelligence.models import (
     Finding,
     Severity,
 )
+
+logger = logging.getLogger(__name__)
 
 
 class DeprecatedAPIAnalyzer(Analyzer):
@@ -138,6 +141,10 @@ class NPlusOneDetectionAnalyzer(Analyzer):
             runs.append((current_pattern, current_count))
 
         for pattern, count in runs:
+            logger.debug(
+                "NPlusOneDetectionAnalyzer: possible N+1 — pattern=%r count=%d",
+                pattern, count,
+            )
             findings.append(Finding(
                 category=self.category,
                 severity=Severity.WARNING,

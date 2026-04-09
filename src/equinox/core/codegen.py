@@ -1,10 +1,13 @@
 """Code generation — convert a Request object to client code in various languages."""
 
 import json
+import logging
 from typing import Optional
 from urllib.parse import urlencode
 
 from equinox.core.request import Request
+
+logger = logging.getLogger(__name__)
 
 
 def _auth_type_name(auth) -> str:
@@ -359,5 +362,6 @@ def generate_code(fmt: str, request: Request) -> str:
     Raises:
         KeyError: If *fmt* is not a known format.
     """
+    logger.debug("generate_code: format=%r method=%s url=%s", fmt, request.method, request.url)
     cls = GENERATORS[fmt]
     return cls().generate(request)

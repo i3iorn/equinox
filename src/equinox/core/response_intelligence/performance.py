@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 from typing import List
 
 from equinox.core.response_intelligence.base import Analyzer
@@ -12,6 +13,8 @@ from equinox.core.response_intelligence.models import (
     Finding,
     Severity,
 )
+
+logger = logging.getLogger(__name__)
 
 
 class CompressionAnalyzer(Analyzer):
@@ -168,6 +171,10 @@ class ResponseTimePercentileAnalyzer(Analyzer):
         sev = Severity.INFO
         if current > p99 and len(values) >= 5:
             sev = Severity.WARNING
+            logger.debug(
+                "ResponseTimePercentileAnalyzer: current=%dms exceeds p99=%dms (sample=%d)",
+                round(current), round(p99), len(values),
+            )
 
         findings.append(Finding(
             category=self.category,

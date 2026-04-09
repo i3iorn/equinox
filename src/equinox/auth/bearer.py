@@ -1,9 +1,12 @@
 """Bearer token authentication"""
 
+import logging
 from typing import Dict, Any
 from equinox.auth.base import AuthStrategy, _validate_credential
 from equinox.core.exceptions import AuthError
 from equinox.core.redact import mask_secret
+
+logger = logging.getLogger(__name__)
 
 
 class BearerAuth(AuthStrategy):
@@ -24,6 +27,7 @@ class BearerAuth(AuthStrategy):
     def apply(self, request: Any, headers: Dict[str, str]) -> None:
         """Add Authorization header with bearer token"""
         headers["Authorization"] = f"Bearer {self.token}"
+        logger.debug("BearerAuth applied (token length: %d)", len(self.token))
 
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary"""

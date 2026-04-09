@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import re
 import time
 from typing import Any, Dict, List, Optional
@@ -14,6 +15,8 @@ from equinox.core.response_intelligence.models import (
     Finding,
     Severity,
 )
+
+logger = logging.getLogger(__name__)
 
 
 class ServerFingerprintAnalyzer(Analyzer):
@@ -126,6 +129,10 @@ class RateLimitDashboardAnalyzer(Analyzer):
             sev = Severity.WARNING
         if ctx.response.status_code == 429:
             sev = Severity.CRITICAL
+            logger.warning(
+                "RateLimitDashboardAnalyzer: 429 Too Many Requests — limit=%s remaining=%s",
+                limit, remaining,
+            )
 
         findings.append(Finding(
             category=self.category,
@@ -337,6 +344,10 @@ class ResponseTimeAnomalyAnalyzer(Analyzer):
         }
 
         if zscore > 0:
+            logger.debug(
+                "ResponseTimeAnomalyAnalyzer: slow response %dms (z=%.2f, mean=%dms)",
+                round(current_ms), zscore, round(mean),
+            )
             findings.append(Finding(
                 category=self.category,
                 severity=Severity.WARNING,

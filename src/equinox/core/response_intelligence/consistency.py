@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import re
 from typing import Any, Dict, List, Set, Tuple
 
@@ -13,6 +14,8 @@ from equinox.core.response_intelligence.models import (
     Finding,
     Severity,
 )
+
+logger = logging.getLogger(__name__)
 
 
 class StatusBodyMismatchAnalyzer(Analyzer):
@@ -306,6 +309,10 @@ class SchemaDriftAnalyzer(Analyzer):
             parts.append(f"Type changed: {', '.join(type_changed[:5])}")
 
         sev = Severity.WARNING if removed or type_changed else Severity.INFO
+        logger.debug(
+            "SchemaDriftAnalyzer: schema changed — added=%d removed=%d type_changed=%d",
+            len(added), len(removed), len(type_changed),
+        )
 
         findings.append(Finding(
             category=self.category,

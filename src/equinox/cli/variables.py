@@ -1,8 +1,11 @@
 """Variable group management CLI commands."""
 
+import logging
 import sys
 
 import click
+
+logger = logging.getLogger(__name__)
 
 
 @click.group()
@@ -42,6 +45,7 @@ def vargroup_create(name, description):
     db = get_db()
     manager = VariableGroupManager(db)
     group_id = manager.create_group(name, description or "")
+    logger.info("Created variable group: id=%s name=%r", group_id, name)
     click.echo(f"Variable group created with ID: {group_id}")
 
 
@@ -55,6 +59,7 @@ def vargroup_delete(group_id):
     db = get_db()
     manager = VariableGroupManager(db)
     manager.delete_group(group_id)
+    logger.info("Deleted variable group id=%s", group_id)
     click.echo("Variable group deleted")
 
 
@@ -71,6 +76,7 @@ def vargroup_add_var(group_id, key, value, description):
     db = get_db()
     manager = VariableGroupManager(db)
     manager.add_variable(group_id, key, value, description or "")
+    logger.info("Added variable %r to group id=%s", key, group_id)
     click.echo(f"Variable '{key}' added to group {group_id}")
 
 
@@ -85,6 +91,7 @@ def vargroup_remove_var(group_id, key):
     db = get_db()
     manager = VariableGroupManager(db)
     manager.remove_variable(group_id, key)
+    logger.info("Removed variable %r from group id=%s", key, group_id)
     click.echo(f"Variable '{key}' removed from group {group_id}")
 
 

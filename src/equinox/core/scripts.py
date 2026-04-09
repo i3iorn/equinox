@@ -25,10 +25,13 @@ from __future__ import annotations
 
 import ast
 import builtins
+import logging
 import multiprocessing
 import threading
 from dataclasses import dataclass, field
 from typing import Any, Dict, FrozenSet, Optional
+
+logger = logging.getLogger(__name__)
 
 
 # ── Allow-list of importable top-level packages ──────────────────────────────
@@ -280,7 +283,18 @@ class ScriptRunner:
             ScriptResult with ``output_vars`` containing any new/changed env
             entries and ``error`` set on exception.
         """
-        return cls._run(script, {"request": dict(request_dict)}, session_vars, "<pre_script>")
+        logger.debug("Running pre-request script", extra={
+            "script_length": len(script),
+            "session_var_count": len(session_vars),
+        })
+        result = cls._run(script, {"request": dict(request_dict)}, session_vars, "<pre_script>")
+        if result.error:
+            logger.warning("Pre-request script failed: %s", result.error)
+        else:
+            logger.debug("Pre-request script completed", extra={
+                "changed_vars": list(result.output_vars.keys()),
+            })
+        return result
 
     @classmethod
     def run_post(
@@ -300,7 +314,18 @@ class ScriptRunner:
             ScriptResult with ``output_vars`` containing any new/changed env
             entries and ``error`` set on exception.
         """
-        return cls._run(script, {"response": dict(response_dict)}, session_vars, "<post_script>")
+        logger.debug("Running post-response script", extra={
+            "script_length": len(script),
+            "session_var_count": len(session_vars),
+        })
+        result = cls._run(script, {"response": dict(response_dict)}, session_vars, "<post_script>")
+        if result.error:
+            logger.warning("Post-response script failed: %s", result.error)
+        else:
+            logger.debug("Post-response script completed", extra={
+                "changed_vars": list(result.output_vars.keys()),
+            })
+        return result
 
     # ── Internal ─────────────────────────────────────────────────────────────
 
@@ -316,6 +341,7 @@ class ScriptRunner:
             return ScriptResult()
 
         if len(script) > cls.MAX_SOURCE_LENGTH:
+            logger.warning("Script rejected: too long (%d chars, max %d)", len(script), cls.MAX_SOURCE_LENGTH)
             return ScriptResult(
                 error=f"Script too long ({len(script)} chars, max {cls.MAX_SOURCE_LENGTH})"
             )
@@ -327,7 +353,9 @@ class ScriptRunner:
         try:
             tree = _validate_ast(script, filename)
             code = compile(tree, filename, "exec")
+            logger.debug("Script AST validation passed", extra={"filename": filename})
         except Exception as exc:  # noqa: BLE001
+            logger.warning("Script AST/compile error in %s: %s", filename, exc)
             return ScriptResult(error=str(exc))
 
         # Run exec() in a subprocess so infinite loops can be killed.
@@ -352,27 +380,30 @@ class ScriptRunner:
                 daemon=True,
             )
             p.start()
+            logger.debug("Script subprocess started (pid=%s, filename=%s)", p.pid, filename)
             p.join(timeout=cls.EXECUTION_TIMEOUT)
 
             if p.is_alive():
-                # Forcefully terminate the runaway process
                 p.kill()
                 p.join(timeout=2.0)
+                logger.warning("Script timed out after %.1fs in %s", cls.EXECUTION_TIMEOUT, filename)
                 return ScriptResult(
                     error=f"Script timed out after {cls.EXECUTION_TIMEOUT}s"
                 )
 
             if result_queue.empty():
+                logger.warning("Script subprocess exited without a result (filename=%s)", filename)
                 return ScriptResult(error="Script process exited without producing a result")
 
             status, payload = result_queue.get_nowait()
             if status == "error":
+                logger.warning("Script runtime error in %s: %s", filename, payload)
                 return ScriptResult(error=payload)
 
             new_env = payload
-        except (OSError, RuntimeError):
-            # Fallback to thread-based execution when multiprocessing is
-            # unavailable (e.g. frozen apps, restricted environments).
+        except (OSError, RuntimeError) as exc:
+            # Fallback to thread-based execution when multiprocessing is unavailable.
+            logger.debug("Multiprocessing unavailable (%s), falling back to thread execution", exc)
             error_container: list = [None]
 
             def _thread_exec() -> None:
@@ -386,10 +417,13 @@ class ScriptRunner:
             t.join(timeout=cls.EXECUTION_TIMEOUT)
 
             if t.is_alive():
+                logger.warning("Thread-based script timed out after %.1fs in %s",
+                               cls.EXECUTION_TIMEOUT, filename)
                 return ScriptResult(
                     error=f"Script timed out after {cls.EXECUTION_TIMEOUT}s"
                 )
             if error_container[0] is not None:
+                logger.warning("Thread-based script error in %s: %s", filename, error_container[0])
                 return ScriptResult(error=str(error_container[0]))
 
             new_env = locs.get("env", {})
@@ -400,4 +434,7 @@ class ScriptRunner:
             for k, v in new_env.items()
             if k not in session_vars or session_vars.get(k) != str(v)
         }
+        if changed:
+            logger.debug("Script set session vars: %s", list(changed.keys()),
+                         extra={"filename": filename, "changed_count": len(changed)})
         return ScriptResult(output_vars=changed)

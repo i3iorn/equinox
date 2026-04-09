@@ -12,12 +12,15 @@ from __future__ import annotations
 
 import hashlib
 import hmac
+import logging
 from datetime import datetime, timezone
 from typing import Any, Dict, Optional, Tuple
 from urllib.parse import quote, urlparse, parse_qsl
 
 from equinox.auth.base import AuthStrategy, _validate_credential
 from equinox.core.exceptions import AuthError
+
+logger = logging.getLogger(__name__)
 
 
 class AWSSigV4Auth(AuthStrategy):
@@ -64,6 +67,12 @@ class AWSSigV4Auth(AuthStrategy):
             ``x-amz-date``           — ISO-8601 date-time (UTC)
             ``x-amz-security-token`` — (only when session_token is set)
         """
+        url = getattr(request, "url", "") or ""
+        method = (getattr(request, "method", "GET") or "GET").upper()
+        logger.debug(
+            "Applying AWS SigV4 auth: method=%s url=%s region=%s service=%s",
+            method, url, self.region, self.service,
+        )
         now = datetime.now(timezone.utc)
         amzdate = now.strftime("%Y%m%dT%H%M%SZ")
         datestamp = now.strftime("%Y%m%d")
@@ -72,8 +81,6 @@ class AWSSigV4Auth(AuthStrategy):
         if self.session_token:
             headers["x-amz-security-token"] = self.session_token
 
-        url = getattr(request, "url", "") or ""
-        method = (getattr(request, "method", "GET") or "GET").upper()
         body = getattr(request, "body", None) or ""
         body_bytes = body.encode("utf-8") if isinstance(body, str) else body
 
@@ -116,6 +123,7 @@ class AWSSigV4Auth(AuthStrategy):
             f"SignedHeaders={signed_headers}, "
             f"Signature={signature}"
         )
+        logger.debug("AWS SigV4 Authorization header applied (signed_headers=%s)", signed_headers)
 
     def to_dict(self) -> Dict[str, Any]:
         d: Dict[str, Any] = {

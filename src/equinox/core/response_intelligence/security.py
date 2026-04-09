@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import base64
 import json
+import logging
 import re
 import time
 from typing import List
@@ -15,6 +16,8 @@ from equinox.core.response_intelligence.models import (
     Finding,
     Severity,
 )
+
+logger = logging.getLogger(__name__)
 
 
 class MissingSecurityHeadersAnalyzer(Analyzer):
@@ -159,6 +162,10 @@ class PIILeakDetectionAnalyzer(Analyzer):
                 d["type"] in ("SSN", "Credit card", "Private key", "AWS secret key")
                 for d in detected
             ) else Severity.WARNING
+            logger.warning(
+                "PIILeakDetection: potential sensitive data found in response body: %s",
+                [d["type"] for d in detected],
+            )
             findings.append(Finding(
                 category=self.category,
                 severity=sev,
@@ -189,6 +196,11 @@ class CORSMisconfigAnalyzer(Analyzer):
                 issues.append("Combined with Allow-Credentials: true this is a critical misconfiguration.")
 
         if issues:
+            logger.warning(
+                "CORSMisconfigAnalyzer: overly permissive CORS — allow_origin=%r allow_credentials=%r",
+                acao,
+                ctx.response.headers.get("access-control-allow-credentials", ""),
+            )
             findings.append(Finding(
                 category=self.category,
                 severity=Severity.WARNING,

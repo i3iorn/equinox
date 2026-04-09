@@ -1,10 +1,13 @@
 """Environment management CLI commands."""
 
+import logging
 import sys
 
 import click
 
 from equinox.storage import EnvironmentManager
+
+logger = logging.getLogger(__name__)
 
 
 @click.group()
@@ -48,6 +51,7 @@ def env_create(name, var, description):
     db = get_db()
     manager = EnvironmentManager(db)
     env_id = manager.create_environment(name, variables, description or "")
+    logger.info("Created environment: id=%s name=%r", env_id, name)
     click.echo(f"Environment created with ID: {env_id}")
 
 
@@ -59,6 +63,7 @@ def env_activate(environment_id):
     db = get_db()
     manager = EnvironmentManager(db)
     manager.set_active_environment(environment_id)
+    logger.info("Activated environment id=%s", environment_id)
     click.echo("Environment activated")
 
 
@@ -72,11 +77,13 @@ def env_delete(environment_id, yes):
     manager = EnvironmentManager(db)
     environment = manager.get_environment(environment_id)
     if not environment:
+        logger.error("Environment %s not found for delete", environment_id)
         click.echo(f"Environment {environment_id} not found", err=True)
         sys.exit(1)
     if not yes:
         click.confirm(f"Delete environment '{environment['name']}'?", abort=True)
     manager.delete_environment(environment_id)
+    logger.info("Deleted environment id=%s name=%r", environment_id, environment['name'])
     click.echo("Environment deleted")
 
 
@@ -125,6 +132,7 @@ def env_set_var(environment_id, key, value):
     variables = environment.get("variables", {})
     variables[key] = value
     manager.update_environment(environment_id, variables=variables)
+    logger.info("Set variable %r in environment id=%s", key, environment_id)
     click.echo(f"Variable '{key}' set in environment '{environment['name']}'")
 
 
@@ -148,6 +156,7 @@ def env_remove_var(environment_id, key):
 
     del variables[key]
     manager.update_environment(environment_id, variables=variables)
+    logger.info("Removed variable %r from environment id=%s", key, environment_id)
     click.echo(f"Variable '{key}' removed from environment '{environment['name']}'")
 
 
@@ -188,6 +197,10 @@ def env_import_dotenv(environment_id, file, merge):
     existing = dict(environment.get("variables", {})) if merge else {}
     existing.update(new_vars)
     manager.update_environment(environment_id, variables=existing)
+    logger.info(
+        "Imported %d variable(s) into environment id=%s (merge=%s)",
+        len(new_vars), environment_id, merge,
+    )
 
     click.echo(f"Imported {len(new_vars)} variable(s) into '{environment['name']}':")
     for k, v in sorted(new_vars.items()):
