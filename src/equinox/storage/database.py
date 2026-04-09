@@ -11,6 +11,11 @@ from equinox.core.exceptions import StorageError, ValidationError, DuplicateErro
 
 logger = logging.getLogger(__name__)
 
+__all__ = ["Database"]
+
+# Type alias for SQL parameters — either positional (tuple / list) or named (Mapping).
+_SqlParams = Union[Tuple[Any, ...], List[Any], Mapping[str, Any]]
+
 _CONNECTION_TIMEOUT_SECONDS = 10.0
 
 
@@ -193,12 +198,17 @@ class Database:
         ``journal_mode`` and ``secure_delete`` persist across connections,
         so they only need to be set once per database file.
         """
-        conn = sqlite3.connect(self.db_path, timeout=_CONNECTION_TIMEOUT_SECONDS)
+        try:
+            conn = sqlite3.connect(self.db_path, timeout=_CONNECTION_TIMEOUT_SECONDS)
+        except sqlite3.Error as exc:
+            raise StorageError(f"Cannot open database to configure PRAGMAs: {exc}") from exc
         try:
             logger.debug("Setting database PRAGMAs: journal_mode=WAL, secure_delete=ON")
             conn.execute("PRAGMA journal_mode = WAL")
             conn.execute("PRAGMA secure_delete = ON")
             logger.debug("Database PRAGMAs configured successfully")
+        except sqlite3.Error as exc:
+            raise StorageError(f"Failed to set database PRAGMAs: {exc}") from exc
         finally:
             conn.close()
 
@@ -235,7 +245,7 @@ class Database:
             StorageError: If the persistent connection is unavailable.
         """
         with self.lock:
-            if not hasattr(self, "_conn") or self._conn is None:
+            if self._conn is None:
                 self._conn = self._new_connection()
             yield self._conn
 
@@ -277,7 +287,16 @@ class Database:
                     logger.error("Failed to rollback transaction: %s", rollback_exc, exc_info=False)
                 raise
 
-    def _validate_query(self, query: str, params: Tuple) -> None:
+    def _get_conn(self) -> sqlite3.Connection:
+        """Return the live connection, or raise ``StorageError`` if the database is closed.
+
+        Must be called while ``self.lock`` is held.
+        """
+        if self._conn is None:
+            raise StorageError("Database connection is closed")
+        return self._conn
+
+    def _validate_query(self, query: str, params: _SqlParams) -> None:
         """Validate query and parameters before execution.
 
         Args:
@@ -307,7 +326,7 @@ class Database:
 
         QueryValidator.validate_placeholders(query, params)
 
-    def execute(self, query: str, params: Tuple = ()) -> sqlite3.Cursor:
+    def execute(self, query: str, params: _SqlParams = ()) -> sqlite3.Cursor:
         """Execute a query safely with validation.
 
         Args:
@@ -319,13 +338,15 @@ class Database:
 
         Raises:
             ValidationError: If query/params are invalid
-            StorageError: If execution fails
+            StorageError: If execution fails or the connection is closed
         """
         self._validate_query(query, params)
 
         try:
             with self.lock:
-                return self._conn.execute(query, params)
+                return self._get_conn().execute(query, params)
+        except StorageError:
+            raise
         except sqlite3.IntegrityError as exc:
             logger.error("Integrity error: %s", exc)
             msg = str(exc)
@@ -342,7 +363,7 @@ class Database:
             logger.error("Unexpected error during query execution: %s", exc)
             raise StorageError(f"Query execution failed: {exc}")
 
-    def fetchone(self, query: str, params: Tuple = ()) -> Optional[Dict[str, Any]]:
+    def fetchone(self, query: str, params: _SqlParams = ()) -> Optional[Dict[str, Any]]:
         """Fetch one row safely.
 
         Args:
@@ -354,20 +375,22 @@ class Database:
 
         Raises:
             ValidationError: If query/params are invalid
-            StorageError: If query fails
+            StorageError: If query fails or the connection is closed
         """
         self._validate_query(query, params)
 
         try:
             with self.lock:
-                cursor = self._conn.execute(query, params)
+                cursor = self._get_conn().execute(query, params)
                 row = cursor.fetchone()
                 return dict(row) if row else None
+        except StorageError:
+            raise
         except sqlite3.Error as exc:
             logger.error("Database error in fetchone: %s", exc)
             raise StorageError(f"Failed to fetch row: {exc}")
 
-    def fetchall(self, query: str, params: Tuple = ()) -> List[Dict[str, Any]]:
+    def fetchall(self, query: str, params: _SqlParams = ()) -> List[Dict[str, Any]]:
         """Fetch all rows safely.
 
         Args:
@@ -379,20 +402,22 @@ class Database:
 
         Raises:
             ValidationError: If query/params are invalid
-            StorageError: If query fails
+            StorageError: If query fails or the connection is closed
         """
         self._validate_query(query, params)
 
         try:
             with self.lock:
-                cursor = self._conn.execute(query, params)
+                cursor = self._get_conn().execute(query, params)
                 rows = cursor.fetchall()
                 return [dict(row) for row in rows]
+        except StorageError:
+            raise
         except sqlite3.Error as exc:
             logger.error("Database error in fetchall: %s", exc)
             raise StorageError(f"Failed to fetch rows: {exc}")
 
-    def insert(self, query: str, params: Tuple = ()) -> int:
+    def insert(self, query: str, params: _SqlParams = ()) -> int:
         """Insert a row and return its ID safely.
 
         Args:
@@ -404,7 +429,7 @@ class Database:
 
         Raises:
             ValidationError: If query/params are invalid
-            StorageError: If insert fails
+            StorageError: If insert fails or the connection is closed
         """
         self._validate_query(query, params)
 
@@ -413,8 +438,10 @@ class Database:
 
         try:
             with self.lock:
-                cursor = self._conn.execute(query, params)
+                cursor = self._get_conn().execute(query, params)
                 return cursor.lastrowid
+        except StorageError:
+            raise
         except sqlite3.IntegrityError as exc:
             logger.error("Integrity error during insert: %s", exc)
             msg = str(exc)
@@ -484,7 +511,7 @@ class _TransactionHelper:
         self._conn = conn
 
     @staticmethod
-    def _validate(query: str, params) -> None:
+    def _validate(query: str, params: "_SqlParams") -> None:
         """Validate query and parameters before execution."""
         if not query or not isinstance(query, str):
             raise ValidationError("Query must be a non-empty string")
@@ -492,13 +519,11 @@ class _TransactionHelper:
             raise ValidationError(
                 f"Query exceeds maximum length of {Database.MAX_QUERY_LENGTH}"
             )
-        if isinstance(params, (tuple, list)) and len(params) > Database.MAX_PARAMS:
-            raise ValidationError(f"Too many parameters (max: {Database.MAX_PARAMS})")
-        elif isinstance(params, Mapping) and len(params) > Database.MAX_PARAMS:
+        if len(params) > Database.MAX_PARAMS:
             raise ValidationError(f"Too many parameters (max: {Database.MAX_PARAMS})")
         QueryValidator.validate_placeholders(query, params)
 
-    def execute(self, query: str, params: Tuple = ()) -> sqlite3.Cursor:
+    def execute(self, query: str, params: "_SqlParams" = ()) -> sqlite3.Cursor:
         """Execute a query and return the cursor."""
         self._validate(query, params)
         return self._conn.execute(query, params)
@@ -509,20 +534,20 @@ class _TransactionHelper:
             raise ValidationError("Query must be a non-empty string")
         return self._conn.executemany(query, seq_of_params)
 
-    def fetchone(self, query: str, params: Tuple = ()) -> Optional[Dict[str, Any]]:
+    def fetchone(self, query: str, params: "_SqlParams" = ()) -> Optional[Dict[str, Any]]:
         """Execute a query and return a single row as a dict, or None."""
         self._validate(query, params)
         cursor = self._conn.execute(query, params)
         row = cursor.fetchone()
         return dict(row) if row else None
 
-    def fetchall(self, query: str, params: Tuple = ()) -> List[Dict[str, Any]]:
+    def fetchall(self, query: str, params: "_SqlParams" = ()) -> List[Dict[str, Any]]:
         """Execute a query and return all rows as dicts."""
         self._validate(query, params)
         cursor = self._conn.execute(query, params)
         return [dict(r) for r in cursor.fetchall()]
 
-    def insert(self, query: str, params: Tuple = ()) -> int:
+    def insert(self, query: str, params: "_SqlParams" = ()) -> int:
         """Execute an INSERT and return the last row id."""
         self._validate(query, params)
         if not query.strip().upper().startswith('INSERT'):
