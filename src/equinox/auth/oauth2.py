@@ -3,9 +3,10 @@
 import json
 import time
 import logging
+import uuid
 from datetime import datetime, timedelta, timezone
 from threading import Lock
-from typing import Dict, Any, Optional
+from typing import Any, Dict, Optional
 
 import httpx
 
@@ -15,11 +16,82 @@ from equinox.core.redact import mask_secret
 from equinox.core.secure_storage import SecureStorage
 from equinox.core.audit import get_audit_logger, AuditEventType, AuditLevel
 from equinox.core.time import utc_now
+from equinox.core.validation import Validator
 
 logger = logging.getLogger(__name__)
 
+# ──────────────────────────────────────────────────────────────────────────────
+# Module constants
+# ──────────────────────────────────────────────────────────────────────────────
+
 _MAX_TOKEN_RETRIES = 3
-_DEFAULT_TOKEN_EXPIRY_SECONDS = 3600  # Assume 1-hour lifetime when server omits expires_in
+# Assume a 1-hour lifetime when the server omits the ``expires_in`` field.
+_DEFAULT_TOKEN_EXPIRY_SECONDS = 3600
+
+# Token snapshot — fields whose values are partially redacted for safe display.
+_REDACTABLE_TOKEN_FIELDS: frozenset = frozenset({"access_token", "refresh_token", "id_token"})
+
+# Response headers excluded from the token-response snapshot (may contain secrets).
+_FILTERED_RESPONSE_HEADERS: frozenset = frozenset({"set-cookie"})
+
+# Token preview parameters: show first N + "…" + last M chars when len > MIN.
+_TOKEN_REDACT_PREFIX_LEN: int = 8
+_TOKEN_REDACT_SUFFIX_LEN: int = 4
+_TOKEN_REDACT_MIN_LEN: int = 12
+
+# Maximum raw response text length kept in the token-response snapshot fallback.
+_TOKEN_RESPONSE_RAW_MAX: int = 2000
+
+# Independent connect-timeout cap for token-endpoint requests so that a dead
+# proxy fails fast at TCP level without waiting the full token_timeout.
+_MAX_CONNECT_TIMEOUT: float = 5.0
+
+# Base for the exponential backoff between token-request retries (seconds).
+_RETRY_BACKOFF_BASE: int = 2
+
+# Markers that identify non-retryable "nothing is listening" errors.
+_CONNECTION_REFUSED_MARKERS: tuple = ("10061", "connection refused", "econnrefused")
+
+# Hex-suffix length appended to anonymous (no client_id) storage keys.
+_ANON_KEY_ID_LENGTH: int = 12
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Module-level helpers
+# ──────────────────────────────────────────────────────────────────────────────
+
+def _is_connection_refused(exc: Exception) -> bool:
+    """Return True for ConnectErrors that indicate nothing is listening.
+
+    These errors are structural (the port is closed) and will never succeed
+    on retry, so the retry loop should break immediately.
+
+    Args:
+        exc: Exception raised by httpx during the token request.
+    """
+    if not isinstance(exc, httpx.ConnectError):
+        return False
+    lower = str(exc).lower()
+    return any(marker in lower for marker in _CONNECTION_REFUSED_MARKERS)
+
+
+def _redact_token_value(key: str, value: Any) -> Any:
+    """Return a display-safe preview of *value* when *key* is a known token field.
+
+    Long token strings (> ``_TOKEN_REDACT_MIN_LEN`` chars) are shortened to
+    ``first8chars…last4chars``.  Short values and non-token keys pass through.
+
+    Args:
+        key:   Response body key (e.g. ``"access_token"``).
+        value: Corresponding value from the token endpoint response.
+    """
+    if (
+        key in _REDACTABLE_TOKEN_FIELDS
+        and isinstance(value, str)
+        and len(value) > _TOKEN_REDACT_MIN_LEN
+    ):
+        return value[:_TOKEN_REDACT_PREFIX_LEN] + "…" + value[-_TOKEN_REDACT_SUFFIX_LEN:]
+    return value
 
 
 class OAuth2Auth(AuthStrategy):
@@ -80,8 +152,7 @@ class OAuth2Auth(AuthStrategy):
         elif client_id:
             self.storage_key = f"oauth2_{client_id}"
         else:
-            import uuid
-            self.storage_key = f"oauth2_anonymous_{uuid.uuid4().hex[:12]}"
+            self.storage_key = f"oauth2_anonymous_{uuid.uuid4().hex[:_ANON_KEY_ID_LENGTH]}"
 
         # Prevent concurrent token-refresh races
         self._refresh_lock = Lock()
@@ -267,25 +338,19 @@ class OAuth2Auth(AuthStrategy):
 
     def _capture_token_response(self, response: httpx.Response) -> None:
         """Store a redacted snapshot of the token endpoint response for inspection."""
-        _TOKEN_KEYS = {"access_token", "refresh_token", "id_token"}
         try:
             body = response.json()
-            redacted_body = {}
-            for k, v in body.items():
-                if k in _TOKEN_KEYS and isinstance(v, str) and len(v) > 12:
-                    redacted_body[k] = v[:8] + "…" + v[-4:]
-                else:
-                    redacted_body[k] = v
+            redacted_body = {k: _redact_token_value(k, v) for k, v in body.items()}
         except Exception:
             try:
-                redacted_body = {"_raw": response.text[:2000] if response.text else ""}
+                redacted_body = {"_raw": response.text[:_TOKEN_RESPONSE_RAW_MAX] if response.text else ""}
             except Exception:
                 redacted_body = {}
 
         try:
             resp_headers = {
                 k: v for k, v in response.headers.items()
-                if k.lower() not in ("set-cookie",)
+                if k.lower() not in _FILTERED_RESPONSE_HEADERS
             }
         except Exception:
             resp_headers = {}
@@ -358,7 +423,6 @@ class OAuth2Auth(AuthStrategy):
         # Validate token URL with full structural + SSRF checks (scheme,
         # private-IP, metadata-endpoint blocking).  At send-time the URL is
         # fully resolved so validate_resolved_url is appropriate.
-        from equinox.core.validation import Validator
         try:
             Validator.validate_resolved_url(self.token_url)
         except Exception as exc:
@@ -376,7 +440,7 @@ class OAuth2Auth(AuthStrategy):
                     timeout=httpx.Timeout(
                         # Limit connect time independently — a dead proxy should
                         # fail fast at TCP level without waiting the full token_timeout.
-                        connect=min(self.token_timeout, 5.0),
+                        connect=min(self.token_timeout, _MAX_CONNECT_TIMEOUT),
                         read=self.token_timeout,
                         write=self.token_timeout,
                         pool=self.token_timeout,
@@ -404,12 +468,7 @@ class OAuth2Auth(AuthStrategy):
                 last_exc = transient_exc
                 # ECONNREFUSED / WinError 10061 — nothing is listening on that
                 # port.  This is never transient; retrying only wastes time.
-                exc_str = str(transient_exc).lower()
-                is_refused = (
-                    isinstance(transient_exc, httpx.ConnectError)
-                    and ("10061" in exc_str or "connection refused" in exc_str)
-                )
-                if is_refused:
+                if _is_connection_refused(transient_exc):
                     logger.warning(
                         "Token request: connection refused on attempt %d — skipping retries"
                         " (proxy=%s, url=%s): %s",
@@ -418,7 +477,7 @@ class OAuth2Auth(AuthStrategy):
                     )
                     break
                 if attempt < _MAX_TOKEN_RETRIES - 1:
-                    wait_seconds = 2 ** attempt  # 1s, 2s
+                    wait_seconds = _RETRY_BACKOFF_BASE ** attempt  # 1 s, 2 s, …
                     logger.warning(
                         "Token request failed (attempt %d/%d), retrying in %ds"
                         " (proxy=%s, url=%s): %s",
