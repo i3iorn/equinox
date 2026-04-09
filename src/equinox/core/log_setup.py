@@ -18,8 +18,7 @@ import sys
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Optional, Dict, Any
-
+from typing import Optional, Dict, Any, Protocol
 
 # ──────────────────────────────────────────────────────────────────────────────
 # Global application correlation ID
@@ -240,3 +239,18 @@ def get_log_file() -> Optional[Path]:
             return Path(handler.baseFilename)
     return None
 
+
+class AuditLoggerLike(Protocol):
+    """Structural interface required from the optional audit logger.
+
+    Only the single method called by RateLimiter is declared here. This keeps
+    the dependency lightweight and avoids importing the concrete AuditLogger,
+    which prevents circular imports.
+    """
+
+    def log_security_violation(
+        self,
+        violation_type: str,
+        details: dict,
+        user: Optional[str] = None,
+    ) -> None: ...
