@@ -110,7 +110,7 @@ def _safe_serialize(doc: Dict[str, Any]) -> str:
     Returns:
         A valid JSON string that fits within MAX_LOG_PAYLOAD_SIZE bytes.
     """
-    result = json.dumps(doc, ensure_ascii=False, default=str)
+    result = json.dumps(doc, ensure_ascii=True, default=str)
     if len(result) > MAX_LOG_PAYLOAD_SIZE:
         cutoff = MAX_LOG_PAYLOAD_SIZE - len(_TRUNCATION_JSON_SUFFIX)
         result = result[:cutoff] + _TRUNCATION_JSON_SUFFIX

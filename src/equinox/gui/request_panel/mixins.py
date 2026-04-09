@@ -277,11 +277,17 @@ class _RequestSendMixin:
         self._set_sending_state(False)
 
         if isinstance(result, RichError):
+            # Use worker.request — the request the worker actually processed.
+            # self.current_request may have been replaced if the user navigated
+            # to a history entry or a different collection request while the
+            # worker was in-flight, which would cause wrong url/method in the
+            # log, wrong history entry, and wrong recommender probe.
+            _sent_request = worker.request
             logger.error(
                 "Request failed: %s", result.message,
                 extra={"error_type": result.exc_type,
-                       "url": getattr(self.current_request, "url", ""),
-                       "method": getattr(self.current_request, "method", "")},
+                       "url": getattr(_sent_request, "url", ""),
+                       "method": getattr(_sent_request, "method", "")},
             )
             self._status_message(f"Error: {result.message}", 8000)
             # Rich dialog: show type + message + hint about log file
@@ -295,14 +301,14 @@ class _RequestSendMixin:
             )
             log_panel = self._logging_panel
             if log_panel:
-                log_panel.log_error(self.current_request, result.message)
-            _save_history_safe(self.db, self.current_request, error=result.message)
+                log_panel.log_error(_sent_request, result.message)
+            _save_history_safe(self.db, _sent_request, error=result.message)
             self._persist_inherited_auth_tokens()
             # Try to provide helpful hints from local history using Recommender
             try:
                 from equinox.intelligence import Recommender
                 rec = Recommender(self.db)
-                probe = {"method": getattr(self.current_request, "method", ""), "url": getattr(self.current_request, "url", "")}
+                probe = {"method": getattr(_sent_request, "method", ""), "url": getattr(_sent_request, "url", "")}
                 suggestions = rec.generate_suggestions(probe, top_n=5)
                 if suggestions:
                             # Convert recommender suggestions into Response Intelligence Findings
@@ -367,13 +373,18 @@ class _RequestSendMixin:
         else:
             response: Response = result
             elapsed_ms = int(response.elapsed * 1000)
+            # response.request is the actual request the worker sent —
+            # use it in preference to self.current_request which may have
+            # been replaced by a history/collection entry the user navigated
+            # to while the worker was still in-flight.
+            _sent_request = response.request
             logger.info(
-                "%s %s → %d %s (%d ms)",
-                response.request.method, response.request.url,
+                "%s %s -> %d %s (%d ms)",
+                _sent_request.method, _sent_request.url,
                 response.status_code, response.reason, elapsed_ms,
                 extra={
-                    "method": response.request.method,
-                    "url": response.request.url,
+                    "method": _sent_request.method,
+                    "url": _sent_request.url,
                     "status": response.status_code,
                     "elapsed_ms": elapsed_ms,
                     "size_bytes": response.size,
@@ -389,15 +400,15 @@ class _RequestSendMixin:
             self._refresh_url_completer()
             log_panel = self._logging_panel
             if log_panel:
-                log_panel.log_response(self.current_request, response)
-            _save_history_safe(self.db, self.current_request, response)
+                log_panel.log_response(_sent_request, response)
+            _save_history_safe(self.db, _sent_request, response)
 
             # If response indicates failure (HTTP 4xx/5xx), offer recommender hints
             try:
                 if response.status_code >= 400:
                     from equinox.intelligence import Recommender
                     rec = Recommender(self.db)
-                    probe = {"method": getattr(self.current_request, "method", ""), "url": getattr(self.current_request, "url", "")}
+                    probe = {"method": getattr(_sent_request, "method", ""), "url": getattr(_sent_request, "url", "")}
                     suggestions = rec.generate_suggestions(probe, top_n=5)
                     if suggestions:
                         # Convert recommender suggestions into Response Intelligence Findings
