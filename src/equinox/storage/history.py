@@ -1,10 +1,13 @@
 """Request history management"""
 
-import logging
+from __future__ import annotations
+
 import hashlib
+import logging
 import re
-from typing import List, Dict, Any, Optional, Tuple
 from collections import namedtuple
+from datetime import datetime as _dt, timezone as _tz
+from typing import Any, Dict, List, Optional, Tuple
 
 from equinox.core.redact import redact_headers, redact_url
 from equinox.storage.database import Database
@@ -87,13 +90,7 @@ class HistoryManager:
 
         response_fields = self._extract_response_fields(response)
         if response_fields:
-            status_code, reason, elapsed, response_headers_json, response_body = (
-                response_fields.status_code,
-                response_fields.reason,
-                response_fields.elapsed,
-                response_fields.headers_json,
-                response_fields.body,
-            )
+            status_code, reason, elapsed, response_headers_json, response_body = response_fields
         else:
             status_code = reason = elapsed = response_headers_json = response_body = None
 
@@ -133,9 +130,10 @@ class HistoryManager:
                 logger.debug("Failed to index history row %s: %s", history_id, idx_exc)
             return history_id
 
+        except (ValidationError, SecurityError, StorageError):
+            raise
         except Exception as insert_exc:
             logger.error("Failed to save history entry: %s", insert_exc)
-            # Preserve original traceback context for easier debugging
             raise StorageError(f"Failed to save history: {insert_exc}") from insert_exc
 
     def delete_history(self, history_id: int) -> None:
@@ -172,25 +170,25 @@ class HistoryManager:
             if days > 36500:
                 raise ValidationError("Days value too large (max 36500)")
 
-            try:
-                with self.db.transaction() as tx:
+        try:
+            with self.db.transaction() as tx:
+                if days is not None:
                     cursor = tx.execute(
                         "DELETE FROM history"
                         " WHERE executed_at < datetime('now', '-' || ? || ' days')",
                         (days,),
                     )
-                    count = cursor.rowcount
-                logger.warning("Deleted %d history entries older than %d days", count, days)
-            except Exception as exc:
-                raise StorageError(f"Failed to clear old history: {exc}")
-        else:
-            try:
-                with self.db.transaction() as tx:
+                    logger.warning(
+                        "Deleted %d history entries older than %d days",
+                        cursor.rowcount, days,
+                    )
+                else:
                     cursor = tx.execute("DELETE FROM history")
-                    count = cursor.rowcount
-                logger.warning("Cleared all %d history entries", count)
-            except Exception as exc:
-                raise StorageError(f"Failed to clear history: {exc}")
+                    logger.warning("Cleared all %d history entries", cursor.rowcount)
+        except StorageError:
+            raise
+        except Exception as exc:
+            raise StorageError(f"Failed to clear history: {exc}") from exc
 
     # ── Public read API ───────────────────────────────────────────────────────
 
@@ -374,18 +372,12 @@ class HistoryManager:
             "FROM history"
         )
 
-        if row:
-            return {
-                "total":      row.get("total") or 0,
-                "successful": row.get("successful") or 0,
-                "failed":     row.get("failed") or 0,
-            }
-        else:
-            return {
-                "total": 0,
-                "successful": 0,
-                "failed": 0,
-            }
+        row = row or {}
+        return {
+            "total":      row.get("total") or 0,
+            "successful": row.get("successful") or 0,
+            "failed":     row.get("failed") or 0,
+        }
 
     # ── save_history helpers ──────────────────────────────────────────────────
 
@@ -571,7 +563,6 @@ class HistoryManager:
         # (Python < 3.11 doesn't recognise the Z suffix natively).
         normalised = timestamp.rstrip("Z")
         try:
-            from datetime import datetime as _dt
             _dt.fromisoformat(normalised)
         except ValueError:
             raise ValidationError(
@@ -777,13 +768,7 @@ class HistoryManager:
             if len(path_segments) > MAX_INDEX_PATH_SEGMENTS:
                 path_segments = path_segments[:MAX_INDEX_PATH_SEGMENTS]
             if isinstance(query_params, dict) and len(query_params) > MAX_INDEX_QUERY_PARAMS:
-                # Keep only the first N keys deterministically
-                limited = {}
-                for i, (k, v) in enumerate(query_params.items()):
-                    if i >= MAX_INDEX_QUERY_PARAMS:
-                        break
-                    limited[k] = v
-                query_params = limited
+                query_params = dict(list(query_params.items())[:MAX_INDEX_QUERY_PARAMS])
 
             # Body hash for quick comparisons. Prefer raw response bytes when
             # available (keeps hashing deterministic even when stored body is truncated).
@@ -811,8 +796,7 @@ class HistoryManager:
             # Use a Python timestamp rather than querying the just-inserted row
             # back from the DB — avoids a redundant round-trip.  The value will
             # be within milliseconds of the CURRENT_TIMESTAMP stored in history.
-            from datetime import datetime as _dt
-            executed_at = _dt.utcnow().strftime("%Y-%m-%d %H:%M:%S")
+            executed_at = _dt.now(_tz.utc).strftime("%Y-%m-%d %H:%M:%S")
 
             self.db.insert(
                 """
@@ -824,10 +808,8 @@ class HistoryManager:
                     history_id,
                     method,
                     normalized_url,
-                    # Serialize path_segments / query_params using safe dumps
-                    # with conservative size limits to avoid bloating the index.
-                    (lambda obj: safe_json_dumps(obj, max_len=4096))(path_segments),
-                    (lambda obj: safe_json_dumps(obj, max_len=8192))(query_params),
+                    safe_json_dumps(path_segments, max_len=4096),
+                    safe_json_dumps(query_params, max_len=8192),
                     body_hash,
                     response_success,
                     executed_at,
@@ -839,4 +821,3 @@ class HistoryManager:
 
 
 
-# module helpers moved to equinox.storage.utils
