@@ -1,5 +1,7 @@
 """Environment management dialog — full variable CRUD."""
 
+from pathlib import Path
+
 from PyQt6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QSplitter,
     QListWidget, QListWidgetItem, QPushButton,
@@ -12,6 +14,7 @@ from PyQt6.QtGui import QColor, QFont
 
 from typing import Optional
 
+from equinox.core.dotenv import parse_dotenv as _parse_dotenv
 from equinox.gui.theme import Colors
 from equinox.storage import Database, EnvironmentManager
 
@@ -41,7 +44,7 @@ class EnvironmentDialog(QDialog):
 
     # ── UI ────────────────────────────────────────────────────────────
 
-    def _init_ui(self):
+    def _init_ui(self) -> None:
         root = QVBoxLayout(self)
         root.setSpacing(8)
 
@@ -84,17 +87,20 @@ class EnvironmentDialog(QDialog):
         rlay = QVBoxLayout(right)
         rlay.setContentsMargins(4, 0, 0, 0)
 
-        self.var_header = QLabel(f"<b>Variables</b>  <span style='color:{Colors.FG_MUTED};'>(select an environment)</span>")
+        self.var_header = QLabel(
+            f"<b>Variables</b>  <span style='color:{Colors.FG_MUTED};'>(select an environment)</span>"
+        )
         rlay.addWidget(self.var_header)
 
         self.var_table = QTableWidget()
         self.var_table.setColumnCount(3)
         self.var_table.setHorizontalHeaderLabels(["Variable", "Value", "Secret"])
-        self.var_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Interactive)
-        self.var_table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
-        self.var_table.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeMode.Fixed)
+        hdr = self.var_table.horizontalHeader()
+        hdr.setSectionResizeMode(0, QHeaderView.ResizeMode.Interactive)
+        hdr.setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
+        hdr.setSectionResizeMode(2, QHeaderView.ResizeMode.Fixed)
         self.var_table.setColumnWidth(2, 58)
-        self.var_table.horizontalHeader().setDefaultSectionSize(180)
+        hdr.setDefaultSectionSize(180)
         self.var_table.verticalHeader().setVisible(False)
         self.var_table.setAlternatingRowColors(True)
         self.var_table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
@@ -103,11 +109,11 @@ class EnvironmentDialog(QDialog):
         rlay.addWidget(self.var_table, 1)
 
         var_btns = QHBoxLayout()
-        self.add_var_btn    = QPushButton("Add Variable")
-        self.remove_var_btn = QPushButton("Remove Selected")
+        self.add_var_btn       = QPushButton("Add Variable")
+        self.remove_var_btn    = QPushButton("Remove Selected")
         self.import_dotenv_btn = QPushButton("Import .env…")
         self.import_dotenv_btn.setToolTip("Load variables from a .env file (merged with existing)")
-        self.save_vars_btn  = QPushButton("💾  Save Variables")
+        self.save_vars_btn     = QPushButton("💾  Save Variables")
         self.save_vars_btn.setStyleSheet("font-weight: bold;")
         for b in (self.add_var_btn, self.remove_var_btn, self.import_dotenv_btn, self.save_vars_btn):
             b.setEnabled(False)
@@ -133,37 +139,41 @@ class EnvironmentDialog(QDialog):
 
     # ── Environment list actions ──────────────────────────────────────
 
-    def _refresh_environments(self, select_id: Optional[int] = None):
+    def _refresh_environments(self, select_id: Optional[int] = None) -> None:
         self.env_list.blockSignals(True)
         self.env_list.clear()
         envs = self.env_manager.list_environments()
+
+        bold_font = QFont()
+        bold_font.setBold(True)
+
         for env in envs:
-            name = env["name"]
+            name   = env["name"]
             active = bool(env.get("is_active"))
-            item = QListWidgetItem(("✓  " if active else "     ") + name)
+            item   = QListWidgetItem(("✓  " if active else "     ") + name)
             item.setData(Qt.ItemDataRole.UserRole, env["id"])
             if active:
                 item.setForeground(QColor(Colors.GREEN))
-                item.setFont(_bold_font())
+                item.setFont(bold_font)
             self.env_list.addItem(item)
             if env["id"] == select_id:
                 self.env_list.setCurrentItem(item)
+
         self.env_list.blockSignals(False)
         if select_id is None and self.env_list.count():
             self.env_list.setCurrentRow(0)
         else:
             self._on_env_selected()
 
-    def _on_env_selected(self):
-        items = self.env_list.selectedItems()
+    def _on_env_selected(self) -> None:
+        items   = self.env_list.selectedItems()
         has_sel = bool(items)
-        self.rename_btn.setEnabled(has_sel)
-        self.activate_btn.setEnabled(has_sel)
-        self.delete_btn.setEnabled(has_sel)
-        self.add_var_btn.setEnabled(has_sel)
-        self.remove_var_btn.setEnabled(has_sel)
-        self.import_dotenv_btn.setEnabled(has_sel)
-        self.save_vars_btn.setEnabled(has_sel)
+        for btn in (
+            self.rename_btn, self.activate_btn, self.delete_btn,
+            self.add_var_btn, self.remove_var_btn,
+            self.import_dotenv_btn, self.save_vars_btn,
+        ):
+            btn.setEnabled(has_sel)
         self.var_table.setEnabled(has_sel)
 
         if not has_sel:
@@ -184,58 +194,64 @@ class EnvironmentDialog(QDialog):
                 QMessageBox.StandardButton.Cancel,
             )
             if ans == QMessageBox.StandardButton.Cancel:
-                # Re-select the old item
+                # Re-select the previously active environment
+                self.env_list.blockSignals(True)
                 for i in range(self.env_list.count()):
                     if self.env_list.item(i).data(Qt.ItemDataRole.UserRole) == self._current_env_id:
-                        self.env_list.blockSignals(True)
                         self.env_list.setCurrentRow(i)
-                        self.env_list.blockSignals(False)
-                        return
-            elif ans == QMessageBox.StandardButton.Save:
+                        break
+                self.env_list.blockSignals(False)
+                return
+            if ans == QMessageBox.StandardButton.Save:
                 self._save_variables()
 
         self._current_env_id = env_id
         self._dirty = False
         self._load_variables(env_id)
 
-    def _load_variables(self, env_id: int):
+    def _load_variables(self, env_id: int) -> None:
         env = self.env_manager.get_environment(env_id)
         if not env:
             return
-        variables = env.get("variables", {})
+        variables   = env.get("variables", {})
         secret_keys = set(env.get("secret_keys") or [])
-        name = env["name"]
-        active_tag = f" <span style='color:{Colors.GREEN};'>(active)</span>" if env.get("is_active") else ""
+        name        = env["name"]
+        active_tag  = (
+            f" <span style='color:{Colors.GREEN};'>(active)</span>"
+            if env.get("is_active") else ""
+        )
         self.var_header.setText(
             f"<b>Variables — {name}</b>{active_tag}"
             f"  <span style='color:{Colors.FG_MUTED};'>"
             f"{len(variables)} variable(s)</span>"
         )
         self.var_table.blockSignals(True)
-        self.var_table.setRowCount(0)
-        for key, value in variables.items():
-            self._append_var_row(key, str(value), secret=key in secret_keys)
-        self.var_table.blockSignals(False)
+        self.var_table.setUpdatesEnabled(False)
+        try:
+            self.var_table.setRowCount(0)
+            for key, value in variables.items():
+                self._append_var_row(key, str(value), secret=key in secret_keys)
+        finally:
+            self.var_table.setUpdatesEnabled(True)
+            self.var_table.blockSignals(False)
         self._dirty = False
         self._update_save_btn()
 
-    def _on_var_changed(self, _item):
+    def _on_var_changed(self, _item) -> None:
         self._dirty = True
         self._update_save_btn()
 
-    def _update_save_btn(self):
-        self.save_vars_btn.setStyleSheet(
-            "font-weight: bold; color: #9a6700;" if self._dirty
-            else "font-weight: bold;"
-        )
-        self.save_vars_btn.setText(
-            "💾  Save Variables *" if self._dirty else "💾  Save Variables"
-        )
+    def _update_save_btn(self) -> None:
+        if self._dirty:
+            self.save_vars_btn.setStyleSheet("font-weight: bold; color: #9a6700;")
+            self.save_vars_btn.setText("💾  Save Variables *")
+        else:
+            self.save_vars_btn.setStyleSheet("font-weight: bold;")
+            self.save_vars_btn.setText("💾  Save Variables")
 
     # ── Variable table helpers ────────────────────────────────────────
 
-    def _append_var_row(self, key: str = "", value: str = "", secret: bool = False):
-        from PyQt6.QtWidgets import QCheckBox
+    def _append_var_row(self, key: str = "", value: str = "", secret: bool = False) -> None:
         row = self.var_table.rowCount()
         self.var_table.insertRow(row)
         self.var_table.setItem(row, 0, QTableWidgetItem(key))
@@ -246,7 +262,7 @@ class EnvironmentDialog(QDialog):
         secret_item.setToolTip("Mark as secret — value will be masked in other views")
         self.var_table.setItem(row, 2, secret_item)
 
-    def _add_variable_row(self):
+    def _add_variable_row(self) -> None:
         if self._current_env_id is None:
             return
         self.var_table.blockSignals(True)
@@ -258,7 +274,7 @@ class EnvironmentDialog(QDialog):
         self._dirty = True
         self._update_save_btn()
 
-    def _remove_selected_variable(self):
+    def _remove_selected_variable(self) -> None:
         rows = sorted(
             {i.row() for i in self.var_table.selectedItems()}, reverse=True
         )
@@ -272,20 +288,20 @@ class EnvironmentDialog(QDialog):
         self._dirty = True
         self._update_save_btn()
 
-    def _save_variables(self):
+    def _save_variables(self) -> None:
         if self._current_env_id is None:
             return
-        variables: dict[str, str] = {}
-        secret_keys: list[str] = []
+        variables:   dict[str, str] = {}
+        secret_keys: list[str]      = []
         errors = []
         for row in range(self.var_table.rowCount()):
             k_item = self.var_table.item(row, 0)
             v_item = self.var_table.item(row, 1)
             s_item = self.var_table.item(row, 2)
             key   = k_item.text().strip() if k_item else ""
-            value = v_item.text() if v_item else ""
+            value = v_item.text()         if v_item else ""
             if not key:
-                continue   # skip blank key rows
+                continue   # skip blank-key rows
             if key in variables:
                 errors.append(f"Duplicate key: '{key}'")
             else:
@@ -314,7 +330,7 @@ class EnvironmentDialog(QDialog):
 
     # ── Environment management ────────────────────────────────────────
 
-    def _create_environment(self):
+    def _create_environment(self) -> None:
         name, ok = QInputDialog.getText(self, "New Environment", "Environment name:")
         if not ok or not name.strip():
             return
@@ -325,7 +341,7 @@ class EnvironmentDialog(QDialog):
         except Exception as exc:
             QMessageBox.critical(self, "Error", f"Failed to create environment: {exc}")
 
-    def _rename_environment(self, _item=None):
+    def _rename_environment(self, _item=None) -> None:
         items = self.env_list.selectedItems()
         if not items:
             return
@@ -343,7 +359,7 @@ class EnvironmentDialog(QDialog):
         except Exception as exc:
             QMessageBox.critical(self, "Error", f"Failed to rename: {exc}")
 
-    def _activate_environment(self):
+    def _activate_environment(self) -> None:
         items = self.env_list.selectedItems()
         if not items:
             return
@@ -356,7 +372,7 @@ class EnvironmentDialog(QDialog):
         except Exception as exc:
             QMessageBox.critical(self, "Error", f"Failed to activate: {exc}")
 
-    def _delete_environment(self):
+    def _delete_environment(self) -> None:
         items = self.env_list.selectedItems()
         if not items:
             return
@@ -389,39 +405,42 @@ class EnvironmentDialog(QDialog):
         if not path:
             return
         try:
-            from pathlib import Path
-            text = Path(path).read_text(encoding="utf-8", errors="replace")
-            new_vars = _parse_dotenv(text)
+            new_vars = _parse_dotenv(Path(path).read_text(encoding="utf-8", errors="replace"))
         except Exception as exc:
             QMessageBox.critical(self, "Import Error", f"Could not read file:\n{exc}")
             return
 
         if not new_vars:
-            QMessageBox.information(self, "Import .env",
-                "No KEY=VALUE pairs found in the selected file.")
+            QMessageBox.information(
+                self, "Import .env",
+                "No KEY=VALUE pairs found in the selected file."
+            )
             return
 
-        # Merge into the table (update existing keys, append new ones)
-        self.var_table.blockSignals(True)
-        existing_keys = {}
+        # Build an index of existing rows by key for O(1) lookup
+        existing_keys: dict[str, int] = {}
         for r in range(self.var_table.rowCount()):
             k_item = self.var_table.item(r, 0)
             if k_item:
                 existing_keys[k_item.text()] = r
 
+        self.var_table.blockSignals(True)
+        self.var_table.setUpdatesEnabled(False)
         added = updated = 0
-        for key, value in new_vars.items():
-            if key in existing_keys:
-                row = existing_keys[key]
-                v_item = self.var_table.item(row, 1)
-                if v_item:
-                    v_item.setText(value)
-                updated += 1
-            else:
-                self._append_var_row(key, value)
-                added += 1
+        try:
+            for key, value in new_vars.items():
+                if key in existing_keys:
+                    v_item = self.var_table.item(existing_keys[key], 1)
+                    if v_item:
+                        v_item.setText(value)
+                    updated += 1
+                else:
+                    self._append_var_row(key, value)
+                    added += 1
+        finally:
+            self.var_table.setUpdatesEnabled(True)
+            self.var_table.blockSignals(False)
 
-        self.var_table.blockSignals(False)
         self._dirty = True
         self._update_save_btn()
         QMessageBox.information(
@@ -430,7 +449,7 @@ class EnvironmentDialog(QDialog):
             "Click 'Save Variables' to persist the changes."
         )
 
-    def _on_close(self):
+    def _on_close(self) -> None:
         if self._dirty:
             ans = QMessageBox.question(
                 self, "Unsaved Changes",
@@ -445,11 +464,3 @@ class EnvironmentDialog(QDialog):
                 self._save_variables()
         self.accept()
 
-
-from equinox.core.dotenv import parse_dotenv as _parse_dotenv  # noqa: E402
-
-
-def _bold_font() -> QFont:
-    f = QFont()
-    f.setBold(True)
-    return f
