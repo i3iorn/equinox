@@ -10,15 +10,14 @@ Supports **Light**, **Dark**, and **System** (auto-detect) modes.
 from __future__ import annotations
 
 import sys
-from typing import Dict
 
 from PyQt6.QtCore import QSettings
-from PyQt6.QtGui import QFont, QPalette, QColor
-from PyQt6.QtWidgets import QApplication, QStyleFactory
+from PyQt6.QtGui import QFont, QPalette
+from PyQt6.QtWidgets import QApplication
 
 # ── Colour palettes ──────────────────────────────────────────────────────────
 
-_LIGHT: Dict[str, str] = {
+_LIGHT: dict[str, str] = {
     # Status / method badges
     "GREEN":      "#1a7f37",
     "AMBER":      "#9a6700",
@@ -46,7 +45,7 @@ _LIGHT: Dict[str, str] = {
     "SEND_HOVER": "#0860ca",
 }
 
-_DARK: Dict[str, str] = {
+_DARK: dict[str, str] = {
     # Status / method badges — muted but still readable on dark backgrounds
     "GREEN":      "#2da44e",
     "AMBER":      "#b8860b",
@@ -101,7 +100,7 @@ class _ColorProxy:
         return _active["BLUE"]
 
     @property
-    def METHOD(self) -> Dict[str, str]:
+    def METHOD(self) -> dict[str, str]:
         p = _active
         return {
             "GET":     p["GREEN"],
@@ -122,8 +121,19 @@ class _ColorProxy:
 
 Colors = _ColorProxy()
 
+__all__ = [
+    "Colors",
+    "apply_theme",
+    "get_font_size", "set_font_size",
+    "get_mono_font", "get_ui_font",
+    "get_theme_mode", "set_theme_mode",
+    "is_dark",
+    "THEME_SYSTEM", "THEME_LIGHT", "THEME_DARK", "THEME_MODES", "THEME_LABELS",
+    "DEFAULT_FONT_SIZE", "DEFAULT_MONO_SIZE", "MIN_FONT_SIZE", "MAX_FONT_SIZE",
+]
+
 # The active palette dict — switched by apply_theme()
-_active: Dict[str, str] = dict(_LIGHT)
+_active: dict[str, str] = dict(_LIGHT)
 
 
 # ── Theme mode constants ─────────────────────────────────────────────────────
@@ -203,19 +213,18 @@ def _system_is_dark() -> bool:
     if sys.platform == "win32":
         try:
             import winreg
-            key = winreg.OpenKey(
+            with winreg.OpenKey(
                 winreg.HKEY_CURRENT_USER,
                 r"Software\Microsoft\Windows\CurrentVersion\Themes\Personalize",
-            )
-            val, _ = winreg.QueryValueEx(key, "AppsUseLightTheme")
-            winreg.CloseKey(key)
+            ) as key:
+                val, _ = winreg.QueryValueEx(key, "AppsUseLightTheme")
             return val == 0
         except Exception:
             pass
 
     # Fallback: Qt palette luminance check
     app = QApplication.instance()
-    if app is not None:
+    if isinstance(app, QApplication):
         palette = app.palette()
         window_color = palette.color(QPalette.ColorRole.Window)
         return window_color.lightnessF() < 0.5
@@ -554,12 +563,24 @@ def _build_stylesheet(base_pt: int) -> str:
 
 # ── Public API ───────────────────────────────────────────────────────────────
 
+# Stylesheet cache keyed by (is_dark, base_pt).
+# _build_stylesheet produces a ~450-line f-string that Qt re-parses in full
+# on every setStyleSheet() call.  Caching avoids redundant work when the
+# theme is re-applied without any settings change (e.g. on window creation).
+# The cache has at most 2 × (MAX_FONT_SIZE − MIN_FONT_SIZE + 1) ≈ 30 entries.
+_ss_cache: dict[tuple[bool, int], str] = {}
+
+
 def apply_theme(app: QApplication | None = None) -> None:
     """(Re-)apply the global stylesheet to the running QApplication.
 
     Resolves the effective palette (light/dark/system), updates the
     ``Colors`` proxy, sets the application font, and installs the
     generated stylesheet.
+
+    The stylesheet string is cached by ``(is_dark, base_pt)`` so repeated
+    calls with unchanged settings avoid the cost of rebuilding and re-parsing
+    a ~450-line QSS document.
     """
     global _active
 
@@ -569,9 +590,14 @@ def apply_theme(app: QApplication | None = None) -> None:
         return
 
     # Resolve effective palette
-    _active = dict(_DARK if _resolve_dark() else _LIGHT)
+    dark = _resolve_dark()
+    _active = dict(_DARK if dark else _LIGHT)
 
     base_pt = get_font_size()
     app.setFont(get_ui_font(base_pt))
-    app.setStyleSheet(_build_stylesheet(base_pt))
+
+    cache_key = (dark, base_pt)
+    if cache_key not in _ss_cache:
+        _ss_cache[cache_key] = _build_stylesheet(base_pt)
+    app.setStyleSheet(_ss_cache[cache_key])
 
