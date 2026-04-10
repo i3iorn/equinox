@@ -1,4 +1,5 @@
 """Main window for Equinox GUI"""
+from __future__ import annotations
 
 import json
 import logging
@@ -12,6 +13,7 @@ from typing import Optional
 from PyQt6.QtCore import Qt, QTimer, QSettings, QByteArray
 from PyQt6.QtGui import QAction, QKeySequence
 from PyQt6.QtWidgets import (
+    QApplication,
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QSplitter,
     QTabWidget, QStatusBar, QToolButton, QMenu,
     QMessageBox, QFileDialog, QInputDialog,
@@ -136,6 +138,20 @@ class MainWindow(QMainWindow):
     def closeEvent(self, event) -> None:  # type: ignore[override]
         logger.info("MainWindow closeEvent triggered - autosaving and persisting layout")
         self.request_panel.autosave_current()
+        # Stop the intelligence worker thread gracefully before the window is
+        # destroyed.  Skipping this can cause a use-after-free crash on some
+        # platforms when the thread emits finished after Qt has torn down the
+        # window's child objects.
+        if self._intelligence_worker is not None:
+            try:
+                self._intelligence_worker.quit()
+                if not self._intelligence_worker.wait(500):
+                    logger.debug("Intelligence worker did not finish in time; terminating")
+                    self._intelligence_worker.terminate()
+                    self._intelligence_worker.wait(200)
+            except Exception:
+                logger.debug("Error stopping intelligence worker on close", exc_info=True)
+            self._intelligence_worker = None
         self._layout_save_timer.stop()  # cancel any pending debounced write
         self._save_layout()
         logger.info("MainWindow closed successfully")
@@ -221,8 +237,16 @@ class MainWindow(QMainWindow):
         factory = factories.get(index)
         if factory is None:
             return
+        # Mark as initialized AFTER factory() succeeds so a failing import
+        # doesn't permanently lock the tab into a broken placeholder state —
+        # the user can click away and back to retry.
+        try:
+            panel = factory()
+        except Exception:
+            logger.exception("Failed to initialize left panel index=%d (%s)",
+                             index, self._left_tabs.tabText(index))
+            return
         self._tabs_initialized.add(index)
-        panel = factory()
         # Swap placeholder for the real panel without retriggering currentChanged.
         label = self._left_tabs.tabText(index)
         self._left_tabs.blockSignals(True)
@@ -284,18 +308,28 @@ class MainWindow(QMainWindow):
         rp.response_received.connect(self.response_panel.display_response)
         rp.response_received.connect(self._on_response_received)
         rp.response_received.connect(self._run_intelligence_analysis)
-        # Refresh lazy side-panels after each response (guard for uninitialized panels)
+        # Refresh lazy side-panels after each response.  Use _safe_refresh so
+        # an error in one panel's refresh does not suppress the other's.
         rp.response_received.connect(
-            lambda _r: self.cookies_panel.refresh() if self.cookies_panel else None
+            lambda _r: self._safe_refresh(self.cookies_panel)
         )
         rp.response_received.connect(
-            lambda _r: self.history_panel.refresh() if self.history_panel else None
+            lambda _r: self._safe_refresh(self.history_panel)
         )
 
         # Connect splitter moved signals to save layout in real-time
         self._main_splitter.splitterMoved.connect(self._on_splitter_moved)
         self._req_resp_splitter.splitterMoved.connect(self._on_splitter_moved)
         logger.debug("Connected splitter movement signals for real-time layout saving")
+
+    def _safe_refresh(self, panel: object) -> None:
+        """Call ``panel.refresh()`` if the panel exists, swallowing any error."""
+        if panel is None:
+            return
+        try:
+            panel.refresh()  # type: ignore[union-attr]
+        except Exception:
+            logger.debug("Panel refresh failed for %r", panel, exc_info=True)
 
     def _on_splitter_moved(self, pos: int, index: int) -> None:
         """Handle splitter movement — debounced to avoid per-pixel disk flushes."""
@@ -338,8 +372,10 @@ class MainWindow(QMainWindow):
         """Load a request into the editor then fire it immediately."""
         self.request_panel.autosave_current()
         self.request_panel.load_request(request)
-        # Use the public API to send the request
-        self.request_panel.send()
+        # Defer send() by one event-loop iteration so that all signals emitted
+        # by load_request() (widget population, dirty-flag reset, etc.) are
+        # fully processed before the HTTP worker reads the panel's state.
+        QTimer.singleShot(0, self.request_panel.send)
 
     # ── Intelligence analysis ─────────────────────────────────────────
 
@@ -348,13 +384,20 @@ class MainWindow(QMainWindow):
         try:
             from equinox.gui.intelligence_worker import IntelligenceWorker
 
-            # Disconnect the previous worker's finished signal before replacing
-            # it so stale results cannot overwrite the new ones.
+            # Stop and discard the previous worker before creating a new one.
+            # Disconnecting its finished signal prevents stale results from
+            # overwriting the UI; quitting the thread avoids a background
+            # analysis running to completion for a response the user no longer cares about.
             if self._intelligence_worker is not None:
                 try:
                     self._intelligence_worker.finished.disconnect()
                 except RuntimeError:
                     pass  # signal was already disconnected
+                try:
+                    self._intelligence_worker.quit()
+                    self._intelligence_worker.wait(300)
+                except Exception:
+                    logger.debug("Could not stop previous intelligence worker", exc_info=True)
                 self._intelligence_worker = None
 
             # Re-use the already-created QSettings instance; avoid re-parsing
@@ -376,6 +419,9 @@ class MainWindow(QMainWindow):
             worker.finished.connect(
                 lambda findings: self.response_panel.set_intelligence_badge(len(findings))
             )
+            # Let Qt own the C++ object once the thread finishes so we don't
+            # accumulate dead QThread wrappers in memory.
+            worker.finished.connect(worker.deleteLater)
 
             # Set "analyzing" state AFTER the worker is created so that if
             # construction raises the panel is not permanently stuck.
@@ -513,7 +559,9 @@ class MainWindow(QMainWindow):
             return
         request = self._request_from_history(entry)
         self.request_panel.load_request(request)
-        self.request_panel.send()
+        # Defer send() so load_request()'s widget-population signals are fully
+        # processed before the HTTP worker reads the panel state.
+        QTimer.singleShot(0, self.request_panel.send)
 
     def _new_request(self) -> None:
         """Autosave current request then clear the editor for a new one."""
@@ -838,13 +886,18 @@ class MainWindow(QMainWindow):
             return
         mgr = CollectionManager(self.db)
         importer = importer_class(mgr)
+        self.status_bar.showMessage("Importing…")
+        QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
         try:
             importer.import_file(Path(file_path))
             if self.collections_panel:
                 self.collections_panel.refresh()
             self.status_bar.showMessage(success_msg, 4000)
         except Exception as exc:
+            self.status_bar.clearMessage()
             QMessageBox.critical(self, "Import Error", f"Failed to import: {exc}")
+        finally:
+            QApplication.restoreOverrideCursor()
 
     def _import_postman(self) -> None:
         from equinox.importers import PostmanImporter
@@ -919,6 +972,7 @@ class MainWindow(QMainWindow):
             return
 
         try:
+            QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
             if format_type == "postman":
                 data = PostmanExporter.export_collection(self.db, collection_id)
                 PostmanExporter.export_to_file(data, Path(file_path))
@@ -933,10 +987,11 @@ class MainWindow(QMainWindow):
             elif format_type == "insomnia":
                 data = InsomniaExporter.export_collection(self.db, collection_id)
                 InsomniaExporter.export_to_file(data, Path(file_path))
-
             self.status_bar.showMessage(f"Exported to {file_path}", 5000)
         except Exception as exc:
             QMessageBox.critical(self, "Export Error", f"Failed to export: {exc}")
+        finally:
+            QApplication.restoreOverrideCursor()
 
     # ── Environment management ────────────────────────────────────────
 
