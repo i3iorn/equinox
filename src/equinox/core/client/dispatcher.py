@@ -3,26 +3,37 @@
 Owns the shared ``httpx.Client`` lifecycle, multipart file handling,
 SSL context construction, and response wrapping.
 """
+from __future__ import annotations
+
 import logging
-import os
 import ssl
 import time
 from pathlib import Path
-from typing import Optional, Any, Tuple, Dict, List
+from typing import Any, Dict, List, Optional, Tuple
 
 import httpx
 
-from equinox.core.request import Request, Response
-from equinox.core.client.cookie_handler import CookieHandler
 from equinox.core.client.auth_redirect import _RedirectSafeAuth
+from equinox.core.client.cookie_handler import CookieHandler
 from equinox.core.exceptions import ValidationError
+from equinox.core.request import Request, Response
 from equinox.core.time import utc_now
 from equinox.core.validation import Validator
 
 logger = logging.getLogger(__name__)
 
+__all__ = ["HttpxDispatcher"]
+
 
 class HttpxDispatcher:
+    """httpx transport adapter for the Equinox HTTP client pipeline.
+
+    Owns a single long-lived :class:`httpx.Client` that is created lazily on
+    the first request (or eagerly via :meth:`open`) and torn down by
+    :meth:`close`.  Callers should use :meth:`execute` to send requests —
+    all SSL, redirect, multipart, auth, and cookie concerns are handled here.
+    """
+
     def __init__(
         self,
         timeout: float,
@@ -38,13 +49,15 @@ class HttpxDispatcher:
         self._cookie_handler = cookie_handler
         self._client: Optional[httpx.Client] = None
 
-    # SSL context builder
+    # ── Client lifecycle ──────────────────────────────────────────────────────
+
     def _build_ssl_context(self) -> Any:
+        """Return an SSL context with TLS 1.2 minimum, or ``False`` to disable."""
         if not self._verify_ssl:
             return False
-        ssl_context = ssl.create_default_context()
-        ssl_context.minimum_version = ssl.TLSVersion.TLSv1_2
-        return ssl_context
+        ctx = ssl.create_default_context()
+        ctx.minimum_version = ssl.TLSVersion.TLSv1_2
+        return ctx
 
     def _ensure_client(self) -> httpx.Client:
         if self._client is None:
@@ -62,46 +75,50 @@ class HttpxDispatcher:
         """Pre-warm the shared ``httpx.Client`` (called from ``HTTPClient.__enter__``)."""
         self._ensure_client()
 
-    def flush_cookies(self, response: Response, url: str) -> None:
-        """Update the in-memory cookie jar from *response* and push to the httpx client.
-
-        Combines the two-step cookie sync into a single call so no caller needs
-        to reach into the dispatcher's private ``_sync_cookies_to_client``.
-        """
-        self._cookie_handler.update_from_response(response, url)
-        self._sync_cookies_to_client()
-
-    def _sync_cookies_to_client(self) -> None:
-        """Merge the latest CookieManager state into the live httpx.Client jar.
-
-        Called after every response so that cookies received via ``Set-Cookie``
-        are available for the next request without rebuilding the whole client.
-        """
-        if self._client is None:
-            return
-        try:
-            fresh = self._cookie_handler.get_httpx_cookies()
-            for name, value in fresh.items():
-                self._client.cookies.set(name, value)
-        except Exception as exc:
-            logger.debug("HttpxDispatcher: failed to sync cookies to client: %s", exc)
-
     def close(self) -> None:
+        """Close and discard the shared ``httpx.Client``."""
         if self._client is not None:
             logger.debug("HttpxDispatcher: closing shared httpx.Client")
             self._client.close()
             self._client = None
 
-    # Multipart builder (simple, DRY)
+    # ── Cookie sync ───────────────────────────────────────────────────────────
+
+    def flush_cookies(self, response: Response, url: str) -> None:
+        """Update the in-memory cookie jar from *response* and push to httpx.
+
+        Combines the two-step cookie sync into a single call so no caller
+        needs to reach into the dispatcher's private helpers.
+        """
+        self._cookie_handler.update_from_response(response, url)
+        self._sync_cookies_to_client()
+
+    def _sync_cookies_to_client(self) -> None:
+        """Merge the latest CookieManager state into the live httpx.Client jar."""
+        if self._client is None:
+            return
+        try:
+            for name, value in self._cookie_handler.get_httpx_cookies().items():
+                self._client.cookies.set(name, value)
+        except Exception as exc:
+            logger.debug("HttpxDispatcher: failed to sync cookies to client: %s", exc)
+
+    # ── Multipart ─────────────────────────────────────────────────────────────
+
     def _build_multipart_files(
         self, request: Request
     ) -> Tuple[Optional[Dict[str, Any]], List[Any]]:
-        """Build httpx-compatible multipart files from request.files (if any).
+        """Build httpx-compatible multipart files from ``request.files``.
 
-        Expected shape:
-            request.files = {
-                "field": ("filename", file_bytes_or_fileobj, "content/type")
-            }
+        Accepted shapes per field::
+
+            "field": ("filename", file_bytes_or_fileobj, "content/type")
+            "field": Path("/path/to/file")      # opened and closed automatically
+            "field": "/path/to/file"            # opened and closed automatically
+
+        Returns:
+            A ``(files_dict, opened_handles)`` tuple.  The caller is
+            responsible for closing every handle in *opened_handles*.
         """
         if not getattr(request, "files", None):
             return None, []
@@ -109,22 +126,35 @@ class HttpxDispatcher:
         files: Dict[str, Any] = {}
         opened_handles: List[Any] = []
 
-        for field, value in request.files.items():
-            # value can be:
-            # - (filename, fileobj/bytes, content_type)
-            # - Path / str (path)
-            if isinstance(value, (str, Path)):
-                fh = open(value, "rb")
-                opened_handles.append(fh)
-                files[field] = (os.path.basename(str(value)), fh)
-            elif isinstance(value, tuple) and len(value) in (2, 3):
-                files[field] = value
-            else:
-                raise ValidationError(f"Unsupported file spec for field '{field}'")
+        try:
+            for field, value in request.files.items():
+                if isinstance(value, (str, Path)):
+                    fh = Path(value).open("rb")
+                    opened_handles.append(fh)
+                    files[field] = (Path(value).name, fh)
+                elif isinstance(value, tuple) and len(value) in (2, 3):
+                    files[field] = value
+                else:
+                    raise ValidationError(
+                        f"Unsupported file spec for field {field!r}: "
+                        f"expected a path or (filename, data[, content_type]) tuple"
+                    )
+        except Exception:
+            # Close any handles that were successfully opened before the error.
+            for fh in opened_handles:
+                try:
+                    fh.close()
+                except Exception:
+                    pass
+            raise
 
         return files, opened_handles
 
-    def _wrap_response(self, raw: httpx.Response, request: Request, elapsed: float) -> Response:
+    # ── Response helpers ──────────────────────────────────────────────────────
+
+    def _wrap_response(
+        self, raw: httpx.Response, request: Request, elapsed: float
+    ) -> Response:
         return Response(
             status_code=raw.status_code,
             reason=self._extract_reason_phrase(raw),
@@ -137,7 +167,6 @@ class HttpxDispatcher:
 
     @staticmethod
     def _extract_reason_phrase(raw: httpx.Response) -> str:
-        # httpx doesn't expose reason phrase directly; approximate from status code
         return raw.reason_phrase or httpx.codes.get_reason_phrase(raw.status_code) or ""
 
     @staticmethod
@@ -146,17 +175,16 @@ class HttpxDispatcher:
         user_set: bool,
         has_files: bool,
     ) -> None:
-        """Remove the ``content-type`` header that httpx injects automatically.
+        """Remove the ``Content-Type`` httpx injects automatically for body requests.
 
-        Only strips it when the caller did not set one explicitly *and* there
-        are no multipart files (whose boundary httpx must generate itself).
+        Only strips it when the caller did not supply one explicitly *and*
+        there are no multipart files (whose boundary httpx must generate).
         """
         if not user_set and not has_files and "content-type" in httpx_req.headers:
             del httpx_req.headers["content-type"]
 
     @staticmethod
     def _log_redirect_chain(raw: httpx.Response) -> None:
-        """Log the redirect chain when the request was redirected one or more times."""
         if not raw.history:
             return
         chain = " → ".join(
@@ -164,10 +192,10 @@ class HttpxDispatcher:
         )
         logger.info(
             "Request followed %d redirect(s): %s → %d",
-            len(raw.history),
-            chain,
-            raw.status_code,
+            len(raw.history), chain, raw.status_code,
         )
+
+    # ── Execute ───────────────────────────────────────────────────────────────
 
     def execute(
         self,
@@ -175,16 +203,22 @@ class HttpxDispatcher:
         headers: Dict[str, str],
         auth_headers: Optional[Dict[str, str]] = None,
     ) -> Response:
-        """Execute the request using httpx, handling redirects and multipart."""
+        """Send *request* via httpx and return a wrapped :class:`Response`.
+
+        Auth headers are removed from *headers* and passed through httpx's
+        native ``auth`` parameter so they survive cross-origin redirects (see
+        :class:`~equinox.core.client.auth_redirect._RedirectSafeAuth`).
+        """
         client = self._ensure_client()
 
         logger.debug(
-            "HttpxDispatcher: sending %s request to %s",
+            "HttpxDispatcher: sending %s %s",
             request.method,
             Validator.sanitize_for_display(request.url, 100),
         )
-        start_time = time.time()
 
+        # Route auth headers through the redirect-safe adapter instead of
+        # embedding them directly — httpx strips plain headers on redirects.
         httpx_auth: Optional[_RedirectSafeAuth] = None
         if auth_headers:
             for key in auth_headers:
@@ -194,6 +228,7 @@ class HttpxDispatcher:
         multipart_files, opened_handles = self._build_multipart_files(request)
         user_set_content_type = any(k.lower() == "content-type" for k in headers)
 
+        start_time = time.time()
         try:
             httpx_request = client.build_request(
                 method=request.method,
@@ -208,11 +243,9 @@ class HttpxDispatcher:
                 files=multipart_files or None,
                 timeout=request.timeout or self._timeout,
             )
-
             self._strip_auto_content_type(
                 httpx_request, user_set_content_type, bool(multipart_files)
             )
-
             raw = client.send(
                 httpx_request,
                 follow_redirects=(
@@ -226,15 +259,22 @@ class HttpxDispatcher:
             for fh in opened_handles:
                 try:
                     fh.close()
-                except Exception as close_exc:
-                    logger.debug("Failed to close file handle: %s", close_exc)
+                except Exception as exc:
+                    logger.debug("Failed to close file handle: %s", exc)
 
         self._log_redirect_chain(raw)
-
         elapsed = time.time() - start_time
         logger.debug(
-            "HttpxDispatcher: request completed in %.2fs with status %d",
-            elapsed,
-            raw.status_code,
+            "HttpxDispatcher: completed in %.3fs — status %d",
+            elapsed, raw.status_code,
         )
         return self._wrap_response(raw, request, elapsed)
+
+    # ── Dunder helpers ────────────────────────────────────────────────────────
+
+    def __repr__(self) -> str:
+        state = "open" if self._client is not None else "closed"
+        return (
+            f"HttpxDispatcher(state={state!r}, timeout={self._timeout}, "
+            f"verify_ssl={self._verify_ssl}, proxy={self._proxy!r})"
+        )

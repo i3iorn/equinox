@@ -14,6 +14,8 @@ from equinox.core.request import Request
 
 logger = logging.getLogger(__name__)
 
+__all__ = ["AuthApplier"]
+
 # Substrings (lowercased) that indicate the proxy refused the TCP connection.
 # Checked against the redacted error message to emit an actionable hint.
 _PROXY_REFUSED_MARKERS = ("10061", "connection refused", "econnrefused")
@@ -62,17 +64,21 @@ class AuthApplier:
         """
         auth_strategy = explicit_auth or request.auth
         if not auth_strategy:
+            logger.debug("No auth strategy active for %s %s", request.method, request.url)
             return {}
 
-        pre_auth_keys = set(headers.keys())
+        pre_keys = set(headers.keys())
         self._invoke_strategy(auth_strategy, request, headers, proxy)
-        auth_headers = {k: headers[k] for k in headers if k not in pre_auth_keys}
+
+        # Isolate only the headers the strategy injected.
+        added_keys = set(headers.keys()) - pre_keys
+        auth_headers = {k: headers[k] for k in added_keys}
 
         if auth_headers:
             logger.debug(
-                "Auth applied (%s): %s",
+                "Auth applied (%s): added headers %s",
                 type(auth_strategy).__name__,
-                ", ".join(auth_headers.keys()),
+                sorted(auth_headers.keys()),
             )
         return auth_headers
 
@@ -86,10 +92,12 @@ class AuthApplier:
         proxy: Optional[str],
     ) -> None:
         """Call ``strategy.apply()``, converting any exception to :class:`RequestError`."""
+        # Some strategies (e.g. OAuth2) support an optional proxy for token
+        # refresh; inject it via the private attribute if present.
+        if proxy and hasattr(strategy, "_proxy"):
+            strategy._proxy = proxy
+        logger.debug("Applying auth strategy: %s", type(strategy).__name__)
         try:
-            if proxy and hasattr(strategy, "_proxy"):
-                strategy._proxy = proxy
-            logger.debug("Applying auth strategy: %s", type(strategy).__name__)
             strategy.apply(request, headers)
         except Exception as exc:
             raise self._map_auth_error(exc, strategy, proxy) from exc
@@ -103,15 +111,15 @@ class AuthApplier:
         """Build a descriptive :class:`RequestError` from a raw auth exception."""
         safe_msg = redact_body(str(exc), max_length=200) or "unknown error"
         logger.error(
-            "Authentication failed (%s): %s — %s",
-            type(exc).__name__,
+            "Authentication failed (%s via %s): %s",
             type(strategy).__name__,
+            type(exc).__name__,
             safe_msg,
         )
         if proxy and _is_proxy_connection_refused(safe_msg):
             return RequestError(
-                f"OAuth2 token refresh failed — proxy ({proxy}) is not reachable. "
+                f"Authentication failed — proxy ({proxy}) is not reachable. "
                 "Please check your proxy settings under Preferences.",
-                details={"proxy": proxy},
+                details={"proxy": proxy, "strategy": type(strategy).__name__},
             )
         return RequestError(f"Authentication failed: {safe_msg}")

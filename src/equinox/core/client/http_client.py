@@ -3,6 +3,8 @@
 Orchestrates validation, rate limiting, concurrency, authentication,
 retries, and the request/response pipeline through a single :meth:`send` call.
 """
+from __future__ import annotations
+
 import logging
 import threading
 import time
@@ -28,6 +30,8 @@ from equinox.core.client.pipeline import RequestPipeline
 from equinox.core.client.retry_policy import RetryPolicy
 
 logger = logging.getLogger(__name__)
+
+__all__ = ["HTTPClient"]
 
 
 class HTTPClient:
@@ -78,7 +82,6 @@ class HTTPClient:
         self.max_rate_per_minute = max_rate_per_minute
         self.max_concurrent_requests = max_concurrent_requests
         self._cancel_event = cancel_event
-        self._active_requests = 0
 
         self._build_components(cookie_manager)
 
@@ -139,6 +142,13 @@ class HTTPClient:
             error_handlers=self._error_handlers,
         )
 
+    # ── Properties ────────────────────────────────────────────────────────────
+
+    @property
+    def active_requests(self) -> int:
+        """Number of requests currently in flight."""
+        return self._concurrency.active
+
     # ── Context manager ───────────────────────────────────────────────────────
 
     def __enter__(self) -> "HTTPClient":
@@ -158,6 +168,7 @@ class HTTPClient:
         check_proxy_reachable(self.proxy)
 
     def _interruptible_sleep(self, seconds: float) -> None:
+        """Sleep for *seconds*, waking early if the cancel event is set."""
         if self._cancel_event is not None:
             was_cancelled = self._cancel_event.wait(timeout=seconds)
             if was_cancelled:
@@ -177,19 +188,6 @@ class HTTPClient:
             Validator.validate_query_params(request.params)
         if request.body:
             Validator.validate_request_body(request.body, request.headers.get("Content-Type"))
-
-    def _check_concurrent_limit(self) -> None:
-        """Acquire a concurrency slot; raises ``RequestError`` when the limit is reached."""
-        self._concurrency.acquire()
-        self._active_requests += 1
-
-    def _release_concurrent_slot(self) -> None:
-        """Release a concurrency slot, keeping ``_active_requests`` non-negative."""
-        try:
-            self._concurrency.release()
-        except Exception as exc:
-            logger.debug("Failed to release concurrency semaphore: %s", exc)
-        self._active_requests = max(0, self._active_requests - 1)
 
     def _execute_single_attempt(
         self,
@@ -254,12 +252,18 @@ class HTTPClient:
 
         self._validate_request(request)
         self.check_rate_limit()
-        self._check_concurrent_limit()
-        try:
+
+        with self._concurrency.slot():
             return self._pipeline.execute(
                 request,
                 dispatch=lambda req: self._dispatch_with_retries(req, auth),
             )
-        finally:
-            self._release_concurrent_slot()
 
+    # ── Dunder helpers ────────────────────────────────────────────────────────
+
+    def __repr__(self) -> str:
+        return (
+            f"HTTPClient(timeout={self.timeout}, verify_ssl={self.verify_ssl}, "
+            f"proxy={self.proxy!r}, active={self.active_requests}/"
+            f"{self.max_concurrent_requests})"
+        )
