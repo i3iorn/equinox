@@ -8,10 +8,7 @@ from __future__ import annotations
 import difflib
 import http.cookies as _hc
 import json
-import os
-import shlex
-from dataclasses import dataclass
-from typing import Optional, Dict, Any, List
+from typing import Optional, Dict, Any
 from urllib.parse import urlencode
 
 from PyQt6.QtWidgets import (
@@ -35,6 +32,17 @@ from equinox.gui.syntax_highlighter import JsonHighlighter, XmlHighlighter, Yaml
 from equinox.gui.theme import Colors, get_mono_font
 
 logger = logging.getLogger(__name__)
+
+# Maps content-type substrings (checked in order) to highlighter classes.
+# First match wins, so more specific tokens should come first.
+_CT_HIGHLIGHTERS = [
+    ("json", JsonHighlighter),
+    ("xml",  XmlHighlighter),
+    ("html", XmlHighlighter),
+    ("svg",  XmlHighlighter),
+    ("yaml", YamlHighlighter),
+    ("yml",  YamlHighlighter),
+]
 
 
 # ---------------------------------------------------------------------------
@@ -153,7 +161,7 @@ class ResponsePanel(QWidget):
         self._wrap_btn.setCheckable(True)
         self._wrap_btn.setChecked(False)
         self._wrap_btn.setToolTip("Toggle line wrapping in response body")
-        self._wrap_btn.clicked.connect(self._toggle_word_wrap)
+        self._wrap_btn.toggled.connect(self._toggle_word_wrap)
 
         self._view_btn, self._view_menu = self._build_view_selector()
 
@@ -183,7 +191,7 @@ class ResponsePanel(QWidget):
         btn.setPopupMode(QToolButton.ToolButtonPopupMode.MenuButtonPopup)
 
         menu = QMenu(btn)
-        for fmt in list(GENERATORS.keys()) + ["cURL"]:
+        for fmt in GENERATORS:
             act = menu.addAction(fmt)
             act.triggered.connect(lambda _, f=fmt: self._copy_as_code(f))
 
@@ -302,6 +310,11 @@ class ResponsePanel(QWidget):
 
         # Ctrl+F shortcut
         QShortcut(QKeySequence("Ctrl+F"), self).activated.connect(self._open_search)
+
+        # Escape hides the search bar when it or its children have focus
+        esc = QShortcut(QKeySequence("Escape"), self._search_bar)
+        esc.setContext(Qt.ShortcutContext.WidgetWithChildrenShortcut)
+        esc.activated.connect(self._search_bar.hide)
 
     # ------------------------------------------------------------------
     # Headers Tab
@@ -605,29 +618,8 @@ class ResponsePanel(QWidget):
 
     def _on_hdrs_filter_changed(self, text: str) -> None:
         """Filter headers table by substring match on name/value."""
-        try:
-            self.resp_headers_table.filter(text)
-            # If HeaderTable has its own filter API, this will work.
-        except Exception:
-            # Fallback: manual row hide/show
-            text_lower = text.lower()
-            table = self.resp_headers_table
-            for row in range(table.rowCount()):
-                show = False
-                for col in range(table.columnCount()):
-                    item = table.item(row, col)
-                    if item and text_lower in item.text().lower():
-                        show = True
-                        break
-                table.setRowHidden(row, not show)
-
-        # Update count label to reflect visible rows
-        visible = 0
-        table = self.resp_headers_table
-        for row in range(table.rowCount()):
-            if not table.isRowHidden(row):
-                visible += 1
-        self._hdrs_count_label.setText(str(visible))
+        self.resp_headers_table.filter(text)
+        self._hdrs_count_label.setText(str(self.resp_headers_table.rowCount()))
 
     # ------------------------------------------------------------------
     # Timings
@@ -762,34 +754,23 @@ class ResponsePanel(QWidget):
 
     def _on_pretty_result(self, marker: object, formatted_text: str) -> None:
         """Handle formatted body results from background worker."""
+        self._loading_label.setVisible(False)
         try:
             cur_marker = getattr(self.current_response, "sent_url", None) or getattr(
                 self.current_response.request, "url", None
             )
             if cur_marker != marker:
                 return
-            self._loading_label.setVisible(False)
-            try:
-                self.body_text.set_code(formatted_text)
-            except Exception:
-                logger.exception("Failed to set pretty-printed body on UI; falling back")
-                try:
-                    if self.current_response is not None:
-                        self.body_text.set_code(self._pretty_body(self.current_response))
-                    else:
-                        self.body_text.clear()
-                except Exception:
-                    logger.exception("Fallback setting of body also failed")
+            self.body_text.set_code(formatted_text)
         except Exception:
-            logger.exception("Unhandled exception in _on_pretty_result")
-            self._loading_label.setVisible(False)
-            try:
-                if self.current_response is not None:
+            logger.exception("Unexpected error in _on_pretty_result; falling back to raw body")
+            if self.current_response is not None:
+                try:
                     self.body_text.set_code(self._pretty_body(self.current_response))
-                else:
-                    self.body_text.clear()
-            except Exception:
-                logger.exception("Fallback in _on_pretty_result also failed")
+                except Exception:
+                    logger.exception("Fallback body display also failed")
+            else:
+                self.body_text.clear()
 
     # ------------------------------------------------------------------
     # JSONPath filter callback
@@ -821,26 +802,7 @@ class ResponsePanel(QWidget):
         if self.current_response is None:
             return
 
-        # Try to get a DB reference through the parent window
-        db = None
-        try:
-            db = self.window().db
-        except Exception:
-            pass
-
-        history_entries = []
-        if db is not None:
-            try:
-                from equinox.storage import HistoryManager
-                mgr = HistoryManager(db)
-                req = self.current_response.request
-                entries = mgr.search_history(
-                    query=req.url, method=req.method, limit=30
-                )
-                history_entries = entries
-            except Exception:
-                pass
-
+        history_entries = self._fetch_history_entries()
         if not history_entries:
             QMessageBox.information(
                 self,
@@ -849,12 +811,42 @@ class ResponsePanel(QWidget):
             )
             return
 
-        # Picker dialog
+        entry = self._pick_history_entry(history_entries)
+        if entry is None:
+            return
+
+        old_body = entry.get("response_body") or ""
+        displayed = self.body_text.toPlainText()
+        new_body = displayed if displayed else self._pretty_body(self.current_response)
+        self._show_diff_dialog(old_body, new_body)
+
+    def _fetch_history_entries(self) -> list:
+        """Return recent history entries matching the current request, or []."""
+        db = None
+        try:
+            db = self.window().db
+        except Exception:
+            pass
+        if db is None:
+            return []
+        try:
+            from equinox.storage import HistoryManager
+            req = self.current_response.request
+            return HistoryManager(db).search_history(
+                query=req.url, method=req.method, limit=30
+            )
+        except Exception:
+            logger.exception("Failed to fetch history entries for diff")
+            return []
+
+    def _pick_history_entry(self, history_entries: list) -> "Optional[Dict[str, Any]]":
+        """Show a picker dialog and return the selected history entry, or None."""
         picker = QDialog(self)
         picker.setWindowTitle("Choose History Entry")
         picker.setMinimumSize(480, 280)
         pk_layout = QVBoxLayout(picker)
         pk_layout.addWidget(QLabel("Select a history entry to compare against:"))
+
         list_widget = QListWidget()
         for entry in history_entries:
             ts = entry.get("executed_at", "")[:19]
@@ -864,6 +856,7 @@ class ResponsePanel(QWidget):
             item.setData(Qt.ItemDataRole.UserRole, entry)
             list_widget.addItem(item)
         pk_layout.addWidget(list_widget, 1)
+
         btn_row = QHBoxLayout()
         cancel_btn = QPushButton("Cancel")
         compare_btn = QPushButton("Compare")
@@ -880,44 +873,34 @@ class ResponsePanel(QWidget):
         )
 
         if picker.exec() != QDialog.DialogCode.Accepted:
-            return
-
+            return None
         selected = list_widget.currentItem()
-        if not selected:
-            return
+        return selected.data(Qt.ItemDataRole.UserRole) if selected else None
 
-        entry = selected.data(Qt.ItemDataRole.UserRole)
-        old_body = entry.get("response_body") or ""
-
-        displayed = self.body_text.toPlainText()
-        new_body = displayed if displayed else self._pretty_body(self.current_response)
-
+    def _show_diff_dialog(self, old_body: str, new_body: str) -> None:
+        """Display a unified diff between *old_body* and *new_body*."""
         old_lines = old_body.splitlines(keepends=True)
         new_lines = new_body.splitlines(keepends=True)
         diff_lines = list(
             difflib.unified_diff(
-                old_lines,
-                new_lines,
-                fromfile="History",
-                tofile="Current",
-                lineterm="",
+                old_lines, new_lines, fromfile="History", tofile="Current", lineterm=""
             )
         )
         diff_text = "".join(diff_lines) if diff_lines else "(No differences)"
 
-        diff_dlg = QDialog(self)
-        diff_dlg.setWindowTitle("Response Body Diff")
-        diff_dlg.setMinimumSize(700, 500)
-        dv_layout = QVBoxLayout(diff_dlg)
+        dlg = QDialog(self)
+        dlg.setWindowTitle("Response Body Diff")
+        dlg.setMinimumSize(700, 500)
+        dv_layout = QVBoxLayout(dlg)
         diff_editor = QPlainTextEdit()
         diff_editor.setReadOnly(True)
         diff_editor.setFont(get_mono_font())
         diff_editor.setPlainText(diff_text)
         dv_layout.addWidget(diff_editor, 1)
         close_btn = QPushButton("Close")
-        close_btn.clicked.connect(diff_dlg.accept)
+        close_btn.clicked.connect(dlg.accept)
         dv_layout.addWidget(close_btn)
-        diff_dlg.exec()
+        dlg.exec()
 
     # ------------------------------------------------------------------
     # View switching
@@ -955,27 +938,23 @@ class ResponsePanel(QWidget):
             self._body_highlighter = None
 
         ct = (content_type or "").lower()
-        doc = self.body_text.document()
+        cls = next((h for token, h in _CT_HIGHLIGHTERS if token in ct), None)
+        if cls is None:
+            return
 
+        doc = self.body_text.document()
         try:
-            if "json" in ct:
-                self._body_highlighter = JsonHighlighter(doc)
-            elif any(x in ct for x in ("xml", "html", "svg")):
-                self._body_highlighter = XmlHighlighter(doc)
-            elif "yaml" in ct or "yml" in ct:
-                self._body_highlighter = YamlHighlighter(doc)
-            else:
-                self._body_highlighter = None
+            self._body_highlighter = cls(doc)
         except Exception:
-            # Highlighter creation failed (e.g. bad document or regex error).
-            # Log and continue without syntax highlighting to avoid crashing UI.
-            logger.exception("Failed to create highlighter for content-type=%s; skipping highlighting", content_type)
-            try:
-                # Ensure no partially-initialized highlighter remains attached
-                if self._body_highlighter is not None:
+            logger.exception(
+                "Failed to create highlighter for content-type=%s; skipping highlighting",
+                content_type,
+            )
+            if self._body_highlighter is not None:
+                try:
                     self._body_highlighter.setDocument(None)
-            except Exception:
-                logger.exception("Error while cleaning up failed highlighter")
+                except Exception:
+                    pass
             self._body_highlighter = None
 
     # ------------------------------------------------------------------
@@ -1043,8 +1022,7 @@ class ResponsePanel(QWidget):
         row = QHBoxLayout()
         row.addWidget(QLabel("Language / Format:"))
         combo = QComboBox()
-        formats = list(GENERATORS.keys()) + ["cURL"]
-        combo.addItems(formats)
+        combo.addItems(list(GENERATORS.keys()))
         row.addWidget(combo, 1)
         layout.addLayout(row)
 
@@ -1079,25 +1057,16 @@ class ResponsePanel(QWidget):
 
     def _copy_as_curl(self) -> None:
         """Copy the request as a cURL command."""
-        if self.current_response is None:
-            return
-        try:
-            code = generate_code("cURL", self.current_response.request)
-        except Exception as exc:
-            QMessageBox.warning(self, "cURL Generation Failed", str(exc))
-            return
-        QApplication.clipboard().setText(code)
+        self._copy_as_code("cURL")
 
     # ------------------------------------------------------------------
     # Misc helpers
     # ------------------------------------------------------------------
 
-    def _toggle_word_wrap(self) -> None:
+    def _toggle_word_wrap(self, checked: bool) -> None:
         """Toggle line wrapping in the response body text view."""
-        if self.body_text.lineWrapMode() == QTextEdit.LineWrapMode.NoWrap:
-            self.body_text.setLineWrapMode(QTextEdit.LineWrapMode.WidgetWidth)
-        else:
-            self.body_text.setLineWrapMode(QTextEdit.LineWrapMode.NoWrap)
+        mode = QTextEdit.LineWrapMode.WidgetWidth if checked else QTextEdit.LineWrapMode.NoWrap
+        self.body_text.setLineWrapMode(mode)
 
     def _open_search(self) -> None:
         """Open the inline search bar when Ctrl+F is pressed."""

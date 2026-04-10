@@ -339,6 +339,39 @@ class PhpCurlGenerator:
         return "\n".join(lines)
 
 
+class CurlGenerator:
+    """Generate a ``curl`` command-line invocation."""
+
+    def generate(self, request: Request) -> str:
+        parts: list = ["curl"]
+
+        method = request.method.upper()
+        if method != "GET":
+            parts.append(f"-X {method}")
+
+        url = _build_url_with_params(request.url, request.params or {})
+        parts.append(f'"{url}"')
+
+        headers = dict(request.headers or {})
+        _inject_auth_into_headers(request, headers)
+        for k, v in headers.items():
+            safe_k = k.replace('"', '\\"')
+            safe_v = str(v).replace('"', '\\"')
+            parts.append(f'-H "{safe_k}: {safe_v}"')
+
+        if request.body:
+            body = (
+                request.body
+                if isinstance(request.body, str)
+                else request.body.decode("utf-8", errors="replace")
+            )
+            # Single-quote escaping: ' → '\''
+            safe_body = body.replace("'", "'\\''")
+            parts.append(f"--data '{safe_body}'")
+
+        return " \\\n  ".join(parts)
+
+
 GENERATORS: dict = {
     "Python (requests)": PythonRequestsGenerator,
     "Python (httpx)": PythonHttpxGenerator,
@@ -346,6 +379,7 @@ GENERATORS: dict = {
     "Go": GoHttpGenerator,
     "Ruby": RubyNetHttpGenerator,
     "PHP (cURL)": PhpCurlGenerator,
+    "cURL": CurlGenerator,
 }
 
 

@@ -32,8 +32,14 @@ class HeaderTable(QTableWidget):
             (k, v) for k, v in self._all_headers.items()
             if not term or term in k.lower() or term in str(v).lower()
         ]
-        self.setRowCount(len(rows))
-        for row, (k, v) in enumerate(rows):
-            self.setItem(row, 0, QTableWidgetItem(k))
-            self.setItem(row, 1, QTableWidgetItem(str(v)))
-        self.resizeRowsToContents()
+
+        # Batch all DOM mutations behind a single repaint for smoother filtering.
+        self.setUpdatesEnabled(False)
+        try:
+            self.setRowCount(len(rows))
+            for row, (k, v) in enumerate(rows):
+                self.setItem(row, 0, QTableWidgetItem(k))
+                self.setItem(row, 1, QTableWidgetItem(str(v)))
+            self.resizeRowsToContents()
+        finally:
+            self.setUpdatesEnabled(True)
