@@ -5,29 +5,34 @@ that are stored independently of any collection or request.  A client marked
 as *default* is pre-selected automatically in the Auth dialog.
 """
 
+from __future__ import annotations
+
 import json
 import logging
+from typing import Optional
 
-from PyQt6.QtWidgets import (
-    QDialog, QVBoxLayout, QHBoxLayout, QSplitter,
-    QListWidget, QListWidgetItem, QPushButton, QLabel,
-    QWidget, QFormLayout, QLineEdit, QComboBox, QTextEdit,
-    QDialogButtonBox, QMessageBox, QInputDialog, QToolButton,
-    QFrame, QSizePolicy,
-)
 from PyQt6.QtCore import Qt, pyqtSignal
-from PyQt6.QtGui import QColor, QFont
+from PyQt6.QtGui import QColor
+from PyQt6.QtWidgets import (
+    QComboBox, QDialog, QDialogButtonBox, QFormLayout, QFrame,
+    QHBoxLayout, QInputDialog, QLabel, QLineEdit, QListWidget,
+    QListWidgetItem, QMessageBox, QPushButton, QSplitter, QTextEdit,
+    QVBoxLayout, QWidget,
+)
 
 from equinox.gui.theme import Colors, get_mono_font
 from equinox.gui.widgets import make_secret_row
-
 from equinox.gui.workers import OAuthTokenTester
 from equinox.storage import Database, OAuthClientManager
 from equinox.storage.oauth_clients import GRANT_TYPES
 
-from typing import Optional
-
 logger = logging.getLogger(__name__)
+
+# HTML fragment shown in the form header when no client is loaded.
+_FORM_HEADER_IDLE = (
+    f"<b>Client Details</b>"
+    f"<span style='color:{Colors.FG_MUTED};'>  (select a client to edit)</span>"
+)
 
 
 class OAuthClientsDialog(QDialog):
@@ -46,29 +51,41 @@ class OAuthClientsDialog(QDialog):
     # Emitted whenever the client list changes so callers can refresh pickers
     clients_changed = pyqtSignal()
 
-    def __init__(self, db: Database, parent=None):
+    def __init__(self, db: Database, parent=None) -> None:
         super().__init__(parent)
-        self.db  = db
+        self.db = db
         self.mgr = OAuthClientManager(db)
         self._current_id: Optional[int] = None
         self._dirty = False
+        self._tester: Optional[OAuthTokenTester] = None  # keeps reference alive until done
 
         self.setWindowTitle("OAuth2 Client Manager")
         self.setMinimumSize(860, 560)
         self._build_ui()
         self._refresh_list()
 
-    # ── UI ────────────────────────────────────────────────────────────
+    # ── UI construction ───────────────────────────────────────────────
 
-    def _build_ui(self):
+    def _build_ui(self) -> None:
         root = QVBoxLayout(self)
         root.setSpacing(6)
 
         splitter = QSplitter(Qt.Orientation.Horizontal)
+        splitter.addWidget(self._build_left_panel())
+        splitter.addWidget(self._build_right_panel())
+        splitter.setSizes([240, 620])
+        root.addWidget(splitter, 1)
 
-        # ── Left: client list ─────────────────────────────────────────
+        btns = QDialogButtonBox(QDialogButtonBox.StandardButton.Close)
+        btns.rejected.connect(self._on_close)
+        root.addWidget(btns)
+
+        self._set_form_enabled(False)
+
+    def _build_left_panel(self) -> QWidget:
+        """Scrollable client list with New / Delete buttons."""
         left = QWidget()
-        ll   = QVBoxLayout(left)
+        ll = QVBoxLayout(left)
         ll.setContentsMargins(0, 0, 4, 0)
         ll.addWidget(QLabel("<b>OAuth2 Clients</b>"))
 
@@ -78,85 +95,86 @@ class OAuthClientsDialog(QDialog):
         ll.addWidget(self.client_list, 1)
 
         list_btns = QHBoxLayout()
-        self.new_btn    = QPushButton("New…")
+        self.new_btn = QPushButton("New…")
         self.delete_btn = QPushButton("Delete")
         self.delete_btn.setEnabled(False)
         list_btns.addWidget(self.new_btn)
         list_btns.addWidget(self.delete_btn)
         list_btns.addStretch()
         ll.addLayout(list_btns)
+
         self.new_btn.clicked.connect(self._new_client)
         self.delete_btn.clicked.connect(self._delete_client)
+        return left
 
-        splitter.addWidget(left)
-
-        # ── Right: edit form ──────────────────────────────────────────
+    def _build_right_panel(self) -> QWidget:
+        """Inline edit form with Test / Set-as-Default / Save actions."""
         right = QWidget()
-        rl    = QVBoxLayout(right)
+        rl = QVBoxLayout(right)
         rl.setContentsMargins(4, 0, 0, 0)
 
-        self.form_header = QLabel(
-            f"<b>Client Details</b>"
-            f"<span style='color:{Colors.FG_MUTED};'>"
-            f"  (select a client to edit)</span>"
-        )
+        self.form_header = QLabel(_FORM_HEADER_IDLE)
         rl.addWidget(self.form_header)
 
         form = QFormLayout()
         form.setLabelAlignment(Qt.AlignmentFlag.AlignRight)
         form.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.ExpandingFieldsGrow)
 
-        self.f_name        = QLineEdit(); self.f_name.setPlaceholderText("My Service")
-        self.f_description = QLineEdit(); self.f_description.setPlaceholderText("Optional description")
-        self.f_token_url   = QLineEdit(); self.f_token_url.setPlaceholderText("https://auth.example.com/oauth/token")
-        self.f_client_id   = QLineEdit(); self.f_client_id.setPlaceholderText("client_id_here")
+        self.f_name = QLineEdit()
+        self.f_name.setPlaceholderText("My Service")
+
+        self.f_description = QLineEdit()
+        self.f_description.setPlaceholderText("Optional description")
+
+        self.f_token_url = QLineEdit()
+        self.f_token_url.setPlaceholderText("https://auth.example.com/oauth/token")
+
+        self.f_client_id = QLineEdit()
+        self.f_client_id.setPlaceholderText("client_id_here")
+
         self.f_client_secret = QLineEdit()
         self.f_client_secret.setEchoMode(QLineEdit.EchoMode.Password)
         self.f_client_secret.setPlaceholderText("client_secret_here")
-        self.f_scope       = QLineEdit(); self.f_scope.setPlaceholderText("read write  (space-separated, optional)")
-        self.f_grant_type  = QComboBox()
+
+        self.f_scope = QLineEdit()
+        self.f_scope.setPlaceholderText("read write  (space-separated, optional)")
+
+        self.f_grant_type = QComboBox()
         self.f_grant_type.addItems(list(GRANT_TYPES))
-        self.f_extra       = QTextEdit()
+
+        self.f_extra = QTextEdit()
         self.f_extra.setPlaceholderText('{ "audience": "https://api.example.com" }')
         self.f_extra.setMaximumHeight(80)
         self.f_extra.setFont(get_mono_font())
 
-        form.addRow("Name:*",         self.f_name)
-        form.addRow("Description:",   self.f_description)
-        form.addRow("Token URL:*",    self.f_token_url)
-        form.addRow("Client ID:*",    self.f_client_id)
+        form.addRow("Name:*", self.f_name)
+        form.addRow("Description:", self.f_description)
+        form.addRow("Token URL:*", self.f_token_url)
+        form.addRow("Client ID:*", self.f_client_id)
         form.addRow("Client Secret:", make_secret_row(self.f_client_secret))
-        form.addRow("Scope:",         self.f_scope)
-        form.addRow("Grant Type:",    self.f_grant_type)
-        form.addRow("Extra Params:",  self.f_extra)
+        form.addRow("Scope:", self.f_scope)
+        form.addRow("Grant Type:", self.f_grant_type)
+        form.addRow("Extra Params:", self.f_extra)
 
-        # Info label below extra params
         info = QLabel(
             f"<small style='color:{Colors.FG_MUTED};'>"
             f"Extra Params: JSON object merged into the token request body "
-            f"(e.g. <tt>{{\"audience\": \"…\"}}</tt>)."
+            f'(e.g. <tt>{{"audience": "…"}}</tt>).'
             f"</small>"
         )
         info.setWordWrap(True)
         form.addRow("", info)
-
         rl.addLayout(form)
 
-        # Mark dirty on any change
-        for w in (self.f_name, self.f_description, self.f_token_url,
-                  self.f_client_id, self.f_client_secret, self.f_scope):
-            w.textChanged.connect(self._mark_dirty)
-        self.f_grant_type.currentIndexChanged.connect(self._mark_dirty)
-        self.f_extra.textChanged.connect(self._mark_dirty)
-
         # ── Action buttons ────────────────────────────────────────────
-        sep = QFrame(); sep.setFrameShape(QFrame.Shape.HLine)
+        sep = QFrame()
+        sep.setFrameShape(QFrame.Shape.HLine)
         rl.addWidget(sep)
 
         act_row = QHBoxLayout()
-        self.test_btn    = QPushButton("🔌  Test Connection")
+        self.test_btn = QPushButton("🔌  Test Connection")
         self.default_btn = QPushButton("★  Set as Default")
-        self.save_btn    = QPushButton("💾  Save")
+        self.save_btn = QPushButton("💾  Save")
         self.save_btn.setStyleSheet("font-weight: bold;")
 
         for b in (self.test_btn, self.default_btn, self.save_btn):
@@ -169,41 +187,55 @@ class OAuthClientsDialog(QDialog):
         self.default_btn.clicked.connect(self._set_default)
         self.save_btn.clicked.connect(self._save_client)
 
-        # Status line for test results
         self.status_label = QLabel("")
         self.status_label.setWordWrap(True)
         rl.addWidget(self.status_label)
-
         rl.addStretch()
 
-        splitter.addWidget(right)
-        splitter.setSizes([240, 620])
-        root.addWidget(splitter, 1)
+        # ── Shared widget collections ─────────────────────────────────
+        # QLineEdit fields — used for blockSignals and dirty-signal wiring.
+        self._line_fields = (
+            self.f_name, self.f_description, self.f_token_url,
+            self.f_client_id, self.f_client_secret, self.f_scope,
+        )
+        # All editable widgets + action buttons — used by _set_form_enabled.
+        self._all_form_widgets = (
+            *self._line_fields,
+            self.f_grant_type, self.f_extra,
+            self.test_btn, self.default_btn, self.save_btn,
+        )
 
-        btns = QDialogButtonBox(QDialogButtonBox.StandardButton.Close)
-        btns.rejected.connect(self._on_close)
-        root.addWidget(btns)
+        # Wire dirty-tracking signals
+        for w in self._line_fields:
+            w.textChanged.connect(self._mark_dirty)
+        self.f_grant_type.currentIndexChanged.connect(self._mark_dirty)
+        self.f_extra.textChanged.connect(self._mark_dirty)
 
-        self._set_form_enabled(False)
+        return right
 
     # ── List management ───────────────────────────────────────────────
 
-    def _refresh_list(self, select_id: Optional[int] = None):
+    def _refresh_list(self, select_id: Optional[int] = None) -> None:
+        self.client_list.setUpdatesEnabled(False)
         self.client_list.blockSignals(True)
-        self.client_list.clear()
-        clients = self.mgr.list_clients()
-        for c in clients:
-            tag   = " ★" if c["is_default"] else ""
-            label = f"{c['name']}{tag}  [{c['grant_type']}]"
-            item  = QListWidgetItem(label)
-            item.setData(Qt.ItemDataRole.UserRole, c["id"])
-            if c["is_default"]:
-                item.setForeground(QColor(Colors.GREEN))
-                f = item.font(); f.setBold(True); item.setFont(f)
-            self.client_list.addItem(item)
-            if c["id"] == select_id:
-                self.client_list.setCurrentItem(item)
-        self.client_list.blockSignals(False)
+        try:
+            self.client_list.clear()
+            for c in self.mgr.list_clients():
+                tag = " ★" if c["is_default"] else ""
+                label = f"{c['name']}{tag}  [{c['grant_type']}]"
+                item = QListWidgetItem(label)
+                item.setData(Qt.ItemDataRole.UserRole, c["id"])
+                if c["is_default"]:
+                    item.setForeground(QColor(Colors.GREEN))
+                    font = item.font()
+                    font.setBold(True)
+                    item.setFont(font)
+                self.client_list.addItem(item)
+                if c["id"] == select_id:
+                    self.client_list.setCurrentItem(item)
+        finally:
+            self.client_list.blockSignals(False)
+            self.client_list.setUpdatesEnabled(True)
 
         if select_id is None and self.client_list.count():
             # Triggers currentItemChanged → _on_client_selected
@@ -216,7 +248,7 @@ class OAuthClientsDialog(QDialog):
 
     # ── Selection logic ───────────────────────────────────────────────
 
-    def _apply_selection(self):
+    def _apply_selection(self) -> None:
         """Read the currently-selected list item and load it into the form.
 
         Unlike ``_on_client_selected`` (the signal slot) this method does
@@ -238,7 +270,7 @@ class OAuthClientsDialog(QDialog):
         self._dirty = False
         self._sync_buttons()
 
-    def _on_client_selected(self, current: QListWidgetItem, _prev):
+    def _on_client_selected(self, current: QListWidgetItem, _prev) -> None:
         """Handle interactive selection changes from the list widget."""
         if current is None:
             self._current_id = None
@@ -273,7 +305,7 @@ class OAuthClientsDialog(QDialog):
         self._dirty = False
         self._sync_buttons()
 
-    def _reselect(self, client_id: int):
+    def _reselect(self, client_id: int) -> None:
         self.client_list.blockSignals(True)
         for i in range(self.client_list.count()):
             if self.client_list.item(i).data(Qt.ItemDataRole.UserRole) == client_id:
@@ -281,7 +313,7 @@ class OAuthClientsDialog(QDialog):
                 break
         self.client_list.blockSignals(False)
 
-    def _load_form(self, client_id: int):
+    def _load_form(self, client_id: int) -> None:
         c = self.mgr.get_client(client_id)
         if not c:
             return
@@ -295,35 +327,23 @@ class OAuthClientsDialog(QDialog):
         idx = self.f_grant_type.findText(c.get("grant_type", "client_credentials"))
         self.f_grant_type.setCurrentIndex(max(idx, 0))
         extra = c.get("extra_params", {})
-        self.f_extra.setPlainText(
-            json.dumps(extra, indent=2) if extra else ""
-        )
+        self.f_extra.setPlainText(json.dumps(extra, indent=2) if extra else "")
         self._block_form(False)
         self.form_header.setText(f"<b>Client: {c['name']}</b>")
         self.status_label.setText("")
 
-    def _block_form(self, block: bool):
-        for w in (self.f_name, self.f_description, self.f_token_url,
-                  self.f_client_id, self.f_client_secret, self.f_scope,
-                  self.f_extra):
+    def _block_form(self, block: bool) -> None:
+        for w in (*self._line_fields, self.f_extra, self.f_grant_type):
             w.blockSignals(block)
-        self.f_grant_type.blockSignals(block)
 
-    def _set_form_enabled(self, enabled: bool):
-        for w in (self.f_name, self.f_description, self.f_token_url,
-                  self.f_client_id, self.f_client_secret, self.f_scope,
-                  self.f_grant_type, self.f_extra,
-                  self.test_btn, self.default_btn, self.save_btn):
+    def _set_form_enabled(self, enabled: bool) -> None:
+        for w in self._all_form_widgets:
             w.setEnabled(enabled)
         if not enabled:
-            self.form_header.setText(
-                f"<b>Client Details</b>"
-                f"<span style='color:{Colors.FG_MUTED};'>"
-                f"  (select a client to edit)</span>"
-            )
+            self.form_header.setText(_FORM_HEADER_IDLE)
             self.status_label.setText("")
 
-    def _sync_buttons(self):
+    def _sync_buttons(self) -> None:
         has = self._current_id is not None
         for b in (self.test_btn, self.default_btn, self.save_btn):
             b.setEnabled(has)
@@ -332,20 +352,16 @@ class OAuthClientsDialog(QDialog):
             "font-weight: bold; color: #9a6700;" if self._dirty
             else "font-weight: bold;"
         )
-        self.save_btn.setText(
-            "💾  Save *" if self._dirty else "💾  Save"
-        )
+        self.save_btn.setText("💾  Save *" if self._dirty else "💾  Save")
 
-    def _mark_dirty(self):
+    def _mark_dirty(self) -> None:
         self._dirty = True
         self._sync_buttons()
 
     # ── CRUD ──────────────────────────────────────────────────────────
 
-    def _new_client(self):
-        name, ok = QInputDialog.getText(
-            self, "New OAuth2 Client", "Client name:"
-        )
+    def _new_client(self) -> None:
+        name, ok = QInputDialog.getText(self, "New OAuth2 Client", "Client name:")
         if not ok or not name.strip():
             return
         try:
@@ -361,7 +377,7 @@ class OAuthClientsDialog(QDialog):
         except Exception as exc:
             QMessageBox.critical(self, "Error", str(exc))
 
-    def _delete_client(self):
+    def _delete_client(self) -> None:
         if self._current_id is None:
             return
         c = self.mgr.get_client(self._current_id)
@@ -384,18 +400,18 @@ class OAuthClientsDialog(QDialog):
             QMessageBox.critical(self, "Error", str(exc))
 
     def _save_client(self) -> bool:
-        """Validate and persist current form.  Returns True on success."""
+        """Validate and persist the current form.  Returns True on success."""
         if self._current_id is None:
             return False
 
-        name        = self.f_name.text().strip()
+        name = self.f_name.text().strip()
         description = self.f_description.text().strip()
-        token_url   = self.f_token_url.text().strip()
-        client_id   = self.f_client_id.text().strip()
-        secret      = self.f_client_secret.text()
-        scope       = self.f_scope.text().strip()
-        grant_type  = self.f_grant_type.currentText()
-        extra_raw   = self.f_extra.toPlainText().strip()
+        token_url = self.f_token_url.text().strip()
+        client_id = self.f_client_id.text().strip()
+        secret = self.f_client_secret.text()
+        scope = self.f_scope.text().strip()
+        grant_type = self.f_grant_type.currentText()
+        extra_raw = self.f_extra.toPlainText().strip()
 
         if not name:
             QMessageBox.warning(self, "Validation", "Name is required.")
@@ -407,7 +423,7 @@ class OAuthClientsDialog(QDialog):
             QMessageBox.warning(self, "Validation", "Client ID is required.")
             return False
 
-        extra_params = {}
+        extra_params: dict = {}
         if extra_raw:
             try:
                 extra_params = json.loads(extra_raw)
@@ -416,7 +432,7 @@ class OAuthClientsDialog(QDialog):
             except (json.JSONDecodeError, ValueError) as exc:
                 QMessageBox.warning(
                     self, "Invalid Extra Params",
-                    f"Extra Params must be a valid JSON object:\n{exc}"
+                    f"Extra Params must be a valid JSON object:\n{exc}",
                 )
                 return False
 
@@ -442,12 +458,11 @@ class OAuthClientsDialog(QDialog):
             QMessageBox.critical(self, "Save Failed", str(exc))
             return False
 
-    def _set_default(self):
+    def _set_default(self) -> None:
         if self._current_id is None:
             return
-        if self._dirty:
-            if not self._save_client():
-                return
+        if self._dirty and not self._save_client():
+            return
         try:
             self.mgr.set_default(self._current_id)
             self.clients_changed.emit()
@@ -458,27 +473,27 @@ class OAuthClientsDialog(QDialog):
 
     # ── Test connection ───────────────────────────────────────────────
 
-    def _test_client(self):
+    def _test_client(self) -> None:
         """Attempt to fetch a real token and display the outcome."""
         if self._current_id is None:
             return
 
         # Use the *form values* so the user can test before saving
-        token_url   = self.f_token_url.text().strip()
-        client_id   = self.f_client_id.text().strip()
-        secret      = self.f_client_secret.text()
-        scope       = self.f_scope.text().strip()
-        grant_type  = self.f_grant_type.currentText()
-        extra_raw   = self.f_extra.toPlainText().strip()
+        token_url = self.f_token_url.text().strip()
+        client_id = self.f_client_id.text().strip()
+        secret = self.f_client_secret.text()
+        scope = self.f_scope.text().strip()
+        grant_type = self.f_grant_type.currentText()
+        extra_raw = self.f_extra.toPlainText().strip()
 
         if not token_url or not client_id:
             QMessageBox.warning(
                 self, "Missing Fields",
-                "Token URL and Client ID are required to test the connection."
+                "Token URL and Client ID are required to test the connection.",
             )
             return
 
-        extra_params = {}
+        extra_params: dict = {}
         if extra_raw:
             try:
                 extra_params = json.loads(extra_raw)
@@ -495,25 +510,23 @@ class OAuthClientsDialog(QDialog):
         self._tester.done.connect(self._on_test_done)
         self._tester.start()
 
-    def _on_test_done(self, success: bool, message: str):
+    def _on_test_done(self, success: bool, message: str) -> None:
         self.test_btn.setEnabled(True)
         self.test_btn.setText("🔌  Test Connection")
         self._set_status(message, ok=success)
 
-    def _set_status(self, msg: str, ok: Optional[bool]):
+    def _set_status(self, msg: str, ok: Optional[bool]) -> None:
         if ok is True:
             colour = Colors.GREEN
         elif ok is False:
             colour = Colors.RED
         else:
             colour = Colors.FG_MUTED
-        self.status_label.setText(
-            f"<span style='color:{colour};'>{msg}</span>"
-        )
+        self.status_label.setText(f"<span style='color:{colour};'>{msg}</span>")
 
     # ── Close guard ───────────────────────────────────────────────────
 
-    def _on_close(self):
+    def _on_close(self) -> None:
         if self._dirty:
             ans = QMessageBox.question(
                 self, "Unsaved Changes",
@@ -525,6 +538,7 @@ class OAuthClientsDialog(QDialog):
             if ans == QMessageBox.StandardButton.Cancel:
                 return
             if ans == QMessageBox.StandardButton.Save:
-                self._save_client()
+                if not self._save_client():
+                    return  # save failed — keep dialog open
         self.accept()
 
