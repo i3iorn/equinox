@@ -22,6 +22,16 @@ _CONTENT_TYPE_MAP: Dict[str, str] = {
     "GraphQL":          "application/json",
 }
 
+# Reverse mapping: MIME-type substring → GUI body-type label.
+# Used by detect_body_type to stay in sync with _CONTENT_TYPE_MAP.
+# Entries are checked in order; first match wins.
+_CT_DETECT_ORDER: Tuple[Tuple[str, str], ...] = (
+    ("json",       "raw (JSON)"),
+    ("xml",        "raw (XML)"),
+    ("urlencoded", "form-urlencoded"),
+    ("text",       "raw (text)"),
+)
+
 
 def assemble_body(
     body_type: str,
@@ -42,24 +52,20 @@ def assemble_body(
     Returns:
         ``(body: Optional[str], multipart_data: Optional[list])``
     """
-    body: Optional[str] = None
-    multipart_data: Optional[List[Any]] = None
-
     if body_type == "multipart/form-data":
         multipart_data = [r for r in multipart_rows if r.get("key", "").strip()]
-    elif body_type == "GraphQL":
-        gql_body: Dict[str, Any] = {"query": gql_query}
-        try:
-            parsed = _json.loads(gql_vars) if gql_vars else None
-            if parsed is not None:
-                gql_body["variables"] = parsed
-        except Exception:
-            logger.warning("Failed to parse GraphQL variables as JSON", exc_info=True)
-        body = _json.dumps(gql_body)
-    else:
-        body = body_text or None
+        return None, multipart_data
 
-    return body, multipart_data
+    if body_type == "GraphQL":
+        gql_body: Dict[str, Any] = {"query": gql_query}
+        if gql_vars:
+            try:
+                gql_body["variables"] = _json.loads(gql_vars)
+            except Exception:
+                logger.warning("Failed to parse GraphQL variables as JSON", exc_info=True)
+        return _json.dumps(gql_body), None
+
+    return body_text or None, None
 
 
 def inject_content_type(
@@ -77,14 +83,12 @@ def inject_content_type(
     """
     if not body:
         return headers
-    # Case-insensitive check: HTTP headers are case-insensitive by spec.
     if any(k.lower() == "content-type" for k in headers):
         return headers
     ct = _CONTENT_TYPE_MAP.get(body_type)
-    if ct:
-        headers = dict(headers)
-        headers["Content-Type"] = ct
-    return headers
+    if ct is None:
+        return headers
+    return {**headers, "Content-Type": ct}
 
 
 def detect_body_type(body: str, headers: Optional[Dict] = None) -> str:
@@ -100,14 +104,10 @@ def detect_body_type(body: str, headers: Optional[Dict] = None) -> str:
         "",
     ).lower()
 
-    if "json" in ct:
-        return "raw (JSON)"
-    if "xml" in ct:
-        return "raw (XML)"
-    if "urlencoded" in ct:
-        return "form-urlencoded"
-    if "text" in ct:
-        return "raw (text)"
+    if ct:
+        for token, label in _CT_DETECT_ORDER:
+            if token in ct:
+                return label
 
     # Sniff content when no definitive header is present.
     stripped = body.strip()
@@ -120,10 +120,10 @@ def detect_body_type(body: str, headers: Optional[Dict] = None) -> str:
     if stripped.startswith("<") and (">" in stripped):
         return "raw (XML)"
     # form-urlencoded: one or more key=value pairs (& separated for multiple).
-    # Require that the key portion (before the first =) contains no whitespace,
-    # which excludes plain sentences that happen to contain "=".
+    # Require that the key portion (before the first =) contains no whitespace
+    # or path separators, which excludes plain sentences and file paths.
     if "=" in stripped:
         key_part = stripped.split("=", 1)[0]
-        if key_part and not any(c in key_part for c in " \t\n\r"):
+        if key_part and not any(c in key_part for c in " \t\n\r/\\"):
             return "form-urlencoded"
     return "raw (text)"
