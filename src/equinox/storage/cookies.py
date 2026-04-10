@@ -18,6 +18,26 @@ from equinox.storage.database import Database
 logger = logging.getLogger(__name__)
 
 
+# ── Module-level validation helper ───────────────────────────────────────────
+
+def _validate_str_field(
+    field_name: str,
+    value: object,
+    max_len: int,
+    *,
+    required: bool = False,
+) -> None:
+    """Validate a cookie string field: type, optional non-empty, length, CRLF."""
+    if not isinstance(value, str):
+        raise ValidationError(f"Cookie {field_name} must be a string")
+    if required and not value.strip():
+        raise ValidationError(f"Cookie {field_name} must be a non-empty string")
+    if len(value) > max_len:
+        raise ValidationError(f"Cookie {field_name} exceeds {max_len} characters")
+    if "\r" in value or "\n" in value:
+        raise ValidationError(f"Cookie {field_name} contains invalid characters")
+
+
 class CookieJarManager:
     """Manage a persistent cookie jar stored in SQLite.
 
@@ -37,46 +57,20 @@ class CookieJarManager:
     # ── Validation helpers ────────────────────────────────────────────────────
 
     def _validate_name(self, name: str) -> None:
-        if not isinstance(name, str) or not name.strip():
-            raise ValidationError("Cookie name must be a non-empty string")
-        if len(name) > self.MAX_NAME_LEN:
-            raise ValidationError(f"Cookie name exceeds {self.MAX_NAME_LEN} characters")
-        if "\r" in name or "\n" in name:
-            raise ValidationError("Cookie name contains invalid characters")
+        _validate_str_field("name", name, self.MAX_NAME_LEN, required=True)
 
     def _validate_value(self, value: str) -> None:
-        if not isinstance(value, str):
-            raise ValidationError("Cookie value must be a string")
-        if len(value) > self.MAX_VALUE_LEN:
-            raise ValidationError(f"Cookie value exceeds {self.MAX_VALUE_LEN} characters")
-        if "\r" in value or "\n" in value:
-            raise ValidationError("Cookie value contains invalid characters")
+        _validate_str_field("value", value, self.MAX_VALUE_LEN)
 
     def _validate_domain(self, domain: str) -> None:
-        if not isinstance(domain, str):
-            raise ValidationError("Cookie domain must be a string")
-        if len(domain) > self.MAX_DOMAIN_LEN:
-            raise ValidationError(f"Cookie domain exceeds {self.MAX_DOMAIN_LEN} characters")
-        if "\r" in domain or "\n" in domain:
-            raise ValidationError("Cookie domain contains invalid characters")
+        _validate_str_field("domain", domain, self.MAX_DOMAIN_LEN)
 
     def _validate_path(self, path: str) -> None:
-        if not isinstance(path, str):
-            raise ValidationError("Cookie path must be a string")
-        if len(path) > self.MAX_PATH_LEN:
-            raise ValidationError(f"Cookie path exceeds {self.MAX_PATH_LEN} characters")
-        if "\r" in path or "\n" in path:
-            raise ValidationError("Cookie path contains invalid characters")
+        _validate_str_field("path", path, self.MAX_PATH_LEN)
 
     def _validate_expires(self, expires: Optional[str]) -> None:
-        if expires is None:
-            return
-        if not isinstance(expires, str):
-            raise ValidationError("Cookie expires must be a string or None")
-        if len(expires) > 100:
-            raise ValidationError("Cookie expires value too long")
-        if "\r" in expires or "\n" in expires:
-            raise ValidationError("Cookie expires contains invalid characters")
+        if expires is not None:
+            _validate_str_field("expires", expires, 100)
 
     # ── Public API ────────────────────────────────────────────────────────────
 
@@ -139,9 +133,11 @@ class CookieJarManager:
                 """,
                 (name, value, domain or "", path or "/", int(secure), int(http_only), expires),
             )
-            # lastrowid is 0 on update (upsert) — look up the real id
+            # lastrowid is 0 on an upsert-update — look up the real id
             if not row_id:
                 row_id = self._find_id(name, domain, path)
+                if row_id < 0:
+                    raise StorageError("Failed to locate upserted cookie row")
             return row_id
         except StorageError:
             raise
@@ -199,11 +195,9 @@ class CookieJarManager:
 
     def update_from_response(self, response_headers: Dict[str, str], url: str) -> None:
         """Parse ``Set-Cookie`` headers and upsert into the jar."""
-        set_cookies: List[str] = []
-        for k, v in response_headers.items():
-            if k.lower() == "set-cookie":
-                set_cookies.append(v)
-
+        set_cookies = [
+            v for k, v in response_headers.items() if k.lower() == "set-cookie"
+        ]
         if not set_cookies:
             return
 
@@ -254,13 +248,9 @@ class CookieJarManager:
             return
 
         first = parts[0]
-        if "=" in first:
-            name, _, value = first.partition("=")
-            name = name.strip()
-            value = value.strip()
-        else:
-            name = first.strip()
-            value = ""
+        name, _, value = first.partition("=")
+        name = name.strip()
+        value = value.strip()
 
         if not name:
             return
@@ -272,17 +262,19 @@ class CookieJarManager:
         expires: Optional[str] = None
 
         for attr in parts[1:]:
-            lower = attr.lower()
-            if lower.startswith("domain="):
-                domain = attr[7:].strip().lstrip(".")
-            elif lower.startswith("path="):
-                path = attr[5:].strip() or "/"
-            elif lower == "secure":
+            attr_key, _, attr_val = attr.partition("=")
+            attr_key = attr_key.strip().lower()
+            attr_val = attr_val.strip()
+            if attr_key == "domain":
+                domain = attr_val.lstrip(".")
+            elif attr_key == "path":
+                path = attr_val or "/"
+            elif attr_key == "secure":
                 secure = True
-            elif lower == "httponly":
+            elif attr_key == "httponly":
                 http_only = True
-            elif lower.startswith("expires="):
-                expires = attr[8:].strip()
+            elif attr_key == "expires":
+                expires = attr_val
 
         try:
             self.add_cookie(
