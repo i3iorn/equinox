@@ -39,9 +39,43 @@ _ASSERTION_TYPES: Tuple[str, ...] = (
 # determined (e.g. the value is not literally present in the serialised text).
 _JSONPATH_PREVIEW_CHARS: int = 50
 
+# Maximum number of extra-selection highlights applied to the body editor.
+# Keeps the UI responsive on large documents with many matches.
+_MAX_HIGHLIGHTS: int = 500
+
 
 class RequestBodyMixin:
     """Methods for captures, assertions, multipart, body-type handling, load, and clear."""
+
+    # ── Internal helpers ──────────────────────────────────────────────
+
+    @staticmethod
+    def _select_range(target, start: int, end: int) -> None:
+        """Move *target*'s cursor to select ``[start, end)`` with bounds clamping.
+
+        Silently does nothing if the range is empty or the widget is gone.
+        """
+        try:
+            doc = target.document()
+            max_pos = max(0, doc.characterCount() - 1)
+        except Exception:
+            return
+        s = max(0, min(start, max_pos))
+        e = max(0, min(end, max_pos))
+        if s >= e:
+            return
+        cursor = target.textCursor()
+        cursor.setPosition(s)
+        cursor.setPosition(e, QTextCursor.MoveMode.KeepAnchor)
+        target.setTextCursor(cursor)
+
+    @staticmethod
+    def _try_ui(fn, *args, **kwargs) -> None:
+        """Call *fn* and silently swallow :exc:`RuntimeError` (deleted C++ widget)."""
+        try:
+            fn(*args, **kwargs)
+        except RuntimeError:
+            logger.debug("Widget unavailable in %s", getattr(fn, "__name__", fn), exc_info=True)
 
     # ── Shared tab-building helpers ───────────────────────────────────
 
@@ -372,18 +406,7 @@ class RequestBodyMixin:
                 positions = self._find_jsonpath_positions(term)
                 if positions and target is not None:
                     start, length = positions[0]
-                    end = min(start + length, len(doc_text))
-                    try:
-                        doc = target.document()
-                        max_pos = max(0, doc.characterCount() - 1)
-                        p = max(0, min(start, max_pos))
-                        q = max(0, min(end, max_pos))
-                        cursor = target.textCursor()
-                        cursor.setPosition(p)
-                        cursor.setPosition(q, QTextCursor.MoveMode.KeepAnchor)
-                        target.setTextCursor(cursor)
-                    except Exception:
-                        pass
+                    self._select_range(target, start, start + length)
                 return
 
             fmt = QTextCharFormat()
@@ -397,6 +420,8 @@ class RequestBodyMixin:
                             sel = self._make_extra_selection(target, m.start(), m.end(), fmt)
                             if sel is not None:
                                 selections.append(sel)
+                                if len(selections) >= _MAX_HIGHLIGHTS:
+                                    break
                 except re.error:
                     pass
             elif term:
@@ -412,10 +437,12 @@ class RequestBodyMixin:
                         sel = self._make_extra_selection(target, idx, idx + len(needle), fmt)
                         if sel is not None:
                             selections.append(sel)
+                            if len(selections) >= _MAX_HIGHLIGHTS:
+                                break
                     start = idx + max(1, len(needle))
 
             if target is not None:
-                target.setExtraSelections(selections)
+                target.setExtraSelections(selections[:_MAX_HIGHLIGHTS])
         except RuntimeError:
             logger.debug("Body editor unavailable while highlighting", exc_info=True)
         except Exception:
@@ -442,18 +469,7 @@ class RequestBodyMixin:
                 positions = self._find_jsonpath_positions(term)
                 if positions and target is not None:
                     start, length = positions[0] if forward else positions[-1]
-                    end = min(start + length, len(doc_text))
-                    try:
-                        doc = target.document()
-                        max_pos = max(0, doc.characterCount() - 1)
-                        s = max(0, min(start, max_pos))
-                        e = max(0, min(end, max_pos))
-                        cursor = target.textCursor()
-                        cursor.setPosition(s)
-                        cursor.setPosition(e, QTextCursor.MoveMode.KeepAnchor)
-                        target.setTextCursor(cursor)
-                    except Exception:
-                        pass
+                    self._select_range(target, start, start + length)
                 return
 
             # ── Regex ─────────────────────────────────────────────────
@@ -482,18 +498,7 @@ class RequestBodyMixin:
                         return
                     m = matches[-1]
                     start, end = m.start(), m.end()
-                try:
-                    doc = target.document()
-                    max_pos = max(0, doc.characterCount() - 1)
-                    s = max(0, min(start, max_pos))
-                    e = max(0, min(end, max_pos))
-                    if s < e:
-                        cursor = target.textCursor()
-                        cursor.setPosition(s)
-                        cursor.setPosition(e, QTextCursor.MoveMode.KeepAnchor)
-                        target.setTextCursor(cursor)
-                except Exception:
-                    pass
+                self._select_range(target, start, end)
                 return
 
             # ── Plain text via Qt (native wrap-around) ────────────────
@@ -565,28 +570,29 @@ class RequestBodyMixin:
                 steps.append(path[i:j])
                 i = j
 
-        matches: List[Tuple[int, int]] = []
-
-        def walk(o, sidx: int) -> None:
-            if sidx >= len(steps):
-                try:
-                    txt = json.dumps(o, ensure_ascii=False)
-                    off = text.find(txt)
-                    if off >= 0:
-                        matches.append((off, len(txt)))
-                except Exception:
-                    pass
-                return
-            step = steps[sidx]
+        # Iteratively walk the parsed path steps
+        current = obj
+        for step in steps:
             if isinstance(step, int):
-                if isinstance(o, list) and 0 <= step < len(o):
-                    walk(o[step], sidx + 1)
+                if isinstance(current, list) and 0 <= step < len(current):
+                    current = current[step]
+                else:
+                    return []
             else:
-                if isinstance(o, dict) and step in o:
-                    walk(o[step], sidx + 1)
+                if isinstance(current, dict) and step in current:
+                    current = current[step]
+                else:
+                    return []
 
-        walk(obj, 0)
-        return matches
+        # Locate the matched value in the source text
+        try:
+            txt = json.dumps(current, ensure_ascii=False)
+            off = text.find(txt)
+            if off >= 0:
+                return [(off, len(txt))]
+        except Exception:
+            pass
+        return []
 
     # ── Load / detect / clear ──────────────────────────────────────────
 
@@ -596,8 +602,7 @@ class RequestBodyMixin:
         self._auth = getattr(request, 'auth', None)
         self.current_request = request
 
-        # Resolve inherited auth when request has no own auth. Guard in case
-        # DB resolution fails in tests.
+        # Resolve inherited auth when request has no own auth.
         if self._auth is None:
             try:
                 self._resolve_inherited_auth()
@@ -607,114 +612,82 @@ class RequestBodyMixin:
             self._inherited_auth = None
             self._inherited_auth_source = None
 
-        # Populate UI widgets — each step is best-effort in headless/test envs.
-        try:
-            self.url_input.setText(request.url)
-        except RuntimeError:
-            logger.debug("url_input unavailable while loading request", exc_info=True)
+        # ── Populate UI widgets (best-effort in headless/test envs) ──
 
-        try:
+        self._try_ui(self.url_input.setText, request.url)
+
+        def _set_method():
             idx = self.method_combo.findText(request.method)
             if idx >= 0:
                 self.method_combo.setCurrentIndex(idx)
-        except RuntimeError:
-            logger.debug("method_combo unavailable while loading request", exc_info=True)
+        self._try_ui(_set_method)
 
-        try:
-            self.headers_table.set_data(request.headers or {})
-        except RuntimeError:
-            logger.debug("headers_table unavailable while loading request", exc_info=True)
+        self._try_ui(self.headers_table.set_data, request.headers or {})
 
-        # Prefer the rich params_list (with enabled flags) when present
         pl = getattr(request, "params_list", None)
-        try:
-            self.params_table.set_data(pl if pl else (request.params or {}))
-        except RuntimeError:
-            logger.debug("params_table unavailable while loading request", exc_info=True)
+        self._try_ui(self.params_table.set_data, pl if pl else (request.params or {}))
 
+        # Body / multipart
         mp_data = getattr(request, "multipart_data", None)
         if mp_data:
-            try:
+            def _load_mp():
                 self._set_multipart_data(mp_data)
                 self.body_type_combo.setCurrentText("multipart/form-data")
                 self.body_text.clear()
-            except RuntimeError:
-                logger.warning("Multipart widgets unavailable while loading multipart data", exc_info=True)
+            self._try_ui(_load_mp)
         elif request.body:
-            try:
+            def _load_body():
                 self.body_text.setPlainText(request.body)
                 self._multipart_table.setRowCount(0)
                 detected = self._detect_body_type(request.body, request.headers)
                 self.body_type_combo.setCurrentText(detected)
-            except RuntimeError:
-                logger.warning("Body widgets unavailable while setting request body", exc_info=True)
+            self._try_ui(_load_body)
         else:
-            try:
+            def _clear_body():
                 self.body_text.clear()
                 self._multipart_table.setRowCount(0)
                 self.body_type_combo.setCurrentText("none")
-            except RuntimeError:
-                logger.warning("Body/multipart widgets unavailable while clearing for empty body", exc_info=True)
+            self._try_ui(_clear_body)
 
-        try:
-            self._update_auth_display(self._auth)
-        except RuntimeError:
-            logger.debug("auth display widgets unavailable while loading request", exc_info=True)
+        self._try_ui(self._update_auth_display, self._auth)
+        self._try_ui(self._set_captures, getattr(request, "captures", None) or [])
+        self._try_ui(self._set_assertions, getattr(request, "assertions", None) or [])
 
-        try:
-            self._set_captures(getattr(request, "captures", None) or [])
-        except RuntimeError:
-            logger.debug("captures table unavailable while loading request", exc_info=True)
-
-        try:
-            self._set_assertions(getattr(request, "assertions", None) or [])
-        except RuntimeError:
-            logger.debug("assertions table unavailable while loading request", exc_info=True)
-
-        try:
+        def _load_scripts():
             self.pre_script_editor.setPlainText(getattr(request, "pre_script", "") or "")
             self.post_script_editor.setPlainText(getattr(request, "post_script", "") or "")
-        except RuntimeError:
-            logger.debug("script editors unavailable while loading request", exc_info=True)
+        self._try_ui(_load_scripts)
 
-        try:
+        def _load_certs():
             self.cert_path_input.setText(getattr(request, "cert_path", "") or "")
             self.cert_key_input.setText(getattr(request, "cert_key_path", "") or "")
-        except RuntimeError:
-            logger.debug("cert inputs unavailable while loading request", exc_info=True)
+        self._try_ui(_load_certs)
 
-        try:
+        def _load_settings():
             self.timeout_spin.setValue(getattr(request, "timeout", DEFAULT_TIMEOUT) or DEFAULT_TIMEOUT)
             self.verify_ssl_check.setChecked(bool(getattr(request, "verify_ssl", True)))
             self.follow_redirects_check.setChecked(bool(getattr(request, "follow_redirects", True)))
-        except RuntimeError:
-            logger.debug("settings widgets unavailable while loading request", exc_info=True)
+        self._try_ui(_load_settings)
 
-        try:
+        def _clear_script_results():
             self.pre_script_result.setText("")
             self.post_script_result.setText("")
-        except RuntimeError:
-            pass
+        self._try_ui(_clear_script_results)
 
-        try:
-            self.notes_editor.setPlainText(getattr(request, "description", "") or "")
-        except RuntimeError:
-            logger.debug("notes editor unavailable while loading request", exc_info=True)
+        self._try_ui(self.notes_editor.setPlainText, getattr(request, "description", "") or "")
 
-        try:
+        def _load_path_params():
             self.path_params_table.set_data(getattr(request, "path_params", None) or {})
             self.path_params_table.update_from_url(request.url)
             self._path_params_widget.setVisible(self.path_params_table.rowCount() > 0)
-        except RuntimeError:
-            logger.debug("path params widgets unavailable while loading request", exc_info=True)
+        self._try_ui(_load_path_params)
 
-        # Final housekeeping — best-effort
-        try:
+        # Final housekeeping
+        def _housekeeping():
             self._clear_dirty()
             self._update_tab_labels()
             self._update_url_suffix()
-        except RuntimeError:
-            logger.debug("final UI housekeeping skipped due to missing widgets", exc_info=True)
+        self._try_ui(_housekeeping)
 
     @staticmethod
     def _detect_body_type(body: str, headers: Optional[Dict] = None) -> str:
@@ -727,44 +700,59 @@ class RequestBodyMixin:
         return detect_body_type(body, headers)
 
     def clear(self) -> None:
-        if self._worker is not None and self._worker.isRunning():
-            self._cancel_request()
-        self.url_input.clear()
-        self.method_combo.setCurrentIndex(0)
-        self.headers_table.reset()
-        self.params_table.reset()
-        self.path_params_table.reset()
-        self._path_params_widget.setVisible(False)
-        self.body_text.clear()
-        self._multipart_table.setRowCount(0)
-        self._gql_query.clear()
-        self._gql_vars.clear()
-        self.body_type_combo.setCurrentIndex(0)
-        # Auth intentionally kept — user almost always wants to reuse it
-        self.captures_table.setRowCount(0)
-        self.captures_results_label.setText("—")
-        self.assertions_table.setRowCount(0)
-        self.assertions_results_label.setText("—")
-        # Reset Assertions tab title
-        for i in range(self.tabs.count()):
-            if self.tabs.tabText(i).startswith("Assertions"):
-                self.tabs.setTabText(i, "Assertions")
-                break
-        self.pre_script_editor.clear()
-        self.post_script_editor.clear()
-        self.pre_script_result.setText("")
-        self.post_script_result.setText("")
-        self.cert_path_input.clear()
-        self.cert_key_input.clear()
-        self.timeout_spin.setValue(DEFAULT_TIMEOUT)
-        self.verify_ssl_check.setChecked(True)
-        self.follow_redirects_check.setChecked(True)
-        self.notes_editor.clear()
+        """Reset all request fields to their defaults.
+
+        Each widget access is guarded so a deleted C++ object in headless/test
+        environments does not prevent the rest of the reset from running.
+        """
+        try:
+            if self._worker is not None and self._worker.isRunning():
+                self._cancel_request()
+        except RuntimeError:
+            pass
+
+        def _reset_widgets():
+            self.url_input.clear()
+            self.method_combo.setCurrentIndex(0)
+            self.headers_table.reset()
+            self.params_table.reset()
+            self.path_params_table.reset()
+            self._path_params_widget.setVisible(False)
+            self.body_text.clear()
+            self._multipart_table.setRowCount(0)
+            self._gql_query.clear()
+            self._gql_vars.clear()
+            self.body_type_combo.setCurrentIndex(0)
+            # Auth intentionally kept — user almost always wants to reuse it
+            self.captures_table.setRowCount(0)
+            self.captures_results_label.setText("—")
+            self.assertions_table.setRowCount(0)
+            self.assertions_results_label.setText("—")
+            # Reset Assertions tab title
+            for i in range(self.tabs.count()):
+                if self.tabs.tabText(i).startswith("Assertions"):
+                    self.tabs.setTabText(i, "Assertions")
+                    break
+            self.pre_script_editor.clear()
+            self.post_script_editor.clear()
+            self.pre_script_result.setText("")
+            self.post_script_result.setText("")
+            self.cert_path_input.clear()
+            self.cert_key_input.clear()
+            self.timeout_spin.setValue(DEFAULT_TIMEOUT)
+            self.verify_ssl_check.setChecked(True)
+            self.follow_redirects_check.setChecked(True)
+            self.notes_editor.clear()
+        self._try_ui(_reset_widgets)
+
         # _session_vars intentionally kept — persists for request chaining
         self.current_request = None
-        self._clear_dirty()
-        self._update_tab_labels()
-        self._update_url_suffix()
+
+        def _housekeeping():
+            self._clear_dirty()
+            self._update_tab_labels()
+            self._update_url_suffix()
+        self._try_ui(_housekeeping)
 
     # ── Multipart helpers ───────────────────────────────────────────
 
