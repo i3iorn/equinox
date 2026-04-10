@@ -1,5 +1,7 @@
 """Save-request dialog — prompts for name, collection, and optional folder."""
 
+from typing import Optional, Tuple
+
 from PyQt6.QtWidgets import (
     QDialog,
     QVBoxLayout,
@@ -8,38 +10,47 @@ from PyQt6.QtWidgets import (
     QLineEdit,
     QComboBox,
     QDialogButtonBox,
+    QMessageBox,
 )
 
-from equinox.storage import Database
+from equinox.storage import Database, CollectionManager
+
+# Maximum characters of the URL shown in the default request name.
+_URL_PREVIEW_LEN = 50
 
 
 class SaveRequestDialog(QDialog):
     """Prompt the user for name, collection, and optional folder when saving."""
 
-    def __init__(self, db: Database, method: str, url: str, current_folder: str = "", parent=None):
+    def __init__(
+        self,
+        db: Database,
+        method: str,
+        url: str,
+        current_folder: str = "",
+        parent=None,
+    ):
         super().__init__(parent)
         self.setWindowTitle("Save Request")
         self.setMinimumWidth(420)
+
+        # Compute the fallback name once so result_values() doesn't need to
+        # store method/url separately.
+        self._default_name = f"{method} {url[:_URL_PREVIEW_LEN]}"
+
         layout = QVBoxLayout(self)
 
         name_row = QHBoxLayout()
         name_row.addWidget(QLabel("Name:"))
         self._name_input = QLineEdit()
-        self._name_input.setPlaceholderText(f"{method} {url[:50]}")
+        self._name_input.setPlaceholderText(self._default_name)
         name_row.addWidget(self._name_input)
         layout.addLayout(name_row)
 
         col_row = QHBoxLayout()
         col_row.addWidget(QLabel("Collection:"))
         self._col_combo = QComboBox()
-        from equinox.storage import CollectionManager
-        mgr = CollectionManager(db)
-        collections = mgr.list_collections()
-        if not collections:
-            mgr.create_collection("My Requests", "Default collection")
-            collections = mgr.list_collections()
-        for col in collections:
-            self._col_combo.addItem(col["name"], col["id"])
+        self._populate_collections(db)
         col_row.addWidget(self._col_combo)
         layout.addLayout(col_row)
 
@@ -55,18 +66,38 @@ class SaveRequestDialog(QDialog):
         buttons = QDialogButtonBox(
             QDialogButtonBox.StandardButton.Save | QDialogButtonBox.StandardButton.Cancel
         )
-        buttons.accepted.connect(self.accept)
+        buttons.accepted.connect(self._on_accept)
         buttons.rejected.connect(self.reject)
         layout.addWidget(buttons)
 
-        self._method = method
-        self._url = url
+    # ── Private helpers ───────────────────────────────────────────────────
 
-    def result_values(self) -> tuple:
-        """Return ``(name, collection_id, col_name, folder_or_none)``."""
-        name = self._name_input.text().strip() or f"{self._method} {self._url[:50]}"
-        col_id = self._col_combo.currentData()
-        col_name = self._col_combo.currentText()
-        folder = self._folder_input.text().strip() or None
+    def _populate_collections(self, db: Database) -> None:
+        """Load collections into the combo, creating a default one if needed."""
+        mgr = CollectionManager(db)
+        collections = mgr.list_collections()
+        if not collections:
+            mgr.create_collection("My Requests", "Default collection")
+            collections = mgr.list_collections()
+        for col in collections:
+            self._col_combo.addItem(col["name"], col["id"])
+
+    def _on_accept(self) -> None:
+        """Validate before closing — reject if no collection is available."""
+        if self._col_combo.currentData() is None:
+            QMessageBox.warning(
+                self, "No Collection", "Please select or create a collection first."
+            )
+            return
+        self.accept()
+
+    # ── Public API ────────────────────────────────────────────────────────
+
+    def result_values(self) -> Tuple[str, int, str, Optional[str]]:
+        """Return ``(name, collection_id, collection_name, folder_or_none)``."""
+        name = self._name_input.text().strip() or self._default_name
+        col_id: int = self._col_combo.currentData()
+        col_name: str = self._col_combo.currentText()
+        folder: Optional[str] = self._folder_input.text().strip() or None
         return name, col_id, col_name, folder
 
