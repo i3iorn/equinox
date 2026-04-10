@@ -1,23 +1,29 @@
 """Request/Response logging panel."""
+from __future__ import annotations
 
 import json
 import logging
-from datetime import datetime, timezone
-from typing import List, Dict, Any
+import os
+import subprocess
+import sys
+from typing import Any
 
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout,
     QTextEdit, QPushButton, QComboBox, QLabel, QSplitter,
-    QListWidget, QListWidgetItem,
+    QListWidget, QListWidgetItem, QMessageBox,
 )
 from PyQt6.QtCore import Qt, QSettings
-from PyQt6.QtGui import QFont, QColor
+from PyQt6.QtGui import QColor
 
+from equinox.core.log_setup import get_log_file
+from equinox.core.redact import redact_body, redact_headers, redact_url
 from equinox.core.time import utc_now
 from equinox.gui.theme import Colors, get_mono_font
-from equinox.core.redact import redact_headers, redact_body, redact_url
 
-# Python logger — routes GUI traffic to the structured log file as well
+__all__ = ["LoggingPanel"]
+
+# Routes GUI traffic to the structured log file as well as the panel.
 _py_logger = logging.getLogger("equinox.gui.traffic")
 
 MAX_LOG_ENTRIES = 500
@@ -26,18 +32,19 @@ MAX_LOG_ENTRIES = 500
 class LoggingPanel(QWidget):
     """Sidebar panel showing a live log of all HTTP transactions."""
 
-    def __init__(self, parent=None):
+    def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
-        self._entries: List[Dict[str, Any]] = []
+        self._entries: list[dict[str, Any]] = []
         self._settings = QSettings("Equinox", "Equinox")
         self._init_ui()
+
+    # ── UI construction ───────────────────────────────────────────────────────
 
     def _init_ui(self) -> None:
         layout = QVBoxLayout(self)
         layout.setContentsMargins(4, 4, 4, 4)
         layout.setSpacing(4)
 
-        # Toolbar
         toolbar = QHBoxLayout()
         self.filter_combo = QComboBox()
         self.filter_combo.addItems(["All", "Requests", "Responses", "Errors"])
@@ -61,7 +68,6 @@ class LoggingPanel(QWidget):
         toolbar.addWidget(clear_btn)
         layout.addLayout(toolbar)
 
-        # Splitter: list on top, detail below
         splitter = QSplitter(Qt.Orientation.Vertical)
 
         self.list_widget = QListWidget()
@@ -78,7 +84,6 @@ class LoggingPanel(QWidget):
         splitter.setChildrenCollapsible(False)
         splitter.setHandleWidth(5)
 
-        # Restore saved splitter position (#1)
         saved = self._settings.value("splitter/logging")
         if saved:
             try:
@@ -93,7 +98,7 @@ class LoggingPanel(QWidget):
 
         layout.addWidget(splitter, 1)
 
-    # ── Public log methods ────────────────────────────────────────────
+    # ── Public log methods ────────────────────────────────────────────────────
 
     def log_request(self, request) -> None:
         safe_url = redact_url(request.url) if request.url else ""
@@ -113,7 +118,8 @@ class LoggingPanel(QWidget):
         self._push(entry)
 
     def log_response(self, request, response) -> None:
-        elapsed_ms = int(response.elapsed * 1000)
+        # Guard against None elapsed (e.g. cancelled or error responses).
+        elapsed_ms = int((response.elapsed or 0) * 1000)
         safe_url = redact_url(request.url) if request.url else ""
         entry = {
             "type": "response",
@@ -164,32 +170,44 @@ class LoggingPanel(QWidget):
         )
         self._push(entry)
 
-    # ── Internal ──────────────────────────────────────────────────────
+    # ── Internal ──────────────────────────────────────────────────────────────
 
-    def _push(self, entry: Dict[str, Any]) -> None:
-        """Store entry and add to list if it passes the current filter."""
+    def _push(self, entry: dict[str, Any]) -> None:
+        """Append *entry* to storage, evict the oldest if at cap, update list.
+
+        Entry dicts are stored directly in each ``QListWidgetItem`` (not an
+        integer index), so eviction needs only a single O(k) scan to remove
+        the one affected list item rather than rebuilding the entire list.
+        """
         self._entries.append(entry)
-        # Evict oldest entries when over cap
+
+        evicted: dict[str, Any] | None = None
         if len(self._entries) > MAX_LOG_ENTRIES:
-            self._entries = self._entries[-MAX_LOG_ENTRIES:]
-            self._refresh_list()
-            return
+            evicted = self._entries.pop(0)
 
         if self._passes_filter(entry):
-            self._append_list_item(entry, len(self._entries) - 1)
+            self._append_list_item(entry)
+
+        # Remove the evicted entry from the list if it was visible.
+        if evicted is not None:
+            for i in range(self.list_widget.count()):
+                if self.list_widget.item(i).data(Qt.ItemDataRole.UserRole) is evicted:
+                    self.list_widget.takeItem(i)
+                    break
+
         self.count_label.setText(f"{len(self._entries)} entries")
 
-    def _passes_filter(self, entry: Dict[str, Any]) -> bool:
+    def _passes_filter(self, entry: dict[str, Any]) -> bool:
         f = self.filter_combo.currentText()
         if f == "All":
             return True
         return (
-            (f == "Requests"  and entry["type"] == "request") or
+            (f == "Requests"  and entry["type"] == "request")  or
             (f == "Responses" and entry["type"] == "response") or
             (f == "Errors"    and entry["type"] == "error")
         )
 
-    def _append_list_item(self, entry: Dict[str, Any], index: int) -> None:
+    def _append_list_item(self, entry: dict[str, Any]) -> None:
         t = entry["type"]
         ts = entry["timestamp"][11:23]   # HH:MM:SS.mmm
 
@@ -206,29 +224,42 @@ class LoggingPanel(QWidget):
 
         item = QListWidgetItem(f"{ts}  {text}")
         item.setForeground(color)
-        item.setData(Qt.ItemDataRole.UserRole, index)
+        # Store the entry dict directly — no stale-index problem on eviction.
+        item.setData(Qt.ItemDataRole.UserRole, entry)
         self.list_widget.addItem(item)
         self.list_widget.scrollToBottom()
 
     def _refresh_list(self) -> None:
-        """Rebuild the list according to the current filter."""
-        self.list_widget.clear()
-        for i, entry in enumerate(self._entries):
-            if self._passes_filter(entry):
-                self._append_list_item(entry, i)
+        """Rebuild the list according to the current filter.
+
+        Signals and screen updates are suppressed during the rebuild to avoid
+        spurious ``currentRowChanged`` firings and per-item repaint overhead.
+        """
+        self.list_widget.blockSignals(True)
+        self.list_widget.setUpdatesEnabled(False)
+        try:
+            self.list_widget.clear()
+            for entry in self._entries:
+                if self._passes_filter(entry):
+                    self._append_list_item(entry)
+        finally:
+            self.list_widget.setUpdatesEnabled(True)
+            self.list_widget.blockSignals(False)
+        self.detail_text.clear()
         self.count_label.setText(f"{len(self._entries)} entries")
 
     def _show_detail(self, _row: int) -> None:
         item = self.list_widget.currentItem()
         if item is None:
             return
-        idx = item.data(Qt.ItemDataRole.UserRole)
-        if idx is None or idx >= len(self._entries):
+        entry = item.data(Qt.ItemDataRole.UserRole)
+        if entry is None:
             return
-        entry = self._entries[idx]
-        self.detail_text.setPlainText(
-            json.dumps(entry, indent=2, default=str)
-        )
+        try:
+            text = json.dumps(entry, indent=2, default=str)
+        except Exception:
+            text = str(entry)
+        self.detail_text.setPlainText(text)
 
     def _clear(self) -> None:
         self._entries.clear()
@@ -238,33 +269,29 @@ class LoggingPanel(QWidget):
 
     def _open_log_file(self) -> None:
         """Open the structured log file in the OS default text viewer."""
-        import os, subprocess
-        from equinox.core.log_setup import get_log_file
-        from PyQt6.QtWidgets import QMessageBox
-
         log_path = get_log_file()
         if not log_path or not log_path.exists():
             QMessageBox.information(
                 self, "Log File",
-                "No log file found yet — send a request first to generate entries."
+                "No log file found yet — send a request first to generate entries.",
             )
             return
 
-        # SECURITY: validate the resolved path before handing it to OS commands
+        # Validate the resolved path before handing it to OS commands.
         resolved = log_path.resolve()
         if not str(resolved).endswith(".log"):
             return
 
         try:
-            if os.name == "nt":
-                os.startfile(str(resolved))
-            elif os.path.exists("/usr/bin/open"):   # macOS
+            if sys.platform == "win32":
+                os.startfile(str(resolved))  # type: ignore[attr-defined]
+            elif sys.platform == "darwin":
                 subprocess.Popen(["open", str(resolved)])  # noqa: S603
             else:
                 subprocess.Popen(["xdg-open", str(resolved)])  # noqa: S603
         except Exception as exc:
             QMessageBox.information(
                 self, "Log File",
-                f"Log file:\n{log_path}\n\n(Could not open automatically: {exc})"
+                f"Log file:\n{log_path}\n\n(Could not open automatically: {exc})",
             )
 
