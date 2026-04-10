@@ -1,15 +1,13 @@
 """Request builder panel.
 
 Logging strategy:
-- Entry/exit: Major operations (load_request, send_request, save_request)
+- Entry/exit: major operations (load_request, send_request, save_request)
 - Context: method, URL, request_id for structured logs
-- Performance: elapsed time for request operations
-- Errors: Full exception context with request details
+- Errors: full exception context with request details
 """
 
 import json
 import logging
-import time
 from typing import Optional, Dict, Tuple
 
 from PyQt6.QtWidgets import (
@@ -141,36 +139,23 @@ class RequestPanel(_RequestSendMixin, _RequestAuthMixin, RequestBodyMixin, QWidg
         self._elapsed_timer.timeout.connect(self._tick_elapsed)
         self._elapsed_secs = 0.0
         self._dirty = False
-        
-        try:
-            start = time.time()
-            self._init_ui()
-            logger.debug("UI initialized", extra={"elapsed_ms": int((time.time() - start) * 1000)})
-            
-            self._setup_dirty_tracking()
-            logger.debug("Dirty tracking setup complete")
-            
-            self._setup_url_completer()
-            logger.debug("URL completer setup complete")
-        except Exception as exc:
-            logger.error("Failed to initialize RequestPanel", exc_info=True)
-            raise
+
+        self._init_ui()
+        self._setup_dirty_tracking()
+        self._setup_url_completer()
 
         # Ctrl+Enter sends from anywhere in the panel (#8)
         send_shortcut = QShortcut(QKeySequence("Ctrl+Return"), self)
         send_shortcut.activated.connect(self._send_request)
-        logger.debug("Registered Ctrl+Return send shortcut")
 
         # Ctrl+S saves to collection from anywhere in the panel
         save_shortcut = QShortcut(QKeySequence("Ctrl+S"), self)
         save_shortcut.activated.connect(self._save_request)
-        logger.debug("Registered Ctrl+S save shortcut")
 
         # Ctrl+Shift+F formats JSON body (#6)
         fmt_shortcut = QShortcut(QKeySequence("Ctrl+Shift+F"), self)
         fmt_shortcut.activated.connect(self._format_json_body)
-        logger.debug("Registered Ctrl+Shift+F format JSON shortcut")
-        
+
         logger.info("RequestPanel initialized successfully")
 
     # ── Dirty-flag tracking (#3) ──────────────────────────────────────
@@ -190,16 +175,11 @@ class RequestPanel(_RequestSendMixin, _RequestAuthMixin, RequestBodyMixin, QWidg
         ``id``).  Silently does nothing for ad-hoc / history requests.
         """
         if not self._dirty:
-            logger.debug("autosave_current: skipped (not dirty)")
             return
         req = self.current_request
         if not req or not getattr(req, "id", None):
-            logger.debug("autosave_current: skipped (no collection request)", 
-                        extra={"request_id": getattr(req, "id", None)})
             return
         try:
-            start = time.time()
-            mgr = self._collection_mgr
             updated = Request(
                 method=self.method_combo.currentText(),
                 url=self.url_input.text().strip(),
@@ -224,25 +204,12 @@ class RequestPanel(_RequestSendMixin, _RequestAuthMixin, RequestBodyMixin, QWidg
                 cert_key_path=self.cert_key_input.text().strip() or None,
                 path_params=self.path_params_table.get_all_data(),
             )
-            mgr.update_request(updated)
+            self._collection_mgr.update_request(updated)
             self._clear_dirty()
-            elapsed_ms = int((time.time() - start) * 1000)
-            logger.info("Autosaved request", extra={
-                "request_id": req.id,
-                "method": updated.method,
-                "url": updated.url,
-                "elapsed_ms": elapsed_ms,
-            })
-        except Exception as exc:
-            logger.error("Autosave failed", exc_info=True, extra={
-                "request_id": getattr(req, "id", None),
-                "method": req.method if req else None,
-                "url": req.url if req else None,
-            })
-            # Surface the failure so the user knows edits may not be persisted.
-            self._status_message(
-                "⚠ Autosave failed — click Save to preserve changes", 8000
-            )
+            logger.debug("Autosaved request id=%s %s %s", req.id, updated.method, updated.url)
+        except Exception:
+            logger.error("Autosave failed for request id=%s", getattr(req, "id", None), exc_info=True)
+            self._status_message("⚠ Autosave failed — click Save to preserve changes", 8000)
 
     # ── Session variable accessors ─────────────────────────────────────
 
@@ -268,44 +235,32 @@ class RequestPanel(_RequestSendMixin, _RequestAuthMixin, RequestBodyMixin, QWidg
 
     def _setup_dirty_tracking(self) -> None:
         """Connect change signals on all editor widgets to mark dirty."""
-        def safe_connect(get_signal, slot, name=None):
-            """Lazily retrieve a signal via get_signal() and connect it to slot.
+        _connected = 0
 
-            get_signal is a callable that returns the signal object when invoked.
-            This avoids attribute access at function call time which can raise
-            if the underlying C++ object was already deleted. Expected errors
-            (AttributeError, RuntimeError) are common in headless/test envs
-            and are logged at DEBUG to avoid noisy warning spam; unexpected
-            exceptions are still surfaced as warnings.
-            """
+        def safe_connect(get_signal, slot, name=None):
+            """Lazily retrieve a signal via get_signal() and connect it to slot."""
+            nonlocal _connected
             try:
                 sig = get_signal()
-            except Exception as exc:
-                # Common case: underlying C++ object removed -> AttributeError / RuntimeError
-                if isinstance(exc, (AttributeError, RuntimeError)):
-                    logger.debug("Signal retrieval skipped (C++ object missing)", extra={
-                        "signal_name": name,
-                        "error": type(exc).__name__,
-                    })
-                else:
-                    logger.warning("Unexpected error retrieving signal", extra={
-                        "signal_name": name,
-                        "error": type(exc).__name__,
-                    }, exc_info=True)
+            except (AttributeError, RuntimeError) as exc:
+                logger.debug(
+                    "Signal retrieval skipped (C++ object missing): %s — %s",
+                    name, type(exc).__name__,
+                )
+                return
+            except Exception:
+                logger.warning(
+                    "Unexpected error retrieving signal: %s", name, exc_info=True
+                )
                 return
             try:
                 sig.connect(slot)
-                logger.debug("Dirty-flag signal connected", extra={"signal_name": name})
-            except RuntimeError as exc:
-                # Underlying C++ object deleted after signal retrieval
-                logger.debug("Failed to connect signal after retrieval (C++ object deleted)", extra={
-                    "signal_name": name,
-                    "slot": slot.__name__ if hasattr(slot, "__name__") else str(slot),
-                })
+                _connected += 1
+            except RuntimeError:
+                logger.debug("Failed to connect signal after retrieval: %s", name)
 
         safe_connect(lambda: self.url_input.textChanged, self._mark_dirty, "url_input.textChanged")
         safe_connect(lambda: self.method_combo.currentIndexChanged, self._mark_dirty, "method_combo.currentIndexChanged")
-        # body_text is a BodyTextProxy; access it directly like any other widget.
         safe_connect(lambda: self.body_text.textChanged, self._mark_dirty, "body_text.textChanged")
         safe_connect(lambda: self.body_text.textChanged, self._update_tab_labels, "body_text.textChanged->update_tab_labels")
         safe_connect(lambda: self.body_type_combo.currentIndexChanged, self._mark_dirty, "body_type_combo.currentIndexChanged")
@@ -324,7 +279,7 @@ class RequestPanel(_RequestSendMixin, _RequestAuthMixin, RequestBodyMixin, QWidg
         safe_connect(lambda: self.notes_editor.textChanged, self._mark_dirty, "notes_editor.textChanged")
         safe_connect(lambda: self._gql_query.textChanged, self._mark_dirty, "_gql_query.textChanged")
         safe_connect(lambda: self._gql_vars.textChanged, self._mark_dirty, "_gql_vars.textChanged")
-        logger.debug("Dirty tracking signals setup complete")
+        logger.debug("Dirty tracking: %d signal(s) connected", _connected)
 
     # ── URL auto-complete from history (#6) ───────────────────────────
 
@@ -341,18 +296,11 @@ class RequestPanel(_RequestSendMixin, _RequestAuthMixin, RequestBodyMixin, QWidg
     def _refresh_url_completer(self) -> None:
         """Populate the completer model from recent history URLs."""
         try:
-            start = time.time()
-            mgr = HistoryManager(self.db)
-            entries = mgr.list_history(limit=200)
+            entries = HistoryManager(self.db).list_history(limit=200)
             urls = list(dict.fromkeys(e["url"] for e in entries))  # deduplicate, keep order
             self._url_model.setStringList(urls)
-            elapsed_ms = int((time.time() - start) * 1000)
-            logger.debug("URL completer refreshed", extra={
-                "url_count": len(urls),
-                "history_entries": len(entries),
-                "elapsed_ms": elapsed_ms,
-            })
-        except Exception as exc:
+            logger.debug("URL completer refreshed: %d URLs", len(urls))
+        except Exception:
             logger.warning("Failed to refresh URL completer", exc_info=True)
 
     # ── UI construction ───────────────────────────────────────────────
@@ -455,13 +403,9 @@ class RequestPanel(_RequestSendMixin, _RequestAuthMixin, RequestBodyMixin, QWidg
         row.addWidget(self._session_vars_label)
 
         # Update session-vars count whenever the signal is emitted
-        try:
-            self.session_vars_changed.connect(
-                lambda d: self._session_vars_label.setText(f"Session vars: {len(d)}")
-            )
-        except Exception:
-            # Best-effort — don't let signal wiring break UI init
-            logger.debug("Could not connect session_vars_changed signal", exc_info=True)
+        self.session_vars_changed.connect(
+            lambda d: self._session_vars_label.setText(f"Session vars: {len(d)}")
+        )
 
         return row
 
@@ -832,13 +776,9 @@ class RequestPanel(_RequestSendMixin, _RequestAuthMixin, RequestBodyMixin, QWidg
         path, _ = QFileDialog.getOpenFileName(self, title, "", filters)
         if path:
             target.setText(path)
-            logger.debug("File selected", extra={
-                "dialog_title": title,
-                "path_length": len(path),
-            })
+            logger.debug("File selected via '%s'", title)
 
     def _browse_cert(self) -> None:
-        logger.debug("Certificate file browser opened")
         self._browse_file_to_input(
             "Select Certificate File",
             "Certificate files (*.pem *.crt *.cer);;All files (*)",
@@ -846,7 +786,6 @@ class RequestPanel(_RequestSendMixin, _RequestAuthMixin, RequestBodyMixin, QWidg
         )
 
     def _browse_cert_key(self) -> None:
-        logger.debug("Certificate key file browser opened")
         self._browse_file_to_input(
             "Select Private Key File",
             "Key files (*.pem *.key);;All files (*)",
@@ -873,64 +812,35 @@ class RequestPanel(_RequestSendMixin, _RequestAuthMixin, RequestBodyMixin, QWidg
             return
 
         try:
-            start = time.time()
             parsed = parse_curl(text.strip())
-            elapsed_ms = int((time.time() - start) * 1000)
-            
-            logger.info("cURL command parsed successfully", extra={
-                "method": parsed.get("method", "GET"),
-                "url": parsed.get("url", ""),
-                "headers_count": len(parsed.get("headers") or {}),
-                "has_body": bool(parsed.get("body")),
-                "elapsed_ms": elapsed_ms,
-            })
         except Exception as exc:
-            logger.warning("Failed to parse cURL command", exc_info=True, extra={
-                "curl_length": len(text),
-            })
+            logger.warning("Failed to parse cURL command (len=%d): %s", len(text), exc)
             QMessageBox.warning(self, "Parse Error", f"Could not parse cURL command:\n{exc}")
             return
 
         # Populate the editor
-        try:
-            method = parsed.get("method", "GET")
-            idx = self.method_combo.findText(method)
-            if idx >= 0:
-                self.method_combo.setCurrentIndex(idx)
-            
-            url = parsed.get("url", "")
-            self.url_input.setText(url)
-            
-            headers = parsed.get("headers") or {}
-            self.headers_table.set_data(headers)
-            
-            body = parsed.get("body")
-            if body:
-                self.body_text.setPlainText(body)
-                self.body_type_combo.setCurrentText(
-                    self._detect_body_type(body, headers)
-                )
-            else:
-                self.body_text.clear()
-                self.body_type_combo.setCurrentIndex(0)
-            
-            if not parsed.get("verify_ssl", True):
-                self.verify_ssl_check.setChecked(False)
-            
-            self._mark_dirty()
-            self._status_message("Request imported from cURL command")
-            
-            logger.info("cURL import completed successfully", extra={
-                "method": method,
-                "url": url,
-                "headers_count": len(headers),
-                "has_body": bool(body),
-            })
-        except Exception as exc:
-            logger.error("Error populating editor from cURL parse result", exc_info=True, extra={
-                "parsed_method": parsed.get("method"),
-                "parsed_url": parsed.get("url"),
-            })
+        method = parsed.get("method", "GET")
+        url = parsed.get("url", "")
+        headers = parsed.get("headers") or {}
+        body = parsed.get("body")
+
+        idx = self.method_combo.findText(method)
+        if idx >= 0:
+            self.method_combo.setCurrentIndex(idx)
+        self.url_input.setText(url)
+        self.headers_table.set_data(headers)
+        if body:
+            self.body_text.setPlainText(body)
+            self.body_type_combo.setCurrentText(self._detect_body_type(body, headers))
+        else:
+            self.body_text.clear()
+            self.body_type_combo.setCurrentIndex(0)
+        if not parsed.get("verify_ssl", True):
+            self.verify_ssl_check.setChecked(False)
+
+        self._mark_dirty()
+        self._status_message("Request imported from cURL command")
+        logger.info("cURL import: %s %s (%d headers)", method, url, len(headers))
 
     # ── Benchmark ─────────────────────────────────────────────────────
 
@@ -938,41 +848,28 @@ class RequestPanel(_RequestSendMixin, _RequestAuthMixin, RequestBodyMixin, QWidg
         """Open the benchmark dialog for the currently configured request."""
         url = self.url_input.text().strip()
         if not url:
-            logger.debug("Benchmark skipped: no URL entered")
             QMessageBox.warning(self, "No Request", "Enter a URL before running a benchmark.")
             return
-        
+
+        method = self.method_combo.currentText()
+        headers = self.headers_table.get_data()
+        body_type = self.body_type_combo.currentText()
+        body = (
+            self.body_text.toPlainText().strip() or None
+            if body_type not in ("none", "multipart/form-data", "GraphQL")
+            else None
+        )
+        req = Request(
+            method=method, url=url, headers=headers, body=body,
+            timeout=self.timeout_spin.value(),
+            verify_ssl=self.verify_ssl_check.isChecked(),
+            follow_redirects=self.follow_redirects_check.isChecked(),
+        )
+        logger.debug("Opening benchmark: %s %s", method, url)
         try:
-            method = self.method_combo.currentText()
-            headers = self.headers_table.get_data()
-            body_type = self.body_type_combo.currentText()
-            body = None
-            if body_type not in ("none", "multipart/form-data", "GraphQL"):
-                body = self.body_text.toPlainText().strip() or None
-            
-            req = Request(
-                method=method,
-                url=url,
-                headers=headers,
-                body=body,
-                timeout=self.timeout_spin.value(),
-                verify_ssl=self.verify_ssl_check.isChecked(),
-                follow_redirects=self.follow_redirects_check.isChecked(),
-            )
-            
-            logger.info("Benchmark dialog opening", extra={
-                "method": method,
-                "url": url,
-                "headers_count": len(headers),
-                "has_body": bool(body),
-            })
-            
-            dlg = BenchmarkDialog(req, self, cookie_manager=self._cookie_manager)
-            dlg.exec()
-        except Exception as exc:
-            logger.error("Failed to open benchmark dialog", exc_info=True, extra={
-                "url": url,
-            })
+            BenchmarkDialog(req, self, cookie_manager=self._cookie_manager).exec()
+        except Exception:
+            logger.error("Failed to open benchmark dialog", exc_info=True)
 
     # ── Headers / params bulk actions and presets ─────────────────────
 
@@ -992,18 +889,10 @@ class RequestPanel(_RequestSendMixin, _RequestAuthMixin, RequestBodyMixin, QWidg
             if key_item and key_item.text().strip().lower() == key.lower():
                 # Key already present — select its value cell so the user can edit it.
                 self.headers_table.setCurrentCell(row, 2)
-                logger.debug("Header preset key already exists, selected value cell", extra={
-                    "header_key": key,
-                    "row": row,
-                })
                 return
         self.headers_table.add_row(key, value)
         self._mark_dirty()
         self._update_tab_labels()
-        logger.debug("Header preset added", extra={
-            "header_key": key,
-            "value_length": len(value),
-        })
 
     def _add_row_and_focus(self, table: CheckableKeyValueTable) -> None:
         """Append an empty row to *table*, select its key cell, and mark dirty."""
@@ -1018,10 +907,6 @@ class RequestPanel(_RequestSendMixin, _RequestAuthMixin, RequestBodyMixin, QWidg
                 table.editItem(item)
         self._mark_dirty()
         self._update_tab_labels()
-        logger.debug("Row added to table", extra={
-            "table_type": type(table).__name__,
-            "new_row_index": last,
-        })
 
     def _remove_table_rows(self, table) -> None:
         rows_to_remove = sorted({idx.row() for idx in table.selectedIndexes()}, reverse=True)
@@ -1029,44 +914,28 @@ class RequestPanel(_RequestSendMixin, _RequestAuthMixin, RequestBodyMixin, QWidg
             table.removeRow(r)
         self._mark_dirty()
         self._update_tab_labels()
-        logger.debug("Rows removed from table", extra={
-            "table_type": type(table).__name__,
-            "rows_removed": len(rows_to_remove),
-        })
 
     # ── Per-table convenience wrappers (used by toolbar slots and tests) ──
 
     def _headers_add_row(self) -> None:
-        logger.debug("Adding header row")
         self._add_row_and_focus(self.headers_table)
 
     def _headers_remove_row(self) -> None:
-        logger.debug("Removing header rows")
         self._remove_table_rows(self.headers_table)
 
     def _params_add_row(self) -> None:
-        logger.debug("Adding parameter row")
         self._add_row_and_focus(self.params_table)
 
     def _params_remove_row(self) -> None:
-        logger.debug("Removing parameter rows")
         self._remove_table_rows(self.params_table)
 
     def _params_set_all(self, enabled: bool) -> None:
         """Enable or disable every row in the params table."""
         self._set_all_checkable(self.params_table, enabled)
-        logger.debug("Parameters toggled", extra={
-            "enabled": enabled,
-            "param_count": self.params_table.rowCount() - 1,
-        })
 
     def _headers_set_all(self, enabled: bool) -> None:
         """Enable or disable every row in the headers table."""
         self._set_all_checkable(self.headers_table, enabled)
-        logger.debug("Headers toggled", extra={
-            "enabled": enabled,
-            "header_count": self.headers_table.rowCount() - 1,
-        })
 
     # ── URL ghost-params preview ──────────────────────────────────────
 
@@ -1076,121 +945,60 @@ class RequestPanel(_RequestSendMixin, _RequestAuthMixin, RequestBodyMixin, QWidg
             enabled = self.params_table.get_enabled_data()
             if not enabled:
                 self.url_input.set_param_suffix("")
-                logger.debug("URL suffix cleared (no enabled params)")
                 return
             sep = "&" if "?" in self.url_input.text() else "?"
             parts = [f"{k}={v}" for k, v in enabled.items() if k]
-            suffix = sep + "&".join(parts)
-            self.url_input.set_param_suffix(suffix)
-            logger.debug("URL suffix updated", extra={
-                "param_count": len(enabled),
-                "suffix_length": len(suffix),
-            })
-        except Exception as exc:
+            self.url_input.set_param_suffix(sep + "&".join(parts))
+        except Exception:
             logger.debug("Failed to update URL suffix", exc_info=True)
             self.url_input.set_param_suffix("")
-
 
     def _on_url_changed_for_path_params(self, text: str) -> None:
         """Show/hide path-params section within the Params tab."""
         try:
             self.path_params_table.update_from_url(text)
-            path_param_count = self.path_params_table.rowCount()
-            visible = path_param_count > 0
+            visible = self.path_params_table.rowCount() > 0
             self._path_params_widget.setVisible(visible)
-            logger.debug("Path parameters updated from URL", extra={
-                "url": text[:100],  # truncate for logging
-                "path_param_count": path_param_count,
-                "visible": visible,
-            })
             self._update_tab_labels()
-        except Exception as exc:
-            logger.warning("Failed to update path parameters from URL", exc_info=True, extra={
-                "url": text[:100],
-            })
+        except Exception:
+            logger.warning("Failed to update path parameters from URL", exc_info=True)
 
     # ── Format JSON (#6) ──────────────────────────────────────────────
 
     def _format_json_body(self) -> None:
         """Pretty-print the JSON in the body editor."""
         text = self.body_text.toPlainText()
-        logger.debug("JSON formatting requested", extra={
-            "body_length": len(text),
-        })
-        
+        if not text.strip():
+            return
         try:
-            start = time.time()
-            parsed = json.loads(text)
-            formatted = json.dumps(parsed, indent=2, ensure_ascii=False)
+            formatted = json.dumps(json.loads(text), indent=2, ensure_ascii=False)
             self.body_text.setPlainText(formatted)
-            elapsed_ms = int((time.time() - start) * 1000)
-            
-            logger.info("JSON formatted successfully", extra={
-                "original_length": len(text),
-                "formatted_length": len(formatted),
-                "elapsed_ms": elapsed_ms,
-            })
+            logger.debug("JSON formatted: %d → %d chars", len(text), len(formatted))
         except json.JSONDecodeError as exc:
-            logger.warning("JSON formatting failed: invalid JSON", extra={
-                "error": str(exc),
-                "line": exc.lineno,
-                "column": exc.colno,
-            })
+            logger.warning("JSON formatting failed: %s (line %d, col %d)", exc.msg, exc.lineno, exc.colno)
             self._status_message(f"Invalid JSON: {exc}", 5000)
 
     def _save_request(self) -> None:
         """Save the current editor state to a collection (prompts for name / folder)."""
         url = self.url_input.text().strip()
         if not url:
-            logger.debug("Save skipped: no URL entered")
             QMessageBox.warning(self, "Missing URL", "Please enter a URL before saving.")
             return
-
-        logger.debug("Save dialog opening")
 
         method      = self.method_combo.currentText()
         headers     = self.headers_table.get_data()
         params      = self.params_table.get_enabled_data()
         params_list = self.params_table.get_all_rows()
         body        = self.body_text.toPlainText().strip() or None
+        current_folder = getattr(self.current_request, "folder", None) or ""
 
-        current_folder = ""
-        if self.current_request and getattr(self.current_request, "folder", None):
-            current_folder = self.current_request.folder
-
-        try:
-            dlg = SaveRequestDialog(self.db, method, url, current_folder, parent=self)
-            logger.debug("Save dialog created", extra={
-                "method": method,
-                "url": url,
-                "current_folder": current_folder,
-            })
-        except Exception as exc:
-            logger.error("Failed to open save dialog", exc_info=True, extra={
-                "method": method,
-                "url": url,
-            })
-            QMessageBox.critical(self, "Error", f"Could not open save dialog: {exc}")
-            return
-
+        dlg = SaveRequestDialog(self.db, method, url, current_folder, parent=self)
         if dlg.exec() != QDialog.DialogCode.Accepted:
-            logger.debug("Save dialog cancelled by user")
             return
 
         name, col_id, col_name, folder = dlg.result_values()
 
-        logger.info("Save details retrieved from dialog", extra={
-            "name": name,
-            "collection_id": col_id,
-            "collection_name": col_name,
-            "folder": folder,
-            "method": method,
-            "url": url,
-        })
-
         try:
-            start = time.time()
-            mgr = self._collection_mgr
             request = Request(
                 method=method, url=url, headers=headers,
                 params=params, params_list=params_list,
@@ -1208,44 +1016,25 @@ class RequestPanel(_RequestSendMixin, _RequestAuthMixin, RequestBodyMixin, QWidg
                 description=self.notes_editor.toPlainText().strip() or None,
                 path_params=self.path_params_table.get_all_data(),
             )
-            
-            req_id = mgr.save_request(request, collection_id=col_id, name=name)
-            elapsed_ms = int((time.time() - start) * 1000)
-            
+            req_id = self._collection_mgr.save_request(request, collection_id=col_id, name=name)
+
             # Link the editor to the newly-saved DB row so autosave targets it.
             request.id = req_id
             request.collection_id = col_id
             self.current_request = request
             self._clear_dirty()
 
-            logger.info("Request saved to collection", extra={
-                "request_id": req_id,
-                "collection_id": col_id,
-                "collection_name": col_name,
-                "name": name,
-                "method": method,
-                "url": url,
-                "folder": folder,
-                "elapsed_ms": elapsed_ms,
-            })
-            
+            logger.info("Request saved: id=%d col=%d '%s' %s %s", req_id, col_id, name, method, url)
             self._status_message(f"Saved '{name}' to '{col_name}'")
-            
+
             try:
                 win = self.window()
                 if hasattr(win, 'collections_panel'):
                     win.collections_panel.refresh()
-                    logger.debug("Collections panel refreshed after save")
-            except Exception as exc:
+            except Exception:
                 logger.warning("Failed to refresh collections panel after save", exc_info=True)
-                
+
         except Exception as exc:
-            logger.error("Failed to save request to collection", exc_info=True, extra={
-                "name": name,
-                "method": method,
-                "url": url,
-                "collection_id": col_id,
-                "folder": folder,
-            })
+            logger.error("Failed to save request", exc_info=True)
             QMessageBox.critical(self, "Save Failed", str(exc))
 

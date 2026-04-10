@@ -9,8 +9,9 @@ Body/captures/assertions/multipart logic lives in ``body_mixin``.
 import logging
 import re
 from datetime import datetime
-from typing import Any, Dict
+from typing import Any, Dict, List, Optional, Tuple
 
+from PyQt6.QtCore import QTimer
 from PyQt6.QtWidgets import (
     QWidget,
     QVBoxLayout,
@@ -21,13 +22,19 @@ from PyQt6.QtWidgets import (
     QDialog,
 )
 
-from equinox.core.time import utc_now
-from equinox.core.redact import mask_secret
-from equinox.gui.theme import Colors
-from equinox.core.request import Request, Response
+from equinox.auth import BearerAuth, BasicAuth, APIKeyAuth, OAuth2Auth
+from equinox.core.captures import CaptureEngine
 from equinox.core.error_enrichment import RichError, enrich_exception
-from equinox.storage import Database, HistoryManager
+from equinox.core.interpolation import VariableInterpolator, collect_interpolation_variables
+from equinox.core.log_setup import get_log_file
+from equinox.core.redact import mask_secret
+from equinox.core.request import Request, Response
+from equinox.core.scripts import ScriptRunner
+from equinox.core.time import utc_now
+from equinox.gui.request_panel.builder import assemble_body, inject_content_type
+from equinox.gui.theme import Colors
 from equinox.gui.workers import RequestWorker
+from equinox.storage import Database, HistoryManager
 
 logger = logging.getLogger(__name__)
 
@@ -35,12 +42,42 @@ logger = logging.getLogger(__name__)
 # e.g. "folder:Api/v2" means the auth came from the folder named "Api/v2".
 _FOLDER_AUTH_PREFIX = "folder:"
 
+# Keys excluded from auth config comparison (volatile token state).
+_AUTH_VOLATILE_KEYS = frozenset({
+    "has_access_token", "has_refresh_token", "expires_at",
+    "access_token", "refresh_token", "token_timeout",
+})
+
+# Pre-compiled URL scheme regex for preflight checks.
+_HTTP_SCHEME_RE = re.compile(r'^https?://', re.IGNORECASE)
+
+# Auth-type preflight checks: (type, attribute_to_check, warning_message).
+_AUTH_PREFLIGHT_CHECKS: Tuple[Tuple[type, str, str], ...] = (
+    (BearerAuth, "token", "Bearer token is empty"),
+    (BasicAuth, "username", "Basic auth username is empty"),
+    (APIKeyAuth, "value", "API key value is empty"),
+    (OAuth2Auth, "token_url", "OAuth2 token URL is not configured"),
+)
+
+# Auth display dispatch: (auth_type, method_name) — looked up by _update_auth_display.
+_AUTH_DISPLAY_DISPATCH: Tuple[Tuple[type, str], ...] = (
+    (BasicAuth, "_display_basic_auth"),
+    (BearerAuth, "_display_bearer_auth"),
+    (OAuth2Auth, "_display_oauth2_auth"),
+    (APIKeyAuth, "_display_apikey_auth"),
+)
+
 
 # ─────────────────────────────────────────────────────────────────────────────
-# History helper (used only by _RequestSendMixin._handle_response)
+# Module-level helpers
 # ─────────────────────────────────────────────────────────────────────────────
 
-def _save_history_safe(db: Database, request, response=None, error=None) -> None:
+def _save_history_safe(
+    db: Database,
+    request: Request,
+    response: Optional[Response] = None,
+    error: Optional[str] = None,
+) -> None:
     """Save to history without letting exceptions bubble to the UI."""
     if request is None:
         return
@@ -54,6 +91,19 @@ def _save_history_safe(db: Database, request, response=None, error=None) -> None
         logger.debug("Failed to save history", exc_info=True)
 
 
+def _write_auth_to_source(mgr, collection_id: int, source: str, auth) -> None:
+    """Persist *auth* to the collection or folder identified by *source*.
+
+    Shared by ``_persist_inherited_auth_tokens`` and
+    ``_save_inherited_token_to_source`` so the source→manager dispatch
+    is defined in exactly one place.
+    """
+    if source == "collection":
+        mgr.set_collection_auth(collection_id, auth)
+    elif source.startswith(_FOLDER_AUTH_PREFIX):
+        mgr.set_folder_auth(collection_id, source[len(_FOLDER_AUTH_PREFIX):], auth)
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Send / Response / Script mixin
 # ─────────────────────────────────────────────────────────────────────────────
@@ -61,33 +111,163 @@ def _save_history_safe(db: Database, request, response=None, error=None) -> None
 class _RequestSendMixin:
     """Methods for sending requests, handling responses, and managing the send lifecycle."""
 
-    def _run_preflight_checks(self) -> list:
+    # ── Preflight ─────────────────────────────────────────────────────
+
+    def _run_preflight_checks(self) -> List[str]:
         """Return a list of advisory warning strings (empty = all clear)."""
-        warnings = []
+        warnings: List[str] = []
         url = self.url_input.text().strip()
 
-        if url and "{{" not in url:
-            if not re.match(r'^https?://', url, re.IGNORECASE):
-                warnings.append("URL does not start with http:// or https://")
+        if url and "{{" not in url and not _HTTP_SCHEME_RE.match(url):
+            warnings.append("URL does not start with http:// or https://")
 
-        # Check auth completeness
-        from equinox.auth import BearerAuth, BasicAuth, APIKeyAuth, OAuth2Auth
         auth = self._auth or self._inherited_auth
         if auth is not None:
-            if isinstance(auth, BearerAuth) and not getattr(auth, "token", None):
-                warnings.append("Bearer token is empty")
-            elif isinstance(auth, BasicAuth) and not getattr(auth, "username", None):
-                warnings.append("Basic auth username is empty")
-            elif isinstance(auth, APIKeyAuth) and not getattr(auth, "value", None):
-                warnings.append("API key value is empty")
-            elif isinstance(auth, OAuth2Auth) and not getattr(auth, "token_url", None):
-                warnings.append("OAuth2 token URL is not configured")
+            for auth_type, attr, msg in _AUTH_PREFLIGHT_CHECKS:
+                if isinstance(auth, auth_type) and not getattr(auth, attr, None):
+                    warnings.append(msg)
+                    break
 
         return warnings
 
-    def _send_request(self) -> None:
-        from equinox.core.interpolation import VariableInterpolator
+    # ── Extracted helpers for _send_request ────────────────────────────
 
+    def _build_auth_probe(self) -> Optional[Request]:
+        """Build a lightweight Request for auth-hierarchy resolution.
+
+        Returns ``None`` if no collection context is available.
+        """
+        req = self.current_request
+        if not req or not getattr(req, "collection_id", None):
+            return None
+        return Request(
+            method="GET", url="",
+            collection_id=req.collection_id,
+            folder=getattr(req, "folder", None),
+        )
+
+    def _resolve_send_auth(self) -> Tuple[Any, Optional[str]]:
+        """Resolve the effective auth for the current send.
+
+        Resolution order: own auth → DB-resolved inherited → cached inherited.
+        Returns ``(effective_auth, inherited_source)``.
+        """
+        if self._auth is not None:
+            return self._auth, None
+
+        # Re-resolve from DB at send time so tokens are always fresh.
+        effective_auth = None
+        inherited_source: Optional[str] = None
+        probe = self._build_auth_probe()
+        if probe is not None:
+            try:
+                inh, inherited_source = self._collection_mgr.resolve_effective_auth(probe)
+                if inh is not None:
+                    effective_auth = inh
+            except Exception as exc:
+                logger.debug("Send-time inherited auth resolution failed: %s", exc)
+
+        # Fallback to cached inherited auth if DB resolution failed
+        if effective_auth is None and getattr(self, "_inherited_auth", None):
+            effective_auth = self._inherited_auth
+            inherited_source = getattr(self, "_inherited_auth_source", None)
+
+        return effective_auth, inherited_source
+
+    def _run_pre_script(
+        self,
+        method: str,
+        url: str,
+        headers: Dict[str, str],
+        params: Dict[str, str],
+        body: Optional[str],
+        variables: Dict[str, str],
+    ) -> Dict[str, str]:
+        """Execute the pre-request script and return the (possibly updated) variables."""
+        pre_src = self.pre_script_editor.toPlainText()
+        if not pre_src.strip():
+            return variables
+        try:
+            req_dict = {
+                "method": method, "url": url,
+                "headers": dict(headers), "params": dict(params), "body": body,
+            }
+            result = ScriptRunner.run_pre(pre_src, req_dict, self._session_vars)
+            self._display_script_result(self.pre_script_result, result)
+            self._apply_script_vars(result)
+            if not result.error:
+                variables.update(self._session_vars)
+        except Exception as exc:
+            logger.debug("Pre-script failed: %s", exc)
+        return variables
+
+    @staticmethod
+    def _interpolate_request_fields(
+        url: str,
+        headers: Dict[str, str],
+        params: Dict[str, str],
+        body: Optional[str],
+        variables: Dict[str, str],
+    ) -> Tuple[str, Dict[str, str], Dict[str, str], Optional[str]]:
+        """Interpolate ``{{VAR}}`` placeholders in all request fields.
+
+        Returns ``(url, headers, params, body)`` with variables expanded.
+        Raises on interpolation failure so the caller can show a user-facing error.
+        """
+        logger.debug("Interpolating variables in request (url_len=%d)", len(url))
+        url = VariableInterpolator.interpolate(url, variables)
+        headers = {
+            VariableInterpolator.interpolate(k, variables):
+            VariableInterpolator.interpolate(v, variables)
+            for k, v in headers.items()
+        }
+        params = {
+            VariableInterpolator.interpolate(k, variables):
+            VariableInterpolator.interpolate(v, variables)
+            for k, v in params.items()
+        }
+        if body:
+            body = VariableInterpolator.interpolate(body, variables)
+        logger.debug("Variable interpolation completed successfully")
+        return url, headers, params, body
+
+    @staticmethod
+    def _resolve_proxy_url() -> Optional[str]:
+        """Read proxy settings from QSettings on the main thread.
+
+        QSettings must NOT be accessed from a background QThread (UB on
+        Windows with the native registry backend).
+        """
+        from PyQt6.QtCore import QSettings as _QSettings
+        settings = _QSettings("Equinox", "Equinox")
+        host = (settings.value("proxy/host") or "").strip()
+        port = int(settings.value("proxy/port") or 0)
+        return f"http://{host}:{port}" if (host and port > 0) else None
+
+    @staticmethod
+    def _display_script_result(label, result) -> None:
+        """Update a script-result QLabel with success/error styling."""
+        if result.error:
+            label.setText(f"Error: {result.error}")
+            label.setStyleSheet(f"color: {Colors.RED};")
+        else:
+            count = len(result.output_vars)
+            label.setText(f"OK — {count} var(s) set" if count else "OK")
+            label.setStyleSheet(f"color: {Colors.GREEN};")
+
+    def _apply_script_vars(self, result) -> None:
+        """Merge script output variables into session state and emit change signal.
+
+        No-op when the script produced an error or zero output vars.
+        """
+        if result.error or not result.output_vars:
+            return
+        self._session_vars.update(result.output_vars)
+        self.session_vars_changed.emit(dict(self._session_vars))
+
+    # ── Core send ─────────────────────────────────────────────────────
+
+    def _send_request(self) -> None:
         url = self.url_input.text().strip()
         if not url:
             QMessageBox.warning(self, "Missing URL", "Please enter a request URL.")
@@ -108,12 +288,11 @@ class _RequestSendMixin:
         if self._worker is not None and self._worker.isRunning():
             return
 
-        method  = self.method_combo.currentText()
+        method = self.method_combo.currentText()
         headers = self.headers_table.get_data()
-        params  = self.params_table.get_enabled_data()   # only checked rows are sent
+        params = self.params_table.get_enabled_data()   # only checked rows are sent
         params_list = self.params_table.get_all_rows()   # full list incl. disabled
         body_type = self.body_type_combo.currentText()
-        from equinox.gui.request_panel.builder import assemble_body, inject_content_type
         body, multipart_data = assemble_body(
             body_type,
             self.body_text.toPlainText().strip(),
@@ -125,88 +304,36 @@ class _RequestSendMixin:
 
         # Variable interpolation — delegate to the canonical shared helper so
         # the GUI and CLI always use the same resolution order.
-        from equinox.core.interpolation import collect_interpolation_variables
         variables = collect_interpolation_variables(
             self.db,
             collection_id=getattr(self.current_request, "collection_id", None),
             session_vars=self._session_vars,
         )
 
-        # ── Pre-request script ────────────────────────────────────────
-        pre_src = self.pre_script_editor.toPlainText()
-        if pre_src.strip():
-            try:
-                from equinox.core.scripts import ScriptRunner
-                req_dict = {"method": method, "url": url,
-                            "headers": dict(headers), "params": dict(params), "body": body}
-                result = ScriptRunner.run_pre(pre_src, req_dict, self._session_vars)
-                if result.error:
-                    self.pre_script_result.setText(f"Error: {result.error}")
-                    self.pre_script_result.setStyleSheet(f"color: {Colors.RED};")
-                else:
-                    self._session_vars.update(result.output_vars)
-                    variables.update(self._session_vars)  # re-inject after script
-                    self.session_vars_changed.emit(dict(self._session_vars))
-                    msg = f"OK — {len(result.output_vars)} var(s) set" if result.output_vars else "OK"
-                    self.pre_script_result.setText(msg)
-                    self.pre_script_result.setStyleSheet(f"color: {Colors.GREEN};")
-            except Exception as exc:
-                logger.debug("Pre-script failed: %s", exc)
+        # Pre-request script (may update variables in-place)
+        variables = self._run_pre_script(method, url, headers, params, body, variables)
 
         try:
-            logger.debug("Interpolating variables in request (url_len=%d)", len(url))
-            url = VariableInterpolator.interpolate(url, variables)
-            headers = {
-                VariableInterpolator.interpolate(k, variables):
-                VariableInterpolator.interpolate(v, variables)
-                for k, v in headers.items()
-            }
-            params = {
-                VariableInterpolator.interpolate(k, variables):
-                VariableInterpolator.interpolate(v, variables)
-                for k, v in params.items()
-            }
-            if body:
-                body = VariableInterpolator.interpolate(body, variables)
-            logger.debug("Variable interpolation completed successfully")
+            url, headers, params, body = self._interpolate_request_fields(
+                url, headers, params, body, variables,
+            )
         except Exception as exc:
             logger.warning("Variable interpolation failed: %s", exc)
-            QMessageBox.warning(self, "Variable Error",
-                                f"Failed to expand variables:\n{exc}")
+            QMessageBox.warning(
+                self, "Variable Error", f"Failed to expand variables:\n{exc}",
+            )
             return
 
         cert_path = self.cert_path_input.text().strip() or None
-        cert_key  = self.cert_key_input.text().strip() or None
+        cert_key = self.cert_key_input.text().strip() or None
 
         # Resolve effective auth: own > inherited (folder > collection)
-        # Re-resolve from DB at send time so tokens are always fresh.
-        effective_auth = self._auth
-        inherited_source = None
-        if effective_auth is None and self.current_request and self.current_request.collection_id:
-            try:
-                collection_manager = self._collection_mgr
-                # Build a lightweight probe with no auth so that
-                # resolve_effective_auth walks the full hierarchy
-                # (folder → collection) instead of short-circuiting
-                # on a previously-resolved auth baked into current_request.
-                probe = Request(
-                    method="GET", url="",
-                    collection_id=self.current_request.collection_id,
-                    folder=self.current_request.folder,
-                )
-                inh, inherited_source = collection_manager.resolve_effective_auth(probe)
-                if inh is not None:
-                    effective_auth = inh
-            except Exception as exc:
-                logger.debug("Send-time inherited auth resolution failed: %s", exc)
-        # Fallback to cached inherited auth if DB resolution failed
-        if effective_auth is None and getattr(self, "_inherited_auth", None):
-            effective_auth = self._inherited_auth
-            inherited_source = getattr(self, "_inherited_auth_source", None)
+        effective_auth, inherited_source = self._resolve_send_auth()
 
         # Track for post-send save-back of refreshed tokens
-        self._send_inherited_auth = effective_auth if self._auth is None else None
-        self._send_inherited_source = inherited_source if self._auth is None else None
+        is_inherited = self._auth is None
+        self._send_inherited_auth = effective_auth if is_inherited else None
+        self._send_inherited_source = inherited_source if is_inherited else None
 
         # Carry forward collection context from the loaded request so that
         # inherited auth, collection variables, and autosave keep working
@@ -247,18 +374,12 @@ class _RequestSendMixin:
         # the user's edits must still be autosaved to the DB when navigating
         # away.  Clearing the flag here would silently discard changes.
 
-        # Resolve proxy on the main thread — QSettings must NOT be accessed
-        # from a background QThread (UB on Windows with native registry format).
-        from PyQt6.QtCore import QSettings as _QSettings
-        _s = _QSettings("Equinox", "Equinox")
-        _ph = (_s.value("proxy/host") or "").strip()
-        _pp = int(_s.value("proxy/port") or 0)
-        _proxy = f"http://{_ph}:{_pp}" if (_ph and _pp > 0) else None
+        proxy = self._resolve_proxy_url()
 
         self._worker = RequestWorker(
             request, self,
             cookie_manager=self._cookie_manager,
-            proxy=_proxy,
+            proxy=proxy,
         )
         worker_ref = self._worker
         self._worker.finished.connect(
@@ -267,12 +388,16 @@ class _RequestSendMixin:
         self._worker.start()
 
     def _cancel_request(self) -> None:
-        if self._worker is not None:
-            self._worker.cancel()
-            self._worker.quit()
+        worker = self._worker
+        if worker is not None:
+            worker.cancel()
+            worker.quit()
+            worker.wait(2000)  # bounded wait prevents orphaned thread signals
             self._worker = None
         self._set_sending_state(False)
         self._status_message("Request cancelled", 4000)
+
+    # ── Response handling ─────────────────────────────────────────────
 
     def _handle_response(self, result: object, worker: RequestWorker) -> None:
         # Stale result guard: only applies when _worker is still set
@@ -281,103 +406,120 @@ class _RequestSendMixin:
         self._worker = None
         self._set_sending_state(False)
 
+        # Normalise un-enriched exceptions without recursion.
+        if isinstance(result, Exception) and not isinstance(result, RichError):
+            try:
+                result = enrich_exception(result)
+            except Exception:
+                result = RichError(
+                    exc_type=type(result).__name__,
+                    message=str(result) or "Unknown error",
+                    tb="",
+                )
+
         if isinstance(result, RichError):
-            # Use worker.request — the request the worker actually processed.
-            # self.current_request may have been replaced if the user navigated
-            # to a history entry or a different collection request while the
-            # worker was in-flight, which would cause wrong url/method in the
-            # log, wrong history entry, and wrong recommender probe.
-            _sent_request = worker.request
-            logger.error(
-                "Request failed: %s", result.message,
-                extra={"error_type": result.exc_type,
-                       "url": getattr(_sent_request, "url", ""),
-                       "method": getattr(_sent_request, "method", "")},
-            )
-            self._status_message(f"Error: {result.message}", 8000)
-            # Rich dialog: show type + message + hint about log file
-            from equinox.core.log_setup import get_log_file
-            from equinox.gui.widgets import CopyableMessageBox
-            log_hint = f"\n\nFull details in: {get_log_file()}" if get_log_file() else ""
-            CopyableMessageBox.critical(
-                self, f"Request Failed — {result.exc_type}",
-                f"{result.message}{log_hint}",
-                copy_text=result.tb,
-            )
-            log_panel = self._logging_panel
-            if log_panel:
-                log_panel.log_error(_sent_request, result.message)
-            _save_history_safe(self.db, _sent_request, error=result.message)
-            self._persist_inherited_auth_tokens()
-            # Try to provide helpful hints from local history using Recommender
-            self._publish_recommender_hints(_sent_request)
-
-        elif isinstance(result, Exception):
-            # Fallback for any exception that slipped through un-enriched
-            rich = enrich_exception(result)
-            self._handle_response(rich, worker)  # recurse once
-
+            self._handle_error_result(result, worker)
         else:
-            response: Response = result
-            elapsed_ms = int(response.elapsed * 1000)
-            # response.request is the actual request the worker sent —
-            # use it in preference to self.current_request which may have
-            # been replaced by a history/collection entry the user navigated
-            # to while the worker was still in-flight.
-            _sent_request = response.request
-            logger.info(
-                "%s %s -> %d %s (%d ms)",
-                _sent_request.method, _sent_request.url,
-                response.status_code, response.reason, elapsed_ms,
-                extra={
-                    "method": _sent_request.method,
-                    "url": _sent_request.url,
-                    "status": response.status_code,
-                    "elapsed_ms": elapsed_ms,
-                    "size_bytes": response.size,
-                },
-            )
-            self._status_message(
-                f"{response.status_code} {response.reason}  —  {elapsed_ms} ms", 8000
-            )
-            self.response_received.emit(response)
-            self._apply_captures(response)
-            self._evaluate_assertions(response)
-            self._run_post_script(response)
-            self._refresh_url_completer()
-            log_panel = self._logging_panel
-            if log_panel:
-                log_panel.log_response(_sent_request, response)
-            _save_history_safe(self.db, _sent_request, response)
+            self._handle_success_result(result, worker)
 
-            # If response indicates failure (HTTP 4xx/5xx), offer recommender hints
-            if response.status_code >= 400:
-                self._publish_recommender_hints(_sent_request)
+    def _handle_error_result(self, result: RichError, worker: RequestWorker) -> None:
+        """Process an error result from a completed request worker."""
+        # Use worker.request — the request the worker actually processed.
+        # self.current_request may have been replaced if the user navigated
+        # while the worker was in-flight.
+        _sent_request = worker.request
+        logger.error(
+            "Request failed: %s", result.message,
+            extra={
+                "error_type": result.exc_type,
+                "url": getattr(_sent_request, "url", ""),
+                "method": getattr(_sent_request, "method", ""),
+            },
+        )
+        self._status_message(f"Error: {result.message}", 8000)
 
-            # Save refreshed tokens back to DB so subsequent requests (and
-            # navigation) reuse the cached token rather than fetching a new one.
-            #
-            # Two separate paths:
-            #  • Inherited auth (self._auth is None): token lives on the
-            #    collection/folder row — handled by _persist_inherited_auth_tokens.
-            #  • Own auth (self._auth is OAuth2Auth): token lives on the request
-            #    row — handled by _persist_own_oauth2_token.  autosave_current()
-            #    would also do this, but only when dirty; _send_request()
-            #    deliberately never sets the dirty flag, so a "send without edits"
-            #    would lose the token on the next navigation without this call.
-            self._persist_inherited_auth_tokens()
-            self._persist_own_oauth2_token()
+        # Rich dialog: show type + message + hint about log file
+        from equinox.gui.widgets import CopyableMessageBox
+        log_hint = f"\n\nFull details in: {get_log_file()}" if get_log_file() else ""
+        CopyableMessageBox.critical(
+            self, f"Request Failed — {result.exc_type}",
+            f"{result.message}{log_hint}",
+            copy_text=result.tb,
+        )
 
-            # Refresh the auth display — OAuth2Auth.apply() may have
-            # auto-refreshed the token in the worker thread, mutating
-            # self._auth in-place.  Without this, the Auth tab preview
-            # would still show the pre-send token.
-            self._update_auth_display(self._auth)
+        log_panel = self._logging_panel
+        if log_panel:
+            log_panel.log_error(_sent_request, result.message)
+
+        # Defer DB write and recommender so the UI updates first.
+        _err_msg = result.message
+        QTimer.singleShot(0, lambda: _save_history_safe(self.db, _sent_request, error=_err_msg))
+        self._persist_inherited_auth_tokens()
+        QTimer.singleShot(0, lambda: self._publish_recommender_hints(_sent_request))
+
+    def _handle_success_result(self, result: Response, worker: RequestWorker) -> None:
+        """Process a successful response from a completed request worker."""
+        response: Response = result
+        elapsed_ms = int(response.elapsed * 1000)
+        # response.request is the actual request the worker sent —
+        # use it in preference to self.current_request which may have
+        # been replaced while the worker was in-flight.
+        _sent_request = response.request
+        logger.info(
+            "%s %s -> %d %s (%d ms)",
+            _sent_request.method, _sent_request.url,
+            response.status_code, response.reason, elapsed_ms,
+            extra={
+                "method": _sent_request.method,
+                "url": _sent_request.url,
+                "status": response.status_code,
+                "elapsed_ms": elapsed_ms,
+                "size_bytes": response.size,
+            },
+        )
+        self._status_message(
+            f"{response.status_code} {response.reason}  —  {elapsed_ms} ms", 8000,
+        )
+        self.response_received.emit(response)
+        self._apply_captures(response)
+        self._evaluate_assertions(response)
+        self._run_post_script(response)
+        self._refresh_url_completer()
+
+        log_panel = self._logging_panel
+        if log_panel:
+            log_panel.log_response(_sent_request, response)
+
+        # Defer DB write so the UI renders the response instantly.
+        QTimer.singleShot(0, lambda: _save_history_safe(self.db, _sent_request, response))
+
+        # If response indicates failure (HTTP 4xx/5xx), offer recommender hints
+        if response.status_code >= 400:
+            QTimer.singleShot(0, lambda: self._publish_recommender_hints(_sent_request))
+
+        # Save refreshed tokens back to DB so subsequent requests (and
+        # navigation) reuse the cached token rather than fetching a new one.
+        #
+        # Two separate paths:
+        #  • Inherited auth (self._auth is None): token lives on the
+        #    collection/folder row — handled by _persist_inherited_auth_tokens.
+        #  • Own auth (self._auth is OAuth2Auth): token lives on the request
+        #    row — handled by _persist_own_oauth2_token.  autosave_current()
+        #    would also do this, but only when dirty; _send_request()
+        #    deliberately never sets the dirty flag, so a "send without edits"
+        #    would lose the token on the next navigation without this call.
+        self._persist_inherited_auth_tokens()
+        self._persist_own_oauth2_token()
+
+        # Refresh the auth display — OAuth2Auth.apply() may have
+        # auto-refreshed the token in the worker thread, mutating
+        # self._auth in-place.  Without this, the Auth tab preview
+        # would still show the pre-send token.
+        self._update_auth_display(self._auth)
 
     def _apply_captures(self, response: Response) -> None:
         """Run capture rules against the response and update session vars."""
         try:
-            from equinox.core.captures import CaptureEngine
             caps_raw = getattr(response.request, "captures", [])
             if not caps_raw:
                 return
@@ -402,7 +544,6 @@ class _RequestSendMixin:
         if not post_src.strip():
             return
         try:
-            from equinox.core.scripts import ScriptRunner
             resp_dict: Dict[str, Any] = {
                 "status_code": response.status_code,
                 "headers": dict(response.headers),
@@ -413,21 +554,9 @@ class _RequestSendMixin:
                 resp_dict["json"] = response.json()
             except Exception:
                 logger.debug("Response body is not JSON; post-script will see json=None")
-            script_result = ScriptRunner.run_post(
-                post_src, resp_dict, self._session_vars
-            )
-            if script_result.error:
-                self.post_script_result.setText(f"Error: {script_result.error}")
-                self.post_script_result.setStyleSheet(f"color: {Colors.RED};")
-            else:
-                self._session_vars.update(script_result.output_vars)
-                self.session_vars_changed.emit(dict(self._session_vars))
-                msg = (
-                    f"OK — {len(script_result.output_vars)} var(s) set"
-                    if script_result.output_vars else "OK"
-                )
-                self.post_script_result.setText(msg)
-                self.post_script_result.setStyleSheet(f"color: {Colors.GREEN};")
+            result = ScriptRunner.run_post(post_src, resp_dict, self._session_vars)
+            self._display_script_result(self.post_script_result, result)
+            self._apply_script_vars(result)
         except Exception as exc:
             logger.debug("Post-script failed: %s", exc)
 
@@ -443,22 +572,13 @@ class _RequestSendMixin:
         source = getattr(self, "_send_inherited_source", None)
         if auth is None or source is None:
             return
-        from equinox.auth import OAuth2Auth
-        if not isinstance(auth, OAuth2Auth):
-            return
-        # Only write back if the object now has a token (i.e. apply() ran)
-        if not auth.access_token:
+        if not isinstance(auth, OAuth2Auth) or not auth.access_token:
             return
         try:
-            mgr = self._collection_mgr
             req = self.current_request
             if not req or not req.collection_id:
                 return
-            if source == "collection":
-                mgr.set_collection_auth(req.collection_id, auth)
-            elif source.startswith(_FOLDER_AUTH_PREFIX):
-                folder_path = source[len(_FOLDER_AUTH_PREFIX):]
-                mgr.set_folder_auth(req.collection_id, folder_path, auth)
+            _write_auth_to_source(self._collection_mgr, req.collection_id, source, auth)
             # Update display to show the fresh token info
             self._inherited_auth = auth
             self._inherited_auth_source = source
@@ -469,31 +589,23 @@ class _RequestSendMixin:
     def _persist_own_oauth2_token(self) -> None:
         """Save a freshly-fetched OAuth2 access token when the request has its own auth.
 
-        ``OAuth2Auth.apply()`` mutates the auth object in-place on the worker
-        thread (setting ``access_token``, ``expires_at``).  For *inherited* auth
-        this is handled by :meth:`_persist_inherited_auth_tokens`.  For *own*
-        auth the normal path is ``autosave_current()``, but that only runs when
-        the dirty flag is set.  Since ``_send_request()`` deliberately never
-        sets the dirty flag, a "send without any edits" scenario would silently
-        discard the fetched token on the next navigation.  This method persists
-        the token directly via ``update_request_auth`` regardless of dirty state.
+        ``_send_request()`` deliberately never sets the dirty flag, so a
+        "send without any edits" scenario would silently discard the fetched
+        token on the next navigation.  This persists it directly via
+        ``update_request_auth`` regardless of dirty state.
         """
-        from equinox.auth import OAuth2Auth
-        if not isinstance(self._auth, OAuth2Auth):
-            return
-        if not self._auth.access_token:
+        if not isinstance(self._auth, OAuth2Auth) or not self._auth.access_token:
             return
         req = self.current_request
         if not req or not getattr(req, "id", None):
             return
         try:
-            mgr = self._collection_mgr
-            mgr.update_request_auth(req.id, self._auth)
+            self._collection_mgr.update_request_auth(req.id, self._auth)
             logger.debug("Persisted own-auth OAuth2 token for request %d", req.id)
         except Exception as exc:
             logger.debug("Failed to persist own OAuth2 token: %s", exc)
 
-    def _publish_recommender_hints(self, request) -> None:
+    def _publish_recommender_hints(self, request: Request) -> None:
         """Generate suggestions for *request* from local history and publish them.
 
         Runs the :class:`~equinox.intelligence.Recommender`, converts results to
@@ -503,88 +615,88 @@ class _RequestSendMixin:
         """
         try:
             from equinox.intelligence import Recommender
-            rec = Recommender(self.db)
-            probe = {
-                "method": getattr(request, "method", ""),
-                "url": getattr(request, "url", ""),
-            }
-            suggestions = rec.generate_suggestions(probe, top_n=5)
+            from equinox.core.response_intelligence.models import (
+                Category, Finding, Severity,
+            )
+        except Exception:
+            logger.debug("Recommender or intelligence models unavailable", exc_info=True)
+            return
+
+        try:
+            suggestions = Recommender(self.db).generate_suggestions(
+                {"method": getattr(request, "method", ""),
+                 "url": getattr(request, "url", "")},
+                top_n=5,
+            )
             if not suggestions:
                 return
-            try:
-                from equinox.core.response_intelligence.models import (
-                    Category, Finding, Severity,
-                )
-                findings = []
-                for s in suggestions:
-                    stype = s.get("type")
-                    if stype == "header":
-                        title = f"Suggested header: {s.get('key')}"
-                        desc = (
-                            f"Set header {s.get('key')} = {s.get('suggested_value')} "
-                            f"(confidence {s.get('confidence'):.2f})"
-                        )
-                    elif stype == "query":
-                        title = f"Suggested query parameter: {s.get('key')}"
-                        desc = (
-                            f"Add query param {s.get('key')} "
-                            f"(seen in {s.get('based_on')} requests, "
-                            f"confidence {s.get('confidence'):.2f})"
-                        )
-                    else:
-                        title = "Suggested change"
-                        desc = str(s)
-                    severity = (
-                        Severity.WARNING if s.get("confidence", 0) >= 0.75
-                        else Severity.INFO
-                    )
-                    findings.append(Finding(
-                        Category.HINTS,
-                        severity,
-                        title,
-                        desc,
-                        analyzer_id="recommender",
-                        details=dict(s),
-                    ))
-                try:
-                    win = self.window()
-                    rp = getattr(win, "response_panel", None)
-                    if rp and hasattr(rp, "intelligence_panel"):
-                        rp.intelligence_panel.display_findings(findings)
-                        rp.set_intelligence_badge(len(findings))
-                    else:
-                        self._status_message(
-                            "Suggestions available (open Intelligence panel)", 8000
-                        )
-                except Exception:
-                    logger.debug(
-                        "Failed to publish recommender findings to Intelligence panel",
-                        exc_info=True,
-                    )
-            except Exception:
-                logger.debug(
-                    "Failed to convert recommender suggestions to findings",
-                    exc_info=True,
+
+            findings = self._suggestions_to_findings(
+                suggestions, Category, Finding, Severity,
+            )
+
+            win = self.window()
+            rp = getattr(win, "response_panel", None)
+            if rp and hasattr(rp, "intelligence_panel"):
+                rp.intelligence_panel.display_findings(findings)
+                rp.set_intelligence_badge(len(findings))
+            else:
+                self._status_message(
+                    "Suggestions available (open Intelligence panel)", 8000,
                 )
         except Exception:
             logger.debug("Recommender failed", exc_info=True)
 
+    @staticmethod
+    def _suggestions_to_findings(
+        suggestions: List[Dict[str, Any]],
+        Category: Any,
+        Finding: Any,
+        Severity: Any,
+    ) -> list:
+        """Convert raw recommender suggestions to Finding objects."""
+        findings = []
+        for s in suggestions:
+            stype = s.get("type")
+            if stype == "header":
+                title = f"Suggested header: {s.get('key')}"
+                desc = (
+                    f"Set header {s.get('key')} = {s.get('suggested_value')} "
+                    f"(confidence {s.get('confidence'):.2f})"
+                )
+            elif stype == "query":
+                title = f"Suggested query parameter: {s.get('key')}"
+                desc = (
+                    f"Add query param {s.get('key')} "
+                    f"(seen in {s.get('based_on')} requests, "
+                    f"confidence {s.get('confidence'):.2f})"
+                )
+            else:
+                title = "Suggested change"
+                desc = str(s)
+            severity = (
+                Severity.WARNING if s.get("confidence", 0) >= 0.75
+                else Severity.INFO
+            )
+            findings.append(Finding(
+                Category.HINTS, severity, title, desc,
+                analyzer_id="recommender", details=dict(s),
+            ))
+        return findings
+
     def _set_sending_state(self, sending: bool) -> None:
+        enabled = not sending
+        self.send_button.setEnabled(enabled)
+        self.url_input.setEnabled(enabled)
+        self.method_combo.setEnabled(enabled)
+        self.cancel_button.setVisible(sending)
         if sending:
             self._elapsed_secs = 0.0
             self._elapsed_timer.start()
-            self.send_button.setEnabled(False)
             self.send_button.setText("0.0s…")
-            self.cancel_button.setVisible(True)
-            self.url_input.setEnabled(False)
-            self.method_combo.setEnabled(False)
         else:
             self._elapsed_timer.stop()
-            self.send_button.setEnabled(True)
             self.send_button.setText("Send")
-            self.cancel_button.setVisible(False)
-            self.url_input.setEnabled(True)
-            self.method_combo.setEnabled(True)
 
     def _tick_elapsed(self) -> None:
         self._elapsed_secs += 0.1
@@ -612,11 +724,7 @@ class _RequestAuthMixin:
         if not req or not req.collection_id:
             return
         try:
-            mgr = self._collection_mgr
-            if source == "collection":
-                mgr.set_collection_auth(req.collection_id, auth)
-            elif source.startswith(_FOLDER_AUTH_PREFIX):
-                mgr.set_folder_auth(req.collection_id, source[len(_FOLDER_AUTH_PREFIX):], auth)
+            _write_auth_to_source(self._collection_mgr, req.collection_id, source, auth)
             logger.debug("Saved dialog-fetched token to %s", source)
         except Exception as exc:
             logger.debug("Failed to save dialog token to source: %s", exc)
@@ -653,59 +761,49 @@ class _RequestAuthMixin:
         was_inherited = self._auth is None and self._inherited_auth is not None
         display_auth = self._auth or self._inherited_auth
         dialog = AuthDialog(display_auth, self, db=self.db)
-        if dialog.exec() == QDialog.DialogCode.Accepted:
-            if hasattr(dialog, '_saved_auth'):
-                saved = dialog._saved_auth
-                fetched_token = getattr(dialog, '_last_fetched_auth', None)
+        if dialog.exec() != QDialog.DialogCode.Accepted:
+            return
+        if not hasattr(dialog, '_saved_auth'):
+            return
 
-                # ── Guard: don't accidentally bake inherited auth into the request ──
-                #
-                # If the request was using inherited auth (from collection/folder)
-                # and the user opened the dialog without changing the underlying
-                # configuration, we must NOT set self._auth — that would store a
-                # copy of the collection's auth on the request row, breaking the
-                # "auth info should not be cached by request" invariant.
-                #
-                # Case A — user changed nothing and didn't fetch a token:
-                #   The configs still match → early return (no change).
-                if (
-                    was_inherited
-                    and saved is not None
-                    and not fetched_token
-                    and self._auth_configs_match(saved, self._inherited_auth)
-                ):
-                    return
+        saved = dialog._saved_auth
+        fetched_token = getattr(dialog, '_last_fetched_auth', None)
 
-                # Case B — user fetched a token but didn't change the config:
-                #   The token belongs to the collection/folder, not to this
-                #   request.  Persist it at the source level and update the
-                #   in-memory inherited auth — do NOT promote to own auth.
-                if (
-                    was_inherited
-                    and saved is not None
-                    and fetched_token is not None
-                    and self._auth_configs_match(saved, self._inherited_auth)
-                ):
-                    self._inherited_auth = saved
-                    self._save_inherited_token_to_source(saved)
-                    self._update_auth_display(self._auth)  # self._auth still None
-                    return
+        # ── Guard: don't accidentally bake inherited auth into the request ──
+        #
+        # If the request was using inherited auth (from collection/folder)
+        # and the user opened the dialog without changing the underlying
+        # configuration, we must NOT set self._auth — that would store a
+        # copy of the collection's auth on the request row.
+        if was_inherited and saved is not None:
+            configs_match = self._auth_configs_match(saved, self._inherited_auth)
 
-                # Case C — user explicitly set a different auth (or changed the
-                # config): honour it as own auth on the request.
-                old_auth = self._auth
-                self._auth = saved
-                if self._auth is not None:
-                    # Own auth supersedes inherited
-                    self._inherited_auth = None
-                    self._inherited_auth_source = None
-                else:
-                    # User chose "No Auth" — re-resolve inherited
-                    self._resolve_inherited_auth()
-                self._update_auth_display(self._auth)
-                # Mark dirty if auth actually changed
-                if not self._auth_configs_match(old_auth, self._auth):
-                    self._mark_dirty()
+            # Case A — unchanged config, no token fetch: no-op.
+            if configs_match and not fetched_token:
+                return
+
+            # Case B — unchanged config, token fetched: persist at source.
+            if configs_match and fetched_token is not None:
+                self._inherited_auth = saved
+                self._save_inherited_token_to_source(saved)
+                self._update_auth_display(self._auth)  # self._auth still None
+                return
+
+        # Case C — user explicitly set a different auth (or changed the
+        # config): honour it as own auth on the request.
+        old_auth = self._auth
+        self._auth = saved
+        if self._auth is not None:
+            # Own auth supersedes inherited
+            self._inherited_auth = None
+            self._inherited_auth_source = None
+        else:
+            # User chose "No Auth" — re-resolve inherited
+            self._resolve_inherited_auth()
+        self._update_auth_display(self._auth)
+        # Mark dirty if auth actually changed
+        if not self._auth_configs_match(old_auth, self._auth):
+            self._mark_dirty()
 
     def _clear_auth(self) -> None:
         had_auth = self._auth is not None
@@ -730,10 +828,7 @@ class _RequestAuthMixin:
         try:
             d1 = a.to_dict()
             d2 = b.to_dict()
-            for key in (
-                "has_access_token", "has_refresh_token", "expires_at",
-                "access_token", "refresh_token", "token_timeout",
-            ):
+            for key in _AUTH_VOLATILE_KEYS:
                 d1.pop(key, None)
                 d2.pop(key, None)
             return d1 == d2
@@ -749,20 +844,16 @@ class _RequestAuthMixin:
         """
         self._inherited_auth = None
         self._inherited_auth_source = None
-        if self.current_request and getattr(self.current_request, "collection_id", None):
-            try:
-                mgr = self._collection_mgr
-                probe = Request(
-                    method="GET", url="",
-                    collection_id=self.current_request.collection_id,
-                    folder=getattr(self.current_request, "folder", None),
-                )
-                inh_auth, inh_source = mgr.resolve_effective_auth(probe)
-                if inh_auth is not None:
-                    self._inherited_auth = inh_auth
-                    self._inherited_auth_source = inh_source
-            except Exception as exc:
-                logger.debug("Failed to resolve inherited auth: %s", exc)
+        probe = self._build_auth_probe()
+        if probe is None:
+            return
+        try:
+            inh_auth, inh_source = self._collection_mgr.resolve_effective_auth(probe)
+            if inh_auth is not None:
+                self._inherited_auth = inh_auth
+                self._inherited_auth_source = inh_source
+        except Exception as exc:
+            logger.debug("Failed to resolve inherited auth: %s", exc)
 
     def refresh_inherited_auth(self) -> None:
         """Public method for external callers (e.g. window signal wiring)
@@ -771,8 +862,19 @@ class _RequestAuthMixin:
             self._resolve_inherited_auth()
             self._update_auth_display(self._auth)
 
-    def _update_auth_display(self, auth=None) -> None:
-        from equinox.auth import BasicAuth, OAuth2Auth, BearerAuth, APIKeyAuth
+    @staticmethod
+    def _format_inherited_label(source: Optional[str]) -> str:
+        """Build a human-readable '(inherited from …)' suffix."""
+        if not source:
+            return ""
+        if source.startswith(_FOLDER_AUTH_PREFIX):
+            folder = source[len(_FOLDER_AUTH_PREFIX):]
+            return f'  (inherited from folder "{folder}")'
+        if source == "collection":
+            return "  (inherited from collection)"
+        return ""
+
+    def _update_auth_display(self, auth: Any = None) -> None:
         self.auth_status_label.setText("")
         self.auth_status_label.setStyleSheet("")
 
@@ -781,50 +883,64 @@ class _RequestAuthMixin:
         inherited_label = ""
         if not display_auth and getattr(self, "_inherited_auth", None):
             display_auth = self._inherited_auth
-            source = getattr(self, "_inherited_auth_source", "") or ""
-            if source.startswith(_FOLDER_AUTH_PREFIX):
-                inherited_label = f"  (inherited from folder \"{source[len(_FOLDER_AUTH_PREFIX):]}\")"
-            elif source == "collection":
-                inherited_label = "  (inherited from collection)"
+            inherited_label = self._format_inherited_label(
+                getattr(self, "_inherited_auth_source", None),
+            )
 
         if not display_auth:
             self.auth_type_label.setText("Auth: None")
             self.auth_details_label.setText("No authentication configured")
-        elif isinstance(display_auth, BasicAuth):
-            self.auth_type_label.setText(f"Auth: Basic{inherited_label}")
-            self.auth_details_label.setText(f"Username: {display_auth.username}")
-        elif isinstance(display_auth, BearerAuth):
-            preview = mask_secret(display_auth.token)
-            self.auth_type_label.setText(f"Auth: Bearer Token{inherited_label}")
-            self.auth_details_label.setText(f"Token: {preview}")
-        elif isinstance(display_auth, OAuth2Auth):
-            self.auth_type_label.setText(f"Auth: OAuth 2.0{inherited_label}")
-            self.auth_details_label.setText(
-                f"Token URL: {display_auth.token_url or '—'}\nClient ID: {display_auth.client_id or '—'}"
-            )
-            info = display_auth.get_token_info()
-            if not display_auth.access_token:
-                text, color = "Token: None", Colors.RED
-            elif info["needs_refresh"]:
-                text, color = f"Token: Expiring soon  [{info['access_token']}]", Colors.AMBER
-            else:
-                text, color = f"Token: Valid  [{info['access_token']}]", Colors.GREEN
-            if info["expires_at"]:
-                try:
-                    secs = int((datetime.fromisoformat(info["expires_at"]) -
-                                utc_now()).total_seconds())
-                    text += f"  (expires in {secs}s)" if secs > 0 else "  (expired)"
-                except Exception:
-                    logger.debug("Failed to parse OAuth2 token expiry", exc_info=True)
-            self.auth_status_label.setText(text)
-            self.auth_status_label.setStyleSheet(f"color: {color};")
-        elif isinstance(display_auth, APIKeyAuth):
-            preview = display_auth.value[:4] + "…" if len(display_auth.value) > 4 else "***"
-            self.auth_type_label.setText(f"Auth: API Key{inherited_label}")
-            self.auth_details_label.setText(f"{display_auth.key} = {preview}  ({display_auth.location})")
+            return
+
+        for auth_type, method_name in _AUTH_DISPLAY_DISPATCH:
+            if isinstance(display_auth, auth_type):
+                getattr(self, method_name)(display_auth, inherited_label)
+                return
+
+        # Unknown auth type (e.g. AWS SigV4)
+        type_name = type(display_auth).__name__
+        self.auth_type_label.setText(f"Auth: {type_name}{inherited_label}")
+        self.auth_details_label.setText("")
+
+    def _display_basic_auth(self, auth: BasicAuth, inherited_label: str) -> None:
+        """Populate the auth display labels for Basic authentication."""
+        self.auth_type_label.setText(f"Auth: Basic{inherited_label}")
+        self.auth_details_label.setText(f"Username: {auth.username}")
+
+    def _display_bearer_auth(self, auth: BearerAuth, inherited_label: str) -> None:
+        """Populate the auth display labels for Bearer token authentication."""
+        preview = mask_secret(auth.token)
+        self.auth_type_label.setText(f"Auth: Bearer Token{inherited_label}")
+        self.auth_details_label.setText(f"Token: {preview}")
+
+    def _display_apikey_auth(self, auth: APIKeyAuth, inherited_label: str) -> None:
+        """Populate the auth display labels for API Key authentication."""
+        preview = auth.value[:4] + "…" if len(auth.value) > 4 else "***"
+        self.auth_type_label.setText(f"Auth: API Key{inherited_label}")
+        self.auth_details_label.setText(
+            f"{auth.key} = {preview}  ({auth.location})"
+        )
+
+    def _display_oauth2_auth(self, auth: OAuth2Auth, inherited_label: str) -> None:
+        """Populate the auth display labels for an OAuth 2.0 configuration."""
+        self.auth_type_label.setText(f"Auth: OAuth 2.0{inherited_label}")
+        self.auth_details_label.setText(
+            f"Token URL: {auth.token_url or '—'}\nClient ID: {auth.client_id or '—'}"
+        )
+        info = auth.get_token_info()
+        if not auth.access_token:
+            text, color = "Token: None", Colors.RED
+        elif info["needs_refresh"]:
+            text, color = f"Token: Expiring soon  [{info['access_token']}]", Colors.AMBER
         else:
-            # Unknown auth type (e.g. AWS SigV4)
-            type_name = type(display_auth).__name__
-            self.auth_type_label.setText(f"Auth: {type_name}{inherited_label}")
-            self.auth_details_label.setText("")
+            text, color = f"Token: Valid  [{info['access_token']}]", Colors.GREEN
+        if info["expires_at"]:
+            try:
+                secs = int((datetime.fromisoformat(info["expires_at"]) -
+                            utc_now()).total_seconds())
+                text += f"  (expires in {secs}s)" if secs > 0 else "  (expired)"
+            except Exception:
+                logger.debug("Failed to parse OAuth2 token expiry", exc_info=True)
+        self.auth_status_label.setText(text)
+        self.auth_status_label.setStyleSheet(f"color: {color};")
 
