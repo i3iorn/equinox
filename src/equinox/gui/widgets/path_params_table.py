@@ -6,6 +6,7 @@ rows are added/removed to match the current set of tokens while preserving
 any values the user has already entered for unchanged parameters.
 """
 
+import logging
 import re
 from typing import Dict
 
@@ -13,6 +14,8 @@ from PyQt6.QtWidgets import (
     QTableWidget, QTableWidgetItem, QHeaderView,
 )
 from PyQt6.QtCore import Qt, pyqtSignal
+
+logger = logging.getLogger(__name__)
 
 
 # Matches both {{param}} (Equinox interpolation syntax) and bare {param}
@@ -101,38 +104,53 @@ class PathParamsTable(QTableWidget):
     def set_data(self, data: Dict[str, str]) -> None:
         """Load saved path-parameter values (e.g. from the database).
 
-        Call *before* ``update_from_url`` so existing values are merged in.
+        Safe to call both *before* and *after* ``update_from_url``.  When
+        called after, the visible value cells are refreshed immediately so the
+        loaded values are shown without requiring a URL change.
         """
-        if data:
-            self._params.update(data)
+        if not data:
+            return
+        self._params.update(data)
+        # If the table is already populated, refresh value cells so the caller
+        # does not have to worry about call ordering with update_from_url.
+        if self._ordered:
+            self._rebuild_table()
 
     def reset(self) -> None:
         """Clear all parameters and rows."""
         self._params.clear()
         self._ordered.clear()
         self.blockSignals(True)
-        self.setRowCount(0)
-        self.blockSignals(False)
+        try:
+            self.setRowCount(0)
+        finally:
+            self.blockSignals(False)
 
     # ── Internal ──────────────────────────────────────────────────────
 
     def _rebuild_table(self) -> None:
         """Rebuild table rows from ``_ordered`` / ``_params``."""
         self.blockSignals(True)
-        self.setRowCount(0)
-        for name in self._ordered:
-            row = self.rowCount()
-            self.insertRow(row)
+        try:
+            self.setRowCount(0)
+            for name in self._ordered:
+                row = self.rowCount()
+                self.insertRow(row)
 
-            key_item = QTableWidgetItem(name)
-            key_item.setFlags(
-                Qt.ItemFlag.ItemIsSelectable | Qt.ItemFlag.ItemIsEnabled
-            )  # read-only
-            self.setItem(row, 0, key_item)
+                key_item = QTableWidgetItem(name)
+                key_item.setFlags(
+                    Qt.ItemFlag.ItemIsSelectable | Qt.ItemFlag.ItemIsEnabled
+                )  # read-only
+                self.setItem(row, 0, key_item)
 
-            val_item = QTableWidgetItem(self._params.get(name, ""))
-            self.setItem(row, 1, val_item)
-        self.blockSignals(False)
+                val_item = QTableWidgetItem(self._params.get(name, ""))
+                self.setItem(row, 1, val_item)
+        except Exception:
+            logger.exception("_rebuild_table failed for params %s", self._ordered)
+        finally:
+            # Always restore the blocked state so the table never becomes
+            # permanently deaf to itemChanged signals after an exception.
+            self.blockSignals(False)
 
     def _sync_from_table(self) -> None:
         """Read current cell values back into ``_params``."""
@@ -148,4 +166,3 @@ class PathParamsTable(QTableWidget):
             if key_item:
                 self._params[key_item.text()] = item.text()
             self.paramsChanged.emit()
-
