@@ -1,11 +1,14 @@
 """Key-value table with per-row enable/disable checkboxes (for Params)."""
 
+import logging
 from typing import Dict
 
 from PyQt6.QtWidgets import (
     QTableWidget, QTableWidgetItem, QHeaderView, QStyledItemDelegate, QLineEdit,
 )
-from PyQt6.QtCore import Qt
+from PyQt6.QtCore import Qt, pyqtSignal
+
+logger = logging.getLogger(__name__)
 
 # Common HTTP request headers for auto-complete
 _COMMON_HTTP_HEADERS = [
@@ -26,13 +29,18 @@ _COMMON_HTTP_HEADERS = [
 class _HeaderCompleterDelegate(QStyledItemDelegate):
     """QStyledItemDelegate that attaches a QCompleter to Key-column editors."""
 
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        # Build the model once so every cell editor shares the same data
+        # instead of allocating a new QStringListModel on every keypress.
+        from PyQt6.QtCore import QStringListModel
+        self._model = QStringListModel(_COMMON_HTTP_HEADERS, self)
+
     def createEditor(self, parent, option, index):
         editor = super().createEditor(parent, option, index)
         if isinstance(editor, QLineEdit):
             from PyQt6.QtWidgets import QCompleter
-            from PyQt6.QtCore import QStringListModel
-            model = QStringListModel(_COMMON_HTTP_HEADERS, editor)
-            completer = QCompleter(model, editor)
+            completer = QCompleter(self._model, editor)
             completer.setCaseSensitivity(Qt.CaseSensitivity.CaseInsensitive)
             completer.setFilterMode(Qt.MatchFlag.MatchContains)
             completer.setMaxVisibleItems(10)
@@ -51,6 +59,12 @@ class CheckableKeyValueTable(QTableWidget):
     ``set_data()``         → accepts either Dict[str, str] (all enabled) or
                              List[Dict] with optional ``"enabled"`` key.
 
+    Signals
+    -------
+    data_changed()
+        Emitted after any user-driven change to a key, value, or checkbox state.
+        Not emitted during bulk operations (``set_data``, ``add_row``, ``reset``).
+
     Parameters
     ----------
     enable_key_completer : bool
@@ -59,8 +73,11 @@ class CheckableKeyValueTable(QTableWidget):
         header suggestions would be confusing.
     """
 
+    data_changed = pyqtSignal()
+
     def __init__(self, parent=None, *, enable_key_completer: bool = False):
         super().__init__(parent)
+        self._updating = False  # reentrancy guard for _on_item_changed
         self.setColumnCount(3)
         self.setHorizontalHeaderLabels(["", "Key", "Value"])
         header = self.horizontalHeader()
@@ -71,7 +88,6 @@ class CheckableKeyValueTable(QTableWidget):
         self.verticalHeader().setVisible(False)
         self.setAlternatingRowColors(True)
         self.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
-        # Install header-name completer on the Key column only when requested
         if enable_key_completer:
             self._header_delegate = _HeaderCompleterDelegate(self)
             self.setItemDelegateForColumn(1, self._header_delegate)
@@ -89,16 +105,51 @@ class CheckableKeyValueTable(QTableWidget):
         return item
 
     def _add_empty_row(self, enabled: bool = False) -> None:
+        """Append a trailing empty sentinel row.
+
+        Internally blocks signals (save/restore) so that the three ``setItem``
+        calls do not trigger ``_on_item_changed`` or ``data_changed``.  This is
+        safe whether or not the caller has already blocked signals.
+        """
         row = self.rowCount()
-        self.insertRow(row)
-        self.setItem(row, 0, self._make_checkbox(enabled))
-        self.setItem(row, 1, QTableWidgetItem(""))
-        self.setItem(row, 2, QTableWidgetItem(""))
+        was_blocked = self.signalsBlocked()
+        self.blockSignals(True)
+        try:
+            self.insertRow(row)
+            self.setItem(row, 0, self._make_checkbox(enabled))
+            self.setItem(row, 1, QTableWidgetItem(""))
+            self.setItem(row, 2, QTableWidgetItem(""))
+        finally:
+            self.blockSignals(was_blocked)
 
     def _on_item_changed(self, item: QTableWidgetItem) -> None:
-        # Auto-add empty row when the user starts typing in the last row
-        if item.column() in (1, 2) and item.row() == self.rowCount() - 1 and item.text().strip():
+        # Reentrancy guard: changes made programmatically inside this handler
+        # (e.g. auto-checking the checkbox) must not trigger a second pass.
+        if self._updating:
+            return
+
+        row = item.row()
+        col = item.column()
+
+        # Auto-enable the row's checkbox as soon as the user types a key so
+        # the row is immediately visible to get_enabled_data() without an
+        # extra click.  The guard prevents the resulting itemChanged for the
+        # checkbox from re-entering this handler.
+        if col == 1 and item.text().strip():
+            checkbox = self.item(row, 0)
+            if checkbox and checkbox.checkState() == Qt.CheckState.Unchecked:
+                self._updating = True
+                try:
+                    checkbox.setCheckState(Qt.CheckState.Checked)
+                finally:
+                    self._updating = False
+
+        # Auto-add a fresh trailing empty row when the user starts filling in
+        # the last row, so there is always somewhere to add the next entry.
+        if col in (1, 2) and row == self.rowCount() - 1 and item.text().strip():
             self._add_empty_row(enabled=False)
+
+        self.data_changed.emit()
 
     # ── Data accessors ────────────────────────────────────────────────
 
@@ -111,7 +162,12 @@ class CheckableKeyValueTable(QTableWidget):
             value_item = self.item(row, 2)
             if key_item and key_item.text().strip():
                 if checkbox and checkbox.checkState() == Qt.CheckState.Checked:
-                    data[key_item.text().strip()] = value_item.text() if value_item else ""
+                    key = key_item.text().strip()
+                    if key in data:
+                        logger.debug(
+                            "Duplicate key %r at row %d; last value wins", key, row
+                        )
+                    data[key] = value_item.text() if value_item else ""
         return data
 
     def get_all_rows(self) -> list:
@@ -142,29 +198,27 @@ class CheckableKeyValueTable(QTableWidget):
         - ``List[Dict]``     — each dict has ``key``, ``value``, ``enabled``.
         """
         self.blockSignals(True)
-        self.setRowCount(0)
-        if isinstance(data, dict):
-            rows = [{"key": k, "value": v, "enabled": True} for k, v in data.items()]
-        else:
-            rows = list(data)
-        for row_data in rows:
-            row = self.rowCount()
-            self.insertRow(row)
-            enabled = row_data.get("enabled", False)
-            self.setItem(row, 0, self._make_checkbox(enabled))
-            self.setItem(row, 1, QTableWidgetItem(str(row_data.get("key", ""))))
-            self.setItem(row, 2, QTableWidgetItem(str(row_data.get("value", ""))))
-        self._add_empty_row(enabled=False)
-        self.blockSignals(False)
+        try:
+            self.setRowCount(0)
+            if isinstance(data, dict):
+                rows = [{"key": k, "value": v, "enabled": True} for k, v in data.items()]
+            else:
+                rows = list(data)
+            for row_data in rows:
+                row = self.rowCount()
+                self.insertRow(row)
+                enabled = row_data.get("enabled", False)
+                self.setItem(row, 0, self._make_checkbox(enabled))
+                self.setItem(row, 1, QTableWidgetItem(str(row_data.get("key", ""))))
+                self.setItem(row, 2, QTableWidgetItem(str(row_data.get("value", ""))))
+            self._add_empty_row(enabled=False)
+        finally:
+            self.blockSignals(False)
 
     def add_row(self, key: str = "", value: str = "", enabled: bool = True) -> None:
         """Insert a new row before the trailing empty row."""
-        # Perform programmatic changes with signals blocked so the
-        # on_item_changed handler does not auto-add another empty row
-        # while we are setting items (which would create two empty rows).
         self.blockSignals(True)
         try:
-            # Remove trailing empty row, add the new row, then re-add an empty row
             last = self.rowCount() - 1
             last_key = self.item(last, 1) if last >= 0 else None
             if last >= 0 and (last_key is None or not last_key.text().strip()):
@@ -180,7 +234,8 @@ class CheckableKeyValueTable(QTableWidget):
 
     def reset(self) -> None:
         self.blockSignals(True)
-        self.setRowCount(0)
-        self.blockSignals(False)
-        self._add_empty_row(enabled=False)
-
+        try:
+            self.setRowCount(0)
+            self._add_empty_row(enabled=False)
+        finally:
+            self.blockSignals(False)
