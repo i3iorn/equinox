@@ -3,6 +3,10 @@ from typing import Any, Optional
 
 logger = logging.getLogger(__name__)
 
+# Attributes that live on the proxy itself (not forwarded to the widget).
+# Used by ``__getattr__`` to avoid infinite recursion during ``__init__``.
+_PROXY_ATTRS = frozenset({"_panel", "_widget", "_buffer", "_fallback_doc"})
+
 
 class _NoopSignal:
     """Stand-in for a Qt signal when the underlying widget is unavailable.
@@ -39,8 +43,12 @@ class BodyTextProxy:
 
     # ── Internal helpers ─────────────────────────────────────────────
 
+    def _invalidate(self) -> None:
+        """Mark the underlying C++ widget as gone."""
+        self._widget = None
+
     def _fw(self, name: str, *args: Any, **kwargs: Any) -> Any:
-        """Forward a named method call to the widget; nullify on RuntimeError.
+        """Forward a named method call to the widget; invalidate on RuntimeError.
 
         Returns the widget method's return value, or ``None`` when the widget
         is unavailable.  Suitable for pure pass-through void methods that have
@@ -50,8 +58,20 @@ class BodyTextProxy:
             try:
                 return getattr(self._widget, name)(*args, **kwargs)
             except RuntimeError:
-                self._widget = None
+                self._invalidate()
         return None
+
+    def _fallback_set(self, text: str) -> None:
+        """Update the in-memory buffer and notify the parent panel.
+
+        Shared by :meth:`setPlainText` and :meth:`clear` to avoid
+        duplicating the fallback path.
+        """
+        self._buffer = text
+        if self._fallback_doc is not None:
+            self._fallback_doc.setPlainText(text)
+        self._panel_op("_mark_dirty")
+        self._panel_op("_update_tab_labels")
 
     def _panel_op(self, name: str) -> None:
         """Call a zero-argument method on the parent panel, swallowing all exceptions."""
@@ -77,7 +97,7 @@ class BodyTextProxy:
             try:
                 return self._widget.textChanged
             except RuntimeError:
-                self._widget = None
+                self._invalidate()
         return _NoopSignal()
 
     # ── Primary text interface ────────────────────────────────────────
@@ -88,13 +108,8 @@ class BodyTextProxy:
                 self._widget.setPlainText(text)
                 return
             except RuntimeError:
-                self._widget = None
-        # Fallback — update buffer and keep the cached document in sync.
-        self._buffer = text
-        if self._fallback_doc is not None:
-            self._fallback_doc.setPlainText(text)
-        self._panel_op("_mark_dirty")
-        self._panel_op("_update_tab_labels")
+                self._invalidate()
+        self._fallback_set(text)
 
     def clear(self) -> None:
         if self._widget is not None:
@@ -102,22 +117,15 @@ class BodyTextProxy:
                 self._widget.clear()
                 return
             except RuntimeError:
-                self._widget = None
-        # Fallback — mirror the side effects of setPlainText("") so the panel
-        # stays in sync (dirty flag, tab labels) regardless of which path clears
-        # the text.
-        self._buffer = ""
-        if self._fallback_doc is not None:
-            self._fallback_doc.setPlainText("")
-        self._panel_op("_mark_dirty")
-        self._panel_op("_update_tab_labels")
+                self._invalidate()
+        self._fallback_set("")
 
     def toPlainText(self) -> str:
         if self._widget is not None:
             try:
                 return self._widget.toPlainText()
             except RuntimeError:
-                self._widget = None
+                self._invalidate()
         return self._buffer
 
     # ── Document ─────────────────────────────────────────────────────
@@ -133,7 +141,7 @@ class BodyTextProxy:
             try:
                 return self._widget.document()
             except RuntimeError:
-                self._widget = None
+                self._invalidate()
         if self._fallback_doc is None:
             from PyQt6.QtGui import QTextDocument
             self._fallback_doc = QTextDocument()
@@ -157,10 +165,18 @@ class BodyTextProxy:
     # ── Dynamic forwarding for all other attributes ───────────────────
 
     def __getattr__(self, name: str) -> Any:
-        """Forward any unrecognised attribute lookup to the underlying widget."""
-        if self._widget is not None:
+        """Forward any unrecognised attribute lookup to the underlying widget.
+
+        The ``_PROXY_ATTRS`` guard prevents infinite recursion when Python
+        looks up instance attributes (e.g. ``_widget``) before ``__init__``
+        has finished assigning them.
+        """
+        if name in _PROXY_ATTRS:
+            raise AttributeError(name)
+        widget = self.__dict__.get("_widget")
+        if widget is not None:
             try:
-                return getattr(self._widget, name)
+                return getattr(widget, name)
             except RuntimeError:
                 self._widget = None
         raise AttributeError(
@@ -168,7 +184,12 @@ class BodyTextProxy:
             " (underlying widget is unavailable)"
         )
 
+    def __bool__(self) -> bool:
+        """Allow truthiness checks — the proxy is always truthy."""
+        return True
+
     def __repr__(self) -> str:
         status = "live" if self._widget is not None else "fallback"
-        preview = repr(self._buffer[:37] + "...") if len(self._buffer) > 40 else repr(self._buffer)
+        buf = self._buffer or ""
+        preview = repr(buf[:37] + "...") if len(buf) > 40 else repr(buf)
         return f"<BodyTextProxy [{status}] buffer={preview}>"
