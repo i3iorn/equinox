@@ -1,10 +1,12 @@
 """Secure SQLite database access with parameterized queries and thread safety."""
+from __future__ import annotations
+
 import re
 import sqlite3
 import threading
 import logging
 from pathlib import Path
-from typing import Optional, Any, List, Dict, Tuple, Mapping, Union
+from typing import Any, Dict, Iterator, List, Mapping, Optional, Tuple, Union
 from contextlib import contextmanager
 
 from equinox.core.exceptions import StorageError, ValidationError, DuplicateError
@@ -18,118 +20,76 @@ _SqlParams = Union[Tuple[Any, ...], List[Any], Mapping[str, Any]]
 
 _CONNECTION_TIMEOUT_SECONDS = 10.0
 
+# Compiled pattern for named SQL placeholders (e.g. ``:user_id``).
+_NAMED_PARAM_RE = re.compile(r":([A-Za-z_][A-Za-z0-9_]*)")
 
-class QueryValidator:
 
-    NAMED_PATTERN = re.compile(r":([A-Za-z_][A-Za-z0-9_]*)")
+# ── Module-level SQL validation helpers ──────────────────────────────────────
 
-    @staticmethod
-    def validate_placeholders(query: str, params) -> None:
-        """
-        Validate SQL placeholders for both positional (?) and named (:name) styles.
-        """
+def _outside_string(query: str) -> Iterator[Tuple[int, str]]:
+    """Yield ``(index, char)`` for every character outside a single-quoted
+    string literal.  Uses SQL's ``''`` escape convention, not backslash.
+    """
+    in_string = False
+    i = 0
+    n = len(query)
+    while i < n:
+        c = query[i]
+        if c == "'":
+            if in_string and i + 1 < n and query[i + 1] == "'":
+                i += 2  # skip escaped ''
+                continue
+            in_string = not in_string
+        elif not in_string:
+            yield i, c
+        i += 1
 
-        # Detect placeholder style
-        has_positional = "?" in query
-        has_named = bool(QueryValidator.NAMED_PATTERN.search(query))
 
-        if has_positional and has_named:
-            raise ValidationError("Cannot mix positional and named placeholders")
+def _extract_named_placeholders(query: str) -> List[str]:
+    """Return named placeholder identifiers found outside string literals."""
+    names: List[str] = []
+    skip_until = -1
+    for i, c in _outside_string(query):
+        if i < skip_until:
+            continue
+        if c == ":":
+            m = _NAMED_PARAM_RE.match(query, i)
+            if m:
+                names.append(m.group(1))
+                skip_until = m.end()
+    return names
 
-        if has_positional:
-            QueryValidator._validate_positional(query, params)
-        elif has_named:
-            QueryValidator._validate_named(query, params)
-        else:
-            logger.debug("No placeholders found for query: %.100s", query)
 
-    @staticmethod
-    def _validate_positional(query: str, params: Tuple) -> None:
-        """Validate positional '?' placeholders.
+def _validate_placeholders(query: str, params: _SqlParams) -> None:
+    """Validate that SQL placeholders in *query* match the supplied *params*.
 
-        Tracks single-quoted string literals using SQL's own escaping
-        convention (doubled quotes ``''``), **not** backslash escaping.
-        """
-        in_string = False
-        count = 0
-        i = 0
-        length = len(query)
+    Raises:
+        ValidationError: On style mixing, count mismatch, or missing/extra keys.
+    """
+    has_positional = "?" in query
+    has_named = bool(_NAMED_PARAM_RE.search(query))
 
-        while i < length:
-            char = query[i]
+    if has_positional and has_named:
+        raise ValidationError("Cannot mix positional and named placeholders")
 
-            if char == "'":
-                if in_string:
-                    # Check for escaped quote ('')
-                    if i + 1 < length and query[i + 1] == "'":
-                        i += 2  # skip both quotes
-                        continue
-                    in_string = False
-                else:
-                    in_string = True
-            elif char == "?" and not in_string:
-                count += 1
-
-            i += 1
-
+    if has_positional:
+        count = sum(1 for _, c in _outside_string(query) if c == "?")
         if count != len(params):
             raise ValidationError(
                 f"Expected {count} parameters but got {len(params)}"
             )
-
-    @staticmethod
-    def _validate_named(query: str, params: Mapping) -> None:
-        """Validate named ':name' placeholders."""
+    elif has_named:
         if not isinstance(params, Mapping):
             raise ValidationError("Named placeholders require a mapping (dict-like)")
-
-        # Extract placeholder names outside string literals
-        names = QueryValidator._extract_named_placeholders(query)
-
+        names = _extract_named_placeholders(query)
         missing = [n for n in names if n not in params]
-        extra = [p for p in params.keys() if p not in names]
-
+        extra = [p for p in params if p not in names]
         if missing:
             raise ValidationError(f"Missing parameters for placeholders: {missing}")
-
         if extra:
             raise ValidationError(f"Extra parameters not used in query: {extra}")
-
-    @staticmethod
-    def _extract_named_placeholders(query: str):
-        """Extract named placeholders outside string literals.
-
-        Uses SQL's own escaping convention (doubled quotes ``''``),
-        not backslash escaping.
-        """
-        in_string = False
-        names = []
-
-        i = 0
-        length = len(query)
-        while i < length:
-            char = query[i]
-
-            if char == "'":
-                if in_string:
-                    if i + 1 < length and query[i + 1] == "'":
-                        i += 2  # skip escaped quote
-                        continue
-                    in_string = False
-                else:
-                    in_string = True
-
-            elif char == ":" and not in_string:
-                # Extract identifier
-                match = QueryValidator.NAMED_PATTERN.match(query, i)
-                if match:
-                    names.append(match.group(1))
-                    i = match.end()
-                    continue
-
-            i += 1
-
-        return names
+    else:
+        logger.debug("No placeholders found for query: %.100s", query)
 
 
 class Database:
@@ -312,7 +272,7 @@ class Database:
             raise ValidationError(f"Query exceeds maximum length of {self.MAX_QUERY_LENGTH}")
         # Accept mapping parameters for named placeholders and sequence for
         # positional placeholders.
-        has_named = bool(QueryValidator.NAMED_PATTERN.search(query))
+        has_named = bool(_NAMED_PARAM_RE.search(query))
         if has_named:
             if not isinstance(params, Mapping):
                 raise ValidationError("Named placeholders require a mapping (dict-like)")
@@ -324,7 +284,7 @@ class Database:
             if len(params) > self.MAX_PARAMS:
                 raise ValidationError(f"Too many parameters (max: {self.MAX_PARAMS})")
 
-        QueryValidator.validate_placeholders(query, params)
+        _validate_placeholders(query, params)
 
     def execute(self, query: str, params: _SqlParams = ()) -> sqlite3.Cursor:
         """Execute a query safely with validation.
@@ -433,7 +393,7 @@ class Database:
         """
         self._validate_query(query, params)
 
-        if not query.strip().upper().startswith('INSERT'):
+        if not query.lstrip().upper().startswith('INSERT'):
             raise ValidationError("Query must be an INSERT statement")
 
         try:
@@ -511,7 +471,7 @@ class _TransactionHelper:
         self._conn = conn
 
     @staticmethod
-    def _validate(query: str, params: "_SqlParams") -> None:
+    def _validate(query: str, params: _SqlParams) -> None:
         """Validate query and parameters before execution."""
         if not query or not isinstance(query, str):
             raise ValidationError("Query must be a non-empty string")
@@ -521,9 +481,9 @@ class _TransactionHelper:
             )
         if len(params) > Database.MAX_PARAMS:
             raise ValidationError(f"Too many parameters (max: {Database.MAX_PARAMS})")
-        QueryValidator.validate_placeholders(query, params)
+        _validate_placeholders(query, params)
 
-    def execute(self, query: str, params: "_SqlParams" = ()) -> sqlite3.Cursor:
+    def execute(self, query: str, params: _SqlParams = ()) -> sqlite3.Cursor:
         """Execute a query and return the cursor."""
         self._validate(query, params)
         return self._conn.execute(query, params)
@@ -532,25 +492,29 @@ class _TransactionHelper:
         """Execute a query against all parameter sequences."""
         if not query or not isinstance(query, str):
             raise ValidationError("Query must be a non-empty string")
+        if len(query) > Database.MAX_QUERY_LENGTH:
+            raise ValidationError(
+                f"Query exceeds maximum length of {Database.MAX_QUERY_LENGTH}"
+            )
         return self._conn.executemany(query, seq_of_params)
 
-    def fetchone(self, query: str, params: "_SqlParams" = ()) -> Optional[Dict[str, Any]]:
+    def fetchone(self, query: str, params: _SqlParams = ()) -> Optional[Dict[str, Any]]:
         """Execute a query and return a single row as a dict, or None."""
         self._validate(query, params)
         cursor = self._conn.execute(query, params)
         row = cursor.fetchone()
         return dict(row) if row else None
 
-    def fetchall(self, query: str, params: "_SqlParams" = ()) -> List[Dict[str, Any]]:
+    def fetchall(self, query: str, params: _SqlParams = ()) -> List[Dict[str, Any]]:
         """Execute a query and return all rows as dicts."""
         self._validate(query, params)
         cursor = self._conn.execute(query, params)
         return [dict(r) for r in cursor.fetchall()]
 
-    def insert(self, query: str, params: "_SqlParams" = ()) -> int:
+    def insert(self, query: str, params: _SqlParams = ()) -> int:
         """Execute an INSERT and return the last row id."""
         self._validate(query, params)
-        if not query.strip().upper().startswith('INSERT'):
+        if not query.lstrip().upper().startswith('INSERT'):
             raise ValidationError("Query must be an INSERT statement")
         cursor = self._conn.execute(query, params)
         return cursor.lastrowid
