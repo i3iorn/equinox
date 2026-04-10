@@ -5,31 +5,40 @@ Manages named, reusable auth credentials of any supported type
 OAuthClientsDialog as the primary credential manager opened from AuthDialog.
 """
 
+from __future__ import annotations
+
 import json
 import logging
+from typing import Optional, Tuple
 
-from PyQt6.QtWidgets import (
-    QDialog, QVBoxLayout, QHBoxLayout, QSplitter,
-    QListWidget, QListWidgetItem, QPushButton, QLabel,
-    QWidget, QFormLayout, QLineEdit, QComboBox, QTextEdit,
-    QDialogButtonBox, QMessageBox, QInputDialog,
-    QFrame, QStackedWidget,
-)
 from PyQt6.QtCore import Qt, pyqtSignal
-from PyQt6.QtGui import QColor, QFont
+from PyQt6.QtGui import QColor
+from PyQt6.QtWidgets import (
+    QComboBox, QDialog, QDialogButtonBox, QFormLayout, QFrame,
+    QHBoxLayout, QInputDialog, QLabel, QLineEdit, QListWidget,
+    QListWidgetItem, QMessageBox, QPushButton, QSplitter, QStackedWidget,
+    QTextEdit, QVBoxLayout, QWidget,
+)
 
 from equinox.gui.theme import Colors, get_mono_font
 from equinox.gui.widgets.secret_row import make_secret_row as _secret_row
 from equinox.gui.workers import OAuthTokenTester
-
 from equinox.storage import Database
 from equinox.storage.saved_credentials import (
-    SavedCredentialsManager, AUTH_TYPES, AUTH_TYPE_LABELS
+    AUTH_TYPE_LABELS, AUTH_TYPES, SavedCredentialsManager,
 )
 
 logger = logging.getLogger(__name__)
 
-GRANT_TYPES = ("client_credentials", "refresh_token", "password", "authorization_code")
+# HTML fragment shown in the form header when no credential is loaded.
+_FORM_HEADER_IDLE = (
+    f"<b>Credential Details</b>"
+    f"<span style='color:{Colors.FG_MUTED};'>  (select a credential)</span>"
+)
+
+GRANT_TYPES: Tuple[str, ...] = (
+    "client_credentials", "refresh_token", "password", "authorization_code"
+)
 
 # Colour per auth type used in the list widget
 _TYPE_COLOUR = {
@@ -51,12 +60,13 @@ class SavedCredentialsDialog(QDialog):
 
     credentials_changed = pyqtSignal()
 
-    def __init__(self, db: Database, parent=None):
+    def __init__(self, db: Database, parent=None) -> None:
         super().__init__(parent)
         self.db  = db
         self.mgr = SavedCredentialsManager(db)
-        self._current_id: "int | None" = None
+        self._current_id: Optional[int] = None
         self._dirty = False
+        self._tester: Optional[OAuthTokenTester] = None  # keeps reference alive until done
 
         self.setWindowTitle("Saved Credentials")
         self.setMinimumSize(960, 580)
@@ -65,13 +75,26 @@ class SavedCredentialsDialog(QDialog):
 
     # ── UI construction ───────────────────────────────────────────────
 
-    def _build_ui(self):
+    def _build_ui(self) -> None:
         root = QVBoxLayout(self)
         root.setSpacing(6)
 
         splitter = QSplitter(Qt.Orientation.Horizontal)
+        splitter.addWidget(self._build_left_panel())
+        splitter.addWidget(self._build_right_panel())
+        splitter.setSizes([240, 720])
+        splitter.setChildrenCollapsible(False)
+        splitter.setHandleWidth(5)
+        root.addWidget(splitter, 1)
 
-        # ── Left: list ────────────────────────────────────────────────
+        close_btns = QDialogButtonBox(QDialogButtonBox.StandardButton.Close)
+        close_btns.rejected.connect(self._on_close)
+        root.addWidget(close_btns)
+
+        self._set_form_enabled(False)
+
+    def _build_left_panel(self) -> QWidget:
+        """Scrollable credential list with New / Duplicate / Delete buttons."""
         left = QWidget()
         ll   = QVBoxLayout(left)
         ll.setContentsMargins(0, 0, 4, 0)
@@ -96,21 +119,18 @@ class SavedCredentialsDialog(QDialog):
         self.new_btn.clicked.connect(self._new_cred)
         self.dup_btn.clicked.connect(self._duplicate_cred)
         self.delete_btn.clicked.connect(self._delete_cred)
+        return left
 
-        splitter.addWidget(left)
-
-        # ── Right: edit form ──────────────────────────────────────────
+    def _build_right_panel(self) -> QWidget:
+        """Inline edit form with type-specific stacked pages and action buttons."""
         right = QWidget()
         rl    = QVBoxLayout(right)
         rl.setContentsMargins(4, 0, 0, 0)
 
-        self.form_header = QLabel(
-            f"<b>Credential Details</b>"
-            f"<span style='color:{Colors.FG_MUTED};'>  (select a credential)</span>"
-        )
+        self.form_header = QLabel(_FORM_HEADER_IDLE)
         rl.addWidget(self.form_header)
 
-        # Name / type / description
+        # Name / type / description — common to all auth types
         top_form = QFormLayout()
         top_form.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.ExpandingFieldsGrow)
         self.f_name = QLineEdit()
@@ -165,22 +185,13 @@ class SavedCredentialsDialog(QDialog):
         self.save_btn.clicked.connect(self._save_cred)
 
         rl.addStretch()
-        splitter.addWidget(right)
-        splitter.setSizes([240, 720])
-        splitter.setChildrenCollapsible(False)
-        splitter.setHandleWidth(5)
-        root.addWidget(splitter, 1)
-
-        close_btns = QDialogButtonBox(QDialogButtonBox.StandardButton.Close)
-        close_btns.rejected.connect(self._on_close)
-        root.addWidget(close_btns)
 
         # Dirty tracking for common fields
         for w in (self.f_name, self.f_description):
             w.textChanged.connect(self._mark_dirty)
         self.f_type.currentIndexChanged.connect(self._mark_dirty)
 
-        self._set_form_enabled(False)
+        return right
 
     # ── Type-specific form pages ──────────────────────────────────────
 
@@ -303,11 +314,11 @@ class SavedCredentialsDialog(QDialog):
 
     # ── Type combo callback ───────────────────────────────────────────
 
-    def _on_type_changed(self, index: int):
+    def _on_type_changed(self, index: int) -> None:
         self.stack.setCurrentIndex(index)
         self._update_test_btn()
 
-    def _update_test_btn(self):
+    def _update_test_btn(self) -> None:
         auth_type = self.f_type.currentData()
         self.test_btn.setEnabled(
             self._current_id is not None and auth_type == "oauth2"
@@ -315,25 +326,28 @@ class SavedCredentialsDialog(QDialog):
 
     # ── List management ───────────────────────────────────────────────
 
-    def _refresh_list(self, select_id: "int | None" = None):
+    def _refresh_list(self, select_id: Optional[int] = None) -> None:
+        self.cred_list.setUpdatesEnabled(False)
         self.cred_list.blockSignals(True)
-        self.cred_list.clear()
-        creds = self.mgr.list()
-        for c in creds:
-            at    = c["auth_type"]
-            label = AUTH_TYPE_LABELS.get(at, at)
-            tag   = " \u2605" if c["is_default"] else ""
-            item  = QListWidgetItem(f"[{label}] {c['name']}{tag}")
-            item.setData(Qt.ItemDataRole.UserRole, c["id"])
-            item.setForeground(QColor(_TYPE_COLOUR.get(at, Colors.FG)))
-            if c["is_default"]:
-                f = item.font()
-                f.setBold(True)
-                item.setFont(f)
-            self.cred_list.addItem(item)
-            if c["id"] == select_id:
-                self.cred_list.setCurrentItem(item)
-        self.cred_list.blockSignals(False)
+        try:
+            self.cred_list.clear()
+            for c in self.mgr.list():
+                at    = c["auth_type"]
+                label = AUTH_TYPE_LABELS.get(at, at)
+                tag   = " \u2605" if c["is_default"] else ""
+                item  = QListWidgetItem(f"[{label}] {c['name']}{tag}")
+                item.setData(Qt.ItemDataRole.UserRole, c["id"])
+                item.setForeground(QColor(_TYPE_COLOUR.get(at, Colors.FG)))
+                if c["is_default"]:
+                    font = item.font()
+                    font.setBold(True)
+                    item.setFont(font)
+                self.cred_list.addItem(item)
+                if c["id"] == select_id:
+                    self.cred_list.setCurrentItem(item)
+        finally:
+            self.cred_list.blockSignals(False)
+            self.cred_list.setUpdatesEnabled(True)
 
         if select_id is None and self.cred_list.count():
             # Fires currentItemChanged → _on_item_selected
@@ -343,7 +357,7 @@ class SavedCredentialsDialog(QDialog):
             # selection logic manually so the form gets loaded/enabled.
             self._apply_selection()
 
-    def _apply_selection(self):
+    def _apply_selection(self) -> None:
         """Read the currently-selected list item and load it into the form.
 
         Does NOT prompt about unsaved changes — only called after
@@ -363,7 +377,7 @@ class SavedCredentialsDialog(QDialog):
         self._dirty = False
         self._sync_buttons()
 
-    def _on_item_selected(self, current: QListWidgetItem, _prev):
+    def _on_item_selected(self, current: QListWidgetItem, _prev) -> None:
         if current is None:
             self._current_id = None
             self._set_form_enabled(False)
@@ -395,7 +409,7 @@ class SavedCredentialsDialog(QDialog):
         self._dirty = False
         self._sync_buttons()
 
-    def _reselect(self, cred_id: int):
+    def _reselect(self, cred_id: int) -> None:
         self.cred_list.blockSignals(True)
         for i in range(self.cred_list.count()):
             if self.cred_list.item(i).data(Qt.ItemDataRole.UserRole) == cred_id:
@@ -403,7 +417,7 @@ class SavedCredentialsDialog(QDialog):
                 break
         self.cred_list.blockSignals(False)
 
-    def _load_form(self, cred_id: int):
+    def _load_form(self, cred_id: int) -> None:
         c = self.mgr.get(cred_id)
         if not c:
             return
@@ -455,7 +469,7 @@ class SavedCredentialsDialog(QDialog):
         )
         self.status_label.setText("")
 
-    def _block_form(self, block: bool):
+    def _block_form(self, block: bool) -> None:
         for w in (
             self.f_name, self.f_description,
             self.o_token_url, self.o_client_id, self.o_client_secret,
@@ -470,7 +484,7 @@ class SavedCredentialsDialog(QDialog):
         for cb in (self.f_type, self.o_grant_type, self.ak_location):
             cb.blockSignals(block)
 
-    def _set_form_enabled(self, enabled: bool):
+    def _set_form_enabled(self, enabled: bool) -> None:
         for w in (
             self.f_name, self.f_description, self.f_type, self.stack,
             self.default_btn, self.save_btn,
@@ -478,15 +492,12 @@ class SavedCredentialsDialog(QDialog):
             w.setEnabled(enabled)
         if not enabled:
             self.test_btn.setEnabled(False)
-            self.form_header.setText(
-                f"<b>Credential Details</b>"
-                f"<span style='color:{Colors.FG_MUTED};'>  (select a credential)</span>"
-            )
+            self.form_header.setText(_FORM_HEADER_IDLE)
             self.status_label.setText("")
         else:
             self._update_test_btn()
 
-    def _sync_buttons(self):
+    def _sync_buttons(self) -> None:
         has = self._current_id is not None
         for b in (self.default_btn, self.save_btn):
             b.setEnabled(has)
@@ -504,14 +515,14 @@ class SavedCredentialsDialog(QDialog):
             "\U0001f4be  Save *" if self._dirty else "\U0001f4be  Save"
         )
 
-    def _mark_dirty(self):
+    def _mark_dirty(self) -> None:
         if not self._dirty:
             self._dirty = True
             self._sync_buttons()
 
     # ── CRUD ──────────────────────────────────────────────────────────
 
-    def _new_cred(self):
+    def _new_cred(self) -> None:
         name, ok = QInputDialog.getText(self, "New Credential", "Credential name:")
         if not ok or not name.strip():
             return
@@ -523,7 +534,7 @@ class SavedCredentialsDialog(QDialog):
         except Exception as exc:
             QMessageBox.critical(self, "Error", str(exc))
 
-    def _duplicate_cred(self):
+    def _duplicate_cred(self) -> None:
         if self._current_id is None:
             return
         src = self.mgr.get(self._current_id)
@@ -544,7 +555,7 @@ class SavedCredentialsDialog(QDialog):
         except Exception as exc:
             QMessageBox.critical(self, "Error", str(exc))
 
-    def _delete_cred(self):
+    def _delete_cred(self) -> None:
         if self._current_id is None:
             return
         c = self.mgr.get(self._current_id)
@@ -602,7 +613,7 @@ class SavedCredentialsDialog(QDialog):
             QMessageBox.critical(self, "Save Failed", str(exc))
             return False
 
-    def _collect_config(self, auth_type: str):
+    def _collect_config(self, auth_type: str) -> Tuple[Optional[dict], Optional[str]]:
         """Read type-specific form fields.  Returns (config_dict, None) or (None, error)."""
         if auth_type == "oauth2":
             token_url = self.o_token_url.text().strip()
@@ -679,12 +690,11 @@ class SavedCredentialsDialog(QDialog):
 
         return {}, None
 
-    def _set_default(self):
+    def _set_default(self) -> None:
         if self._current_id is None:
             return
-        if self._dirty:
-            if not self._save_cred():
-                return
+        if self._dirty and not self._save_cred():
+            return
         try:
             self.mgr.set_default(self._current_id)
             self.credentials_changed.emit()
@@ -695,7 +705,7 @@ class SavedCredentialsDialog(QDialog):
 
     # ── Test connection (OAuth2 only) ─────────────────────────────────
 
-    def _test_cred(self):
+    def _test_cred(self) -> None:
         token_url  = self.o_token_url.text().strip()
         client_id  = self.o_client_id.text().strip()
         secret     = self.o_client_secret.text()
@@ -727,14 +737,14 @@ class SavedCredentialsDialog(QDialog):
         self._tester.done.connect(self._on_test_done)
         self._tester.start()
 
-    def _on_test_done(self, success: bool, message: str):
+    def _on_test_done(self, success: bool, message: str) -> None:
         self.test_btn.setEnabled(True)
         self.test_btn.setText("\U0001f50c  Test Connection")
         self._set_status(message, ok=success)
 
     # ── Close guard ───────────────────────────────────────────────────
 
-    def _on_close(self):
+    def _on_close(self) -> None:
         if self._dirty:
             ans = QMessageBox.question(
                 self, "Unsaved Changes",
@@ -746,9 +756,10 @@ class SavedCredentialsDialog(QDialog):
             if ans == QMessageBox.StandardButton.Cancel:
                 return
             if ans == QMessageBox.StandardButton.Save:
-                self._save_cred()
+                if not self._save_cred():
+                    return  # save failed — keep dialog open
         self.accept()
 
-    def _set_status(self, msg: str, ok: "bool | None"):
+    def _set_status(self, msg: str, ok: Optional[bool]) -> None:
         colour = Colors.GREEN if ok is True else Colors.RED if ok is False else Colors.FG_MUTED
         self.status_label.setText(f"<span style='color:{colour};'>{msg}</span>")
