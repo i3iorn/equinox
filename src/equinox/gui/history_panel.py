@@ -1,21 +1,45 @@
 """History panel"""
+from __future__ import annotations
 
+import difflib
+import logging
 from datetime import date, datetime, timedelta
 
+from PyQt6.QtCore import Qt, QTimer, pyqtSignal
+from PyQt6.QtGui import QAction, QColor, QFont, QTextCharFormat
 from PyQt6.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QListWidget, QListWidgetItem,
-    QPushButton, QLabel, QMessageBox, QCheckBox, QMenu, QLineEdit, QComboBox,
-    QDoubleSpinBox, QGroupBox, QGridLayout,
-    QDialog, QDialogButtonBox, QSplitter, QTabWidget, QTextEdit,
+    QCheckBox, QComboBox, QDialog, QDialogButtonBox, QDoubleSpinBox,
+    QGridLayout, QGroupBox, QHBoxLayout, QLabel, QLineEdit, QListWidget,
+    QListWidgetItem, QMenu, QMessageBox, QPushButton, QSpinBox, QSplitter,
+    QTabWidget, QTextEdit, QVBoxLayout, QWidget,
 )
-from PyQt6.QtCore import pyqtSignal, Qt, QTimer
-from PyQt6.QtGui import QColor, QFont, QAction
 
 from equinox.gui.theme import Colors
 from equinox.storage import Database, HistoryManager
-import logging
+
+__all__ = ["HistoryPanel", "HistoryDiffDialog"]
 
 logger = logging.getLogger(__name__)
+
+# ── Module-level constants ────────────────────────────────────────────────────
+
+_AUTO_REFRESH_INTERVAL_MS = 30_000
+
+
+# ── Helper functions ──────────────────────────────────────────────────────────
+
+
+def _bold_font() -> QFont:
+    f = QFont()
+    f.setBold(True)
+    return f
+
+
+def _mono_font() -> QFont:
+    return QFont("Courier New", 9)
+
+
+# ── History panel ─────────────────────────────────────────────────────────────
 
 
 class HistoryPanel(QWidget):
@@ -24,15 +48,20 @@ class HistoryPanel(QWidget):
     history_selected = pyqtSignal(int)   # load into editor
     history_replay   = pyqtSignal(int)   # load + immediately send
 
-    def __init__(self, db: Database, parent=None):
+    def __init__(self, db: Database, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self.db = db
+        # Cache the manager — it is a lightweight DB wrapper; no need to
+        # reconstruct it on every operation.
+        self._mgr = HistoryManager(db)
         self.auto_refresh_enabled = True
         self._init_ui()
         self._setup_auto_refresh()
         self.refresh()
 
-    def _init_ui(self):
+    # ── UI construction ───────────────────────────────────────────────────────
+
+    def _init_ui(self) -> None:
         layout = QVBoxLayout(self)
         layout.setContentsMargins(4, 4, 4, 4)
         layout.setSpacing(4)
@@ -200,9 +229,27 @@ class HistoryPanel(QWidget):
 
         self.list_widget.itemSelectionChanged.connect(self._on_selection_changed)
 
-    # ── Advanced-filter toggle ────────────────────────────────────────────
+    # ── Auto-refresh ──────────────────────────────────────────────────────────
 
-    def _toggle_advanced_filters(self, checked: bool):
+    def _setup_auto_refresh(self) -> None:
+        self.refresh_timer = QTimer(self)
+        self.refresh_timer.timeout.connect(self._refresh_if_visible)
+        self.refresh_timer.start(_AUTO_REFRESH_INTERVAL_MS)
+
+    def _refresh_if_visible(self) -> None:
+        if self.isVisible():
+            self.refresh()
+
+    def _toggle_auto_refresh(self, state: int) -> None:
+        self.auto_refresh_enabled = bool(state)
+        if self.auto_refresh_enabled:
+            self.refresh_timer.start(_AUTO_REFRESH_INTERVAL_MS)
+        else:
+            self.refresh_timer.stop()
+
+    # ── Advanced-filter toggle ────────────────────────────────────────────────
+
+    def _toggle_advanced_filters(self, checked: bool) -> None:
         self.advanced_group.setVisible(checked)
         self.advanced_toggle.setText(
             "▼ Advanced Filters" if checked else "▶ Advanced Filters"
@@ -219,23 +266,9 @@ class HistoryPanel(QWidget):
             self.filter_error_label.setVisible(False)
             self._apply_filters()
 
-    def _setup_auto_refresh(self):
-        self.refresh_timer = QTimer(self)
-        self.refresh_timer.timeout.connect(self._refresh_if_visible)
-        self.refresh_timer.start(30_000)  # #5: lazy fallback, immediate via signals
+    # ── Selection handling ────────────────────────────────────────────────────
 
-    def _refresh_if_visible(self):
-        if self.isVisible():
-            self.refresh()
-
-    def _toggle_auto_refresh(self, state):
-        self.auto_refresh_enabled = (state == Qt.CheckState.Checked.value)
-        if self.auto_refresh_enabled:
-            self.refresh_timer.start(5000)
-        else:
-            self.refresh_timer.stop()
-
-    def _on_selection_changed(self):
+    def _on_selection_changed(self) -> None:
         sel = self.list_widget.selectedItems()
         # Only count real entries (not separator labels)
         real_sel = [i for i in sel if i.data(Qt.ItemDataRole.UserRole) is not None]
@@ -245,10 +278,13 @@ class HistoryPanel(QWidget):
         self.delete_sel_btn.setEnabled(has)
         self.compare_btn.setEnabled(len(real_sel) == 2)
 
-    def _on_search_changed(self, _text=None):
+    # ── Search / filter ───────────────────────────────────────────────────────
+
+    def _on_search_changed(self, _text: str = "") -> None:
+        """Debounce typed search input by 300 ms before applying filters."""
         self._search_timer.start(300)
 
-    def _apply_filters(self):
+    def _apply_filters(self) -> None:
         self.filter_error_label.setVisible(False)
 
         method = self.method_filter.currentText()
@@ -257,23 +293,17 @@ class HistoryPanel(QWidget):
         status = "" if status == "All Status" else status.lower()
         query  = self.search_input.text().strip()
 
-        # Collect advanced filter values
-        body_regex = self.regex_input.text().strip() if hasattr(self, "regex_input") else ""
-        jsonpath = self.jsonpath_input.text().strip() if hasattr(self, "jsonpath_input") else ""
-        jsonpath_value = self.jsonpath_value_input.text().strip() if hasattr(self, "jsonpath_value_input") else ""
-        jsonpath_value = jsonpath_value or None
-        content_type = self.content_type_input.text().strip() if hasattr(self, "content_type_input") else ""
-        header = self.header_input.text().strip() if hasattr(self, "header_input") else ""
-        min_elapsed = None
-        max_elapsed = None
-        if hasattr(self, "min_elapsed_spin") and self.min_elapsed_spin.value() > 0:
-            min_elapsed = self.min_elapsed_spin.value()
-        if hasattr(self, "max_elapsed_spin") and self.max_elapsed_spin.value() > 0:
-            max_elapsed = self.max_elapsed_spin.value()
+        # Advanced filter values — widgets are always present after _init_ui().
+        body_regex     = self.regex_input.text().strip()
+        jsonpath       = self.jsonpath_input.text().strip()
+        jsonpath_value = self.jsonpath_value_input.text().strip() or None
+        content_type   = self.content_type_input.text().strip()
+        header         = self.header_input.text().strip()
+        min_elapsed    = self.min_elapsed_spin.value() or None
+        max_elapsed    = self.max_elapsed_spin.value() or None
 
         try:
-            mgr = HistoryManager(self.db)
-            entries = mgr.search_history(
+            entries = self._mgr.search_history(
                 query=query,
                 method=method,
                 status_class=status,
@@ -286,17 +316,16 @@ class HistoryPanel(QWidget):
                 max_elapsed=max_elapsed,
             )
         except Exception as exc:
+            logger.warning("History filter error: %s", exc)
             self.filter_error_label.setText(str(exc))
             self.filter_error_label.setVisible(True)
             # Mark the offending input with a red border
-            if body_regex and "regex" in str(exc).lower():
-                self.regex_input.setStyleSheet("border: 1px solid red;")
-            else:
-                self.regex_input.setStyleSheet("")
-            if jsonpath and "jsonpath" in str(exc).lower():
-                self.jsonpath_input.setStyleSheet("border: 1px solid red;")
-            else:
-                self.jsonpath_input.setStyleSheet("")
+            self.regex_input.setStyleSheet(
+                "border: 1px solid red;" if body_regex and "regex" in str(exc).lower() else ""
+            )
+            self.jsonpath_input.setStyleSheet(
+                "border: 1px solid red;" if jsonpath and "jsonpath" in str(exc).lower() else ""
+            )
             return
 
         # Clear any previous error styling
@@ -305,9 +334,11 @@ class HistoryPanel(QWidget):
 
         self._populate_list(entries)
 
+    # ── List population ───────────────────────────────────────────────────────
+
     @staticmethod
     def _date_group_label(entry_date: date) -> str:
-        """Return a human-readable group label for a history entry date (#13)."""
+        """Return a human-readable group label for a history entry date."""
         today = date.today()
         if entry_date == today:
             return "Today"
@@ -318,76 +349,91 @@ class HistoryPanel(QWidget):
         return entry_date.strftime("%B %Y")
 
     def _add_date_separator(self, label: str) -> None:
-        """Add a non-selectable date separator row to the list (#13)."""
+        """Add a non-selectable date separator row to the list."""
         sep = QListWidgetItem(f"  {label}")
-        sep.setFlags(Qt.ItemFlag.NoItemFlags)   # not selectable
+        sep.setFlags(Qt.ItemFlag.NoItemFlags)
         sep.setFont(_bold_font())
         sep.setForeground(QColor(Colors.FG_MUTED))
         sep.setBackground(QColor(Colors.BG_ALT))
         self.list_widget.addItem(sep)
 
-    def _populate_list(self, entries):
+    def _populate_list(self, entries: list[dict]) -> None:
+        """Rebuild the list widget from *entries*, restoring the prior selection.
+
+        Signals and screen updates are suppressed during the rebuild to avoid
+        O(n) ``itemSelectionChanged`` firings and per-row repaint overhead.
+        ``_on_selection_changed`` is driven manually after re-enabling.
+        """
         selected_ids = {
             i.data(Qt.ItemDataRole.UserRole)
             for i in self.list_widget.selectedItems()
             if i.data(Qt.ItemDataRole.UserRole) is not None
         }
 
-        self.list_widget.clear()
-
-        current_group: str | None = None
-
-        for entry in entries:
-            # ── Date grouping (#13) ───────────────────────────────────
-            ts_str = str(entry.get("executed_at", ""))
-            try:
-                entry_date = datetime.fromisoformat(ts_str).date()
-            except Exception:
-                entry_date = date.today()
-            group_label = self._date_group_label(entry_date)
-            if group_label != current_group:
-                self._add_date_separator(group_label)
-                current_group = group_label
-
-            status  = entry.get("status_code", "ERR")
-            method  = entry["method"]
-            url     = entry["url"]
-            ts      = ts_str.split(".")[0]
-            elapsed = entry.get("elapsed")
-            elapsed_str = f"  {int(elapsed * 1000)} ms" if elapsed else ""
-
-            text = f"[{status}] {method}  {url}\n{ts}{elapsed_str}"
-            item = QListWidgetItem(text)
-            item.setData(Qt.ItemDataRole.UserRole, entry["id"])
-
-            if entry.get("error"):
-                item.setForeground(QColor(Colors.RED))
-            elif isinstance(status, int) and status >= 400:
-                item.setForeground(QColor(Colors.AMBER))
-            else:
-                item.setForeground(QColor(Colors.GREEN))
-
-            self.list_widget.addItem(item)
-
-            if entry["id"] in selected_ids:
-                item.setSelected(True)
-
-    def refresh(self):
-        """Refresh history list."""
-        self._apply_filters()
-
+        self.list_widget.blockSignals(True)
+        self.list_widget.setUpdatesEnabled(False)
         try:
-            mgr = HistoryManager(self.db)
-            stats = mgr.get_stats()
+            self.list_widget.clear()
+            current_group: str | None = None
+
+            for entry in entries:
+                ts_str = str(entry.get("executed_at", ""))
+                try:
+                    entry_date = datetime.fromisoformat(ts_str).date()
+                except Exception:
+                    entry_date = date.today()
+                group_label = self._date_group_label(entry_date)
+                if group_label != current_group:
+                    self._add_date_separator(group_label)
+                    current_group = group_label
+
+                status  = entry.get("status_code", "ERR")
+                method  = entry["method"]
+                url     = entry["url"]
+                ts      = ts_str.split(".")[0]
+                elapsed = entry.get("elapsed")
+                elapsed_str = f"  {int(elapsed * 1000)} ms" if elapsed else ""
+
+                text = f"[{status}] {method}  {url}\n{ts}{elapsed_str}"
+                item = QListWidgetItem(text)
+                item.setData(Qt.ItemDataRole.UserRole, entry["id"])
+
+                if entry.get("error"):
+                    item.setForeground(QColor(Colors.RED))
+                elif isinstance(status, int) and status >= 400:
+                    item.setForeground(QColor(Colors.AMBER))
+                else:
+                    item.setForeground(QColor(Colors.GREEN))
+
+                self.list_widget.addItem(item)
+
+                if entry["id"] in selected_ids:
+                    item.setSelected(True)
+        finally:
+            self.list_widget.setUpdatesEnabled(True)
+            self.list_widget.blockSignals(False)
+
+        # Drive button-state update manually since signals were blocked.
+        self._on_selection_changed()
+
+    # ── Public API ────────────────────────────────────────────────────────────
+
+    def refresh(self) -> None:
+        """Refresh history list and stats."""
+        self._apply_filters()
+        try:
+            stats = self._mgr.get_stats()
             self.stats_label.setText(
                 f"Total: {stats['total']}  |  "
                 f"OK: {stats['successful']}  |  "
                 f"Failed: {stats['failed']}"
             )
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.error("Failed to load history stats: %s", exc, exc_info=True)
 
-    def _on_item_double_clicked(self, item: QListWidgetItem):
+    # ── Slots ─────────────────────────────────────────────────────────────────
+
+    def _on_item_double_clicked(self, item: QListWidgetItem) -> None:
         history_id = item.data(Qt.ItemDataRole.UserRole)
         logger.debug("HistoryPanel: itemDoubleClicked id=%r", history_id)
         if history_id:
@@ -396,12 +442,10 @@ class HistoryPanel(QWidget):
             except Exception:
                 logger.exception("Failed to emit history_selected for id=%r", history_id)
 
-    def _open_selected(self):
-        # Emit only the first "real" selected history entry (ignore separators)
-        sel = self.list_widget.selectedItems()
-        for it in sel:
+    def _open_selected(self) -> None:
+        """Emit ``history_selected`` for the first real selected entry."""
+        for it in self.list_widget.selectedItems():
             hid = it.data(Qt.ItemDataRole.UserRole)
-            logger.debug("HistoryPanel._open_selected: found candidate id=%r", hid)
             if hid is not None:
                 try:
                     self.history_selected.emit(int(hid))
@@ -409,22 +453,19 @@ class HistoryPanel(QWidget):
                     logger.exception("_open_selected: invalid history id %r", hid)
                 return
 
-    def _replay_selected(self):
-        # Similar to _open_selected — find the first real entry and emit its id
-        sel = self.list_widget.selectedItems()
-        for it in sel:
+    def _replay_selected(self) -> None:
+        """Emit ``history_replay`` for the first real selected entry."""
+        for it in self.list_widget.selectedItems():
             hid = it.data(Qt.ItemDataRole.UserRole)
             if hid is not None:
                 try:
                     self.history_replay.emit(int(hid))
                 except Exception:
-                    from logging import getLogger
-
-                    getLogger(__name__).debug("_replay_selected: invalid history id %r", hid, exc_info=True)
+                    logger.exception("_replay_selected: invalid history id %r", hid)
                 return
 
     def _delete_selected(self) -> None:
-        """Delete all currently selected history entries (#14)."""
+        """Delete all currently selected history entries."""
         ids = [
             i.data(Qt.ItemDataRole.UserRole)
             for i in self.list_widget.selectedItems()
@@ -439,15 +480,25 @@ class HistoryPanel(QWidget):
         )
         if reply != QMessageBox.StandardButton.Yes:
             return
-        try:
-            mgr = HistoryManager(self.db)
-            for hid in ids:
-                mgr.delete_history(hid)
-        except Exception:
-            pass
+
+        errors: list[str] = []
+        for hid in ids:
+            try:
+                self._mgr.delete_history(hid)
+            except Exception as exc:
+                logger.error("Failed to delete history id=%s: %s", hid, exc, exc_info=True)
+                errors.append(str(exc))
+
+        # Always refresh so the list reflects the actual DB state.
         self.refresh()
 
-    def _show_context_menu(self, position):
+        if errors:
+            QMessageBox.warning(
+                self, "Delete Errors",
+                f"{len(errors)} deletion(s) failed:\n\n" + "\n".join(errors),
+            )
+
+    def _show_context_menu(self, position) -> None:
         item = self.list_widget.itemAt(position)
         if not item:
             return
@@ -472,13 +523,14 @@ class HistoryPanel(QWidget):
         menu.exec(self.list_widget.viewport().mapToGlobal(position))
 
     def _delete_one(self, history_id: int) -> None:
-        """Delete a single history entry (#14)."""
+        """Delete a single history entry (via context menu)."""
         try:
-            mgr = HistoryManager(self.db)
-            mgr.delete_history(history_id)
-            self.refresh()
-        except Exception:
-            pass
+            self._mgr.delete_history(history_id)
+        except Exception as exc:
+            logger.error("Failed to delete history id=%s: %s", history_id, exc, exc_info=True)
+            QMessageBox.warning(self, "Error", str(exc))
+            return
+        self.refresh()
 
     def _compare_selected(self) -> None:
         """Open a side-by-side diff for the two currently selected history entries."""
@@ -491,31 +543,30 @@ class HistoryPanel(QWidget):
         id_a = real_items[0].data(Qt.ItemDataRole.UserRole)
         id_b = real_items[1].data(Qt.ItemDataRole.UserRole)
         try:
-            mgr = HistoryManager(self.db)
-            entry_a = mgr.get_history(id_a)
-            entry_b = mgr.get_history(id_b)
+            entry_a = self._mgr.get_history(id_a)
+            entry_b = self._mgr.get_history(id_b)
             if entry_a and entry_b:
                 HistoryDiffDialog(entry_a, entry_b, self).exec()
         except Exception as exc:
             QMessageBox.critical(self, "Error", f"Failed to load history entries:\n{exc}")
 
-    def _clear_history(self):
+    def _clear_history(self) -> None:
         reply = QMessageBox.question(
-            self, "Confirm Clear",
-            "Clear all history?",
+            self, "Confirm Clear", "Clear all history?",
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
         )
-        if reply == QMessageBox.StandardButton.Yes:
-            try:
-                mgr = HistoryManager(self.db)
-                mgr.clear_history()
-            except Exception:
-                pass
-            self.refresh()
+        if reply != QMessageBox.StandardButton.Yes:
+            return
+        try:
+            self._mgr.clear_history()
+        except Exception as exc:
+            logger.error("Failed to clear history: %s", exc, exc_info=True)
+            QMessageBox.warning(self, "Error", str(exc))
+            return
+        self.refresh()
 
-    def _cleanup_history(self):
+    def _cleanup_history(self) -> None:
         """Delete history entries older than a user-chosen number of days."""
-        from PyQt6.QtWidgets import QSpinBox, QDialogButtonBox
         dialog = QDialog(self)
         dialog.setWindowTitle("Clean Up History")
         dialog.setFixedWidth(320)
@@ -544,27 +595,26 @@ class HistoryPanel(QWidget):
 
         days = spin.value()
         try:
-            mgr = HistoryManager(self.db)
-            mgr.clear_history(days=days)
-            self.refresh()
+            self._mgr.clear_history(days=days)
         except Exception as exc:
+            logger.error("Failed to clean up history (days=%d): %s", days, exc, exc_info=True)
             QMessageBox.critical(self, "Error", f"Failed to clean up history:\n{exc}")
+            return
+        self.refresh()
 
 
-def _bold_font() -> QFont:
-    f = QFont()
-    f.setBold(True)
-    return f
-
-
-def _mono_font() -> QFont:
-    return QFont("Courier New", 9)
+# ── Diff dialog ───────────────────────────────────────────────────────────────
 
 
 class HistoryDiffDialog(QDialog):
     """Side-by-side diff of two history entries (request and response)."""
 
-    def __init__(self, entry_a: dict, entry_b: dict, parent=None):
+    def __init__(
+        self,
+        entry_a: dict,
+        entry_b: dict,
+        parent: QWidget | None = None,
+    ) -> None:
         super().__init__(parent)
         self._entry_a = entry_a
         self._entry_b = entry_b
@@ -576,12 +626,9 @@ class HistoryDiffDialog(QDialog):
         self._init_ui()
 
     def _init_ui(self) -> None:
-        from PyQt6.QtWidgets import QTabWidget, QSplitter, QTextEdit
         layout = QVBoxLayout(self)
 
         tabs = QTabWidget()
-
-        # Request tab — side by side
         tabs.addTab(
             self._make_split_widget(
                 self._format_request(self._entry_a),
@@ -591,8 +638,6 @@ class HistoryDiffDialog(QDialog):
             ),
             "Request",
         )
-
-        # Response tab — side by side
         tabs.addTab(
             self._make_split_widget(
                 self._format_response(self._entry_a),
@@ -602,8 +647,6 @@ class HistoryDiffDialog(QDialog):
             ),
             "Response",
         )
-
-        # Unified diff tab (response bodies)
         tabs.addTab(self._make_unified_diff_widget(), "Unified Diff (response body)")
 
         layout.addWidget(tabs, 1)
@@ -612,7 +655,7 @@ class HistoryDiffDialog(QDialog):
         close_btns.rejected.connect(self.reject)
         layout.addWidget(close_btns)
 
-    # ── Formatters ────────────────────────────────────────────────────
+    # ── Formatters ────────────────────────────────────────────────────────────
 
     @staticmethod
     def _format_request(entry: dict) -> str:
@@ -640,21 +683,24 @@ class HistoryDiffDialog(QDialog):
         lines += ["", "── Body ──", entry.get("response_body") or "(none)"]
         return "\n".join(lines)
 
-    # ── Widgets ───────────────────────────────────────────────────────
+    # ── Widgets ───────────────────────────────────────────────────────────────
 
     def _make_split_widget(
-        self, text_a: str, text_b: str, label_a: str = "A", label_b: str = "B"
+        self,
+        text_a: str,
+        text_b: str,
+        label_a: str = "A",
+        label_b: str = "B",
     ) -> QWidget:
-        from PyQt6.QtWidgets import QSplitter, QTextEdit
         w = QWidget()
         lay = QVBoxLayout(w)
         lay.setContentsMargins(4, 4, 4, 4)
 
         hdr = QHBoxLayout()
         for lbl in (label_a, label_b):
-            l = QLabel(f"<b>{lbl}</b>")
-            l.setAlignment(Qt.AlignmentFlag.AlignCenter)
-            hdr.addWidget(l, 1)
+            lbl_widget = QLabel(f"<b>{lbl}</b>")
+            lbl_widget.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            hdr.addWidget(lbl_widget, 1)
         lay.addLayout(hdr)
 
         splitter = QSplitter(Qt.Orientation.Horizontal)
@@ -669,10 +715,6 @@ class HistoryDiffDialog(QDialog):
         return w
 
     def _make_unified_diff_widget(self) -> QWidget:
-        import difflib
-        from PyQt6.QtWidgets import QTextEdit
-        from PyQt6.QtGui import QTextCursor
-
         body_a = (self._entry_a.get("response_body") or "").splitlines(keepends=True)
         body_b = (self._entry_b.get("response_body") or "").splitlines(keepends=True)
         diff_lines = list(difflib.unified_diff(
@@ -693,9 +735,6 @@ class HistoryDiffDialog(QDialog):
         if not diff_lines:
             te.setPlainText("(no differences in response bodies)")
         else:
-            # Colour-code additions/removals
-            cursor = te.textCursor()
-            from PyQt6.QtGui import QTextCharFormat
             fmt_add = QTextCharFormat()
             fmt_add.setBackground(QColor("#1a3a1a"))
             fmt_rem = QTextCharFormat()
@@ -703,6 +742,8 @@ class HistoryDiffDialog(QDialog):
             fmt_hdr = QTextCharFormat()
             fmt_hdr.setForeground(QColor(Colors.BLUE))
             fmt_def = QTextCharFormat()
+
+            cursor = te.textCursor()
             for line in diff_lines:
                 if line.startswith("+++") or line.startswith("---"):
                     cursor.insertText(line + "\n", fmt_hdr)
