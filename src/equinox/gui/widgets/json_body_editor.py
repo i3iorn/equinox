@@ -5,11 +5,20 @@ Refactored JSON body editor:
 """
 
 import json as _json
+import logging
+
 from PyQt6.QtWidgets import QWidget, QPlainTextEdit, QTextEdit
 from PyQt6.QtCore import Qt, QSize
 from PyQt6.QtGui import QTextCursor, QPainter, QColor, QTextCharFormat
 
 from equinox.gui.syntax_highlighter import JsonHighlighter
+
+logger = logging.getLogger(__name__)
+
+# Maximum number of characters searched in each direction when looking for a
+# matching bracket.  Without a limit, bracket matching on a large document can
+# scan the entire file on every cursor movement and freeze the UI.
+_MAX_BRACKET_SEARCH = 10_000
 
 
 # ---------------------------------------------------------------------------
@@ -102,7 +111,10 @@ class JsonBodyEditor(QPlainTextEdit):
 
     def line_number_area_width(self) -> int:
         digits = len(str(self.document().blockCount())) + 1
-        return 4 + digits * 8
+        # Use actual font metrics instead of a hardcoded 8 px per digit so
+        # the gutter stays correct on HiDPI displays and with larger fonts.
+        char_width = self.fontMetrics().horizontalAdvance("9")
+        return 4 + char_width * digits
 
     def _update_line_number_area_width(self, _):
         self.setViewportMargins(self.line_number_area_width(), 0, 0, 0)
@@ -131,58 +143,58 @@ class JsonBodyEditor(QPlainTextEdit):
 
     def _highlight_matching_bracket(self):
         cursor = self.textCursor()
-        text = self.toPlainText()
         pos = cursor.position()
+        doc = self.document()
 
         self.setExtraSelections([])
 
-        if pos <= 0 or pos > len(text):
+        if pos <= 0:
             return
 
-        char = text[pos - 1]
+        # Use document.characterAt() — O(1) per character — instead of
+        # toPlainText() which copies the entire document into a Python str.
+        char = doc.characterAt(pos - 1)
         match_pos = None
 
-        # Opening bracket
         if char in _OPEN_CLOSE:
-            match_pos = self._find_matching_forward(text, pos - 1, char, _OPEN_CLOSE[char])
-
-        # Closing bracket
+            match_pos = self._find_matching_forward(doc, pos - 1, char, _OPEN_CLOSE[char])
         elif char in _CLOSE_CHARS:
             opener = next((k for k, v in _OPEN_CLOSE.items() if v == char), None)
             if opener:
-                match_pos = self._find_matching_backward(text, pos - 1, opener, char)
+                match_pos = self._find_matching_backward(doc, pos - 1, opener, char)
 
         if match_pos is not None:
             fmt = QTextCharFormat()
             fmt.setBackground(QColor(200, 200, 0, 100))
-
             sels = []
-            s1 = self._make_selection(pos - 1, fmt)
-            s2 = self._make_selection(match_pos, fmt)
-            if s1 is not None:
-                sels.append(s1)
-            if s2 is not None:
-                sels.append(s2)
+            for p in (pos - 1, match_pos):
+                sel = self._make_selection(p, fmt)
+                if sel is not None:
+                    sels.append(sel)
             if sels:
                 self.setExtraSelections(sels)
 
-    def _find_matching_forward(self, text, start, open_char, close_char):
+    def _find_matching_forward(self, doc, start, open_char, close_char):
         depth = 1
-        for i in range(start + 1, len(text)):
-            if text[i] == open_char:
+        limit = min(start + _MAX_BRACKET_SEARCH, doc.characterCount())
+        for i in range(start + 1, limit):
+            ch = doc.characterAt(i)
+            if ch == open_char:
                 depth += 1
-            elif text[i] == close_char:
+            elif ch == close_char:
                 depth -= 1
                 if depth == 0:
                     return i
         return None
 
-    def _find_matching_backward(self, text, start, open_char, close_char):
+    def _find_matching_backward(self, doc, start, open_char, close_char):
         depth = 1
-        for i in range(start - 1, -1, -1):
-            if text[i] == close_char:
+        limit = max(start - _MAX_BRACKET_SEARCH, -1)
+        for i in range(start - 1, limit, -1):
+            ch = doc.characterAt(i)
+            if ch == close_char:
                 depth += 1
-            elif text[i] == open_char:
+            elif ch == open_char:
                 depth -= 1
                 if depth == 0:
                     return i
@@ -190,17 +202,12 @@ class JsonBodyEditor(QPlainTextEdit):
 
     def _make_selection(self, pos, fmt):
         doc = self.document()
-        try:
-            max_pos = max(0, doc.characterCount() - 1)
-        except Exception:
+        # characterCount() always includes Qt's implicit trailing newline,
+        # so valid user-character positions are in [0, characterCount() - 2].
+        if pos < 0 or pos >= doc.characterCount() - 1:
             return None
-
-        p = max(0, min(pos, max_pos))
-        if p >= max_pos and max_pos == 0:
-            return None
-
         cursor = QTextCursor(doc)
-        cursor.setPosition(p)
+        cursor.setPosition(pos)
         cursor.movePosition(QTextCursor.MoveOperation.NextCharacter, QTextCursor.MoveMode.KeepAnchor)
         sel = QTextEdit.ExtraSelection()
         sel.cursor = cursor
@@ -270,8 +277,13 @@ class JsonBodyEditor(QPlainTextEdit):
     def _wrap_selection(self, opener, cursor):
         closer = _OPEN_CLOSE[opener]
         selected = cursor.selectedText()
-        cursor.insertText(opener + selected + closer)
-        cursor.movePosition(QTextCursor.MoveOperation.PreviousCharacter)
+        # Single undo step for the whole wrap operation.
+        cursor.beginEditBlock()
+        try:
+            cursor.insertText(opener + selected + closer)
+            cursor.movePosition(QTextCursor.MoveOperation.PreviousCharacter)
+        finally:
+            cursor.endEditBlock()
         self.setTextCursor(cursor)
 
     def _indent_selection_or_insert_spaces(self, cursor):
@@ -281,35 +293,50 @@ class JsonBodyEditor(QPlainTextEdit):
             cursor.insertText(" " * self._INDENT_SIZE)
 
     def _indent_selection(self):
-        cursor = self.textCursor()
-        start = self.document().findBlock(cursor.selectionStart())
-        end = self.document().findBlock(cursor.selectionEnd() - 1)
+        outer = self.textCursor()
+        start = self.document().findBlock(outer.selectionStart())
+        end = self.document().findBlock(outer.selectionEnd() - 1)
 
-        block = start
-        while block.isValid() and block.blockNumber() <= end.blockNumber():
-            if block.text().strip():
-                c = QTextCursor(block)
-                c.insertText(" " * self._INDENT_SIZE)
-            block = block.next()
+        # Single undo step for the entire indent operation.
+        outer.beginEditBlock()
+        try:
+            block = start
+            while block.isValid() and block.blockNumber() <= end.blockNumber():
+                if block.text().strip():
+                    c = QTextCursor(block)
+                    c.insertText(" " * self._INDENT_SIZE)
+                block = block.next()
+        finally:
+            outer.endEditBlock()
 
     def _dedent_selection(self):
-        cursor = self.textCursor()
-        start = self.document().findBlock(cursor.selectionStart())
-        end = self.document().findBlock(cursor.selectionEnd() - 1)
+        outer = self.textCursor()
+        start = self.document().findBlock(outer.selectionStart())
+        end = self.document().findBlock(outer.selectionEnd() - 1)
 
-        block = start
-        while block.isValid() and block.blockNumber() <= end.blockNumber():
-            text = block.text()
-            if text.startswith(" " * self._INDENT_SIZE):
-                c = QTextCursor(block)
-                for _ in range(self._INDENT_SIZE):
-                    c.deleteChar()
-            block = block.next()
+        # Single undo step for the entire dedent operation.
+        outer.beginEditBlock()
+        try:
+            block = start
+            while block.isValid() and block.blockNumber() <= end.blockNumber():
+                text = block.text()
+                if text.startswith(" " * self._INDENT_SIZE):
+                    c = QTextCursor(block)
+                    for _ in range(self._INDENT_SIZE):
+                        c.deleteChar()
+                block = block.next()
+        finally:
+            outer.endEditBlock()
 
     def _handle_enter(self, cursor):
         block_text = cursor.block().text()
         indent = len(block_text) - len(block_text.lstrip())
-        extra = self._INDENT_SIZE if block_text.rstrip().endswith(("{", "[")) else 0
+        # Check the text *before the cursor position within the line*, not the
+        # entire block text.  Without this, pressing Enter in the middle of
+        # "{"key": "val"}" incorrectly adds extra indentation.
+        col = cursor.positionInBlock()
+        text_before_cursor = block_text[:col].rstrip()
+        extra = self._INDENT_SIZE if text_before_cursor.endswith(("{", "[")) else 0
         cursor.insertText("\n" + " " * (indent + extra))
 
     def _handle_backspace(self, cursor):
@@ -364,13 +391,19 @@ class JsonBodyEditor(QPlainTextEdit):
                 break
             block = block.next()
 
-        block = start
-        while block.isValid() and block.blockNumber() <= end.blockNumber():
-            if uncomment:
-                self._uncomment_line(block)
-            else:
-                self._comment_line(block)
-            block = block.next()
+        # Group all per-line edits into a single undo step so one Ctrl+Z
+        # reverses the entire toggle, not one line at a time.
+        cursor.beginEditBlock()
+        try:
+            block = start
+            while block.isValid() and block.blockNumber() <= end.blockNumber():
+                if uncomment:
+                    self._uncomment_line(block)
+                else:
+                    self._comment_line(block)
+                block = block.next()
+        finally:
+            cursor.endEditBlock()
 
     def _toggle_comment_line(self, block):
         text = block.text().lstrip()
@@ -409,15 +442,21 @@ class JsonBodyEditor(QPlainTextEdit):
     # ------------------------------------------------------------------
 
     def _auto_format_json(self):
+        text = self.toPlainText().strip()
+        if not text:
+            return
         try:
-            text = self.toPlainText().strip()
-            if not text:
-                return
             parsed = _json.loads(text)
-            formatted = _json.dumps(parsed, indent=self._INDENT_SIZE, ensure_ascii=False)
-            self.setPlainText(formatted)
-        except Exception:
-            pass
+        except _json.JSONDecodeError as exc:
+            logger.debug("JSON auto-format skipped — parse error: %s", exc)
+            return
+        formatted = _json.dumps(parsed, indent=self._INDENT_SIZE, ensure_ascii=False)
+        # Preserve the vertical scroll position; setPlainText() resets the
+        # viewport to the top which is disorienting for large documents.
+        scrollbar = self.verticalScrollBar()
+        saved_scroll = scrollbar.value()
+        self.setPlainText(formatted)
+        scrollbar.setValue(saved_scroll)
 
     # ------------------------------------------------------------------
     # Helpers
