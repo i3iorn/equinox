@@ -1,35 +1,50 @@
 """WebSocket panel — connect, send, and receive WebSocket messages."""
+from __future__ import annotations
 
+import asyncio
+import json
+import logging
+import sys
 from datetime import datetime
 
-from PyQt6.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QLabel,
-    QLineEdit, QTableWidget, QTableWidgetItem, QHeaderView,
-    QPlainTextEdit, QCheckBox, QSizePolicy,
-)
 from PyQt6.QtCore import Qt, QThread, pyqtSignal
-from PyQt6.QtGui import QColor, QFont
+from PyQt6.QtGui import QColor
+from PyQt6.QtWidgets import (
+    QCheckBox, QHBoxLayout, QHeaderView, QLabel, QLineEdit,
+    QPlainTextEdit, QPushButton, QTableWidget, QTableWidgetItem,
+    QVBoxLayout, QWidget,
+)
 
 from equinox.gui.theme import Colors
 
+__all__ = ["WebSocketPanel"]
+
+logger = logging.getLogger(__name__)
+
+# Maximum rows kept in the message log before oldest rows are evicted.
+MAX_LOG_ROWS = 1_000
+
+
+# ── Background WebSocket thread ───────────────────────────────────────────────
+
 
 class _WSThread(QThread):
-    """Background thread that owns the asyncio event loop + websocket connection."""
+    """Background thread that owns the asyncio event loop + WebSocket connection."""
 
-    message_received = pyqtSignal(str, str)   # (direction, text): "in" | "out"
+    message_received = pyqtSignal(str, str)  # (direction, text): "in" | "out"
     connected        = pyqtSignal()
     disconnected     = pyqtSignal()
     error_occurred   = pyqtSignal(str)
 
-    def __init__(self, url: str, parent=None):
-        super().__init__(parent)
-        self._url  = url
-        self._loop = None
-        self._ws   = None
+    def __init__(self, url: str) -> None:
+        super().__init__()  # no Qt parent — lifetime managed via deleteLater
+        self._url:  str                    = url
+        self._loop: asyncio.AbstractEventLoop | None = None
+        self._ws                           = None  # websockets.WebSocketClientProtocol
 
-    def run(self):
-        import asyncio
-        import sys
+    # ── QThread entry point ───────────────────────────────────────────────────
+
+    def run(self) -> None:
         if sys.platform == "win32":
             asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
         self._loop = asyncio.new_event_loop()
@@ -39,7 +54,7 @@ class _WSThread(QThread):
         finally:
             self._loop.close()
 
-    async def _connect(self):
+    async def _connect(self) -> None:
         try:
             import websockets
         except ImportError:
@@ -54,20 +69,41 @@ class _WSThread(QThread):
                 async for msg in ws:
                     self.message_received.emit("in", str(msg))
         except Exception as exc:
+            logger.warning("WebSocket error for %s: %s", self._url, exc)
             self.error_occurred.emit(str(exc))
         finally:
             self._ws = None
             self.disconnected.emit()
 
+    # ── Thread-safe helpers ───────────────────────────────────────────────────
+
     def send(self, text: str) -> None:
-        if self._ws is not None and self._loop is not None:
-            import asyncio
-            asyncio.run_coroutine_threadsafe(self._ws.send(text), self._loop)
+        """Schedule a send on the asyncio loop from any thread."""
+        if self._ws is None or self._loop is None or self._loop.is_closed():
+            return
+        asyncio.run_coroutine_threadsafe(self._safe_send(text), self._loop)
+
+    async def _safe_send(self, text: str) -> None:
+        """Send *text*, emitting ``error_occurred`` on failure instead of raising."""
+        try:
+            if self._ws is not None:
+                await self._ws.send(text)
+        except Exception as exc:
+            logger.debug("WebSocket send failed: %s", exc)
+            self.error_occurred.emit(f"Send error: {exc}")
 
     def stop(self) -> None:
-        if self._ws is not None and self._loop is not None:
-            import asyncio
+        """Request a clean close of the WebSocket from any thread."""
+        if self._loop is None or self._loop.is_closed():
+            return
+        if self._ws is not None:
             asyncio.run_coroutine_threadsafe(self._ws.close(), self._loop)
+        else:
+            # Connection attempt is still in-progress — interrupt the loop.
+            self._loop.call_soon_threadsafe(self._loop.stop)
+
+
+# ── Panel ─────────────────────────────────────────────────────────────────────
 
 
 class WebSocketPanel(QWidget):
@@ -78,17 +114,18 @@ class WebSocketPanel(QWidget):
     _COL_SIZE = 2
     _COL_MSG  = 3
 
-    def __init__(self, parent=None):
+    def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self._thread: _WSThread | None = None
         self._init_ui()
 
-    def _init_ui(self):
+    # ── UI construction ───────────────────────────────────────────────────────
+
+    def _init_ui(self) -> None:
         layout = QVBoxLayout(self)
         layout.setContentsMargins(4, 4, 4, 4)
         layout.setSpacing(4)
 
-        # URL + connect row
         url_row = QHBoxLayout()
         self.url_input = QLineEdit()
         self.url_input.setPlaceholderText("wss://echo.websocket.org")
@@ -98,12 +135,10 @@ class WebSocketPanel(QWidget):
         url_row.addWidget(self.connect_btn)
         layout.addLayout(url_row)
 
-        # Status
         self.status_label = QLabel("Disconnected")
         self.status_label.setObjectName("mutedLabel")
         layout.addWidget(self.status_label)
 
-        # Log toolbar: Format JSON toggle + Clear
         log_toolbar = QHBoxLayout()
         self._fmt_json_check = QCheckBox("Format JSON")
         self._fmt_json_check.setToolTip(
@@ -116,7 +151,6 @@ class WebSocketPanel(QWidget):
         log_toolbar.addWidget(self.clear_btn)
         layout.addLayout(log_toolbar)
 
-        # Message log — 4-column QTableWidget
         self.message_log = QTableWidget(0, 4)
         self.message_log.setHorizontalHeaderLabels(["", "Time", "Bytes", "Message"])
         hdr = self.message_log.horizontalHeader()
@@ -132,7 +166,6 @@ class WebSocketPanel(QWidget):
         self.message_log.setWordWrap(False)
         layout.addWidget(self.message_log, 3)
 
-        # Send row
         send_row = QHBoxLayout()
         self.message_input = QPlainTextEdit()
         self.message_input.setMaximumHeight(60)
@@ -144,48 +177,60 @@ class WebSocketPanel(QWidget):
         send_row.addWidget(self.send_btn)
         layout.addLayout(send_row)
 
-    # ── Connection lifecycle ───────────────────────────────────────────
+    # ── Connection lifecycle ──────────────────────────────────────────────────
 
-    def _toggle_connection(self):
+    def _toggle_connection(self) -> None:
         if self._thread is not None and self._thread.isRunning():
             self._thread.stop()
             self.connect_btn.setEnabled(False)
-        else:
-            url = self.url_input.text().strip()
-            if not url:
-                return
-            self._thread = _WSThread(url, self)
-            self._thread.connected.connect(self._on_connected)
-            self._thread.disconnected.connect(self._on_disconnected)
-            self._thread.message_received.connect(self._on_message)
-            self._thread.error_occurred.connect(self._on_error)
-            self._thread.start()
-            self.connect_btn.setText("Disconnect")
-            self.status_label.setText("Connecting…")
-            self.status_label.setStyleSheet("")
+            return
 
-    def _on_connected(self):
+        url = self.url_input.text().strip()
+        if not url:
+            return
+        if not url.startswith(("ws://", "wss://")):
+            self.status_label.setText("URL must start with ws:// or wss://")
+            self.status_label.setStyleSheet(f"color: {Colors.RED};")
+            return
+
+        self._thread = _WSThread(url)
+        # Ensure the thread object is destroyed cleanly after run() returns,
+        # even if self._thread is set to None while the thread is finishing.
+        self._thread.finished.connect(self._thread.deleteLater)
+        self._thread.connected.connect(self._on_connected)
+        self._thread.disconnected.connect(self._on_disconnected)
+        self._thread.message_received.connect(self._on_message)
+        self._thread.error_occurred.connect(self._on_error)
+        self._thread.start()
+        self.connect_btn.setText("Disconnect")
+        self.status_label.setText("Connecting…")
+        self.status_label.setStyleSheet("")
+
+    def _on_connected(self) -> None:
         self.status_label.setText("Connected")
         self.status_label.setStyleSheet(f"color: {Colors.GREEN};")
         self.send_btn.setEnabled(True)
         self.connect_btn.setEnabled(True)
         self.connect_btn.setText("Disconnect")
 
-    def _on_disconnected(self):
+    def _on_disconnected(self) -> None:
         self.status_label.setText("Disconnected")
         self.status_label.setStyleSheet("")
         self.connect_btn.setText("Connect")
         self.connect_btn.setEnabled(True)
         self.send_btn.setEnabled(False)
+        # Release our reference; the thread cleans itself up via deleteLater
+        # (connected above at creation time) once run() returns.
         self._thread = None
 
-    def _on_error(self, msg: str):
-        self._append_row("⚠", datetime.now().strftime("%H:%M:%S"), "—", f"Error: {msg}",
-                         fg=Colors.RED)
+    def _on_error(self, msg: str) -> None:
+        logger.warning("WebSocket error: %s", msg)
+        self._append_row("⚠", datetime.now().strftime("%H:%M:%S"), "—",
+                         f"Error: {msg}", fg=Colors.RED)
 
-    # ── Messaging ─────────────────────────────────────────────────────
+    # ── Messaging ─────────────────────────────────────────────────────────────
 
-    def _send_message(self):
+    def _send_message(self) -> None:
         text = self.message_input.toPlainText()
         if not text or self._thread is None:
             return
@@ -193,7 +238,7 @@ class WebSocketPanel(QWidget):
         self._on_message("out", text)
         self.message_input.clear()
 
-    def _on_message(self, direction: str, text: str):
+    def _on_message(self, direction: str, text: str) -> None:
         arrow = "←" if direction == "in" else "→"
         ts    = datetime.now().strftime("%H:%M:%S")
         size  = f"{len(text.encode('utf-8'))} B"
@@ -202,40 +247,47 @@ class WebSocketPanel(QWidget):
         display = text
         if self._fmt_json_check.isChecked():
             try:
-                import json as _json
-                display = _json.dumps(_json.loads(text), indent=2, ensure_ascii=False)
+                display = json.dumps(json.loads(text), indent=2, ensure_ascii=False)
             except Exception:
                 pass
 
         self._append_row(arrow, ts, size, display, fg=fg)
 
     def _append_row(self, arrow: str, ts: str, size: str, msg: str, fg: str = "") -> None:
-        row = self.message_log.rowCount()
-        self.message_log.insertRow(row)
+        """Insert a new row into the message log, evicting the oldest if at cap.
 
-        dir_item  = QTableWidgetItem(arrow)
-        time_item = QTableWidgetItem(ts)
-        size_item = QTableWidgetItem(size)
-        msg_item  = QTableWidgetItem(msg)
+        Screen updates are suppressed for the duration of the insert so a
+        single repaint covers the row addition and the scroll-to-bottom.
+        """
+        self.message_log.setUpdatesEnabled(False)
+        try:
+            # Evict oldest row when at the cap to bound memory usage.
+            if self.message_log.rowCount() >= MAX_LOG_ROWS:
+                self.message_log.removeRow(0)
 
-        for item in (dir_item, time_item, size_item, msg_item):
-            item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsEditable)
-            if fg:
-                item.setForeground(QColor(fg))
+            row = self.message_log.rowCount()
+            self.message_log.insertRow(row)
 
-        self.message_log.setItem(row, self._COL_DIR,  dir_item)
-        self.message_log.setItem(row, self._COL_TIME, time_item)
-        self.message_log.setItem(row, self._COL_SIZE, size_item)
-        self.message_log.setItem(row, self._COL_MSG,  msg_item)
+            for col, text in enumerate((arrow, ts, size, msg)):
+                item = QTableWidgetItem(text)
+                item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsEditable)
+                if fg:
+                    item.setForeground(QColor(fg))
+                self.message_log.setItem(row, col, item)
+        finally:
+            self.message_log.setUpdatesEnabled(True)
+
         self.message_log.scrollToBottom()
 
     def _clear_log(self) -> None:
         self.message_log.setRowCount(0)
 
-    # ── Cleanup ───────────────────────────────────────────────────────
+    # ── Cleanup ───────────────────────────────────────────────────────────────
 
-    def closeEvent(self, event):
+    def closeEvent(self, event) -> None:
         if self._thread is not None and self._thread.isRunning():
             self._thread.stop()
-            self._thread.wait(2000)
+            # Wait briefly so the asyncio loop can close cleanly.
+            # We do NOT block longer than 1 s to avoid freezing the shutdown.
+            self._thread.wait(1_000)
         super().closeEvent(event)
