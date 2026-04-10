@@ -1,14 +1,23 @@
 """Environment management"""
 
+from __future__ import annotations
+
 import logging
 import re
-from typing import List, Dict, Any, Optional
+from typing import Any, Dict, List, Optional
 
+from equinox.core.exceptions import DuplicateError, SecurityError, StorageError, ValidationError
+from equinox.core.interpolation import VariableInterpolator
 from equinox.storage.database import Database
-from equinox.core.exceptions import StorageError, ValidationError, SecurityError, DuplicateError
-from equinox.storage.utils import require_positive_int, validate_variable_key, validate_variable_value, safe_json_loads, safe_json_dumps
+from equinox.storage.utils import (
+    require_positive_int, safe_json_dumps, safe_json_loads,
+    validate_variable_key, validate_variable_value,
+)
 
 logger = logging.getLogger(__name__)
+
+# Variable-name character-set pattern (alphanumeric, underscore, dash).
+_VAR_NAME_RE = re.compile(r'^[a-zA-Z0-9_-]+$')
 
 
 class EnvironmentManager:
@@ -22,19 +31,10 @@ class EnvironmentManager:
     MAX_VARIABLE_VALUE_LENGTH = 10000
     MAX_ENVIRONMENTS = 1000
     MAX_SECRET_KEYS = 100
-    MAX_TEXT_SIZE = 1_000_000  # 1MB text limit for interpolation
+    MAX_TEXT_SIZE = 1_000_000  # 1 MB text limit for interpolation
     MAX_EXPANSION_RATIO = 100  # Maximum allowed text expansion during interpolation
 
-    # Variable name validation pattern (alphanumeric, underscore, dash)
-    VARIABLE_NAME_PATTERN = re.compile(r'^[a-zA-Z0-9_-]+$')
-
-    def __init__(self, db: Database):
-        """
-        Initialize environment manager
-
-        Args:
-            db: Database instance
-        """
+    def __init__(self, db: Database) -> None:
         self.db = db
 
     def _validate_variables(self, variables: dict) -> Dict[str, str]:
@@ -46,14 +46,13 @@ class EnvironmentManager:
         """
         if not isinstance(variables, dict):
             raise ValidationError("Variables must be a dictionary")
-
         if len(variables) > self.MAX_VARIABLE_COUNT:
             raise SecurityError(f"Too many variables (max {self.MAX_VARIABLE_COUNT})")
 
         sanitized: Dict[str, str] = {}
         for key, value in variables.items():
             key = validate_variable_key(key, self.MAX_VARIABLE_KEY_LENGTH)
-            if not self.VARIABLE_NAME_PATTERN.match(key):
+            if not _VAR_NAME_RE.match(key):
                 raise ValidationError(
                     f"Invalid variable key: {key}. Must contain only alphanumeric characters, "
                     "underscores, and hyphens"
@@ -64,30 +63,26 @@ class EnvironmentManager:
 
     def _validate_name(self, name: Optional[str], allow_empty: bool = False) -> str:
         """Validate and normalize an environment name.
-        
-        Args:
-            name: Name to validate
-            allow_empty: If True, empty strings are permitted
-            
-        Returns:
-            Sanitized name
-            
-        Raises:
-            ValidationError: If name is invalid
-        """
-        if not name and not allow_empty:
-            raise ValidationError("Environment name must be a non-empty string")
 
+        Args:
+            name: Name to validate.
+            allow_empty: If True, empty strings are permitted.
+
+        Returns:
+            Sanitized name.
+
+        Raises:
+            ValidationError: If name is invalid.
+        """
         if not isinstance(name, str):
             raise ValidationError("Environment name must be a string")
-
-        if len(name) > self.MAX_NAME_LENGTH:
-            raise ValidationError(f"Environment name too long (max {self.MAX_NAME_LENGTH} characters)")
-
         name = name.strip()
         if not name and not allow_empty:
             raise ValidationError("Environment name cannot be empty or whitespace")
-
+        if len(name) > self.MAX_NAME_LENGTH:
+            raise ValidationError(
+                f"Environment name too long (max {self.MAX_NAME_LENGTH} characters)"
+            )
         return name
 
     def _validate_description(self, description: Optional[str]) -> str:
@@ -173,23 +168,23 @@ class EnvironmentManager:
         if env_count and env_count["count"] >= self.MAX_ENVIRONMENTS:
             raise SecurityError(f"Maximum number of environments reached ({self.MAX_ENVIRONMENTS})")
 
-
         try:
-            try:
-                vars_json = safe_json_dumps(sanitized_variables, max_len=200_000)
-            except SecurityError as exc:
-                raise SecurityError(f"Environment variables too large: {exc}") from exc
+            vars_json = safe_json_dumps(sanitized_variables, max_len=200_000)
             environment_id = self.db.insert(
                 "INSERT INTO environments (name, description, variables) VALUES (?, ?, ?)",
                 (name, description, vars_json),
             )
-            logger.info("Created environment '%s' with ID %d and %d variables", name, environment_id, len(sanitized_variables))
+            logger.info(
+                "Created environment '%s' with ID %d and %d variables",
+                name, environment_id, len(sanitized_variables),
+            )
             return environment_id
-
         except DuplicateError:
             raise DuplicateError(f"Environment '{name}' already exists")
-        except Exception as e:
-            raise StorageError(f"Failed to create environment: {e}")
+        except (SecurityError, StorageError):
+            raise
+        except Exception as exc:
+            raise StorageError(f"Failed to create environment: {exc}") from exc
 
     def _decode_row(self, row: Dict[str, Any]) -> Dict[str, Any]:
         """Decode JSON columns in an environment row in-place and return it.
@@ -311,11 +306,12 @@ class EnvironmentManager:
             query = f"UPDATE environments SET {', '.join(updates)} WHERE id = ?"
             self.db.execute(query, tuple(params))
             logger.info("Updated environment '%s' (ID: %d)", environment['name'], environment_id)
-
         except DuplicateError:
-            raise DuplicateError(f"Environment name already exists")
-        except Exception as e:
-            raise StorageError(f"Failed to update environment: {e}")
+            raise DuplicateError("Environment name already exists")
+        except (SecurityError, StorageError):
+            raise
+        except Exception as exc:
+            raise StorageError(f"Failed to update environment: {exc}") from exc
 
     def set_active_environment(self, environment_id: int) -> None:
         """Set active environment
@@ -335,16 +331,13 @@ class EnvironmentManager:
         if not environment:
             raise StorageError(f"Environment with ID {environment_id} does not exist")
 
-        try:
-            # Use a single UPDATE with CASE to make the switch atomic
-            self.db.execute(
-                "UPDATE environments SET is_active = CASE WHEN id = ? THEN 1 ELSE 0 END",
-                (environment_id,),
-            )
-            logger.info("Activated environment '%s' (ID: %d)", environment['name'], environment_id)
+        # Use a single UPDATE with CASE to make the switch atomic
+        self.db.execute(
+            "UPDATE environments SET is_active = CASE WHEN id = ? THEN 1 ELSE 0 END",
+            (environment_id,),
+        )
+        logger.info("Activated environment '%s' (ID: %d)", environment['name'], environment_id)
 
-        except Exception as e:
-            raise StorageError(f"Failed to activate environment: {e}")
 
     def delete_environment(self, environment_id: int) -> None:
         """Delete environment
@@ -364,12 +357,9 @@ class EnvironmentManager:
         if not environment:
             raise StorageError(f"Environment with ID {environment_id} does not exist")
 
-        try:
-            self.db.execute("DELETE FROM environments WHERE id = ?", (environment_id,))
-            logger.warning("Deleted environment '%s' (ID: %d)", environment['name'], environment_id)
+        self.db.execute("DELETE FROM environments WHERE id = ?", (environment_id,))
+        logger.warning("Deleted environment '%s' (ID: %d)", environment['name'], environment_id)
 
-        except Exception as e:
-            raise StorageError(f"Failed to delete environment: {e}")
 
     def interpolate_variables(self, text: str, max_iterations: int = 10) -> str:
         """Replace {{variable}} placeholders with values from active environment.
@@ -404,5 +394,4 @@ class EnvironmentManager:
         if not variables:
             return text
 
-        from equinox.core.interpolation import VariableInterpolator
         return VariableInterpolator.interpolate(text, variables, max_iterations=max_iterations)
