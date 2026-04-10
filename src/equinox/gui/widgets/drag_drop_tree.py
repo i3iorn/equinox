@@ -1,10 +1,13 @@
 """Drag-and-drop enabled QTreeWidget for the collections panel."""
 
+import logging
 from typing import Optional
 
 from PyQt6.QtWidgets import QTreeWidget, QTreeWidgetItem, QAbstractItemView
 from PyQt6.QtCore import pyqtSignal, Qt, QMimeData
-from PyQt6.QtGui import QDrag
+from PyQt6.QtGui import QDrag, QDragEnterEvent, QDragMoveEvent, QDropEvent
+
+logger = logging.getLogger(__name__)
 
 
 class DragDropTree(QTreeWidget):
@@ -32,37 +35,54 @@ class DragDropTree(QTreeWidget):
     def _item_data(self, item: Optional[QTreeWidgetItem]) -> Optional[dict]:
         return item.data(0, Qt.ItemDataRole.UserRole) if item else None
 
-    def startDrag(self, supportedActions):
+    def startDrag(self, supportedActions: Qt.DropAction) -> None:
         item = self.currentItem()
         data = self._item_data(item)
         if not data or data.get("type") != "request":
             return  # only requests are draggable
 
+        request_id = data.get("id")
+        if request_id is None:
+            logger.debug("startDrag: request item has no 'id'; drag aborted")
+            return
+
         drag = QDrag(self)
         mime = QMimeData()
-        mime.setText(str(data["id"]))
+        mime.setText(str(request_id))
         drag.setMimeData(mime)
-        drag.exec(Qt.DropAction.MoveAction)
+        result = drag.exec(Qt.DropAction.MoveAction)
+        logger.debug("startDrag: drag finished (action=%s, request_id=%s)", result, request_id)
 
     # ── Visual feedback: highlight valid targets ──────────────────────
 
-    def dragEnterEvent(self, event):
+    def dragEnterEvent(self, event: QDragEnterEvent) -> None:
         if event.mimeData().hasText():
             event.acceptProposedAction()
         else:
             event.ignore()
 
-    def dragMoveEvent(self, event):
+    def dragMoveEvent(self, event: QDragMoveEvent) -> None:
         target = self.itemAt(event.position().toPoint())
         tdata = self._item_data(target)
-        if tdata and tdata.get("type") in ("collection", "folder", "request"):
-            event.acceptProposedAction()
-        else:
+        if not tdata or tdata.get("type") not in ("collection", "folder", "request"):
             event.ignore()
+            return
+
+        # Don't show a "valid drop" cursor when hovering over the item being
+        # dragged — it can't be dropped onto itself.
+        if tdata.get("type") == "request":
+            try:
+                if int(event.mimeData().text()) == tdata.get("id"):
+                    event.ignore()
+                    return
+            except (ValueError, TypeError):
+                pass
+
+        event.acceptProposedAction()
 
     # ── Handle the drop ───────────────────────────────────────────────
 
-    def dropEvent(self, event):
+    def dropEvent(self, event: QDropEvent) -> None:
         mime = event.mimeData()
         if not mime or not mime.hasText():
             event.ignore()
@@ -83,7 +103,7 @@ class DragDropTree(QTreeWidget):
         # Resolve target collection + folder
         target_type = tdata.get("type")
         if target_type == "collection":
-            col_id = tdata["id"]
+            col_id = tdata.get("id")  # .get() avoids KeyError on malformed data
             folder = None
         elif target_type == "folder":
             col_id = self._col_id_of(target_item)
@@ -92,8 +112,15 @@ class DragDropTree(QTreeWidget):
             target_req_id = tdata.get("id")
             col_id = self._col_id_of(target_item)
             folder = self._folder_of(target_item)
-            # If dropping on a request, emit reorder signal
-            if target_req_id is not None and target_req_id != request_id:
+            # Silently ignore self-drops — the item is already where it is.
+            if target_req_id is not None and target_req_id == request_id:
+                logger.debug("dropEvent: self-drop ignored (request_id=%s)", request_id)
+                event.ignore()
+                return
+            if target_req_id is not None:
+                logger.debug(
+                    "dropEvent: reorder request %s → before %s", request_id, target_req_id
+                )
                 event.acceptProposedAction()
                 self.request_reorder.emit(request_id, target_req_id)
                 return
@@ -102,9 +129,14 @@ class DragDropTree(QTreeWidget):
             return
 
         if col_id is None:
+            logger.debug("dropEvent: could not resolve collection id; drop ignored")
             event.ignore()
             return
 
+        logger.debug(
+            "dropEvent: move request %s → collection %s, folder=%r",
+            request_id, col_id, folder,
+        )
         event.acceptProposedAction()
         self.request_dropped.emit(request_id, col_id, folder)
 
