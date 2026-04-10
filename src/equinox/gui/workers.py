@@ -1,7 +1,11 @@
 """Background worker threads and dialogs for the Equinox GUI."""
 
+import csv
+import json as _json
 import logging
 import threading
+import time
+from datetime import datetime as _dt
 from typing import Optional
 
 # Percentile thresholds used in benchmark result display and export.
@@ -18,6 +22,8 @@ from PyQt6.QtWidgets import (
     QFormLayout,
     QFileDialog,
     QMessageBox,
+    QProgressBar,
+    QSpinBox,
 )
 from PyQt6.QtCore import QThread, pyqtSignal
 
@@ -37,6 +43,8 @@ class OAuthTokenTester(QThread):
     """Thread that tests OAuth2 token acquisition via a real POST request.
 
     Emits ``done(success: bool, message: str)`` when finished.
+    Call ``cancel()`` before destroying the owner widget to prevent the signal
+    from firing into a dead object.
     """
 
     done = pyqtSignal(bool, str)
@@ -58,6 +66,11 @@ class OAuthTokenTester(QThread):
         self.scope = scope
         self.grant_type = grant_type
         self.extra_params = extra_params
+        self._cancelled = False
+
+    def cancel(self) -> None:
+        """Mark this tester as cancelled so no signal fires after the owner closes."""
+        self._cancelled = True
 
     def run(self) -> None:
         try:
@@ -85,7 +98,8 @@ class OAuthTokenTester(QThread):
                     + (f"  expires_in={expires_in}s" if expires_in else "")
                     + ("  (no access_token!)" if not has_access else "")
                 )
-                self.done.emit(True, msg)
+                if not self._cancelled:
+                    self.done.emit(True, msg)
             else:
                 try:
                     body = resp.json()
@@ -96,9 +110,11 @@ class OAuthTokenTester(QThread):
                     )
                 except Exception:
                     err = resp.text[:200]
-                self.done.emit(False, f"HTTP {resp.status_code}: {redact_body(str(err))}")
+                if not self._cancelled:
+                    self.done.emit(False, f"HTTP {resp.status_code}: {redact_body(str(err))}")
         except Exception as exc:
-            self.done.emit(False, redact_body(str(exc)))
+            if not self._cancelled:
+                self.done.emit(False, redact_body(str(exc)))
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -171,8 +187,12 @@ class BenchmarkWorker(QThread):
 
     Signals
     -------
-    progress(int)   — emitted after each request with the current iteration count.
+    progress(int)       — emitted after each request with the current iteration count.
     finished(list, int) — emitted when done: (elapsed_times_seconds, error_count).
+
+    Cancellation is handled via a ``threading.Event`` so that an in-flight
+    request can be aborted immediately (the event is forwarded to the
+    underlying :class:`HTTPClient`).
     """
 
     progress = pyqtSignal(int)
@@ -191,28 +211,36 @@ class BenchmarkWorker(QThread):
         self._n = n
         self._proxy = proxy
         self._cookie_manager = cookie_manager
-        self._cancelled = False
+        # threading.Event is safe to set from the main thread and read from
+        # the worker thread without additional locking.
+        self._cancel_event = threading.Event()
 
     def cancel(self) -> None:
-        self._cancelled = True
+        """Request cancellation; aborts the current in-flight request too."""
+        self._cancel_event.set()
 
     def run(self) -> None:
-        import time
-
         times: list = []
         errors = 0
 
+        # Create the client once so the underlying connection pool is reused
+        # across all iterations — this avoids a full TLS handshake per request
+        # and gives accurate latency numbers for keep-alive endpoints.
+        # Passing cancel_event allows an in-flight request to be aborted
+        # immediately when cancel() is called, not just between iterations.
+        client = HTTPClient(
+            cookie_manager=self._cookie_manager,
+            timeout=getattr(self._request, "timeout", DEFAULT_TIMEOUT),
+            verify_ssl=getattr(self._request, "verify_ssl", True),
+            follow_redirects=getattr(self._request, "follow_redirects", True),
+            proxy=self._proxy,
+            cancel_event=self._cancel_event,
+        )
+
         for i in range(self._n):
-            if self._cancelled:
+            if self._cancel_event.is_set():
                 break
             try:
-                client = HTTPClient(
-                    cookie_manager=self._cookie_manager,
-                    timeout=getattr(self._request, "timeout", DEFAULT_TIMEOUT),
-                    verify_ssl=getattr(self._request, "verify_ssl", True),
-                    follow_redirects=getattr(self._request, "follow_redirects", True),
-                    proxy=self._proxy,
-                )
                 t0 = time.monotonic()
                 client.send(self._request)
                 times.append(time.monotonic() - t0)
@@ -239,15 +267,15 @@ class BenchmarkDialog(QDialog):
         self._times: list = []
         self._errors: int = 0
         self._worker: Optional[BenchmarkWorker] = None
+        self._was_cancelled = False  # set by _cancel(); read by _on_finished()
         self._init_ui()
 
     def _init_ui(self) -> None:
-        from PyQt6.QtWidgets import QProgressBar, QSpinBox as _Spin
         layout = QVBoxLayout(self)
         layout.setSpacing(8)
 
         form = QFormLayout()
-        self._count_spin = _Spin()
+        self._count_spin = QSpinBox()
         self._count_spin.setRange(1, 1000)
         self._count_spin.setValue(10)
         form.addRow("Number of requests:", self._count_spin)
@@ -297,6 +325,7 @@ class BenchmarkDialog(QDialog):
         self._cancel_btn.setEnabled(True)
         self._export_btn.setEnabled(False)
         self._results.setPlainText("Running\u2026")
+        self._was_cancelled = False
 
         # Resolve proxy on the main thread (safe for QSettings on all platforms)
         s = QSettings("Equinox", "Equinox")
@@ -317,6 +346,7 @@ class BenchmarkDialog(QDialog):
 
     def _cancel(self) -> None:
         if self._worker and self._worker.isRunning():
+            self._was_cancelled = True
             self._worker.cancel()
             self._cancel_btn.setEnabled(False)
             self._results.setPlainText("Cancelling\u2026")
@@ -328,11 +358,30 @@ class BenchmarkDialog(QDialog):
         self._run_btn.setEnabled(True)
         self._cancel_btn.setEnabled(False)
         self._progress.setVisible(False)
-        self._worker = None
+
+        # Release the worker and let Qt clean up the C++ thread object.
+        worker, self._worker = self._worker, None
+        if worker is not None:
+            worker.deleteLater()
 
         n = self._progress.maximum()
+        n_done = len(times) + errors
+
+        if self._was_cancelled:
+            self._was_cancelled = False
+            msg = f"Cancelled after {n_done} of {n} request(s)."
+            if times:
+                # Partial results are still useful — show them and allow export.
+                self._times = times
+                self._errors = errors
+                self._results.setPlainText(msg + "\n\nPartial results below:\n")
+                self._export_btn.setEnabled(True)
+            else:
+                self._results.setPlainText(msg)
+            return
+
         if not times:
-            self._results.setPlainText(f"All {n} request(s) failed.")
+            self._results.setPlainText(f"All {n} request(s) failed ({errors} errors).")
             return
 
         self._times = times
@@ -358,8 +407,23 @@ class BenchmarkDialog(QDialog):
         self._export_btn.setEnabled(True)
 
     def reject(self) -> None:
-        """Cancel any running benchmark before closing."""
-        self._cancel()
+        """Disconnect signals and wait for the worker before closing.
+
+        Without this, a running worker thread can emit ``finished`` into the
+        already-destroyed dialog widgets and cause a segfault.
+        """
+        if self._worker is not None:
+            # Disconnect first so no callbacks fire into the closing dialog.
+            try:
+                self._worker.progress.disconnect()
+                self._worker.finished.disconnect()
+            except RuntimeError:
+                pass  # signals were already disconnected
+            self._worker.cancel()
+            if not self._worker.wait(1000):
+                # Didn't finish in time — log and move on; don't block the UI.
+                logger.debug("BenchmarkWorker did not stop within 1 s on dialog close")
+            self._worker = None
         super().reject()
 
     def _export_results(self) -> None:
@@ -367,9 +431,6 @@ class BenchmarkDialog(QDialog):
         if not self._times:
             return
 
-        import csv
-        import json as _json
-        from datetime import datetime as _dt
 
         times_ms = [round(t * 1000, 3) for t in self._times]
         times_s  = sorted(self._times)
