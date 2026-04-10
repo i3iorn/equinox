@@ -5,17 +5,19 @@ import json
 from PyQt6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QTabWidget, QWidget,
     QLabel, QLineEdit, QComboBox, QPushButton, QFormLayout,
-    QMessageBox, QToolButton, QFrame, QTextEdit,
+    QMessageBox, QFrame, QTextEdit,
 )
-from PyQt6.QtCore import Qt, QThread, pyqtSignal
-from PyQt6.QtGui import QFont
-from typing import Optional, Dict, Any
+from PyQt6.QtCore import QThread, pyqtSignal
+from typing import Dict, Any
 
 from equinox.core.time import utc_now
 from equinox.gui.theme import Colors, get_mono_font
 from equinox.gui.widgets import make_secret_row
 
 from equinox.auth import BasicAuth, OAuth2Auth, BearerAuth, APIKeyAuth
+from equinox.auth.aws_sigv4 import AWSSigV4Auth
+from equinox.storage import SavedCredentialsManager
+from equinox.storage.saved_credentials import AUTH_TYPE_LABELS
 
 
 class _TokenFetchWorker(QThread):
@@ -110,11 +112,11 @@ class AuthDialog(QDialog):
     _TAB_AWS    = 5
 
     _AUTH_TYPE_TO_TAB = {
-        "basic":     1,
-        "bearer":    2,
-        "oauth2":    3,
-        "api_key":   4,
-        "aws_sigv4": 5,
+        "basic":     _TAB_BASIC,
+        "bearer":    _TAB_BEARER,
+        "oauth2":    _TAB_OAUTH2,
+        "api_key":   _TAB_APIKEY,
+        "aws_sigv4": _TAB_AWS,
     }
 
     def __init__(self, current_auth=None, parent=None, db=None):
@@ -197,13 +199,15 @@ class AuthDialog(QDialog):
         return lbl
 
     def _create_no_auth_tab(self) -> QWidget:
-        w = QWidget(); lay = QVBoxLayout(w)
+        w = QWidget()
+        lay = QVBoxLayout(w)
         lay.addWidget(QLabel("No authentication will be used for this request."))
         lay.addStretch()
         return w
 
     def _create_basic_auth_tab(self) -> QWidget:
-        w = QWidget(); lay = QFormLayout(w)
+        w = QWidget()
+        lay = QFormLayout(w)
         self.basic_username = QLineEdit()
         self.basic_password = QLineEdit()
         self.basic_password.setEchoMode(QLineEdit.EchoMode.Password)
@@ -213,7 +217,8 @@ class AuthDialog(QDialog):
         return w
 
     def _create_bearer_auth_tab(self) -> QWidget:
-        w = QWidget(); lay = QFormLayout(w)
+        w = QWidget()
+        lay = QFormLayout(w)
         self.bearer_token = QLineEdit()
         self.bearer_token.setEchoMode(QLineEdit.EchoMode.Password)
         self.bearer_token.setPlaceholderText("Paste your bearer token here…")
@@ -222,7 +227,8 @@ class AuthDialog(QDialog):
         return w
 
     def _create_oauth2_tab(self) -> QWidget:
-        w = QWidget(); lay = QFormLayout(w)
+        w = QWidget()
+        lay = QFormLayout(w)
         lay.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.ExpandingFieldsGrow)
 
         self.oauth2_token_url     = QLineEdit()
@@ -274,7 +280,8 @@ class AuthDialog(QDialog):
         return w
 
     def _create_api_key_tab(self) -> QWidget:
-        w = QWidget(); lay = QFormLayout(w)
+        w = QWidget()
+        lay = QFormLayout(w)
         self.api_key_name     = QLineEdit()
         self.api_key_name.setPlaceholderText("X-API-Key")
         self.api_key_value    = QLineEdit()
@@ -362,7 +369,7 @@ class AuthDialog(QDialog):
             info = auth.get_token_info()
             expiry = ""
             if info.get("expires_at"):
-                from datetime import datetime, timezone
+                from datetime import datetime
                 try:
                     secs = int(
                         (datetime.fromisoformat(str(info["expires_at"])) -
@@ -388,12 +395,10 @@ class AuthDialog(QDialog):
 
     # ── Saved credential picker ────────────────────────────────────────
 
-    def _refresh_client_picker(self):
+    def _refresh_client_picker(self) -> None:
         """Reload the saved-credential combo from the database."""
         if not self._db:
             return
-        from equinox.storage import SavedCredentialsManager
-        from equinox.storage.saved_credentials import AUTH_TYPE_LABELS
         mgr = SavedCredentialsManager(self._db)
         creds = mgr.list()
 
@@ -419,14 +424,13 @@ class AuthDialog(QDialog):
                         self.cred_picker.setCurrentIndex(i)
                         break
 
-    def _on_client_picked(self, index: int):
+    def _on_client_picked(self, index: int) -> None:
         """Auto-fill fields (and switch tab) when a saved credential is selected."""
         if not self._db:
             return
         cred_id = self.cred_picker.currentData()
         if cred_id is None:
             return   # "fill in manually" selected
-        from equinox.storage import SavedCredentialsManager
         cred = SavedCredentialsManager(self._db).get(cred_id)
         if not cred:
             return
@@ -467,7 +471,7 @@ class AuthDialog(QDialog):
             self.aws_service.setText(cfg.get("service", ""))
             self.aws_session_token.setText(cfg.get("session_token", ""))
 
-    def _open_client_manager(self):
+    def _open_client_manager(self) -> None:
         """Open the saved-credentials manager dialog."""
         if not self._db:
             QMessageBox.information(
@@ -475,6 +479,7 @@ class AuthDialog(QDialog):
                 "The credential manager is not available in this context."
             )
             return
+        # Deferred to avoid circular import between sibling dialog modules.
         from equinox.gui.dialogs.saved_credentials_dialog import SavedCredentialsDialog
         dlg = SavedCredentialsDialog(self._db, self)
         dlg.credentials_changed.connect(self._refresh_client_picker)
@@ -482,20 +487,19 @@ class AuthDialog(QDialog):
 
     # ── Load / Save ───────────────────────────────────────────────────
 
-    def _load_current_auth(self):
-        from equinox.auth.aws_sigv4 import AWSSigV4Auth
+    def _load_current_auth(self) -> None:
         if not self.current_auth:
-            self.tabs.setCurrentIndex(0)
+            self.tabs.setCurrentIndex(self._TAB_NONE)
             return
         if isinstance(self.current_auth, BasicAuth):
-            self.tabs.setCurrentIndex(1)
+            self.tabs.setCurrentIndex(self._TAB_BASIC)
             self.basic_username.setText(self.current_auth.username)
             self.basic_password.setText(self.current_auth.password)
         elif isinstance(self.current_auth, BearerAuth):
-            self.tabs.setCurrentIndex(2)
+            self.tabs.setCurrentIndex(self._TAB_BEARER)
             self.bearer_token.setText(self.current_auth.token)
         elif isinstance(self.current_auth, OAuth2Auth):
-            self.tabs.setCurrentIndex(3)
+            self.tabs.setCurrentIndex(self._TAB_OAUTH2)
             self.oauth2_token_url.setText(self.current_auth.token_url or "")
             self.oauth2_client_id.setText(self.current_auth.client_id or "")
             self.oauth2_client_secret.setText(self.current_auth.client_secret or "")
@@ -503,93 +507,93 @@ class AuthDialog(QDialog):
             self.oauth2_access_token.setText(self.current_auth.access_token or "")
             self.oauth2_refresh_token.setText(self.current_auth.refresh_token or "")
         elif isinstance(self.current_auth, APIKeyAuth):
-            self.tabs.setCurrentIndex(4)
+            self.tabs.setCurrentIndex(self._TAB_APIKEY)
             self.api_key_name.setText(self.current_auth.key)
             self.api_key_value.setText(self.current_auth.value)
             self.api_key_location.setCurrentIndex(
                 0 if self.current_auth.location == "header" else 1
             )
         elif isinstance(self.current_auth, AWSSigV4Auth):
-            self.tabs.setCurrentIndex(5)
+            self.tabs.setCurrentIndex(self._TAB_AWS)
             self.aws_access_key.setText(self.current_auth.access_key)
             self.aws_secret_key.setText(self.current_auth.secret_key)
             self.aws_region.setText(self.current_auth.region)
             self.aws_service.setText(self.current_auth.service)
             self.aws_session_token.setText(self.current_auth.session_token or "")
 
-    def _save_auth(self):
-        try:
-            tab = self.tabs.currentIndex()
-            if tab == 0:
-                auth = None
-            elif tab == 1:
-                username = self.basic_username.text().strip()
-                password = self.basic_password.text()
-                if not username or not password:
-                    QMessageBox.warning(self, "Missing Fields", "Enter both username and password.")
-                    return
-                auth = BasicAuth(username=username, password=password)
-            elif tab == 2:
-                token = self.bearer_token.text().strip()
-                if not token:
-                    QMessageBox.warning(self, "Missing Token", "Enter a bearer token.")
-                    return
-                auth = BearerAuth(token=token)
-            elif tab == 3:
-                token_url     = self.oauth2_token_url.text().strip()
-                client_id     = self.oauth2_client_id.text().strip()
-                client_secret = self.oauth2_client_secret.text().strip()
-                if not token_url or not client_id:
-                    QMessageBox.warning(self, "Missing Fields",
-                                        "Token URL and Client ID are required.")
-                    return
-                auth = OAuth2Auth(
-                    token_url=token_url,
-                    client_id=client_id,
-                    client_secret=client_secret,
-                    scope=self.oauth2_scope.text().strip() or None,
-                    access_token=self.oauth2_access_token.text().strip() or None,
-                    refresh_token=self.oauth2_refresh_token.text().strip() or None,
-                )
-                # Carry forward expires_at from a successful "Fetch Token…"
-                # so the token isn't treated as eternal.
-                if self._last_fetched_auth is not None:
-                    fetched = self._last_fetched_auth
-                    if (
-                        fetched.expires_at is not None
-                        and auth.access_token == fetched.access_token
-                    ):
-                        auth.expires_at = fetched.expires_at
-            elif tab == 4:
-                key_name  = self.api_key_name.text().strip()
-                key_value = self.api_key_value.text().strip()
-                if not key_name or not key_value:
-                    QMessageBox.warning(self, "Missing Fields", "Enter both key name and value.")
-                    return
-                auth = APIKeyAuth(
-                    key=key_name, value=key_value,
-                    location=self.api_key_location.currentText(),
-                )
-            elif tab == 5:
-                from equinox.auth.aws_sigv4 import AWSSigV4Auth
-                access_key = self.aws_access_key.text().strip()
-                secret_key = self.aws_secret_key.text().strip()
-                region     = self.aws_region.text().strip()
-                service    = self.aws_service.text().strip()
-                if not access_key or not secret_key or not region or not service:
-                    QMessageBox.warning(self, "Missing Fields",
-                                        "Access Key, Secret Key, Region and Service are required.")
-                    return
-                auth = AWSSigV4Auth(
-                    access_key=access_key,
-                    secret_key=secret_key,
-                    region=region,
-                    service=service,
-                    session_token=self.aws_session_token.text().strip() or None,
-                )
-            else:
-                auth = None
+    def _save_auth(self) -> None:
+        tab = self.tabs.currentIndex()
 
+        if tab == self._TAB_NONE:
+            auth = None
+        elif tab == self._TAB_BASIC:
+            username = self.basic_username.text().strip()
+            password = self.basic_password.text()
+            if not username or not password:
+                QMessageBox.warning(self, "Missing Fields", "Enter both username and password.")
+                return
+            auth = BasicAuth(username=username, password=password)
+        elif tab == self._TAB_BEARER:
+            token = self.bearer_token.text().strip()
+            if not token:
+                QMessageBox.warning(self, "Missing Token", "Enter a bearer token.")
+                return
+            auth = BearerAuth(token=token)
+        elif tab == self._TAB_OAUTH2:
+            token_url     = self.oauth2_token_url.text().strip()
+            client_id     = self.oauth2_client_id.text().strip()
+            client_secret = self.oauth2_client_secret.text().strip()
+            if not token_url or not client_id:
+                QMessageBox.warning(self, "Missing Fields",
+                                    "Token URL and Client ID are required.")
+                return
+            auth = OAuth2Auth(
+                token_url=token_url,
+                client_id=client_id,
+                client_secret=client_secret,
+                scope=self.oauth2_scope.text().strip() or None,
+                access_token=self.oauth2_access_token.text().strip() or None,
+                refresh_token=self.oauth2_refresh_token.text().strip() or None,
+            )
+            # Carry forward expires_at from a successful "Fetch Token…"
+            # so the token isn't treated as eternal.
+            if self._last_fetched_auth is not None:
+                fetched = self._last_fetched_auth
+                if (
+                    fetched.expires_at is not None
+                    and auth.access_token == fetched.access_token
+                ):
+                    auth.expires_at = fetched.expires_at
+        elif tab == self._TAB_APIKEY:
+            key_name  = self.api_key_name.text().strip()
+            key_value = self.api_key_value.text().strip()
+            if not key_name or not key_value:
+                QMessageBox.warning(self, "Missing Fields", "Enter both key name and value.")
+                return
+            auth = APIKeyAuth(
+                key=key_name, value=key_value,
+                location=self.api_key_location.currentText(),
+            )
+        elif tab == self._TAB_AWS:
+            access_key = self.aws_access_key.text().strip()
+            secret_key = self.aws_secret_key.text().strip()
+            region     = self.aws_region.text().strip()
+            service    = self.aws_service.text().strip()
+            if not access_key or not secret_key or not region or not service:
+                QMessageBox.warning(self, "Missing Fields",
+                                    "Access Key, Secret Key, Region and Service are required.")
+                return
+            auth = AWSSigV4Auth(
+                access_key=access_key,
+                secret_key=secret_key,
+                region=region,
+                service=service,
+                session_token=self.aws_session_token.text().strip() or None,
+            )
+        else:
+            auth = None
+
+        try:
             self._saved_auth = auth
             self.auth_configured.emit(auth)
             self.accept()
@@ -599,13 +603,6 @@ class AuthDialog(QDialog):
     @staticmethod
     def configure_auth(current_auth=None, parent=None, db=None) -> tuple:
         dialog = AuthDialog(current_auth, parent, db=db)
-        result = None
-
-        def on_auth_configured(auth):
-            nonlocal result
-            result = auth
-
-        dialog.auth_configured.connect(on_auth_configured)
         if dialog.exec() == QDialog.DialogCode.Accepted:
-            return (True, result)
+            return (True, getattr(dialog, "_saved_auth", None))
         return (False, current_auth)
