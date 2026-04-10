@@ -1,18 +1,19 @@
 """URL input with ghost query-parameter preview."""
 
+import os
+import re
+from typing import Optional
 
 from PyQt6.QtWidgets import QLineEdit, QToolTip
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QPainter, QColor, QFontMetricsF
 
-from equinox.storage import EnvironmentManager
 from equinox.core.interpolation import VariableInterpolator
-from equinox.storage import CollectionManager
-import os
-import re
-from typing import Optional
-
+from equinox.storage import CollectionManager, EnvironmentManager
 from equinox.gui.theme import Colors
+
+# Compiled once; reused for every OS-env key filter during tooltip resolution.
+_VALID_VAR_RE = re.compile(r'^[a-zA-Z0-9_-]+$')
 
 
 class UrlLineEdit(QLineEdit):
@@ -52,6 +53,12 @@ class UrlLineEdit(QLineEdit):
         super().focusOutEvent(event)
         self.update()   # show ghost again
 
+    def leaveEvent(self, event):
+        """Reset hover state so the tooltip reappears on re-entry."""
+        self._last_hovered_var = None
+        QToolTip.hideText()
+        super().leaveEvent(event)
+
     def paintEvent(self, event):
         super().paintEvent(event)
         if self.hasFocus() or not self._param_suffix:
@@ -72,135 +79,114 @@ class UrlLineEdit(QLineEdit):
             return
 
         painter = QPainter(self)
-        painter.setPen(QColor(Colors.FG_SUBTLE))
-        painter.setFont(self.font())
-        painter.drawText(
-            suffix_x, 0, available_width, self.height(),
-            Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft,
-            self._param_suffix,
-        )
-        painter.end()
+        try:
+            painter.setPen(QColor(Colors.FG_SUBTLE))
+            painter.setFont(self.font())
+            painter.drawText(
+                suffix_x, 0, available_width, self.height(),
+                Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft,
+                self._param_suffix,
+            )
+        finally:
+            painter.end()
+
+    # ── Variable tooltip ──────────────────────────────────────────────
 
     def mouseMoveEvent(self, event):
-        """Show tooltip for a {{variable}} under the mouse cursor.
-
-        We map the mouse position to a character index in the line edit, then
-        scan outward for a {{...}} token. If found, we interpolate it against
-        the active environment and show the resolved value as a tooltip.
-        """
+        """Show a tooltip for the ``{{variable}}`` under the mouse cursor."""
         try:
             pos = event.pos()
-            # cursorPositionAt maps QPoint to character index
             idx = self.cursorPositionAt(pos)
             text = self.text()
-            if not text or idx < 0 or idx > len(text):
-                return super().mouseMoveEvent(event)
 
-            # Find the nearest {{ on the left and }} on the right
-            left = text.rfind("{{", 0, idx)
-            right = text.find("}}", idx)
-            if left == -1 or right == -1:
-                # No token under cursor — clear last seen to allow future updates
+            if not text or idx < 0:
                 self._last_hovered_var = None
-                return super().mouseMoveEvent(event)
+            else:
+                # Find the nearest {{ on the left and }} on the right.
+                left = text.rfind("{{", 0, idx)
+                right = text.find("}}", idx)
 
-            token = text[left : right + 2]
-            # Basic validation of token structure
-            if not (token.startswith("{{") and token.endswith("}}")):
-                self._last_hovered_var = None
-                return super().mouseMoveEvent(event)
-
-            var_name = token[2:-2].strip()
-            if not var_name:
-                self._last_hovered_var = None
-                return super().mouseMoveEvent(event)
-
-            # Avoid re-showing tooltip for the same variable repeatedly
-            if var_name == self._last_hovered_var:
-                return super().mouseMoveEvent(event)
-
-            # Resolve using the same variable resolution pipeline the
-            # request sender uses: collection vars (if any) + active env
-            # variables + filtered OS env + session vars. This ensures the
-            # tooltip matches what the request will see when sent.
-            try:
-                win = self.window()
-                db = getattr(win, "db", None)
-                rp = getattr(win, "request_panel", None)
-                resolved = token
-                if db is None:
-                    # No DB available — nothing we can do
-                    resolved = token
+                if left == -1 or right == -1:
+                    self._last_hovered_var = None
                 else:
-                    variables = {}
-                    # Active environment variables
-                    try:
-                        env_mgr = EnvironmentManager(db)
-                        active = env_mgr.get_active_environment()
-                        if active:
-                            variables.update(active.get("variables", {}))
-                    except Exception:
-                        pass
-
-                    # Collection / inherited variables (if request loaded)
-                    try:
-                        if rp is not None and getattr(rp, "current_request", None) and getattr(rp.current_request, "collection_id", None):
-                            col_mgr = CollectionManager(db)
-                            col_vars = col_mgr.get_all_collection_variables(rp.current_request.collection_id)
-                            variables.update(col_vars)
-                    except Exception:
-                        pass
-
-                    # Filter OS env to variable-like names (same pattern as sender)
-                    try:
-                        valid_var_pattern = re.compile(r'^[a-zA-Z0-9_-]+$')
-                        os_env_filtered = {
-                            k: v for k, v in os.environ.items()
-                            if isinstance(v, str) and valid_var_pattern.match(k)
-                        }
-                        if os_env_filtered:
-                            variables.update(os_env_filtered)
-                    except Exception:
-                        pass
-
-                    # Session vars captured in the RequestPanel (override env)
-                    try:
-                        if rp is not None:
-                            session_vars = rp.get_session_vars()
-                            variables.update(session_vars)
-                    except Exception:
-                        pass
-
-                    # Path parameters set in the PathParamsTable should take
-                    # precedence for variables that appear in the URL path.
-                    # Use get_all_data() to include empty values (tests and
-                    # save/load flows rely on round-tripping empty entries).
-                    try:
-                        if rp is not None and getattr(rp, 'path_params_table', None) is not None:
-                            path_params = rp.path_params_table.get_all_data()
-                            # Ensure path params override any previously-set vars
-                            if path_params:
-                                variables.update(path_params)
-                    except Exception:
-                        pass
-
-                    # Finally run the same interpolation routine
-                    try:
-                        resolved = VariableInterpolator.interpolate(token, variables)
-                    except Exception:
-                        resolved = token
-            except Exception:
-                resolved = token
-
-            # Build tooltip text: show variable name → resolved value
-            tip = f"{var_name} → {resolved}"
-            QToolTip.showText(self.mapToGlobal(pos), tip, self)
-            self._last_hovered_var = var_name
+                    var_name = text[left + 2 : right].strip()
+                    if not var_name:
+                        self._last_hovered_var = None
+                    elif var_name != self._last_hovered_var:
+                        token = text[left : right + 2]
+                        resolved = self._resolve_variable(var_name, token)
+                        if resolved == token:
+                            tip = f"{var_name}  (not set)"
+                        else:
+                            tip = f"{var_name} → {resolved}"
+                        QToolTip.showText(self.mapToGlobal(pos), tip, self)
+                        self._last_hovered_var = var_name
         except Exception:
-            # Any error should not break UI
             self._last_hovered_var = None
 
-        # Always pass the event along to the base class (don't `return` from
-        # inside a finally clause — that can change control flow unexpectedly).
         super().mouseMoveEvent(event)
 
+    def _resolve_variable(self, var_name: str, token: str) -> str:
+        """Interpolate *token* against the same variable sources the request sender uses.
+
+        Returns the resolved string, or *token* unchanged when resolution fails
+        or no database is available.
+        """
+        win = self.window()
+        db = getattr(win, "db", None)
+        if db is None:
+            return token
+
+        rp = getattr(win, "request_panel", None)
+        variables: dict = {}
+
+        # 1. Active environment variables.
+        try:
+            env = EnvironmentManager(db).get_active_environment()
+            if env:
+                variables.update(env.get("variables", {}))
+        except Exception:
+            pass
+
+        # 2. Collection-level variables (if a collection request is loaded).
+        try:
+            if rp is not None:
+                req = getattr(rp, "current_request", None)
+                col_id = getattr(req, "collection_id", None) if req else None
+                if col_id is not None:
+                    variables.update(
+                        CollectionManager(db).get_all_collection_variables(col_id)
+                    )
+        except Exception:
+            pass
+
+        # 3. OS environment — look up only the specific variable rather than
+        #    iterating all of os.environ to avoid an unnecessary linear scan.
+        try:
+            if _VALID_VAR_RE.match(var_name):
+                os_val = os.environ.get(var_name)
+                if os_val is not None:
+                    variables[var_name] = os_val
+        except Exception:
+            pass
+
+        # 4. Session variables captured in the RequestPanel (override env).
+        try:
+            if rp is not None:
+                variables.update(rp.get_session_vars())
+        except Exception:
+            pass
+
+        # 5. Path parameters take highest precedence for URL-embedded tokens.
+        try:
+            if rp is not None and getattr(rp, "path_params_table", None) is not None:
+                path_params = rp.path_params_table.get_all_data()
+                if path_params:
+                    variables.update(path_params)
+        except Exception:
+            pass
+
+        try:
+            return VariableInterpolator.interpolate(token, variables)
+        except Exception:
+            return token
