@@ -1,11 +1,13 @@
 """OAuth2 client management — named, reusable OAuth2 credentials."""
 
+from __future__ import annotations
+
 import logging
 from typing import Any, Dict, List, Optional
 
+from equinox.core.exceptions import DuplicateError, StorageError, ValidationError
 from equinox.storage.database import Database
-from equinox.core.exceptions import StorageError, ValidationError, DuplicateError
-from equinox.storage.utils import require_str as _require_str, safe_json_loads, safe_json_dumps
+from equinox.storage.utils import require_str as _require_str, safe_json_dumps, safe_json_loads
 
 logger = logging.getLogger(__name__)
 
@@ -35,12 +37,12 @@ class OAuthClientManager:
     created_at / updated_at
     """
 
-    MAX_NAME_LEN   = 200
-    MAX_URL_LEN    = 2000
-    MAX_ID_LEN     = 500
+    MAX_NAME_LEN = 200
+    MAX_URL_LEN = 2000
+    MAX_ID_LEN = 500
     MAX_SECRET_LEN = 2000
-    MAX_SCOPE_LEN  = 1000
-    MAX_DESC_LEN   = 1000
+    MAX_SCOPE_LEN = 1000
+    MAX_DESC_LEN = 1000
 
     def __init__(self, db: Database) -> None:
         self.db = db
@@ -66,17 +68,13 @@ class OAuthClientManager:
             ValidationError: bad input
             StorageError: duplicate name or DB error
         """
-        name         = self._validate_str(name,          "name",          self.MAX_NAME_LEN)
-        token_url    = self._validate_str(token_url,     "token_url",     self.MAX_URL_LEN,  required=False)
-        client_id    = self._validate_str(client_id,     "client_id",     self.MAX_ID_LEN,   required=False)
-        client_secret= self._validate_str(client_secret, "client_secret", self.MAX_SECRET_LEN, required=False)
-        scope        = self._validate_str(scope,         "scope",         self.MAX_SCOPE_LEN,  required=False)
-        description  = self._validate_str(description,   "description",   self.MAX_DESC_LEN,   required=False)
-
-        if grant_type not in GRANT_TYPES:
-            raise ValidationError(
-                f"grant_type must be one of: {', '.join(GRANT_TYPES)}"
-            )
+        name = _require_str(name, "name", self.MAX_NAME_LEN)
+        token_url = _require_str(token_url, "token_url", self.MAX_URL_LEN, required=False)
+        client_id = _require_str(client_id, "client_id", self.MAX_ID_LEN, required=False)
+        client_secret = _require_str(client_secret, "client_secret", self.MAX_SECRET_LEN, required=False)
+        scope = _require_str(scope, "scope", self.MAX_SCOPE_LEN, required=False)
+        description = _require_str(description, "description", self.MAX_DESC_LEN, required=False)
+        self._validate_grant_type(grant_type)
 
         extra_json = safe_json_dumps(extra_params or {})
 
@@ -95,6 +93,8 @@ class OAuthClientManager:
             return row_id
         except DuplicateError:
             raise DuplicateError(f"An OAuth2 client named '{name}' already exists")
+        except StorageError:
+            raise
         except Exception as exc:
             raise StorageError(f"Failed to create OAuth2 client: {exc}") from exc
 
@@ -151,22 +151,21 @@ class OAuthClientManager:
 
         if name is not None:
             updates.append("name = ?")
-            params.append(self._validate_str(name, "name", self.MAX_NAME_LEN))
+            params.append(_require_str(name, "name", self.MAX_NAME_LEN))
         if token_url is not None:
             updates.append("token_url = ?")
-            params.append(self._validate_str(token_url, "token_url", self.MAX_URL_LEN))
+            params.append(_require_str(token_url, "token_url", self.MAX_URL_LEN))
         if client_id_val is not None:
             updates.append("client_id = ?")
-            params.append(self._validate_str(client_id_val, "client_id", self.MAX_ID_LEN))
+            params.append(_require_str(client_id_val, "client_id", self.MAX_ID_LEN))
         if client_secret is not None:
             updates.append("client_secret = ?")
-            params.append(self._validate_str(client_secret, "client_secret", self.MAX_SECRET_LEN, required=False))
+            params.append(_require_str(client_secret, "client_secret", self.MAX_SECRET_LEN, required=False))
         if scope is not None:
             updates.append("scope = ?")
-            params.append(self._validate_str(scope, "scope", self.MAX_SCOPE_LEN, required=False))
+            params.append(_require_str(scope, "scope", self.MAX_SCOPE_LEN, required=False))
         if grant_type is not None:
-            if grant_type not in GRANT_TYPES:
-                raise ValidationError(f"grant_type must be one of: {', '.join(GRANT_TYPES)}")
+            self._validate_grant_type(grant_type)
             updates.append("grant_type = ?")
             params.append(grant_type)
         if extra_params is not None:
@@ -174,7 +173,7 @@ class OAuthClientManager:
             params.append(safe_json_dumps(extra_params))
         if description is not None:
             updates.append("description = ?")
-            params.append(self._validate_str(description, "description", self.MAX_DESC_LEN, required=False))
+            params.append(_require_str(description, "description", self.MAX_DESC_LEN, required=False))
 
         if not updates:
             return
@@ -188,7 +187,10 @@ class OAuthClientManager:
             )
             logger.info("Updated OAuth2 client id=%d", client_id)
         except DuplicateError:
-            raise DuplicateError(f"An OAuth2 client named '{name}' already exists")
+            display_name = name if name is not None else existing["name"]
+            raise DuplicateError(f"An OAuth2 client named '{display_name}' already exists")
+        except StorageError:
+            raise
         except Exception as exc:
             raise StorageError(f"Failed to update OAuth2 client: {exc}") from exc
 
@@ -222,7 +224,13 @@ class OAuthClientManager:
 
     # ── Helpers ───────────────────────────────────────────────────────
 
-    def to_oauth2_auth(self, client: Dict[str, Any]) -> "OAuth2Auth":  # type: ignore[name-defined]
+    @staticmethod
+    def _validate_grant_type(grant_type: str) -> None:
+        """Raise ``ValidationError`` if *grant_type* is not in ``GRANT_TYPES``."""
+        if grant_type not in GRANT_TYPES:
+            raise ValidationError(f"grant_type must be one of: {', '.join(GRANT_TYPES)}")
+
+    def to_oauth2_auth(self, client: Dict[str, Any]) -> "OAuth2Auth":
         """Build a live :class:`~equinox.auth.oauth2.OAuth2Auth` from a client row."""
         from equinox.auth.oauth2 import OAuth2Auth
         return OAuth2Auth(
@@ -237,16 +245,8 @@ class OAuthClientManager:
     @staticmethod
     def _decode(row) -> Dict[str, Any]:
         d = dict(row)
-        d["extra_params"] = safe_json_loads(d.get("extra_params") or "{}")
+        d["extra_params"] = safe_json_loads(d.get("extra_params") or "{}", row_id=d.get("id"))
         d["is_default"] = bool(d.get("is_default", 0))
         return d
 
-    @staticmethod
-    def _validate_str(
-        value: str,
-        field: str,
-        max_len: int,
-        required: bool = True,
-    ) -> str:
-        return _require_str(value, field, max_len, required=required)
 
