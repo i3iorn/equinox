@@ -345,17 +345,17 @@ class TestHTTPClientCoverage:
     def test_concurrent_limit(self):
         from equinox.core.client import HTTPClient
         client = HTTPClient(max_concurrent_requests=1)
-        client._check_concurrent_limit()  # slot 1 taken
-        with pytest.raises(RequestError, match="Too many concurrent"):
-            client._check_concurrent_limit()
+        client.check_rate_limit()
+        with pytest.raises(RequestError, match="Too many concurrent requests"):
+            client.check_concurrent_limit()
 
     def test_release_concurrent_slot(self):
         from equinox.core.client import HTTPClient
         client = HTTPClient(max_concurrent_requests=1)
-        client._check_concurrent_limit()
+        client.check_concurrent_limit()
         client._release_concurrent_slot()
         # Should not raise after release
-        client._check_concurrent_limit()
+        client.check_concurrent_limit()
 
     def test_release_slot_never_below_zero(self):
         from equinox.core.client import HTTPClient

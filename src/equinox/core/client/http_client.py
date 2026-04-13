@@ -154,7 +154,7 @@ class HTTPClient:
     def __enter__(self) -> "HTTPClient":
         if self.proxy:
             logger.debug("HTTPClient: opening with proxy %s", self.proxy)
-            self._check_proxy_reachable()
+            self.check_proxy_reachable()
         self._dispatcher.open()
         return self
 
@@ -162,10 +162,6 @@ class HTTPClient:
         self._dispatcher.close()
 
     # ── Private helpers ───────────────────────────────────────────────────────
-
-    def _check_proxy_reachable(self) -> None:
-        from equinox.core.proxy import check_proxy_reachable
-        check_proxy_reachable(self.proxy)
 
     def _interruptible_sleep(self, seconds: float) -> None:
         """Sleep for *seconds*, waking early if the cancel event is set."""
@@ -220,6 +216,18 @@ class HTTPClient:
         )
 
     # ── Public API ────────────────────────────────────────────────────────────
+
+    def check_proxy_reachable(self) -> None:
+        from equinox.core.proxy import check_proxy_reachable
+        check_proxy_reachable(self.proxy)
+
+    def check_concurrent_limit(self) -> None:
+        """Check if the concurrency limit has been reached; raises ``RequestError`` if so."""
+        if self.active_requests >= self.max_concurrent_requests:
+            raise RequestError(
+                f"Concurrency limit exceeded: {self.active_requests} active "
+                f"requests (max {self.max_concurrent_requests})"
+            )
 
     def check_rate_limit(self) -> None:
         """Trigger the rate limiter; raises ``RateLimitError`` when the limit is reached."""

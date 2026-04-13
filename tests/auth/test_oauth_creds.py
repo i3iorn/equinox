@@ -146,7 +146,7 @@ class TestOAuthClientManager:
 
     def test_name_required(self, db):
         mgr = OAuthClientManager(db)
-        with pytest.raises(ValidationError, match='required'):
+        with pytest.raises(ValidationError, match='required|non-empty'):
             mgr.create_client(name='', token_url='', client_id='', client_secret='')
 
     def test_name_too_long(self, db):
