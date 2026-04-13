@@ -111,6 +111,7 @@ class HTTPClient:
         parameter validation while each collaborator has a clear construction
         site here.
         """
+        self._active_requests: int = 0  # counter for check_concurrent_limit / _release_concurrent_slot
         self.interceptors = InterceptorChain()
         self.logger = RequestResponseLogger()
         self._audit = get_audit_logger()
@@ -222,17 +223,44 @@ class HTTPClient:
         check_proxy_reachable(self.proxy)
 
     def check_concurrent_limit(self) -> None:
-        """Check if the concurrency limit has been reached; raises ``RequestError`` if so."""
-        if self.active_requests >= self.max_concurrent_requests:
-            raise RequestError(
-                f"Concurrency limit exceeded: {self.active_requests} active "
-                f"requests (max {self.max_concurrent_requests})"
-            )
+        """Acquire one concurrency slot; raises ``RequestError`` if the limit is already reached.
 
-    def check_rate_limit(self) -> None:
-        """Trigger the rate limiter; raises ``RateLimitError`` when the limit is reached."""
+        Increments ``_active_requests`` when a slot is available.  Call
+        :meth:`_release_concurrent_slot` to return the slot when the operation
+        completes.
+
+        Raises:
+            RequestError: If ``_active_requests >= max_concurrent_requests``.
+        """
+        if self._active_requests >= self.max_concurrent_requests:
+            raise RequestError(
+                f"Too many concurrent requests: {self._active_requests} active "
+                f"(max {self.max_concurrent_requests})"
+            )
+        self._active_requests += 1
+
+    def _release_concurrent_slot(self) -> None:
+        """Return one concurrency slot acquired by :meth:`check_concurrent_limit`.
+
+        Safe to call even when ``_active_requests`` is already 0 — the counter
+        is never allowed to go below zero.
+        """
+        if self._active_requests > 0:
+            self._active_requests -= 1
+
+    def check_rate_limit(self) -> int:
+        """Trigger the rate limiter and increment the active-request counter.
+
+        Returns:
+            The updated ``_active_requests`` count.
+
+        Raises:
+            RateLimitError: If the rate limit is exceeded.
+        """
         logger.debug("HTTPClient: checking rate limit (max=%d/min)", self.max_rate_per_minute)
         self._rate_limiter.try_acquire()
+        self._active_requests += 1
+        return self._active_requests
 
     def send(self, request: Request, auth: Optional[AuthStrategy] = None) -> Response:
         """Send *request*, applying *auth* (or ``request.auth``) if provided.

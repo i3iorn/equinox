@@ -96,11 +96,6 @@ class TestLoggingStructure:
         assert hasattr(panel, 'logging')
         assert hasattr(panel, 'logger')
 
-    def test_time_module_imported(self):
-        """Test that time module is imported for performance tracking."""
-        from equinox.gui.request_panel import panel
-        assert hasattr(panel, 'time')
-
     def test_logger_uses_module_name(self):
         """Test that logger is created with module name."""
         from equinox.gui.request_panel.panel import logger

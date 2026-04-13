@@ -235,7 +235,7 @@ class TestCookieValidation:
             mgr.add_cookie("k", "v", path="/bad\npath")
 
     def test_expires_too_long(self, mgr):
-        with pytest.raises(ValidationError, match="too long"):
+        with pytest.raises(ValidationError, match="exceeds 100 characters"):
             mgr.add_cookie("k", "v", expires="x" * 101)
 
     def test_expires_crlf(self, mgr):
