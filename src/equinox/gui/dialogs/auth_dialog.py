@@ -1,6 +1,7 @@
 """Authentication configuration dialog"""
 
 import json
+import logging
 
 from PyQt6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QTabWidget, QWidget,
@@ -10,6 +11,7 @@ from PyQt6.QtWidgets import (
 from PyQt6.QtCore import QThread, pyqtSignal
 from typing import Dict, Any
 
+from equinox.core.interpolation import VariableInterpolator, collect_interpolation_variables
 from equinox.core.time import utc_now
 from equinox.gui.theme import Colors, get_mono_font
 from equinox.gui.widgets import make_secret_row
@@ -18,6 +20,8 @@ from equinox.auth import BasicAuth, OAuth2Auth, BearerAuth, APIKeyAuth
 from equinox.auth.aws_sigv4 import AWSSigV4Auth
 from equinox.storage import SavedCredentialsManager
 from equinox.storage.saved_credentials import AUTH_TYPE_LABELS
+
+logger = logging.getLogger(__name__)
 
 
 class _TokenFetchWorker(QThread):
@@ -31,8 +35,6 @@ class _TokenFetchWorker(QThread):
 
     def run(self):
         try:
-            # apply() triggers _refresh_access_token(); OAuth2Auth.apply() only
-            # reads self.* fields — it never reads the request argument.
             self._auth.apply(object(), {})
             self.finished.emit(self._auth)
         except Exception as exc:
@@ -322,6 +324,23 @@ class AuthDialog(QDialog):
         ))
         return w
 
+    # ── Variable interpolation helper ─────────────────────────────────
+
+    def _collect_variables(self) -> Dict[str, str]:
+        """Gather interpolation variables from the database.
+
+        Returns an empty dict when the database is not available (e.g.
+        the dialog was opened without a DB context), so callers can
+        skip interpolation gracefully.
+        """
+        if not self._db:
+            return {}
+        try:
+            return collect_interpolation_variables(self._db)
+        except Exception as exc:
+            logger.debug("Failed to collect interpolation variables: %s", exc)
+            return {}
+
     # ── OAuth2 token fetch ─────────────────────────────────────────────
 
     def _fetch_oauth2_token(self) -> None:
@@ -333,11 +352,30 @@ class AuthDialog(QDialog):
             self.oauth2_fetch_status.setStyleSheet(f"color: {Colors.RED};")
             return
 
+        # Interpolate {{VAR}} placeholders in OAuth2 fields so the user can
+        # reference environment/collection variables in token URLs, client IDs, etc.
+        variables = self._collect_variables()
+        if variables:
+            try:
+                _interp = lambda s: VariableInterpolator.interpolate(s, variables)
+                token_url = _interp(token_url)
+                client_id = _interp(client_id)
+                client_secret = _interp(self.oauth2_client_secret.text().strip()) or None
+                scope = _interp(self.oauth2_scope.text().strip()) or None
+            except Exception as exc:
+                logger.warning("Variable interpolation failed in OAuth2 fetch: %s", exc)
+                self.oauth2_fetch_status.setText(f"Variable error: {exc}")
+                self.oauth2_fetch_status.setStyleSheet(f"color: {Colors.RED};")
+                return
+        else:
+            client_secret = self.oauth2_client_secret.text().strip() or None
+            scope = self.oauth2_scope.text().strip() or None
+
         auth = OAuth2Auth(
             token_url=token_url,
             client_id=client_id,
-            client_secret=self.oauth2_client_secret.text().strip() or None,
-            scope=self.oauth2_scope.text().strip() or None,
+            client_secret=client_secret,
+            scope=scope,
         )
         self.oauth2_fetch_btn.setEnabled(False)
         self.oauth2_fetch_status.setText("Fetching…")

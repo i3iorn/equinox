@@ -31,7 +31,7 @@ from equinox.core.redact import mask_secret
 from equinox.core.request import Request, Response
 from equinox.core.scripts import ScriptRunner
 from equinox.core.time import utc_now
-from equinox.gui.request_panel.builder import assemble_body, inject_content_type
+from equinox.gui.request_panel.builder import assemble_body, inject_content_type, interpolate_auth
 from equinox.gui.theme import Colors
 from equinox.gui.workers import RequestWorker
 from equinox.storage import Database, HistoryManager
@@ -329,6 +329,23 @@ class _RequestSendMixin:
 
         # Resolve effective auth: own > inherited (folder > collection)
         effective_auth, inherited_source = self._resolve_send_auth()
+
+        # Interpolate {{VAR}} placeholders inside auth fields (token URLs,
+        # keys, secrets, etc.) using the same variable pool as the rest of
+        # the request.  This mirrors the CLI path which interpolates the
+        # auth string before parsing it.
+        try:
+            effective_auth = interpolate_auth(
+                effective_auth,
+                lambda s: VariableInterpolator.interpolate(s, variables),
+            )
+        except Exception as exc:
+            logger.warning("Auth variable interpolation failed: %s", exc)
+            QMessageBox.warning(
+                self, "Variable Error",
+                f"Failed to expand variables in auth fields:\n{exc}",
+            )
+            return
 
         # Track for post-send save-back of refreshed tokens
         is_inherited = self._auth is None

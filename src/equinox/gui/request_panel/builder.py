@@ -6,11 +6,18 @@ without a display server.
 
 import json as _json
 import logging
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Callable, Dict, List, Optional, Tuple
+
+from equinox.auth import BasicAuth, BearerAuth, APIKeyAuth, OAuth2Auth
+from equinox.auth.aws_sigv4 import AWSSigV4Auth
+from equinox.auth.base import AuthStrategy
 
 logger = logging.getLogger(__name__)
 
-__all__ = ["assemble_body", "inject_content_type", "detect_body_type"]
+__all__ = [
+    "assemble_body", "inject_content_type", "detect_body_type",
+    "interpolate_auth",
+]
 
 # Canonical mapping from GUI body-type labels to MIME Content-Type values.
 # Used by both inject_content_type (forward) and detect_body_type (via header sniff).
@@ -127,3 +134,80 @@ def detect_body_type(body: str, headers: Optional[Dict] = None) -> str:
         if key_part and not any(c in key_part for c in " \t\n\r/\\"):
             return "form-urlencoded"
     return "raw (text)"
+
+
+# ── Auth interpolation ───────────────────────────────────────────────────────
+
+def interpolate_auth(
+    auth: Optional[AuthStrategy],
+    interp: Callable[[str], str],
+) -> Optional[AuthStrategy]:
+    """Return a *new* auth object with ``{{VAR}}`` placeholders expanded.
+
+    Args:
+        auth:   The auth strategy whose string fields should be interpolated.
+                ``None`` is passed through unchanged.
+        interp: A callable ``str → str`` that performs the actual variable
+                substitution (typically
+                ``lambda s: VariableInterpolator.interpolate(s, variables)``).
+
+    Returns:
+        A freshly constructed auth object of the same type with all string
+        fields interpolated, or ``None`` when *auth* is ``None``.
+
+    The original *auth* object is never mutated.  Unknown auth sub-types are
+    returned as-is so the send path never crashes on a custom plugin strategy.
+    """
+    if auth is None:
+        return None
+
+    def _i(value: Optional[str]) -> Optional[str]:
+        """Interpolate a single optional string field."""
+        return interp(value) if value else value
+
+    if isinstance(auth, BasicAuth):
+        return BasicAuth(
+            username=interp(auth.username),
+            password=interp(auth.password),
+        )
+
+    if isinstance(auth, BearerAuth):
+        return BearerAuth(token=interp(auth.token))
+
+    if isinstance(auth, OAuth2Auth):
+        new_auth = OAuth2Auth(
+            token_url=_i(auth.token_url),
+            client_id=_i(auth.client_id),
+            client_secret=_i(auth.client_secret),
+            scope=_i(auth.scope),
+            access_token=_i(auth.access_token),
+            refresh_token=_i(auth.refresh_token),
+            token_timeout=auth.token_timeout,
+        )
+        # Preserve token expiry so a pre-fetched token isn't treated as eternal.
+        new_auth.expires_at = auth.expires_at
+        return new_auth
+
+    if isinstance(auth, APIKeyAuth):
+        return APIKeyAuth(
+            key=interp(auth.key),
+            value=interp(auth.value),
+            location=auth.location,
+        )
+
+    if isinstance(auth, AWSSigV4Auth):
+        return AWSSigV4Auth(
+            access_key=interp(auth.access_key),
+            secret_key=interp(auth.secret_key),
+            region=interp(auth.region),
+            service=interp(auth.service),
+            session_token=_i(auth.session_token),
+        )
+
+    # Unknown / plugin auth — return unchanged so we never break the send path.
+    logger.debug(
+        "interpolate_auth: unsupported auth type %s — skipping interpolation",
+        type(auth).__name__,
+    )
+    return auth
+
