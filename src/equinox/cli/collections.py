@@ -194,7 +194,7 @@ def collection_export(collection_id, format, output, title, version):
     """
     from pathlib import Path
     from equinox.cli.main import get_db
-    from equinox.importers.exporters import (
+    from equinox.exporters import (
         PostmanExporter, OpenAPIExporter, InsomniaExporter,
     )
 
