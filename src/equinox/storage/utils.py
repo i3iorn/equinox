@@ -4,7 +4,7 @@ import json
 import logging
 from typing import Any, Optional
 
-from equinox.core.exceptions import ValidationError
+from equinox.core.exceptions import SecurityError, ValidationError
 
 logger = logging.getLogger(__name__)
 
@@ -18,8 +18,16 @@ MAX_DESCRIPTION_LENGTH: int = 1_000
 MAX_VARIABLE_KEY_LENGTH: int = 100
 MAX_VARIABLE_VALUE_LENGTH: int = 10_000
 
+# Private aliases kept for backward compatibility with older imports.
+_MAX_VARIABLE_KEY_LENGTH = MAX_VARIABLE_KEY_LENGTH
+_MAX_VARIABLE_VALUE_LENGTH = MAX_VARIABLE_VALUE_LENGTH
 
-def require_positive_int(value, label: str) -> None:
+# Sentinel used by safe_json_loads to distinguish "no default given" from
+# "caller explicitly passed None as the desired fallback value".
+_MISSING: object = object()
+
+
+def require_positive_int(value: Any, label: str) -> None:
     """Raise ValidationError unless *value* is a positive integer.
 
     Args:
@@ -31,32 +39,30 @@ def require_positive_int(value, label: str) -> None:
         raise ValidationError(f"{label} must be a positive integer")
 
 
-# Keep private aliases for backward compatibility with any code that
-# imported the old underscore-prefixed names.
-_MAX_VARIABLE_KEY_LENGTH = MAX_VARIABLE_KEY_LENGTH
-_MAX_VARIABLE_VALUE_LENGTH = MAX_VARIABLE_VALUE_LENGTH
-
-
-def validate_variable_key(key, max_length: int = _MAX_VARIABLE_KEY_LENGTH) -> str:
+def validate_variable_key(key: Any, max_length: int = MAX_VARIABLE_KEY_LENGTH) -> str:
     """Validate and strip a variable key.  Returns the stripped key.
+
+    Strips leading/trailing whitespace before checking length so that the
+    meaningful content length is enforced, not the padded length.
 
     Raises:
         ValidationError: If *key* is not a non-empty string or is too long.
     """
     if not key or not isinstance(key, str):
         raise ValidationError("Variable key must be a non-empty string")
-    if len(key) > max_length:
-        raise ValidationError(
-            f"Variable key too long (max {max_length} characters)"
-        )
     key = key.strip()
     if not key:
         raise ValidationError("Variable key cannot be empty or whitespace")
+    if len(key) > max_length:
+        raise ValidationError(f"Variable key too long (max {max_length} characters)")
     return key
 
 
-def validate_variable_value(value, max_length: int = _MAX_VARIABLE_VALUE_LENGTH) -> None:
-    """Validate a variable value.
+def validate_variable_value(value: Any, max_length: int = MAX_VARIABLE_VALUE_LENGTH) -> str:
+    """Validate a variable value and return it unchanged.
+
+    Values are *not* stripped — leading/trailing whitespace is intentional
+    (e.g. passwords, tokens).
 
     Raises:
         ValidationError: If *value* is not a string or is too long.
@@ -64,18 +70,17 @@ def validate_variable_value(value, max_length: int = _MAX_VARIABLE_VALUE_LENGTH)
     if not isinstance(value, str):
         raise ValidationError("Variable value must be a string")
     if len(value) > max_length:
-        raise ValidationError(
-            f"Variable value too long (max {max_length} characters)"
-        )
+        raise ValidationError(f"Variable value too long (max {max_length} characters)")
+    return value
 
 
-def require_str(value, field: str, max_len: int, required: bool = True) -> str:
+def require_str(value: Any, field: str, max_len: int, required: bool = True) -> str:
     """Validate and strip a string field.  Returns the stripped value.
 
     Args:
-        value: The value to validate (will be coerced from None to "").
+        value: The value to validate (``None`` is coerced to ``""``).
         field: Human-readable field name for error messages.
-        max_len: Maximum allowed length.
+        max_len: Maximum allowed length (applied *after* stripping).
         required: If True, raise on empty/whitespace-only strings.
 
     Raises:
@@ -87,10 +92,9 @@ def require_str(value, field: str, max_len: int, required: bool = True) -> str:
         raise ValidationError(f"'{field}' must be a string")
     if required and not value:
         raise ValidationError(f"'{field}' must be a non-empty string")
-    stripped = value.strip()
-    if required and not stripped:
+    value = value.strip()
+    if required and not value:
         raise ValidationError(f"'{field}' cannot be empty or whitespace")
-    value = stripped
     if len(value) > max_len:
         raise ValidationError(f"'{field}' is too long (max {max_len} chars)")
     return value
@@ -110,7 +114,7 @@ def coerce_body_to_str(body: Any, strict: bool = False) -> Optional[str]:
 
     if isinstance(body, (bytes, bytearray)):
         try:
-            return bytes(body).decode("utf-8", errors="strict" if strict else "replace")
+            return body.decode("utf-8", errors="strict" if strict else "replace")
         except Exception:
             if strict:
                 raise
@@ -119,7 +123,6 @@ def coerce_body_to_str(body: Any, strict: bool = False) -> Optional[str]:
     if isinstance(body, str):
         return body
 
-    # Coerce other types to string
     try:
         return str(body)
     except Exception:
@@ -152,16 +155,14 @@ def safe_json_dumps(
     """
     s = json.dumps(obj, indent=indent, ensure_ascii=ensure_ascii, sort_keys=sort_keys)
     if max_len is not None and len(s) > max_len:
-        from equinox.core.exceptions import SecurityError as _SE
-
-        raise _SE(f"JSON serialization exceeds {max_len} bytes")
+        raise SecurityError(f"JSON serialization exceeds {max_len} bytes")
     return s
 
 
 def safe_json_loads(
     s: Optional[str],
     *,
-    default: Any = None,
+    default: Any = _MISSING,
     row_id: Optional[int] = None,
 ) -> Any:
     """Safely parse a JSON string, returning *default* on failure.
@@ -169,18 +170,17 @@ def safe_json_loads(
     Args:
         s: JSON string to parse (``None`` and empty strings return *default*).
         default: Value to return when *s* is empty/None or cannot be parsed.
-            Defaults to ``None``; callers should pass ``{}``, ``[]``, etc. as
-            appropriate for the column type.
+            When omitted, ``{}`` is used.  Pass ``default=[]``, ``default=None``,
+            etc. to override for specific column types.
         row_id: If provided, parse errors are logged at ERROR level with this
             context; otherwise they are logged at DEBUG level.
 
     Returns:
         Parsed JSON value, or *default* on failure.
     """
-    if default is None:
-        default = {}
+    resolved = {} if default is _MISSING else default
     if not s:
-        return default
+        return resolved
     try:
         return json.loads(s)
     except (json.JSONDecodeError, TypeError) as exc:
@@ -188,4 +188,4 @@ def safe_json_loads(
             logger.error("Failed to parse JSON for row %s: %s", row_id, exc)
         else:
             logger.debug("Failed to parse JSON: %s", exc)
-        return default
+        return resolved
