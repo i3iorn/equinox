@@ -15,6 +15,17 @@ from PyQt6.QtCore import QSettings
 from PyQt6.QtGui import QFont, QPalette
 from PyQt6.QtWidgets import QApplication
 
+__all__ = [
+    "Colors",
+    "apply_theme",
+    "get_font_size", "set_font_size",
+    "get_mono_font", "get_ui_font",
+    "get_theme_mode", "set_theme_mode",
+    "is_dark",
+    "THEME_SYSTEM", "THEME_LIGHT", "THEME_DARK", "THEME_MODES", "THEME_LABELS",
+    "DEFAULT_FONT_SIZE", "DEFAULT_MONO_SIZE", "MIN_FONT_SIZE", "MAX_FONT_SIZE",
+]
+
 # ── Colour palettes ──────────────────────────────────────────────────────────
 
 _LIGHT: dict[str, str] = {
@@ -73,6 +84,17 @@ _DARK: dict[str, str] = {
     "SEND_HOVER": "#6ab5eb",
 }
 
+# Guard: both palettes must expose identical keys so QSS substitution never
+# produces a KeyError at runtime when the theme switches.
+assert _LIGHT.keys() == _DARK.keys(), (
+    f"Palette key mismatch — only in _LIGHT: {_LIGHT.keys() - _DARK.keys()!r}, "
+    f"only in _DARK: {_DARK.keys() - _LIGHT.keys()!r}"
+)
+
+# The active palette dict — replaced by apply_theme(); read by _ColorProxy at
+# call time so all property accesses reflect the current theme immediately.
+_active: dict[str, str] = dict(_LIGHT)
+
 
 # ── Dynamic Colors proxy ─────────────────────────────────────────────────────
 
@@ -121,55 +143,55 @@ class _ColorProxy:
 
 Colors = _ColorProxy()
 
-__all__ = [
-    "Colors",
-    "apply_theme",
-    "get_font_size", "set_font_size",
-    "get_mono_font", "get_ui_font",
-    "get_theme_mode", "set_theme_mode",
-    "is_dark",
-    "THEME_SYSTEM", "THEME_LIGHT", "THEME_DARK", "THEME_MODES", "THEME_LABELS",
-    "DEFAULT_FONT_SIZE", "DEFAULT_MONO_SIZE", "MIN_FONT_SIZE", "MAX_FONT_SIZE",
-]
-
-# The active palette dict — switched by apply_theme()
-_active: dict[str, str] = dict(_LIGHT)
-
 
 # ── Theme mode constants ─────────────────────────────────────────────────────
 
-THEME_SYSTEM = "system"
-THEME_LIGHT  = "light"
-THEME_DARK   = "dark"
-THEME_MODES  = (THEME_SYSTEM, THEME_LIGHT, THEME_DARK)
-THEME_LABELS = {"system": "System", "light": "Light", "dark": "Dark"}
+THEME_SYSTEM: str = "system"
+THEME_LIGHT:  str = "light"
+THEME_DARK:   str = "dark"
+THEME_MODES:  tuple[str, ...] = (THEME_SYSTEM, THEME_LIGHT, THEME_DARK)
+THEME_LABELS: dict[str, str] = {"system": "System", "light": "Light", "dark": "Dark"}
 
 
-# ── Defaults ─────────────────────────────────────────────────────────────────
+# ── Font / size defaults ─────────────────────────────────────────────────────
 
-DEFAULT_FONT_SIZE  = 9
-DEFAULT_MONO_SIZE  = 9
-MIN_FONT_SIZE      = 6
-MAX_FONT_SIZE      = 20
+DEFAULT_FONT_SIZE: int = 9
+# DEFAULT_MONO_SIZE is exported for callers that maintain a separate
+# monospaced-font size preference.  It is not used by this module internally.
+DEFAULT_MONO_SIZE: int = 9
+MIN_FONT_SIZE:     int = 6
+MAX_FONT_SIZE:     int = 20
+
+# Secondary-label size: base_pt minus this reduction, but never below the floor.
+_SM_FONT_REDUCTION: int = 2
+_SM_MIN_PT:         int = 7
 
 
-# ── Settings persistence ────────────────────────────────────────────────────
+# ── Settings persistence ─────────────────────────────────────────────────────
 
 def _settings() -> QSettings:
     return QSettings("Equinox", "Equinox")
 
 
+# ── Private helpers ───────────────────────────────────────────────────────────
+
+def _clamp_font_size(size: int) -> int:
+    """Return *size* clamped to ``[MIN_FONT_SIZE, MAX_FONT_SIZE]``."""
+    return max(MIN_FONT_SIZE, min(MAX_FONT_SIZE, size))
+
+
+# ── Settings accessors ────────────────────────────────────────────────────────
+
 def get_font_size() -> int:
     """Return the user-chosen base font size (pt)."""
     s = _settings()
     val = s.value("appearance/font_size", DEFAULT_FONT_SIZE, type=int)
-    return max(MIN_FONT_SIZE, min(MAX_FONT_SIZE, val))
+    return _clamp_font_size(val)
 
 
 def set_font_size(size: int) -> None:
     """Persist the base font size and immediately re-apply the theme."""
-    size = max(MIN_FONT_SIZE, min(MAX_FONT_SIZE, size))
-    _settings().setValue("appearance/font_size", size)
+    _settings().setValue("appearance/font_size", _clamp_font_size(size))
     apply_theme()
 
 
@@ -252,7 +274,7 @@ def is_dark() -> bool:
 def _build_stylesheet(base_pt: int) -> str:
     """Generate the application-wide QSS string."""
     C = _active
-    sm = max(base_pt - 2, 7)
+    sm = max(base_pt - _SM_FONT_REDUCTION, _SM_MIN_PT)
 
     return f"""
     /* ── Global ─────────────────────────────────────────── */
