@@ -1,42 +1,29 @@
 """History panel"""
 from __future__ import annotations
 
-import difflib
 import logging
 from datetime import date, datetime, timedelta
+from typing import Callable
 
 from PyQt6.QtCore import Qt, QTimer, pyqtSignal
-from PyQt6.QtGui import QAction, QColor, QFont, QTextCharFormat
+from PyQt6.QtGui import QAction, QColor, QFont
 from PyQt6.QtWidgets import (
     QCheckBox, QComboBox, QDialog, QDialogButtonBox, QDoubleSpinBox,
     QGridLayout, QGroupBox, QHBoxLayout, QLabel, QLineEdit, QListWidget,
-    QListWidgetItem, QMenu, QMessageBox, QPushButton, QSpinBox, QSplitter,
-    QTabWidget, QTextEdit, QVBoxLayout, QWidget,
+    QListWidgetItem, QMenu, QMessageBox, QPushButton, QSpinBox, QVBoxLayout, QWidget,
 )
 
+from equinox.gui.dialogs.history_diff_dialog import HistoryDiffDialog
 from equinox.gui.theme import Colors
 from equinox.storage import Database, HistoryManager
 
-__all__ = ["HistoryPanel", "HistoryDiffDialog"]
+__all__ = ["HistoryPanel"]
 
 logger = logging.getLogger(__name__)
 
 # ── Module-level constants ────────────────────────────────────────────────────
 
 _AUTO_REFRESH_INTERVAL_MS = 30_000
-
-
-# ── Helper functions ──────────────────────────────────────────────────────────
-
-
-def _bold_font() -> QFont:
-    f = QFont()
-    f.setBold(True)
-    return f
-
-
-def _mono_font() -> QFont:
-    return QFont("Courier New", 9)
 
 
 # ── History panel ─────────────────────────────────────────────────────────────
@@ -198,7 +185,9 @@ class HistoryPanel(QWidget):
 
         # Validation label (for regex / JSONPath errors)
         self.filter_error_label = QLabel()
-        self.filter_error_label.setStyleSheet("color: red; font-size: 11px;")
+        self.filter_error_label.setStyleSheet(
+            f"color: {Colors.ERROR}; font-size: 11px;"
+        )
         self.filter_error_label.setVisible(False)
         layout.addWidget(self.filter_error_label)
 
@@ -269,14 +258,12 @@ class HistoryPanel(QWidget):
     # ── Selection handling ────────────────────────────────────────────────────
 
     def _on_selection_changed(self) -> None:
-        sel = self.list_widget.selectedItems()
-        # Only count real entries (not separator labels)
-        real_sel = [i for i in sel if i.data(Qt.ItemDataRole.UserRole) is not None]
-        has = bool(real_sel)
+        ids = self._selected_real_ids()
+        has = bool(ids)
         self.open_btn.setEnabled(has)
         self.replay_btn.setEnabled(has)
         self.delete_sel_btn.setEnabled(has)
-        self.compare_btn.setEnabled(len(real_sel) == 2)
+        self.compare_btn.setEnabled(len(ids) == 2)
 
     # ── Search / filter ───────────────────────────────────────────────────────
 
@@ -352,7 +339,9 @@ class HistoryPanel(QWidget):
         """Add a non-selectable date separator row to the list."""
         sep = QListWidgetItem(f"  {label}")
         sep.setFlags(Qt.ItemFlag.NoItemFlags)
-        sep.setFont(_bold_font())
+        bold = QFont()
+        bold.setBold(True)
+        sep.setFont(bold)
         sep.setForeground(QColor(Colors.FG_MUTED))
         sep.setBackground(QColor(Colors.BG_ALT))
         self.list_widget.addItem(sep)
@@ -444,41 +433,22 @@ class HistoryPanel(QWidget):
 
     def _open_selected(self) -> None:
         """Emit ``history_selected`` for the first real selected entry."""
-        for it in self.list_widget.selectedItems():
-            hid = it.data(Qt.ItemDataRole.UserRole)
-            if hid is not None:
-                try:
-                    self.history_selected.emit(int(hid))
-                except Exception:
-                    logger.exception("_open_selected: invalid history id %r", hid)
-                return
+        self._emit_first_selected(self.history_selected)
 
     def _replay_selected(self) -> None:
         """Emit ``history_replay`` for the first real selected entry."""
-        for it in self.list_widget.selectedItems():
-            hid = it.data(Qt.ItemDataRole.UserRole)
-            if hid is not None:
-                try:
-                    self.history_replay.emit(int(hid))
-                except Exception:
-                    logger.exception("_replay_selected: invalid history id %r", hid)
-                return
+        self._emit_first_selected(self.history_replay)
 
     def _delete_selected(self) -> None:
         """Delete all currently selected history entries."""
-        ids = [
-            i.data(Qt.ItemDataRole.UserRole)
-            for i in self.list_widget.selectedItems()
-            if i.data(Qt.ItemDataRole.UserRole) is not None
-        ]
+        ids = self._selected_real_ids()
         if not ids:
             return
-        reply = QMessageBox.question(
-            self, "Confirm Delete",
-            f"Delete {len(ids)} selected history entr{'y' if len(ids) == 1 else 'ies'}?",
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-        )
-        if reply != QMessageBox.StandardButton.Yes:
+        n = len(ids)
+        if not self._confirm(
+            "Confirm Delete",
+            f"Delete {n} selected history entr{'y' if n == 1 else 'ies'}?",
+        ):
             return
 
         errors: list[str] = []
@@ -534,28 +504,22 @@ class HistoryPanel(QWidget):
 
     def _compare_selected(self) -> None:
         """Open a side-by-side diff for the two currently selected history entries."""
-        real_items = [
-            i for i in self.list_widget.selectedItems()
-            if i.data(Qt.ItemDataRole.UserRole) is not None
-        ]
-        if len(real_items) != 2:
+        ids = self._selected_real_ids()
+        if len(ids) != 2:
             return
-        id_a = real_items[0].data(Qt.ItemDataRole.UserRole)
-        id_b = real_items[1].data(Qt.ItemDataRole.UserRole)
+        id_a, id_b = ids
         try:
             entry_a = self._mgr.get_history(id_a)
             entry_b = self._mgr.get_history(id_b)
             if entry_a and entry_b:
                 HistoryDiffDialog(entry_a, entry_b, self).exec()
+            else:
+                logger.warning("Could not load history entries for comparison: %r %r", id_a, id_b)
         except Exception as exc:
             QMessageBox.critical(self, "Error", f"Failed to load history entries:\n{exc}")
 
     def _clear_history(self) -> None:
-        reply = QMessageBox.question(
-            self, "Confirm Clear", "Clear all history?",
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-        )
-        if reply != QMessageBox.StandardButton.Yes:
+        if not self._confirm("Confirm Clear", "Clear all history?"):
             return
         try:
             self._mgr.clear_history()
@@ -602,157 +566,39 @@ class HistoryPanel(QWidget):
             return
         self.refresh()
 
+    # ── Private helpers ───────────────────────────────────────────────────────
 
-# ── Diff dialog ───────────────────────────────────────────────────────────────
-
-
-class HistoryDiffDialog(QDialog):
-    """Side-by-side diff of two history entries (request and response)."""
-
-    def __init__(
-        self,
-        entry_a: dict,
-        entry_b: dict,
-        parent: QWidget | None = None,
-    ) -> None:
-        super().__init__(parent)
-        self._entry_a = entry_a
-        self._entry_b = entry_b
-        self.setWindowTitle(
-            f"Compare  [{entry_a.get('method')} {entry_a.get('url', '')[:40]}]  "
-            f"vs  [{entry_b.get('method')} {entry_b.get('url', '')[:40]}]"
+    def _confirm(self, title: str, question: str) -> bool:
+        """Show a Yes/No confirmation dialog and return ``True`` if confirmed."""
+        reply = QMessageBox.question(
+            self, title, question,
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
         )
-        self.setMinimumSize(980, 640)
-        self._init_ui()
+        return reply == QMessageBox.StandardButton.Yes
 
-    def _init_ui(self) -> None:
-        layout = QVBoxLayout(self)
+    def _selected_real_ids(self) -> list[int]:
+        """Return the DB IDs of all selected non-separator list entries.
 
-        tabs = QTabWidget()
-        tabs.addTab(
-            self._make_split_widget(
-                self._format_request(self._entry_a),
-                self._format_request(self._entry_b),
-                label_a=f"Entry #{self._entry_a.get('id')}",
-                label_b=f"Entry #{self._entry_b.get('id')}",
-            ),
-            "Request",
-        )
-        tabs.addTab(
-            self._make_split_widget(
-                self._format_response(self._entry_a),
-                self._format_response(self._entry_b),
-                label_a=f"Entry #{self._entry_a.get('id')}",
-                label_b=f"Entry #{self._entry_b.get('id')}",
-            ),
-            "Response",
-        )
-        tabs.addTab(self._make_unified_diff_widget(), "Unified Diff (response body)")
-
-        layout.addWidget(tabs, 1)
-
-        close_btns = QDialogButtonBox(QDialogButtonBox.StandardButton.Close)
-        close_btns.rejected.connect(self.reject)
-        layout.addWidget(close_btns)
-
-    # ── Formatters ────────────────────────────────────────────────────────────
-
-    @staticmethod
-    def _format_request(entry: dict) -> str:
-        lines = [
-            f"{entry.get('method', '?')} {entry.get('url', '?')}",
-            f"Timestamp : {entry.get('executed_at', '?')}",
-            "",
-            "── Headers ──",
+        Separator items have no ``UserRole`` data; they are excluded so callers
+        never have to guard against ``None`` IDs themselves.
+        """
+        return [
+            i.data(Qt.ItemDataRole.UserRole)
+            for i in self.list_widget.selectedItems()
+            if i.data(Qt.ItemDataRole.UserRole) is not None
         ]
-        for k, v in (entry.get("request_headers") or {}).items():
-            lines.append(f"  {k}: {v}")
-        lines += ["", "── Body ──", entry.get("request_body") or "(none)"]
-        return "\n".join(lines)
 
-    @staticmethod
-    def _format_response(entry: dict) -> str:
-        lines = [
-            f"Status  : {entry.get('status_code', '?')} {entry.get('reason', '')}",
-            f"Elapsed : {int((entry.get('elapsed') or 0) * 1000)} ms",
-            "",
-            "── Headers ──",
-        ]
-        for k, v in (entry.get("response_headers") or {}).items():
-            lines.append(f"  {k}: {v}")
-        lines += ["", "── Body ──", entry.get("response_body") or "(none)"]
-        return "\n".join(lines)
+    def _emit_first_selected(self, signal: Callable[[int], None]) -> None:
+        """Emit *signal* with the ID of the first real selected list entry.
 
-    # ── Widgets ───────────────────────────────────────────────────────────────
-
-    def _make_split_widget(
-        self,
-        text_a: str,
-        text_b: str,
-        label_a: str = "A",
-        label_b: str = "B",
-    ) -> QWidget:
-        w = QWidget()
-        lay = QVBoxLayout(w)
-        lay.setContentsMargins(4, 4, 4, 4)
-
-        hdr = QHBoxLayout()
-        for lbl in (label_a, label_b):
-            lbl_widget = QLabel(f"<b>{lbl}</b>")
-            lbl_widget.setAlignment(Qt.AlignmentFlag.AlignCenter)
-            hdr.addWidget(lbl_widget, 1)
-        lay.addLayout(hdr)
-
-        splitter = QSplitter(Qt.Orientation.Horizontal)
-        for text in (text_a, text_b):
-            te = QTextEdit()
-            te.setReadOnly(True)
-            te.setFont(_mono_font())
-            te.setPlainText(text)
-            splitter.addWidget(te)
-        splitter.setSizes([490, 490])
-        lay.addWidget(splitter, 1)
-        return w
-
-    def _make_unified_diff_widget(self) -> QWidget:
-        body_a = (self._entry_a.get("response_body") or "").splitlines(keepends=True)
-        body_b = (self._entry_b.get("response_body") or "").splitlines(keepends=True)
-        diff_lines = list(difflib.unified_diff(
-            body_a, body_b,
-            fromfile=f"Entry #{self._entry_a.get('id')}",
-            tofile=f"Entry #{self._entry_b.get('id')}",
-            lineterm="",
-        ))
-
-        w = QWidget()
-        lay = QVBoxLayout(w)
-        lay.setContentsMargins(4, 4, 4, 4)
-
-        te = QTextEdit()
-        te.setReadOnly(True)
-        te.setFont(_mono_font())
-
-        if not diff_lines:
-            te.setPlainText("(no differences in response bodies)")
-        else:
-            fmt_add = QTextCharFormat()
-            fmt_add.setBackground(QColor("#1a3a1a"))
-            fmt_rem = QTextCharFormat()
-            fmt_rem.setBackground(QColor("#3a1a1a"))
-            fmt_hdr = QTextCharFormat()
-            fmt_hdr.setForeground(QColor(Colors.BLUE))
-            fmt_def = QTextCharFormat()
-
-            cursor = te.textCursor()
-            for line in diff_lines:
-                if line.startswith("+++") or line.startswith("---"):
-                    cursor.insertText(line + "\n", fmt_hdr)
-                elif line.startswith("+"):
-                    cursor.insertText(line + "\n", fmt_add)
-                elif line.startswith("-"):
-                    cursor.insertText(line + "\n", fmt_rem)
-                else:
-                    cursor.insertText(line + "\n", fmt_def)
-
-        lay.addWidget(te, 1)
-        return w
+        Centralises the identical logic shared by ``_open_selected`` and
+        ``_replay_selected``, which differ only in which signal they emit.
+        """
+        for it in self.list_widget.selectedItems():
+            hid = it.data(Qt.ItemDataRole.UserRole)
+            if hid is not None:
+                try:
+                    signal(int(hid))
+                except Exception:
+                    logger.exception("Failed to emit signal for history id %r", hid)
+                return
