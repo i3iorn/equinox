@@ -4,7 +4,7 @@ from typing import Generator, List, NamedTuple
 
 from PyQt6.QtGui import QSyntaxHighlighter
 
-from equinox.gui.syntax_highlighter.base import _make_format, _variable_fmt, _VARIABLE_PATTERN
+from equinox.gui.syntax_highlighter.base import _make_format, _VARIABLE_FMT, _VARIABLE_PATTERN
 from equinox.gui.theme import Colors
 
 __all__ = ["JsonHighlighter"]
@@ -218,7 +218,6 @@ class JsonHighlighter(QSyntaxHighlighter):
         super().__init__(document)
 
         self.lexer = JsonLexer()
-        self._var_fmt = _variable_fmt()
 
         self.formats = {
             "STRING":    _make_format(Colors.GREEN),
@@ -284,6 +283,6 @@ class JsonHighlighter(QSyntaxHighlighter):
         # Skip the regex scan entirely when no placeholder can be present.
         if "{{" in text:
             for match in _VARIABLE_PATTERN.finditer(text):
-                self.setFormat(match.start(), match.end() - match.start(), self._var_fmt)
+                self.setFormat(match.start(), match.end() - match.start(), _VARIABLE_FMT)
 
         self.setCurrentBlockState(final_state.value)
