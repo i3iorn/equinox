@@ -254,24 +254,24 @@ class TestGetStats:
         assert stats["failed"] == 2
 
 
-# ── _prepare_url and _prepare_request_headers ─────────────────────────────────
+# ── _prepare_url and _prepare_headers (on _HistorySerializer) ──────────────────
 
 class TestSanitizers:
 
     def test_sanitize_url_clean(self, mgr):
         url = "https://api.example.com/resource?page=1&size=10"
-        result = mgr._prepare_url(url)
+        result = mgr._serializer._prepare_url(url)
         assert result == url
 
     def test_sanitize_url_redacts_password(self, mgr):
         url = "https://example.com/api?password=hunter2&foo=bar"
-        result = mgr._prepare_url(url)
+        result = mgr._serializer._prepare_url(url)
         assert "hunter2" not in result
         assert "[REDACTED]" in result
 
     def test_sanitize_url_redacts_token(self, mgr):
         url = "https://example.com/api?token=abc123&other=x"
-        result = mgr._prepare_url(url)
+        result = mgr._serializer._prepare_url(url)
         assert "abc123" not in result
 
     def test_sanitize_headers_redacts_auth(self, mgr):
@@ -280,7 +280,7 @@ class TestSanitizers:
             "cookie": "session=abc",
             "Accept": "application/json",
         }
-        result_json = mgr._prepare_request_headers(headers)
+        result_json = mgr._serializer._prepare_headers(headers)
         import json
         result = json.loads(result_json)
         assert result["Authorization"] == "[REDACTED]"
@@ -289,5 +289,5 @@ class TestSanitizers:
 
     def test_sanitize_headers_empty(self, mgr):
         import json
-        result_json = mgr._prepare_request_headers({})
+        result_json = mgr._serializer._prepare_headers({})
         assert json.loads(result_json) == {}
