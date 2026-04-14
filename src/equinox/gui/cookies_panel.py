@@ -10,6 +10,7 @@ from PyQt6.QtWidgets import (
 )
 from PyQt6.QtCore import Qt
 
+from equinox.gui.theme import Colors
 from equinox.storage.cookies import CookieJarManager
 from equinox.storage import Database
 
@@ -50,7 +51,7 @@ class _AddCookieDialog(QDialog):
         layout.addLayout(form)
 
         self._error_label = QLabel()
-        self._error_label.setStyleSheet("color: #f38ba8;")  # error red
+        self._error_label.setStyleSheet(f"color: {Colors.ERROR};")
         self._error_label.setVisible(False)
         layout.addWidget(self._error_label)
 
@@ -91,6 +92,11 @@ class CookiesPanel(QWidget):
     """Left-panel tab for managing the persistent cookie jar."""
 
     _COLUMNS = ("Name", "Value", "Domain", "Path", "Secure")
+
+    # Column index that holds the DB row id in Qt.ItemDataRole.UserRole.
+    # Named here so that refresh() (writer) and _delete_selected() (reader)
+    # stay in sync automatically when columns are reorganised.
+    _ID_COLUMN = 0
 
     def __init__(self, db: Database, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -166,7 +172,7 @@ class CookiesPanel(QWidget):
                 # Attach the DB id to the name cell for later retrieval.
                 name_item.setData(Qt.ItemDataRole.UserRole, cookie["id"])
 
-                self.table.setItem(row, 0, name_item)
+                self.table.setItem(row, self._ID_COLUMN, name_item)
                 self.table.setItem(row, 1, QTableWidgetItem(cookie["value"]))
                 self.table.setItem(row, 2, QTableWidgetItem(cookie.get("domain", "")))
                 self.table.setItem(row, 3, QTableWidgetItem(cookie.get("path", "/")))
@@ -200,20 +206,26 @@ class CookiesPanel(QWidget):
         self.refresh()
 
     def _delete_selected(self) -> None:
-        rows = {idx.row() for idx in self.table.selectedIndexes()}
-        if not rows:
+        # selectionModel().selectedRows() returns one index per selected row —
+        # the correct API for a SelectRows table (selectedIndexes() returns one
+        # index per *cell*, which requires an extra deduplication step).
+        selected = self.table.selectionModel().selectedRows()
+        if not selected:
             return
-        reply = QMessageBox.question(
-            self, "Confirm Delete",
-            f"Delete {len(rows)} selected cookie(s)?",
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-        )
-        if reply != QMessageBox.StandardButton.Yes:
+
+        count = len(selected)
+        if not self._confirm(
+            "Confirm Delete",
+            f"Delete {count} selected cookie{'s' if count != 1 else ''}?",
+        ):
             return
 
         errors: list[str] = []
-        for row in rows:
-            cookie_id = self.table.item(row, 0).data(Qt.ItemDataRole.UserRole)
+        for index in selected:
+            item = self.table.item(index.row(), self._ID_COLUMN)
+            if item is None:
+                continue
+            cookie_id = item.data(Qt.ItemDataRole.UserRole)
             try:
                 self._mgr.delete_cookie(cookie_id)
             except Exception as exc:
@@ -231,12 +243,7 @@ class CookiesPanel(QWidget):
             )
 
     def _clear_all(self) -> None:
-        reply = QMessageBox.question(
-            self, "Confirm Clear",
-            "Clear all cookies?",
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-        )
-        if reply != QMessageBox.StandardButton.Yes:
+        if not self._confirm("Confirm Clear", "Clear all cookies?"):
             return
         try:
             self._mgr.clear_cookies()
@@ -245,3 +252,14 @@ class CookiesPanel(QWidget):
             QMessageBox.warning(self, "Error", str(exc))
             return
         self.refresh()
+
+    # ── Private helpers ───────────────────────────────────────────────────────
+
+    def _confirm(self, title: str, question: str) -> bool:
+        """Show a Yes/No confirmation dialog and return ``True`` if the user confirms."""
+        reply = QMessageBox.question(
+            self, title, question,
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+        )
+        return reply == QMessageBox.StandardButton.Yes
+
