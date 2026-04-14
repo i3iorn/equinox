@@ -31,7 +31,9 @@ class TestMigrationRunner:
         db.db_path = db_path.resolve()
         db.db_path.parent.mkdir(parents=True, exist_ok=True)
         import threading
-        db.lock = threading.Lock()
+        db._lock = threading.Lock()
+        db._conn = sqlite3.connect(str(db.db_path))
+        db._conn.row_factory = sqlite3.Row
         # Don't call _run_migrations yet
         runner = MigrationRunner(db)
         assert runner.version == 0
