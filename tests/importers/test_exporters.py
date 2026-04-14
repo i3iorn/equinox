@@ -2,8 +2,9 @@
 from unittest.mock import patch, MagicMock
 from equinox.importers.exporters import (
     CurlExporter, PostmanExporter, OpenAPIExporter, InsomniaExporter, HARExporter,
-    _write_json_file, _json_to_dict
 )
+from equinox.importers._utils import json_to_dict, write_json_file, parse_url_parts
+from equinox.core.time import to_iso_z
 from equinox.core.request import Request, Response
 from equinox.core.exceptions import ValidationError
 from equinox.storage.database import Database
@@ -36,22 +37,22 @@ class TestUtilityFunctions:
     
     def test_json_to_dict_valid(self):
         """Improvement #9: Safe JSON parsing with valid input."""
-        result = _json_to_dict('{"key": "value"}')
+        result = json_to_dict('{"key": "value"}')
         assert result == {"key": "value"}
     
     def test_json_to_dict_invalid_with_default(self):
         """Improvement #9: Fallback to default on invalid JSON."""
-        result = _json_to_dict('invalid json', default={"fallback": "value"})
+        result = json_to_dict('invalid json', default={"fallback": "value"})
         assert result == {"fallback": "value"}
     
     def test_json_to_dict_empty_string(self):
         """Improvement #9: Handle empty JSON string."""
-        result = _json_to_dict('', default={"empty": True})
+        result = json_to_dict('', default={"empty": True})
         assert result == {"empty": True}
     
     def test_json_to_dict_malformed(self):
         """Improvement #9: Handle malformed JSON gracefully."""
-        result = _json_to_dict('{key": "value}', default={})
+        result = json_to_dict('{key": "value}', default={})
         assert result == {}
     
     def testcoerce_body_to_str_bytes(self):
@@ -80,7 +81,7 @@ class TestUtilityFunctions:
     
     def test_get_iso_timestamp_default(self):
         """Improvement #12: ISO timestamp with Z suffix."""
-        ts = _get_iso_timestamp()
+        ts = to_iso_z()
         assert ts.endswith("Z")
         assert "T" in ts
     
@@ -88,13 +89,13 @@ class TestUtilityFunctions:
         """Improvement #12: Format provided datetime."""
         from datetime import datetime, timezone
         dt = datetime(2026, 3, 13, 10, 30, 0, tzinfo=timezone.utc)
-        ts = _get_iso_timestamp(dt)
+        ts = to_iso_z(dt)
         assert ts.endswith("Z")
         assert "2026-03-13" in ts
     
     def test_parse_url_safe_full_url(self):
         """Improvement #3: Safe URL parsing with full URL."""
-        result = _parse_url_safe("https://example.com:8080/api/users?page=1")
+        result = parse_url_parts("https://example.com:8080/api/users?page=1")
         assert result["scheme"] == "https"
         assert result["hostname"] == "example.com"
         assert result["port"] == "8080"
@@ -103,14 +104,14 @@ class TestUtilityFunctions:
     
     def test_parse_url_safe_minimal(self):
         """Improvement #3: Safe URL parsing with minimal URL."""
-        result = _parse_url_safe("https://example.com")
+        result = parse_url_parts("https://example.com")
         assert result["scheme"] == "https"
         assert result["hostname"] == "example.com"
         assert result["path"] == "" or result["path"] == "/"
     
     def test_parse_url_safe_invalid(self):
         """Improvement #3: Handle invalid URL gracefully."""
-        result = _parse_url_safe("not a valid url")
+        result = parse_url_parts("not a valid url")
         assert isinstance(result, dict)
         assert "scheme" in result
         assert result["scheme"] == "https"  # Defaults to https
@@ -119,7 +120,7 @@ class TestUtilityFunctions:
         """Improvement #6: Write JSON file with deduplication."""
         data = {"test": "data"}
         file_path = tmp_path / "test.json"
-        _write_json_file(data, file_path)
+        write_json_file(data, file_path)
         assert file_path.exists()
         assert json.loads(file_path.read_text()) == data
     
@@ -127,18 +128,17 @@ class TestUtilityFunctions:
         """Improvement #6: Create parent directories automatically."""
         data = {"test": "data"}
         file_path = tmp_path / "nested" / "deep" / "test.json"
-        _write_json_file(data, file_path)
+        write_json_file(data, file_path)
         assert file_path.exists()
         assert json.loads(file_path.read_text()) == data
     
     def test_write_json_file_error_handling(self, tmp_path):
         """Improvement #6, #8: Error handling on write failure."""
         data = {"test": "data"}
-        # Use a non-writable path (simulate permission error)
         bad_path = tmp_path / "test.json"
         with patch("builtins.open", side_effect=IOError("Permission denied")):
             with pytest.raises(IOError):
-                _write_json_file(data, bad_path)
+                write_json_file(data, bad_path)
 
 
 # ============================================================================
