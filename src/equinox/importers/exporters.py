@@ -9,7 +9,6 @@ Supports:
 """
 from __future__ import annotations
 
-import json
 import logging
 import platform
 import shlex
@@ -17,16 +16,21 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
-from urllib.parse import urlparse
 
 from equinox.core.request import Request, Response
 from equinox.storage.collections import CollectionManager
 from equinox.storage.database import Database
 from equinox.core.exceptions import ValidationError
 from equinox.core.redact import redact_headers
+from equinox.core.time import to_iso_z as _to_iso
 from equinox.core.validation import Validator
 from equinox.core import urls
-from equinox.storage.utils import safe_json_loads, coerce_body_to_str
+from equinox.storage.utils import coerce_body_to_str
+from equinox.importers._utils import (
+    json_to_dict as _json_to_dict,
+    parse_url_parts as _parse_url,
+    write_json_file as _write_json_file,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -35,63 +39,6 @@ logger = logging.getLogger(__name__)
 # Module-level helpers
 # ---------------------------------------------------------------------------
 
-def _json_to_dict(raw: str, default: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
-    """Parse a JSON string → dict, handling both dict and list-of-pairs formats.
-
-    When the stored value is a list (e.g. params stored as ``{key, value, enabled}``
-    objects) it is converted to a plain ``{key: value}`` dict for export use.
-    """
-    default = default or {}
-    parsed = safe_json_loads(raw, default=default)
-    if isinstance(parsed, list):
-        return {
-            item.get("key", ""): item.get("value", "")
-            for item in parsed
-            if isinstance(item, dict)
-        }
-    return parsed if isinstance(parsed, dict) else default
-
-
-def _to_iso(dt: Optional[datetime] = None) -> str:
-    """Return *dt* (or now) as an ISO 8601 string with trailing ``Z``.
-
-    Uses ``strftime`` directly to avoid the ``+00:00`` suffix produced by
-    ``datetime.isoformat()`` on timezone-aware objects.
-    """
-    if dt is None:
-        dt = datetime.now(timezone.utc)
-    elif dt.tzinfo is None:
-        dt = dt.replace(tzinfo=timezone.utc)
-    return dt.strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
-
-
-def _parse_url(url: str) -> Dict[str, str]:
-    """Safely parse *url* into its components, returning safe defaults on failure."""
-    try:
-        p = urlparse(url)
-        return {
-            "scheme":   p.scheme or "https",
-            "hostname": p.hostname or "",
-            "port":     str(p.port) if p.port else "",
-            "path":     p.path or "/",
-            "query":    p.query or "",
-            "netloc":   p.netloc or "",
-        }
-    except Exception as exc:
-        logger.warning("Failed to parse URL %s: %s", url, exc)
-        return {"scheme": "https", "hostname": "", "port": "", "path": "/", "query": "", "netloc": ""}
-
-
-def _write_json_file(data: Dict[str, Any], file_path: Path) -> None:
-    """Write *data* as pretty-printed JSON to *file_path*."""
-    try:
-        file_path.parent.mkdir(parents=True, exist_ok=True)
-        with open(file_path, "w", encoding="utf-8") as f:
-            json.dump(data, f, indent=2, ensure_ascii=False)
-        logger.info("Exported to %s", file_path)
-    except IOError as exc:
-        logger.error("Failed to write %s: %s", file_path, exc)
-        raise
 
 
 # ---------------------------------------------------------------------------
