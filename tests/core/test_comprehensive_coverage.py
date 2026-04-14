@@ -747,7 +747,7 @@ class TestInterpolationComprehensive:
     # ── MAX_OUTPUT_BYTES enforcement ──────────────────────────────────────
 
     def test_input_text_too_large(self):
-        huge_text = "a" * (1024 * 1024 + 1)
+        huge_text = "a" * (2 * 1024 * 1024 + 1)
         with pytest.raises(SecurityError, match="too large"):
             VariableInterpolator.interpolate(huge_text, {})
 
