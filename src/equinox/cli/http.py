@@ -297,6 +297,11 @@ _REQ_OPTIONS = [
                  help="Assert response header (format: 'Name: value'). Exits 2 on failure. Repeatable."),
 ]
 
+_BODY_OPTIONS = [
+    click.option("--data", "-d", help="Request body (plain text or @filename)"),
+    click.option("--json", "-j", "json_data", help="JSON request body"),
+]
+
 
 def _apply_options(cmd, options):
     for opt in reversed(options):
@@ -304,78 +309,51 @@ def _apply_options(cmd, options):
     return cmd
 
 
-@click.command()
-@click.argument("url")
-@click.pass_context
-def get(ctx, url, header, param, auth, timeout, no_verify, save, save_response, quiet, output_fmt,
-        assert_status, assert_contains, assert_header):
-    """Send GET request"""
-    _send_request(ctx, "GET", url, None, header, param, auth, timeout, no_verify, save,
-                  save_response, quiet, output_fmt=output_fmt,
-                  assert_status=assert_status, assert_contains=assert_contains,
-                  assert_header=assert_header)
+def _make_http_command(method: str, *, has_body: bool = False):
+    """Factory that generates a Click command for the given HTTP *method*.
 
-get = _apply_options(get, _REQ_OPTIONS)
+    When *has_body* is True the command accepts ``--data`` / ``--json``
+    options and prepares the request body via :func:`_prepare_body`.
+    """
+    if has_body:
+        @click.command(method.lower())
+        @click.argument("url")
+        @click.pass_context
+        def cmd(ctx, url, data, json_data, header, param, auth, timeout,
+                no_verify, save, save_response, quiet, output_fmt,
+                assert_status, assert_contains, assert_header):
+            _send_request(
+                ctx, method, url, _prepare_body(data, json_data),
+                header, param, auth, timeout, no_verify, save,
+                save_response, quiet, output_fmt=output_fmt,
+                assert_status=assert_status, assert_contains=assert_contains,
+                assert_header=assert_header,
+            )
+        cmd = _apply_options(cmd, _REQ_OPTIONS)
+        cmd = _apply_options(cmd, _BODY_OPTIONS)
+    else:
+        @click.command(method.lower())
+        @click.argument("url")
+        @click.pass_context
+        def cmd(ctx, url, header, param, auth, timeout,
+                no_verify, save, save_response, quiet, output_fmt,
+                assert_status, assert_contains, assert_header):
+            _send_request(
+                ctx, method, url, None,
+                header, param, auth, timeout, no_verify, save,
+                save_response, quiet, output_fmt=output_fmt,
+                assert_status=assert_status, assert_contains=assert_contains,
+                assert_header=assert_header,
+            )
+        cmd = _apply_options(cmd, _REQ_OPTIONS)
 
-
-@click.command()
-@click.argument("url")
-@click.option("--data", "-d", help="Request body (plain text or @filename)")
-@click.option("--json", "-j", "json_data", help="JSON request body")
-@click.pass_context
-def post(ctx, url, data, json_data, header, param, auth, timeout, no_verify, save, save_response,
-         quiet, output_fmt, assert_status, assert_contains, assert_header):
-    """Send POST request"""
-    _send_request(ctx, "POST", url, _prepare_body(data, json_data),
-                  header, param, auth, timeout, no_verify, save, save_response, quiet,
-                  output_fmt=output_fmt, assert_status=assert_status,
-                  assert_contains=assert_contains, assert_header=assert_header)
-
-post = _apply_options(post, _REQ_OPTIONS)
-
-
-@click.command()
-@click.argument("url")
-@click.option("--data", "-d", help="Request body")
-@click.option("--json", "-j", "json_data", help="JSON request body")
-@click.pass_context
-def put(ctx, url, data, json_data, header, param, auth, timeout, no_verify, save, save_response,
-        quiet, output_fmt, assert_status, assert_contains, assert_header):
-    """Send PUT request"""
-    _send_request(ctx, "PUT", url, _prepare_body(data, json_data),
-                  header, param, auth, timeout, no_verify, save, save_response, quiet,
-                  output_fmt=output_fmt, assert_status=assert_status,
-                  assert_contains=assert_contains, assert_header=assert_header)
-
-put = _apply_options(put, _REQ_OPTIONS)
+    cmd.help = f"Send {method} request"
+    return cmd
 
 
-@click.command()
-@click.argument("url")
-@click.option("--data", "-d", help="Request body")
-@click.option("--json", "-j", "json_data", help="JSON request body")
-@click.pass_context
-def patch(ctx, url, data, json_data, header, param, auth, timeout, no_verify, save, save_response,
-          quiet, output_fmt, assert_status, assert_contains, assert_header):
-    """Send PATCH request"""
-    _send_request(ctx, "PATCH", url, _prepare_body(data, json_data),
-                  header, param, auth, timeout, no_verify, save, save_response, quiet,
-                  output_fmt=output_fmt, assert_status=assert_status,
-                  assert_contains=assert_contains, assert_header=assert_header)
-
-patch = _apply_options(patch, _REQ_OPTIONS)
-
-
-@click.command()
-@click.argument("url")
-@click.pass_context
-def delete(ctx, url, header, param, auth, timeout, no_verify, save, save_response, quiet, output_fmt,
-           assert_status, assert_contains, assert_header):
-    """Send DELETE request"""
-    _send_request(ctx, "DELETE", url, None, header, param, auth, timeout, no_verify, save,
-                  save_response, quiet, output_fmt=output_fmt,
-                  assert_status=assert_status, assert_contains=assert_contains,
-                  assert_header=assert_header)
-
-delete = _apply_options(delete, _REQ_OPTIONS)
+get    = _make_http_command("GET")
+post   = _make_http_command("POST",   has_body=True)
+put    = _make_http_command("PUT",    has_body=True)
+patch  = _make_http_command("PATCH",  has_body=True)
+delete = _make_http_command("DELETE")
 
