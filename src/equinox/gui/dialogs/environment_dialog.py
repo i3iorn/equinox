@@ -16,10 +16,11 @@ from typing import Optional
 
 from equinox.core.dotenv import parse_dotenv as _parse_dotenv
 from equinox.gui.theme import Colors
+from equinox.gui.dialogs._dirty_dialog_mixin import DirtyDialogMixin
 from equinox.storage import Database, EnvironmentManager
 
 
-class EnvironmentDialog(QDialog):
+class EnvironmentDialog(DirtyDialogMixin, QDialog):
     """Manage environments and their variables.
 
     Variables can be added, edited inline, and removed.  Changes are written
@@ -37,9 +38,14 @@ class EnvironmentDialog(QDialog):
         self._current_env_id: Optional[int] = None
         self._dirty = False          # unsaved variable edits
 
+        # DirtyDialogMixin requirements
+        self._save_callback = self._save_variables
+
         self.setWindowTitle("Manage Environments")
         self.setMinimumSize(780, 520)
         self._init_ui()
+        # Set _list_widget after UI construction
+        self._list_widget = self.env_list
         self._refresh_environments()
 
     # ── UI ────────────────────────────────────────────────────────────
@@ -195,12 +201,7 @@ class EnvironmentDialog(QDialog):
             )
             if ans == QMessageBox.StandardButton.Cancel:
                 # Re-select the previously active environment
-                self.env_list.blockSignals(True)
-                for i in range(self.env_list.count()):
-                    if self.env_list.item(i).data(Qt.ItemDataRole.UserRole) == self._current_env_id:
-                        self.env_list.setCurrentRow(i)
-                        break
-                self.env_list.blockSignals(False)
+                self._reselect_item(self._current_env_id)
                 return
             if ans == QMessageBox.StandardButton.Save:
                 self._save_variables()
@@ -288,9 +289,9 @@ class EnvironmentDialog(QDialog):
         self._dirty = True
         self._update_save_btn()
 
-    def _save_variables(self) -> None:
+    def _save_variables(self) -> bool:
         if self._current_env_id is None:
-            return
+            return False
         variables:   dict[str, str] = {}
         secret_keys: list[str]      = []
         errors = []
@@ -311,7 +312,7 @@ class EnvironmentDialog(QDialog):
 
         if errors:
             QMessageBox.warning(self, "Duplicate Keys", "\n".join(errors))
-            return
+            return False
 
         try:
             self.env_manager.update_environment(
@@ -325,8 +326,10 @@ class EnvironmentDialog(QDialog):
                 self.window().statusBar().showMessage("Variables saved", 3000)
             except Exception:
                 pass
+            return True
         except Exception as exc:
             QMessageBox.critical(self, "Save Failed", str(exc))
+            return False
 
     # ── Environment management ────────────────────────────────────────
 
@@ -417,7 +420,6 @@ class EnvironmentDialog(QDialog):
             )
             return
 
-        # Build an index of existing rows by key for O(1) lookup
         existing_keys: dict[str, int] = {}
         for r in range(self.var_table.rowCount()):
             k_item = self.var_table.item(r, 0)
@@ -448,19 +450,3 @@ class EnvironmentDialog(QDialog):
             f"Imported {len(new_vars)} variable(s): {added} new, {updated} updated.\n\n"
             "Click 'Save Variables' to persist the changes."
         )
-
-    def _on_close(self) -> None:
-        if self._dirty:
-            ans = QMessageBox.question(
-                self, "Unsaved Changes",
-                "You have unsaved variable changes. Save before closing?",
-                QMessageBox.StandardButton.Save |
-                QMessageBox.StandardButton.Discard |
-                QMessageBox.StandardButton.Cancel,
-            )
-            if ans == QMessageBox.StandardButton.Cancel:
-                return
-            if ans == QMessageBox.StandardButton.Save:
-                self._save_variables()
-        self.accept()
-

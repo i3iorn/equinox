@@ -23,10 +23,12 @@ from PyQt6.QtWidgets import (
 from equinox.gui.theme import Colors, get_mono_font
 from equinox.gui.widgets.secret_row import make_secret_row as _secret_row
 from equinox.gui.workers import OAuthTokenTester
+from equinox.gui.dialogs._dirty_dialog_mixin import DirtyDialogMixin
 from equinox.storage import Database
 from equinox.storage.saved_credentials import (
     AUTH_TYPE_LABELS, AUTH_TYPES, SavedCredentialsManager,
 )
+from equinox.storage.oauth_clients import GRANT_TYPES
 
 logger = logging.getLogger(__name__)
 
@@ -36,9 +38,6 @@ _FORM_HEADER_IDLE = (
     f"<span style='color:{Colors.FG_MUTED};'>  (select a credential)</span>"
 )
 
-GRANT_TYPES: Tuple[str, ...] = (
-    "client_credentials", "refresh_token", "password", "authorization_code"
-)
 
 # Colour per auth type used in the list widget
 _TYPE_COLOUR = {
@@ -50,7 +49,7 @@ _TYPE_COLOUR = {
 }
 
 
-class SavedCredentialsDialog(QDialog):
+class SavedCredentialsDialog(DirtyDialogMixin, QDialog):
     """Manager for named, reusable auth credentials of any type.
 
     Left panel  – scrollable list of all saved credentials grouped by type.
@@ -68,9 +67,14 @@ class SavedCredentialsDialog(QDialog):
         self._dirty = False
         self._tester: Optional[OAuthTokenTester] = None  # keeps reference alive until done
 
+        # DirtyDialogMixin requirements
+        self._save_callback = self._save_cred
+
         self.setWindowTitle("Saved Credentials")
         self.setMinimumSize(960, 580)
         self._build_ui()
+        # Set _list_widget after UI construction
+        self._list_widget = self.cred_list
         self._refresh_list()
 
     # ── UI construction ───────────────────────────────────────────────
@@ -388,20 +392,8 @@ class SavedCredentialsDialog(QDialog):
             return  # same item re-selected — no-op
 
         if self._dirty and self._current_id is not None:
-            ans = QMessageBox.question(
-                self, "Unsaved Changes",
-                "Save changes to the current credential before switching?",
-                QMessageBox.StandardButton.Save |
-                QMessageBox.StandardButton.Discard |
-                QMessageBox.StandardButton.Cancel,
-            )
-            if ans == QMessageBox.StandardButton.Cancel:
-                self._reselect(self._current_id)
+            if not self._prompt_unsaved(self._current_id):
                 return
-            if ans == QMessageBox.StandardButton.Save:
-                if not self._save_cred():
-                    self._reselect(self._current_id)
-                    return
 
         self._current_id = new_id
         self._load_form(self._current_id)
@@ -410,12 +402,7 @@ class SavedCredentialsDialog(QDialog):
         self._sync_buttons()
 
     def _reselect(self, cred_id: int) -> None:
-        self.cred_list.blockSignals(True)
-        for i in range(self.cred_list.count()):
-            if self.cred_list.item(i).data(Qt.ItemDataRole.UserRole) == cred_id:
-                self.cred_list.setCurrentRow(i)
-                break
-        self.cred_list.blockSignals(False)
+        self._reselect_item(cred_id)
 
     def _load_form(self, cred_id: int) -> None:
         c = self.mgr.get(cred_id)
@@ -742,24 +729,5 @@ class SavedCredentialsDialog(QDialog):
         self.test_btn.setText("\U0001f50c  Test Connection")
         self._set_status(message, ok=success)
 
-    # ── Close guard ───────────────────────────────────────────────────
-
-    def _on_close(self) -> None:
-        if self._dirty:
-            ans = QMessageBox.question(
-                self, "Unsaved Changes",
-                "Save changes before closing?",
-                QMessageBox.StandardButton.Save |
-                QMessageBox.StandardButton.Discard |
-                QMessageBox.StandardButton.Cancel,
-            )
-            if ans == QMessageBox.StandardButton.Cancel:
-                return
-            if ans == QMessageBox.StandardButton.Save:
-                if not self._save_cred():
-                    return  # save failed — keep dialog open
-        self.accept()
-
     def _set_status(self, msg: str, ok: Optional[bool]) -> None:
-        colour = Colors.GREEN if ok is True else Colors.RED if ok is False else Colors.FG_MUTED
-        self.status_label.setText(f"<span style='color:{colour};'>{msg}</span>")
+        self.status_label.setText(self._format_status(msg, ok))

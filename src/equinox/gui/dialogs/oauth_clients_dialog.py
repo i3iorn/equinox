@@ -23,6 +23,7 @@ from PyQt6.QtWidgets import (
 from equinox.gui.theme import Colors, get_mono_font
 from equinox.gui.widgets import make_secret_row
 from equinox.gui.workers import OAuthTokenTester
+from equinox.gui.dialogs._dirty_dialog_mixin import DirtyDialogMixin
 from equinox.storage import Database, OAuthClientManager
 from equinox.storage.oauth_clients import GRANT_TYPES
 
@@ -35,7 +36,7 @@ _FORM_HEADER_IDLE = (
 )
 
 
-class OAuthClientsDialog(QDialog):
+class OAuthClientsDialog(DirtyDialogMixin, QDialog):
     """Full-featured OAuth2 client credential manager.
 
     Layout
@@ -59,9 +60,14 @@ class OAuthClientsDialog(QDialog):
         self._dirty = False
         self._tester: Optional[OAuthTokenTester] = None  # keeps reference alive until done
 
+        # DirtyDialogMixin requirements
+        self._save_callback = self._save_client
+
         self.setWindowTitle("OAuth2 Client Manager")
         self.setMinimumSize(860, 560)
         self._build_ui()
+        # Set _list_widget after UI construction
+        self._list_widget = self.client_list
         self._refresh_list()
 
     # ── UI construction ───────────────────────────────────────────────
@@ -283,20 +289,8 @@ class OAuthClientsDialog(QDialog):
             return   # same item re-selected — no-op
 
         if self._dirty and self._current_id is not None:
-            ans = QMessageBox.question(
-                self, "Unsaved Changes",
-                "Save changes to the current client before switching?",
-                QMessageBox.StandardButton.Save |
-                QMessageBox.StandardButton.Discard |
-                QMessageBox.StandardButton.Cancel,
-            )
-            if ans == QMessageBox.StandardButton.Cancel:
-                self._reselect(self._current_id)
+            if not self._prompt_unsaved(self._current_id):
                 return
-            if ans == QMessageBox.StandardButton.Save:
-                if not self._save_client():
-                    self._reselect(self._current_id)
-                    return
 
         self._current_id = new_id
         self._load_form(self._current_id)
@@ -306,12 +300,7 @@ class OAuthClientsDialog(QDialog):
         self._sync_buttons()
 
     def _reselect(self, client_id: int) -> None:
-        self.client_list.blockSignals(True)
-        for i in range(self.client_list.count()):
-            if self.client_list.item(i).data(Qt.ItemDataRole.UserRole) == client_id:
-                self.client_list.setCurrentRow(i)
-                break
-        self.client_list.blockSignals(False)
+        self._reselect_item(client_id)
 
     def _load_form(self, client_id: int) -> None:
         c = self.mgr.get_client(client_id)
@@ -516,29 +505,8 @@ class OAuthClientsDialog(QDialog):
         self._set_status(message, ok=success)
 
     def _set_status(self, msg: str, ok: Optional[bool]) -> None:
-        if ok is True:
-            colour = Colors.GREEN
-        elif ok is False:
-            colour = Colors.RED
-        else:
-            colour = Colors.FG_MUTED
-        self.status_label.setText(f"<span style='color:{colour};'>{msg}</span>")
+        self.status_label.setText(self._format_status(msg, ok))
 
     # ── Close guard ───────────────────────────────────────────────────
-
-    def _on_close(self) -> None:
-        if self._dirty:
-            ans = QMessageBox.question(
-                self, "Unsaved Changes",
-                "Save changes before closing?",
-                QMessageBox.StandardButton.Save |
-                QMessageBox.StandardButton.Discard |
-                QMessageBox.StandardButton.Cancel,
-            )
-            if ans == QMessageBox.StandardButton.Cancel:
-                return
-            if ans == QMessageBox.StandardButton.Save:
-                if not self._save_client():
-                    return  # save failed — keep dialog open
-        self.accept()
+    # _on_close is inherited from DirtyDialogMixin
 
