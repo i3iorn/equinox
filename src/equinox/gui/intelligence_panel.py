@@ -3,6 +3,8 @@ from __future__ import annotations
 
 import json
 import logging
+from contextlib import contextmanager
+from typing import Callable, Generator
 
 from PyQt6.QtWidgets import (
     QWidget,
@@ -22,12 +24,17 @@ __all__ = ["IntelligencePanel"]
 
 logger = logging.getLogger(__name__)
 
-# Severity → (icon, CSS color accessor)
-_SEV_STYLE: dict[Severity, tuple[str, str]] = {
-    Severity.CRITICAL: ("⛔", "ERROR"),
-    Severity.WARNING:  ("⚠",  "WARNING"),
-    Severity.INFO:     ("ℹ",  "INFO"),
+# Severity → (icon, color_callable).
+# Storing a callable (instead of a string attribute name resolved via getattr)
+# keeps the Colors reference explicit and statically checkable.
+_SEV_STYLE: dict[Severity, tuple[str, Callable[[], str]]] = {
+    Severity.CRITICAL: ("⛔", lambda: Colors.ERROR),
+    Severity.WARNING:  ("⚠",  lambda: Colors.WARNING),
+    Severity.INFO:     ("ℹ",  lambda: Colors.INFO),
 }
+
+# Fallback used when a Severity value has no entry in _SEV_STYLE.
+_SEV_STYLE_DEFAULT: tuple[str, Callable[[], str]] = ("ℹ", lambda: Colors.INFO)
 
 
 class _FindingCard(QFrame):
@@ -48,8 +55,8 @@ class _FindingCard(QFrame):
         header_row = QHBoxLayout()
         header_row.setSpacing(6)
 
-        icon, color_attr = _SEV_STYLE.get(finding.severity, ("ℹ", "INFO"))
-        color = getattr(Colors, color_attr, Colors.FG_MUTED)
+        icon, color_fn = _SEV_STYLE.get(finding.severity, _SEV_STYLE_DEFAULT)
+        color = color_fn()
 
         sev_label = QLabel(icon)
         sev_label.setFixedWidth(18)
@@ -57,6 +64,7 @@ class _FindingCard(QFrame):
         header_row.addWidget(sev_label)
 
         title_label = QLabel(finding.title)
+        title_label.setTextFormat(Qt.TextFormat.PlainText)
         title_label.setStyleSheet(f"font-weight: bold; color: {Colors.FG};")
         title_label.setWordWrap(True)
         header_row.addWidget(title_label, 1)
@@ -83,6 +91,7 @@ class _FindingCard(QFrame):
 
         # ── Description ───────────────────────────────────────────────
         desc = QLabel(finding.description)
+        desc.setTextFormat(Qt.TextFormat.PlainText)
         desc.setWordWrap(True)
         desc.setStyleSheet(f"color: {Colors.FG_MUTED}; padding-left: 24px;")
         layout.addWidget(desc)
@@ -93,6 +102,7 @@ class _FindingCard(QFrame):
             self._details_widget = QLabel()
             self._details_widget.setFont(get_mono_font())
             self._details_widget.setWordWrap(True)
+            self._details_widget.setTextFormat(Qt.TextFormat.PlainText)
             self._details_widget.setTextInteractionFlags(
                 Qt.TextInteractionFlag.TextSelectableByMouse
             )
@@ -183,23 +193,82 @@ class IntelligencePanel(QWidget):
         self._findings = list(findings)  # defensive copy
 
         if not findings:
-            self._summary_label.setText("✓ No issues found")
-            self._summary_label.setStyleSheet(
-                f"font-weight: bold; color: {Colors.SUCCESS}; padding: 2px 4px;"
-            )
-            self._placeholder.setText("✓ No issues found")
-            self._placeholder.setStyleSheet(f"color: {Colors.SUCCESS}; font-weight: bold;")
-            self._scroll.setVisible(False)
-            self._placeholder.setVisible(True)
-            # Still clear any previously displayed cards.
-            self._scroll_content.setUpdatesEnabled(False)
-            try:
+            self._set_summary("✓ No issues found", Colors.SUCCESS)
+            self._set_placeholder("✓ No issues found", Colors.SUCCESS, bold=True)
+            with self._suspend_card_updates():
                 self._clear_cards()
-            finally:
-                self._scroll_content.setUpdatesEnabled(True)
+            self._show_content(show_scroll=False)
             return
 
-        # ── Build summary text ────────────────────────────────────────
+        self._set_summary(self._build_summary_html(findings), Colors.FG, rich_text=True)
+        self._rebuild_cards(findings)
+        self._show_content(show_scroll=True)
+
+    def set_analyzing(self) -> None:
+        """Show a 'running' state while analysis is in progress."""
+        with self._suspend_card_updates():
+            self._clear_cards()
+        self._set_summary("⟳ Analyzing…", Colors.FG_MUTED)
+        self._set_placeholder("⟳ Analyzing response…", Colors.FG_MUTED)
+        self._show_content(show_scroll=False)
+
+    def clear(self) -> None:
+        """Reset to initial state."""
+        with self._suspend_card_updates():
+            self._clear_cards()
+        self._findings = []
+        self._set_summary("", Colors.FG)
+        self._set_placeholder("Send a request to see analysis results.")
+        self._show_content(show_scroll=False)
+
+    # ── Private helpers ───────────────────────────────────────────────────────
+
+    @contextmanager
+    def _suspend_card_updates(self) -> Generator[None, None, None]:
+        """Context manager that suppresses repaints on the scroll content widget.
+
+        Using a context manager instead of inline try/finally blocks makes every
+        call site one line and eliminates the risk of accidentally omitting the
+        paired ``setUpdatesEnabled(True)`` call.
+        """
+        self._scroll_content.setUpdatesEnabled(False)
+        try:
+            yield
+        finally:
+            self._scroll_content.setUpdatesEnabled(True)
+
+    def _set_summary(
+        self, text: str, color: str, *, rich_text: bool = False
+    ) -> None:
+        """Update the summary bar label with *text* styled in *color*."""
+        self._summary_label.setText(text)
+        self._summary_label.setStyleSheet(
+            f"font-weight: bold; color: {color}; padding: 2px 4px;"
+        )
+        self._summary_label.setTextFormat(
+            Qt.TextFormat.RichText if rich_text else Qt.TextFormat.PlainText
+        )
+
+    def _set_placeholder(
+        self, text: str, color: str = "", *, bold: bool = False
+    ) -> None:
+        """Update the placeholder label text and optional styling."""
+        self._placeholder.setText(text)
+        parts = []
+        if color:
+            parts.append(f"color: {color};")
+        if bold:
+            parts.append("font-weight: bold;")
+        self._placeholder.setStyleSheet(" ".join(parts))
+
+    def _show_content(self, *, show_scroll: bool) -> None:
+        """Toggle between the scroll area (cards) and the placeholder label."""
+        self._scroll.setVisible(show_scroll)
+        self._placeholder.setVisible(not show_scroll)
+
+    @staticmethod
+    def _build_summary_html(findings: list[Finding]) -> str:
+        """Return an HTML string summarising finding counts by severity."""
         counts: dict[Severity, int] = {}
         for f in findings:
             counts[f.severity] = counts.get(f.severity, 0) + 1
@@ -208,25 +277,19 @@ class IntelligencePanel(QWidget):
         for sev in (Severity.CRITICAL, Severity.WARNING, Severity.INFO):
             c = counts.get(sev, 0)
             if c:
-                icon, color_attr = _SEV_STYLE[sev]
-                color = getattr(Colors, color_attr, Colors.FG_MUTED)
-                parts.append(f'<span style="color:{color};">{icon} {c} {sev.value}</span>')
-        self._summary_label.setText(
-            f"  {len(findings)} finding(s):  " + "   ".join(parts)
-        )
-        self._summary_label.setTextFormat(Qt.TextFormat.RichText)
-        self._summary_label.setStyleSheet(
-            f"font-weight: bold; color: {Colors.FG}; padding: 2px 4px;"
-        )
+                icon, color_fn = _SEV_STYLE.get(sev, _SEV_STYLE_DEFAULT)
+                parts.append(
+                    f'<span style="color:{color_fn()};">{icon} {c} {sev.value}</span>'
+                )
+        return f"  {len(findings)} finding(s):  " + "   ".join(parts)
 
-        # ── Group by category ─────────────────────────────────────────
+    def _rebuild_cards(self, findings: list[Finding]) -> None:
+        """Clear existing cards and insert new ones grouped by category."""
         by_cat: dict[Category, list[Finding]] = {}
         for f in findings:
             by_cat.setdefault(f.category, []).append(f)
 
-        # ── Rebuild cards (suppress per-card repaints) ────────────────
-        self._scroll_content.setUpdatesEnabled(False)
-        try:
+        with self._suspend_card_updates():
             self._clear_cards()
             for cat in Category:
                 cat_findings = by_cat.get(cat)
@@ -237,7 +300,7 @@ class IntelligencePanel(QWidget):
                     f"font-weight: bold; color: {Colors.FG_MUTED}; "
                     f"padding: 4px 0 2px 0; font-size: 11px;"
                 )
-                # Insert before the trailing stretch (always at count-1).
+                # Insert before the trailing stretch (always at count - 1).
                 self._scroll_layout.insertWidget(
                     self._scroll_layout.count() - 1, cat_label
                 )
@@ -245,43 +308,6 @@ class IntelligencePanel(QWidget):
                     self._scroll_layout.insertWidget(
                         self._scroll_layout.count() - 1, _FindingCard(finding)
                     )
-        finally:
-            self._scroll_content.setUpdatesEnabled(True)
-
-        self._placeholder.setVisible(False)
-        self._scroll.setVisible(True)
-
-    def set_analyzing(self) -> None:
-        """Show a 'running' state while analysis is in progress."""
-        self._scroll_content.setUpdatesEnabled(False)
-        try:
-            self._clear_cards()
-        finally:
-            self._scroll_content.setUpdatesEnabled(True)
-        self._summary_label.setText("⟳ Analyzing…")
-        self._summary_label.setStyleSheet(
-            f"font-weight: bold; color: {Colors.FG_MUTED}; padding: 2px 4px;"
-        )
-        self._placeholder.setText("⟳ Analyzing response…")
-        self._placeholder.setStyleSheet(f"color: {Colors.FG_MUTED};")
-        self._placeholder.setVisible(True)
-        self._scroll.setVisible(False)
-
-    def clear(self) -> None:
-        """Reset to initial state."""
-        self._scroll_content.setUpdatesEnabled(False)
-        try:
-            self._clear_cards()
-        finally:
-            self._scroll_content.setUpdatesEnabled(True)
-        self._findings = []
-        self._summary_label.setText("")
-        self._placeholder.setText("Send a request to see analysis results.")
-        self._placeholder.setStyleSheet("")
-        self._placeholder.setVisible(True)
-        self._scroll.setVisible(False)
-
-    # ── Internal ──────────────────────────────────────────────────────────────
 
     def _clear_cards(self) -> None:
         """Remove all finding cards and category labels from the scroll layout.
