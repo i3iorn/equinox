@@ -10,6 +10,10 @@ from equinox.core.exceptions import DuplicateError, SecurityError, StorageError,
 from equinox.core.interpolation import VariableInterpolator
 from equinox.storage.database import Database
 from equinox.storage.utils import (
+    MAX_NAME_LENGTH as _MAX_NAME,
+    MAX_DESCRIPTION_LENGTH as _MAX_DESC,
+    MAX_VARIABLE_KEY_LENGTH as _MAX_VAR_KEY,
+    MAX_VARIABLE_VALUE_LENGTH as _MAX_VAR_VAL,
     require_positive_int, safe_json_dumps, safe_json_loads,
     validate_variable_key, validate_variable_value,
 )
@@ -23,12 +27,12 @@ _VAR_NAME_RE = re.compile(r'^[a-zA-Z0-9_-]+$')
 class EnvironmentManager:
     """Manage environments and variables"""
 
-    # Security limits
-    MAX_NAME_LENGTH = 200
-    MAX_DESCRIPTION_LENGTH = 1000
+    # Security limits — delegated to central constants in storage.utils
+    MAX_NAME_LENGTH = _MAX_NAME
+    MAX_DESCRIPTION_LENGTH = _MAX_DESC
     MAX_VARIABLE_COUNT = 100
-    MAX_VARIABLE_KEY_LENGTH = 100
-    MAX_VARIABLE_VALUE_LENGTH = 10000
+    MAX_VARIABLE_KEY_LENGTH = _MAX_VAR_KEY
+    MAX_VARIABLE_VALUE_LENGTH = _MAX_VAR_VAL
     MAX_ENVIRONMENTS = 1000
     MAX_SECRET_KEYS = 100
     MAX_TEXT_SIZE = 1_000_000  # 1 MB text limit for interpolation

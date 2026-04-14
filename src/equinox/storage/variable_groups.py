@@ -6,6 +6,10 @@ from typing import List, Dict, Any, Optional
 from equinox.storage.database import Database
 from equinox.core.exceptions import StorageError, ValidationError, SecurityError, DuplicateError
 from equinox.storage.utils import (
+    MAX_NAME_LENGTH as _MAX_NAME,
+    MAX_DESCRIPTION_LENGTH as _MAX_DESC,
+    MAX_VARIABLE_KEY_LENGTH as _MAX_VAR_KEY,
+    MAX_VARIABLE_VALUE_LENGTH as _MAX_VAR_VAL,
     require_positive_int,
     require_str,
     validate_variable_key,
@@ -18,11 +22,11 @@ logger = logging.getLogger(__name__)
 class VariableGroupManager:
     """Manage variable groups and their items"""
 
-    # Security limits
-    MAX_NAME_LENGTH = 200
-    MAX_DESCRIPTION_LENGTH = 1000
-    MAX_VARIABLE_KEY_LENGTH = 100
-    MAX_VARIABLE_VALUE_LENGTH = 10000
+    # Security limits — delegated to central constants in storage.utils
+    MAX_NAME_LENGTH = _MAX_NAME
+    MAX_DESCRIPTION_LENGTH = _MAX_DESC
+    MAX_VARIABLE_KEY_LENGTH = _MAX_VAR_KEY
+    MAX_VARIABLE_VALUE_LENGTH = _MAX_VAR_VAL
     MAX_VARIABLES_PER_GROUP = 100
     MAX_GROUPS = 1000
 

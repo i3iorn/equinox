@@ -9,6 +9,16 @@ from equinox.core.exceptions import ValidationError
 logger = logging.getLogger(__name__)
 
 
+# ── Shared storage limits ─────────────────────────────────────────────────
+# Single source of truth — import these in every manager instead of
+# redeclaring identical constants on each class.
+
+MAX_NAME_LENGTH: int = 200
+MAX_DESCRIPTION_LENGTH: int = 1_000
+MAX_VARIABLE_KEY_LENGTH: int = 100
+MAX_VARIABLE_VALUE_LENGTH: int = 10_000
+
+
 def require_positive_int(value, label: str) -> None:
     """Raise ValidationError unless *value* is a positive integer.
 
@@ -21,8 +31,10 @@ def require_positive_int(value, label: str) -> None:
         raise ValidationError(f"{label} must be a positive integer")
 
 
-_MAX_VARIABLE_KEY_LENGTH = 100
-_MAX_VARIABLE_VALUE_LENGTH = 10_000
+# Keep private aliases for backward compatibility with any code that
+# imported the old underscore-prefixed names.
+_MAX_VARIABLE_KEY_LENGTH = MAX_VARIABLE_KEY_LENGTH
+_MAX_VARIABLE_VALUE_LENGTH = MAX_VARIABLE_VALUE_LENGTH
 
 
 def validate_variable_key(key, max_length: int = _MAX_VARIABLE_KEY_LENGTH) -> str:

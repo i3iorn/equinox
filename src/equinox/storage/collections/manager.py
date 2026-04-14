@@ -10,7 +10,11 @@ from equinox.storage.collections.variables import CollectionVariablesMixin
 from equinox.storage.database import Database
 from equinox.core.request import Request
 from equinox.core.exceptions import StorageError, ValidationError, DuplicateError
-from equinox.storage.utils import require_positive_int, require_str, safe_json_loads, safe_json_dumps
+from equinox.storage.utils import (
+    MAX_NAME_LENGTH as _MAX_NAME,
+    MAX_DESCRIPTION_LENGTH as _MAX_DESC,
+    require_positive_int, require_str, safe_json_loads, safe_json_dumps,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -59,8 +63,8 @@ class CollectionManager(
 ):
     """Manage request collections."""
 
-    MAX_NAME_LENGTH = 200
-    MAX_DESCRIPTION_LENGTH = 1000
+    MAX_NAME_LENGTH = _MAX_NAME
+    MAX_DESCRIPTION_LENGTH = _MAX_DESC
     DEFAULT_TIMEOUT = 30.0
 
     # ── Private validation helpers ──────────────────────────────────────
