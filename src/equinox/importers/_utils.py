@@ -4,11 +4,14 @@ Contains helpers that are common across all importer classes (OpenAPI, Postman,
 HAR, Insomnia) to avoid code duplication.
 """
 
+import json
 import logging
 from pathlib import Path
-from typing import Optional, Sequence
+from typing import Any, Dict, Optional, Sequence
+from urllib.parse import urlparse
 
 from equinox.core.exceptions import ValidationError
+from equinox.storage.utils import safe_json_loads
 
 logger = logging.getLogger(__name__)
 
@@ -52,4 +55,84 @@ def validate_import_file(
             f"{label} too large: {size:,} bytes (max {max_bytes:,} bytes)"
         )
     logger.debug("validate_import_file: OK path=%s size=%d", path, size)
+
+
+def json_to_dict(
+    raw: str,
+    default: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    """Parse a JSON string → dict, handling both dict and list-of-pairs formats.
+
+    When the stored value is a list (e.g. params stored as ``{key, value,
+    enabled}`` objects) it is converted to a plain ``{key: value}`` dict for
+    export use.
+
+    Args:
+        raw:     Raw JSON string to parse.
+        default: Fallback value when *raw* is absent or unparseable.
+                 Defaults to ``{}``.
+
+    Returns:
+        Parsed dict, or *default* on failure.
+    """
+    default = default or {}
+    parsed = safe_json_loads(raw, default=default)
+    if isinstance(parsed, list):
+        return {
+            item.get("key", ""): item.get("value", "")
+            for item in parsed
+            if isinstance(item, dict)
+        }
+    return parsed if isinstance(parsed, dict) else default
+
+
+def parse_url_parts(url: str) -> Dict[str, str]:
+    """Safely parse *url* into its export-friendly components.
+
+    Returns a dict with keys ``scheme``, ``hostname``, ``port``, ``path``,
+    ``query``, and ``netloc``, falling back to safe defaults on any parse
+    failure.  This is distinct from :func:`equinox.core.urls._parse_url`,
+    which returns a ``(scheme, netloc, path, query)`` tuple.
+
+    Args:
+        url: URL string to decompose.
+
+    Returns:
+        Dict with the URL's components.
+    """
+    try:
+        p = urlparse(url)
+        return {
+            "scheme":   p.scheme or "https",
+            "hostname": p.hostname or "",
+            "port":     str(p.port) if p.port else "",
+            "path":     p.path or "/",
+            "query":    p.query or "",
+            "netloc":   p.netloc or "",
+        }
+    except Exception as exc:
+        logger.warning("Failed to parse URL %s: %s", url, exc)
+        return {"scheme": "https", "hostname": "", "port": "", "path": "/", "query": "", "netloc": ""}
+
+
+def write_json_file(data: Dict[str, Any], file_path: Path) -> None:
+    """Write *data* as pretty-printed JSON to *file_path*.
+
+    Creates any missing parent directories automatically.
+
+    Args:
+        data:      Serialisable dict to write.
+        file_path: Destination path (parents created if absent).
+
+    Raises:
+        IOError: If the file cannot be written.
+    """
+    try:
+        file_path.parent.mkdir(parents=True, exist_ok=True)
+        with open(file_path, "w", encoding="utf-8") as f:
+            json.dump(data, f, indent=2, ensure_ascii=False)
+        logger.info("Exported to %s", file_path)
+    except IOError as exc:
+        logger.error("Failed to write %s: %s", file_path, exc)
+        raise
 
