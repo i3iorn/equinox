@@ -163,7 +163,7 @@ class OAuth2Auth(AuthStrategy):
         self._proxy: Optional[str] = None
 
         # Last token-endpoint exchange (redacted) — surfaced in the GUI
-        self.last_token_response: Optional[Dict[str, Any]] = None
+        self._last_token_response: Optional[Dict[str, Any]] = None
 
         if self.secure_storage and self.storage_key:
             self._load_from_storage()
@@ -206,7 +206,7 @@ class OAuth2Auth(AuthStrategy):
             "refresh_token": self.refresh_token,
             "has_access_token": bool(self.access_token),
             "has_refresh_token": bool(self.refresh_token),
-            "expires_at": self.expires_at.isoformat() if self.expires_at else None,
+            "expires_at": self._expires_at_iso(),
             "token_timeout": self.token_timeout,
         }
 
@@ -236,6 +236,26 @@ class OAuth2Auth(AuthStrategy):
 
     # ── Token state helpers ───────────────────────────────────────────────────
 
+    @property
+    def last_token_response(self) -> Optional[Dict[str, Any]]:
+        """The most recent (redacted) token endpoint exchange, or ``None``."""
+        return self._last_token_response
+
+    @property
+    def _has_storage(self) -> bool:
+        """Return True when secure storage is configured and a key is set."""
+        return bool(self.secure_storage and self.storage_key)
+
+    @property
+    def _proxy_label(self) -> str:
+        """Human-readable proxy label used in log messages."""
+        return self._proxy or "none"
+
+    @property
+    def _proxy_for_httpx(self) -> Optional[str]:
+        """Proxy URL passed to httpx, or ``None`` when no proxy is configured."""
+        return self._proxy or None
+
     def _needs_refresh(self) -> bool:
         """Return True when the token is missing, expired, or about to expire."""
         if not self.access_token:
@@ -259,7 +279,7 @@ class OAuth2Auth(AuthStrategy):
         return {
             "access_token": token_preview,
             "has_refresh_token": bool(self.refresh_token),
-            "expires_at": self.expires_at.isoformat() if self.expires_at else None,
+            "expires_at": self._expires_at_iso(),
             "needs_refresh": self._needs_refresh(),
         }
 
@@ -267,7 +287,7 @@ class OAuth2Auth(AuthStrategy):
 
     def _load_from_storage(self) -> None:
         """Restore tokens from secure storage, if available."""
-        if not self.secure_storage or not self.storage_key:
+        if not self._has_storage:
             logger.debug("OAuth2 secure storage not configured (key=%s)", self.storage_key)
             return
 
@@ -281,7 +301,7 @@ class OAuth2Auth(AuthStrategy):
                 self.expires_at = self._parse_expires_at(data.get("expires_at"))
                 logger.info(
                     "OAuth2 tokens loaded from storage (expires_at=%s)",
-                    self.expires_at.isoformat() if self.expires_at else "None",
+                    self._expires_at_iso() or "None",
                 )
             else:
                 logger.debug("No stored OAuth2 tokens found for key=%s", self.storage_key)
@@ -290,7 +310,7 @@ class OAuth2Auth(AuthStrategy):
 
     def _save_to_storage(self) -> None:
         """Persist current tokens to secure storage."""
-        if not self.secure_storage or not self.storage_key:
+        if not self._has_storage:
             logger.debug("OAuth2 secure storage not configured, skipping save")
             return
 
@@ -299,15 +319,19 @@ class OAuth2Auth(AuthStrategy):
             data = {
                 "access_token": self.access_token,
                 "refresh_token": self.refresh_token,
-                "expires_at": self.expires_at.isoformat() if self.expires_at else None,
+                "expires_at": self._expires_at_iso(),
             }
             self.secure_storage.store(self.storage_key, json.dumps(data))
             logger.info(
                 "OAuth2 tokens saved to storage (expires_at=%s)",
-                self.expires_at.isoformat() if self.expires_at else "None",
+                self._expires_at_iso() or "None",
             )
         except Exception as storage_exc:
             logger.warning("Failed to save OAuth2 tokens to storage: %s", storage_exc)
+
+    def _expires_at_iso(self) -> Optional[str]:
+        """Return ``expires_at`` as an ISO-8601 string, or ``None`` if unset."""
+        return self.expires_at.isoformat() if self.expires_at else None
 
     @staticmethod
     def _parse_expires_at(expires_at_str: Optional[str]) -> Optional[datetime]:
@@ -319,6 +343,28 @@ class OAuth2Auth(AuthStrategy):
             return parsed.replace(tzinfo=None) if parsed.tzinfo else parsed
         except (ValueError, TypeError):
             return None
+
+    @staticmethod
+    def _parse_expires_in(raw_expires: Any) -> int:
+        """Return a valid ``expires_in`` seconds value from a raw token response field.
+
+        Accepts int, float, or string representations.  Falls back to
+        ``_DEFAULT_TOKEN_EXPIRY_SECONDS`` when the value is absent, zero,
+        negative, or cannot be parsed.
+
+        Args:
+            raw_expires: The raw ``expires_in`` value from the token endpoint.
+        """
+        try:
+            value = int(float(raw_expires)) if raw_expires is not None else 0
+            if value > 0:
+                return value
+        except (ValueError, TypeError):
+            logger.warning(
+                "Invalid expires_in value %r, using default %ds",
+                raw_expires, _DEFAULT_TOKEN_EXPIRY_SECONDS,
+            )
+        return _DEFAULT_TOKEN_EXPIRY_SECONDS
 
     # ── Token refresh ─────────────────────────────────────────────────────────
 
@@ -336,17 +382,25 @@ class OAuth2Auth(AuthStrategy):
         self._capture_token_response(response)
         self._apply_token_response(response)
 
+    @staticmethod
+    def _snapshot_response_body(response: httpx.Response) -> Dict[str, Any]:
+        """Return a redacted snapshot of the token response body.
+
+        Tries to parse as JSON first; falls back to a truncated raw text
+        representation; returns an empty dict when both fail.
+        """
+        try:
+            return {k: _redact_token_value(k, v) for k, v in response.json().items()}
+        except Exception:
+            pass
+        try:
+            raw = response.text
+            return {"_raw": raw[:_TOKEN_RESPONSE_RAW_MAX] if raw else ""}
+        except Exception:
+            return {}
+
     def _capture_token_response(self, response: httpx.Response) -> None:
         """Store a redacted snapshot of the token endpoint response for inspection."""
-        try:
-            body = response.json()
-            redacted_body = {k: _redact_token_value(k, v) for k, v in body.items()}
-        except Exception:
-            try:
-                redacted_body = {"_raw": response.text[:_TOKEN_RESPONSE_RAW_MAX] if response.text else ""}
-            except Exception:
-                redacted_body = {}
-
         try:
             resp_headers = {
                 k: v for k, v in response.headers.items()
@@ -365,12 +419,32 @@ class OAuth2Auth(AuthStrategy):
         except Exception:
             status = 0
 
-        self.last_token_response = {
+        self._last_token_response = {
             "status_code": status,
             "headers": resp_headers,
-            "body": redacted_body,
+            "body": self._snapshot_response_body(response),
             "url": url,
             "method": "POST",
+        }
+
+    def _refresh_token_grant_data(self) -> Dict[str, Any]:
+        """Build grant data for the refresh-token flow (RFC 6749 §6)."""
+        data: Dict[str, Any] = {
+            "grant_type": "refresh_token",
+            "refresh_token": self.refresh_token,
+        }
+        if self.client_id:
+            data["client_id"] = self.client_id
+        if self.client_secret:
+            data["client_secret"] = self.client_secret
+        return data
+
+    def _client_credentials_grant_data(self) -> Dict[str, Any]:
+        """Build grant data for the client-credentials flow (RFC 6749 §4.4)."""
+        return {
+            "grant_type": "client_credentials",
+            "client_id": self.client_id,
+            "client_secret": self.client_secret,
         }
 
     def _build_grant_data(self) -> Dict[str, Any]:
@@ -383,31 +457,43 @@ class OAuth2Auth(AuthStrategy):
         """
         if self.refresh_token:
             logger.debug("Refreshing OAuth2 token using refresh token")
-            data: Dict[str, Any] = {
-                "grant_type": "refresh_token",
-                "refresh_token": self.refresh_token,
-            }
-            if self.client_id:
-                data["client_id"] = self.client_id
-            if self.client_secret:
-                data["client_secret"] = self.client_secret
-            # RFC 6749 §6: scope is OPTIONAL on refresh, but many servers honour it.
-            if self.scope:
-                data["scope"] = self.scope
-            return data
-
-        if self.client_id and self.client_secret:
+            data = self._refresh_token_grant_data()
+        elif self.client_id and self.client_secret:
             logger.debug("Refreshing OAuth2 token using client credentials")
-            data = {
-                "grant_type": "client_credentials",
-                "client_id": self.client_id,
-                "client_secret": self.client_secret,
-            }
-            if self.scope:
-                data["scope"] = self.scope
-            return data
+            data = self._client_credentials_grant_data()
+        else:
+            raise AuthError("No refresh token or client credentials configured")
 
-        raise AuthError("No refresh token or client credentials configured")
+        # RFC 6749 §6: scope is OPTIONAL on refresh, but many servers honour it.
+        if self.scope:
+            data["scope"] = self.scope
+        return data
+
+    def _make_token_timeout(self) -> httpx.Timeout:
+        """Return the httpx.Timeout for token endpoint requests.
+
+        The connect timeout is capped independently so that a dead proxy fails
+        fast at TCP level without waiting the full ``token_timeout``.
+        """
+        return httpx.Timeout(
+            connect=min(self.token_timeout, _MAX_CONNECT_TIMEOUT),
+            read=self.token_timeout,
+            write=self.token_timeout,
+            pool=self.token_timeout,
+        )
+
+    def _execute_token_post(self, grant_data: Dict[str, Any]) -> httpx.Response:
+        """Perform a single HTTP POST to the token endpoint.
+
+        Raises:
+            httpx.HTTPStatusError: On a non-2xx response.
+            httpx.TransportError, httpx.TimeoutException: On network failure.
+        """
+        assert self.token_url is not None  # guaranteed by _refresh_access_token guard
+        with httpx.Client(timeout=self._make_token_timeout(), proxy=self._proxy_for_httpx) as client:
+            response = client.post(self.token_url, data=grant_data)
+        response.raise_for_status()
+        return response
 
     def _post_token_request(self, grant_data: Dict[str, Any]) -> httpx.Response:
         """POST grant_data to the token endpoint with retry on transient network errors.
@@ -417,8 +503,7 @@ class OAuth2Auth(AuthStrategy):
         Raises:
             AuthError: After exhausting retries or on HTTP error status.
         """
-        last_exc: Optional[Exception] = None
-        attempts_made = 0
+        assert self.token_url is not None  # guaranteed by _refresh_access_token guard
 
         # Validate token URL with full structural + SSRF checks (scheme,
         # private-IP, metadata-endpoint blocking).  At send-time the URL is
@@ -428,30 +513,17 @@ class OAuth2Auth(AuthStrategy):
         except Exception as exc:
             raise AuthError(f"Invalid token URL: {exc}", details={"token_url": self.token_url})
 
+        last_exc: Optional[Exception] = None
+        attempts_made = 0
+
         for attempt in range(_MAX_TOKEN_RETRIES):
             attempts_made = attempt + 1
+            logger.debug(
+                "Token request to %s (attempt %d/%d, proxy=%s)",
+                self.token_url, attempts_made, _MAX_TOKEN_RETRIES, self._proxy_label,
+            )
             try:
-                logger.debug(
-                    "Token request to %s (attempt %d/%d, proxy=%s)",
-                    self.token_url, attempts_made, _MAX_TOKEN_RETRIES,
-                    self._proxy or "none",
-                )
-                with httpx.Client(
-                    timeout=httpx.Timeout(
-                        # Limit connect time independently — a dead proxy should
-                        # fail fast at TCP level without waiting the full token_timeout.
-                        connect=min(self.token_timeout, _MAX_CONNECT_TIMEOUT),
-                        read=self.token_timeout,
-                        write=self.token_timeout,
-                        pool=self.token_timeout,
-                    ),
-                    proxy=self._proxy or None,
-                ) as client:
-                    response = client.post(
-                        self.token_url,
-                        data=grant_data,
-                    )
-                response.raise_for_status()
+                response = self._execute_token_post(grant_data)
                 logger.debug(
                     "Token request succeeded on attempt %d/%d",
                     attempts_made, _MAX_TOKEN_RETRIES,
@@ -459,9 +531,7 @@ class OAuth2Auth(AuthStrategy):
                 return response
             except httpx.HTTPStatusError as status_exc:
                 error_msg = f"Token endpoint returned HTTP {status_exc.response.status_code}"
-                logger.error(
-                    "%s for %s", error_msg, self.token_url,
-                )
+                logger.error("%s for %s", error_msg, self.token_url)
                 self._audit.log_auth_failure("oauth2", error_msg)
                 raise AuthError(error_msg, details={"token_url": self.token_url})
             except (httpx.TransportError, httpx.TimeoutException) as transient_exc:
@@ -472,26 +542,24 @@ class OAuth2Auth(AuthStrategy):
                     logger.warning(
                         "Token request: connection refused on attempt %d — skipping retries"
                         " (proxy=%s, url=%s): %s",
-                        attempts_made, self._proxy or "none",
-                        self.token_url, transient_exc,
+                        attempts_made, self._proxy_label, self.token_url, transient_exc,
                     )
                     break
-                if attempt < _MAX_TOKEN_RETRIES - 1:
-                    wait_seconds = _RETRY_BACKOFF_BASE ** attempt  # 1 s, 2 s, …
+                is_final = attempt == _MAX_TOKEN_RETRIES - 1
+                wait_seconds = _RETRY_BACKOFF_BASE ** attempt  # 1 s, 2 s, …
+                if is_final:
                     logger.warning(
-                        "Token request failed (attempt %d/%d), retrying in %ds"
-                        " (proxy=%s, url=%s): %s",
-                        attempts_made, _MAX_TOKEN_RETRIES, wait_seconds,
-                        self._proxy or "none", self.token_url, transient_exc,
+                        "Token request failed on final attempt %d/%d (proxy=%s, url=%s): %s",
+                        attempts_made, _MAX_TOKEN_RETRIES,
+                        self._proxy_label, self.token_url, transient_exc,
                     )
-                    time.sleep(wait_seconds)
                 else:
                     logger.warning(
-                        "Token request failed on final attempt %d/%d"
-                        " (proxy=%s, url=%s): %s",
-                        attempts_made, _MAX_TOKEN_RETRIES,
-                        self._proxy or "none", self.token_url, transient_exc,
+                        "Token request failed (attempt %d/%d), retrying in %ds (proxy=%s, url=%s): %s",
+                        attempts_made, _MAX_TOKEN_RETRIES, wait_seconds,
+                        self._proxy_label, self.token_url, transient_exc,
                     )
+                    time.sleep(wait_seconds)
 
         raise AuthError(
             f"Failed to refresh OAuth2 token after {attempts_made} attempt(s): {last_exc}",
@@ -522,31 +590,14 @@ class OAuth2Auth(AuthStrategy):
             raw_access, "OAuth2 access token (from endpoint)"
         )
 
-        # Parse expires_in robustly — servers may return int, float, or
-        # string representations.  Fall back to the default on any error.
-        raw_expires = token_data.get("expires_in")
-        try:
-            expires_in_seconds = int(float(raw_expires)) if raw_expires is not None else _DEFAULT_TOKEN_EXPIRY_SECONDS
-            if expires_in_seconds <= 0:
-                expires_in_seconds = _DEFAULT_TOKEN_EXPIRY_SECONDS
-        except (ValueError, TypeError):
-            logger.warning(
-                "Invalid expires_in value %r, using default %ds",
-                raw_expires, _DEFAULT_TOKEN_EXPIRY_SECONDS,
-            )
-            expires_in_seconds = _DEFAULT_TOKEN_EXPIRY_SECONDS
-
-        self.expires_at = (
-            utc_now()
-            + timedelta(seconds=expires_in_seconds)
-        )
+        expires_in_seconds = self._parse_expires_in(token_data.get("expires_in"))
+        self.expires_at = utc_now() + timedelta(seconds=expires_in_seconds)
         logger.debug("OAuth2 token will expire in %d seconds", expires_in_seconds)
 
         if "refresh_token" in token_data:
-            raw_refresh = token_data["refresh_token"]
             try:
                 self.refresh_token = _validate_credential(
-                    raw_refresh, "OAuth2 refresh token (from endpoint)"
+                    token_data["refresh_token"], "OAuth2 refresh token (from endpoint)"
                 )
             except AuthError:
                 logger.warning(
