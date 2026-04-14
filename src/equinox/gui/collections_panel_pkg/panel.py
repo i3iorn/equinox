@@ -14,7 +14,7 @@ import logging
 from equinox.storage import Database, CollectionManager
 from equinox.gui.widgets.drag_drop_tree import DragDropTree
 from equinox.gui.collections_panel_pkg.actions import _CollectionsActionsMixin
-from equinox.importers.exporters import OpenAPIExporter, PostmanExporter, CurlExporter
+from equinox.exporters import OpenAPIExporter, PostmanExporter, CurlExporter
 from equinox.gui.dialogs.api_spec_dialog import ApiSpecDialog
 import traceback
 
