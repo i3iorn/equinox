@@ -936,7 +936,7 @@ class MainWindow(QMainWindow):
         )
 
     def _export_collection(self, format_type: str) -> None:
-        from equinox.importers.exporters import PostmanExporter, OpenAPIExporter, InsomniaExporter
+        from equinox.exporters import PostmanExporter, OpenAPIExporter, InsomniaExporter
 
         mgr = CollectionManager(self.db)
         collections = mgr.list_collections()
