@@ -31,7 +31,7 @@ def test_index_history_row_expands_placeholders_and_normalizes():
             "query_params": {},
         }
 
-        hm._index_history_row(1, "GET", test_url, 200, b"{}")
+        hm._indexer.index(1, "GET", test_url, 200, b"{}")
 
         # Assert expand_placeholders called with original templated URL
         mock_expand.assert_called_once_with(test_url, None)
