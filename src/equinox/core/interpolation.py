@@ -14,8 +14,8 @@ Example:
     'https://example.com/api'
 
 Security:
-    - Text size limited to 1MB
-    - Expansion ratio limited to 100x
+    - Text size limited to 1 MB
+    - Expansion ratio limited to 200x original length
     - Variable names must match pattern [a-zA-Z0-9_-]+
     - Circular references detected and warned
     - Unresolvable placeholders left unchanged
@@ -54,13 +54,11 @@ class VariableInterpolator:
 
     MAX_ITERATIONS = 10
     MAX_EXPANSION_RATIO = 200
-    MAX_OUTPUT_BYTES = 2 * 1024 * 1024
+    # Hard ceiling on raw input size (checked before any expansion work).
+    MAX_INPUT_BYTES = 1 * 1024 * 1024    # 1 MB
+    # Hard ceiling on output size after variable substitution.
+    MAX_OUTPUT_BYTES = 2 * 1024 * 1024   # 2 MB
 
-    # Minimum expansion budget regardless of input length.
-    # A single {{TOKEN}} placeholder (≈14 bytes) can legitimately expand to a
-    # multi-kilobyte JWT; the ratio check must never set a budget smaller than
-    # this floor.  The absolute MAX_OUTPUT_BYTES is still the real DoS guard.
-    _MIN_EXPANSION_FLOOR_BYTES = 256 * 1024  # 256 KB
 
     @classmethod
     def interpolate(cls, text: str, variables: Dict[str, str], max_iterations: Optional[int] = None) -> str:
@@ -97,14 +95,14 @@ class VariableInterpolator:
         # Validate input size upfront (early exit for large inputs)
         try:
             text_bytes = text.encode(_TEXT_ENCODING)
-            if len(text_bytes) > cls.MAX_OUTPUT_BYTES:
+            if len(text_bytes) > cls.MAX_INPUT_BYTES:
                 logger.warning(
-                    "Input text exceeds maximum size: %d bytes > %d bytes max",
-                    len(text_bytes), cls.MAX_OUTPUT_BYTES,
+                    "Input text exceeds maximum input size: %d bytes > %d bytes max",
+                    len(text_bytes), cls.MAX_INPUT_BYTES,
                 )
                 raise SecurityError(
-                    f"Input text too large ({len(text_bytes)} bytes, "
-                    f"max {cls.MAX_OUTPUT_BYTES} bytes)"
+                    f"Input text too large ({len(text_bytes):,} bytes, "
+                    f"max {cls.MAX_INPUT_BYTES:,} bytes)"
                 )
         except UnicodeEncodeError as e:
             # str.encode() raises UnicodeEncodeError for lone surrogates and
@@ -137,13 +135,11 @@ class VariableInterpolator:
         # ── Interpolation loop ──────────────────────────────────────────────────
         iteration_limit = max_iterations or cls.MAX_ITERATIONS
         original_length = len(text)
-        # Ratio-based limit with a generous floor so that short inputs
-        # (e.g. a single {{TOKEN}} placeholder) aren't given an impossibly
-        # small budget.  MAX_OUTPUT_BYTES is the hard ceiling.
-        expansion_limit = max(
-            original_length * cls.MAX_EXPANSION_RATIO,
-            cls._MIN_EXPANSION_FLOOR_BYTES,
-        )
+        # Ratio-based expansion budget.  MAX_EXPANSION_RATIO=200 is generous
+        # enough for realistic large values (e.g. a JWT from {{ACCESS_TOKEN}}
+        # expands ~149x) while still catching expansion bombs in one or two
+        # substitution passes.  MAX_OUTPUT_BYTES is the hard absolute ceiling.
+        expansion_limit = original_length * cls.MAX_EXPANSION_RATIO
 
         def substitute_variable(match: re.Match) -> str:
             """Replace matched {{variable}} with its value or leave unchanged."""
@@ -171,8 +167,9 @@ class VariableInterpolator:
                     expansion_ratio, len(text), expansion_limit,
                 )
                 raise SecurityError(
-                    f"Variable interpolation output too large: "
-                    f"{len(text)} bytes (limit {expansion_limit} bytes, ratio {expansion_ratio:.1f}x)"
+                    f"Variable interpolation caused excessive text expansion: "
+                    f"{len(text):,} bytes (limit {expansion_limit:,} bytes, "
+                    f"ratio {expansion_ratio:.1f}x)"
                 )
 
             # Double-check absolute size limit — encode once and reuse.
