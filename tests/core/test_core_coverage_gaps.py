@@ -313,17 +313,19 @@ class TestUrls:
         assert result == "https://{{host}}/api"
 
     def test_normalized_parts_stdlib_path(self):
-        """When urlps is unavailable, stdlib urlparse is used."""
-        import equinox.core.urls as urls_mod
-        original = urls_mod._HAS_URLPS
-        try:
-            urls_mod._HAS_URLPS = False
+        """When the urlps parser is replaced with the stdlib parser, output is correct."""
+        from urllib.parse import urlparse
+        from equinox.core.urls import _URLComponents
+
+        def _stdlib(url: str) -> _URLComponents:
+            p = urlparse(url)
+            return _URLComponents(p.scheme, p.netloc, p.path, p.query)
+
+        with patch("equinox.core.urls._parse_url", side_effect=_stdlib):
             result = normalized_parts("https://example.com/users/123?page=1")
-            assert result["scheme"] == "https"
-            assert "{id}" in result["path_segments"]
-            assert result["query_params"]["page"] == "1"
-        finally:
-            urls_mod._HAS_URLPS = original
+        assert result["scheme"] == "https"
+        assert "{id}" in result["path_segments"]
+        assert result["query_params"]["page"] == "1"
 
     def test_normalized_parts_with_uuid_segment(self):
         result = normalized_parts("https://api.example.com/users/550e8400-e29b-41d4-a716-446655440000/profile")
