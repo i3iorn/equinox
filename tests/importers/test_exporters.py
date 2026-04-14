@@ -1,6 +1,6 @@
 ﻿import json, pytest, platform
 from unittest.mock import patch, MagicMock
-from equinox.importers.exporters import (
+from equinox.exporters import (
     CurlExporter, PostmanExporter, OpenAPIExporter, InsomniaExporter, HARExporter,
 )
 from equinox.importers._utils import json_to_dict, write_json_file, parse_url_parts
