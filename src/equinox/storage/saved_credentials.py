@@ -9,7 +9,13 @@ from typing import Any, Dict, List, Optional
 from equinox.storage.database import Database
 from equinox.core.exceptions import StorageError, ValidationError, SecurityError, DuplicateError
 from equinox.core.auth_cipher import encrypt_auth_data, decrypt_auth_data
-from equinox.storage.utils import require_str as _require_str, safe_json_loads, safe_json_dumps
+from equinox.storage.utils import (
+    MAX_NAME_LENGTH,
+    MAX_DESCRIPTION_LENGTH,
+    require_str,
+    safe_json_loads,
+    safe_json_dumps,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -22,6 +28,9 @@ AUTH_TYPE_LABELS: Dict[str, str] = {
     "bearer":    "Bearer Token",
     "aws_sigv4": "AWS SigV4",
 }
+
+# Maximum serialized JSON length for a stored config blob.
+_MAX_CONFIG_JSON_LEN: int = 50_000
 
 
 class SavedCredentialsManager:
@@ -41,8 +50,7 @@ class SavedCredentialsManager:
     bearer:  token
     """
 
-    MAX_NAME_LEN = 200
-    MAX_DESC_LEN = 1000
+    _MAX_COPY_ATTEMPTS = 100
 
     def __init__(self, db: Database) -> None:
         self.db = db
@@ -63,17 +71,10 @@ class SavedCredentialsManager:
             ValidationError: bad input
             StorageError: duplicate name or DB error
         """
-        name        = self._req_str(name, "name", self.MAX_NAME_LEN)
-        description = self._opt_str(description, "description", self.MAX_DESC_LEN)
-        if auth_type not in AUTH_TYPES:
-            raise ValidationError(
-                f"auth_type must be one of: {', '.join(AUTH_TYPES)}"
-            )
-        try:
-            cfg = safe_json_dumps(config or {}, max_len=50_000)
-        except SecurityError as exc:
-            raise ValidationError(f"Credential config too large: {exc}") from exc
-        config_json = encrypt_auth_data(cfg)
+        name        = require_str(name, "name", MAX_NAME_LENGTH)
+        description = require_str(description, "description", MAX_DESCRIPTION_LENGTH, required=False)
+        self._validate_auth_type(auth_type)
+        config_json = self._serialize_config(config or {})
         try:
             row_id = self.db.insert(
                 """
@@ -148,32 +149,26 @@ class SavedCredentialsManager:
         description: Optional[str] = None,
     ) -> None:
         """Partially update a credential.  Only non-None fields are changed."""
-        if not self.get(cred_id):
-            raise StorageError(f"Saved credential {cred_id} not found")
+        self._require_existing(cred_id)
 
         updates: List[str] = []
         params: List[Any] = []
+        validated_name: Optional[str] = None
 
         if name is not None:
+            validated_name = require_str(name, "name", MAX_NAME_LENGTH)
             updates.append("name = ?")
-            params.append(self._req_str(name, "name", self.MAX_NAME_LEN))
+            params.append(validated_name)
         if auth_type is not None:
-            if auth_type not in AUTH_TYPES:
-                raise ValidationError(
-                    f"auth_type must be one of: {', '.join(AUTH_TYPES)}"
-                )
+            self._validate_auth_type(auth_type)
             updates.append("auth_type = ?")
             params.append(auth_type)
         if config is not None:
             updates.append("config = ?")
-            try:
-                cfg = safe_json_dumps(config, max_len=50_000)
-            except SecurityError as exc:
-                raise ValidationError(f"Credential config too large: {exc}") from exc
-            params.append(encrypt_auth_data(cfg))
+            params.append(self._serialize_config(config))
         if description is not None:
             updates.append("description = ?")
-            params.append(self._opt_str(description, "description", self.MAX_DESC_LEN))
+            params.append(require_str(description, "description", MAX_DESCRIPTION_LENGTH, required=False))
 
         if not updates:
             return
@@ -187,7 +182,7 @@ class SavedCredentialsManager:
             )
             logger.info("Updated saved credential id=%d", cred_id)
         except DuplicateError:
-            raise DuplicateError(f"A saved credential named '{name}' already exists")
+            raise DuplicateError(f"A saved credential named '{validated_name}' already exists")
         except Exception as exc:
             raise StorageError(f"Failed to update saved credential: {exc}") from exc
 
@@ -198,8 +193,7 @@ class SavedCredentialsManager:
         is marked as default (which would happen if the app crashed between
         two separate UPDATE statements).
         """
-        if not self.get(cred_id):
-            raise StorageError(f"Saved credential {cred_id} not found")
+        self._require_existing(cred_id)
         self.db.execute(
             "UPDATE saved_credentials SET is_default = CASE WHEN id = ? THEN 1 ELSE 0 END",
             (cred_id,),
@@ -218,27 +212,23 @@ class SavedCredentialsManager:
         If *new_name* is not supplied, a unique "(Copy)" / "(Copy 2)" suffix
         is appended to the source name automatically.
         """
-        source = self.get(cred_id)
-        if not source:
-            logger.warning("Attempted to duplicate non-existent credential id=%d", cred_id)
-            raise StorageError(f"Saved credential {cred_id} not found")
+        source = self._require_existing(cred_id)
 
-        if new_name is None:
-            new_name = self._unique_copy_name(source["name"])
+        resolved_name: str = (
+            new_name if new_name is not None else self._unique_copy_name(source["name"])
+        )
 
         new_id = self.create(
-            name=new_name,
+            name=resolved_name,
             auth_type=source["auth_type"],
             config=source["config"],
             description=source.get("description", ""),
         )
         logger.info(
             "Duplicated saved credential id=%d to new_id=%d (new_name=%s)",
-            cred_id, new_id, new_name,
+            cred_id, new_id, resolved_name,
         )
         return new_id
-
-    _MAX_COPY_ATTEMPTS = 100
 
     def _unique_copy_name(self, base_name: str) -> str:
         """Return a unique 'base_name (Copy)' / 'base_name (Copy 2)' label.
@@ -246,8 +236,8 @@ class SavedCredentialsManager:
         Uses a single SQL query to fetch all matching names, then picks the
         first unused suffix in Python — avoiding up to 101 round-trips.
         """
-        # Escape LIKE metacharacters in the base name so special characters
-        # (%, _, \) in credential names are treated as literals.
+        # Escape LIKE metacharacters so special characters (%, _, \) in
+        # credential names are treated as literals.
         escaped = (
             base_name.replace("\\", "\\\\")
             .replace("%", "\\%")
@@ -274,24 +264,19 @@ class SavedCredentialsManager:
 
     def delete(self, cred_id: int) -> None:
         """Delete a credential by DB id."""
-        existing = self.get(cred_id)
-        if not existing:
-            logger.warning("Attempted to delete non-existent credential id=%d", cred_id)
-            raise StorageError(f"Saved credential {cred_id} not found")
-        # Single delete and a single info log. Earlier implementation contained
-        # duplicate deletes and an unreachable check; simplify to deterministic
-        # behaviour.
+        existing = self._require_existing(cred_id)
         self.db.execute("DELETE FROM saved_credentials WHERE id = ?", (cred_id,))
         logger.info("Deleted saved credential '%s' (id=%d)", existing.get("name"), cred_id)
 
     # ── Auth strategy factory ─────────────────────────────────────────
 
-    def to_auth_strategy(self, row: Dict[str, Any]):
+    def to_auth_strategy(self, row: Dict[str, Any]) -> Any:
         """Build a live auth-strategy object from a saved credential row.
 
         Imports are lazy to avoid circular dependencies.
 
         Raises:
+            ValidationError: If *auth_type* is not recognized.
             StorageError: If the credential config is invalid or incomplete
                 (e.g. empty token/password from a legacy row).
         """
@@ -333,7 +318,7 @@ class SavedCredentialsManager:
                     service=cfg.get("service", "execute-api"),
                     session_token=cfg.get("session_token") or None,
                 )
-        except Exception as exc:
+        except (TypeError, ValueError, KeyError, AttributeError) as exc:
             raise StorageError(
                 f"Saved credential '{row.get('name', '?')}' has invalid config: {exc}"
             ) from exc
@@ -348,11 +333,39 @@ class SavedCredentialsManager:
     delete_credential  = delete
     update_credential  = update
 
-    # ── Helpers ───────────────────────────────────────────────────────
+    # ── Private helpers ───────────────────────────────────────────────
+
+    def _require_existing(self, cred_id: int) -> Dict[str, Any]:
+        """Return the decoded row for *cred_id*, or raise :class:`StorageError`."""
+        row = self.get(cred_id)
+        if not row:
+            raise StorageError(f"Saved credential {cred_id} not found")
+        return row
+
+    @staticmethod
+    def _validate_auth_type(auth_type: str) -> None:
+        """Raise :class:`ValidationError` if *auth_type* is not in :data:`AUTH_TYPES`."""
+        if auth_type not in AUTH_TYPES:
+            raise ValidationError(
+                f"auth_type must be one of: {', '.join(AUTH_TYPES)}"
+            )
+
+    @staticmethod
+    def _serialize_config(config: Dict[str, Any]) -> str:
+        """Serialize and encrypt a config dict for storage.
+
+        Raises:
+            ValidationError: If the serialized JSON exceeds :data:`_MAX_CONFIG_JSON_LEN`.
+        """
+        try:
+            json_str = safe_json_dumps(config, max_len=_MAX_CONFIG_JSON_LEN)
+        except SecurityError as exc:
+            raise ValidationError(f"Credential config too large: {exc}") from exc
+        return encrypt_auth_data(json_str)
 
     @staticmethod
     def _decode(row) -> Dict[str, Any]:
-        d = dict(row)
+        d: Dict[str, Any] = dict(row)  # type: ignore[arg-type]
         raw_config = d.get("config") or "{}"
         try:
             d["config"] = safe_json_loads(decrypt_auth_data(raw_config))
@@ -361,15 +374,10 @@ class SavedCredentialsManager:
             # rather than silently returning an empty config, which would mask a
             # security-relevant event (consistent with CollectionAuthMixin).
             raise
-        except Exception:
-            d["config"] = {}
+        except Exception as exc:
+            # Any other failure (e.g. key-file I/O error, encoding error) is
+            # equally security-relevant — wrap and propagate instead of hiding it.
+            raise StorageError(f"Failed to decode stored credential config: {exc}") from exc
         d["is_default"] = bool(d.get("is_default", 0))
         return d
 
-    @staticmethod
-    def _req_str(value: Any, field: str, max_len: int) -> str:
-        return _require_str(value, field, max_len, required=True)
-
-    @staticmethod
-    def _opt_str(value: Any, field: str, max_len: int) -> str:
-        return _require_str(value, field, max_len, required=False)
