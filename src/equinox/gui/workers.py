@@ -8,10 +8,6 @@ import time
 from datetime import datetime as _dt
 from typing import Optional
 
-# Percentile thresholds used in benchmark result display and export.
-_P95 = 0.95
-_P99 = 0.99
-
 from PyQt6.QtWidgets import (
     QDialog,
     QVBoxLayout,
@@ -37,6 +33,39 @@ from equinox.gui.theme import get_mono_font
 logger = logging.getLogger(__name__)
 
 DEFAULT_TIMEOUT = 30.0
+
+# Percentile thresholds used in benchmark result display and export.
+_P95: float = 0.95
+_P99: float = 0.99
+
+
+# ── Private helpers ───────────────────────────────────────────────────────────
+
+def _percentile(sorted_times: list, p: float) -> float:
+    """Return the *p*-th percentile value from a pre-sorted sequence of timings."""
+    n = len(sorted_times)
+    return sorted_times[max(0, int(n * p) - 1)]
+
+
+def _build_client(
+    request: Request,
+    cookie_manager: Optional[CookieManager],
+    proxy: Optional[str],
+    cancel_event: threading.Event,
+) -> HTTPClient:
+    """Construct an :class:`HTTPClient` from request preferences and run-time context.
+
+    Reads ``timeout``, ``verify_ssl``, and ``follow_redirects`` via ``getattr``
+    so the function degrades gracefully when request objects omit these attrs.
+    """
+    return HTTPClient(
+        cookie_manager=cookie_manager,
+        timeout=getattr(request, "timeout", DEFAULT_TIMEOUT),
+        verify_ssl=getattr(request, "verify_ssl", True),
+        follow_redirects=getattr(request, "follow_redirects", True),
+        proxy=proxy,
+        cancel_event=cancel_event,
+    )
 
 
 class OAuthTokenTester(QThread):
@@ -162,13 +191,8 @@ class RequestWorker(QThread):
                 )
             else:
                 logger.debug("No proxy configured")
-            client = HTTPClient(
-                cookie_manager=self._cookie_manager,
-                timeout=getattr(self.request, "timeout", DEFAULT_TIMEOUT),
-                verify_ssl=getattr(self.request, "verify_ssl", True),
-                follow_redirects=getattr(self.request, "follow_redirects", True),
-                proxy=self._proxy,
-                cancel_event=self._cancel_event,
+            client = _build_client(
+                self.request, self._cookie_manager, self._proxy, self._cancel_event
             )
             response = client.send(self.request)
             if not self._cancelled:
@@ -228,13 +252,8 @@ class BenchmarkWorker(QThread):
         # and gives accurate latency numbers for keep-alive endpoints.
         # Passing cancel_event allows an in-flight request to be aborted
         # immediately when cancel() is called, not just between iterations.
-        client = HTTPClient(
-            cookie_manager=self._cookie_manager,
-            timeout=getattr(self._request, "timeout", DEFAULT_TIMEOUT),
-            verify_ssl=getattr(self._request, "verify_ssl", True),
-            follow_redirects=getattr(self._request, "follow_redirects", True),
-            proxy=self._proxy,
-            cancel_event=self._cancel_event,
+        client = _build_client(
+            self._request, self._cookie_manager, self._proxy, self._cancel_event
         )
 
         for i in range(self._n):
@@ -246,6 +265,9 @@ class BenchmarkWorker(QThread):
                 times.append(time.monotonic() - t0)
             except Exception:
                 errors += 1
+                logger.debug(
+                    "Benchmark iteration %d/%d failed", i + 1, self._n, exc_info=True
+                )
             self.progress.emit(i + 1)
 
         self.finished.emit(times, errors)
@@ -266,6 +288,7 @@ class BenchmarkDialog(QDialog):
         self.setMinimumSize(420, 340)
         self._times: list = []
         self._errors: int = 0
+        self._stats: dict = {}          # populated by _on_finished; read by _export_results
         self._worker: Optional[BenchmarkWorker] = None
         self._was_cancelled = False  # set by _cancel(); read by _on_finished()
         self._init_ui()
@@ -313,6 +336,30 @@ class BenchmarkDialog(QDialog):
         bottom_row.addStretch()
         bottom_row.addWidget(close_btns)
         layout.addLayout(bottom_row)
+
+    # ── Private helpers ───────────────────────────────────────────────────────
+
+    @staticmethod
+    def _compute_stats(times: list, errors: int) -> dict:
+        """Return a stats dict computed from raw benchmark timings.
+
+        All ``*_ms`` values are rounded to 3 decimal places.
+        ``times_ms`` preserves the original iteration order for per-row CSV export.
+        """
+        times_s = sorted(times)
+        n_ok = len(times_s)
+        avg = sum(times_s) / n_ok
+        return {
+            "n_ok":     n_ok,
+            "errors":   errors,
+            "min_ms":   round(times_s[0] * 1000, 3),
+            "avg_ms":   round(avg * 1000, 3),
+            "max_ms":   round(times_s[-1] * 1000, 3),
+            "p95_ms":   round(_percentile(times_s, _P95) * 1000, 3),
+            "p99_ms":   round(_percentile(times_s, _P99) * 1000, 3),
+            # Per-iteration timings in original run order for CSV export:
+            "times_ms": [round(t * 1000, 3) for t in times],
+        }
 
     def _run(self) -> None:
         from PyQt6.QtCore import QSettings
@@ -374,6 +421,7 @@ class BenchmarkDialog(QDialog):
                 # Partial results are still useful — show them and allow export.
                 self._times = times
                 self._errors = errors
+                self._stats = self._compute_stats(times, errors)
                 self._results.setPlainText(msg + "\n\nPartial results below:\n")
                 self._export_btn.setEnabled(True)
             else:
@@ -386,23 +434,19 @@ class BenchmarkDialog(QDialog):
 
         self._times = times
         self._errors = errors
-
-        times_s = sorted(times)
-        n_ok = len(times_s)
-        avg = sum(times_s) / n_ok
-        p95 = times_s[max(0, int(n_ok * _P95) - 1)]
-        p99 = times_s[max(0, int(n_ok * _P99) - 1)]
+        self._stats = self._compute_stats(times, errors)
+        s = self._stats
 
         self._results.setPlainText(
             f"Requests : {n}\n"
-            f"Success  : {n_ok}\n"
-            f"Errors   : {errors}\n"
+            f"Success  : {s['n_ok']}\n"
+            f"Errors   : {s['errors']}\n"
             f"\n"
-            f"Min      : {times_s[0] * 1000:.1f} ms\n"
-            f"Avg      : {avg * 1000:.1f} ms\n"
-            f"Max      : {times_s[-1] * 1000:.1f} ms\n"
-            f"p95      : {p95 * 1000:.1f} ms\n"
-            f"p99      : {p99 * 1000:.1f} ms\n"
+            f"Min      : {s['min_ms']:.1f} ms\n"
+            f"Avg      : {s['avg_ms']:.1f} ms\n"
+            f"Max      : {s['max_ms']:.1f} ms\n"
+            f"p95      : {s['p95_ms']:.1f} ms\n"
+            f"p99      : {s['p99_ms']:.1f} ms\n"
         )
         self._export_btn.setEnabled(True)
 
@@ -431,25 +475,20 @@ class BenchmarkDialog(QDialog):
         if not self._times:
             return
 
-
-        times_ms = [round(t * 1000, 3) for t in self._times]
-        times_s  = sorted(self._times)
-        n_ok     = len(times_s)
-        avg      = sum(times_s) / n_ok
-
+        s = self._stats
         summary = {
-            "url":      self._request.url,
-            "method":   self._request.method,
-            "run_at":   _dt.now().isoformat(timespec="seconds"),
-            "requests": n_ok + self._errors,
-            "success":  n_ok,
-            "errors":   self._errors,
-            "min_ms":   round(times_s[0] * 1000, 3),
-            "avg_ms":   round(avg * 1000, 3),
-            "max_ms":   round(times_s[-1] * 1000, 3),
-            "p95_ms":   round(times_s[max(0, int(n_ok * _P95) - 1)] * 1000, 3),
-            "p99_ms":   round(times_s[max(0, int(n_ok * _P99) - 1)] * 1000, 3),
-            "iterations": times_ms,
+            "url":        self._request.url,
+            "method":     self._request.method,
+            "run_at":     _dt.now().isoformat(timespec="seconds"),
+            "requests":   s["n_ok"] + s["errors"],
+            "success":    s["n_ok"],
+            "errors":     s["errors"],
+            "min_ms":     s["min_ms"],
+            "avg_ms":     s["avg_ms"],
+            "max_ms":     s["max_ms"],
+            "p95_ms":     s["p95_ms"],
+            "p99_ms":     s["p99_ms"],
+            "iterations": s["times_ms"],
         }
 
         path, selected_filter = QFileDialog.getSaveFileName(
@@ -464,7 +503,7 @@ class BenchmarkDialog(QDialog):
                 with open(path, "w", newline="", encoding="utf-8") as f:
                     writer = csv.writer(f)
                     writer.writerow(["iteration", "elapsed_ms"])
-                    for idx, ms in enumerate(times_ms, 1):
+                    for idx, ms in enumerate(s["times_ms"], 1):
                         writer.writerow([idx, ms])
             else:
                 with open(path, "w", encoding="utf-8") as f:
