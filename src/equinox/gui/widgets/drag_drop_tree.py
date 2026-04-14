@@ -1,7 +1,7 @@
 """Drag-and-drop enabled QTreeWidget for the collections panel."""
+from __future__ import annotations
 
 import logging
-from typing import Optional
 
 from PyQt6.QtWidgets import QTreeWidget, QTreeWidgetItem, QAbstractItemView
 from PyQt6.QtCore import pyqtSignal, Qt, QMimeData
@@ -30,14 +30,24 @@ class DragDropTree(QTreeWidget):
         self.setDefaultDropAction(Qt.DropAction.MoveAction)
         self.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
 
+    # ── Private helpers ───────────────────────────────────────────────
+
+    @staticmethod
+    def _node_data(item: QTreeWidgetItem | None) -> dict:
+        """Return the UserRole dict for *item*, or ``{}`` if absent or unset.
+
+        Always returns a ``dict`` so callers can safely call ``.get()``
+        without a None-guard.  An empty dict is falsy, so ``if not data``
+        checks remain valid.
+        """
+        if item is None:
+            return {}
+        return item.data(0, Qt.ItemDataRole.UserRole) or {}
+
     # ── Only request items are draggable ──────────────────────────────
 
-    def _item_data(self, item: Optional[QTreeWidgetItem]) -> Optional[dict]:
-        return item.data(0, Qt.ItemDataRole.UserRole) if item else None
-
     def startDrag(self, supportedActions: Qt.DropAction) -> None:
-        item = self.currentItem()
-        data = self._item_data(item)
+        data = self._node_data(self.currentItem())
         if not data or data.get("type") != "request":
             return  # only requests are draggable
 
@@ -63,14 +73,15 @@ class DragDropTree(QTreeWidget):
 
     def dragMoveEvent(self, event: QDragMoveEvent) -> None:
         target = self.itemAt(event.position().toPoint())
-        tdata = self._item_data(target)
-        if not tdata or tdata.get("type") not in ("collection", "folder", "request"):
+        tdata = self._node_data(target)
+        ttype = tdata.get("type")
+        if ttype not in ("collection", "folder", "request"):
             event.ignore()
             return
 
         # Don't show a "valid drop" cursor when hovering over the item being
         # dragged — it can't be dropped onto itself.
-        if tdata.get("type") == "request":
+        if ttype == "request":
             try:
                 if int(event.mimeData().text()) == tdata.get("id"):
                     event.ignore()
@@ -95,19 +106,24 @@ class DragDropTree(QTreeWidget):
             return
 
         target_item = self.itemAt(event.position().toPoint())
-        tdata = self._item_data(target_item)
+        if target_item is None:
+            event.ignore()
+            return
+        tdata = self._node_data(target_item)
         if not tdata:
             event.ignore()
             return
 
-        # Resolve target collection + folder
         target_type = tdata.get("type")
+        folder: str | None
+
         if target_type == "collection":
-            col_id = tdata.get("id")  # .get() avoids KeyError on malformed data
+            col_id = tdata.get("id")
             folder = None
         elif target_type == "folder":
             col_id = self._col_id_of(target_item)
-            folder = tdata.get("path")
+            raw_path = tdata.get("path")
+            folder = str(raw_path) if raw_path is not None else None
         elif target_type == "request":
             target_req_id = tdata.get("id")
             col_id = self._col_id_of(target_item)
@@ -122,7 +138,7 @@ class DragDropTree(QTreeWidget):
                     "dropEvent: reorder request %s → before %s", request_id, target_req_id
                 )
                 event.acceptProposedAction()
-                self.request_reorder.emit(request_id, target_req_id)
+                self.request_reorder.emit(request_id, int(target_req_id))
                 return
         else:
             event.ignore()
@@ -133,6 +149,14 @@ class DragDropTree(QTreeWidget):
             event.ignore()
             return
 
+        # Validate col_id satisfies the signal's declared int type before emitting.
+        try:
+            col_id = int(col_id)
+        except (TypeError, ValueError):
+            logger.debug("dropEvent: col_id %r is not a valid integer; drop ignored", col_id)
+            event.ignore()
+            return
+
         logger.debug(
             "dropEvent: move request %s → collection %s, folder=%r",
             request_id, col_id, folder,
@@ -140,31 +164,33 @@ class DragDropTree(QTreeWidget):
         event.acceptProposedAction()
         self.request_dropped.emit(request_id, col_id, folder)
 
-    # ── Helpers ───────────────────────────────────────────────────────
+    # ── Tree-walk helpers ─────────────────────────────────────────────
 
     @staticmethod
-    def _col_id_of(item: QTreeWidgetItem) -> Optional[int]:
-        """Walk parent chain to find the enclosing collection ID."""
-        cursor = item
+    def _col_id_of(item: QTreeWidgetItem) -> int | None:
+        """Walk the parent chain to find the enclosing collection's ID."""
+        cursor: QTreeWidgetItem | None = item
         while cursor is not None:
-            d = cursor.data(0, Qt.ItemDataRole.UserRole) or {}
+            d = DragDropTree._node_data(cursor)
             if d.get("type") == "collection":
-                return d.get("id")
+                col_id = d.get("id")
+                return int(col_id) if col_id is not None else None
             cursor = cursor.parent()
         return None
 
     @staticmethod
-    def _folder_of(item: QTreeWidgetItem) -> Optional[str]:
-        """Return the folder path of the item's direct parent (or None for root)."""
+    def _folder_of(item: QTreeWidgetItem) -> str | None:
+        """Return the folder path of the item's direct parent, or None for root."""
         parent = item.parent()
         if parent is None:
             return None
-        pd = parent.data(0, Qt.ItemDataRole.UserRole) or {}
+        pd = DragDropTree._node_data(parent)
         if pd.get("type") == "folder":
-            return pd.get("path")
+            path = pd.get("path")
+            return str(path) if path is not None else None
         return None
 
 
-# Backward-compat alias
+# Backward-compat alias (original internal name)
 _DragDropTree = DragDropTree
 
