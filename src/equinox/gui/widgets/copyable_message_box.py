@@ -1,7 +1,7 @@
 """QMessageBox subclass with a built-in *Copy* button."""
+from __future__ import annotations
 
 import logging
-from typing import Optional
 
 from PyQt6.QtCore import QTimer
 from PyQt6.QtWidgets import QApplication, QMessageBox, QPushButton, QWidget
@@ -34,11 +34,13 @@ class CopyableMessageBox(QMessageBox):
         icon: QMessageBox.Icon,
         title: str,
         text: str,
-        copy_text: Optional[str] = None,
-        parent: Optional[QWidget] = None,
+        copy_text: str | None = None,
+        parent: QWidget | None = None,
     ) -> None:
         super().__init__(icon, title, text, QMessageBox.StandardButton.Ok, parent)
-        self._copy_text = copy_text or text
+        # Explicit None check: an empty-string copy_text means "copy nothing",
+        # not "fall back to the visible message".
+        self._copy_text = copy_text if copy_text is not None else text
         self._copy_btn: QPushButton = self.addButton(
             self._COPY_LABEL, QMessageBox.ButtonRole.ActionRole
         )
@@ -80,38 +82,49 @@ class CopyableMessageBox(QMessageBox):
     def _reset_copy_label(self) -> None:
         self._copy_btn.setText(self._COPY_LABEL)
 
+    @classmethod
+    def _show(
+        cls,
+        icon: QMessageBox.Icon,
+        parent: QWidget | None,
+        title: str,
+        text: str,
+        copy_text: str | None,
+    ) -> int:
+        """Instantiate and execute the dialog with the given *icon*."""
+        return cls(icon, title, text, copy_text, parent).exec()
+
     # ── Convenience class methods (mirror QMessageBox API) ────────────
 
     @classmethod
     def critical(
         cls,
-        parent: Optional[QWidget],
+        parent: QWidget | None,
         title: str,
         text: str,
-        copy_text: Optional[str] = None,
+        copy_text: str | None = None,
     ) -> int:
         """Show a *Critical* dialog with OK + Copy buttons."""
-        return cls(QMessageBox.Icon.Critical, title, text, copy_text, parent).exec()
+        return cls._show(QMessageBox.Icon.Critical, parent, title, text, copy_text)
 
     @classmethod
     def warning(
         cls,
-        parent: Optional[QWidget],
+        parent: QWidget | None,
         title: str,
         text: str,
-        copy_text: Optional[str] = None,
+        copy_text: str | None = None,
     ) -> int:
         """Show a *Warning* dialog with OK + Copy buttons."""
-        return cls(QMessageBox.Icon.Warning, title, text, copy_text, parent).exec()
+        return cls._show(QMessageBox.Icon.Warning, parent, title, text, copy_text)
 
     @classmethod
     def information(
         cls,
-        parent: Optional[QWidget],
+        parent: QWidget | None,
         title: str,
         text: str,
-        copy_text: Optional[str] = None,
+        copy_text: str | None = None,
     ) -> int:
         """Show an *Information* dialog with OK + Copy buttons."""
-        return cls(QMessageBox.Icon.Information, title, text, copy_text, parent).exec()
-
+        return cls._show(QMessageBox.Icon.Information, parent, title, text, copy_text)
