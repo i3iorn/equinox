@@ -5,9 +5,9 @@ import re
 import sqlite3
 import threading
 import logging
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, Dict, Iterator, List, Mapping, Optional, Tuple, Union
-from contextlib import contextmanager
 
 from equinox.core.exceptions import StorageError, ValidationError, DuplicateError
 
@@ -15,7 +15,11 @@ logger = logging.getLogger(__name__)
 
 __all__ = ["Database"]
 
-# Type alias for SQL parameters — either positional (tuple / list) or named (Mapping).
+# ---------------------------------------------------------------------------
+# Type aliases and module-level constants
+# ---------------------------------------------------------------------------
+
+#: Type alias for SQL parameters — positional (tuple/list) or named (Mapping).
 _SqlParams = Union[Tuple[Any, ...], List[Any], Mapping[str, Any]]
 
 _CONNECTION_TIMEOUT_SECONDS = 10.0
@@ -23,12 +27,19 @@ _CONNECTION_TIMEOUT_SECONDS = 10.0
 # Compiled pattern for named SQL placeholders (e.g. ``:user_id``).
 _NAMED_PARAM_RE = re.compile(r":([A-Za-z_][A-Za-z0-9_]*)")
 
+# Shared limits — referenced by both Database and _TransactionHelper via the
+# module-level constants so a single change updates both classes.
+_MAX_QUERY_LENGTH = 10_000
+_MAX_PARAMS       = 100
 
-# ── Module-level SQL validation helpers ──────────────────────────────────────
+
+# ---------------------------------------------------------------------------
+# SQL validation helpers
+# ---------------------------------------------------------------------------
 
 def _outside_string(query: str) -> Iterator[Tuple[int, str]]:
     """Yield ``(index, char)`` for every character outside a single-quoted
-    string literal.  Uses SQL's ``''`` escape convention, not backslash.
+    SQL string literal.  Uses SQL's ``''`` escape convention, not backslash.
     """
     in_string = False
     i = 0
@@ -37,7 +48,7 @@ def _outside_string(query: str) -> Iterator[Tuple[int, str]]:
         c = query[i]
         if c == "'":
             if in_string and i + 1 < n and query[i + 1] == "'":
-                i += 2  # skip escaped ''
+                i += 2   # skip escaped ''
                 continue
             in_string = not in_string
         elif not in_string:
@@ -67,7 +78,7 @@ def _validate_placeholders(query: str, params: _SqlParams) -> None:
         ValidationError: On style mixing, count mismatch, or missing/extra keys.
     """
     has_positional = "?" in query
-    has_named = bool(_NAMED_PARAM_RE.search(query))
+    has_named      = bool(_NAMED_PARAM_RE.search(query))
 
     if has_positional and has_named:
         raise ValidationError("Cannot mix positional and named placeholders")
@@ -81,9 +92,9 @@ def _validate_placeholders(query: str, params: _SqlParams) -> None:
     elif has_named:
         if not isinstance(params, Mapping):
             raise ValidationError("Named placeholders require a mapping (dict-like)")
-        names = _extract_named_placeholders(query)
+        names   = _extract_named_placeholders(query)
         missing = [n for n in names if n not in params]
-        extra = [p for p in params if p not in names]
+        extra   = [p for p in params if p not in names]
         if missing:
             raise ValidationError(f"Missing parameters for placeholders: {missing}")
         if extra:
@@ -92,351 +103,314 @@ def _validate_placeholders(query: str, params: _SqlParams) -> None:
         logger.debug("No placeholders found for query: %.100s", query)
 
 
+def _validate_sql(query: str, params: _SqlParams) -> None:
+    """Validate *query* string and *params* before any execution.
+
+    Shared by :class:`Database` and :class:`_TransactionHelper` so the rules
+    are defined in exactly one place.
+
+    Raises:
+        ValidationError: If any check fails.
+    """
+    if not query or not isinstance(query, str):
+        raise ValidationError("Query must be a non-empty string")
+    if len(query) > _MAX_QUERY_LENGTH:
+        raise ValidationError(
+            f"Query exceeds maximum length of {_MAX_QUERY_LENGTH}"
+        )
+    if isinstance(params, Mapping):
+        if len(params) > _MAX_PARAMS:
+            raise ValidationError(f"Too many parameters (max: {_MAX_PARAMS})")
+    elif isinstance(params, (tuple, list)):
+        if len(params) > _MAX_PARAMS:
+            raise ValidationError(f"Too many parameters (max: {_MAX_PARAMS})")
+    else:
+        raise ValidationError("Query parameters must be a tuple, list, or mapping")
+    _validate_placeholders(query, params)
+
+
+def _run_sqlite(fn, query: str, params: _SqlParams) -> sqlite3.Cursor:
+    """Call *fn(query, params)* and map ``sqlite3`` errors to app exceptions.
+
+    Centralises the error-translation logic that would otherwise be duplicated
+    in every ``execute`` / ``fetchone`` / ``fetchall`` / ``insert`` method.
+
+    Raises:
+        DuplicateError: On UNIQUE constraint violation.
+        StorageError: On any other SQLite or unexpected failure.
+    """
+    try:
+        return fn(query, params)
+    except StorageError:
+        raise
+    except sqlite3.IntegrityError as exc:
+        logger.error("Integrity constraint violated: %s", exc)
+        if "UNIQUE" in str(exc).upper():
+            raise DuplicateError(f"Unique constraint violated: {exc}")
+        raise StorageError(f"Database integrity error: {exc}")
+    except sqlite3.OperationalError as exc:
+        logger.error("Operational error: %s", exc)
+        raise StorageError(f"Database operational error: {exc}")
+    except sqlite3.Error as exc:
+        logger.error("Database error: %s", exc)
+        raise StorageError(f"Database error: {exc}")
+    except Exception as exc:
+        logger.error("Unexpected error during query execution: %s", exc)
+        raise StorageError(f"Query execution failed: {exc}")
+
+
+# ---------------------------------------------------------------------------
+# Database
+# ---------------------------------------------------------------------------
+
 class Database:
     """Secure SQLite database manager.
 
-    Features:
-    - Automatic parameterized queries
-    - SQL injection prevention
-    - Thread-safe operations with a single persistent connection
-    - Comprehensive error handling
+    - Parameterized queries only — no string formatting in SQL.
+    - SQL injection prevention via placeholder validation.
+    - Thread-safe with a single persistent connection and a reentrant lock.
+    - WAL journal mode for concurrent reader/writer access.
+    - Automatic schema migration on ``__init__``.
     """
 
-    MAX_QUERY_LENGTH = 10000
-    MAX_PARAMS = 100
+    # Re-exported for backward compatibility; canonical values are module-level.
+    MAX_QUERY_LENGTH = _MAX_QUERY_LENGTH
+    MAX_PARAMS       = _MAX_PARAMS
 
-    def __init__(self, db_path: str = "equinox.db"):
-        """Initialize database with path validation and schema migration.
+    def __init__(self, db_path: str = "equinox.db") -> None:
+        """Open (or create) the database and run pending schema migrations.
 
         Args:
-            db_path: Path to SQLite database file
+            db_path: Path to the SQLite database file.
 
         Raises:
-            ValidationError: If db_path is invalid
-            StorageError: If database initialization fails
+            ValidationError: If *db_path* is invalid.
+            StorageError: If the database cannot be opened or migrated.
         """
         self._conn: Optional[sqlite3.Connection] = None
+
         if not db_path or not isinstance(db_path, str):
             raise ValidationError("Database path must be a non-empty string")
-
         try:
             self.db_path = Path(db_path).resolve()
         except Exception as exc:
             raise ValidationError(f"Invalid database path: {exc}")
 
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
-        self.lock = threading.Lock()
+        self._lock = threading.Lock()
 
         logger.info("Initializing database at %s", self.db_path)
-        # Set file-level PRAGMAs (journal_mode, secure_delete) via a temp
-        # connection before opening the persistent one.
-        self._set_database_pragmas()
-        # Open the long-lived connection used by all execute/fetch/insert calls.
+        # WAL mode and secure_delete are database-level settings that persist
+        # across connections, so configure them once on a temporary connection
+        # before opening the long-lived one.
+        self._configure_persistent_pragmas()
         self._conn = self._new_connection()
         self._run_migrations()
+
+    # ── Connection management ─────────────────────────────────────────────────
 
     def _new_connection(self) -> sqlite3.Connection:
         """Create, configure, and return a new SQLite connection.
 
-        Uses ``isolation_level=None`` (full manual / autocommit mode) so that
-        Python's DB-API does not silently inject ``BEGIN`` statements, giving
-        us explicit control over transaction boundaries.
+        ``isolation_level=None`` (autocommit) prevents Python's DB-API from
+        injecting implicit ``BEGIN`` statements; transactions are fully explicit.
         """
         conn = sqlite3.connect(
             str(self.db_path),
             check_same_thread=False,
             timeout=_CONNECTION_TIMEOUT_SECONDS,
-            isolation_level=None,  # autocommit; transactions managed explicitly
+            isolation_level=None,
         )
         conn.row_factory = sqlite3.Row
         conn.execute("PRAGMA foreign_keys = ON")
         return conn
 
-    def _set_database_pragmas(self) -> None:
-        """Set persistent database-level PRAGMAs once at startup.
+    def _configure_persistent_pragmas(self) -> None:
+        """Set database-level PRAGMAs that persist across connections.
 
-        ``journal_mode`` and ``secure_delete`` persist across connections,
-        so they only need to be set once per database file.
+        ``journal_mode=WAL`` and ``secure_delete=ON`` only need to be applied
+        once per database file, so a short-lived connection is used here rather
+        than waiting for the persistent one.
         """
         try:
             conn = sqlite3.connect(self.db_path, timeout=_CONNECTION_TIMEOUT_SECONDS)
         except sqlite3.Error as exc:
-            raise StorageError(f"Cannot open database to configure PRAGMAs: {exc}") from exc
+            raise StorageError(
+                f"Cannot open database to configure PRAGMAs: {exc}"
+            ) from exc
         try:
-            logger.debug("Setting database PRAGMAs: journal_mode=WAL, secure_delete=ON")
+            logger.debug("Configuring PRAGMAs: journal_mode=WAL, secure_delete=ON")
             conn.execute("PRAGMA journal_mode = WAL")
             conn.execute("PRAGMA secure_delete = ON")
-            logger.debug("Database PRAGMAs configured successfully")
         except sqlite3.Error as exc:
-            raise StorageError(f"Failed to set database PRAGMAs: {exc}") from exc
+            raise StorageError(f"Failed to configure database PRAGMAs: {exc}") from exc
         finally:
             conn.close()
 
     def _run_migrations(self) -> None:
-        """Run all pending schema migrations on startup.
+        """Run all pending schema migrations via :class:`MigrationRunner`.
 
-        Uses the :class:`~equinox.storage.migrations.MigrationRunner` so the
-        schema is always up-to-date without manual intervention.
+        Triggered automatically in ``__init__`` — no manual call needed.
 
         Raises:
             StorageError: If any migration fails.
         """
-        from equinox.storage.migrations import MigrationRunner  # local import avoids circulars
-        runner = MigrationRunner(self)
+        from equinox.storage.migrations import MigrationRunner  # avoid circular import
         try:
-            version = runner.run()
+            version = MigrationRunner(self).run()
             logger.info("Database schema at version %d", version)
         except Exception as exc:
             raise StorageError(f"Failed to run database migrations: {exc}") from exc
 
-    def _init_schema(self) -> None:  # pragma: no cover
-        """Deprecated — use _run_migrations."""
-        self._run_migrations()
+    def _require_conn(self) -> sqlite3.Connection:
+        """Return the live connection, or raise ``StorageError`` if closed.
+
+        Must be called while ``self._lock`` is held.
+        """
+        conn = getattr(self, "_conn", None)
+        if conn is None:
+            raise StorageError("Database connection is closed")
+        return conn
+
+    # ── Backward-compatible public attribute ──────────────────────────────────
+
+    @property
+    def lock(self) -> threading.Lock:
+        """The database mutex.
+
+        Exposed for callers that need to hold the lock across multiple
+        operations (e.g. migration runners).  Prefer :meth:`transaction`
+        for all normal multi-statement work.
+        """
+        return self._lock
+
+    # ── Context managers ──────────────────────────────────────────────────────
 
     @contextmanager
     def get_connection(self):
-        """Context manager that yields the persistent database connection.
+        """Yield the persistent connection under the database lock.
 
-        The connection is long-lived and must **not** be closed by the caller.
-        Acquires the database lock for the duration of the context so callers
-        can safely read or write without racing other threads.
+        Low-level escape hatch — prefer the typed helpers
+        (``execute``, ``fetchone``, ``fetchall``, ``insert``, ``transaction``)
+        for all normal usage.  The connection **must not** be closed by the caller.
 
         Raises:
-            StorageError: If the persistent connection is unavailable.
+            StorageError: If the connection is unavailable.
         """
-        with self.lock:
-            if getattr(self, "_conn", None) is None:
-                self._conn = self._new_connection()
-            yield self._conn
+        with self._lock:
+            yield self._require_conn()
 
     @contextmanager
     def transaction(self):
-        """Context manager for multi-statement transactions.
+        """Context manager for multi-statement atomic transactions.
 
-        All statements executed via the yielded helper run on the **same**
-        persistent connection inside a single ``BEGIN … COMMIT`` block.
-        If an exception occurs the transaction is rolled back.
+        All statements executed on the yielded :class:`_TransactionHelper` run
+        inside a single ``BEGIN … COMMIT`` block on the persistent connection.
+        Any exception triggers an automatic ``ROLLBACK``.
 
         Usage::
 
             with db.transaction() as tx:
                 tx.execute("INSERT INTO ...", (...))
-                tx.execute("INSERT INTO ...", (...))
-            # COMMIT happens automatically on clean exit
+                tx.execute("UPDATE  ...", (...))
+            # COMMIT on clean exit; ROLLBACK on exception
 
         Yields:
-            A :class:`_TransactionHelper` with ``execute``, ``executemany``,
-            ``fetchone``, ``fetchall``, and ``insert`` methods.
+            :class:`_TransactionHelper`
         """
-        with self.lock:
+        with self._lock:
+            conn = self._require_conn()
             logger.debug("Starting database transaction")
-            if getattr(self, "_conn", None) is None:
-                self._conn = self._new_connection()
-            conn = self._conn
             conn.execute("BEGIN")
             try:
                 yield _TransactionHelper(conn)
                 conn.execute("COMMIT")
-                logger.debug("Transaction committed successfully")
+                logger.debug("Transaction committed")
             except Exception as exc:
-                logger.warning("Transaction failed, rolling back: %s", exc, exc_info=False)
+                logger.warning("Transaction rolling back: %s", exc, exc_info=False)
                 try:
                     conn.execute("ROLLBACK")
                     logger.debug("Transaction rolled back")
-                except Exception as rollback_exc:
-                    logger.error("Failed to rollback transaction: %s", rollback_exc, exc_info=False)
+                except Exception as rb_exc:
+                    logger.error("Rollback failed: %s", rb_exc, exc_info=False)
                 raise
 
-    def _get_conn(self) -> sqlite3.Connection:
-        """Return the live connection, or raise ``StorageError`` if the database is closed.
-
-        Must be called while ``self.lock`` is held.
-        """
-        if getattr(self, "_conn", None) is None:
-            raise StorageError("Database connection is closed")
-        return self._conn
-
-    def _validate_query(self, query: str, params: _SqlParams) -> None:
-        """Validate query and parameters before execution.
-
-        Args:
-            query: SQL query
-            params: Query parameters
-
-        Raises:
-            ValidationError: If validation fails
-        """
-        if not query or not isinstance(query, str):
-            raise ValidationError("Query must be a non-empty string")
-        if len(query) > self.MAX_QUERY_LENGTH:
-            raise ValidationError(f"Query exceeds maximum length of {self.MAX_QUERY_LENGTH}")
-        # Accept mapping parameters for named placeholders and sequence for
-        # positional placeholders.
-        has_named = bool(_NAMED_PARAM_RE.search(query))
-        if has_named:
-            if not isinstance(params, Mapping):
-                raise ValidationError("Named placeholders require a mapping (dict-like)")
-            if len(params) > self.MAX_PARAMS:
-                raise ValidationError(f"Too many parameters (max: {self.MAX_PARAMS})")
-        else:
-            if not isinstance(params, (tuple, list)):
-                raise ValidationError("Query parameters must be a tuple or list")
-            if len(params) > self.MAX_PARAMS:
-                raise ValidationError(f"Too many parameters (max: {self.MAX_PARAMS})")
-
-        _validate_placeholders(query, params)
+    # ── Query helpers ─────────────────────────────────────────────────────────
 
     def execute(self, query: str, params: _SqlParams = ()) -> sqlite3.Cursor:
-        """Execute a query safely with validation.
-
-        Args:
-            query: SQL query with ? placeholders
-            params: Query parameters (must match placeholder count)
-
-        Returns:
-            Cursor object
+        """Execute a write (or DDL) statement and return the cursor.
 
         Raises:
-            ValidationError: If query/params are invalid
-            StorageError: If execution fails or the connection is closed
+            ValidationError: If *query* or *params* are invalid.
+            DuplicateError: On UNIQUE constraint violation.
+            StorageError: On any other failure.
         """
-        self._validate_query(query, params)
-
-        try:
-            with self.lock:
-                return self._get_conn().execute(query, params)
-        except StorageError:
-            raise
-        except sqlite3.IntegrityError as exc:
-            logger.error("Integrity error: %s", exc)
-            msg = str(exc)
-            if "UNIQUE" in msg.upper():
-                raise DuplicateError(f"Database unique constraint violated: {exc}")
-            raise StorageError(f"Database integrity error: {exc}")
-        except sqlite3.OperationalError as exc:
-            logger.error("Operational error: %s", exc)
-            raise StorageError(f"Database operational error: {exc}")
-        except sqlite3.Error as exc:
-            logger.error("Database error: %s", exc)
-            raise StorageError(f"Database error: {exc}")
-        except Exception as exc:
-            logger.error("Unexpected error during query execution: %s", exc)
-            raise StorageError(f"Query execution failed: {exc}")
+        _validate_sql(query, params)
+        with self._lock:
+            return _run_sqlite(self._require_conn().execute, query, params)
 
     def fetchone(self, query: str, params: _SqlParams = ()) -> Optional[Dict[str, Any]]:
-        """Fetch one row safely.
-
-        Args:
-            query: SQL query with ? placeholders
-            params: Query parameters
-
-        Returns:
-            Row as dictionary or None
+        """Fetch a single row and return it as a ``dict``, or ``None``.
 
         Raises:
-            ValidationError: If query/params are invalid
-            StorageError: If query fails or the connection is closed
+            ValidationError: If *query* or *params* are invalid.
+            StorageError: On failure.
         """
-        self._validate_query(query, params)
-
-        try:
-            with self.lock:
-                cursor = self._get_conn().execute(query, params)
-                row = cursor.fetchone()
-                return dict(row) if row else None
-        except StorageError:
-            raise
-        except sqlite3.Error as exc:
-            logger.error("Database error in fetchone: %s", exc)
-            raise StorageError(f"Failed to fetch row: {exc}")
+        _validate_sql(query, params)
+        with self._lock:
+            cursor = _run_sqlite(self._require_conn().execute, query, params)
+            row = cursor.fetchone()
+            return dict(row) if row else None
 
     def fetchall(self, query: str, params: _SqlParams = ()) -> List[Dict[str, Any]]:
-        """Fetch all rows safely.
-
-        Args:
-            query: SQL query with ? placeholders
-            params: Query parameters
-
-        Returns:
-            List of rows as dictionaries
+        """Fetch all rows and return them as a ``list`` of ``dict``.
 
         Raises:
-            ValidationError: If query/params are invalid
-            StorageError: If query fails or the connection is closed
+            ValidationError: If *query* or *params* are invalid.
+            StorageError: On failure.
         """
-        self._validate_query(query, params)
-
-        try:
-            with self.lock:
-                cursor = self._get_conn().execute(query, params)
-                rows = cursor.fetchall()
-                return [dict(row) for row in rows]
-        except StorageError:
-            raise
-        except sqlite3.Error as exc:
-            logger.error("Database error in fetchall: %s", exc)
-            raise StorageError(f"Failed to fetch rows: {exc}")
+        _validate_sql(query, params)
+        with self._lock:
+            cursor = _run_sqlite(self._require_conn().execute, query, params)
+            return [dict(row) for row in cursor.fetchall()]
 
     def insert(self, query: str, params: _SqlParams = ()) -> int:
-        """Insert a row and return its ID safely.
-
-        Args:
-            query: SQL insert query with ? placeholders
-            params: Query parameters
-
-        Returns:
-            Last inserted row ID
+        """Execute an INSERT and return the new row's ID.
 
         Raises:
-            ValidationError: If query/params are invalid
-            StorageError: If insert fails or the connection is closed
+            ValidationError: If *query* or *params* are invalid, or the
+                statement is not an INSERT.
+            DuplicateError: On UNIQUE constraint violation.
+            StorageError: On any other failure.
         """
-        self._validate_query(query, params)
-
-        if not query.lstrip().upper().startswith('INSERT'):
+        _validate_sql(query, params)
+        if not query.lstrip().upper().startswith("INSERT"):
             raise ValidationError("Query must be an INSERT statement")
+        with self._lock:
+            cursor = _run_sqlite(self._require_conn().execute, query, params)
+            return cursor.lastrowid
 
-        try:
-            with self.lock:
-                cursor = self._get_conn().execute(query, params)
-                return cursor.lastrowid
-        except StorageError:
-            raise
-        except sqlite3.IntegrityError as exc:
-            logger.error("Integrity error during insert: %s", exc)
-            msg = str(exc)
-            if "UNIQUE" in msg.upper():
-                raise DuplicateError(f"Failed to insert row (unique constraint): {exc}")
-            raise StorageError(f"Failed to insert row (integrity constraint): {exc}")
-        except sqlite3.Error as exc:
-            logger.error("Database error during insert: %s", exc)
-            raise StorageError(f"Failed to insert row: {exc}")
-        except Exception as exc:
-            logger.error("Unexpected error during insert: %s", exc)
-            raise StorageError(f"Failed to insert row: {exc}")
+    # ── Lifecycle ─────────────────────────────────────────────────────────────
 
     def close(self) -> None:
         """Close the persistent database connection."""
-        with self.lock:
-            if self._conn is not None:
+        with self._lock:
+            conn = self._conn
+            if conn is not None:
                 try:
-                    self._conn.close()
+                    conn.close()
                 except Exception as exc:
-                    logger.debug("Error closing persistent connection: %s", exc, exc_info=False)
+                    logger.debug("Error closing connection: %s", exc, exc_info=False)
                 finally:
                     self._conn = None
 
     def __del__(self) -> None:
-        """Last-resort GC safety net — close the connection if the caller forgot.
+        """GC safety net — suppress ``ResourceWarning: unclosed database``.
 
-        Suppresses the ``ResourceWarning: unclosed database`` that Python emits
-        when a ``sqlite3.Connection`` is garbage-collected while still open.
-        Must never raise, because exceptions from ``__del__`` are silently
-        ignored by the interpreter (and may hide the real error).
+        Must never raise.  The lock is intentionally bypassed because ``__del__``
+        may run during interpreter shutdown when locks can deadlock.
         """
         try:
-            # Avoid acquiring the lock here: __del__ may run during interpreter
-            # shutdown when locks can deadlock.  Directly close if still open.
             conn = getattr(self, "_conn", None)
             if conn is not None:
                 conn.close()
@@ -444,25 +418,26 @@ class Database:
         except Exception:  # noqa: BLE001
             pass
 
-    # ── Context-manager support ───────────────────────────────────────────────
-
     def __enter__(self) -> "Database":
         """Return *self* so ``with Database(...) as db:`` works."""
         return self
 
     def __exit__(self, exc_type, exc_val, exc_tb) -> None:
-        """Close the connection on context exit (clean or exceptional)."""
+        """Close on context exit (clean or exceptional)."""
         self.close()
 
+
+# ---------------------------------------------------------------------------
+# _TransactionHelper
+# ---------------------------------------------------------------------------
 
 class _TransactionHelper:
     """Thin wrapper around a ``sqlite3.Connection`` for use inside
     :meth:`Database.transaction`.
 
-    All methods execute on the **same** connection so they participate in
-    the enclosing transaction.  Basic query validation mirrors
-    :meth:`Database._validate_query` to prevent accidental SQL injection
-    even within a transaction context.
+    All methods execute on the same connection and therefore participate in
+    the enclosing ``BEGIN … COMMIT`` block.  Validation mirrors
+    :func:`_validate_sql` so injection protection is always active.
     """
 
     __slots__ = ("_conn",)
@@ -470,52 +445,44 @@ class _TransactionHelper:
     def __init__(self, conn: sqlite3.Connection) -> None:
         self._conn = conn
 
-    @staticmethod
-    def _validate(query: str, params: _SqlParams) -> None:
-        """Validate query and parameters before execution."""
-        if not query or not isinstance(query, str):
-            raise ValidationError("Query must be a non-empty string")
-        if len(query) > Database.MAX_QUERY_LENGTH:
-            raise ValidationError(
-                f"Query exceeds maximum length of {Database.MAX_QUERY_LENGTH}"
-            )
-        if len(params) > Database.MAX_PARAMS:
-            raise ValidationError(f"Too many parameters (max: {Database.MAX_PARAMS})")
-        _validate_placeholders(query, params)
-
     def execute(self, query: str, params: _SqlParams = ()) -> sqlite3.Cursor:
-        """Execute a query and return the cursor."""
-        self._validate(query, params)
-        return self._conn.execute(query, params)
+        """Execute a statement and return the cursor."""
+        _validate_sql(query, params)
+        return _run_sqlite(self._conn.execute, query, params)
 
     def executemany(self, query: str, seq_of_params) -> sqlite3.Cursor:
-        """Execute a query against all parameter sequences."""
+        """Execute a statement against each item in *seq_of_params*."""
         if not query or not isinstance(query, str):
             raise ValidationError("Query must be a non-empty string")
-        if len(query) > Database.MAX_QUERY_LENGTH:
+        if len(query) > _MAX_QUERY_LENGTH:
             raise ValidationError(
-                f"Query exceeds maximum length of {Database.MAX_QUERY_LENGTH}"
+                f"Query exceeds maximum length of {_MAX_QUERY_LENGTH}"
             )
         return self._conn.executemany(query, seq_of_params)
 
     def fetchone(self, query: str, params: _SqlParams = ()) -> Optional[Dict[str, Any]]:
-        """Execute a query and return a single row as a dict, or None."""
-        self._validate(query, params)
-        cursor = self._conn.execute(query, params)
+        """Execute a query and return a single row as a ``dict``, or ``None``."""
+        _validate_sql(query, params)
+        cursor = _run_sqlite(self._conn.execute, query, params)
         row = cursor.fetchone()
         return dict(row) if row else None
 
     def fetchall(self, query: str, params: _SqlParams = ()) -> List[Dict[str, Any]]:
-        """Execute a query and return all rows as dicts."""
-        self._validate(query, params)
-        cursor = self._conn.execute(query, params)
+        """Execute a query and return all rows as ``dict``."""
+        _validate_sql(query, params)
+        cursor = _run_sqlite(self._conn.execute, query, params)
         return [dict(r) for r in cursor.fetchall()]
 
     def insert(self, query: str, params: _SqlParams = ()) -> int:
-        """Execute an INSERT and return the last row id."""
-        self._validate(query, params)
-        if not query.lstrip().upper().startswith('INSERT'):
+        """Execute an INSERT and return the last row id.
+
+        Raises:
+            ValidationError: If the statement is not an INSERT.
+            DuplicateError: On UNIQUE constraint violation.
+        """
+        _validate_sql(query, params)
+        if not query.lstrip().upper().startswith("INSERT"):
             raise ValidationError("Query must be an INSERT statement")
-        cursor = self._conn.execute(query, params)
+        cursor = _run_sqlite(self._conn.execute, query, params)
         return cursor.lastrowid
 
