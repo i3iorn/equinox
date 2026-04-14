@@ -1,10 +1,34 @@
 """Auto-growing key-value table widget."""
 
-from typing import Dict
+from contextlib import contextmanager
+from typing import Optional
 
-from PyQt6.QtWidgets import QTableWidget, QTableWidgetItem, QHeaderView
-from PyQt6.QtCore import pyqtSignal
+from PyQt6.QtCore import QObject, pyqtSignal
+from PyQt6.QtWidgets import QHeaderView, QTableWidget, QTableWidgetItem, QWidget
 
+# ---------------------------------------------------------------------------
+# Module-level helpers
+# ---------------------------------------------------------------------------
+
+@contextmanager
+def _blocked(obj: QObject):
+    """Block Qt signals on *obj* for the duration of the ``with`` block.
+
+    Saves and restores the previous blocked state so this helper is safe to
+    call from inside an already-blocked context without accidentally re-enabling
+    signals on exit.
+    """
+    was_blocked = obj.signalsBlocked()
+    obj.blockSignals(True)
+    try:
+        yield
+    finally:
+        obj.blockSignals(was_blocked)
+
+
+# ---------------------------------------------------------------------------
+# Widget
+# ---------------------------------------------------------------------------
 
 class KeyValueTable(QTableWidget):
     """QTableWidget for key-value pairs that adds an empty row automatically
@@ -17,70 +41,86 @@ class KeyValueTable(QTableWidget):
         Not emitted during bulk operations (``set_data``, ``reset``).
     """
 
+    # Column indices — centralised so subclasses and callers never use magic numbers.
+    _COL_KEY:   int = 0
+    _COL_VALUE: int = 1
+    _COL_COUNT: int = 2
+
     data_changed = pyqtSignal()
 
-    def __init__(self, parent=None):
+    def __init__(self, parent: Optional[QWidget] = None) -> None:
         super().__init__(parent)
-        self.setColumnCount(2)
+        self.setColumnCount(self._COL_COUNT)
         self.setHorizontalHeaderLabels(["Key", "Value"])
-        self.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Interactive)
-        self.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
+        self.horizontalHeader().setSectionResizeMode(self._COL_KEY,   QHeaderView.ResizeMode.Interactive)
+        self.horizontalHeader().setSectionResizeMode(self._COL_VALUE, QHeaderView.ResizeMode.Stretch)
         self.verticalHeader().setVisible(False)
         self.setAlternatingRowColors(True)
         self.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
         self._add_empty_row()
         self.itemChanged.connect(self._on_item_changed)
 
-    def _add_empty_row(self) -> None:
-        """Append a trailing empty sentinel row.
+    # ------------------------------------------------------------------
+    # Private helpers
+    # ------------------------------------------------------------------
 
-        Internally blocks signals (save/restore) so the two ``setItem`` calls
-        do not trigger ``_on_item_changed`` or ``data_changed``.  Safe whether
-        or not the caller has already blocked signals.
+    def _append_row(self, key: str, value: str) -> None:
+        """Insert a single row at the bottom of the table.
+
+        Does **not** manage signals — must be called from within a
+        ``_blocked(self)`` context.
         """
         row = self.rowCount()
-        was_blocked = self.signalsBlocked()
-        self.blockSignals(True)
-        try:
-            self.insertRow(row)
-            self.setItem(row, 0, QTableWidgetItem(""))
-            self.setItem(row, 1, QTableWidgetItem(""))
-        finally:
-            self.blockSignals(was_blocked)
+        self.insertRow(row)
+        self.setItem(row, self._COL_KEY,   QTableWidgetItem(key))
+        self.setItem(row, self._COL_VALUE, QTableWidgetItem(value))
+
+    def _add_empty_row(self) -> None:
+        """Append the trailing empty sentinel row (signals are blocked internally)."""
+        with _blocked(self):
+            self._append_row("", "")
 
     def _on_item_changed(self, item: QTableWidgetItem) -> None:
         if item.row() == self.rowCount() - 1 and item.text().strip():
             self._add_empty_row()
         self.data_changed.emit()
 
-    def get_data(self) -> Dict[str, str]:
-        data: Dict[str, str] = {}
+    # ------------------------------------------------------------------
+    # Public API
+    # ------------------------------------------------------------------
+
+    def get_data(self) -> dict[str, str]:
+        """Return all non-empty key-value pairs as a plain dictionary.
+
+        Keys are stripped of surrounding whitespace (which is never meaningful
+        for HTTP header names or query parameters).  Value whitespace is
+        preserved — a value like ``" Bearer token"`` is intentional.
+        """
+        data: dict[str, str] = {}
         for row in range(self.rowCount()):
-            key_item = self.item(row, 0)
-            value_item = self.item(row, 1)
-            if key_item and value_item and key_item.text().strip():
-                # Strip keys (whitespace there is never meaningful) but preserve
-                # value whitespace — a value like " Bearer token" is intentional.
-                data[key_item.text().strip()] = value_item.text()
+            key_item   = self.item(row, self._COL_KEY)
+            value_item = self.item(row, self._COL_VALUE)
+            if key_item and value_item:
+                key = key_item.text().strip()
+                if key:
+                    data[key] = value_item.text()
         return data
 
-    def set_data(self, data: Dict[str, str]) -> None:
-        self.blockSignals(True)
-        try:
+    def set_data(self, data: dict[str, str]) -> None:
+        """Replace the table contents with *data*, then append an empty sentinel row.
+
+        Signals are blocked for the entire operation; ``data_changed`` is **not**
+        emitted.
+        """
+        with _blocked(self):
             self.setRowCount(0)
             for key, value in data.items():
-                row = self.rowCount()
-                self.insertRow(row)
-                self.setItem(row, 0, QTableWidgetItem(str(key)))
-                self.setItem(row, 1, QTableWidgetItem(str(value)))
-            self._add_empty_row()
-        finally:
-            self.blockSignals(False)
+                self._append_row(str(key), str(value))
+            self._append_row("", "")
 
     def reset(self) -> None:
-        self.blockSignals(True)
-        try:
-            self.setRowCount(0)
-            self._add_empty_row()
-        finally:
-            self.blockSignals(False)
+        """Clear all rows and restore a single empty sentinel row.
+
+        Equivalent to ``set_data({})``.  ``data_changed`` is **not** emitted.
+        """
+        self.set_data({})
