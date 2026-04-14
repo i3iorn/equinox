@@ -25,7 +25,7 @@ from equinox.storage.cookies import CookieJarManager
 from equinox.gui.request_panel import RequestPanel
 from equinox.gui.response_panel import ResponsePanel
 from equinox.gui.theme import (
-    Colors, get_font_size, set_font_size, MIN_FONT_SIZE, MAX_FONT_SIZE,
+    Colors, get_font_size, set_font_size,
     DEFAULT_FONT_SIZE, get_theme_mode, set_theme_mode, THEME_MODES, THEME_LABELS,
 )
 
@@ -47,6 +47,14 @@ _MIN_RESP_H         = 120
 _MIN_LEFT_W         = 180
 _SPLITTER_HANDLE_W  = 5
 _STATUS_TIMEOUT_MS  = 10_000
+
+# QSettings keys — defined once, shared between _save_layout and _restore_layout.
+_KEY_GEOMETRY       = "window/geometry"
+_KEY_WIN_STATE      = "window/state"
+_KEY_MAIN_SPLIT     = "splitter/main"
+_KEY_REQRESP_SPLIT  = "splitter/req_resp"
+_KEY_LEFT_TAB       = "left_tabs/index"
+_KEY_INTEL_DISABLED = "intelligence/disabled_analyzers"
 
 
 class MainWindow(QMainWindow):
@@ -76,15 +84,15 @@ class MainWindow(QMainWindow):
 
     def _restore_layout(self) -> None:
         """Restore window geometry and splitter sizes from QSettings."""
-        geo = self._settings.value("window/geometry")
+        geo = self._settings.value(_KEY_GEOMETRY)
         if isinstance(geo, QByteArray):
             self.restoreGeometry(geo)
             logger.debug("Restored window geometry")
-        state = self._settings.value("window/state")
+        state = self._settings.value(_KEY_WIN_STATE)
         if isinstance(state, QByteArray):
             self.restoreState(state)
             logger.debug("Restored window state")
-        ms = self._settings.value("splitter/main")
+        ms = self._settings.value(_KEY_MAIN_SPLIT)
         if ms is not None:
             try:
                 sizes = [int(x) for x in ms]
@@ -94,7 +102,7 @@ class MainWindow(QMainWindow):
                 logger.debug("Failed to restore main splitter sizes: %s", e, exc_info=True)
         else:
             logger.debug("No saved main splitter sizes found in QSettings")
-        rs = self._settings.value("splitter/req_resp")
+        rs = self._settings.value(_KEY_REQRESP_SPLIT)
         if rs is not None:
             try:
                 sizes = [int(x) for x in rs]
@@ -104,7 +112,7 @@ class MainWindow(QMainWindow):
                 logger.debug("Failed to restore req/resp splitter sizes: %s", e, exc_info=True)
         else:
             logger.debug("No saved req/resp splitter sizes found in QSettings")
-        tab_idx = self._settings.value("left_tabs/index", 0, type=int)
+        tab_idx = self._settings.value(_KEY_LEFT_TAB, 0, type=int)
         # Block signals so setCurrentIndex doesn't fire _ensure_tab_initialized
         # synchronously during __init__ — defer to the first event-loop iteration
         # so the window is fully constructed before any panel DB queries run.
@@ -117,18 +125,18 @@ class MainWindow(QMainWindow):
     def _save_layout(self) -> None:
         """Persist window geometry and splitter sizes."""
         try:
-            self._settings.setValue("window/geometry", self.saveGeometry())
+            self._settings.setValue(_KEY_GEOMETRY, self.saveGeometry())
             logger.debug("Saved window geometry")
-            self._settings.setValue("window/state", self.saveState())
+            self._settings.setValue(_KEY_WIN_STATE, self.saveState())
             logger.debug("Saved window state")
             main_sizes = list(self._main_splitter.sizes())
-            self._settings.setValue("splitter/main", main_sizes)
+            self._settings.setValue(_KEY_MAIN_SPLIT, main_sizes)
             logger.debug("Saved main splitter sizes: %s", main_sizes)
             req_resp_sizes = list(self._req_resp_splitter.sizes())
-            self._settings.setValue("splitter/req_resp", req_resp_sizes)
+            self._settings.setValue(_KEY_REQRESP_SPLIT, req_resp_sizes)
             logger.debug("Saved req/resp splitter sizes: %s", req_resp_sizes)
             tab_idx = self._left_tabs.currentIndex()
-            self._settings.setValue("left_tabs/index", tab_idx)
+            self._settings.setValue(_KEY_LEFT_TAB, tab_idx)
             logger.debug("Saved left tabs index: %d", tab_idx)
             self._settings.sync()  # Ensure settings are written to disk
             logger.debug("Layout settings synchronized to disk")
@@ -221,6 +229,24 @@ class MainWindow(QMainWindow):
     # ── Lazy left-panel initialization ────────────────────────────────
 
     _LEFT_TAB_LABELS = ("Collections", "History", "Variables", "Logs", "Cookies", "WebSocket")
+
+    # Keyboard shortcut table — displayed by _show_shortcuts_dialog.
+    _KEYBOARD_SHORTCUTS: list[tuple[str, str]] = [
+        ("Ctrl+N",       "New request (clear editor)"),
+        ("Ctrl+Return",  "Send request"),
+        ("Ctrl+S",       "Save to Collection"),
+        ("Ctrl+,",       "Open Preferences"),
+        ("Ctrl+Q",       "Exit"),
+        ("F5",           "Refresh collections"),
+        ("F1",           "Keyboard Shortcuts (this dialog)"),
+        ("Ctrl+=",       "Zoom in"),
+        ("Ctrl+-",       "Zoom out"),
+        ("Ctrl+0",       "Reset zoom"),
+        ("Ctrl+Shift+F", "Format JSON body"),
+        ("Ctrl+F",       "Find in response body"),
+        ("F2",           "Rename selected collection item"),
+        ("Delete",       "Delete selected collection item"),
+    ]
 
     def _ensure_tab_initialized(self, index: int) -> None:
         """Create the real panel for *index* on first selection; swap the placeholder."""
@@ -402,7 +428,7 @@ class MainWindow(QMainWindow):
 
             # Re-use the already-created QSettings instance; avoid re-parsing
             # JSON on every response.
-            disabled_raw = self._settings.value("intelligence/disabled_analyzers", "[]")
+            disabled_raw = self._settings.value(_KEY_INTEL_DISABLED, "[]")
             try:
                 disabled: set = set(json.loads(disabled_raw)) if disabled_raw else set()
             except Exception:
@@ -434,24 +460,53 @@ class MainWindow(QMainWindow):
     # ── History handlers ──────────────────────────────────────────────
 
     @staticmethod
+    def _coerce_to_dict(value: object, field_name: str) -> dict:
+        """Return *value* as a plain dict, logging and returning ``{}`` on failure.
+
+        Handles ``sqlite3.Row``, mapping-like objects, and any other type that
+        can be coerced with ``dict()``.  Falls back to ``{}`` so callers always
+        receive a safe type.
+        """
+        if isinstance(value, dict):
+            return value
+        try:
+            return dict(value)  # type: ignore[arg-type]
+        except Exception:
+            logger.debug("Could not coerce %s to dict, defaulting to {}", field_name, exc_info=True)
+            return {}
+
+    @staticmethod
+    def _coerce_body_to_bytes(raw: object) -> bytes:
+        """Decode *raw* (str, bytes, or other) to ``bytes`` for Response construction."""
+        if isinstance(raw, bytes):
+            return raw
+        if isinstance(raw, str):
+            return raw.encode("utf-8")
+        try:
+            return str(raw).encode("utf-8")
+        except Exception:
+            return b""
+
+    @staticmethod
+    def _parse_timestamp(value: object) -> Optional[datetime]:
+        """Parse an ISO-8601 string into a ``datetime``, or ``None`` on any failure."""
+        if not value:
+            return None
+        try:
+            return datetime.fromisoformat(str(value))
+        except (TypeError, ValueError):
+            logger.debug("Could not parse timestamp: %s", value)
+            return None
+
+    @staticmethod
     def _request_from_history(entry: dict) -> Request:
         """Build a Request from a history DB row."""
-        # Defensive coercion: stored history rows may contain legacy types
-        headers = entry.get("request_headers") or {}
-        if not isinstance(headers, dict):
-            try:
-                headers = dict(headers)
-            except Exception:
-                logger.debug("_request_from_history: could not coerce headers to dict, defaulting to {}", exc_info=True)
-                headers = {}
-
-        params = entry.get("request_params") or {}
-        if not isinstance(params, dict):
-            try:
-                params = dict(params)
-            except Exception:
-                logger.debug("_request_from_history: could not coerce params to dict, defaulting to {}", exc_info=True)
-                params = {}
+        headers = MainWindow._coerce_to_dict(
+            entry.get("request_headers") or {}, "request_headers"
+        )
+        params = MainWindow._coerce_to_dict(
+            entry.get("request_params") or {}, "request_params"
+        )
 
         body = entry.get("request_body")
         if isinstance(body, bytes):
@@ -474,91 +529,88 @@ class MainWindow(QMainWindow):
         """Fetch a history entry by ID, or None."""
         return HistoryManager(self.db).get_history(history_id)
 
-    def _load_history_entry(self, history_id: int) -> None:
-        # Use guarded operations to avoid crashing the UI when history rows
-        # contain unexpected types or malformed data. Log and surface a
-        # non-fatal error to the user instead of letting an exception bubble.
-        try:
-            self.request_panel.autosave_current()
+    def _fetch_and_load_history(self, history_id: int) -> Optional[tuple[dict, Request]]:
+        """Autosave, fetch, build, and load a history entry into the request panel.
 
-            entry = self._fetch_history_entry(history_id)
-            if not entry:
-                logger.debug("_load_history_entry: no history entry found for id=%s", history_id)
-                return
-
-            request = self._request_from_history(entry)
-            try:
-                self.request_panel.load_request(request)
-            except Exception:
-                # Loading the request UI should not crash the whole app
-                logger.error("Failed to load request from history id=%s", history_id, exc_info=True)
-
-            if entry.get("status_code") is not None:
-                raw_body = entry.get("response_body") or ""
-                if isinstance(raw_body, str):
-                    body_bytes = raw_body.encode("utf-8")
-                elif isinstance(raw_body, bytes):
-                    body_bytes = raw_body
-                else:
-                    try:
-                        body_bytes = str(raw_body).encode("utf-8")
-                    except Exception:
-                        body_bytes = b""
-
-                # Guard fromisoformat against NULL / malformed timestamps in the DB
-                timestamp: Optional[datetime] = None
-                try:
-                    executed_at = entry.get("executed_at")
-                    if executed_at:
-                        timestamp = datetime.fromisoformat(executed_at)
-                except (TypeError, ValueError):
-                    logger.debug("Could not parse executed_at: %s", entry.get("executed_at"))
-
-                headers = entry.get("response_headers") or {}
-                if not isinstance(headers, dict):
-                    try:
-                        headers = dict(headers)
-                    except Exception:
-                        logger.debug("_load_history_entry: could not coerce response headers to dict, defaulting to {}", exc_info=True)
-                        headers = {}
-
-                try:
-                    response = Response(
-                        status_code=int(entry.get("status_code") or 0),
-                        reason=entry.get("reason") or "",
-                        headers=headers,
-                        body=body_bytes,
-                        elapsed=float(entry.get("elapsed") or 0.0),
-                        request=request,
-                        timestamp=timestamp,
-                    )
-                    logger.debug("Displaying history response id=%s (status=%s size=%s)", history_id, entry.get("status_code"), len(body_bytes))
-                    self.response_panel.display_response(response)
-                except Exception:
-                    logger.error("Failed to construct/display Response for history id=%s", history_id, exc_info=True)
-        except Exception:
-            # Catch-all to ensure the UI remains responsive even on unexpected DB
-            # schema or corrupted rows.
-            logger.error("Unhandled error while loading history entry id=%s", history_id, exc_info=True)
-            try:
-                from PyQt6.QtWidgets import QMessageBox
-
-                QMessageBox.critical(
-                    self, "Error",
-                    f"Failed to load history entry {history_id}. See log for details."
-                )
-            except Exception:
-                # If even the message box fails, just log; we must not crash.
-                logger.debug("Also failed to show error dialog for history load failure", exc_info=True)
-
-    def _replay_history_entry(self, history_id: int) -> None:
-        """Re-run a history entry exactly as originally sent."""
+        Returns ``(entry, request)`` on success so the caller can inspect the
+        DB row (e.g. to reconstruct the stored response).  Returns ``None``
+        when no entry exists for *history_id*.
+        """
         self.request_panel.autosave_current()
         entry = self._fetch_history_entry(history_id)
         if not entry:
-            return
+            logger.debug("_fetch_and_load_history: no entry for id=%s", history_id)
+            return None
         request = self._request_from_history(entry)
-        self.request_panel.load_request(request)
+        try:
+            self.request_panel.load_request(request)
+        except Exception:
+            # A UI load failure must not prevent the response from being displayed.
+            logger.error("Failed to load request from history id=%s", history_id, exc_info=True)
+        return entry, request
+
+    def _build_response_from_history(
+        self, entry: dict, request: Request, history_id: int
+    ) -> Optional[Response]:
+        """Reconstruct a ``Response`` from a history DB row, or ``None``."""
+        if entry.get("status_code") is None:
+            return None
+
+        body_bytes = self._coerce_body_to_bytes(entry.get("response_body") or "")
+        timestamp  = self._parse_timestamp(entry.get("executed_at"))
+        headers    = self._coerce_to_dict(
+            entry.get("response_headers") or {}, "response_headers"
+        )
+
+        try:
+            response = Response(
+                status_code=int(entry.get("status_code") or 0),
+                reason=entry.get("reason") or "",
+                headers=headers,
+                body=body_bytes,
+                elapsed=float(entry.get("elapsed") or 0.0),
+                request=request,
+                timestamp=timestamp,
+            )
+        except Exception:
+            logger.error(
+                "Failed to construct Response for history id=%s", history_id, exc_info=True
+            )
+            return None
+
+        logger.debug(
+            "Built history response id=%s (status=%s size=%s)",
+            history_id, entry.get("status_code"), len(body_bytes),
+        )
+        return response
+
+    def _load_history_entry(self, history_id: int) -> None:
+        """Load and display a history entry in the request/response panels."""
+        try:
+            result = self._fetch_and_load_history(history_id)
+            if result is None:
+                return
+            entry, request = result
+            response = self._build_response_from_history(entry, request, history_id)
+            if response is not None:
+                self.response_panel.display_response(response)
+        except Exception:
+            # Catch-all: the UI must stay responsive even on corrupted DB rows.
+            logger.error(
+                "Unhandled error loading history entry id=%s", history_id, exc_info=True
+            )
+            try:
+                QMessageBox.critical(
+                    self, "Error",
+                    f"Failed to load history entry {history_id}. See log for details.",
+                )
+            except Exception:
+                logger.debug("Also failed to show error dialog for history load", exc_info=True)
+
+    def _replay_history_entry(self, history_id: int) -> None:
+        """Re-run a history entry exactly as originally sent."""
+        if self._fetch_and_load_history(history_id) is None:
+            return
         # Defer send() so load_request()'s widget-population signals are fully
         # processed before the HTTP worker reads the panel state.
         QTimer.singleShot(0, self.request_panel.send)
@@ -677,15 +729,15 @@ class MainWindow(QMainWindow):
 
     # ── Zoom ──────────────────────────────────────────────────────────
 
+    def _adjust_font_size(self, delta: int) -> None:
+        """Clamp and apply a font-size change of *delta* points."""
+        set_font_size(get_font_size() + delta)
+
     def _zoom_in(self) -> None:
-        cur = get_font_size()
-        if cur < MAX_FONT_SIZE:
-            set_font_size(cur + 1)
+        self._adjust_font_size(+1)
 
     def _zoom_out(self) -> None:
-        cur = get_font_size()
-        if cur > MIN_FONT_SIZE:
-            set_font_size(cur - 1)
+        self._adjust_font_size(-1)
 
     def _zoom_reset(self) -> None:
         set_font_size(DEFAULT_FONT_SIZE)
@@ -798,7 +850,7 @@ class MainWindow(QMainWindow):
             return
 
         try:
-            if os.name == "nt":
+            if sys.platform == "win32":
                 os.startfile(str(resolved))  # type: ignore[attr-defined]
             elif sys.platform == "darwin":
                 subprocess.Popen(["open", str(resolved)])  # noqa: S603
@@ -819,29 +871,12 @@ class MainWindow(QMainWindow):
             QHeaderView, QDialogButtonBox,
         )
 
-        _SHORTCUTS = [
-            ("Ctrl+N",       "New request (clear editor)"),
-            ("Ctrl+Return",  "Send request"),
-            ("Ctrl+S",       "Save to Collection"),
-            ("Ctrl+,",       "Open Preferences"),
-            ("Ctrl+Q",       "Exit"),
-            ("F5",           "Refresh collections"),
-            ("F1",           "Keyboard Shortcuts (this dialog)"),
-            ("Ctrl+=",       "Zoom in"),
-            ("Ctrl+-",       "Zoom out"),
-            ("Ctrl+0",       "Reset zoom"),
-            ("Ctrl+Shift+F", "Format JSON body"),
-            ("Ctrl+F",       "Find in response body"),
-            ("F2",           "Rename selected collection item"),
-            ("Delete",       "Delete selected collection item"),
-        ]
-
         dialog = QDialog(self)
         dialog.setWindowTitle("Keyboard Shortcuts")
         dialog.setMinimumSize(480, 400)
         dlg_layout = QVBoxLayout(dialog)
 
-        table = QTableWidget(len(_SHORTCUTS), 2)
+        table = QTableWidget(len(self._KEYBOARD_SHORTCUTS), 2)
         table.setHorizontalHeaderLabels(["Shortcut", "Action"])
         table.horizontalHeader().setSectionResizeMode(
             0, QHeaderView.ResizeMode.ResizeToContents
@@ -851,7 +886,7 @@ class MainWindow(QMainWindow):
         table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
         table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
         table.setAlternatingRowColors(True)
-        for row, (shortcut, action) in enumerate(_SHORTCUTS):
+        for row, (shortcut, action) in enumerate(self._KEYBOARD_SHORTCUTS):
             table.setItem(row, 0, QTableWidgetItem(shortcut))
             table.setItem(row, 1, QTableWidgetItem(action))
         table.resizeRowsToContents()
