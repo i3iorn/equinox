@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import logging
+from typing import Callable, Optional, TypeVar
 
 from PyQt6.QtCore import QObject, QThread, pyqtSignal
 
@@ -15,6 +16,8 @@ from equinox.storage.response_intelligence import ResponseIntelligenceManager
 __all__ = ["IntelligenceWorker"]
 
 logger = logging.getLogger(__name__)
+
+_T = TypeVar("_T")
 
 
 class IntelligenceWorker(QThread):
@@ -33,7 +36,7 @@ class IntelligenceWorker(QThread):
         db: Open database instance (``equinox.storage.Database``).
         disabled_analyzers: Names of analyzers to skip.  Stored internally
             as a ``frozenset`` so the caller cannot mutate it after
-            construction.
+            construction.  Non-string or empty entries are silently dropped.
         parent: Optional Qt parent object.
     """
 
@@ -53,10 +56,11 @@ class IntelligenceWorker(QThread):
         self._request = request
         self._response = response
         self._db = db
-        # Store as frozenset — immutable and hashable; callers cannot mutate
-        # the disabled set after the worker has been constructed.
-        self._disabled: frozenset[str] = (
-            frozenset(disabled_analyzers) if disabled_analyzers else frozenset()
+        # Only accept non-empty strings; anything else is silently dropped so
+        # a malformed caller cannot accidentally disable every analyzer.
+        self._disabled: frozenset[str] = frozenset(
+            a for a in (disabled_analyzers or ())
+            if isinstance(a, str) and a
         )
 
     # ── QThread entry point ───────────────────────────────────────────────────
@@ -76,84 +80,181 @@ class IntelligenceWorker(QThread):
             findings = []
         self.finished.emit(findings)
 
-    # ── Internal ──────────────────────────────────────────────────────────────
+    # ── Orchestration ─────────────────────────────────────────────────────────
 
     def _execute(self) -> list[Finding]:
-        """Run the full analysis pipeline.
+        """Orchestrate the full analysis pipeline.
 
-        Each database step is wrapped individually so a transient DB error
-        degrades gracefully rather than aborting the entire analysis.
-
-        An interruption check between the DB prefetch phase and the analysis
-        engine call allows the caller to call ``requestInterruption()`` and
-        have the worker exit cleanly without running the expensive engine.
+        Each distinct responsibility is delegated to a focused private method:
+        URL resolution, context fetching, engine execution, and result
+        persistence.  Interruption is checked between the two most expensive
+        phases so the caller can cancel cleanly at either boundary.
         """
         mgr = ResponseIntelligenceManager(self._db)
-        url_pattern = normalize_url_pattern(
-            self._response.sent_url or self._request.url
-        )
+        url_pattern = self._resolve_url_pattern()
         method = self._request.method.upper()
 
-        # ── Gather historical context ─────────────────────────────────
-        endpoint_stats = None
-        stored_schema = None
-        history_rows: list[dict] = []
+        ctx = self._fetch_analysis_context(mgr, url_pattern, method)
 
-        try:
-            endpoint_stats = mgr.get_endpoint_stats(url_pattern, method)
-        except Exception:
-            logger.debug("Failed to fetch endpoint stats", exc_info=True)
-
-        try:
-            stored_schema = mgr.get_schema(url_pattern, method)
-        except Exception:
-            logger.debug("Failed to fetch stored schema", exc_info=True)
-
-        try:
-            history_rows = mgr.get_recent_history(limit=50)
-        except Exception:
-            logger.debug("Failed to fetch recent history", exc_info=True)
-
-        # Bail out cleanly if the caller cancelled us before the (expensive)
-        # analysis engine step.
+        # Allow clean cancellation between the (potentially heavy) DB prefetch
+        # and the analysis engine.
         if self.isInterruptionRequested():
             logger.debug("Intelligence worker: interrupted before analysis")
             return []
 
-        # ── Run analysis engine ───────────────────────────────────────
-        ctx = AnalysisContext(
+        findings = self._run_engine(ctx)
+
+        # Allow cancellation before the write-back phase so we don't issue
+        # unnecessary DB writes for a discarded result.
+        if self.isInterruptionRequested():
+            logger.debug("Intelligence worker: interrupted before persistence")
+            return findings
+
+        self._persist_results(mgr, url_pattern, method)
+        return findings
+
+    # ── URL resolution ────────────────────────────────────────────────────────
+
+    def _resolve_url_pattern(self) -> str:
+        """Derive and normalise the URL pattern used as the DB lookup key.
+
+        Falls back to ``"/"`` when neither ``sent_url`` nor ``url`` yields a
+        non-empty value so downstream callers always receive a valid key.
+        """
+        raw_url = self._response.sent_url or self._request.url
+        if not raw_url:
+            logger.debug("Intelligence worker: no URL available; using '/'")
+            return "/"
+        return normalize_url_pattern(raw_url)
+
+    # ── Context fetching (read phase) ─────────────────────────────────────────
+
+    def _fetch_analysis_context(
+        self,
+        mgr: ResponseIntelligenceManager,
+        url_pattern: str,
+        method: str,
+    ) -> AnalysisContext:
+        """Fetch all historical data needed by the analysis engine.
+
+        Each DB call is wrapped individually via ``_try_fetch`` so a transient
+        error in one query degrades gracefully instead of aborting the whole
+        context build.
+        """
+        endpoint_stats = self._try_fetch(
+            lambda: mgr.get_endpoint_stats(url_pattern, method),
+            "endpoint stats",
+        )
+        stored_schema = self._try_fetch(
+            lambda: mgr.get_schema(url_pattern, method),
+            "stored schema",
+        )
+        history_rows: list[dict] = (
+            self._try_fetch(
+                lambda: mgr.get_recent_history(limit=50),
+                "recent history",
+            )
+            or []
+        )
+
+        return AnalysisContext(
             request=self._request,
             response=self._response,
             history_rows=history_rows,
             endpoint_stats=endpoint_stats,
             stored_schema=stored_schema,
         )
-        engine = AnalysisEngine(disabled=set(self._disabled) or None)
-        findings = engine.analyze(ctx)
 
-        # ── Post-analysis: update stats and schema ────────────────────
+    # ── Analysis engine ───────────────────────────────────────────────────────
+
+    def _run_engine(self, ctx: AnalysisContext) -> list[Finding]:
+        """Instantiate and run the analysis engine for this worker's config."""
+        engine = AnalysisEngine(disabled=set(self._disabled))
+        return engine.analyze(ctx)
+
+    # ── Result persistence (write phase) ──────────────────────────────────────
+
+    def _persist_results(
+        self,
+        mgr: ResponseIntelligenceManager,
+        url_pattern: str,
+        method: str,
+    ) -> None:
+        """Write timing stats and schema snapshots back to the database.
+
+        Each write is isolated so a failure in one does not prevent the other
+        from completing.
+        """
+        self._update_endpoint_stats(mgr, url_pattern, method)
+        self._save_schema_snapshot(mgr, url_pattern, method)
+
+    def _update_endpoint_stats(
+        self,
+        mgr: ResponseIntelligenceManager,
+        url_pattern: str,
+        method: str,
+    ) -> None:
+        """Append the current response time to the endpoint's timing history."""
         elapsed = self._response.elapsed
-        if elapsed is not None:
-            try:
-                mgr.update_endpoint_stats(url_pattern, method, round(elapsed * 1000, 2))
-            except Exception:
-                logger.debug("Failed to update endpoint stats", exc_info=True)
-        else:
+        if elapsed is None:
             logger.debug(
                 "Skipping endpoint stats update: elapsed is None for %s %s",
                 method,
                 url_pattern,
             )
+            return
+        elapsed_ms = round(elapsed * 1000, 2)
+        self._try_write(
+            lambda: mgr.update_endpoint_stats(url_pattern, method, elapsed_ms),
+            "endpoint stats",
+        )
 
+    def _save_schema_snapshot(
+        self,
+        mgr: ResponseIntelligenceManager,
+        url_pattern: str,
+        method: str,
+    ) -> None:
+        """Capture a schema fingerprint for JSON responses and persist it."""
+        if not self._response.is_json:
+            return
+        self._try_write(
+            lambda: mgr.save_schema(
+                url_pattern,
+                method,
+                SchemaDriftAnalyzer.build_schema_fingerprint(self._response.json()),
+            ),
+            "schema snapshot",
+        )
+
+    # ── Generic DB operation helpers ──────────────────────────────────────────
+
+    @staticmethod
+    def _try_fetch(operation: Callable[[], _T], label: str) -> Optional[_T]:
+        """Execute *operation* and return its result; return ``None`` on error.
+
+        Errors are logged at DEBUG because transient DB failures during the
+        read phase are non-critical — the analysis engine runs with whatever
+        historical data is available.
+        """
         try:
-            if self._response.is_json:
-                obj = self._response.json()
-                schema = SchemaDriftAnalyzer.build_schema_fingerprint(obj)
-                mgr.save_schema(url_pattern, method, schema)
+            return operation()
         except Exception:
-            logger.debug("Failed to save schema snapshot", exc_info=True)
+            logger.debug("Failed to fetch %s", label, exc_info=True)
+            return None
 
-        return findings
+    @staticmethod
+    def _try_write(operation: Callable[[], None], label: str) -> None:
+        """Execute *operation*; log and swallow any exception.
+
+        Write failures are non-fatal — the analysis result is still returned
+        to the UI.  DEBUG level is appropriate here because the storage layer
+        already logs serious failures at WARNING.
+        """
+        try:
+            operation()
+        except Exception:
+            logger.debug("Failed to write %s", label, exc_info=True)
 
     # ── Dunder helpers ────────────────────────────────────────────────────────
 
