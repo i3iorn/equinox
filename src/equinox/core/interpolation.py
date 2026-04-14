@@ -53,8 +53,14 @@ class VariableInterpolator:
     VARIABLE_PATTERN = re.compile(r'\{\{([a-zA-Z0-9_-]+)\}\}')
 
     MAX_ITERATIONS = 10
-    MAX_EXPANSION_RATIO = 100
-    MAX_OUTPUT_BYTES = 1024 * 1024  # 1 MB absolute ceiling
+    MAX_EXPANSION_RATIO = 200
+    MAX_OUTPUT_BYTES = 2 * 1024 * 1024
+
+    # Minimum expansion budget regardless of input length.
+    # A single {{TOKEN}} placeholder (≈14 bytes) can legitimately expand to a
+    # multi-kilobyte JWT; the ratio check must never set a budget smaller than
+    # this floor.  The absolute MAX_OUTPUT_BYTES is still the real DoS guard.
+    _MIN_EXPANSION_FLOOR_BYTES = 256 * 1024  # 256 KB
 
     @classmethod
     def interpolate(cls, text: str, variables: Dict[str, str], max_iterations: Optional[int] = None) -> str:
@@ -131,7 +137,13 @@ class VariableInterpolator:
         # ── Interpolation loop ──────────────────────────────────────────────────
         iteration_limit = max_iterations or cls.MAX_ITERATIONS
         original_length = len(text)
-        expansion_limit = original_length * cls.MAX_EXPANSION_RATIO
+        # Ratio-based limit with a generous floor so that short inputs
+        # (e.g. a single {{TOKEN}} placeholder) aren't given an impossibly
+        # small budget.  MAX_OUTPUT_BYTES is the hard ceiling.
+        expansion_limit = max(
+            original_length * cls.MAX_EXPANSION_RATIO,
+            cls._MIN_EXPANSION_FLOOR_BYTES,
+        )
 
         def substitute_variable(match: re.Match) -> str:
             """Replace matched {{variable}} with its value or leave unchanged."""
@@ -152,15 +164,15 @@ class VariableInterpolator:
 
             # Prevent expansion attacks
             if len(text) > expansion_limit:
-                expansion_ratio = len(text) / original_length if original_length > 0 else 1.0
+                expansion_ratio = len(text) / original_length if original_length > 0 else float("inf")
                 logger.warning(
-                    "Variable interpolation caused excessive expansion: "
-                    "ratio=%.2f, size=%d bytes (max %d bytes)",
+                    "Variable interpolation expansion too large: "
+                    "ratio=%.2f, output=%d bytes (limit=%d bytes)",
                     expansion_ratio, len(text), expansion_limit,
                 )
                 raise SecurityError(
-                    f"excessive text expansion: Variable interpolation caused excessive expansion "
-                    f"({len(text)} bytes vs {expansion_limit} max)"
+                    f"Variable interpolation output too large: "
+                    f"{len(text)} bytes (limit {expansion_limit} bytes, ratio {expansion_ratio:.1f}x)"
                 )
 
             # Double-check absolute size limit — encode once and reuse.

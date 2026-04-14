@@ -32,7 +32,7 @@ class EnvironmentManager:
     MAX_ENVIRONMENTS = 1000
     MAX_SECRET_KEYS = 100
     MAX_TEXT_SIZE = 1_000_000  # 1 MB text limit for interpolation
-    MAX_EXPANSION_RATIO = 100  # Maximum allowed text expansion during interpolation
+    MAX_EXPANSION_RATIO = 150  # Maximum allowed text expansion during interpolation
 
     def __init__(self, db: Database) -> None:
         self.db = db
