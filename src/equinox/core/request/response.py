@@ -83,9 +83,15 @@ class Response:
     def __post_init__(self) -> None:
         self.headers = HeaderDict(self.headers or {})
         logger.debug(
-            "Response: %d (%s) size=%d bytes elapsed=%.3fs",
+            "Response: %d (%s) size=%d bytes elapsed=%.3fs body_type=%s",
             self.status_code, self.reason, len(self.body), self.elapsed,
+            type(self.body).__name__,
         )
+        if len(self.body) > 0:
+            logger.debug(
+                "Response body preview (first 200 chars): %r",
+                self.body[:200] if isinstance(self.body, bytes) else str(self.body)[:200],
+            )
 
     # ── Header helper ─────────────────────────────────────────────────────────
 

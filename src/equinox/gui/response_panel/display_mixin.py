@@ -105,6 +105,11 @@ class ResponseDisplayMixin:
             actual_text = self.body_text.toPlainText() if hasattr(self.body_text, 'toPlainText') else '(N/A)'
             logger.debug("_display_body: set %d chars, body_text now contains %d chars", len(text), len(actual_text))
 
+            # Force Qt to refresh the text widget after content change
+            logger.debug("_display_body: forcing body_text widget refresh")
+            self.body_text.update()
+            self.body_text.viewport().update()
+
     # ------------------------------------------------------------------
     # JSON Tree
     # ------------------------------------------------------------------

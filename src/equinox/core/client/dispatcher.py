@@ -155,11 +155,17 @@ class HttpxDispatcher:
     def _wrap_response(
         self, raw: httpx.Response, request: Request, elapsed: float
     ) -> Response:
+        # Explicitly read the body to ensure it's properly consumed
+        body = raw.content
+        logger.debug(
+            "HttpxDispatcher._wrap_response: status=%d body_len=%d headers_count=%d",
+            raw.status_code, len(body), len(raw.headers),
+        )
         return Response(
             status_code=raw.status_code,
             reason=self._extract_reason_phrase(raw),
             headers=dict(raw.headers),
-            body=raw.content,
+            body=body,
             elapsed=elapsed,
             request=request,
             timestamp=utc_now(),
