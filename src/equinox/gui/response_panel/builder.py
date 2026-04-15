@@ -22,6 +22,73 @@ from equinox.gui.response_panel.read_only_text import ReadOnlyText
 from equinox.gui.response_panel.search_bar import SearchBar
 from equinox.gui.theme import Colors, get_mono_font
 
+# Layout spacing constants
+_STATUS_BAR_SPACING = 0
+_TIMINGS_ROW_SPACING = 0
+_BODY_TAB_SPACING = 0
+_HEADERS_TAB_MARGINS = (0, 2, 0, 0)
+_HEADERS_TAB_SPACING = 2
+_COOKIES_TAB_MARGINS = (0, 2, 0, 0)
+_SENT_REQUEST_TAB_MARGINS = (4, 4, 4, 4)
+_SENT_REQUEST_TAB_SPACING = 6
+
+# Button widths
+_BTN_WIDTH_SMALL = 56    # "Diff…"
+_BTN_WIDTH_MEDIUM = 80   # "Copy Body"
+_BTN_WIDTH_LARGE = 90    # "Download…"
+_BTN_WIDTH_XLARGE = 110  # "Copy as cURL"
+
+# Widget sizing
+_HEADERS_SEARCH_HEIGHT = 24
+_SENT_BODY_MAX_HEIGHT = 180
+_BODY_WARNING_MARGINS = (4, 2, 4, 2)
+
+# Cookies table column count
+_COOKIES_COLUMNS = 7
+
+# Style object names (used for theme-aware styling)
+_STYLE_MUTED_LABEL = "mutedLabel"
+_BODY_WARNING_SEPARATOR = "|"
+
+
+# Private helper functions — widget construction patterns
+# ─────────────────────────────────────────────────────────
+
+
+def _make_muted_label(text: str = "") -> QLabel:
+    """Create a muted (de-emphasized) label for secondary information."""
+    label = QLabel(text)
+    label.setObjectName(_STYLE_MUTED_LABEL)
+    return label
+
+
+def _make_button(text: str, width: int, tooltip: str = "", parent=None) -> QPushButton:
+    """Create a button with fixed width and optional tooltip."""
+    btn = QPushButton(text, parent)
+    btn.setFixedWidth(width)
+    if tooltip:
+        btn.setToolTip(tooltip)
+    return btn
+
+
+def _make_container(margins: tuple[int, int, int, int], spacing: int) -> tuple[QWidget, QVBoxLayout]:
+    """Create a QWidget with QVBoxLayout (contents margins and spacing pre-set).
+
+    Returns (container, layout) for convenient setup.
+    """
+    container = QWidget()
+    layout = QVBoxLayout(container)
+    layout.setContentsMargins(*margins)
+    layout.setSpacing(spacing)
+    return container, layout
+
+
+def _make_shortcut(seq: str, parent, callback) -> QShortcut:
+    """Create a keyboard shortcut with proper activation connection."""
+    shortcut = QShortcut(QKeySequence(seq), parent)
+    shortcut.activated.connect(callback)
+    return shortcut
+
 
 class ResponseBuilderMixin:
     """Mixin that provides every ``_build_*`` method for the response panel."""
@@ -36,20 +103,13 @@ class ResponseBuilderMixin:
         self.status_label = QLabel("No response yet")
         self.status_label.setStyleSheet(f"font-weight: bold; color: {Colors.FG_MUTED};")
 
-        self.time_label = QLabel("")
-        self.time_label.setObjectName("mutedLabel")
+        self.time_label = _make_muted_label()
+        self.size_label = _make_muted_label()
 
-        self.size_label = QLabel("")
-        self.size_label.setObjectName("mutedLabel")
-
-        copy_btn = QPushButton("Copy Body")
-        copy_btn.setFixedWidth(80)
-        copy_btn.setToolTip("Copy response body to clipboard")
+        copy_btn = _make_button("Copy Body", _BTN_WIDTH_MEDIUM, "Copy response body to clipboard")
         copy_btn.clicked.connect(self._copy_body)
 
-        download_btn = QPushButton("Download…")
-        download_btn.setFixedWidth(90)
-        download_btn.setToolTip("Save response body to a file")
+        download_btn = _make_button("Download…", _BTN_WIDTH_LARGE, "Save response body to a file")
         download_btn.clicked.connect(self._download_body)
 
         code_btn = self._build_code_button()
@@ -63,15 +123,13 @@ class ResponseBuilderMixin:
 
         self._view_btn, self._view_menu = self._build_view_selector()
 
-        diff_btn = QPushButton("Diff…")
-        diff_btn.setFixedWidth(56)
-        diff_btn.setToolTip("Compare response body with a history entry")
+        diff_btn = _make_button("Diff…", _BTN_WIDTH_SMALL, "Compare response body with a history entry")
         diff_btn.clicked.connect(self._diff_with_history)
 
         row.addWidget(self.status_label)
         row.addStretch()
         row.addWidget(self.time_label)
-        row.addWidget(QLabel("|"))
+        row.addWidget(QLabel(_BODY_WARNING_SEPARATOR))
         row.addWidget(self.size_label)
         row.addWidget(self._wrap_btn)
         row.addWidget(self._view_btn)
@@ -138,8 +196,7 @@ class ResponseBuilderMixin:
         self._timings_toggle.setVisible(False)
         self._timings_toggle.clicked.connect(self._on_timings_toggled)
 
-        self._timings_label = QLabel()
-        self._timings_label.setObjectName("mutedLabel")
+        self._timings_label = _make_muted_label()
         self._timings_label.setVisible(False)
 
         row.addWidget(self._timings_toggle)
@@ -169,21 +226,17 @@ class ResponseBuilderMixin:
     # ------------------------------------------------------------------
 
     def _build_body_tab(self) -> None:
-        container = QWidget()
-        vbox = QVBoxLayout(container)
-        vbox.setContentsMargins(0, 0, 0, 0)
-        vbox.setSpacing(0)
+        container, vbox = _make_container((0, 0, 0, 0), _BODY_TAB_SPACING)
 
         # Large-body warning
         self._body_warning = QWidget()
         warn_row = QHBoxLayout(self._body_warning)
-        warn_row.setContentsMargins(4, 2, 4, 2)
+        warn_row.setContentsMargins(*_BODY_WARNING_MARGINS)
 
         self._body_warn_label = QLabel()
         self._body_warn_label.setStyleSheet(f"color: {Colors.AMBER}; font-weight: bold;")
 
-        load_btn = QPushButton("Load Full")
-        load_btn.setFixedWidth(100)
+        load_btn = _make_button("Load Full", _BTN_WIDTH_MEDIUM)
         load_btn.clicked.connect(self._load_large_body)
 
         warn_row.addWidget(self._body_warn_label)
@@ -193,8 +246,7 @@ class ResponseBuilderMixin:
         vbox.addWidget(self._body_warning)
 
         # Loading indicator
-        self._loading_label = QLabel("Loading…")
-        self._loading_label.setObjectName("mutedLabel")
+        self._loading_label = _make_muted_label("Loading…")
         self._loading_label.setVisible(False)
         vbox.addWidget(self._loading_label)
 
@@ -210,10 +262,9 @@ class ResponseBuilderMixin:
 
         self._body_tab_idx = self.tabs.addTab(container, "Body")
 
-        # Ctrl+F shortcut
-        QShortcut(QKeySequence("Ctrl+F"), self).activated.connect(self._open_search)
+        # Keyboard shortcuts
+        _make_shortcut("Ctrl+F", self, self._open_search)
 
-        # Escape hides the search bar when it or its children have focus
         esc = QShortcut(QKeySequence("Escape"), self._search_bar)
         esc.setContext(Qt.ShortcutContext.WidgetWithChildrenShortcut)
         esc.activated.connect(self._search_bar.hide)
@@ -223,20 +274,16 @@ class ResponseBuilderMixin:
     # ------------------------------------------------------------------
 
     def _build_headers_tab(self) -> None:
-        container = QWidget()
-        vbox = QVBoxLayout(container)
-        vbox.setContentsMargins(0, 2, 0, 0)
-        vbox.setSpacing(2)
+        container, vbox = _make_container(_HEADERS_TAB_MARGINS, _HEADERS_TAB_SPACING)
 
         search_row = QHBoxLayout()
         self._hdrs_search = QLineEdit()
         self._hdrs_search.setPlaceholderText("Filter headers…")
-        self._hdrs_search.setFixedHeight(24)
+        self._hdrs_search.setFixedHeight(_HEADERS_SEARCH_HEIGHT)
         self._hdrs_search.setClearButtonEnabled(True)
         self._hdrs_search.textChanged.connect(self._on_hdrs_filter_changed)
 
-        self._hdrs_count_label = QLabel("")
-        self._hdrs_count_label.setObjectName("mutedLabel")
+        self._hdrs_count_label = _make_muted_label()
 
         search_row.addWidget(self._hdrs_search, 1)
         search_row.addWidget(self._hdrs_count_label)
@@ -252,11 +299,9 @@ class ResponseBuilderMixin:
     # ------------------------------------------------------------------
 
     def _build_cookies_tab(self) -> None:
-        container = QWidget()
-        vbox = QVBoxLayout(container)
-        vbox.setContentsMargins(0, 2, 0, 0)
+        container, vbox = _make_container(_COOKIES_TAB_MARGINS, 0)
 
-        self._cookies_table = QTableWidget(0, 7)
+        self._cookies_table = QTableWidget(0, _COOKIES_COLUMNS)
         self._cookies_table.setHorizontalHeaderLabels(
             ["Name", "Value", "Domain", "Path", "Expires", "Secure", "HttpOnly"]
         )
@@ -287,10 +332,7 @@ class ResponseBuilderMixin:
     # ------------------------------------------------------------------
 
     def _build_sent_request_tab(self) -> None:
-        container = QWidget()
-        layout = QVBoxLayout(container)
-        layout.setContentsMargins(4, 4, 4, 4)
-        layout.setSpacing(6)
+        container, layout = _make_container(_SENT_REQUEST_TAB_MARGINS, _SENT_REQUEST_TAB_SPACING)
 
         # Request line
         row = QHBoxLayout()
@@ -305,9 +347,9 @@ class ResponseBuilderMixin:
         self.sent_url_label.setWordWrap(True)
         self.sent_url_label.setFont(get_mono_font())
 
-        copy_curl_btn = QPushButton("Copy as cURL")
-        copy_curl_btn.setFixedWidth(110)
-        copy_curl_btn.setToolTip("Copy the request as a cURL command")
+        copy_curl_btn = _make_button(
+            "Copy as cURL", _BTN_WIDTH_XLARGE, "Copy the request as a cURL command"
+        )
         copy_curl_btn.clicked.connect(self._copy_as_curl)
 
         row.addWidget(self.sent_method_label)
@@ -323,7 +365,7 @@ class ResponseBuilderMixin:
         # Body
         layout.addWidget(QLabel("Request Body:"))
         self.sent_body_text = ReadOnlyText()
-        self.sent_body_text.setMaximumHeight(180)
+        self.sent_body_text.setMaximumHeight(_SENT_BODY_MAX_HEIGHT)
         layout.addWidget(self.sent_body_text, 1)
 
         self.tabs.addTab(container, "Sent Request")
