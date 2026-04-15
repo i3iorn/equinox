@@ -1,6 +1,7 @@
+from __future__ import annotations
+
 import json
 import logging
-import re
 from dataclasses import dataclass
 from enum import Enum, auto
 from typing import Any, Callable, List, Optional, Sequence, Tuple
@@ -13,7 +14,7 @@ from PyQt6.QtCore import (
     QTimer,
     pyqtSignal,
 )
-from PyQt6.QtGui import QColor, QTextCharFormat, QTextCursor, QTextDocument
+from PyQt6.QtGui import QColor, QTextCharFormat, QTextCursor
 from PyQt6.QtWidgets import (
     QHBoxLayout,
     QLabel,
@@ -28,8 +29,47 @@ from equinox.gui.theme import Colors
 
 logger = logging.getLogger(__name__)
 
-# Maximum number of matches to highlight to avoid UI overload
-MAX_MATCHES = 200
+# ──────────────────────────────────────────────────────────────────────────────
+# Configuration Constants
+# ──────────────────────────────────────────────────────────────────────────────
+
+# Maximum number of matches to highlight to avoid UI overload on large documents
+_MAX_MATCHES = 200
+
+# Debounce timer for search input (milliseconds)
+_DEBOUNCE_INTERVAL_MS = 250
+
+# Preview truncation limit for JSONPath results
+_PREVIEW_VALUE_LIMIT = 50
+_PREVIEW_MAX_VALUES = 6
+
+# UI Configuration
+_INPUT_HEIGHT = 24
+_BUTTON_SIZE = 24
+_BUTTON_WIDE_SIZE = 28
+_CANCEL_BUTTON_SIZE = 20
+_SEARCH_HIGHLIGHT_RADIUS = 5
+
+# Highlighter colors
+_HIGHLIGHT_DIM_COLOR = Colors.HIGHLIGHT
+_HIGHLIGHT_CURRENT_COLOR = "#e8a030"
+
+# Error messages
+_ERROR_NO_JSON = "No JSON document available — send a request that returns JSON first."
+_ERROR_JSONPATH_IMPORT = "⚠ jsonpath-ng is not installed. Run: pip install jsonpath-ng"
+
+# UI Text
+_PLACEHOLDER_TEXT_FIND = "Find in body…"
+_PLACEHOLDER_TEXT_REGEX = "Regular expression…"
+_PLACEHOLDER_TEXT_JSONPATH = "JSONPath expression — e.g. $.users[*].name"
+
+# Status messages
+_STATUS_SEARCHING = "searching…"
+_STATUS_NO_MATCHES = "no matches"
+_STATUS_CANCELLED = "cancelled"
+_STATUS_INVALID_REGEX = "invalid regex"
+_STATUS_JSONPATH_ERROR = "expression error"
+_STATUS_JSONPATH_MISSING = "jsonpath-ng missing"
 
 
 class _CancelToken:
@@ -64,7 +104,11 @@ class _SearchJobConfig:
 
 
 class _SearchRunnable(QRunnable):
-    """Background worker that performs the actual search on plain text, regex, or JSONPath."""
+    """Off-thread worker for search operations.
+
+    Performs text, regex, or JSONPath search on document content.
+    Emits result signals when complete.
+    """
 
     def __init__(self, config: _SearchJobConfig) -> None:
         super().__init__()
@@ -72,10 +116,14 @@ class _SearchRunnable(QRunnable):
         self.signals = _SearchSignals()
 
     def run(self) -> None:
+        """Execute search operation.
+
+        Handles all search modes and error cases. Always emits result signals.
+        """
         cfg = self._config
         term = cfg.term or ""
         if not term:
-            # No term → no matches
+            # No search term
             self._emit_result([], [], "")
             return
 
@@ -91,8 +139,6 @@ class _SearchRunnable(QRunnable):
             self._emit_result([], [], "")
             return
 
-        # For now we emit a single partial (done=True) and a final result.
-        # This keeps the interface compatible while keeping the worker simple.
         self._emit_partial(offsets, values, preview, done=True)
         self._emit_result(offsets, values, preview)
 
@@ -104,6 +150,7 @@ class _SearchRunnable(QRunnable):
         values: Sequence[Any],
         preview: str,
     ) -> None:
+        """Emit final search result."""
         self.signals.result.emit(
             self._config.job_id,
             list(offsets),
@@ -118,6 +165,7 @@ class _SearchRunnable(QRunnable):
         preview: str,
         done: bool,
     ) -> None:
+        """Emit partial search result."""
         self.signals.partial_result.emit(
             self._config.job_id,
             list(offsets),
@@ -129,10 +177,15 @@ class _SearchRunnable(QRunnable):
     # ── Core search implementations ──────────────────────────────────
 
     def _search_text(self) -> Tuple[List[Tuple[int, int]], List[Any], str]:
-        """Literal substring search using Python string operations."""
+        """Perform literal substring search.
+
+        Returns:
+            (offsets, values, preview) where offsets are (start, end) tuples
+        """
         cfg = self._config
         text = cfg.doc_text
         term = cfg.term
+
         if not cfg.case_sensitive:
             text_lower = text.lower()
             term_lower = term.lower()
@@ -142,7 +195,7 @@ class _SearchRunnable(QRunnable):
 
         offsets: List[Tuple[int, int]] = []
         start = 0
-        while not cfg.cancel_token.cancelled and len(offsets) < MAX_MATCHES:
+        while not cfg.cancel_token.cancelled and len(offsets) < _MAX_MATCHES:
             idx = text_lower.find(term_lower, start)
             if idx == -1:
                 break
@@ -153,7 +206,11 @@ class _SearchRunnable(QRunnable):
         return offsets, [], ""
 
     def _search_regex(self) -> Tuple[List[Tuple[int, int]], List[Any], str]:
-        """Regular-expression search using QRegularExpression (Qt6 compatible)."""
+        """Perform regex search using QRegularExpression.
+
+        Returns:
+            (offsets, values, preview) where preview contains error message if invalid
+        """
         cfg = self._config
         pattern = cfg.term
 
@@ -170,7 +227,7 @@ class _SearchRunnable(QRunnable):
         text = cfg.doc_text
         offsets: List[Tuple[int, int]] = []
         it = re_pattern.globalMatch(text)
-        while it.hasNext() and not cfg.cancel_token.cancelled and len(offsets) < MAX_MATCHES:
+        while it.hasNext() and not cfg.cancel_token.cancelled and len(offsets) < _MAX_MATCHES:
             match = it.next()
             s = match.capturedStart()
             e = match.capturedEnd()
@@ -181,17 +238,19 @@ class _SearchRunnable(QRunnable):
         return offsets, [], ""
 
     def _search_jsonpath(self) -> Tuple[List[Tuple[int, int]], List[Any], str]:
-        """Evaluate a JSONPath expression and map primitive values back into the text."""
+        """Evaluate JSONPath expression against JSON document.
+
+        Returns:
+            (offsets, values, preview) where values are matched JSON objects
+        """
         cfg = self._config
         if cfg.json_obj is None:
-            # This case is normally handled in the UI before starting the job,
-            # but we guard here as well.
-            return [], [], "No JSON document available — send a request that returns JSON first."
+            return [], [], _ERROR_NO_JSON
 
         try:
             from jsonpath_ng.ext import parse as _jp_parse  # type: ignore[import]
         except ImportError:
-            return [], [], "⚠ jsonpath-ng is not installed. Run: pip install jsonpath-ng"
+            return [], [], _ERROR_JSONPATH_IMPORT
 
         try:
             jp_expr = _jp_parse(cfg.term)
@@ -200,25 +259,16 @@ class _SearchRunnable(QRunnable):
             return [], [], f"⚠ {exc}"
 
         values = [m.value for m in raw_matches]
-        # Build preview string
-        if values:
-            previews: List[str] = []
-            for v in values[:6]:
-                s = json.dumps(v, ensure_ascii=False)
-                previews.append(s if len(s) <= 50 else s[:47] + "…")
-            preview = "  ·  ".join(previews)
-            if len(values) > 6:
-                preview += f"  … (+{len(values) - 6} more)"
-            preview = f"→ {preview}"
-        else:
-            preview = "(path matched no values)"
 
-        # Map primitive values back into the pretty-printed JSON text
+        # Build preview string
+        preview = self._build_jsonpath_preview(values)
+
+        # Map primitive values back into document text
         text = cfg.doc_text
         offsets: List[Tuple[int, int]] = []
         seen_terms: set[str] = set()
         for v in values:
-            if cfg.cancel_token.cancelled or len(offsets) >= MAX_MATCHES:
+            if cfg.cancel_token.cancelled or len(offsets) >= _MAX_MATCHES:
                 break
             if isinstance(v, (dict, list)):
                 continue
@@ -228,7 +278,7 @@ class _SearchRunnable(QRunnable):
             seen_terms.add(term)
 
             start = 0
-            while not cfg.cancel_token.cancelled and len(offsets) < MAX_MATCHES:
+            while not cfg.cancel_token.cancelled and len(offsets) < _MAX_MATCHES:
                 idx = text.find(term, start)
                 if idx == -1:
                     break
@@ -237,6 +287,30 @@ class _SearchRunnable(QRunnable):
                 start = end
 
         return offsets, values, preview
+
+    @staticmethod
+    def _build_jsonpath_preview(values: List[Any]) -> str:
+        """Build human-readable preview of JSONPath results.
+
+        Args:
+            values: List of matched values
+
+        Returns:
+            Preview string (e.g., "→ value1 · value2 · … (+3 more)")
+        """
+        if not values:
+            return "(path matched no values)"
+
+        previews: List[str] = []
+        for v in values[:6]:
+            s = json.dumps(v, ensure_ascii=False)
+            previews.append(s if len(s) <= 50 else s[:47] + "…")
+
+        preview = "  ·  ".join(previews)
+        if len(values) > 6:
+            preview += f"  … (+{len(values) - 6} more)"
+
+        return f"→ {preview}"
 
 
 class SearchBar(QWidget):
@@ -577,7 +651,7 @@ class SearchBar(QWidget):
             return
 
         new_offs = list(offsets_chunk) if offsets_chunk else []
-        remaining = MAX_MATCHES - len(self._offsets)
+        remaining = _MAX_MATCHES - len(self._offsets)
         if remaining > 0:
             self._offsets.extend([(int(s), int(e)) for s, e in new_offs[:remaining]])
 
