@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import difflib
 import logging
-from typing import Optional, Dict, Any
+from typing import TYPE_CHECKING, Optional
 
 from PyQt6.QtWidgets import (
     QVBoxLayout, QHBoxLayout, QLabel, QTextEdit,
@@ -22,11 +22,87 @@ from equinox.core.codegen import GENERATORS, generate_code
 from equinox.gui.response_panel.pretty_print import PrettyPrintRunnable
 from equinox.gui.theme import get_mono_font
 
+if TYPE_CHECKING:
+    from equinox.storage import Database
+
 logger = logging.getLogger(__name__)
+
+# Dialog geometry constants
+_HISTORY_PICKER_WIDTH = 480
+_HISTORY_PICKER_HEIGHT = 280
+_DIFF_DIALOG_WIDTH = 700
+_DIFF_DIALOG_HEIGHT = 500
+_CODEGEN_DIALOG_WIDTH = 640
+_CODEGEN_DIALOG_HEIGHT = 480
+
+# File extension mapping by content-type
+_CONTENT_TYPE_EXTENSIONS = {
+    "json": "response.json",
+    "xml": "response.xml",
+    "html": "response.html",
+}
+_DEFAULT_FILENAME = "response.txt"
 
 
 class ResponseActionsMixin:
     """Mixin providing all user-action methods for ResponsePanel."""
+
+    # ------------------------------------------------------------------
+    # Private helpers — encapsulation
+    # ------------------------------------------------------------------
+
+    def _get_body_text(self) -> str:
+        """Return the current body text, using _pretty_body as fallback.
+
+        Handles None checks and exceptions consistently across all actions.
+        """
+        displayed = self.body_text.toPlainText()
+        if displayed:
+            return displayed
+        if self.current_response is not None:
+            try:
+                return self._pretty_body(self.current_response)
+            except Exception:
+                logger.exception("Failed to pretty-print body")
+        return ""
+
+    def _get_database(self) -> "Optional[Database]":
+        """Extract database from the main window, or None if unavailable.
+
+        Centralizes the risky window traversal so it can be updated in one place.
+        """
+        try:
+            return self.window().db
+        except Exception:
+            return None
+
+    def _get_current_request_marker(self) -> object:
+        """Return a unique identifier for the current response's request URL.
+
+        Used to detect stale responses in async operations (e.g., large body
+        loading). Returns (sent_url or request.url) to match _load_large_body
+        and _on_pretty_result.
+        """
+        if self.current_response is None:
+            return None
+        return getattr(self.current_response, "sent_url", None) or getattr(
+            self.current_response.request, "url", None
+        )
+
+    def _suggest_filename(self) -> str:
+        """Suggest a filename for download based on content-type.
+
+        Returns a filename with appropriate extension for JSON/XML/HTML,
+        or a default .txt filename.
+        """
+        if self.current_response is None:
+            return _DEFAULT_FILENAME
+
+        ct = self.current_response.headers.get("content-type", "").lower()
+        for key, filename in _CONTENT_TYPE_EXTENSIONS.items():
+            if key in ct:
+                return filename
+        return _DEFAULT_FILENAME
 
     # ------------------------------------------------------------------
     # Large body loading
@@ -40,9 +116,7 @@ class ResponseActionsMixin:
         self._body_warning.setVisible(False)
         self._loading_label.setVisible(True)
 
-        marker = getattr(self.current_response, "sent_url", None) or getattr(
-            self.current_response.request, "url", None
-        )
+        marker = self._get_current_request_marker()
         runnable = PrettyPrintRunnable(self.current_response, marker)
         runnable.signals.result.connect(self._on_pretty_result)
         self._thread_pool.start(runnable)
@@ -50,21 +124,20 @@ class ResponseActionsMixin:
     def _on_pretty_result(self, marker: object, formatted_text: str) -> None:
         """Handle formatted body results from background worker."""
         self._loading_label.setVisible(False)
+
+        # Stale response — user switched requests while formatting was in progress.
+        if marker != self._get_current_request_marker():
+            return
+
         try:
-            cur_marker = getattr(self.current_response, "sent_url", None) or getattr(
-                self.current_response.request, "url", None
-            )
-            if cur_marker != marker:
-                return
             self.body_text.set_code(formatted_text)
         except Exception:
-            logger.exception("Unexpected error in _on_pretty_result; falling back to raw body")
-            if self.current_response is not None:
-                try:
-                    self.body_text.set_code(self._pretty_body(self.current_response))
-                except Exception:
-                    logger.exception("Fallback body display also failed")
-            else:
+            logger.exception("Failed to display formatted body; falling back to raw")
+            try:
+                fallback = self._get_body_text()
+                self.body_text.set_code(fallback)
+            except Exception:
+                logger.exception("Fallback body display also failed")
                 self.body_text.clear()
 
     # ------------------------------------------------------------------
@@ -75,18 +148,12 @@ class ResponseActionsMixin:
         """Receive filtered JSON text from the SearchBar and update the body view."""
         try:
             if filtered_text is None:
-                if self.current_response is None:
-                    self.body_text.clear()
-                else:
-                    self.body_text.set_code(self._pretty_body(self.current_response))
+                self.body_text.set_code(self._get_body_text())
             else:
                 self.body_text.set_code(filtered_text)
         except Exception:
-            # If anything goes wrong, fall back to original body
-            if self.current_response is not None:
-                self.body_text.set_code(self._pretty_body(self.current_response))
-            else:
-                self.body_text.clear()
+            logger.exception("Failed to update body with JSONPath filter")
+            self.body_text.set_code(self._get_body_text())
 
     # ------------------------------------------------------------------
     # Diff with history
@@ -111,19 +178,18 @@ class ResponseActionsMixin:
             return
 
         old_body = entry.get("response_body") or ""
-        displayed = self.body_text.toPlainText()
-        new_body = displayed if displayed else self._pretty_body(self.current_response)
+        new_body = self._get_body_text()
         self._show_diff_dialog(old_body, new_body)
 
     def _fetch_history_entries(self) -> list:
-        """Return recent history entries matching the current request, or []."""
-        db = None
-        try:
-            db = self.window().db
-        except Exception:
-            pass
-        if db is None:
+        """Return recent history entries matching the current request.
+
+        Returns an empty list if the database is unavailable or the query fails.
+        """
+        db = self._get_database()
+        if db is None or self.current_response is None:
             return []
+
         try:
             from equinox.storage import HistoryManager
             req = self.current_response.request
@@ -134,19 +200,25 @@ class ResponseActionsMixin:
             logger.exception("Failed to fetch history entries for diff")
             return []
 
-    def _pick_history_entry(self, history_entries: list) -> "Optional[Dict[str, Any]]":
+    def _format_history_entry(self, entry: dict) -> str:
+        """Format a history entry for display in the picker list."""
+        ts = entry.get("executed_at", "")[:19]
+        method = entry.get("method", "")
+        url = entry.get("url", "")
+        status = entry.get("status_code", "?")
+        return f"{ts}  {method}  {url}  [{status}]"
+
+    def _pick_history_entry(self, history_entries: list) -> "Optional[dict]":
         """Show a picker dialog and return the selected history entry, or None."""
         picker = QDialog(self)
         picker.setWindowTitle("Choose History Entry")
-        picker.setMinimumSize(480, 280)
+        picker.setMinimumSize(_HISTORY_PICKER_WIDTH, _HISTORY_PICKER_HEIGHT)
         pk_layout = QVBoxLayout(picker)
         pk_layout.addWidget(QLabel("Select a history entry to compare against:"))
 
         list_widget = QListWidget()
         for entry in history_entries:
-            ts = entry.get("executed_at", "")[:19]
-            sc = entry.get("status_code", "?")
-            label = f"{ts}  {entry.get('method', '')}  {entry.get('url', '')}  [{sc}]"
+            label = self._format_history_entry(entry)
             item = QListWidgetItem(label)
             item.setData(Qt.ItemDataRole.UserRole, entry)
             list_widget.addItem(item)
@@ -185,7 +257,7 @@ class ResponseActionsMixin:
 
         dlg = QDialog(self)
         dlg.setWindowTitle("Response Body Diff")
-        dlg.setMinimumSize(700, 500)
+        dlg.setMinimumSize(_DIFF_DIALOG_WIDTH, _DIFF_DIALOG_HEIGHT)
         dv_layout = QVBoxLayout(dlg)
         diff_editor = QPlainTextEdit()
         diff_editor.setReadOnly(True)
@@ -203,7 +275,7 @@ class ResponseActionsMixin:
 
     def _copy_body(self) -> None:
         """Copy the current body text to the clipboard."""
-        text = self.body_text.toPlainText()
+        text = self._get_body_text()
         if not text:
             return
         QApplication.clipboard().setText(text)
@@ -213,50 +285,51 @@ class ResponseActionsMixin:
         if self.current_response is None:
             return
 
-        suggested = "response.txt"
-        ct = self.current_response.headers.get("content-type", "").lower()
-        if "json" in ct:
-            suggested = "response.json"
-        elif "xml" in ct:
-            suggested = "response.xml"
-        elif "html" in ct:
-            suggested = "response.html"
-
+        suggested_filename = self._suggest_filename()
         path, _ = QFileDialog.getSaveFileName(
             self,
             "Save Response Body",
-            suggested,
+            suggested_filename,
             "All Files (*.*)",
         )
         if not path:
             return
 
-        text = self.body_text.toPlainText() or self._pretty_body(self.current_response)
+        text = self._get_body_text()
         try:
             with open(path, "w", encoding="utf-8") as f:
                 f.write(text)
         except Exception as exc:
             QMessageBox.warning(self, "Save Failed", f"Could not save file:\n{exc}")
 
+    def _generate_code_snippet(self, fmt: str) -> str:
+        """Generate client code for the request in the given *fmt*.
+
+        Returns the generated code, or an error message on failure.
+        """
+        if self.current_response is None:
+            return "# No response available"
+        try:
+            return generate_code(fmt, self.current_response.request)
+        except Exception as exc:
+            return f"# Error generating code: {exc}"
+
     def _copy_as_code(self, fmt: str) -> None:
         """Generate client code for this request and copy to clipboard."""
-        if self.current_response is None:
-            return
-        try:
-            code = generate_code(fmt, self.current_response.request)
-        except Exception as exc:
-            QMessageBox.warning(self, "Code Generation Failed", str(exc))
-            return
-        QApplication.clipboard().setText(code)
+        code = self._generate_code_snippet(fmt)
+        if code.startswith("# Error"):
+            QMessageBox.warning(self, "Code Generation Failed", code)
+        else:
+            QApplication.clipboard().setText(code)
 
     def _view_code_dialog(self) -> None:
-        """Show a dialog with generated client code."""
+        """Show a dialog with generated client code in multiple languages."""
         if self.current_response is None:
             return
 
         dlg = QDialog(self)
         dlg.setWindowTitle("Generate Client Code")
-        dlg.setMinimumSize(640, 480)
+        dlg.setMinimumSize(_CODEGEN_DIALOG_WIDTH, _CODEGEN_DIALOG_HEIGHT)
         layout = QVBoxLayout(dlg)
 
         row = QHBoxLayout()
@@ -281,10 +354,7 @@ class ResponseActionsMixin:
 
         def update_code() -> None:
             fmt = combo.currentText()
-            try:
-                code = generate_code(fmt, self.current_response.request)
-            except Exception as exc:
-                code = f"# Error generating code: {exc}"
+            code = self._generate_code_snippet(fmt)
             editor.setPlainText(code)
 
         combo.currentIndexChanged.connect(update_code)
@@ -313,5 +383,4 @@ class ResponseActionsMixin:
         if self.tabs.currentIndex() != self._body_tab_idx:
             self.tabs.setCurrentIndex(self._body_tab_idx)
         self._search_bar.show_and_focus()
-
 
