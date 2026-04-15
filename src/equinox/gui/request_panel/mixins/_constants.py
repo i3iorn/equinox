@@ -96,3 +96,13 @@ FMT_JSON_BTN_WIDTH = 95
 HISTORY_COMPLETER_LIMIT = 200
 COMPLETER_MAX_VISIBLE = 12
 
+# ──────────────────────────────────────────────────────────────────────────────
+# Save Dialog
+# ──────────────────────────────────────────────────────────────────────────────
+
+# Save-request dialog minimum width
+SAVE_DIALOG_MIN_WIDTH = 420
+
+# URL preview length in auto-generated request name
+SAVE_DIALOG_URL_PREVIEW_LEN = 50
+
