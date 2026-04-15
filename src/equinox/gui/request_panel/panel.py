@@ -51,7 +51,7 @@ from equinox.gui.request_panel.mixins import (  # noqa: F401
     _RequestAuthMixin,
     _save_history_safe,
 )
-from equinox.gui.request_panel.mixins._constants import (
+from equinox.gui.request_panel._constants import (
     BENCHMARK_BTN_WIDTH,
     BROWSE_BTN_WIDTH,
     CANCEL_BTN_WIDTH,

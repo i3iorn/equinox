@@ -28,7 +28,7 @@ from equinox.core.redact import mask_secret
 from equinox.core.time import utc_now
 from equinox.gui.theme import Colors
 
-from equinox.gui.request_panel.mixins._constants import (
+from equinox.gui.request_panel._constants import (
     APIKEY_PREVIEW_LENGTH,
     AUTH_DISPLAY_DISPATCH,
     AUTH_TAB_MARGINS,

@@ -12,7 +12,7 @@ from typing import Any, Optional
 from equinox.core.request import Request, Response
 from equinox.storage import Database, HistoryManager
 
-from equinox.gui.request_panel.mixins._constants import FOLDER_AUTH_PREFIX
+from equinox.gui.request_panel._constants import FOLDER_AUTH_PREFIX
 
 logger = logging.getLogger(__name__)
 

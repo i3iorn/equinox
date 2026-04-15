@@ -27,7 +27,7 @@ from equinox.gui.request_panel.builder import assemble_body, inject_content_type
 from equinox.gui.theme import Colors
 from equinox.gui.workers import RequestWorker
 
-from equinox.gui.request_panel.mixins._constants import (
+from equinox.gui.request_panel._constants import (
     AUTH_PREFLIGHT_CHECKS,
     HTTP_SCHEME_RE,
     PREFLIGHT_SEPARATOR,

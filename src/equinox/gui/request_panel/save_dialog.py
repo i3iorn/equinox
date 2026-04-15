@@ -20,7 +20,7 @@ from PyQt6.QtWidgets import (
 )
 
 from equinox.storage import Database, CollectionManager
-from equinox.gui.request_panel.mixins._constants import (
+from equinox.gui.request_panel._constants import (
     SAVE_DIALOG_MIN_WIDTH,
     SAVE_DIALOG_URL_PREVIEW_LEN,
 )
