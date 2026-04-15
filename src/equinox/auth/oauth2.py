@@ -1,12 +1,13 @@
 """OAuth2 authentication with secure token storage and refresh"""
 
+import base64
 import json
 import time
 import logging
 import uuid
 from datetime import datetime, timedelta, timezone
 from threading import Lock
-from typing import Any, Callable, Dict, Optional
+from typing import Any, Callable, Dict, Literal, Optional
 
 import httpx
 
@@ -121,6 +122,7 @@ class OAuth2Auth(AuthStrategy):
         secure_storage: Optional[SecureStorage] = None,
         storage_key: Optional[str] = None,
         token_timeout: float = 10.0,
+        token_auth: Literal["body", "basic"] = "body",
     ):
         """Initialize OAuth2 auth with optional secure storage.
 
@@ -134,6 +136,8 @@ class OAuth2Auth(AuthStrategy):
             secure_storage: SecureStorage instance for storing tokens (optional)
             storage_key: Key to store tokens in secure storage
             token_timeout: HTTP timeout for token endpoint requests in seconds
+            token_auth: How to send credentials to token endpoint — "body" (default, RFC 6749 §2.3.1)
+                       or "basic" (HTTP Basic Auth, RFC 6749 §2.3.1, used by D&B Direct+, etc.)
         """
         self.access_token = access_token
         self.token_url = token_url
@@ -142,6 +146,11 @@ class OAuth2Auth(AuthStrategy):
         self.scope = scope
         self.refresh_token = refresh_token
         self.expires_at: Optional[datetime] = None
+
+        # Validate token_auth parameter
+        if token_auth not in ("body", "basic"):
+            raise AuthError(f"Invalid token_auth {token_auth!r}. Must be 'body' or 'basic'.")
+        self.token_auth = token_auth
 
         # Validate and clamp token_timeout
         if not isinstance(token_timeout, (int, float)) or token_timeout <= 0:
@@ -211,6 +220,7 @@ class OAuth2Auth(AuthStrategy):
             "has_refresh_token": bool(self.refresh_token),
             "expires_at": self._expires_at_iso(),
             "token_timeout": self.token_timeout,
+            "token_auth": self.token_auth,
         }
 
     @classmethod
@@ -226,6 +236,7 @@ class OAuth2Auth(AuthStrategy):
             refresh_token=data.get("refresh_token"),
             secure_storage=secure_storage,
             token_timeout=data.get("token_timeout", cls.DEFAULT_TOKEN_TIMEOUT),
+            token_auth=data.get("token_auth", "body"),
         )
         # Restore expiration so _needs_refresh() can make the right decision.
         instance.expires_at = cls._parse_expires_at(data.get("expires_at"))
@@ -247,6 +258,7 @@ class OAuth2Auth(AuthStrategy):
             access_token=_interpolate_field(self.access_token, interp),
             refresh_token=_interpolate_field(self.refresh_token, interp),
             token_timeout=self.token_timeout,
+            token_auth=self.token_auth,
         )
         # Preserve token expiry so pre-fetched token isn't treated as eternal
         new_auth.expires_at = self.expires_at
@@ -518,16 +530,51 @@ class OAuth2Auth(AuthStrategy):
             pool=self.token_timeout,
         )
 
+    def _make_basic_auth_header(self) -> str:
+        """Return the Base64-encoded Basic auth header value.
+
+        Used for D&B Direct+, GitHub, and other OAuth2 providers that require
+        HTTP Basic Authentication (RFC 6749 §2.3.1) instead of body-encoded
+        credentials.
+
+        Returns:
+            The Basic auth header value: "Basic {base64(client_id:client_secret)}"
+
+        Raises:
+            AuthError: If client_id or client_secret is missing.
+        """
+        if not self.client_id or not self.client_secret:
+            raise AuthError(
+                "Client ID and secret are required for Basic auth token endpoint"
+            )
+        credentials = f"{self.client_id}:{self.client_secret}"
+        encoded = base64.b64encode(credentials.encode("utf-8")).decode("ascii")
+        return f"Basic {encoded}"
+
     def _execute_token_post(self, grant_data: Dict[str, Any]) -> httpx.Response:
         """Perform a single HTTP POST to the token endpoint.
+
+        Sends credentials either in the request body or as an Authorization header
+        (HTTP Basic Auth), depending on the configured ``token_auth`` mode.
 
         Raises:
             httpx.HTTPStatusError: On a non-2xx response.
             httpx.TransportError, httpx.TimeoutException: On network failure.
         """
         assert self.token_url is not None  # guaranteed by _refresh_access_token guard
+
+        headers: Dict[str, str] = {}
+        body = grant_data.copy()
+
+        if self.token_auth == "basic":
+            # D&B Direct+ / RFC 6749 §2.3.1: credentials in Authorization header
+            headers["Authorization"] = self._make_basic_auth_header()
+            # Remove client credentials from body when using Basic auth
+            body.pop("client_id", None)
+            body.pop("client_secret", None)
+
         with httpx.Client(timeout=self._make_token_timeout(), proxy=self._proxy_for_httpx) as client:
-            response = client.post(self.token_url, data=grant_data)
+            response = client.post(self.token_url, data=body, headers=headers)
         response.raise_for_status()
         return response
 

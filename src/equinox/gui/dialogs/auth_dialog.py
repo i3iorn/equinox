@@ -18,10 +18,26 @@ from equinox.gui.widgets import make_secret_row
 
 from equinox.auth import BasicAuth, OAuth2Auth, BearerAuth, APIKeyAuth
 from equinox.auth.aws_sigv4 import AWSSigV4Auth
+from equinox.core.exceptions import AuthError
 from equinox.storage import SavedCredentialsManager
 from equinox.storage.saved_credentials import AUTH_TYPE_LABELS
 
 logger = logging.getLogger(__name__)
+
+
+def _sanitize_field(text: str) -> str:
+    """Strip CR/LF characters that password managers may paste into fields.
+
+    Prevents ``AuthError`` (CRLF-injection check) from firing on values
+    that are merely copy-paste artefacts rather than real attacks.
+    """
+    return text.replace("\r", "").replace("\n", "")
+
+
+# Sentinel returned by _build_auth_from_tab when a required-field check
+# fails and a QMessageBox has already been shown.  Distinct from ``None``
+# which means "No Auth".
+_MISSING = object()
 
 
 class _TokenFetchWorker(QThread):
@@ -562,36 +578,69 @@ class AuthDialog(QDialog):
     def _save_auth(self) -> None:
         tab = self.tabs.currentIndex()
 
+        try:
+            auth = self._build_auth_from_tab(tab)
+        except AuthError as exc:
+            QMessageBox.warning(
+                self, "Invalid Credentials",
+                f"Could not save authentication:\n{exc}",
+            )
+            return
+
+        if auth is _MISSING:
+            # _build_auth_from_tab returned sentinel — validation message already shown
+            return
+
+        try:
+            self._saved_auth = auth
+            self.auth_configured.emit(auth)
+            self.accept()
+        except Exception as exc:
+            QMessageBox.critical(self, "Error", f"Failed to configure authentication: {exc}")
+
+    def _build_auth_from_tab(self, tab: int):
+        """Construct an auth strategy from the current tab's fields.
+
+        Returns:
+            An auth strategy object, ``None`` (No Auth), or :data:`_MISSING`
+            when a required-field check fails (message already shown).
+
+        Raises:
+            AuthError: When credential validation fails (CRLF, length, etc.).
+        """
         if tab == self._TAB_NONE:
-            auth = None
-        elif tab == self._TAB_BASIC:
-            username = self.basic_username.text().strip()
-            password = self.basic_password.text()
+            return None
+
+        if tab == self._TAB_BASIC:
+            username = _sanitize_field(self.basic_username.text().strip())
+            password = _sanitize_field(self.basic_password.text())
             if not username or not password:
                 QMessageBox.warning(self, "Missing Fields", "Enter both username and password.")
-                return
-            auth = BasicAuth(username=username, password=password)
-        elif tab == self._TAB_BEARER:
-            token = self.bearer_token.text().strip()
+                return _MISSING
+            return BasicAuth(username=username, password=password)
+
+        if tab == self._TAB_BEARER:
+            token = _sanitize_field(self.bearer_token.text().strip())
             if not token:
                 QMessageBox.warning(self, "Missing Token", "Enter a bearer token.")
-                return
-            auth = BearerAuth(token=token)
-        elif tab == self._TAB_OAUTH2:
-            token_url     = self.oauth2_token_url.text().strip()
-            client_id     = self.oauth2_client_id.text().strip()
-            client_secret = self.oauth2_client_secret.text().strip()
+                return _MISSING
+            return BearerAuth(token=token)
+
+        if tab == self._TAB_OAUTH2:
+            token_url     = _sanitize_field(self.oauth2_token_url.text().strip())
+            client_id     = _sanitize_field(self.oauth2_client_id.text().strip())
+            client_secret = _sanitize_field(self.oauth2_client_secret.text().strip())
             if not token_url or not client_id:
                 QMessageBox.warning(self, "Missing Fields",
                                     "Token URL and Client ID are required.")
-                return
+                return _MISSING
             auth = OAuth2Auth(
                 token_url=token_url,
                 client_id=client_id,
                 client_secret=client_secret,
-                scope=self.oauth2_scope.text().strip() or None,
-                access_token=self.oauth2_access_token.text().strip() or None,
-                refresh_token=self.oauth2_refresh_token.text().strip() or None,
+                scope=_sanitize_field(self.oauth2_scope.text().strip()) or None,
+                access_token=_sanitize_field(self.oauth2_access_token.text().strip()) or None,
+                refresh_token=_sanitize_field(self.oauth2_refresh_token.text().strip()) or None,
             )
             # Carry forward expires_at from a successful "Fetch Token…"
             # so the token isn't treated as eternal.
@@ -602,41 +651,37 @@ class AuthDialog(QDialog):
                     and auth.access_token == fetched.access_token
                 ):
                     auth.expires_at = fetched.expires_at
-        elif tab == self._TAB_APIKEY:
-            key_name  = self.api_key_name.text().strip()
-            key_value = self.api_key_value.text().strip()
+            return auth
+
+        if tab == self._TAB_APIKEY:
+            key_name  = _sanitize_field(self.api_key_name.text().strip())
+            key_value = _sanitize_field(self.api_key_value.text().strip())
             if not key_name or not key_value:
                 QMessageBox.warning(self, "Missing Fields", "Enter both key name and value.")
-                return
-            auth = APIKeyAuth(
+                return _MISSING
+            return APIKeyAuth(
                 key=key_name, value=key_value,
                 location=self.api_key_location.currentText(),
             )
-        elif tab == self._TAB_AWS:
-            access_key = self.aws_access_key.text().strip()
-            secret_key = self.aws_secret_key.text().strip()
-            region     = self.aws_region.text().strip()
-            service    = self.aws_service.text().strip()
+
+        if tab == self._TAB_AWS:
+            access_key = _sanitize_field(self.aws_access_key.text().strip())
+            secret_key = _sanitize_field(self.aws_secret_key.text().strip())
+            region     = _sanitize_field(self.aws_region.text().strip())
+            service    = _sanitize_field(self.aws_service.text().strip())
             if not access_key or not secret_key or not region or not service:
                 QMessageBox.warning(self, "Missing Fields",
                                     "Access Key, Secret Key, Region and Service are required.")
-                return
-            auth = AWSSigV4Auth(
+                return _MISSING
+            return AWSSigV4Auth(
                 access_key=access_key,
                 secret_key=secret_key,
                 region=region,
                 service=service,
-                session_token=self.aws_session_token.text().strip() or None,
+                session_token=_sanitize_field(self.aws_session_token.text().strip()) or None,
             )
-        else:
-            auth = None
 
-        try:
-            self._saved_auth = auth
-            self.auth_configured.emit(auth)
-            self.accept()
-        except Exception as exc:
-            QMessageBox.critical(self, "Error", f"Failed to configure authentication: {exc}")
+        return None
 
     @staticmethod
     def configure_auth(current_auth=None, parent=None, db=None) -> tuple:

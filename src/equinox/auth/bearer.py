@@ -1,7 +1,7 @@
 """Bearer token authentication"""
 
 import logging
-from typing import Any, Callable, Dict, Optional
+from typing import Any, Dict, Optional
 from equinox.auth.base import AuthStrategy, _validate_credential
 from equinox.core.exceptions import AuthError
 from equinox.core.redact import mask_secret
