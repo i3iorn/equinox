@@ -42,6 +42,12 @@ class ResponseDisplayMixin:
         self.status_label.setStyleSheet(f"font-weight: bold; color: {color};")
         self.time_label.setText(f"{int(response.elapsed * 1000)} ms")
         self.size_label.setText(format_size(response.size))
+        logger.debug(
+            "_update_status_bar: %d %s, %d ms, %s",
+            code, response.reason,
+            int(response.elapsed * 1000),
+            format_size(response.size),
+        )
 
     @staticmethod
     def _get_status_color(status_code: int) -> str:
@@ -59,6 +65,10 @@ class ResponseDisplayMixin:
 
     def _display_body(self, response: Response) -> None:
         """Display response body, handling size warnings."""
+        logger.debug(
+            "_display_body: size=%d, threshold=%d",
+            response.size, self._LARGE_BODY_THRESHOLD,
+        )
         if response.size > self._LARGE_BODY_THRESHOLD:
             self._body_warning.setVisible(True)
             self._body_warn_label.setText(
@@ -66,9 +76,12 @@ class ResponseDisplayMixin:
             )
             self.body_text.setPlaceholderText("Click 'Load Full' to display the body.")
             self.body_text.clear()
+            logger.debug("_display_body: large body — deferred rendering")
         else:
             self._body_warning.setVisible(False)
-            self.body_text.set_code(pretty_print_body(response))
+            text = pretty_print_body(response)
+            self.body_text.set_code(text)
+            logger.debug("_display_body: set %d chars", len(text))
 
     # ------------------------------------------------------------------
     # JSON Tree
@@ -77,6 +90,10 @@ class ResponseDisplayMixin:
     def _display_json_tree(self, response: Response) -> None:
         try:
             can_show_json = bool(response.is_json and response.size <= self._LARGE_BODY_THRESHOLD)
+            logger.debug(
+                "_display_json_tree: is_json=%s, can_show=%s",
+                getattr(response, "is_json", None), can_show_json,
+            )
             if can_show_json:
                 obj = response.json()
                 self._json_tree.load_json(obj)
@@ -88,6 +105,7 @@ class ResponseDisplayMixin:
             self.tabs.setTabVisible(self._json_tab_idx, can_show_json)
             self._view_json_act.setEnabled(can_show_json)
         except Exception:
+            logger.exception("_display_json_tree: failed")
             self._json_tree.clear()
             self._search_bar.set_json_doc(None)
             self.tabs.setTabVisible(self._json_tab_idx, False)
@@ -103,7 +121,9 @@ class ResponseDisplayMixin:
         self._hdrs_search.blockSignals(False)
 
         self.resp_headers_table.load(response.headers)
-        self._hdrs_count_label.setText(str(len(response.headers)))
+        count = len(response.headers)
+        self._hdrs_count_label.setText(str(count))
+        logger.debug("_display_headers: %d headers loaded", count)
 
     def _on_hdrs_filter_changed(self, text: str) -> None:
         """Filter headers table by substring match on name/value."""
@@ -181,6 +201,11 @@ class ResponseDisplayMixin:
 
     def _display_sent_request(self, response: Response) -> None:
         """Populate the 'Sent Request' tab from the response's metadata."""
+        logger.debug(
+            "_display_sent_request: method=%s url=%s",
+            response.request.method,
+            getattr(response, "sent_url", None) or response.request.url,
+        )
         self._display_sent_request_method(response.request.method)
         self._display_sent_request_url(response)
         self._display_sent_request_headers(response)
@@ -256,11 +281,13 @@ class ResponseDisplayMixin:
         ct = (content_type or "").lower()
         cls = next((h for token, h in CT_HIGHLIGHTERS if token in ct), None)
         if cls is None:
+            logger.debug("_apply_highlighter: no highlighter for ct=%r", content_type)
             return
 
         doc = self.body_text.document()
         try:
             self._body_highlighter = cls(doc)
+            logger.debug("_apply_highlighter: attached %s for ct=%r", cls.__name__, content_type)
         except Exception:
             logger.exception(
                 "Failed to create highlighter for content-type=%s; skipping highlighting",
@@ -272,5 +299,3 @@ class ResponseDisplayMixin:
                 except Exception:
                     pass
             self._body_highlighter = None
-
-

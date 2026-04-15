@@ -113,10 +113,14 @@ class ResponsePanel(
         self.current_response = response
 
         logger.debug(
-            "display_response: status=%s size=%s",
+            "display_response: status=%s size=%s content_type=%s",
             getattr(response, "status_code", None),
             getattr(response, "size", None),
+            response.headers.get("content-type", "(none)") if hasattr(response, "headers") else "(no headers)",
         )
+
+        # Update status bar first — gives immediate visual feedback
+        self._safe_display(self._update_status_bar, response)
 
         # Apply syntax highlighting for body
         self._apply_highlighter_safe(response)
@@ -126,6 +130,7 @@ class ResponsePanel(
 
         # Switch to preferred view
         self._apply_view_preference()
+        logger.debug("display_response: pipeline complete")
 
     def _apply_highlighter_safe(self, response: Response) -> None:
         """Apply syntax highlighter for response content-type.
@@ -267,6 +272,7 @@ class ResponsePanel(
         """
         try:
             fn(*args)
+            logger.debug("Display function %s completed", fn.__name__)
         except Exception:
             logger.exception("Display function %s failed", fn.__name__)
 
