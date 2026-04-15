@@ -20,6 +20,7 @@ from PyQt6.QtCore import Qt
 
 from equinox.core.codegen import GENERATORS, generate_code
 from equinox.gui.response_panel.pretty_print import PrettyPrintRunnable
+from equinox.gui.response_panel._formatting import pretty_print_body
 from equinox.gui.theme import get_mono_font
 
 if TYPE_CHECKING:
@@ -61,7 +62,7 @@ class ResponseActionsMixin:
             return displayed
         if self.current_response is not None:
             try:
-                return self._pretty_body(self.current_response)
+                return pretty_print_body(self.current_response)
             except Exception:
                 logger.exception("Failed to pretty-print body")
         return ""
