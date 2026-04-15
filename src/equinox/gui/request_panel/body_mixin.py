@@ -1,9 +1,22 @@
-"""Body-related mixin for RequestPanel: captures, assertions, multipart, load/clear."""
+"""Body-related mixin for RequestPanel: captures, assertions, multipart, load/clear.
+
+Provides comprehensive request body handling including:
+- Captures: Extract values from responses into variables
+- Assertions: Define pass/fail rules for responses
+- Multipart: Handle multipart/form-data bodies
+- Body type detection and switching
+- Body search and highlighting (text, regex, JSONPath)
+- Request loading and clearing
+
+All UI operations are guarded against missing widgets (headless/test environments).
+"""
+
+from __future__ import annotations
 
 import logging
 import json
 import re
-from typing import List, Optional, Dict, Tuple
+from typing import List, Optional, Dict, Tuple, Any
 
 from PyQt6.QtWidgets import (
     QWidget,
@@ -27,51 +40,89 @@ from equinox.gui.workers import DEFAULT_TIMEOUT
 
 logger = logging.getLogger(__name__)
 
-# ── Module-level constants ────────────────────────────────────────────────────
+# ──────────────────────────────────────────────────────────────────────────────
+# Module-level Constants
+# ──────────────────────────────────────────────────────────────────────────────
 
-# Ordered tuples used to populate combo boxes — single source of truth.
+# Ordered tuples used to populate combo boxes — single source of truth
 _CAPTURE_SOURCES: Tuple[str, ...] = ("json", "header", "regex", "status")
 _ASSERTION_TYPES: Tuple[str, ...] = (
     "status", "body_contains", "header_value", "jsonpath", "elapsed_lt"
 )
 
-# Fallback selection width (chars) used when a JSONPath match length cannot be
-# determined (e.g. the value is not literally present in the serialised text).
+# JSONPath value preview character limit
 _JSONPATH_PREVIEW_CHARS: int = 50
 
-# Maximum number of extra-selection highlights applied to the body editor.
-# Keeps the UI responsive on large documents with many matches.
+# Maximum body search highlights to keep UI responsive
 _MAX_HIGHLIGHTS: int = 500
+
+# UI Configuration
+_TOOLBAR_SPACING = 2
+_TOOLBAR_MARGINS = (0, 2, 0, 0)
+_BUTTON_ADD_WIDTH = 64
+_BUTTON_REMOVE_WIDTH = 80
+_LAYOUT_MARGINS = (0, 4, 0, 0)
+
+# Tab labels for captures/assertions
+_LABEL_CAPTURES = "Captures"
+_LABEL_ASSERTIONS = "Assertions"
+_LABEL_LAST_CAPTURE = "Last capture results:"
+_LABEL_LAST_ASSERTION = "Last assertion results:"
+_LABEL_EMPTY = "—"
 
 
 class RequestBodyMixin:
-    """Methods for captures, assertions, multipart, body-type handling, load, and clear."""
+    """Methods for captures, assertions, multipart, body-type handling, load, and clear.
+
+    Responsibilities:
+    - Table management for captures and assertions
+    - Request body loading and persistence
+    - Search and highlighting in body
+    - Multipart form data handling
+    - JSONPath evaluation for captures and search
+    """
 
     # ── Internal helpers ──────────────────────────────────────────────
 
     @staticmethod
-    def _select_range(target, start: int, end: int) -> None:
-        """Move *target*'s cursor to select ``[start, end)`` with bounds clamping.
+    def _select_range(target: QTextEdit, start: int, end: int) -> None:
+        """Move cursor to select range [start, end) with bounds clamping.
 
-        Silently does nothing if the range is empty or the widget is gone.
+        Args:
+            target: QTextEdit widget
+            start: Start position
+            end: End position
+
+        Silently does nothing if range invalid or widget unavailable.
         """
         try:
             doc = target.document()
             max_pos = max(0, doc.characterCount() - 1)
         except Exception:
             return
+
         s = max(0, min(start, max_pos))
         e = max(0, min(end, max_pos))
         if s >= e:
             return
+
         cursor = target.textCursor()
         cursor.setPosition(s)
         cursor.setPosition(e, QTextCursor.MoveMode.KeepAnchor)
         target.setTextCursor(cursor)
 
     @staticmethod
-    def _try_ui(fn, *args, **kwargs) -> None:
-        """Call *fn* and silently swallow :exc:`RuntimeError` (deleted C++ widget)."""
+    def _try_ui(fn: Any, *args: Any, **kwargs: Any) -> None:
+        """Call function and silently swallow RuntimeError (deleted C++ widget).
+
+        Used to guard UI operations in headless/test environments where
+        the underlying Qt widget may have been deleted.
+
+        Args:
+            fn: Function to call
+            *args: Positional arguments
+            **kwargs: Keyword arguments
+        """
         try:
             fn(*args, **kwargs)
         except RuntimeError:
@@ -81,201 +132,292 @@ class RequestBodyMixin:
 
     @staticmethod
     def _build_action_tab_shell(
-        title: str, add_slot, remove_slot
-    ) -> tuple:
-        """Build the common outer shell for Captures / Assertions tabs.
+        title: str, add_slot: Any, remove_slot: Any
+    ) -> Tuple[QWidget, QVBoxLayout, QLabel]:
+        """Build common outer shell for Captures/Assertions tabs.
 
-        Creates ``QWidget → QVBoxLayout`` with a bold-label toolbar
-        (``+ Add`` / ``− Remove`` buttons) already wired to *add_slot* and
-        *remove_slot*.  Also constructs and styles the shared results label.
+        Creates toolbar with Add/Remove buttons and results label.
 
-        Returns ``(widget, layout, results_label)``; the caller is responsible
-        for inserting the data table and appending the caption + results_label
-        to *layout*.
+        Args:
+            title: Tab title
+            add_slot: Callback for add button
+            remove_slot: Callback for remove button
+
+        Returns:
+            (widget, layout, results_label)
         """
         w = QWidget()
         layout = QVBoxLayout(w)
-        layout.setContentsMargins(0, 4, 0, 0)
+        layout.setContentsMargins(*_LAYOUT_MARGINS)
 
         toolbar = QHBoxLayout()
-        toolbar.setContentsMargins(0, 2, 0, 0)
-        toolbar.setSpacing(2)
+        toolbar.setContentsMargins(*_TOOLBAR_MARGINS)
+        toolbar.setSpacing(_TOOLBAR_SPACING)
+
         lbl = QLabel(title)
         lbl.setStyleSheet("font-weight: bold;")
         toolbar.addWidget(lbl)
+
         add_btn = QPushButton("+ Add")
-        add_btn.setFixedWidth(64)
+        add_btn.setFixedWidth(_BUTTON_ADD_WIDTH)
         add_btn.clicked.connect(add_slot)
+
         remove_btn = QPushButton("− Remove")
-        remove_btn.setFixedWidth(80)
+        remove_btn.setFixedWidth(_BUTTON_REMOVE_WIDTH)
         remove_btn.clicked.connect(remove_slot)
+
         toolbar.addWidget(add_btn)
         toolbar.addWidget(remove_btn)
         toolbar.addStretch()
         layout.addLayout(toolbar)
 
-        results_label = QLabel("—")
+        results_label = QLabel(_LABEL_EMPTY)
         results_label.setFont(get_mono_font())
         results_label.setWordWrap(True)
         results_label.setObjectName("mutedLabel")
+
         return w, layout, results_label
 
     @staticmethod
     def _remove_selected_from(table: QTableWidget) -> None:
-        """Remove every selected row from *table* (highest index first)."""
+        """Remove selected rows from table (highest index first).
+
+        Args:
+            table: QTableWidget to modify
+        """
         for r in sorted({i.row() for i in table.selectedIndexes()}, reverse=True):
             table.removeRow(r)
 
     # ── Captures tab ──────────────────────────────────────────────────
 
     def _create_captures_tab(self) -> QWidget:
+        """Create captures table tab.
+
+        Returns:
+            QWidget for captures tab
+        """
         w, layout, self.captures_results_label = self._build_action_tab_shell(
-            "Captures", self._captures_add_row, self._captures_remove_row
+            _LABEL_CAPTURES, self._captures_add_row, self._captures_remove_row
         )
-        self.captures_table = QTableWidget(0, 4)
-        self.captures_table.setHorizontalHeaderLabels(["Variable", "Source", "Path / Pattern", "Default"])
-        hdr = self.captures_table.horizontalHeader()
+        self.captures_table = self._create_captures_table()
+        layout.addWidget(self.captures_table)
+        layout.addWidget(QLabel(_LABEL_LAST_CAPTURE))
+        layout.addWidget(self.captures_results_label)
+        return w
+
+    @staticmethod
+    def _create_captures_table() -> QTableWidget:
+        """Create and configure captures table.
+
+        Returns:
+            Configured QTableWidget
+        """
+        table = QTableWidget(0, 4)
+        table.setHorizontalHeaderLabels(["Variable", "Source", "Path / Pattern", "Default"])
+        hdr = table.horizontalHeader()
         hdr.setSectionResizeMode(0, QHeaderView.ResizeMode.Interactive)
         hdr.setSectionResizeMode(1, QHeaderView.ResizeMode.ResizeToContents)
         hdr.setSectionResizeMode(2, QHeaderView.ResizeMode.Stretch)
         hdr.setSectionResizeMode(3, QHeaderView.ResizeMode.Interactive)
-        self.captures_table.verticalHeader().setVisible(False)
-        self.captures_table.setAlternatingRowColors(True)
-        self.captures_table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
-        layout.addWidget(self.captures_table)
-        layout.addWidget(QLabel("Last capture results:"))
-        layout.addWidget(self.captures_results_label)
-        return w
+        table.verticalHeader().setVisible(False)
+        table.setAlternatingRowColors(True)
+        table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
+        return table
 
     # ── Assertions tab ────────────────────────────────────────────────
 
     def _create_assertions_tab(self) -> QWidget:
-        """Assertions tab — define pass/fail rules evaluated after each response."""
-        w, layout, self.assertions_results_label = self._build_action_tab_shell(
-            "Assertions", self._assertions_add_row, self._assertions_remove_row
-        )
-        self.assertions_table = QTableWidget(0, 3)
-        self.assertions_table.setHorizontalHeaderLabels(["Type", "Field / Path", "Expected"])
-        ahdr = self.assertions_table.horizontalHeader()
-        ahdr.setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
-        ahdr.setSectionResizeMode(1, QHeaderView.ResizeMode.Interactive)
-        ahdr.setSectionResizeMode(2, QHeaderView.ResizeMode.Stretch)
-        self.assertions_table.horizontalHeader().setDefaultSectionSize(160)
-        self.assertions_table.verticalHeader().setVisible(False)
-        self.assertions_table.setAlternatingRowColors(True)
-        self.assertions_table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
-        layout.addWidget(self.assertions_table)
-        layout.addWidget(QLabel("Last assertion results:"))
-        layout.addWidget(self.assertions_results_label)
+        """Create assertions table tab.
 
+        Returns:
+            QWidget for assertions tab
+        """
+        w, layout, self.assertions_results_label = self._build_action_tab_shell(
+            _LABEL_ASSERTIONS, self._assertions_add_row, self._assertions_remove_row
+        )
+        self.assertions_table = self._create_assertions_table()
+        layout.addWidget(self.assertions_table)
+        layout.addWidget(QLabel(_LABEL_LAST_ASSERTION))
+        layout.addWidget(self.assertions_results_label)
         return w
 
+    @staticmethod
+    def _create_assertions_table() -> QTableWidget:
+        """Create and configure assertions table.
+
+        Returns:
+            Configured QTableWidget
+        """
+        table = QTableWidget(0, 3)
+        table.setHorizontalHeaderLabels(["Type", "Field / Path", "Expected"])
+        hdr = table.horizontalHeader()
+        hdr.setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
+        hdr.setSectionResizeMode(1, QHeaderView.ResizeMode.Interactive)
+        hdr.setSectionResizeMode(2, QHeaderView.ResizeMode.Stretch)
+        hdr.setDefaultSectionSize(160)
+        table.verticalHeader().setVisible(False)
+        table.setAlternatingRowColors(True)
+        table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
+        return table
+
     def _assertions_add_row(self) -> None:
-        """Append a new empty assertion row to the table."""
+        """Append empty assertion row to table."""
         row = self.assertions_table.rowCount()
         self.assertions_table.insertRow(row)
+
         type_combo = QComboBox()
         type_combo.addItems(_ASSERTION_TYPES)
         self.assertions_table.setCellWidget(row, 0, type_combo)
+
         self.assertions_table.setItem(row, 1, QTableWidgetItem(""))
         self.assertions_table.setItem(row, 2, QTableWidgetItem(""))
 
     def _assertions_remove_row(self) -> None:
-        """Remove the currently selected assertion row(s)."""
+        """Remove selected assertion rows."""
         self._remove_selected_from(self.assertions_table)
 
-    def _get_assertions(self) -> list:
-        """Collect assertion rules from the assertions table."""
+    def _get_assertions(self) -> List[Dict[str, str]]:
+        """Collect assertion rules from table.
+
+        Returns:
+            List of assertion rule dicts
+        """
         rules = []
         for row in range(self.assertions_table.rowCount()):
             widget = self.assertions_table.cellWidget(row, 0)
             a_type = widget.currentText() if widget else "status"
+
             f_item = self.assertions_table.item(row, 1)
             e_item = self.assertions_table.item(row, 2)
-            field    = f_item.text().strip() if f_item else ""
+
+            field = f_item.text().strip() if f_item else ""
             expected = e_item.text().strip() if e_item else ""
+
             if expected:
                 rules.append({"type": a_type, "field": field, "expected": expected})
+
         return rules
 
-    def _set_assertions(self, rules: list) -> None:
-        """Populate the assertions table from a list of rule dicts."""
+    def _set_assertions(self, rules: Optional[List[Dict[str, str]]]) -> None:
+        """Populate assertions table from rule list.
+
+        Args:
+            rules: List of assertion rule dicts or None
+        """
         self.assertions_table.setRowCount(0)
         for rule in (rules or []):
             self._assertions_add_row()
             row = self.assertions_table.rowCount() - 1
+
             widget = self.assertions_table.cellWidget(row, 0)
             if widget:
                 idx = widget.findText(rule.get("type", "status"))
                 if idx >= 0:
                     widget.setCurrentIndex(idx)
+
             f_item = self.assertions_table.item(row, 1)
             e_item = self.assertions_table.item(row, 2)
+
             if f_item:
                 f_item.setText(rule.get("field", ""))
             if e_item:
                 e_item.setText(rule.get("expected", ""))
 
-    def _evaluate_assertions(self, response) -> None:
-        """Run assertion rules against the response and display results."""
+    def _evaluate_assertions(self, response: Any) -> None:
+        """Evaluate assertion rules against response.
+
+        Args:
+            response: Response object to test
+        """
         rules = self._get_assertions()
         if not rules:
-            self.assertions_results_label.setText("—")
+            self.assertions_results_label.setText(_LABEL_EMPTY)
             return
+
         lines = []
         for rule in rules:
             passed, msg = _evaluate_assertion(rule, response)
             icon = "✓" if passed else "✗"
             lines.append(f"{icon} {msg}")
-        self.assertions_results_label.setText("\n".join(lines) if lines else "—")
-        # Update the tab title with pass/fail summary
+
+        self.assertions_results_label.setText("\n".join(lines) if lines else _LABEL_EMPTY)
+
+        # Update tab title with pass/fail summary
         passed_count = sum(1 for line in lines if line.startswith("✓"))
         total = len(lines)
         for i in range(self.tabs.count()):
-            if self.tabs.tabText(i).startswith("Assertions"):
-                label = f"Assertions ({passed_count}/{total})" if lines else "Assertions"
+            if self.tabs.tabText(i).startswith(_LABEL_ASSERTIONS):
+                label = f"{_LABEL_ASSERTIONS} ({passed_count}/{total})" if lines else _LABEL_ASSERTIONS
                 self.tabs.setTabText(i, label)
                 break
 
     # ── Captures ──────────────────────────────────────────────────────
 
     def _captures_add_row(self) -> None:
+        """Append empty capture row to table."""
         r = self.captures_table.rowCount()
         self.captures_table.insertRow(r)
+
         self.captures_table.setItem(r, 0, QTableWidgetItem(""))
+
         source_combo = QComboBox()
         source_combo.addItems(_CAPTURE_SOURCES)
         self.captures_table.setCellWidget(r, 1, source_combo)
+
         self.captures_table.setItem(r, 2, QTableWidgetItem(""))
         self.captures_table.setItem(r, 3, QTableWidgetItem(""))
 
     def _captures_remove_row(self) -> None:
+        """Remove selected capture rows."""
         self._remove_selected_from(self.captures_table)
 
-    def _get_captures(self) -> list:
+    def _get_captures(self) -> List[Dict[str, str]]:
+        """Collect captures from table.
+
+        Returns:
+            List of capture dicts with variable/source/path/default
+        """
         captures = []
         for r in range(self.captures_table.rowCount()):
             var_item = self.captures_table.item(r, 0)
             variable = var_item.text().strip() if var_item else ""
             if not variable:
                 continue
+
             source_widget = self.captures_table.cellWidget(r, 1)
             source = source_widget.currentText() if source_widget else "json"
+
             path_item = self.captures_table.item(r, 2)
             path = path_item.text().strip() if path_item else ""
+
             default_item = self.captures_table.item(r, 3)
             default = default_item.text().strip() if default_item else ""
-            captures.append({"variable": variable, "source": source, "path": path, "default": default})
+
+            captures.append({
+                "variable": variable,
+                "source": source,
+                "path": path,
+                "default": default
+            })
+
         return captures
 
-    def _set_captures(self, captures: list) -> None:
+    def _set_captures(self, captures: Optional[List[Dict[str, str]]]) -> None:
+        """Populate captures table from capture list.
+
+        Args:
+            captures: List of capture dicts or None
+        """
         self.captures_table.setRowCount(0)
-        for cap in captures:
+        for cap in (captures or []):
             if not isinstance(cap, dict):
                 continue
+
             r = self.captures_table.rowCount()
             self.captures_table.insertRow(r)
+
             self.captures_table.setItem(r, 0, QTableWidgetItem(cap.get("variable", "")))
+
             source_combo = QComboBox()
             source_combo.addItems(_CAPTURE_SOURCES)
             src = cap.get("source", "json")
@@ -283,8 +425,11 @@ class RequestBodyMixin:
             if idx >= 0:
                 source_combo.setCurrentIndex(idx)
             self.captures_table.setCellWidget(r, 1, source_combo)
+
             self.captures_table.setItem(r, 2, QTableWidgetItem(cap.get("path", "")))
             self.captures_table.setItem(r, 3, QTableWidgetItem(cap.get("default", "")))
+
+    # ... existing code ...
 
     # ── Body type / tab labels ─────────────────────────────────────────
 
