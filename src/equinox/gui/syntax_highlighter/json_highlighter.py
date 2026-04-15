@@ -9,7 +9,7 @@ from PyQt6.QtGui import QSyntaxHighlighter
 from equinox.gui.syntax_highlighter.base import _make_format, _VARIABLE_FMT, _VARIABLE_PATTERN
 from equinox.gui.theme import Colors
 
-__all__ = ["JsonHighlighter"]
+__all__ = ["JsonHighlighter", "JsonLexer", "State"]
 
 
 # ---------------------------------------------------------------------------
@@ -144,7 +144,11 @@ class JsonLexer:
                         state = State.NORMAL
                         content_start = (start + 1) if string_opened_here else start
                         value = text[content_start : i - 1]
-                        self._emit_string_token(start, i, value, yield_func=lambda t: (yield t))
+                        # Emit the appropriate token (TIMESTAMP or STRING)
+                        if self.enable_timestamps and _TIMESTAMP_RE.fullmatch(value):
+                            yield Token("TIMESTAMP", start, i, value)
+                        else:
+                            yield Token("STRING", start, i, value)
                         string_opened_here = False
                         break
 
@@ -262,24 +266,6 @@ class JsonLexer:
 
         return state
 
-    def _emit_string_token(
-        self, start: int, end: int, value: str, yield_func
-    ) -> None:
-        """Emit either a STRING or TIMESTAMP token based on content.
-
-        Parameters
-        ----------
-        start, end
-            Token position in the original text.
-        value
-            The string content (without quotes).
-        yield_func
-            Generator yield function (lambda t: (yield t) from caller).
-        """
-        if self.enable_timestamps and _TIMESTAMP_RE.fullmatch(value):
-            yield_func(Token("TIMESTAMP", start, end, value))
-        else:
-            yield_func(Token("STRING", start, end, value))
 
 
 # ---------------------------------------------------------------------------

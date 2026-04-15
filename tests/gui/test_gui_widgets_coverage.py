@@ -136,7 +136,7 @@ class TestDragDropTree:
     def test_item_data_none_item(self):
         from equinox.gui.widgets.drag_drop_tree import DragDropTree
         tree = DragDropTree()
-        assert tree._item_data(None) is None
+        assert tree._node_data(None) is None
 
     def test_item_data_with_item(self):
         from equinox.gui.widgets.drag_drop_tree import DragDropTree
@@ -145,7 +145,7 @@ class TestDragDropTree:
         item = QTreeWidgetItem(["My Request"])
         data = {"type": "request", "id": 42}
         item.setData(0, Qt.ItemDataRole.UserRole, data)
-        assert tree._item_data(item) == data
+        assert tree._node_data(item) == data
 
     def test_start_drag_no_item(self):
         from equinox.gui.widgets.drag_drop_tree import DragDropTree

@@ -22,6 +22,7 @@ from equinox.core.request import Response
 from equinox.gui.response_panel.builder import ResponseBuilderMixin
 from equinox.gui.response_panel.display_mixin import ResponseDisplayMixin
 from equinox.gui.response_panel.actions_mixin import ResponseActionsMixin
+from equinox.gui.response_panel._formatting import pretty_print_body
 
 logger = logging.getLogger(__name__)
 
@@ -58,6 +59,7 @@ class ResponsePanel(
         self._thread_pool = QThreadPool.globalInstance()
         self._body_highlighter: Optional[Any] = None
         self._prefer_json_view = False
+        self._LARGE_BODY_THRESHOLD = _LARGE_BODY_THRESHOLD
 
         self._init_ui()
 
@@ -183,6 +185,19 @@ class ResponsePanel(
                 "Failed to show error dialog",
                 exc_info=True,
             )
+
+    def _pretty_body(self, response: Response) -> str:
+        """Format response body for display (JSON or XML, otherwise raw).
+
+        Wrapper around the pretty_print_body function from _formatting.
+
+        Args:
+            response: Response object to format
+
+        Returns:
+            Formatted body string
+        """
+        return pretty_print_body(response)
 
     def set_intelligence_badge(self, count: int) -> None:
         """Set badge showing number of intelligence findings.

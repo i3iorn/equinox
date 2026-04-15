@@ -33,15 +33,15 @@ class DragDropTree(QTreeWidget):
     # ── Private helpers ───────────────────────────────────────────────
 
     @staticmethod
-    def _node_data(item: QTreeWidgetItem | None) -> dict:
-        """Return the UserRole dict for *item*, or ``{}`` if absent or unset.
+    def _node_data(item: QTreeWidgetItem | None) -> dict | None:
+        """Return the UserRole dict for *item*, or ``None`` if item is None.
 
-        Always returns a ``dict`` so callers can safely call ``.get()``
-        without a None-guard.  An empty dict is falsy, so ``if not data``
-        checks remain valid.
+        Returns ``None`` if the item is None, or ``{}`` if the item's UserRole
+        data is not set. Callers should check ``if not data:`` before calling
+        ``.get()`` to handle both None and empty dict cases.
         """
         if item is None:
-            return {}
+            return None
         return item.data(0, Qt.ItemDataRole.UserRole) or {}
 
     # ── Only request items are draggable ──────────────────────────────
@@ -74,6 +74,9 @@ class DragDropTree(QTreeWidget):
     def dragMoveEvent(self, event: QDragMoveEvent) -> None:
         target = self.itemAt(event.position().toPoint())
         tdata = self._node_data(target)
+        if not tdata:
+            event.ignore()
+            return
         ttype = tdata.get("type")
         if ttype not in ("collection", "folder", "request"):
             event.ignore()
@@ -189,8 +192,3 @@ class DragDropTree(QTreeWidget):
             path = pd.get("path")
             return str(path) if path is not None else None
         return None
-
-
-# Backward-compat alias (original internal name)
-_DragDropTree = DragDropTree
-
