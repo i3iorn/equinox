@@ -711,6 +711,9 @@ class MainWindow(QMainWindow):
         manage_creds = QAction("Manage &Saved Credentials…", self)
         manage_creds.triggered.connect(self._manage_oauth_clients)
         env_menu.addAction(manage_creds)
+        manage_secrets = QAction("Manage &Secret Managers…", self)
+        manage_secrets.triggered.connect(self._manage_secret_managers)
+        env_menu.addAction(manage_secrets)
 
         # Help
         help_menu = menubar.addMenu("&Help")
@@ -1041,3 +1044,19 @@ class MainWindow(QMainWindow):
     def _manage_oauth_clients(self) -> None:
         from equinox.gui.dialogs.saved_credentials_dialog import SavedCredentialsDialog
         SavedCredentialsDialog(self.db, self).exec()
+
+    def _manage_secret_managers(self) -> None:
+        """Open the Secret Manager settings panel in a dialog."""
+        from equinox.gui.secret_manager_panel import SecretManagerSettingsPanel
+        from PyQt6.QtWidgets import QDialog, QVBoxLayout
+        
+        dialog = QDialog(self)
+        dialog.setWindowTitle("Secret Managers")
+        dialog.setMinimumSize(600, 500)
+        
+        layout = QVBoxLayout(dialog)
+        panel = SecretManagerSettingsPanel(parent=dialog)
+        layout.addWidget(panel)
+        
+        dialog.exec()
+
