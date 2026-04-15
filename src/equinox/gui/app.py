@@ -1,4 +1,11 @@
-"""Main GUI application."""
+"""Main GUI application.
+
+Responsibilities:
+- Bootstrap sequence: logging → Qt → theme → database → window
+- Exception handling and error reporting
+- Splash screen lifecycle during startup
+- Graceful shutdown logging
+"""
 from __future__ import annotations
 
 import logging
@@ -6,7 +13,8 @@ import sys
 import traceback
 import types
 from importlib.metadata import PackageNotFoundError, version
-from typing import NoReturn
+from pathlib import Path
+from typing import NoReturn, Any
 
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QColor, QPixmap
@@ -22,23 +30,52 @@ __all__ = ["main"]
 
 logger = logging.getLogger(__name__)
 
-# ── Splash constants ──────────────────────────────────────────────────────────
+# ──────────────────────────────────────────────────────────────────────────────
+# Splash Screen Configuration
+# ──────────────────────────────────────────────────────────────────────────────
 
 _SPLASH_WIDTH: int = 420
 _SPLASH_HEIGHT: int = 100
 _SPLASH_BG_COLOR: str = "#1e1e2e"
 _SPLASH_TEXT_COLOR: str = "#cdd6f4"
 _SPLASH_ALIGN = Qt.AlignmentFlag.AlignBottom | Qt.AlignmentFlag.AlignHCenter
+_SPLASH_INITIAL_MSG: str = "Starting Equinox…"
 
-# ── Helpers ───────────────────────────────────────────────────────────────────
+# ──────────────────────────────────────────────────────────────────────────────
+# Startup Messages
+# ──────────────────────────────────────────────────────────────────────────────
+
+_MSG_INITIALIZING_DB: str = "Initialising database…"
+_MSG_LOADING_INTERFACE: str = "Loading interface…"
+_ERR_LOGGING_SETUP: str = "FATAL: Could not configure logging: %s"
+_ERR_DB_INIT: str = "Equinox could not open its database:\n\n%s"
+_ERR_STARTUP: str = "Equinox could not start:\n\n%s"
 
 
-def _app_version() -> str:
-    """Return the installed package version, or ``'dev'`` if not installed."""
+def _get_app_version() -> str:
+    """Return the installed package version, or ``'dev'`` if not installed.
+
+    Returns:
+        Version string (e.g. "1.0.0") or "dev" if not installed
+    """
     try:
         return version("equinox")
     except PackageNotFoundError:
         return "dev"
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Exception Handling
+# ──────────────────────────────────────────────────────────────────────────────
+
+
+def _install_qt_exception_hook() -> None:
+    """Install a custom exception hook for the Qt main thread.
+
+    Catches unhandled exceptions (except SystemExit and KeyboardInterrupt),
+    logs them, and shows a user-friendly error dialog with copyable traceback.
+    """
+    sys.excepthook = _qt_exception_hook
 
 
 def _qt_exception_hook(
@@ -50,14 +87,22 @@ def _qt_exception_hook(
 
     ``SystemExit`` and ``KeyboardInterrupt`` are forwarded to the default hook
     so normal process termination is never intercepted by the error dialog.
+
+    Args:
+        exc_type: Exception type
+        exc_value: Exception instance
+        exc_tb: Traceback object
     """
+    # Allow normal process termination
     if issubclass(exc_type, (SystemExit, KeyboardInterrupt)):
         sys.__excepthook__(exc_type, exc_value, exc_tb)
         return
 
+    # Format and log the full traceback
     msg = "".join(traceback.format_exception(exc_type, exc_value, exc_tb))
     logger.critical("Unhandled exception on Qt thread:\n%s", msg)
 
+    # Show user-friendly error dialog with copyable details
     try:
         CopyableMessageBox.critical(
             None,
@@ -68,35 +113,162 @@ def _qt_exception_hook(
             copy_text=msg,
         )
     except Exception:
-        pass  # Dialog itself failed; the error is already in the log.
+        # Dialog itself failed; exception is already logged above
+        pass
 
 
-def _make_splash() -> QSplashScreen:
-    """Create a minimal splash screen shown during startup initialisation."""
-    pixmap = QPixmap(_SPLASH_WIDTH, _SPLASH_HEIGHT)
-    pixmap.fill(QColor(_SPLASH_BG_COLOR))
-    splash = QSplashScreen(pixmap, Qt.WindowType.WindowStaysOnTopHint)
-    splash.showMessage("Starting Equinox…", _SPLASH_ALIGN, QColor(_SPLASH_TEXT_COLOR))
-    return splash
+# ──────────────────────────────────────────────────────────────────────────────
+# Splash Screen Helper
+# ──────────────────────────────────────────────────────────────────────────────
 
 
-def _splash_msg(splash: QSplashScreen, text: str) -> None:
-    """Update *splash* message and pump pending events so the UI stays responsive."""
-    splash.showMessage(text, _SPLASH_ALIGN, QColor(_SPLASH_TEXT_COLOR))
-    QApplication.processEvents()
+class _SplashScreen:
+    """Manages the splash screen lifecycle during startup.
+
+    Provides a clean API for updating messages and ensures the UI stays
+    responsive via event processing after each update.
+
+    Attributes:
+        screen: The underlying QSplashScreen instance
+    """
+
+    def __init__(self) -> None:
+        """Create and initialize the splash screen."""
+        pixmap = QPixmap(_SPLASH_WIDTH, _SPLASH_HEIGHT)
+        pixmap.fill(QColor(_SPLASH_BG_COLOR))
+        self.screen = QSplashScreen(pixmap, Qt.WindowType.WindowStaysOnTopHint)
+
+    def show(self) -> None:
+        """Display the splash screen and pump events for responsiveness."""
+        self.screen.showMessage(
+            _SPLASH_INITIAL_MSG, _SPLASH_ALIGN, QColor(_SPLASH_TEXT_COLOR)
+        )
+        self.screen.show()
+        QApplication.processEvents()
+
+    def update(self, text: str) -> None:
+        """Update the splash message and pump events to keep UI responsive.
+
+        Args:
+            text: Message text to display
+        """
+        self.screen.showMessage(text, _SPLASH_ALIGN, QColor(_SPLASH_TEXT_COLOR))
+        QApplication.processEvents()
+
+    def close(self) -> None:
+        """Close the splash screen."""
+        self.screen.close()
+
+    def finish(self, window: MainWindow) -> None:
+        """Dismiss the splash when the main window is ready.
+
+        Args:
+            window: The main application window
+        """
+        self.screen.finish(window)
 
 
-def _fatal_startup_error(
-    splash: QSplashScreen,
-    title: str,
-    message: str,
+# ──────────────────────────────────────────────────────────────────────────────
+# Startup Steps
+# ──────────────────────────────────────────────────────────────────────────────
+
+
+def _init_logging() -> Path:
+    """Initialize application logging.
+
+    Must be called before anything else so exceptions can be properly logged.
+
+    Returns:
+        Path to the log file
+
+    Raises:
+        SystemExit: If logging initialization fails
+    """
+    try:
+        return configure_logging(console_level=logging.WARNING)
+    except Exception as exc:
+        print(_ERR_LOGGING_SETUP % exc, file=sys.stderr)
+        sys.exit(1)
+
+
+def _init_qt_application(app_version: str) -> QApplication:
+    """Initialize the Qt application with UI settings.
+
+    Args:
+        app_version: Application version string
+
+    Returns:
+        Configured QApplication instance
+    """
+    QApplication.setHighDpiScaleFactorRoundingPolicy(
+        Qt.HighDpiScaleFactorRoundingPolicy.PassThrough
+    )
+    app = QApplication(sys.argv)
+    app.setApplicationName("Equinox")
+    app.setOrganizationName("Equinox")
+    app.setApplicationVersion(app_version)
+    return app
+
+
+def _init_database(splash: _SplashScreen) -> Any:
+    """Initialize the database (may run migrations on first launch).
+
+    Args:
+        splash: Splash screen for status updates
+
+    Returns:
+        Database instance
+
+    Raises:
+        SystemExit: If database initialization fails
+    """
+    splash.update(_MSG_INITIALIZING_DB)
+    try:
+        return get_db()
+    except Exception as exc:
+        _show_fatal_error(
+            splash, "Database Error", _ERR_DB_INIT % exc
+        )
+
+
+def _init_main_window(splash: _SplashScreen, db: object) -> MainWindow:
+    """Initialize the main application window.
+
+    Args:
+        splash: Splash screen for status updates
+        db: Database instance
+
+    Returns:
+        Configured MainWindow instance
+
+    Raises:
+        SystemExit: If window initialization fails
+    """
+    splash.update(_MSG_LOADING_INTERFACE)
+    try:
+        return MainWindow(db)
+    except Exception as exc:
+        _show_fatal_error(
+            splash, "Startup Error", _ERR_STARTUP % exc
+        )
+
+
+def _show_fatal_error(
+    splash: _SplashScreen, title: str, message: str
 ) -> NoReturn:
-    """Log a critical startup failure, show an error dialog, and terminate.
+    """Display a fatal error dialog and terminate the application.
 
-    Must be called from within an ``except`` block so that ``exc_info=True``
-    and ``traceback.format_exc()`` capture the active exception context.
-    The full traceback is offered via the dialog's *Copy* button without
-    being shown in the visible message text.
+    Must be called from within an except block so that traceback.format_exc()
+    captures the active exception context. The full traceback is offered via
+    the dialog's Copy button without being shown in the visible message text.
+
+    Args:
+        splash: Splash screen to close
+        title: Error dialog title
+        message: Error message to display
+
+    Raises:
+        SystemExit: Always (app terminates with exit code 1)
     """
     logger.critical("Fatal startup error — %s", title, exc_info=True)
     splash.close()
@@ -109,71 +281,57 @@ def _fatal_startup_error(
     sys.exit(1)
 
 
-# ── Entry point ───────────────────────────────────────────────────────────────
+# ──────────────────────────────────────────────────────────────────────────────
+# Main Entry Point
+# ──────────────────────────────────────────────────────────────────────────────
 
 
 def main() -> NoReturn:
-    """Launch the Equinox GUI application."""
-    # ── Logging must be configured before anything else ──────────────────
-    # Wrap configure_logging because the exception hook and QApplication do
-    # not exist yet — any failure here can only be reported to stderr.
-    try:
-        log_file = configure_logging(console_level=logging.WARNING)
-    except Exception as exc:  # pragma: no cover
-        print(f"FATAL: Could not configure logging: {exc}", file=sys.stderr)
-        sys.exit(1)
+    """Launch the Equinox GUI application.
 
-    app_ver = _app_version()
-    logger.info("Equinox GUI starting — version %s", app_ver)
+    Bootstrap sequence:
+    1. Initialize logging (must be first, can only report errors to stderr)
+    2. Install exception hook for Qt main thread
+    3. Create Qt application with settings
+    4. Apply theme
+    5. Show splash screen
+    6. Initialize database (may run migrations)
+    7. Initialize main window
+    8. Connect shutdown handlers
+    9. Run event loop
 
-    # ── Install exception hook ───────────────────────────────────────────
-    sys.excepthook = _qt_exception_hook
+    Raises:
+        SystemExit: Always (with status 0 on normal exit, 1 on error)
+    """
+    # Step 1: Initialize logging (first, before exception hook)
+    log_file = _init_logging()
+    app_version = _get_app_version()
+    logger.info("Equinox GUI starting — version %s", app_version)
 
-    # ── Qt application ───────────────────────────────────────────────────
-    QApplication.setHighDpiScaleFactorRoundingPolicy(
-        Qt.HighDpiScaleFactorRoundingPolicy.PassThrough
-    )
-    app = QApplication(sys.argv)
-    app.setApplicationName("Equinox")
-    app.setOrganizationName("Equinox")
-    app.setApplicationVersion(app_ver)
+    # Step 2: Install custom exception hook for runtime errors
+    _install_qt_exception_hook()
 
-    # ── Apply theme ──────────────────────────────────────────────────────
+    # Step 3: Initialize Qt application
+    app = _init_qt_application(app_version)
+
+    # Step 4: Apply theme
     apply_theme(app)
 
-    # ── Splash screen (keeps the UI responsive during initialisation) ────
-    splash = _make_splash()
+    # Step 5: Show splash screen (keeps UI responsive during startup)
+    splash = _SplashScreen()
     splash.show()
-    QApplication.processEvents()
 
-    # ── Database (may run schema migrations on first launch) ─────────────
-    _splash_msg(splash, "Initialising database…")
-    try:
-        db = get_db()
-    except Exception as exc:
-        _fatal_startup_error(
-            splash,
-            "Database Error",
-            f"Equinox could not open its database:\n\n{exc}",
-        )
+    # Step 6: Initialize database (may run schema migrations)
+    db = _init_database(splash)
 
-    # ── Main window ──────────────────────────────────────────────────────
-    _splash_msg(splash, "Loading interface…")
-    try:
-        window = MainWindow(db)
-    except Exception as exc:
-        _fatal_startup_error(
-            splash,
-            "Startup Error",
-            f"Equinox could not start:\n\n{exc}",
-        )
-
+    # Step 7: Initialize main window
+    window = _init_main_window(splash, db)
     window.statusBar().showMessage(f"Ready  |  Log: {log_file}", 6000)
 
-    # ── Connect clean-shutdown logging ───────────────────────────────────
+    # Step 8: Connect shutdown logging
     app.aboutToQuit.connect(lambda: logger.info("Equinox GUI shutting down"))
 
-    # ── Show window, then dismiss splash once it is visible ──────────────
+    # Step 9: Show window and dismiss splash
     window.show()
     splash.finish(window)
 
