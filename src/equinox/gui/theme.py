@@ -44,10 +44,10 @@ _LIGHT: dict[str, str] = {
     "BG_ALT":     "#ededef",
     "BORDER":     "#d1d9e0",
     "BORDER_FCS": "#0969da",
-    # Text
+    # Text (WCAG AA contrast ratios maintained)
     "FG":         "#1f2328",
-    "FG_MUTED":   "#656d76",
-    "FG_SUBTLE":  "#848d97",
+    "FG_MUTED":   "#4d5561",  # Improved: darker for better contrast, but still readable
+    "FG_SUBTLE":  "#6e7681",  # Improved: better contrast for secondary text
     # Selection / highlight
     "SELECTION":  "#dceefb",
     "SEL_TEXT":   "#b6d7f8",
@@ -72,10 +72,10 @@ _DARK: dict[str, str] = {
     "BG_ALT":     "#161b22",
     "BORDER":     "#30363d",
     "BORDER_FCS": "#4d8ed4",
-    # Text
+    # Text (WCAG AA contrast ratios: all >4.5:1)
     "FG":         "#e6edf3",
-    "FG_MUTED":   "#8b949e",
-    "FG_SUBTLE":  "#6e7681",
+    "FG_MUTED":   "#b0b9c3",  # Improved: significantly lighter for ~7:1 contrast on BG
+    "FG_SUBTLE":  "#8b949e",  # Improved: better contrast than before
     # Selection / highlight
     "SELECTION":  "#1f3347",
     "SEL_TEXT":   "#264f78",
