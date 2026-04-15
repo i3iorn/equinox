@@ -61,7 +61,7 @@ _DARK: dict[str, str] = {
     "GREEN":      "#2da44e",
     "AMBER":      "#b8860b",
     "RED":        "#e0484b",
-    "BLUE":       "#4d8ed4",
+    "BLUE":       "#6daef4",
     "PURPLE":     "#9a7bdb",
     "MUTED":      "#8b949e",
     "CYAN":       "#39c5cf",
