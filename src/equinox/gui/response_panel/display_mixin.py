@@ -38,10 +38,27 @@ class ResponseDisplayMixin:
         code = response.status_code
         color = self._get_status_color(code)
 
+        # Log widget references to ensure they exist
+        logger.debug(
+            "_update_status_bar: status_label=%s time_label=%s size_label=%s",
+            type(self.status_label).__name__,
+            type(self.time_label).__name__,
+            type(self.size_label).__name__,
+        )
+
         self.status_label.setText(f"{code}  {response.reason}")
         self.status_label.setStyleSheet(f"font-weight: bold; color: {color};")
         self.time_label.setText(f"{int(response.elapsed * 1000)} ms")
         self.size_label.setText(format_size(response.size))
+
+        # Verify values were actually set
+        logger.debug(
+            "_update_status_bar: set status_label text=%r time_label text=%r size_label text=%r",
+            self.status_label.text(),
+            self.time_label.text(),
+            self.size_label.text(),
+        )
+
         logger.debug(
             "_update_status_bar: %d %s, %d ms, %s",
             code, response.reason,
@@ -66,8 +83,10 @@ class ResponseDisplayMixin:
     def _display_body(self, response: Response) -> None:
         """Display response body, handling size warnings."""
         logger.debug(
-            "_display_body: size=%d, threshold=%d",
+            "_display_body: size=%d, threshold=%d, body_text=%s visible=%s",
             response.size, self._LARGE_BODY_THRESHOLD,
+            type(self.body_text).__name__,
+            self.body_text.isVisible() if hasattr(self.body_text, 'isVisible') else 'N/A',
         )
         if response.size > self._LARGE_BODY_THRESHOLD:
             self._body_warning.setVisible(True)
@@ -80,8 +99,11 @@ class ResponseDisplayMixin:
         else:
             self._body_warning.setVisible(False)
             text = pretty_print_body(response)
+            logger.debug("_display_body: calling body_text.set_code with %d chars", len(text))
             self.body_text.set_code(text)
-            logger.debug("_display_body: set %d chars", len(text))
+            # Verify it was set
+            actual_text = self.body_text.toPlainText() if hasattr(self.body_text, 'toPlainText') else '(N/A)'
+            logger.debug("_display_body: set %d chars, body_text now contains %d chars", len(text), len(actual_text))
 
     # ------------------------------------------------------------------
     # JSON Tree
@@ -120,10 +142,17 @@ class ResponseDisplayMixin:
         self._hdrs_search.clear()
         self._hdrs_search.blockSignals(False)
 
+        logger.debug(
+            "_display_headers: resp_headers_table=%s visible=%s tabs=%s",
+            type(self.resp_headers_table).__name__,
+            self.resp_headers_table.isVisible() if hasattr(self.resp_headers_table, 'isVisible') else 'N/A',
+            type(self.tabs).__name__,
+        )
+
         self.resp_headers_table.load(response.headers)
         count = len(response.headers)
         self._hdrs_count_label.setText(str(count))
-        logger.debug("_display_headers: %d headers loaded", count)
+        logger.debug("_display_headers: %d headers loaded, tabs visible=%s", count, self.tabs.isVisible())
 
     def _on_hdrs_filter_changed(self, text: str) -> None:
         """Filter headers table by substring match on name/value."""

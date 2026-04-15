@@ -94,6 +94,12 @@ class ResponsePanel(
         Raises:
             ValueError: If response is None (validation)
         """
+        logger.debug(
+            "display_response called: self=%s isVisible=%s",
+            type(self).__name__,
+            self.isVisible() if hasattr(self, 'isVisible') else 'N/A',
+        )
+
         if response is None:
             logger.warning("display_response called with None response")
             return
@@ -156,12 +162,22 @@ class ResponsePanel(
         Args:
             response: Response to display
         """
+        logger.debug(
+            "_display_sections: tabs=%s count=%d current_index=%d isVisible=%s",
+            type(self.tabs).__name__,
+            self.tabs.count() if hasattr(self.tabs, 'count') else 'N/A',
+            self.tabs.currentIndex() if hasattr(self.tabs, 'currentIndex') else 'N/A',
+            self.tabs.isVisible() if hasattr(self.tabs, 'isVisible') else 'N/A',
+        )
+
         self._safe_display(self._display_body, response)
         self._safe_display(self._display_json_tree, response)
         self._safe_display(self._display_headers, response)
         self._safe_display(self._display_timings, response)
         self._safe_display(self._load_cookies_tab, response.headers)
         self._safe_display(self._display_sent_request, response)
+
+        logger.debug("_display_sections completed")
 
     def _apply_view_preference(self) -> None:
         """Apply user's preferred view (raw or JSON).
