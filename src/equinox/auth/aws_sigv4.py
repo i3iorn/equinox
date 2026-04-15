@@ -14,10 +14,10 @@ import hashlib
 import hmac
 import logging
 from datetime import datetime, timezone
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Callable, Dict, Optional, Tuple
 from urllib.parse import quote, urlparse, parse_qsl
 
-from equinox.auth.base import AuthStrategy, _validate_credential
+from equinox.auth.base import AuthStrategy, _validate_credential, _interpolate_field
 from equinox.core.exceptions import AuthError
 
 logger = logging.getLogger(__name__)
@@ -35,6 +35,7 @@ class AWSSigV4Auth(AuthStrategy):
     """
 
     AUTH_TYPE = "aws_sigv4"
+    DISPLAY_NAME = "AWS SigV4"
 
     def __init__(
         self,
@@ -138,7 +139,7 @@ class AWSSigV4Auth(AuthStrategy):
         return d
 
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> "AWSSigV4Auth":
+    def from_dict(cls, data: Dict[str, Any], **kwargs: Any) -> "AWSSigV4Auth":
         """Create from dictionary.
 
         Raises:
@@ -154,6 +155,31 @@ class AWSSigV4Auth(AuthStrategy):
             )
         except KeyError as exc:
             raise AuthError(f"Invalid AWS SigV4 auth data: missing key {exc}") from exc
+
+    # ── Strategy metadata ─────────────────────────────────────────────────────
+
+    def interpolate(self, interp: Callable[[str], str]) -> "AWSSigV4Auth":
+        """Return a copy with ``{{VAR}}`` placeholders expanded."""
+        return AWSSigV4Auth(
+            access_key=interp(self.access_key),
+            secret_key=interp(self.secret_key),
+            region=interp(self.region),
+            service=interp(self.service),
+            session_token=_interpolate_field(self.session_token, interp),
+        )
+
+    def get_display_summary(self) -> str:
+        masked_key = (
+            f"{self.access_key[:4]}****" if len(self.access_key) > 4 else "****"
+        )
+        return f"Key: {masked_key}  Region: {self.region}  Service: {self.service}"
+
+    def get_preflight_warning(self) -> Optional[str]:
+        if not self.access_key:
+            return "AWS access key is empty"
+        if not self.secret_key:
+            return "AWS secret key is empty"
+        return None
 
     def __repr__(self) -> str:
         masked_key = (

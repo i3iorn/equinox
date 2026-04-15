@@ -1,4 +1,4 @@
-"""Authentication strategies for HTTP requests"""
+"""Authentication strategies for HTTP requests."""
 
 from equinox.auth.base import AuthStrategy
 from equinox.auth.bearer import BearerAuth

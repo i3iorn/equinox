@@ -1,7 +1,7 @@
 """Bearer token authentication"""
 
 import logging
-from typing import Dict, Any
+from typing import Any, Callable, Dict, Optional
 from equinox.auth.base import AuthStrategy, _validate_credential
 from equinox.core.exceptions import AuthError
 from equinox.core.redact import mask_secret
@@ -23,6 +23,7 @@ class BearerAuth(AuthStrategy):
     """
 
     AUTH_TYPE = "bearer"
+    DISPLAY_NAME = "Bearer Token"
 
     def __init__(self, token: str):
         """Initialise bearer auth.
@@ -46,7 +47,7 @@ class BearerAuth(AuthStrategy):
         return {"type": self.AUTH_TYPE, "token": self.token}
 
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> "BearerAuth":
+    def from_dict(cls, data: Dict[str, Any], **kwargs: Any) -> "BearerAuth":
         """Create from a serialised dictionary.
 
         Raises:
@@ -58,6 +59,16 @@ class BearerAuth(AuthStrategy):
             raise AuthError(
                 f"Invalid {cls.__name__} data: missing key {exc}"
             ) from exc
+
+    # ── Strategy metadata ─────────────────────────────────────────────────────
+
+    def get_display_summary(self) -> str:
+        return f"Token: {mask_secret(self.token)}"
+
+    def get_preflight_warning(self) -> Optional[str]:
+        if not self.token:
+            return "Bearer token is empty"
+        return None
 
     # ── Dunder helpers ────────────────────────────────────────────────────────
 

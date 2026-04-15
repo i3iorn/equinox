@@ -1,7 +1,10 @@
 """Saved credential management — store and reuse named auth configurations.
 
-Supports any auth type: OAuth2, API Key, Basic Auth, Bearer Token.
+Supports any auth type: OAuth2, API Key, Basic Auth, Bearer Token, AWS SigV4.
 Each credential is stored as a name + auth_type discriminator + config JSON blob.
+
+Type lists and display labels are derived from the auth factory registry
+(:mod:`equinox.auth.factory`) — no parallel constants to maintain.
 """
 import logging
 from typing import Any, Dict, List, Optional
@@ -19,6 +22,20 @@ from equinox.storage.utils import (
 
 logger = logging.getLogger(__name__)
 
+
+def _get_auth_types() -> tuple:
+    """Lazy accessor for canonical auth types (avoids circular import)."""
+    from equinox.auth.factory import get_auth_types
+    return get_auth_types()
+
+
+def _get_auth_type_labels() -> Dict[str, str]:
+    """Lazy accessor for auth type display labels (avoids circular import)."""
+    from equinox.auth.factory import get_auth_type_labels
+    return get_auth_type_labels()
+
+
+# Public aliases for backward-compatibility with code that imported these directly.
 AUTH_TYPES = ("oauth2", "api_key", "basic", "bearer", "aws_sigv4")
 
 AUTH_TYPE_LABELS: Dict[str, str] = {
@@ -273,57 +290,36 @@ class SavedCredentialsManager:
     def to_auth_strategy(self, row: Dict[str, Any]) -> Any:
         """Build a live auth-strategy object from a saved credential row.
 
-        Imports are lazy to avoid circular dependencies.
+        Delegates to the unified :func:`~equinox.auth.factory.auth_from_dict`
+        registry so new auth types only need to be registered in one place.
 
         Raises:
             ValidationError: If *auth_type* is not recognized.
-            StorageError: If the credential config is invalid or incomplete
-                (e.g. empty token/password from a legacy row).
+            StorageError: If the credential config is invalid or incomplete.
         """
-        from equinox.auth.oauth2 import OAuth2Auth
-        from equinox.auth.api_key import APIKeyAuth
-        from equinox.auth.basic import BasicAuth
-        from equinox.auth.bearer import BearerAuth
+        from equinox.auth.factory import auth_from_dict
 
         auth_type = row["auth_type"]
         cfg = row["config"]
 
+        # Normalise config keys to match from_dict() expectations.
+        # Saved-credential config uses the same keys as to_dict() for most types.
+        # For OAuth2, saved configs omit token state (access_token, refresh_token)
+        # which is correct — the strategy will fetch fresh tokens on demand.
         try:
-            if auth_type == "oauth2":
-                return OAuth2Auth(
-                    token_url=cfg.get("token_url") or None,
-                    client_id=cfg.get("client_id") or None,
-                    client_secret=cfg.get("client_secret") or None,
-                    scope=cfg.get("scope") or None,
+            result = auth_from_dict(auth_type, cfg)
+            if result is None:
+                raise StorageError(
+                    f"Saved credential '{row.get('name', '?')}' has invalid config"
                 )
-            if auth_type == "api_key":
-                return APIKeyAuth(
-                    key=cfg.get("key", "X-API-Key"),
-                    value=cfg.get("value", ""),
-                    location=cfg.get("location", "header"),
-                )
-            if auth_type == "basic":
-                return BasicAuth(
-                    username=cfg.get("username", ""),
-                    password=cfg.get("password", ""),
-                )
-            if auth_type == "bearer":
-                return BearerAuth(token=cfg.get("token", ""))
-            if auth_type == "aws_sigv4":
-                from equinox.auth.aws_sigv4 import AWSSigV4Auth
-                return AWSSigV4Auth(
-                    access_key=cfg.get("access_key", ""),
-                    secret_key=cfg.get("secret_key", ""),
-                    region=cfg.get("region", "us-east-1"),
-                    service=cfg.get("service", "execute-api"),
-                    session_token=cfg.get("session_token") or None,
-                )
-        except (TypeError, ValueError, KeyError, AttributeError) as exc:
+            return result
+        except ValueError:
+            raise ValidationError(f"Unknown auth_type: {auth_type!r}")
+        except Exception as exc:
             raise StorageError(
                 f"Saved credential '{row.get('name', '?')}' has invalid config: {exc}"
             ) from exc
 
-        raise ValidationError(f"Unknown auth_type: {auth_type!r}")
 
     # ── Aliases (for backward-compat with test expectations) ──────────
 

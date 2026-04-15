@@ -3,14 +3,16 @@
 Centralises magic numbers, prefixes, dispatch tables, and compiled
 patterns so they are defined in exactly one place and importable by
 both ``_send_mixin`` and ``_auth_mixin`` (as well as unit tests).
+
+Auth display and preflight checks are now derived from the strategy
+classes themselves (via ``get_display_summary`` / ``get_preflight_warning``),
+eliminating the need for parallel isinstance dispatch tables.
 """
 
 from __future__ import annotations
 
 import re
 from typing import Tuple
-
-from equinox.auth import BearerAuth, BasicAuth, APIKeyAuth, OAuth2Auth
 
 # ──────────────────────────────────────────────────────────────────────────────
 # Auth
@@ -26,24 +28,6 @@ AUTH_VOLATILE_KEYS = frozenset({
     "access_token", "refresh_token", "token_timeout",
 })
 
-# Auth-type preflight checks: (type, attribute_to_check, warning_message)
-AUTH_PREFLIGHT_CHECKS: Tuple[Tuple[type, str, str], ...] = (
-    (BearerAuth, "token", "Bearer token is empty"),
-    (BasicAuth, "username", "Basic auth username is empty"),
-    (APIKeyAuth, "value", "API key value is empty"),
-    (OAuth2Auth, "token_url", "OAuth2 token URL is not configured"),
-)
-
-# Auth display dispatch: (auth_type, method_name)
-AUTH_DISPLAY_DISPATCH: Tuple[Tuple[type, str], ...] = (
-    (BasicAuth, "_display_basic_auth"),
-    (BearerAuth, "_display_bearer_auth"),
-    (OAuth2Auth, "_display_oauth2_auth"),
-    (APIKeyAuth, "_display_apikey_auth"),
-)
-
-# API key preview length for masked display
-APIKEY_PREVIEW_LENGTH = 4
 
 # Auth display layout margins
 AUTH_TAB_MARGINS = (6, 8, 6, 8)

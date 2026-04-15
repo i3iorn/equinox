@@ -28,7 +28,6 @@ from equinox.gui.theme import Colors
 from equinox.gui.workers import RequestWorker
 
 from equinox.gui.request_panel._constants import (
-    AUTH_PREFLIGHT_CHECKS,
     HTTP_SCHEME_RE,
     PREFLIGHT_SEPARATOR,
     RECOMMENDER_HIGH_CONFIDENCE,
@@ -67,7 +66,7 @@ class _RequestSendMixin:
 
         Checks:
         - URL has http(s):// scheme (unless it contains ``{{VAR}}``)
-        - Auth has required fields configured
+        - Auth has required fields configured (via strategy's get_preflight_warning)
 
         Returns:
             List of warning strings (empty if no issues)
@@ -79,11 +78,10 @@ class _RequestSendMixin:
             warnings.append("URL does not start with http:// or https://")
 
         auth = self._auth or self._inherited_auth
-        if auth is not None:
-            for auth_type, attr, msg in AUTH_PREFLIGHT_CHECKS:
-                if isinstance(auth, auth_type) and not getattr(auth, attr, None):
-                    warnings.append(msg)
-                    break
+        if auth is not None and hasattr(auth, "get_preflight_warning"):
+            warning = auth.get_preflight_warning()
+            if warning:
+                warnings.append(warning)
 
         return warnings
 

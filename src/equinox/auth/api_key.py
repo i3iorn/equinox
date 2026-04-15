@@ -1,8 +1,8 @@
 """API Key authentication"""
 
 import logging
-from typing import Dict, Any, Literal
-from equinox.auth.base import AuthStrategy, _validate_credential
+from typing import Any, Callable, Dict, Literal, Optional
+from equinox.auth.base import AuthStrategy, _validate_credential, _interpolate_field
 from equinox.core.exceptions import AuthError
 
 logger = logging.getLogger(__name__)
@@ -10,6 +10,9 @@ logger = logging.getLogger(__name__)
 __all__ = ["APIKeyAuth"]
 
 _VALID_LOCATIONS = frozenset({"header", "query"})
+
+# Preview length for masked display
+_PREVIEW_LENGTH = 4
 
 
 class APIKeyAuth(AuthStrategy):
@@ -28,6 +31,7 @@ class APIKeyAuth(AuthStrategy):
     """
 
     AUTH_TYPE = "api_key"
+    DISPLAY_NAME = "API Key"
 
     def __init__(
         self,
@@ -77,7 +81,7 @@ class APIKeyAuth(AuthStrategy):
         }
 
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> "APIKeyAuth":
+    def from_dict(cls, data: Dict[str, Any], **kwargs: Any) -> "APIKeyAuth":
         """Create from a serialised dictionary.
 
         Raises:
@@ -93,6 +97,21 @@ class APIKeyAuth(AuthStrategy):
             raise AuthError(
                 f"Invalid {cls.__name__} data: missing key {exc}"
             ) from exc
+
+    # ── Strategy metadata ─────────────────────────────────────────────────────
+
+    def get_display_summary(self) -> str:
+        preview = (
+            self.value[:_PREVIEW_LENGTH] + "…"
+            if len(self.value) > _PREVIEW_LENGTH
+            else "***"
+        )
+        return f"{self.key} = {preview}  ({self.location})"
+
+    def get_preflight_warning(self) -> Optional[str]:
+        if not self.value:
+            return "API key value is empty"
+        return None
 
     # ── Dunder helpers ────────────────────────────────────────────────────────
 

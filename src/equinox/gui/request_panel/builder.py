@@ -16,8 +16,6 @@ import json as _json
 import logging
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
-from equinox.auth import BasicAuth, BearerAuth, APIKeyAuth, OAuth2Auth
-from equinox.auth.aws_sigv4 import AWSSigV4Auth
 from equinox.auth.base import AuthStrategy
 
 logger = logging.getLogger(__name__)
@@ -280,108 +278,31 @@ def interpolate_auth(
 ) -> Optional[AuthStrategy]:
     """Interpolate {{VAR}} placeholders in auth strategy fields.
 
-    Creates a new auth object with all string fields expanded using the
-    provided interpolation function. Useful for resolving variables before
-    sending the request.
+    Delegates to ``auth.interpolate(interp)`` — each strategy class owns
+    its own copy semantics, preserving non-string state like ``expires_at``
+    and ``_proxy`` that a generic to_dict/from_dict round-trip would lose.
 
     Args:
         auth: Auth strategy to interpolate (can be None)
         interp: Function str → str for variable substitution
-                (typically VariableInterpolator.interpolate)
 
     Returns:
         New auth object with interpolated fields, or None if input is None
-
-    Notes:
-        - The original auth object is never mutated
-        - Unknown/plugin auth types are returned unchanged
-        - None values remain None (not interpolated)
     """
     if auth is None:
         return None
 
-    # Dispatch to appropriate interpolator based on auth type
-    if isinstance(auth, BasicAuth):
-        return _interpolate_basic_auth(auth, interp)
-
-    if isinstance(auth, BearerAuth):
-        return _interpolate_bearer_auth(auth, interp)
-
-    if isinstance(auth, OAuth2Auth):
-        return _interpolate_oauth2_auth(auth, interp)
-
-    if isinstance(auth, APIKeyAuth):
-        return _interpolate_apikey_auth(auth, interp)
-
-    if isinstance(auth, AWSSigV4Auth):
-        return _interpolate_aws_sigv4_auth(auth, interp)
-
-    # Unknown auth type — return unchanged so send path never crashes
-    logger.debug(
-        "interpolate_auth: unsupported auth type %s — skipping interpolation",
-        type(auth).__name__,
-    )
-    return auth
+    try:
+        return auth.interpolate(interp)
+    except Exception:
+        # Unknown/plugin auth types that don't implement interpolate()
+        # are returned unchanged so the send path never crashes.
+        logger.debug(
+            "interpolate_auth: %s.interpolate() failed — returning unchanged",
+            type(auth).__name__,
+            exc_info=True,
+        )
+        return auth
 
 
-def _interpolate_field(value: Optional[str], interp: Callable[[str], str]) -> Optional[str]:
-    """Interpolate a single optional string field.
-
-    Args:
-        value: String value to interpolate or None
-        interp: Interpolation function
-
-    Returns:
-        Interpolated value or None if input is None
-    """
-    return interp(value) if value else None
-
-
-def _interpolate_basic_auth(auth: BasicAuth, interp: Callable[[str], str]) -> BasicAuth:
-    """Interpolate BasicAuth fields."""
-    return BasicAuth(
-        username=interp(auth.username),
-        password=interp(auth.password),
-    )
-
-
-def _interpolate_bearer_auth(auth: BearerAuth, interp: Callable[[str], str]) -> BearerAuth:
-    """Interpolate BearerAuth fields."""
-    return BearerAuth(token=interp(auth.token))
-
-
-def _interpolate_oauth2_auth(auth: OAuth2Auth, interp: Callable[[str], str]) -> OAuth2Auth:
-    """Interpolate OAuth2Auth fields."""
-    new_auth = OAuth2Auth(
-        token_url=_interpolate_field(auth.token_url, interp),
-        client_id=_interpolate_field(auth.client_id, interp),
-        client_secret=_interpolate_field(auth.client_secret, interp),
-        scope=_interpolate_field(auth.scope, interp),
-        access_token=_interpolate_field(auth.access_token, interp),
-        refresh_token=_interpolate_field(auth.refresh_token, interp),
-        token_timeout=auth.token_timeout,
-    )
-    # Preserve token expiry so pre-fetched token isn't treated as eternal
-    new_auth.expires_at = auth.expires_at
-    return new_auth
-
-
-def _interpolate_apikey_auth(auth: APIKeyAuth, interp: Callable[[str], str]) -> APIKeyAuth:
-    """Interpolate APIKeyAuth fields."""
-    return APIKeyAuth(
-        key=interp(auth.key),
-        value=interp(auth.value),
-        location=auth.location,
-    )
-
-
-def _interpolate_aws_sigv4_auth(auth: AWSSigV4Auth, interp: Callable[[str], str]) -> AWSSigV4Auth:
-    """Interpolate AWSSigV4Auth fields."""
-    return AWSSigV4Auth(
-        access_key=interp(auth.access_key),
-        secret_key=interp(auth.secret_key),
-        region=interp(auth.region),
-        service=interp(auth.service),
-        session_token=_interpolate_field(auth.session_token, interp),
-    )
 

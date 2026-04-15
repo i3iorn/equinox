@@ -1,7 +1,26 @@
-"""Base authentication strategy"""
+"""Base authentication strategy.
+
+Provides the ``AuthStrategy`` abstract base class and shared validation.
+
+Every concrete strategy must define:
+
+- ``AUTH_TYPE``      — short identifier (e.g. ``"bearer"``, ``"basic"``).
+- ``DISPLAY_NAME``   — human-readable label for GUI rendering.
+- ``apply()``        — inject credentials into request headers/params.
+- ``to_dict()``      — round-trip serialisation.
+- ``from_dict()``    — deserialisation from a dict.
+
+Optional overrides for richer behaviour:
+
+- ``interpolate()``  — return a copy with ``{{VAR}}`` placeholders expanded.
+- ``get_display_summary()``  — one-liner summary for the GUI auth tab.
+- ``get_preflight_warning()``  — advisory string when required fields are empty.
+"""
+
+from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from typing import Dict, Any
+from typing import Any, Callable, Dict, Optional
 
 from equinox.core.exceptions import AuthError
 
@@ -40,27 +59,81 @@ def _validate_credential(value: str, field_name: str) -> str:
     return value
 
 
+def _interpolate_field(
+    value: Optional[str],
+    interp: Callable[[str], str],
+) -> Optional[str]:
+    """Interpolate a single optional string field.
+
+    Returns ``None`` unchanged; non-empty strings are passed through *interp*.
+    """
+    return interp(value) if value else None
+
+
 class AuthStrategy(ABC):
-    """Base class for authentication strategies"""
+    """Base class for authentication strategies.
+
+    Subclasses must set two class-level attributes:
+
+    - ``AUTH_TYPE: str``     — short key used in ``to_dict()["type"]``.
+    - ``DISPLAY_NAME: str``  — human-readable label (e.g. ``"OAuth 2.0"``).
+    """
+
+    AUTH_TYPE: str = ""           # e.g. "bearer", "basic", "oauth2"
+    DISPLAY_NAME: str = ""        # e.g. "Bearer Token", "OAuth 2.0"
+
+    # ── Core interface (must override) ────────────────────────────────
 
     @abstractmethod
     def apply(self, request: Any, headers: Dict[str, str]) -> None:
-        """
-        Apply authentication to request headers
+        """Apply authentication to request headers (and optionally params).
 
         Args:
-            request: Request object
-            headers: Headers dictionary to modify
+            request: Request object (may be read for URL, params, body).
+            headers: Headers dict to modify in-place.
         """
-        pass
 
     @abstractmethod
     def to_dict(self) -> Dict[str, Any]:
-        """Convert auth strategy to dictionary for storage"""
-        pass
+        """Serialise to a plain dict suitable for JSON / DB storage."""
 
     @classmethod
     @abstractmethod
-    def from_dict(cls, data: Dict[str, Any]) -> "AuthStrategy":
-        """Create auth strategy from dictionary"""
-        pass
+    def from_dict(cls, data: Dict[str, Any], **kwargs: Any) -> "AuthStrategy":
+        """Reconstruct from a serialised dict."""
+
+    # ── Optional overrides ────────────────────────────────────────────
+
+    def interpolate(
+        self,
+        interp: Callable[[str], str],
+    ) -> "AuthStrategy":
+        """Return a *new* instance with ``{{VAR}}`` placeholders expanded.
+
+        The default implementation round-trips through ``to_dict`` /
+        ``from_dict``, interpolating every string value.  Subclasses with
+        non-string state (e.g. ``expires_at``) should override to preserve it.
+
+        Args:
+            interp: ``str → str`` variable-expansion function.
+        """
+        d = self.to_dict()
+        interpolated = {
+            k: (interp(v) if isinstance(v, str) and v else v)
+            for k, v in d.items()
+        }
+        return type(self).from_dict(interpolated)
+
+    def get_display_summary(self) -> str:
+        """Return a short, non-secret summary string for GUI labels.
+
+        Override in subclasses to provide richer detail.
+        """
+        return self.DISPLAY_NAME or type(self).__name__
+
+    def get_preflight_warning(self) -> Optional[str]:
+        """Return an advisory warning if required fields are missing.
+
+        Returns ``None`` when the configuration looks complete.
+        """
+        return None

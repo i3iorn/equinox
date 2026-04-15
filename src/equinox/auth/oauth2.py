@@ -6,11 +6,11 @@ import logging
 import uuid
 from datetime import datetime, timedelta, timezone
 from threading import Lock
-from typing import Any, Dict, Optional
+from typing import Any, Callable, Dict, Optional
 
 import httpx
 
-from equinox.auth.base import AuthStrategy, _validate_credential
+from equinox.auth.base import AuthStrategy, _validate_credential, _interpolate_field
 from equinox.core.exceptions import AuthError
 from equinox.core.redact import mask_secret
 from equinox.core.secure_storage import SecureStorage
@@ -103,6 +103,9 @@ class OAuth2Auth(AuthStrategy):
     - Support for refresh token and client credentials flows
     - Configurable refresh buffer (e.g., refresh 30s before expiry)
     """
+
+    AUTH_TYPE = "oauth2"
+    DISPLAY_NAME = "OAuth 2.0"
 
     REFRESH_BUFFER_SECONDS = 30
     DEFAULT_TOKEN_TIMEOUT = 10.0
@@ -211,8 +214,9 @@ class OAuth2Auth(AuthStrategy):
         }
 
     @classmethod
-    def from_dict(cls, data: Dict[str, Any], secure_storage: Optional[SecureStorage] = None) -> "OAuth2Auth":
-        """Create from dictionary"""
+    def from_dict(cls, data: Dict[str, Any], **kwargs: Any) -> "OAuth2Auth":
+        """Create from dictionary."""
+        secure_storage = kwargs.get("secure_storage")
         instance = cls(
             access_token=data.get("access_token"),
             token_url=data.get("token_url"),
@@ -226,6 +230,38 @@ class OAuth2Auth(AuthStrategy):
         # Restore expiration so _needs_refresh() can make the right decision.
         instance.expires_at = cls._parse_expires_at(data.get("expires_at"))
         return instance
+
+    # ── Strategy metadata ─────────────────────────────────────────────────────
+
+    def interpolate(self, interp: Callable[[str], str]) -> "OAuth2Auth":
+        """Return a copy with ``{{VAR}}`` placeholders expanded.
+
+        Preserves non-string state (expires_at, _proxy, _refresh_lock) that
+        would be lost by a naive to_dict/from_dict round-trip.
+        """
+        new_auth = OAuth2Auth(
+            token_url=_interpolate_field(self.token_url, interp),
+            client_id=_interpolate_field(self.client_id, interp),
+            client_secret=_interpolate_field(self.client_secret, interp),
+            scope=_interpolate_field(self.scope, interp),
+            access_token=_interpolate_field(self.access_token, interp),
+            refresh_token=_interpolate_field(self.refresh_token, interp),
+            token_timeout=self.token_timeout,
+        )
+        # Preserve token expiry so pre-fetched token isn't treated as eternal
+        new_auth.expires_at = self.expires_at
+        return new_auth
+
+    def get_display_summary(self) -> str:
+        return (
+            f"Token URL: {self.token_url or '—'}\n"
+            f"Client ID: {self.client_id or '—'}"
+        )
+
+    def get_preflight_warning(self) -> Optional[str]:
+        if not self.token_url:
+            return "OAuth2 token URL is not configured"
+        return None
 
     def __repr__(self) -> str:
         token_status = "present" if self.access_token else "None"

@@ -1,15 +1,18 @@
-"""Auth factory helpers for deserializing auth objects from dicts.
+"""Auth factory — single source of truth for auth-type registration.
 
-Centralizes the mapping from auth_type string to the appropriate
-``from_dict`` constructor to avoid duplicated branching across the codebase.
+The :data:`AUTH_REGISTRY` maps every known type identifier to a lazy-import
+function that returns the class.  Both ``auth_from_dict`` and the storage
+layer use this registry so a new auth type only needs to be registered here.
 
-The :data:`AUTH_REGISTRY` maps **all** known type identifiers — both the
-short ``to_dict()["type"]`` names (``"bearer"``, ``"basic"``, …) and the
-class-name strings (``"BearerAuth"``, ``"BasicAuth"``, …) — to a lazy
-import function that returns the class.  This single registry is used by
-:func:`auth_from_dict` *and* by the storage-layer deserializer so a new
-auth type only needs to be registered in one place.
+The registry accepts two keys per type:
+
+- The short ``to_dict()["type"]`` name (``"bearer"``, ``"basic"``, …).
+- The class name string (``"BearerAuth"``, ``"BasicAuth"``, …).
+
+Display names and labels are derived from the classes themselves
+(``cls.DISPLAY_NAME``, ``cls.AUTH_TYPE``), eliminating parallel constants.
 """
+
 import logging
 from typing import Any, Callable, Dict, Optional, Type
 
@@ -64,13 +67,23 @@ AUTH_REGISTRY: Dict[str, Callable[[], Type]] = {
     "AWSSigV4Auth": _get_aws_sigv4,
 }
 
+# Canonical ordering for UI display (tab order, picker order).
+# Each entry is a short type name that can be resolved via AUTH_REGISTRY.
+AUTH_TYPE_ORDER: tuple = ("basic", "bearer", "oauth2", "api_key", "aws_sigv4")
 
-def auth_from_dict(auth_type: str, data: Dict[str, Any]) -> Optional[Any]:
+
+# ---------------------------------------------------------------------------
+# Public API
+# ---------------------------------------------------------------------------
+
+def auth_from_dict(auth_type: str, data: Dict[str, Any], **kwargs: Any) -> Optional[Any]:
     """Return an auth object reconstructed from *auth_type* and *data*.
 
     Accepts both short type names (``"bearer"``) and class names
-    (``"BearerAuth"``).  Returns ``None`` if the type is unknown or
-    reconstruction fails.
+    (``"BearerAuth"``).  Returns ``None`` if reconstruction fails.
+
+    Raises:
+        ValueError: If the type is not in :data:`AUTH_REGISTRY`.
     """
     loader = AUTH_REGISTRY.get(auth_type)
     if loader is None:
@@ -78,8 +91,36 @@ def auth_from_dict(auth_type: str, data: Dict[str, Any]) -> Optional[Any]:
         raise ValueError(f"Unknown auth type: {auth_type}")
     try:
         cls = loader()
-        return cls.from_dict(data)
+        return cls.from_dict(data, **kwargs)
     except Exception as exc:
         logger.error("Failed to reconstruct auth %s: %s", auth_type, exc)
     return None
+
+
+def get_auth_class(auth_type: str) -> Optional[Type]:
+    """Return the auth class for *auth_type*, or ``None`` if unknown."""
+    loader = AUTH_REGISTRY.get(auth_type)
+    if loader is None:
+        return None
+    return loader()
+
+
+def get_auth_type_labels() -> Dict[str, str]:
+    """Return ``{auth_type: display_name}`` for all registered types.
+
+    Derived from each class's ``DISPLAY_NAME`` attribute — no separate
+    constant to maintain.
+    """
+    labels: Dict[str, str] = {}
+    for short_name in AUTH_TYPE_ORDER:
+        loader = AUTH_REGISTRY.get(short_name)
+        if loader:
+            cls = loader()
+            labels[short_name] = getattr(cls, "DISPLAY_NAME", short_name)
+    return labels
+
+
+def get_auth_types() -> tuple:
+    """Return the canonical tuple of auth-type short names."""
+    return AUTH_TYPE_ORDER
 

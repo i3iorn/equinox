@@ -4,6 +4,11 @@ Contains ``_RequestAuthMixin`` — all methods related to authentication
 configuration, display rendering, inheritance resolution, and token
 persistence back to collection/folder sources.
 
+Auth display and preflight checks now delegate to each strategy's
+``get_display_summary()`` and ``get_preflight_warning()`` methods,
+eliminating the isinstance dispatch chains that required updates
+every time a new auth type was added.
+
 This mixin has no ``__init__`` and relies on ``self.*`` attributes set by
 ``RequestPanel.__init__`` (PyQt6 MRO is respected).
 """
@@ -11,7 +16,6 @@ This mixin has no ``__init__`` and relies on ``self.*`` attributes set by
 from __future__ import annotations
 
 import logging
-from datetime import datetime
 from typing import Any, Optional
 
 from PyQt6.QtWidgets import (
@@ -23,14 +27,13 @@ from PyQt6.QtWidgets import (
     QDialog,
 )
 
-from equinox.auth import BearerAuth, BasicAuth, APIKeyAuth, OAuth2Auth
+from equinox.auth import OAuth2Auth
+from equinox.auth.base import AuthStrategy
 from equinox.core.redact import mask_secret
 from equinox.core.time import utc_now
 from equinox.gui.theme import Colors
 
 from equinox.gui.request_panel._constants import (
-    APIKEY_PREVIEW_LENGTH,
-    AUTH_DISPLAY_DISPATCH,
     AUTH_TAB_MARGINS,
     AUTH_VOLATILE_KEYS,
     FOLDER_AUTH_PREFIX,
@@ -46,7 +49,7 @@ class _RequestAuthMixin:
     Responsible for:
     - Auth tab UI creation
     - Auth configuration dialog interaction
-    - Auth display across all supported auth types
+    - Auth display (delegated to strategy metadata)
     - Auth inheritance resolution (from folder/collection)
     - Auth comparison (excluding volatile token fields)
     - Token persistence to source (collection/folder)
@@ -239,8 +242,9 @@ class _RequestAuthMixin:
     def _update_auth_display(self, auth: Any = None) -> None:
         """Update the auth tab labels to reflect current auth state.
 
-        Shows own auth if set, otherwise inherited auth. Falls back to
-        "No authentication configured" when neither is present.
+        Uses strategy metadata (``DISPLAY_NAME``, ``get_display_summary()``)
+        instead of isinstance dispatch. OAuth2 gets special treatment for
+        its token-status line with expiry countdown.
 
         Args:
             auth: Own auth strategy or None
@@ -262,45 +266,24 @@ class _RequestAuthMixin:
             self.auth_details_label.setText("No authentication configured")
             return
 
-        for auth_type, method_name in AUTH_DISPLAY_DISPATCH:
-            if isinstance(display_auth, auth_type):
-                getattr(self, method_name)(display_auth, inherited_label)
-                return
-
-        # Unknown auth type (e.g. AWS SigV4)
-        type_name = type(display_auth).__name__
+        # Type label — derived from strategy's DISPLAY_NAME
+        type_name = getattr(display_auth, "DISPLAY_NAME", "") or type(display_auth).__name__
         self.auth_type_label.setText(f"Auth: {type_name}{inherited_label}")
-        self.auth_details_label.setText("")
 
-    def _display_basic_auth(self, auth: BasicAuth, inherited_label: str) -> None:
-        """Populate the auth display labels for Basic authentication."""
-        self.auth_type_label.setText(f"Auth: Basic{inherited_label}")
-        self.auth_details_label.setText(f"Username: {auth.username}")
+        # Details — derived from strategy's get_display_summary()
+        if hasattr(display_auth, "get_display_summary"):
+            self.auth_details_label.setText(display_auth.get_display_summary())
+        else:
+            self.auth_details_label.setText("")
 
-    def _display_bearer_auth(self, auth: BearerAuth, inherited_label: str) -> None:
-        """Populate the auth display labels for Bearer token authentication."""
-        preview = mask_secret(auth.token)
-        self.auth_type_label.setText(f"Auth: Bearer Token{inherited_label}")
-        self.auth_details_label.setText(f"Token: {preview}")
+        # OAuth2 gets a special token-status line with expiry countdown
+        if isinstance(display_auth, OAuth2Auth):
+            self._render_oauth2_token_status(display_auth)
 
-    def _display_apikey_auth(self, auth: APIKeyAuth, inherited_label: str) -> None:
-        """Populate the auth display labels for API Key authentication."""
-        preview = (
-            auth.value[:APIKEY_PREVIEW_LENGTH] + "…"
-            if len(auth.value) > APIKEY_PREVIEW_LENGTH
-            else "***"
-        )
-        self.auth_type_label.setText(f"Auth: API Key{inherited_label}")
-        self.auth_details_label.setText(
-            f"{auth.key} = {preview}  ({auth.location})"
-        )
+    def _render_oauth2_token_status(self, auth: OAuth2Auth) -> None:
+        """Render the OAuth2 token status line with colour and countdown."""
+        from datetime import datetime
 
-    def _display_oauth2_auth(self, auth: OAuth2Auth, inherited_label: str) -> None:
-        """Populate the auth display labels for an OAuth 2.0 configuration."""
-        self.auth_type_label.setText(f"Auth: OAuth 2.0{inherited_label}")
-        self.auth_details_label.setText(
-            f"Token URL: {auth.token_url or '—'}\nClient ID: {auth.client_id or '—'}"
-        )
         info = auth.get_token_info()
         if not auth.access_token:
             text, color = "Token: None", Colors.RED
