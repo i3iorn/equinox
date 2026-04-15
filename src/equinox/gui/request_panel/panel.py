@@ -8,7 +8,7 @@ Logging strategy:
 
 import json
 import logging
-from typing import Optional, Dict, Tuple
+from typing import Optional, Dict, NamedTuple, Tuple
 
 from PyQt6.QtWidgets import (
     QWidget,
@@ -51,6 +51,19 @@ from equinox.gui.request_panel.mixins import (  # noqa: F401
     _RequestAuthMixin,
     _save_history_safe,
 )
+from equinox.gui.request_panel.mixins._constants import (
+    BENCHMARK_BTN_WIDTH,
+    BROWSE_BTN_WIDTH,
+    CANCEL_BTN_WIDTH,
+    CLEAR_SV_BTN_WIDTH,
+    COMPLETER_MAX_VISIBLE,
+    FMT_JSON_BTN_WIDTH,
+    HISTORY_COMPLETER_LIMIT,
+    IMPORT_BTN_WIDTH,
+    METHOD_COMBO_WIDTH,
+    SEND_BTN_WIDTH,
+    STATUS_DURATION_LONG,
+)
 from equinox.gui.request_panel.body_mixin import RequestBodyMixin  # noqa: F401
 from equinox.gui.request_panel.save_dialog import SaveRequestDialog
 from equinox.gui.request_panel.toolbar import TabToolbar
@@ -89,6 +102,14 @@ _SCRIPTS_CHEAT_TEXT = (
     "<br><b>Allowed modules</b><br>"
     "&nbsp;&nbsp;json, re, base64, hashlib, hmac, datetime, time, math, uuid, urllib.parse"
 )
+
+
+class _KvTabResult(NamedTuple):
+    """Return type for ``_build_kv_tab`` — avoids anonymous 4-tuples."""
+    widget: QWidget
+    layout: QVBoxLayout
+    toolbar: TabToolbar
+    table: CheckableKeyValueTable
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -168,6 +189,44 @@ class RequestPanel(_RequestSendMixin, _RequestAuthMixin, RequestBodyMixin, QWidg
 
     # ── Autosave ──────────────────────────────────────────────────────
 
+    def _build_request_from_editor(self, **overrides) -> Request:
+        """Construct a :class:`Request` from the current editor widget state.
+
+        Common extraction point used by autosave, save-to-collection, and
+        the send path so field reading is defined in exactly one place.
+
+        Args:
+            **overrides: Keyword arguments passed through to the ``Request``
+                constructor, overriding the values read from widgets.  Typical
+                overrides include ``name``, ``collection_id``, ``folder``,
+                ``id``, ``auth``, and ``multipart_data``.
+
+        Returns:
+            A fully populated :class:`Request` instance.
+        """
+        fields = dict(
+            method=self.method_combo.currentText(),
+            url=self.url_input.text().strip(),
+            headers=self.headers_table.get_data(),
+            params=self.params_table.get_enabled_data(),
+            params_list=self.params_table.get_all_rows(),
+            body=self.body_text.toPlainText().strip() or None,
+            auth=self._auth,
+            timeout=self.timeout_spin.value(),
+            verify_ssl=self.verify_ssl_check.isChecked(),
+            follow_redirects=self.follow_redirects_check.isChecked(),
+            captures=self._get_captures(),
+            assertions=self._get_assertions(),
+            pre_script=self.pre_script_editor.toPlainText(),
+            post_script=self.post_script_editor.toPlainText(),
+            cert_path=self.cert_path_input.text().strip() or None,
+            cert_key_path=self.cert_key_input.text().strip() or None,
+            description=self.notes_editor.toPlainText().strip() or None,
+            path_params=self.path_params_table.get_all_data(),
+        )
+        fields.update(overrides)
+        return Request(**fields)
+
     def autosave_current(self) -> None:
         """Persist the current editor state back to the DB if dirty.
 
@@ -180,36 +239,18 @@ class RequestPanel(_RequestSendMixin, _RequestAuthMixin, RequestBodyMixin, QWidg
         if not req or not getattr(req, "id", None):
             return
         try:
-            updated = Request(
-                method=self.method_combo.currentText(),
-                url=self.url_input.text().strip(),
-                headers=self.headers_table.get_data(),
-                params=self.params_table.get_enabled_data(),
-                params_list=self.params_table.get_all_rows(),
-                body=self.body_text.toPlainText().strip() or None,
-                auth=self._auth,
-                timeout=self.timeout_spin.value(),
-                verify_ssl=self.verify_ssl_check.isChecked(),
-                follow_redirects=self.follow_redirects_check.isChecked(),
+            updated = self._build_request_from_editor(
                 name=req.name,
-                description=self.notes_editor.toPlainText().strip() or None,
                 collection_id=req.collection_id,
                 folder=req.folder,
                 id=req.id,
-                captures=self._get_captures(),
-                assertions=self._get_assertions(),
-                pre_script=self.pre_script_editor.toPlainText(),
-                post_script=self.post_script_editor.toPlainText(),
-                cert_path=self.cert_path_input.text().strip() or None,
-                cert_key_path=self.cert_key_input.text().strip() or None,
-                path_params=self.path_params_table.get_all_data(),
             )
             self._collection_mgr.update_request(updated)
             self._clear_dirty()
             logger.debug("Autosaved request id=%s %s %s", req.id, updated.method, updated.url)
         except Exception:
             logger.error("Autosave failed for request id=%s", getattr(req, "id", None), exc_info=True)
-            self._status_message("⚠ Autosave failed — click Save to preserve changes", 8000)
+            self._status_message("⚠ Autosave failed — click Save to preserve changes", STATUS_DURATION_LONG)
 
     # ── Session variable accessors ─────────────────────────────────────
 
@@ -288,7 +329,7 @@ class RequestPanel(_RequestSendMixin, _RequestAuthMixin, RequestBodyMixin, QWidg
         completer = QCompleter(self._url_model, self)
         completer.setCaseSensitivity(Qt.CaseSensitivity.CaseInsensitive)
         completer.setFilterMode(Qt.MatchFlag.MatchContains)
-        completer.setMaxVisibleItems(12)
+        completer.setMaxVisibleItems(COMPLETER_MAX_VISIBLE)
         self.url_input.setCompleter(completer)
         # Defer the DB fetch so it doesn't block the main thread during window init.
         QTimer.singleShot(0, self._refresh_url_completer)
@@ -296,12 +337,12 @@ class RequestPanel(_RequestSendMixin, _RequestAuthMixin, RequestBodyMixin, QWidg
     def _refresh_url_completer(self) -> None:
         """Populate the completer model from recent history URLs."""
         try:
-            entries = HistoryManager(self.db).list_history(limit=200)
+            entries = HistoryManager(self.db).list_history(limit=HISTORY_COMPLETER_LIMIT)
             urls = list(dict.fromkeys(e["url"] for e in entries))  # deduplicate, keep order
             self._url_model.setStringList(urls)
             logger.debug("URL completer refreshed: %d URLs", len(urls))
         except Exception:
-            logger.warning("Failed to refresh URL completer", exc_info=True)
+            logger.debug("Failed to refresh URL completer", exc_info=True)
 
     # ── UI construction ───────────────────────────────────────────────
 
@@ -338,7 +379,7 @@ class RequestPanel(_RequestSendMixin, _RequestAuthMixin, RequestBodyMixin, QWidg
         row.setSpacing(4)
         self.method_combo = QComboBox()
         self.method_combo.addItems(["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"])
-        self.method_combo.setFixedWidth(90)
+        self.method_combo.setFixedWidth(METHOD_COMBO_WIDTH)
         self.url_input = UrlLineEdit()
         self.url_input.setPlaceholderText(
             "https://api.example.com/v1/resource  ·  {{VAR}} for variables  ·  Ctrl+N = new"
@@ -346,13 +387,13 @@ class RequestPanel(_RequestSendMixin, _RequestAuthMixin, RequestBodyMixin, QWidg
         self.url_input.returnPressed.connect(self._send_request)
         self.send_button = QPushButton("Send")
         self.send_button.setObjectName("sendBtn")
-        self.send_button.setFixedWidth(80)
+        self.send_button.setFixedWidth(SEND_BTN_WIDTH)
         self.send_button.setToolTip("Send request (Ctrl+Enter)")
         self.send_button.clicked.connect(self._send_request)
         self.send_button.setDefault(True)
         self.cancel_button = QPushButton("Cancel")
         self.cancel_button.setObjectName("cancelBtn")
-        self.cancel_button.setFixedWidth(70)
+        self.cancel_button.setFixedWidth(CANCEL_BTN_WIDTH)
         self.cancel_button.setToolTip("Cancel the in-flight request")
         self.cancel_button.clicked.connect(self._cancel_request)
         self.cancel_button.setVisible(False)
@@ -373,22 +414,22 @@ class RequestPanel(_RequestSendMixin, _RequestAuthMixin, RequestBodyMixin, QWidg
         row.setSpacing(6)
 
         save_btn = QPushButton("Save")
-        save_btn.setFixedWidth(80)
+        save_btn.setFixedWidth(SEND_BTN_WIDTH)
         save_btn.setToolTip("Save to a collection (prompts for name / folder)")
         save_btn.clicked.connect(self._save_request)
 
         import_btn = QPushButton("Import from cURL")
-        import_btn.setFixedWidth(140)
+        import_btn.setFixedWidth(IMPORT_BTN_WIDTH)
         import_btn.setToolTip("Paste a cURL command to populate the request editor")
         import_btn.clicked.connect(self._import_from_curl)
 
         bench_btn = QPushButton("Benchmark")
-        bench_btn.setFixedWidth(100)
+        bench_btn.setFixedWidth(BENCHMARK_BTN_WIDTH)
         bench_btn.setToolTip("Run repeated requests and view latency statistics")
         bench_btn.clicked.connect(self._open_benchmark)
 
         clear_sv_btn = QPushButton("Clear Session Vars")
-        clear_sv_btn.setFixedWidth(140)
+        clear_sv_btn.setFixedWidth(CLEAR_SV_BTN_WIDTH)
         clear_sv_btn.setToolTip("Clear all captured session variables")
         clear_sv_btn.clicked.connect(self.clear_session_vars)
 
@@ -434,16 +475,15 @@ class RequestPanel(_RequestSendMixin, _RequestAuthMixin, RequestBodyMixin, QWidg
         *,
         presets=None,
         enable_key_completer: bool = False,
-    ) -> Tuple[QWidget, QVBoxLayout, "TabToolbar", CheckableKeyValueTable]:
+    ) -> _KvTabResult:
         """Shared boilerplate for Headers / Params tabs.
 
         Builds a widget with a :class:`TabToolbar` and a
         :class:`CheckableKeyValueTable`, wiring the common add / remove /
         enable-all / disable-all toolbar signals to table-generic helpers.
 
-        Returns ``(widget, layout, toolbar, table)`` so callers can
-        post-configure — e.g. connect extra toolbar signals or append
-        additional sections to the layout.
+        Returns a :class:`_KvTabResult` so callers can post-configure —
+        e.g. connect extra toolbar signals or append additional sections.
         """
         w = QWidget()
         layout = QVBoxLayout(w)
@@ -457,17 +497,19 @@ class RequestPanel(_RequestSendMixin, _RequestAuthMixin, RequestBodyMixin, QWidg
         toolbar.disable_all_clicked.connect(lambda: self._set_all_checkable(table, False))
         layout.addWidget(toolbar)
         layout.addWidget(table, 1)
-        return w, layout, toolbar, table
+        return _KvTabResult(w, layout, toolbar, table)
 
     def _build_headers_tab(self) -> QWidget:
-        w, _, toolbar, self.headers_table = self._build_kv_tab(
+        result = self._build_kv_tab(
             "Headers", presets=_HEADER_PRESETS, enable_key_completer=True
         )
-        toolbar.preset_selected.connect(self._insert_header_preset)
-        return w
+        self.headers_table = result.table
+        result.toolbar.preset_selected.connect(self._insert_header_preset)
+        return result.widget
 
     def _build_params_tab(self) -> QWidget:
-        w, layout, _, self.params_table = self._build_kv_tab("Query Parameters")
+        result = self._build_kv_tab("Query Parameters")
+        self.params_table = result.table
         self._path_params_widget = QWidget()
         pp_inner = QVBoxLayout(self._path_params_widget)
         pp_inner.setContentsMargins(0, 6, 0, 0)
@@ -478,15 +520,25 @@ class RequestPanel(_RequestSendMixin, _RequestAuthMixin, RequestBodyMixin, QWidg
         self.path_params_table = PathParamsTable()
         pp_inner.addWidget(self.path_params_table)
         self._path_params_widget.setVisible(False)
-        layout.addWidget(self._path_params_widget, 1)
-        return w
+        result.layout.addWidget(self._path_params_widget, 1)
+        return result.widget
 
     def _build_body_tab(self) -> QWidget:
+        """Body tab: type selector, inline search, raw editor, multipart, and GraphQL."""
         w = QWidget()
         layout = QVBoxLayout(w)
         layout.setContentsMargins(0, 4, 0, 0)
 
-        # ── Type selection bar ────────────────────────────────────────────
+        layout.addLayout(self._build_body_type_bar())
+        layout.addLayout(self._build_body_search_bar())
+        self._build_body_editor(layout)
+        self._build_multipart_section(layout)
+        self._build_graphql_section(layout)
+
+        return w
+
+    def _build_body_type_bar(self) -> QHBoxLayout:
+        """Body-type combo and format button."""
         type_bar = QHBoxLayout()
         self.body_type_combo = QComboBox()
         self.body_type_combo.addItems(
@@ -498,15 +550,16 @@ class RequestPanel(_RequestSendMixin, _RequestAuthMixin, RequestBodyMixin, QWidg
         type_bar.addWidget(QLabel("Type:"))
         type_bar.addWidget(self.body_type_combo)
         self._fmt_json_btn = QPushButton("Format JSON")
-        self._fmt_json_btn.setFixedWidth(95)
+        self._fmt_json_btn.setFixedWidth(FMT_JSON_BTN_WIDTH)
         self._fmt_json_btn.setToolTip("Pretty-print the JSON body (Ctrl+Shift+F)")
         self._fmt_json_btn.clicked.connect(self._format_json_body)
         self._fmt_json_btn.setVisible(False)
         type_bar.addWidget(self._fmt_json_btn)
         type_bar.addStretch()
-        layout.addLayout(type_bar)  # ← type bar is the topmost element
+        return type_bar
 
-        # ── Inline find bar ───────────────────────────────────────────────
+    def _build_body_search_bar(self) -> QHBoxLayout:
+        """Inline find bar for the body editor."""
         self._body_search_input = QLineEdit()
         self._body_search_input.setPlaceholderText("Find in body…")
         self._body_search_input.setFixedHeight(26)
@@ -547,30 +600,19 @@ class RequestPanel(_RequestSendMixin, _RequestAuthMixin, RequestBodyMixin, QWidg
         search_row.addWidget(self._body_jsonpath_cb)
         search_row.addWidget(prev_btn)
         search_row.addWidget(next_btn)
-        layout.addLayout(search_row)
+        return search_row
 
-        # ── Raw / text body editor ────────────────────────────────────────
-        # Parent the editor to the RequestPanel to ensure Qt owns the
-        # underlying C++ object and it isn't deleted unexpectedly by the
-        # Python GC while the wrapper remains referenced.
-        # Using `self` as parent is safe: the widget will still be
-        # reparented into the body tab layout and will remain alive for
-        # the lifetime of the panel.
-        # Create the real editor and wrap it in a proxy that tolerates
-        # a missing underlying C++ object in some headless test environments.
+    def _build_body_editor(self, layout: QVBoxLayout) -> None:
+        """Create the raw/text body editor and wrap it in a resilient proxy."""
         real_body = JsonBodyEditor(self)
         proxy = BodyTextProxy(self, real_body)
-        # Add the real widget to the layout (QLayout expects a QWidget)
         layout.addWidget(real_body, 1)
-        # Expose the proxy as the public attribute so callers go through it
         self.body_text = proxy
         self.body_text.setPlaceholderText('{ "key": "value" }')
         self.body_text.setFont(get_mono_font())
 
-        # ── Multipart form-data editor ────────────────────────────────────
-        # Toolbar immediately above the table so controls stay adjacent.
-        # _multipart_add_row / _multipart_remove_row / _multipart_browse_file
-        # are defined in RequestBodyMixin
+    def _build_multipart_section(self, layout: QVBoxLayout) -> None:
+        """Multipart form-data toolbar and table."""
         self._mp_toolbar = TabToolbar("", include_file_btn=True, parent=self)
         self._mp_toolbar.add_clicked.connect(self._multipart_add_row)
         self._mp_toolbar.remove_clicked.connect(self._multipart_remove_row)
@@ -591,9 +633,10 @@ class RequestPanel(_RequestSendMixin, _RequestAuthMixin, RequestBodyMixin, QWidg
         self._multipart_table.setVisible(False)
         layout.addWidget(self._multipart_table, 1)
 
-        # ── GraphQL editor ────────────────────────────────────────────────
+    def _build_graphql_section(self, layout: QVBoxLayout) -> None:
+        """GraphQL query + variables split editor."""
         self._gql_widget = QWidget()
-        self._gql_widget.setVisible(False)  # shown only when GraphQL body type is selected
+        self._gql_widget.setVisible(False)
         layout.addWidget(self._gql_widget, 1)
         gql_layout = QVBoxLayout(self._gql_widget)
         gql_layout.setContentsMargins(0, 4, 0, 0)
@@ -617,7 +660,6 @@ class RequestPanel(_RequestSendMixin, _RequestAuthMixin, RequestBodyMixin, QWidg
         gql_splitter.setSizes([200, 120])
         gql_layout.addWidget(gql_splitter, 1)
 
-        return w
 
     def _build_notes_tab(self) -> QWidget:
         """Notes tab: free-form description for the request."""
@@ -750,7 +792,7 @@ class RequestPanel(_RequestSendMixin, _RequestAuthMixin, RequestBodyMixin, QWidg
         self.cert_path_input = QLineEdit()
         self.cert_path_input.setPlaceholderText("Path to .pem / .crt file")
         cert_browse = QPushButton("Browse…")
-        cert_browse.setFixedWidth(70)
+        cert_browse.setFixedWidth(BROWSE_BTN_WIDTH)
         cert_browse.clicked.connect(self._browse_cert)
         cert_row.addWidget(self.cert_path_input, 1)
         cert_row.addWidget(cert_browse)
@@ -761,7 +803,7 @@ class RequestPanel(_RequestSendMixin, _RequestAuthMixin, RequestBodyMixin, QWidg
         self.cert_key_input = QLineEdit()
         self.cert_key_input.setPlaceholderText("Path to private key file (leave blank if combined)")
         key_browse = QPushButton("Browse…")
-        key_browse.setFixedWidth(70)
+        key_browse.setFixedWidth(BROWSE_BTN_WIDTH)
         key_browse.clicked.connect(self._browse_cert_key)
         key_row.addWidget(self.cert_key_input, 1)
         key_row.addWidget(key_browse)
@@ -961,7 +1003,7 @@ class RequestPanel(_RequestSendMixin, _RequestAuthMixin, RequestBodyMixin, QWidg
             self._path_params_widget.setVisible(visible)
             self._update_tab_labels()
         except Exception:
-            logger.warning("Failed to update path parameters from URL", exc_info=True)
+            logger.debug("Failed to update path parameters from URL", exc_info=True)
 
     # ── Format JSON (#6) ──────────────────────────────────────────────
 
@@ -976,7 +1018,7 @@ class RequestPanel(_RequestSendMixin, _RequestAuthMixin, RequestBodyMixin, QWidg
             logger.debug("JSON formatted: %d → %d chars", len(text), len(formatted))
         except json.JSONDecodeError as exc:
             logger.warning("JSON formatting failed: %s (line %d, col %d)", exc.msg, exc.lineno, exc.colno)
-            self._status_message(f"Invalid JSON: {exc}", 5000)
+            self._status_message(f"Invalid JSON: {exc}")
 
     def _save_request(self) -> None:
         """Save the current editor state to a collection (prompts for name / folder)."""
@@ -985,11 +1027,7 @@ class RequestPanel(_RequestSendMixin, _RequestAuthMixin, RequestBodyMixin, QWidg
             QMessageBox.warning(self, "Missing URL", "Please enter a URL before saving.")
             return
 
-        method      = self.method_combo.currentText()
-        headers     = self.headers_table.get_data()
-        params      = self.params_table.get_enabled_data()
-        params_list = self.params_table.get_all_rows()
-        body        = self.body_text.toPlainText().strip() or None
+        method = self.method_combo.currentText()
         current_folder = getattr(self.current_request, "folder", None) or ""
 
         dlg = SaveRequestDialog(self.db, method, url, current_folder, parent=self)
@@ -999,22 +1037,9 @@ class RequestPanel(_RequestSendMixin, _RequestAuthMixin, RequestBodyMixin, QWidg
         name, col_id, col_name, folder = dlg.result_values()
 
         try:
-            request = Request(
-                method=method, url=url, headers=headers,
-                params=params, params_list=params_list,
-                body=body, name=name, auth=self._auth,
-                timeout=self.timeout_spin.value(),
-                verify_ssl=self.verify_ssl_check.isChecked(),
-                follow_redirects=self.follow_redirects_check.isChecked(),
+            request = self._build_request_from_editor(
+                name=name,
                 folder=folder,
-                captures=self._get_captures(),
-                assertions=self._get_assertions(),
-                pre_script=self.pre_script_editor.toPlainText(),
-                post_script=self.post_script_editor.toPlainText(),
-                cert_path=self.cert_path_input.text().strip() or None,
-                cert_key_path=self.cert_key_input.text().strip() or None,
-                description=self.notes_editor.toPlainText().strip() or None,
-                path_params=self.path_params_table.get_all_data(),
             )
             req_id = self._collection_mgr.save_request(request, collection_id=col_id, name=name)
 
@@ -1032,7 +1057,7 @@ class RequestPanel(_RequestSendMixin, _RequestAuthMixin, RequestBodyMixin, QWidg
                 if hasattr(win, 'collections_panel'):
                     win.collections_panel.refresh()
             except Exception:
-                logger.warning("Failed to refresh collections panel after save", exc_info=True)
+                logger.debug("Failed to refresh collections panel after save", exc_info=True)
 
         except Exception as exc:
             logger.error("Failed to save request", exc_info=True)

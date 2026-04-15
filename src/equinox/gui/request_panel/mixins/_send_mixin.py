@@ -376,36 +376,29 @@ class _RequestSendMixin:
     ) -> Request:
         """Build the Request object carrying forward collection context.
 
-        Preserves collection_id, folder, id, and name from the currently
-        loaded request so that inherited auth, collection variables, and
-        autosave keep working even after the first send replaces
-        self.current_request.
+        Delegates to ``_build_request_from_editor`` (defined on RequestPanel)
+        for field extraction, then applies the send-specific overrides:
+        interpolated URL/headers/params/body, effective auth, and multipart
+        data.  Preserves collection_id, folder, id, and name from the
+        currently loaded request.
 
         Returns:
             Fully constructed Request object
         """
-        cert_path = self.cert_path_input.text().strip() or None
-        cert_key = self.cert_key_input.text().strip() or None
         _prev = self.current_request
-
-        return Request(
-            method=method, url=url, headers=headers,
-            params=params, params_list=params_list,
-            body=body, auth=effective_auth,
-            timeout=self.timeout_spin.value(),
-            verify_ssl=self.verify_ssl_check.isChecked(),
-            follow_redirects=self.follow_redirects_check.isChecked(),
-            captures=self._get_captures(),
-            pre_script=self.pre_script_editor.toPlainText(),
-            post_script=self.post_script_editor.toPlainText(),
-            cert_path=cert_path,
-            cert_key_path=cert_key,
+        return self._build_request_from_editor(
+            method=method,
+            url=url,
+            headers=headers,
+            params=params,
+            params_list=params_list,
+            body=body,
+            auth=effective_auth,
             multipart_data=multipart_data,
             collection_id=getattr(_prev, "collection_id", None),
             folder=getattr(_prev, "folder", None),
             id=getattr(_prev, "id", None),
             name=getattr(_prev, "name", None),
-            path_params=self.path_params_table.get_all_data(),
         )
 
     def _dispatch_worker(self, request: Request) -> None:

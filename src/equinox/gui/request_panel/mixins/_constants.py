@@ -79,3 +79,20 @@ RECOMMENDER_TOP_N = 5
 # Confidence threshold for WARNING severity
 RECOMMENDER_HIGH_CONFIDENCE = 0.75
 
+# ──────────────────────────────────────────────────────────────────────────────
+# Panel UI — widget dimensions and limits
+# ──────────────────────────────────────────────────────────────────────────────
+
+METHOD_COMBO_WIDTH = 90
+SEND_BTN_WIDTH = 80
+CANCEL_BTN_WIDTH = 70
+BROWSE_BTN_WIDTH = 70
+IMPORT_BTN_WIDTH = 140
+BENCHMARK_BTN_WIDTH = 100
+CLEAR_SV_BTN_WIDTH = 140
+FMT_JSON_BTN_WIDTH = 95
+
+# URL auto-completer
+HISTORY_COMPLETER_LIMIT = 200
+COMPLETER_MAX_VISIBLE = 12
+
