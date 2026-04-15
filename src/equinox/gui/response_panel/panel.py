@@ -22,7 +22,6 @@ from equinox.core.request import Response
 from equinox.gui.response_panel.builder import ResponseBuilderMixin
 from equinox.gui.response_panel.display_mixin import ResponseDisplayMixin
 from equinox.gui.response_panel.actions_mixin import ResponseActionsMixin
-from equinox.gui.response_panel._formatting import pretty_print_body
 
 logger = logging.getLogger(__name__)
 
@@ -32,6 +31,10 @@ __all__ = ["ResponsePanel"]
 _LARGE_BODY_THRESHOLD = 2_097_152  # 2 MB
 _LAYOUT_MARGINS = (6, 4, 6, 4)
 _LAYOUT_SPACING = 4
+
+# View modes (used for view preference state)
+_VIEW_MODE_RAW = "raw"
+_VIEW_MODE_JSON = "json"
 
 
 class ResponsePanel(
@@ -50,21 +53,40 @@ class ResponsePanel(
     - View switching (raw/JSON)
     - Intelligence findings
 
-    Delegates specific concerns to mixin classes.
+    Delegates specific UI concerns to mixin classes:
+    - ResponseBuilderMixin: UI widget construction
+    - ResponseDisplayMixin: Populating widgets with response data
+    - ResponseActionsMixin: User interactions (copy, export, etc.)
+
+    Attributes:
+        current_response: Currently displayed Response object
     """
 
     def __init__(self, parent: Optional[QWidget] = None) -> None:
+        """Initialize ResponsePanel.
+
+        Args:
+            parent: Parent widget (for PyQt6 ownership)
+        """
         super().__init__(parent)
+        # Response state
         self.current_response: Optional[Response] = None
-        self._thread_pool = QThreadPool.globalInstance()
-        self._body_highlighter: Optional[Any] = None
-        self._prefer_json_view = False
+
+        # Configuration
         self._LARGE_BODY_THRESHOLD = _LARGE_BODY_THRESHOLD
 
+        # Thread pool for async operations (e.g., response intelligence)
+        self._thread_pool = QThreadPool.globalInstance()
+
+        # View state
+        self._body_highlighter: Optional[Any] = None
+        self._view_preference = _VIEW_MODE_RAW  # Preferred view: "raw" or "json"
+
+        # Initialize UI
         self._init_ui()
 
     # ------------------------------------------------------------------
-    # UI bootstrap
+    # Initialization & Setup
     # ------------------------------------------------------------------
 
     def _init_ui(self) -> None:
@@ -79,67 +101,76 @@ class ResponsePanel(
         self._build_tabs(layout)
 
     # ------------------------------------------------------------------
-    # Public API
+    # Response Display Pipeline
     # ------------------------------------------------------------------
 
     def display_response(self, response: Response) -> None:
         """Display an HTTP response.
 
-        Main entry point for displaying responses. Safely updates all
-        display elements and handles errors gracefully.
+        Main entry point for displaying responses. Orchestrates the complete
+        display pipeline with comprehensive error handling.
 
         Args:
             response: Response object to display
 
         Raises:
-            ValueError: If response is None (validation)
+            ValueError: If response is None
         """
-        logger.debug(
-            "display_response called: self=%s isVisible=%s",
-            type(self).__name__,
-            self.isVisible() if hasattr(self, 'isVisible') else 'N/A',
-        )
-
         if response is None:
-            logger.warning("display_response called with None response")
+            logger.warning("display_response: called with None response")
             return
 
-        try:
-            self._display_response_impl(response)
-        except Exception:
-            logger.exception("Unhandled exception in display_response")
-            self._show_display_error()
+        logger.debug(
+            "display_response: status=%d size=%d content_type=%s",
+            response.status_code,
+            response.size,
+            response.headers.get("content-type", ""),
+        )
 
-    def _display_response_impl(self, response: Response) -> None:
-        """Implementation of response display pipeline.
+        try:
+            self._render_response(response)
+        except Exception:
+            logger.exception("display_response: unhandled exception in render pipeline")
+            self._show_error_dialog(
+                "Display Error",
+                "An unexpected error occurred while displaying the response. See logs for details.",
+            )
+
+    def _render_response(self, response: Response) -> None:
+        """Execute the complete response display pipeline.
+
+        Pipeline steps:
+        1. Store current response
+        2. Update status bar (immediate visual feedback)
+        3. Apply syntax highlighting
+        4. Populate all tabs with response data
+        5. Apply view preference
+        6. Force widget refresh
 
         Args:
             response: Response to display
         """
         self.current_response = response
 
-        logger.debug(
-            "display_response: status=%s size=%s content_type=%s",
-            getattr(response, "status_code", None),
-            getattr(response, "size", None),
-            response.headers.get("content-type", "(none)") if hasattr(response, "headers") else "(no headers)",
-        )
-
-        # Update status bar first — gives immediate visual feedback
+        # Execute display pipeline with error isolation
         self._safe_display(self._update_status_bar, response)
+        self._safe_display(self._apply_highlighter_for_response, response)
+        self._safe_display(self._populate_all_tabs, response)
 
-        # Apply syntax highlighting for body
-        self._apply_highlighter_safe(response)
-
-        # Display each section of the response (all guarded)
-        self._display_sections(response)
-
-        # Switch to preferred view
+        # Apply user's preferred view mode
         self._apply_view_preference()
+
+        # Force Qt to refresh widgets after content updates
+        self._refresh_display()
+
         logger.debug("display_response: pipeline complete")
 
-    def _apply_highlighter_safe(self, response: Response) -> None:
-        """Apply syntax highlighter for response content-type.
+
+    def _apply_highlighter_for_response(self, response: Response) -> None:
+        """Apply syntax highlighter based on response content-type.
+
+        Safely applies the appropriate syntax highlighter for the response body.
+        Errors are logged but don't interrupt the display pipeline.
 
         Args:
             response: Response with headers
@@ -149,150 +180,172 @@ class ResponsePanel(
             self._apply_highlighter(content_type)
         except Exception:
             logger.exception(
-                "Failed to apply highlighter for content-type=%s",
+                "apply_highlighter_for_response: failed for content-type=%r",
                 response.headers.get("content-type", ""),
             )
 
-     def _display_sections(self, response: Response) -> None:
-         """Display all response sections with error isolation.
+    def _populate_all_tabs(self, response: Response) -> None:
+        """Populate all response tabs with data.
 
-         Each section is displayed independently so one failure
-         doesn't prevent displaying the rest.
+        Displays response data across all tabs with independent error handling
+        for each tab, ensuring one failure doesn't prevent displaying others.
 
-         Args:
-             response: Response to display
-         """
-         logger.debug(
-             "_display_sections: tabs=%s count=%d current_index=%d isVisible=%s",
-             type(self.tabs).__name__,
-             self.tabs.count() if hasattr(self.tabs, 'count') else 'N/A',
-             self.tabs.currentIndex() if hasattr(self.tabs, 'currentIndex') else 'N/A',
-             self.tabs.isVisible() if hasattr(self.tabs, 'isVisible') else 'N/A',
-         )
-
-         self._safe_display(self._display_body, response)
-         self._safe_display(self._display_json_tree, response)
-         self._safe_display(self._display_headers, response)
-         self._safe_display(self._display_timings, response)
-         self._safe_display(self._load_cookies_tab, response.headers)
-         self._safe_display(self._display_sent_request, response)
-
-         # Force Qt to re-render tab widget and its children after content updates
-         logger.debug("_display_sections: forcing widget refresh")
-         self.tabs.update()
-         self.update()
-         logger.debug("_display_sections completed")
-
-    def _apply_view_preference(self) -> None:
-        """Apply user's preferred view (raw or JSON).
-
-        Falls back to raw view if JSON view is not available.
+        Args:
+            response: Response to display
         """
-        if self._prefer_json_view and self._view_json_act.isEnabled():
-            self._switch_to_json_view()
-        else:
-            self._switch_to_raw_view()
+        logger.debug(
+            "populate_all_tabs: tabs_count=%d current_index=%d visible=%s",
+            self.tabs.count(),
+            self.tabs.currentIndex(),
+            self.tabs.isVisible(),
+        )
 
-    def _show_display_error(self) -> None:
-        """Show error dialog when response display fails.
+        # Each tab is populated independently with error isolation
+        self._safe_display(self._display_body, response)
+        self._safe_display(self._display_json_tree, response)
+        self._safe_display(self._display_headers, response)
+        self._safe_display(self._display_timings, response)
+        self._safe_display(self._load_cookies_tab, response.headers)
+        self._safe_display(self._display_sent_request, response)
 
-        Handles dialog creation failures gracefully.
+        logger.debug("populate_all_tabs: completed")
+
+    def _refresh_display(self) -> None:
+        """Force Qt to refresh all widgets after content changes.
+
+        Triggers update events on the tab widget and response panel
+        to ensure all content changes are rendered.
         """
         try:
-            QMessageBox.critical(
-                self,
-                "Display Error",
-                "An unexpected error occurred while displaying the response. "
-                "See logs for details.",
-            )
+            logger.debug("refresh_display: triggering widget updates")
+            self.tabs.update()
+            if hasattr(self.body_text, 'update'):
+                self.body_text.update()
+            if hasattr(self.body_text, 'viewport'):
+                self.body_text.viewport().update()
+            self.update()
+        except Exception:
+            logger.debug("refresh_display: error during widget refresh", exc_info=True)
+
+    # ------------------------------------------------------------------
+    # View Mode Management
+    # ------------------------------------------------------------------
+
+    def _apply_view_preference(self) -> None:
+        """Apply user's preferred view mode (raw or JSON).
+
+        Attempts to switch to the preferred view, falling back to raw view
+        if JSON view is not available.
+        """
+        if self._view_preference == _VIEW_MODE_JSON and self._view_json_act.isEnabled():
+            self._switch_view(_VIEW_MODE_JSON)
+        else:
+            self._switch_view(_VIEW_MODE_RAW)
+
+    def _on_view_selected(self, mode: str) -> None:
+        """Handle user view mode selection.
+
+        Called when user selects a different view mode (raw or JSON).
+
+        Args:
+            mode: "json" for JSON view, "raw" for raw view
+        """
+        if mode not in (_VIEW_MODE_JSON, _VIEW_MODE_RAW):
+            logger.warning("on_view_selected: invalid mode=%r, using raw", mode)
+            mode = _VIEW_MODE_RAW
+
+        self._view_preference = mode
+        self._switch_view(mode)
+
+    def _switch_view(self, mode: str) -> None:
+        """Switch to the specified view mode.
+
+        Internal method that performs the actual view switch by:
+        - Updating action checked states
+        - Switching to the appropriate tab
+
+        Args:
+            mode: "json" or "raw"
+        """
+        is_json = mode == _VIEW_MODE_JSON
+
+        # Update action states (signal blocking prevents loops)
+        self._view_json_act.blockSignals(True)
+        self._view_raw_act.blockSignals(True)
+        try:
+            self._view_json_act.setChecked(is_json)
+            self._view_raw_act.setChecked(not is_json)
+        finally:
+            self._view_json_act.blockSignals(False)
+            self._view_raw_act.blockSignals(False)
+
+        # Switch to appropriate tab
+        tab_idx = self._json_tab_idx if is_json else self._body_tab_idx
+        self.tabs.setCurrentIndex(tab_idx)
+        logger.debug("switch_view: switched to %s view (tab_idx=%d)", mode, tab_idx)
+
+    # ------------------------------------------------------------------
+    # Utility Methods & Error Handling
+    # ------------------------------------------------------------------
+
+    def set_intelligence_badge(self, count: int) -> None:
+        """Update intelligence panel tab label with finding count.
+
+        Displays a badge with the number of findings, or hides it if count is 0.
+
+        Args:
+            count: Number of intelligence findings (≥ 0)
+        """
+        try:
+            idx = self.tabs.indexOf(self.intelligence_panel)
+            if idx < 0:
+                logger.debug("set_intelligence_badge: intelligence panel not found in tabs")
+                return
+
+            label = f"Intelligence ({count})" if count > 0 else "Intelligence"
+            self.tabs.setTabText(idx, label)
+            logger.debug("set_intelligence_badge: updated to count=%d", count)
+        except Exception:
+            logger.exception("set_intelligence_badge: failed to update badge")
+
+    def _show_error_dialog(self, title: str, message: str) -> None:
+        """Show an error dialog to the user.
+
+        Safely displays an error message, handling any dialog creation failures.
+
+        Args:
+            title: Dialog title
+            message: Error message to display
+        """
+        try:
+            QMessageBox.critical(self, title, message)
         except Exception:
             logger.debug(
-                "Failed to show error dialog",
+                "show_error_dialog: failed to display dialog (title=%r)",
+                title,
                 exc_info=True,
             )
 
-    def _pretty_body(self, response: Response) -> str:
-        """Format response body for display (JSON or XML, otherwise raw).
-
-        Wrapper around the pretty_print_body function from _formatting.
-
-        Args:
-            response: Response object to format
-
-        Returns:
-            Formatted body string
-        """
-        return pretty_print_body(response)
-
-    def set_intelligence_badge(self, count: int) -> None:
-        """Set badge showing number of intelligence findings.
-
-        Args:
-            count: Number of findings (0 = no badge)
-        """
-        idx = self.tabs.indexOf(self.intelligence_panel)
-        if idx < 0:
-            logger.debug("Intelligence panel not found in tabs")
-            return
-
-        label = f"Intelligence ({count})" if count > 0 else "Intelligence"
-        self.tabs.setTabText(idx, label)
-
-    # ------------------------------------------------------------------
-    # View switching
-    # ------------------------------------------------------------------
-
-    def _on_view_selected(self, mode: str) -> None:
-        """Handle view mode selection (raw or JSON).
-
-        Args:
-            mode: "json" for JSON view, anything else for raw
-        """
-        if mode == "json":
-            self._prefer_json_view = True
-            self._switch_to_json_view()
-        else:
-            self._prefer_json_view = False
-            self._switch_to_raw_view()
-
-    def _switch_to_raw_view(self) -> None:
-        """Switch to raw response body view."""
-        self._view_raw_act.setChecked(True)
-        self._view_json_act.setChecked(False)
-        self.tabs.setCurrentIndex(self._body_tab_idx)
-
-    def _switch_to_json_view(self) -> None:
-        """Switch to JSON tree view (with fallback to raw).
-
-        Falls back to raw view if JSON view is not available.
-        """
-        if not self._view_json_act.isEnabled():
-            self._switch_to_raw_view()
-            return
-
-        self._view_raw_act.setChecked(False)
-        self._view_json_act.setChecked(True)
-        self.tabs.setCurrentIndex(self._json_tab_idx)
-
-    # ------------------------------------------------------------------
-    # Internal helpers
-    # ------------------------------------------------------------------
-
     @staticmethod
     def _safe_display(fn: Callable[[Any], None], *args: Any) -> None:
-        """Safely call a display function, isolating errors.
+        """Safely call a display function with comprehensive error isolation.
 
-        If a display function fails, the error is logged but other
-        display functions continue. This prevents one broken section
-        from hiding the rest of the response.
+        Wraps a display function call in try-catch so that one failure
+        doesn't interrupt the rest of the display pipeline. Particularly
+        useful when displaying different response tabs — if headers fail,
+        we still want to show the body.
 
         Args:
-            fn: Display function to call
+            fn: Display function to call (should accept *args)
             *args: Arguments to pass to fn
+
+        Logs:
+            DEBUG: On successful completion
+            EXCEPTION: On any error in fn
         """
         try:
             fn(*args)
-            logger.debug("Display function %s completed", fn.__name__)
+            logger.debug("safe_display: %s completed successfully", fn.__name__)
         except Exception:
-            logger.exception("Display function %s failed", fn.__name__)
+            logger.exception("safe_display: %s failed with error", fn.__name__)
 
