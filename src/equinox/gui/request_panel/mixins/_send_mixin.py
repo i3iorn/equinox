@@ -162,11 +162,12 @@ class _RequestSendMixin:
         headers: Dict[str, str],
         params: Dict[str, str],
         body: Optional[str],
+        path_params: Dict[str, str],
         variables: Dict[str, str],
-    ) -> Tuple[str, Dict[str, str], Dict[str, str], Optional[str]]:
+    ) -> Tuple[str, Dict[str, str], Dict[str, str], Optional[str], Dict[str, str]]:
         """Interpolate ``{{VAR}}`` placeholders in all request fields.
 
-        Returns ``(url, headers, params, body)`` with variables expanded.
+        Returns ``(url, headers, params, body, path_params)`` with variables expanded.
         Raises on interpolation failure so the caller can show a user-facing error.
         """
         logger.debug("Interpolating variables in request (url_len=%d)", len(url))
@@ -181,10 +182,15 @@ class _RequestSendMixin:
             VariableInterpolator.interpolate(v, variables)
             for k, v in params.items()
         }
+        path_params = {
+            VariableInterpolator.interpolate(k, variables):
+            VariableInterpolator.interpolate(v, variables)
+            for k, v in path_params.items()
+        }
         if body:
             body = VariableInterpolator.interpolate(body, variables)
         logger.debug("Variable interpolation completed successfully")
-        return url, headers, params, body
+        return url, headers, params, body, path_params
 
     @staticmethod
     def _resolve_proxy_url() -> Optional[str]:
@@ -250,7 +256,7 @@ class _RequestSendMixin:
             return
 
         # ── Gather fields from UI ─────────────────────────────────────
-        method, headers, params, params_list, body, body_type, multipart_data = (
+        method, headers, params, params_list, body, body_type, multipart_data, path_params = (
             self._gather_request_fields()
         )
         headers = inject_content_type(body, body_type, headers)
@@ -266,8 +272,8 @@ class _RequestSendMixin:
         variables = self._run_pre_script(method, url, headers, params, body, variables)
 
         try:
-            url, headers, params, body = self._interpolate_request_fields(
-                url, headers, params, body, variables,
+            url, headers, params, body, path_params = self._interpolate_request_fields(
+                url, headers, params, body, path_params, variables,
             )
         except Exception as exc:
             logger.warning("Variable interpolation failed: %s", exc)
@@ -298,7 +304,7 @@ class _RequestSendMixin:
         # ── Build and dispatch ────────────────────────────────────────
         request = self._build_request_object(
             method, url, headers, params, params_list, body,
-            effective_auth, multipart_data,
+            effective_auth, multipart_data, path_params,
         )
         self.current_request = request
 
@@ -328,16 +334,17 @@ class _RequestSendMixin:
 
     def _gather_request_fields(
         self,
-    ) -> Tuple[str, Dict[str, str], Dict[str, str], list, Optional[str], str, Optional[list]]:
+    ) -> Tuple[str, Dict[str, str], Dict[str, str], list, Optional[str], str, Optional[list], Dict[str, str]]:
         """Read all request fields from UI widgets.
 
         Returns:
-            (method, headers, params, params_list, body, body_type, multipart_data)
+            (method, headers, params, params_list, body, body_type, multipart_data, path_params)
         """
         method = self.method_combo.currentText()
         headers = self.headers_table.get_data()
         params = self.params_table.get_enabled_data()     # only checked rows are sent
         params_list = self.params_table.get_all_rows()     # full list incl. disabled
+        path_params = self.path_params_table.get_all_data()  # all path parameters from table
         body_type = self.body_type_combo.currentText()
         body, multipart_data = assemble_body(
             body_type,
@@ -346,7 +353,7 @@ class _RequestSendMixin:
             self._gql_vars.toPlainText().strip(),
             self._get_multipart_data(),
         )
-        return method, headers, params, params_list, body, body_type, multipart_data
+        return method, headers, params, params_list, body, body_type, multipart_data, path_params
 
     def _track_inherited_auth_for_send(
         self, effective_auth: Any, inherited_source: Optional[str]
@@ -371,13 +378,14 @@ class _RequestSendMixin:
         body: Optional[str],
         effective_auth: Any,
         multipart_data: Optional[list],
+        path_params: Optional[Dict[str, str]] = None,
     ) -> Request:
         """Build the Request object carrying forward collection context.
 
         Delegates to ``_build_request_from_editor`` (defined on RequestPanel)
         for field extraction, then applies the send-specific overrides:
-        interpolated URL/headers/params/body, effective auth, and multipart
-        data.  Preserves collection_id, folder, id, and name from the
+        interpolated URL/headers/params/body, effective auth, multipart
+        data, and path parameters.  Preserves collection_id, folder, id, and name from the
         currently loaded request.
 
         Returns:
@@ -393,6 +401,7 @@ class _RequestSendMixin:
             body=body,
             auth=effective_auth,
             multipart_data=multipart_data,
+            path_params=path_params or {},
             collection_id=getattr(_prev, "collection_id", None),
             folder=getattr(_prev, "folder", None),
             id=getattr(_prev, "id", None),
