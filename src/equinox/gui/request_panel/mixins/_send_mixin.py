@@ -6,6 +6,13 @@ persisting history, and publishing recommender hints.
 
 This mixin has no ``__init__`` and relies on ``self.*`` attributes set by
 ``RequestPanel.__init__`` (PyQt6 MRO is respected).
+
+Responsibilities:
+- Request assembly and variable interpolation (send phase)
+- Worker thread lifecycle management
+- Response processing pipeline (success/error/post-request tasks)
+- Session state updates (captures, scripts, auth tokens)
+- Deferred persistence (history, recommender suggestions)
 """
 
 from __future__ import annotations
@@ -44,32 +51,49 @@ from equinox.gui.request_panel.mixins._helpers import (
 
 logger = logging.getLogger(__name__)
 
+# ── Status message templates ──────────────────────────────────────────────────
+_MSG_MISSING_URL = "Please enter a request URL."
+_MSG_ERROR_PREFIX = "Error: "
+_MSG_CANCELLED = "Request cancelled"
+_MSG_VAR_FAILED = "Failed to expand variables"
+_MSG_AUTH_VAR_FAILED = "Failed to expand variables in auth fields"
+
+# ── String truncation for safe logging ────────────────────────────────────────
+_URL_LOG_LIMIT = 80
+_URL_ERROR_LOG_LIMIT = 80
+
 
 class _RequestSendMixin:
     """Methods for sending requests, handling responses, and managing the send lifecycle.
 
-    Responsible for:
-    - Pre-flight validation and advisory warnings
-    - Request field assembly and variable interpolation
-    - Auth resolution and interpolation
-    - Worker thread management (start, cancel, stale-result guard)
-    - Response processing (success/error dispatch)
-    - Pre/post scripts and captures
-    - History persistence (deferred via QTimer)
-    - Recommender suggestions for failed requests
+    Pipeline stages:
+    1. **Pre-flight** — Validate URL, check auth configuration
+    2. **Assembly** — Gather fields from UI (method, headers, params, body, path_params)
+    3. **Interpolation** — Expand {{variable}} placeholders in all fields
+    4. **Auth resolution** — Resolve effective auth (own → inherited → cached)
+    5. **Worker dispatch** — Create and start background worker thread
+    6. **Response routing** — Route to success or error handler
+    7. **Post-request** — Captures, scripts, token persistence, history, recommender
+
+    Key invariants:
+    - All user input is validated before use (zero-trust)
+    - HTTP client never sees uninterpolated URLs or variables
+    - Dirty flag is never set by send (only by user edits)
+    - Worker results are guarded against stale responses (multithreading safety)
+    - All task deferrals use QTimer to unblock the UI
     """
 
-    # ── Preflight ─────────────────────────────────────────────────────
+    # ── Preflight validation ──────────────────────────────────────────────────
 
     def _run_preflight_checks(self) -> List[str]:
-        """Return a list of advisory warning strings (empty = all clear).
+        """Return advisory warnings (empty list = all clear).
 
         Checks:
-        - URL has http(s):// scheme (unless it contains ``{{VAR}}``)
-        - Auth has required fields configured (via strategy's get_preflight_warning)
+        - URL has http(s):// scheme (unless it contains {{VAR}})
+        - Auth strategy accepts current configuration
 
         Returns:
-            List of warning strings (empty if no issues)
+            List of warning strings (never raises)
         """
         warnings: List[str] = []
         url = self.url_input.text().strip()
@@ -85,12 +109,12 @@ class _RequestSendMixin:
 
         return warnings
 
-    # ── Extracted helpers for _send_request ────────────────────────────
+    # ── Request assembly & interpolation ──────────────────────────────────────
 
     def _build_auth_probe(self) -> Optional[Request]:
-        """Build a lightweight Request for auth-hierarchy resolution.
+        """Build lightweight Request for auth-hierarchy resolution.
 
-        Returns ``None`` if no collection context is available.
+        Returns None if no collection context available.
         """
         req = self.current_request
         if not req or not getattr(req, "collection_id", None):
@@ -102,15 +126,13 @@ class _RequestSendMixin:
         )
 
     def _resolve_send_auth(self) -> Tuple[Any, Optional[str]]:
-        """Resolve the effective auth for the current send.
+        """Resolve effective auth: own → DB-inherited → cached inherited.
 
-        Resolution order: own auth → DB-resolved inherited → cached inherited.
-        Returns ``(effective_auth, inherited_source)``.
+        Returns (effective_auth, inherited_source).
         """
         if self._auth is not None:
             return self._auth, None
 
-        # Re-resolve from DB at send time so tokens are always fresh.
         effective_auth = None
         inherited_source: Optional[str] = None
         probe = self._build_auth_probe()
@@ -122,7 +144,6 @@ class _RequestSendMixin:
             except Exception as exc:
                 logger.debug("Send-time inherited auth resolution failed: %s", exc)
 
-        # Fallback to cached inherited auth if DB resolution failed
         if effective_auth is None and getattr(self, "_inherited_auth", None):
             effective_auth = self._inherited_auth
             inherited_source = getattr(self, "_inherited_auth_source", None)
@@ -138,7 +159,11 @@ class _RequestSendMixin:
         body: Optional[str],
         variables: Dict[str, str],
     ) -> Dict[str, str]:
-        """Execute the pre-request script and return the (possibly updated) variables."""
+        """Execute pre-request script; return (possibly updated) variables.
+
+        Script execution is isolated: exceptions are logged, not raised.
+        Session variables are merged into the return dict.
+        """
         pre_src = self.pre_script_editor.toPlainText()
         if not pre_src.strip():
             return variables
@@ -165,10 +190,10 @@ class _RequestSendMixin:
         path_params: Dict[str, str],
         variables: Dict[str, str],
     ) -> Tuple[str, Dict[str, str], Dict[str, str], Optional[str], Dict[str, str]]:
-        """Interpolate ``{{VAR}}`` placeholders in all request fields.
+        """Interpolate {{VAR}} placeholders in all request fields.
 
-        Returns ``(url, headers, params, body, path_params)`` with variables expanded.
-        Raises on interpolation failure so the caller can show a user-facing error.
+        Returns (url, headers, params, body, path_params) with variables expanded.
+        Raises on interpolation failure (caller handles & shows error dialog).
         """
         logger.debug("Interpolating variables in request (url_len=%d)", len(url))
         url = VariableInterpolator.interpolate(url, variables)
@@ -196,8 +221,8 @@ class _RequestSendMixin:
     def _resolve_proxy_url() -> Optional[str]:
         """Read proxy settings from QSettings on the main thread.
 
-        QSettings must NOT be accessed from a background QThread (UB on
-        Windows with the native registry backend).
+        QSettings must NOT be accessed from background QThreads (UB on Windows).
+        Returns None if proxy is not configured.
         """
         from PyQt6.QtCore import QSettings as _QSettings
         settings = _QSettings("Equinox", "Equinox")
@@ -207,7 +232,7 @@ class _RequestSendMixin:
 
     @staticmethod
     def _display_script_result(label, result) -> None:
-        """Update a script-result QLabel with success/error styling."""
+        """Update script-result label with success/error styling."""
         if result.error:
             label.setText(f"Error: {result.error}")
             label.setStyleSheet(f"color: {Colors.RED};")
@@ -217,19 +242,19 @@ class _RequestSendMixin:
             label.setStyleSheet(f"color: {Colors.GREEN};")
 
     def _apply_script_vars(self, result) -> None:
-        """Merge script output variables into session state and emit change signal.
+        """Merge script output variables into session state.
 
-        No-op when the script produced an error or zero output vars.
+        No-op if the script produced an error or zero output vars.
         """
         if result.error or not result.output_vars:
             return
         self._session_vars.update(result.output_vars)
         self.session_vars_changed.emit(dict(self._session_vars))
 
-    # ── Core send ─────────────────────────────────────────────────────
+    # ── Core send pipeline ────────────────────────────────────────────────────
 
     def _send_request(self) -> None:
-        """Orchestrate a full request send cycle.
+        """Orchestrate full request send cycle.
 
         Pipeline:
         1. Validate URL
@@ -243,52 +268,45 @@ class _RequestSendMixin:
         """
         url = self.url_input.text().strip()
         if not url:
-            QMessageBox.warning(self, "Missing URL", "Please enter a request URL.")
+            QMessageBox.warning(self, "Missing URL", _MSG_MISSING_URL)
             return
 
         logger.debug("_send_request() initiated: url=%s", url[:80])
 
-        # Pre-flight advisory warnings (non-blocking)
         self._display_preflight_warnings()
 
-        # Don't start a second request while one is in flight
         if self._worker is not None and self._worker.isRunning():
             return
 
-        # ── Gather fields from UI ─────────────────────────────────────
-        method, headers, params, params_list, body, body_type, multipart_data, path_params = (
-            self._gather_request_fields()
-        )
-        headers = inject_content_type(body, body_type, headers)
-
-        # ── Variable interpolation ────────────────────────────────────
-        variables = collect_interpolation_variables(
-            self.db,
-            collection_id=getattr(self.current_request, "collection_id", None),
-            session_vars=self._session_vars,
-        )
-
-        # Pre-request script (may update variables in-place)
-        variables = self._run_pre_script(method, url, headers, params, body, variables)
-
+        # ── Gather, interpolate, and validate ──
         try:
+            method, headers, params, params_list, body, body_type, multipart_data, path_params = (
+                self._gather_request_fields()
+            )
+            headers = inject_content_type(body, body_type, headers)
+
+            variables = collect_interpolation_variables(
+                self.db,
+                collection_id=getattr(self.current_request, "collection_id", None),
+                session_vars=self._session_vars,
+            )
+            variables = self._run_pre_script(method, url, headers, params, body, variables)
+
             url, headers, params, body, path_params = self._interpolate_request_fields(
                 url, headers, params, body, path_params, variables,
             )
-            # After interpolating path_params, apply them to the URL by using them as variables
-            # This replaces {{param_name}} placeholders in the URL with their interpolated values
+
             if path_params:
                 from equinox.core.urls import expand_placeholders
                 url = expand_placeholders(url, path_params)
                 logger.debug("URL expanded with path_params: %s", url[:100])
+
         except Exception as exc:
             logger.warning("Variable interpolation failed: %s", exc)
-            QMessageBox.warning(
-                self, "Variable Error", f"Failed to expand variables:\n{exc}",
-            )
+            QMessageBox.warning(self, "Variable Error", f"{_MSG_VAR_FAILED}:\n{exc}")
             return
 
-        # ── Auth resolution ───────────────────────────────────────────
+        # ── Resolve auth ──
         effective_auth, inherited_source = self._resolve_send_auth()
 
         try:
@@ -298,16 +316,12 @@ class _RequestSendMixin:
             )
         except Exception as exc:
             logger.warning("Auth variable interpolation failed: %s", exc)
-            QMessageBox.warning(
-                self, "Variable Error",
-                f"Failed to expand variables in auth fields:\n{exc}",
-            )
+            QMessageBox.warning(self, "Variable Error", f"{_MSG_AUTH_VAR_FAILED}:\n{exc}")
             return
 
-        # Track for post-send save-back of refreshed tokens
         self._track_inherited_auth_for_send(effective_auth, inherited_source)
 
-        # ── Build and dispatch ────────────────────────────────────────
+        # ── Build and dispatch ──
         request = self._build_request_object(
             method, url, headers, params, params_list, body,
             effective_auth, multipart_data, path_params,
@@ -322,10 +336,6 @@ class _RequestSendMixin:
 
         self.request_sent.emit(request)
         self._set_sending_state(True)
-        # NOTE: Do NOT call _clear_dirty() here.  Sending is not a save —
-        # the user's edits must still be autosaved to the DB when navigating
-        # away.  Clearing the flag here would silently discard changes.
-
         self._dispatch_worker(request)
 
     def _display_preflight_warnings(self) -> None:
@@ -348,9 +358,9 @@ class _RequestSendMixin:
         """
         method = self.method_combo.currentText()
         headers = self.headers_table.get_data()
-        params = self.params_table.get_enabled_data()     # only checked rows are sent
-        params_list = self.params_table.get_all_rows()     # full list incl. disabled
-        path_params = self.path_params_table.get_all_data()  # all path parameters from table
+        params = self.params_table.get_enabled_data()
+        params_list = self.params_table.get_all_rows()
+        path_params = self.path_params_table.get_all_data()
         body_type = self.body_type_combo.currentText()
         body, multipart_data = assemble_body(
             body_type,
@@ -364,12 +374,7 @@ class _RequestSendMixin:
     def _track_inherited_auth_for_send(
         self, effective_auth: Any, inherited_source: Optional[str]
     ) -> None:
-        """Store inherited auth context for post-send token persistence.
-
-        Args:
-            effective_auth: Resolved auth strategy
-            inherited_source: Source identifier or None if own auth
-        """
+        """Store inherited auth context for post-send token persistence."""
         is_inherited = self._auth is None
         self._send_inherited_auth = effective_auth if is_inherited else None
         self._send_inherited_source = inherited_source if is_inherited else None
@@ -386,16 +391,10 @@ class _RequestSendMixin:
         multipart_data: Optional[list],
         path_params: Optional[Dict[str, str]] = None,
     ) -> Request:
-        """Build the Request object carrying forward collection context.
+        """Build Request object carrying forward collection context.
 
-        Delegates to ``_build_request_from_editor`` (defined on RequestPanel)
-        for field extraction, then applies the send-specific overrides:
-        interpolated URL/headers/params/body, effective auth, multipart
-        data, and path parameters.  Preserves collection_id, folder, id, and name from the
-        currently loaded request.
-
-        Returns:
-            Fully constructed Request object
+        Applies send-specific overrides: interpolated fields, effective auth,
+        multipart data, path parameters. Preserves collection_id, folder, id, name.
         """
         _prev = self.current_request
         return self._build_request_from_editor(
@@ -415,13 +414,8 @@ class _RequestSendMixin:
         )
 
     def _dispatch_worker(self, request: Request) -> None:
-        """Create and start the background request worker.
-
-        Args:
-            request: Fully assembled Request to send
-        """
+        """Create and start the background request worker."""
         proxy = self._resolve_proxy_url()
-
         self._worker = RequestWorker(
             request, self,
             cookie_manager=self._cookie_manager,
@@ -442,36 +436,57 @@ class _RequestSendMixin:
             worker.wait(WORKER_WAIT_MS)
             self._worker = None
         self._set_sending_state(False)
-        self._status_message("Request cancelled", STATUS_DURATION_SHORT)
+        self._status_message(_MSG_CANCELLED, STATUS_DURATION_SHORT)
 
-    # ── Response handling ─────────────────────────────────────────────
+    # ── Response handling ─────────────────────────────────────────────────────
+
+    def _defer_task(self, fn, *args, **kwargs) -> None:
+        """Defer a task to unblock the main thread.
+
+        Schedules the given function to run on the next event loop iteration.
+        Used for DB writes, recommender queries, and other expensive operations.
+
+        Args:
+            fn: Callable to execute (typically a lambda or partial)
+            *args, **kwargs: Arguments to pass to fn
+        """
+        QTimer.singleShot(0, lambda: fn(*args, **kwargs))
+
+    def _normalize_exception(self, result: object) -> object:
+        """Normalize exceptions to RichError without recursion.
+
+        If result is an Exception that's not already RichError, attempts to
+        enrich it. Falls back to a minimal RichError if enrichment fails.
+
+        Args:
+            result: Object that might be an exception
+
+        Returns:
+            Result unchanged, or RichError if it was an un-enriched exception
+        """
+        if isinstance(result, Exception) and not isinstance(result, RichError):
+            try:
+                return enrich_exception(result)
+            except Exception:
+                return RichError(
+                    exc_type=type(result).__name__,
+                    message=str(result) or "Unknown error",
+                    tb="",
+                )
+        return result
 
     def _handle_response(self, result: object, worker: RequestWorker) -> None:
         """Route worker result to success or error handler.
 
         Guards against stale results from cancelled/replaced workers.
-        Normalizes un-enriched exceptions into RichError objects.
-
-        Args:
-            result: Response object or Exception from worker
-            worker: Worker that produced the result
+        Normalizes exceptions into RichError objects.
         """
-        # Stale result guard: only applies when _worker is still set
         if self._worker is not None and worker is not self._worker:
-            return  # Stale result from a cancelled/replaced worker
+            return  # Stale result from cancelled/replaced worker
         self._worker = None
         self._set_sending_state(False)
 
-        # Normalise un-enriched exceptions without recursion.
-        if isinstance(result, Exception) and not isinstance(result, RichError):
-            try:
-                result = enrich_exception(result)
-            except Exception:
-                result = RichError(
-                    exc_type=type(result).__name__,
-                    message=str(result) or "Unknown error",
-                    tb="",
-                )
+        result = self._normalize_exception(result)
 
         if isinstance(result, RichError):
             self._handle_error_result(result, worker)
@@ -479,22 +494,23 @@ class _RequestSendMixin:
             self._handle_success_result(result, worker)
 
     def _handle_error_result(self, result: RichError, worker: RequestWorker) -> None:
-        """Process an error result from a completed request worker."""
-        # Use worker.request — the request the worker actually processed.
-        # self.current_request may have been replaced if the user navigated
-        # while the worker was in-flight.
+        """Process error result from worker."""
         _sent_request = worker.request
+
+        # ── Logging ──
         logger.error(
             "Request failed: %s", result.message,
             extra={
                 "error_type": result.exc_type,
-                "url": getattr(_sent_request, "url", ""),
+                "url": getattr(_sent_request, "url", "")[:_URL_ERROR_LOG_LIMIT],
                 "method": getattr(_sent_request, "method", ""),
             },
         )
-        self._status_message(f"Error: {result.message}", STATUS_DURATION_LONG)
 
-        # Rich dialog: show type + message + hint about log file
+        # ── UI feedback ──
+        self._status_message(f"{_MSG_ERROR_PREFIX}{result.message}", STATUS_DURATION_LONG)
+
+        # ── Error dialog ──
         from equinox.gui.widgets import CopyableMessageBox
         log_hint = f"\n\nFull details in: {get_log_file()}" if get_log_file() else ""
         CopyableMessageBox.critical(
@@ -503,39 +519,35 @@ class _RequestSendMixin:
             copy_text=result.tb,
         )
 
+        # ── Logging panel ──
         notify_log_panel(self._logging_panel, "log_error", _sent_request, result.message)
 
-        # Defer DB write and recommender so the UI updates first.
-        _err_msg = result.message
-        QTimer.singleShot(0, lambda: save_history_safe(self.db, _sent_request, error=_err_msg))
+        # ── Deferred tasks ──
+        self._defer_task(save_history_safe, self.db, _sent_request, error=result.message)
         self._persist_inherited_auth_tokens()
-        QTimer.singleShot(0, lambda: self._publish_recommender_hints(_sent_request))
+        self._defer_task(self._publish_recommender_hints, _sent_request)
 
     def _handle_success_result(self, result: Response, worker: RequestWorker) -> None:
-        """Process a successful response from a completed request worker."""
+        """Process successful response from worker.
+
+        Execute in two phases:
+        1. Sync: Update UI, emit signals, run scripts/captures
+        2. Deferred: DB writes, recommender, expensive operations
+        """
         response: Response = result
         elapsed_ms = int(response.elapsed * 1000)
-        # response.request is the actual request the worker sent —
-        # use it in preference to self.current_request which may have
-        # been replaced while the worker was in-flight.
         _sent_request = response.request
-        logger.info(
-            "%s %s -> %d %s (%d ms)",
-            _sent_request.method, _sent_request.url,
-            response.status_code, response.reason, elapsed_ms,
-            extra={
-                "method": _sent_request.method,
-                "url": _sent_request.url,
-                "status": response.status_code,
-                "elapsed_ms": elapsed_ms,
-                "size_bytes": response.size,
-            },
-        )
+
+        # ── Phase 1: Immediate response handling (sync) ──
+
+        self._log_success_response(_sent_request, response, elapsed_ms)
         self._status_message(
             f"{response.status_code} {response.reason}  —  {elapsed_ms} ms",
             STATUS_DURATION_LONG,
         )
         self.response_received.emit(response)
+
+        # Run post-response processing pipeline (must complete before deferred tasks)
         self._apply_captures(response)
         self._evaluate_assertions(response)
         self._run_post_script(response)
@@ -543,37 +555,41 @@ class _RequestSendMixin:
 
         notify_log_panel(self._logging_panel, "log_response", _sent_request, response)
 
-        # Defer DB write so the UI renders the response instantly.
-        QTimer.singleShot(0, lambda: save_history_safe(self.db, _sent_request, response))
+        # ── Phase 2: Deferred tasks (async-safe on main thread) ──
 
-        # If response indicates failure (HTTP 4xx/5xx), offer recommender hints
+        self._defer_task(save_history_safe, self.db, _sent_request, response)
+
         if response.status_code >= 400:
-            QTimer.singleShot(0, lambda: self._publish_recommender_hints(_sent_request))
+            self._defer_task(self._publish_recommender_hints, _sent_request)
 
-        # Save refreshed tokens back to DB so subsequent requests (and
-        # navigation) reuse the cached token rather than fetching a new one.
-        #
-        # Two separate paths:
-        #  • Inherited auth (self._auth is None): token lives on the
-        #    collection/folder row — handled by _persist_inherited_auth_tokens.
-        #  • Own auth (self._auth is OAuth2Auth): token lives on the request
-        #    row — handled by _persist_own_oauth2_token.  autosave_current()
-        #    would also do this, but only when dirty; _send_request()
-        #    deliberately never sets the dirty flag, so a "send without edits"
-        #    would lose the token on the next navigation without this call.
+        # Persist refreshed tokens (separate ownership paths)
         self._persist_inherited_auth_tokens()
         self._persist_own_oauth2_token()
 
-        # Refresh the auth display — OAuth2Auth.apply() may have
-        # auto-refreshed the token in the worker thread, mutating
-        # self._auth in-place.  Without this, the Auth tab preview
-        # would still show the pre-send token.
+        # Refresh auth display (may have been mutated by auto-refresh in worker)
         self._update_auth_display(self._auth)
 
-    # ── Captures ──────────────────────────────────────────────────────
+    def _log_success_response(
+        self, request: Request, response: Response, elapsed_ms: int
+    ) -> None:
+        """Log a successful response with structured context."""
+        logger.info(
+            "%s %s -> %d %s (%d ms)",
+            request.method, request.url[:_URL_LOG_LIMIT],
+            response.status_code, response.reason, elapsed_ms,
+            extra={
+                "method": request.method,
+                "url": request.url[:_URL_LOG_LIMIT],
+                "status": response.status_code,
+                "elapsed_ms": elapsed_ms,
+                "size_bytes": response.size,
+            },
+        )
+
+    # ── Post-response processing pipeline ──────────────────────────────────────
 
     def _apply_captures(self, response: Response) -> None:
-        """Run capture rules against the response and update session vars."""
+        """Run capture rules against response; update session vars."""
         try:
             caps_raw = getattr(response.request, "captures", [])
             if not caps_raw:
@@ -593,10 +609,8 @@ class _RequestSendMixin:
         except Exception as exc:
             logger.debug("Capture processing failed: %s", exc, exc_info=True)
 
-    # ── Scripts ───────────────────────────────────────────────────────
-
     def _run_post_script(self, response: Response) -> None:
-        """Execute the post-response script if one is defined."""
+        """Execute post-response script if defined."""
         post_src = self.post_script_editor.toPlainText()
         if not post_src.strip():
             return
@@ -617,15 +631,13 @@ class _RequestSendMixin:
         except Exception as exc:
             logger.debug("Post-script failed: %s", exc)
 
-    # ── Token persistence ─────────────────────────────────────────────
+    # ── Token persistence ─────────────────────────────────────────────────────
 
     def _persist_inherited_auth_tokens(self) -> None:
-        """Save back refreshed tokens on inherited auth to the DB.
+        """Save refreshed tokens on inherited auth to DB.
 
-        After ``OAuth2Auth.apply()`` auto-refreshes a token, the in-memory
-        object has the new ``access_token`` and ``expires_at``.  This method
-        writes them back to the collection or folder so subsequent requests
-        reuse the token instead of fetching a new one every time.
+        After OAuth2Auth.apply() auto-refreshes, write the new token back
+        to collection/folder so subsequent requests reuse it.
         """
         auth = getattr(self, "_send_inherited_auth", None)
         source = getattr(self, "_send_inherited_source", None)
@@ -638,7 +650,6 @@ class _RequestSendMixin:
             if not req or not req.collection_id:
                 return
             write_auth_to_source(self._collection_mgr, req.collection_id, source, auth)
-            # Update display to show the fresh token info
             self._inherited_auth = auth
             self._inherited_auth_source = source
             self._update_auth_display(self._auth)
@@ -646,12 +657,10 @@ class _RequestSendMixin:
             logger.debug("Failed to persist inherited auth tokens: %s", exc)
 
     def _persist_own_oauth2_token(self) -> None:
-        """Save a freshly-fetched OAuth2 access token when the request has its own auth.
+        """Save refreshed OAuth2 token on own auth to request row.
 
-        ``_send_request()`` deliberately never sets the dirty flag, so a
-        "send without any edits" scenario would silently discard the fetched
-        token on the next navigation.  This persists it directly via
-        ``update_request_auth`` regardless of dirty state.
+        _send_request() never sets dirty, so "send without edits" would
+        discard token on next navigation. Persist directly regardless of dirty state.
         """
         if not isinstance(self._auth, OAuth2Auth) or not self._auth.access_token:
             return
@@ -664,15 +673,12 @@ class _RequestSendMixin:
         except Exception as exc:
             logger.debug("Failed to persist own OAuth2 token: %s", exc)
 
-    # ── Recommender ───────────────────────────────────────────────────
+    # ── Recommender ───────────────────────────────────────────────────────────
 
     def _publish_recommender_hints(self, request: Request) -> None:
-        """Generate suggestions for *request* from local history and publish them.
+        """Generate suggestions from history and publish to Intelligence panel.
 
-        Runs the :class:`~equinox.intelligence.Recommender`, converts results to
-        Intelligence :class:`~equinox.core.response_intelligence.models.Finding`
-        objects, and pushes them to the Intelligence panel.  All exceptions are
-        swallowed so this never interrupts the normal send/error flow.
+        All exceptions are swallowed so this never interrupts send/error flow.
         """
         try:
             from equinox.intelligence import Recommender
@@ -692,9 +698,7 @@ class _RequestSendMixin:
             if not suggestions:
                 return
 
-            findings = self._suggestions_to_findings(
-                suggestions, Category, Finding, Severity,
-            )
+            findings = self._suggestions_to_findings(suggestions, Category, Finding, Severity)
 
             win = self.window()
             rp = getattr(win, "response_panel", None)
@@ -716,7 +720,7 @@ class _RequestSendMixin:
         Finding: Any,
         Severity: Any,
     ) -> list:
-        """Convert raw recommender suggestions to Finding objects."""
+        """Convert recommender suggestions to Finding objects."""
         findings = []
         for s in suggestions:
             stype = s.get("type")
@@ -746,14 +750,10 @@ class _RequestSendMixin:
             ))
         return findings
 
-    # ── UI state ──────────────────────────────────────────────────────
+    # ── UI state management ───────────────────────────────────────────────────
 
     def _set_sending_state(self, sending: bool) -> None:
-        """Toggle UI between idle and sending states.
-
-        Args:
-            sending: True to show sending state, False for idle
-        """
+        """Toggle UI between idle and sending states."""
         enabled = not sending
         self.send_button.setEnabled(enabled)
         self.url_input.setEnabled(enabled)
@@ -768,6 +768,6 @@ class _RequestSendMixin:
             self.send_button.setText("Send")
 
     def _tick_elapsed(self) -> None:
+        """Update elapsed time display."""
         self._elapsed_secs += 0.1
         self.send_button.setText(f"{self._elapsed_secs:.1f}s…")
-
