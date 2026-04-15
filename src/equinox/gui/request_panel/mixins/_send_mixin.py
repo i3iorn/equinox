@@ -275,6 +275,12 @@ class _RequestSendMixin:
             url, headers, params, body, path_params = self._interpolate_request_fields(
                 url, headers, params, body, path_params, variables,
             )
+            # After interpolating path_params, apply them to the URL by using them as variables
+            # This replaces {{param_name}} placeholders in the URL with their interpolated values
+            if path_params:
+                from equinox.core.urls import expand_placeholders
+                url = expand_placeholders(url, path_params)
+                logger.debug("URL expanded with path_params: %s", url[:100])
         except Exception as exc:
             logger.warning("Variable interpolation failed: %s", exc)
             QMessageBox.warning(
