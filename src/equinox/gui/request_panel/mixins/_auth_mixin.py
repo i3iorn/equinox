@@ -16,6 +16,7 @@ This mixin has no ``__init__`` and relies on ``self.*`` attributes set by
 from __future__ import annotations
 
 import logging
+from datetime import datetime
 from typing import Any, Optional
 
 from PyQt6.QtWidgets import (
@@ -28,7 +29,6 @@ from PyQt6.QtWidgets import (
 )
 
 from equinox.auth import OAuth2Auth
-from equinox.auth.base import AuthStrategy
 from equinox.core.redact import mask_secret
 from equinox.core.time import utc_now
 from equinox.gui.theme import Colors
@@ -41,6 +41,21 @@ from equinox.gui.request_panel._constants import (
 from equinox.gui.request_panel.mixins._helpers import write_auth_to_source
 
 logger = logging.getLogger(__name__)
+
+# ──────────────────────────────────────────────────────────────────────────────
+# UI Constants
+# ──────────────────────────────────────────────────────────────────────────────
+
+_AUTH_NONE_LABEL = "Auth: None"
+_AUTH_NONE_DESC = "No authentication configured"
+_AUTH_TOKEN_NONE = "Token: None"
+_AUTH_TOKEN_EXPIRING = "Token: Expiring soon"
+_AUTH_TOKEN_VALID = "Token: Valid"
+_AUTH_INHERITED_FROM_COLLECTION = "  (inherited from collection)"
+_AUTH_INHERITED_FROM_FOLDER = '  (inherited from folder "{}")'
+
+_BTN_CONFIGURE = "Configure Authentication…"
+_BTN_CLEAR = "Clear Auth"
 
 
 class _RequestAuthMixin:
@@ -69,15 +84,17 @@ class _RequestAuthMixin:
         """
         source = getattr(self, "_inherited_auth_source", None)
         if not source:
+            logger.debug("No inherited auth source; token not persisted")
             return
         req = self.current_request
         if not req or not req.collection_id:
+            logger.debug("No current request or collection_id; token not persisted")
             return
         try:
             write_auth_to_source(self._collection_mgr, req.collection_id, source, auth)
-            logger.debug("Saved dialog-fetched token to %s", source)
+            logger.debug("Saved dialog-fetched token to source: %s", mask_secret(source))
         except Exception as exc:
-            logger.debug("Failed to save dialog token to source: %s", exc)
+            logger.debug("Failed to save dialog token to source: %s", exc, exc_info=True)
 
     # ── Tab creation ──────────────────────────────────────────────────
 
@@ -90,21 +107,20 @@ class _RequestAuthMixin:
         w = QWidget()
         layout = QVBoxLayout(w)
         layout.setContentsMargins(*AUTH_TAB_MARGINS)
-        self.auth_type_label = QLabel("Auth: None")
-        self.auth_type_label.setStyleSheet("font-weight: bold;")
-        self.auth_details_label = QLabel("No authentication configured")
-        self.auth_details_label.setObjectName("mutedLabel")
-        self.auth_details_label.setWordWrap(True)
-        self.auth_status_label = QLabel("")
-        self.auth_status_label.setWordWrap(True)
-        configure_btn = QPushButton("Configure Authentication…")
-        configure_btn.clicked.connect(self._configure_auth)
-        clear_btn = QPushButton("Clear Auth")
-        clear_btn.clicked.connect(self._clear_auth)
-        btn_row = QHBoxLayout()
-        btn_row.addWidget(configure_btn)
-        btn_row.addWidget(clear_btn)
-        btn_row.addStretch()
+
+        # Create labels with initial state
+        self.auth_type_label = self._create_styled_label(
+            _AUTH_NONE_LABEL, bold=True
+        )
+        self.auth_details_label = self._create_styled_label(
+            _AUTH_NONE_DESC, muted=True, wrap=True
+        )
+        self.auth_status_label = self._create_styled_label("", wrap=True)
+
+        # Create button row
+        btn_row = self._create_auth_button_row()
+
+        # Assemble layout
         layout.addWidget(self.auth_type_label)
         layout.addWidget(self.auth_details_label)
         layout.addWidget(self.auth_status_label)
@@ -112,46 +128,111 @@ class _RequestAuthMixin:
         layout.addStretch()
         return w
 
+    @staticmethod
+    def _create_styled_label(
+        text: str, bold: bool = False, muted: bool = False, wrap: bool = False
+    ) -> QLabel:
+        """Create a styled QLabel (DRY helper).
+
+        Args:
+            text: Label text
+            bold: Whether to make the text bold
+            muted: Whether to apply muted style (mutedLabel object name)
+            wrap: Whether to enable word wrapping
+
+        Returns:
+            Configured QLabel instance
+        """
+        label = QLabel(text)
+        if bold:
+            label.setStyleSheet("font-weight: bold;")
+        if muted:
+            label.setObjectName("mutedLabel")
+        if wrap:
+            label.setWordWrap(True)
+        return label
+
+    def _create_auth_button_row(self) -> QHBoxLayout:
+        """Create the auth button row (Configure / Clear) (DRY helper).
+
+        Returns:
+            QHBoxLayout with configure and clear buttons
+        """
+        btn_row = QHBoxLayout()
+        configure_btn = QPushButton(_BTN_CONFIGURE)
+        configure_btn.clicked.connect(self._configure_auth)
+        clear_btn = QPushButton(_BTN_CLEAR)
+        clear_btn.clicked.connect(self._clear_auth)
+        btn_row.addWidget(configure_btn)
+        btn_row.addWidget(clear_btn)
+        btn_row.addStretch()
+        return btn_row
+
     # ── Configuration ─────────────────────────────────────────────────
 
     def _configure_auth(self) -> None:
+        """Show auth dialog and apply the user's auth configuration changes."""
         from equinox.gui.dialogs.auth_dialog import AuthDialog
-        # Show inherited auth in the dialog so the user sees what's active
+
+        # Determine what auth to display in dialog
         was_inherited = self._auth is None and self._inherited_auth is not None
         display_auth = self._auth or self._inherited_auth
+
+        # Show dialog
         dialog = AuthDialog(display_auth, self, db=self.db)
         if dialog.exec() != QDialog.DialogCode.Accepted:
             return
-        if not hasattr(dialog, '_saved_auth'):
+
+        # Extract saved auth and any token that was fetched
+        saved = getattr(dialog, "_saved_auth", None)
+        fetched_token = getattr(dialog, "_last_fetched_auth", None)
+
+        # Dispatch on the dialog result
+        if was_inherited and saved is not None:
+            self._handle_inherited_auth_dialog_result(saved, fetched_token)
+        else:
+            self._handle_own_auth_dialog_result(saved)
+
+    def _handle_inherited_auth_dialog_result(
+        self, saved: Any, fetched_token: Any
+    ) -> None:
+        """Handle auth dialog result when the request was using inherited auth.
+
+        Carefully distinguishes between:
+        - Case A: Unchanged config, no token fetch → no-op
+        - Case B: Unchanged config, token fetched → persist at source only
+        - Case C: Changed config or explicit selection → set as own auth
+
+        Args:
+            saved: Auth object from the dialog
+            fetched_token: Newly fetched token (if any)
+        """
+        if not self._auth_configs_match(saved, self._inherited_auth):
+            # Case C: Config changed; set as own auth
+            self._handle_own_auth_dialog_result(saved)
             return
 
-        saved = dialog._saved_auth
-        fetched_token = getattr(dialog, '_last_fetched_auth', None)
+        if not fetched_token:
+            # Case A: No change, no fetch; no-op
+            logger.debug("Auth dialog: unchanged inherited config, no token fetch")
+            return
 
-        # ── Guard: don't accidentally bake inherited auth into the request ──
-        #
-        # If the request was using inherited auth (from collection/folder)
-        # and the user opened the dialog without changing the underlying
-        # configuration, we must NOT set self._auth — that would store a
-        # copy of the collection's auth on the request row.
-        if was_inherited and saved is not None:
-            configs_match = self._auth_configs_match(saved, self._inherited_auth)
+        # Case B: Unchanged config but token was fetched; persist at source
+        logger.debug("Auth dialog: persisting fetched token to inherited auth source")
+        self._inherited_auth = saved
+        self._save_inherited_token_to_source(saved)
+        self._update_auth_display(self._auth)  # self._auth still None
 
-            # Case A — unchanged config, no token fetch: no-op.
-            if configs_match and not fetched_token:
-                return
+    def _handle_own_auth_dialog_result(self, saved: Any) -> None:
+        """Handle auth dialog result when setting own auth on the request.
 
-            # Case B — unchanged config, token fetched: persist at source.
-            if configs_match and fetched_token is not None:
-                self._inherited_auth = saved
-                self._save_inherited_token_to_source(saved)
-                self._update_auth_display(self._auth)  # self._auth still None
-                return
-
-        # Case C — user explicitly set a different auth (or changed the
-        # config): honour it as own auth on the request.
+        Args:
+            saved: Auth object from dialog (may be None for "No Auth")
+        """
         old_auth = self._auth
         self._auth = saved
+
+        # Update inheritance and mark dirty only if config changed
         if self._auth is not None:
             # Own auth supersedes inherited
             self._inherited_auth = None
@@ -159,18 +240,21 @@ class _RequestAuthMixin:
         else:
             # User chose "No Auth" — re-resolve inherited
             self._resolve_inherited_auth()
+
         self._update_auth_display(self._auth)
-        # Mark dirty if auth actually changed
         if not self._auth_configs_match(old_auth, self._auth):
             self._mark_dirty()
+            logger.debug("Auth dialog: marked request dirty (config changed)")
 
     def _clear_auth(self) -> None:
+        """Clear own auth on this request; re-resolve inherited auth."""
         had_auth = self._auth is not None
         self._auth = None
         self._resolve_inherited_auth()
         self._update_auth_display(None)
         if had_auth:
             self._mark_dirty()
+            logger.debug("Auth cleared")
 
     # ── Comparison ────────────────────────────────────────────────────
 
@@ -229,14 +313,21 @@ class _RequestAuthMixin:
 
     @staticmethod
     def _format_inherited_label(source: Optional[str]) -> str:
-        """Build a human-readable '(inherited from …)' suffix."""
+        """Build a human-readable '(inherited from …)' suffix.
+
+        Args:
+            source: Source identifier or None
+
+        Returns:
+            Human-readable suffix, or empty string if no source
+        """
         if not source:
             return ""
         if source.startswith(FOLDER_AUTH_PREFIX):
             folder = source[len(FOLDER_AUTH_PREFIX):]
-            return f'  (inherited from folder "{folder}")'
+            return _AUTH_INHERITED_FROM_FOLDER.format(folder)
         if source == "collection":
-            return "  (inherited from collection)"
+            return _AUTH_INHERITED_FROM_COLLECTION
         return ""
 
     def _update_auth_display(self, auth: Any = None) -> None:
@@ -249,55 +340,145 @@ class _RequestAuthMixin:
         Args:
             auth: Own auth strategy or None
         """
+        # Reset status line (used only by OAuth2)
         self.auth_status_label.setText("")
         self.auth_status_label.setStyleSheet("")
 
-        # If no own auth, check inherited
-        display_auth = auth
-        inherited_label = ""
-        if not display_auth and getattr(self, "_inherited_auth", None):
-            display_auth = self._inherited_auth
-            inherited_label = self._format_inherited_label(
-                getattr(self, "_inherited_auth_source", None),
-            )
-
+        # Determine what to display: own auth or inherited
+        display_auth = auth or self._get_inherited_auth_safe()
         if not display_auth:
-            self.auth_type_label.setText("Auth: None")
-            self.auth_details_label.setText("No authentication configured")
+            self._set_auth_display_none()
             return
 
-        # Type label — derived from strategy's DISPLAY_NAME
-        type_name = getattr(display_auth, "DISPLAY_NAME", "") or type(display_auth).__name__
+        # Get inherited label if applicable
+        inherited_label = ""
+        if auth is None and self._inherited_auth_source:
+            inherited_label = self._format_inherited_label(self._inherited_auth_source)
+
+        self._set_auth_display_for_strategy(display_auth, inherited_label)
+
+    def _get_inherited_auth_safe(self) -> Optional[Any]:
+        """Safely retrieve inherited auth (handles missing attributes).
+
+        Returns:
+            Inherited auth object or None
+        """
+        return getattr(self, "_inherited_auth", None)
+
+    def _set_auth_display_none(self) -> None:
+        """Set display labels for the 'no auth' state."""
+        self.auth_type_label.setText(_AUTH_NONE_LABEL)
+        self.auth_details_label.setText(_AUTH_NONE_DESC)
+
+    def _set_auth_display_for_strategy(self, auth: Any, inherited_label: str) -> None:
+        """Set display labels for a specific auth strategy.
+
+        Args:
+            auth: Auth strategy object
+            inherited_label: Inherited source label (e.g. " (inherited from collection)")
+        """
+        # Type label from strategy's DISPLAY_NAME or class name
+        type_name = self._get_auth_type_name(auth)
         self.auth_type_label.setText(f"Auth: {type_name}{inherited_label}")
 
-        # Details — derived from strategy's get_display_summary()
-        if hasattr(display_auth, "get_display_summary"):
-            self.auth_details_label.setText(display_auth.get_display_summary())
-        else:
-            self.auth_details_label.setText("")
+        # Details from strategy's get_display_summary()
+        summary = self._get_auth_display_summary(auth)
+        self.auth_details_label.setText(summary)
 
-        # OAuth2 gets a special token-status line with expiry countdown
-        if isinstance(display_auth, OAuth2Auth):
-            self._render_oauth2_token_status(display_auth)
+        # Special OAuth2 token-status line
+        if isinstance(auth, OAuth2Auth):
+            self._render_oauth2_token_status(auth)
+
+    @staticmethod
+    def _get_auth_type_name(auth: Any) -> str:
+        """Extract type name from auth strategy (DRY helper).
+
+        Tries DISPLAY_NAME attribute first, falls back to class name.
+
+        Args:
+            auth: Auth strategy object
+
+        Returns:
+            Display name for the auth type
+        """
+        return getattr(auth, "DISPLAY_NAME", None) or type(auth).__name__
+
+    @staticmethod
+    def _get_auth_display_summary(auth: Any) -> str:
+        """Extract display summary from auth strategy (DRY helper).
+
+        Args:
+            auth: Auth strategy object
+
+        Returns:
+            Display summary, or empty string if not available
+        """
+        if hasattr(auth, "get_display_summary"):
+            try:
+                return auth.get_display_summary()
+            except Exception as exc:
+                logger.debug("Failed to get display summary: %s", exc, exc_info=True)
+        return ""
 
     def _render_oauth2_token_status(self, auth: OAuth2Auth) -> None:
-        """Render the OAuth2 token status line with colour and countdown."""
-        from datetime import datetime
+        """Render the OAuth2 token status line with colour and countdown.
 
-        info = auth.get_token_info()
+        Displays token state (None/Expiring/Valid) and time-to-expiry if available.
+
+        Args:
+            auth: OAuth2Auth instance with token info
+        """
+        try:
+            info = auth.get_token_info()
+            text, color = self._build_oauth2_status_text(auth, info)
+            text = self._append_oauth2_expiry_countdown(text, info)
+            self.auth_status_label.setText(text)
+            self.auth_status_label.setStyleSheet(f"color: {color};")
+        except Exception as exc:
+            logger.debug("Failed to render OAuth2 token status: %s", exc, exc_info=True)
+
+    @staticmethod
+    def _build_oauth2_status_text(auth: OAuth2Auth, info: dict) -> tuple[str, str]:
+        """Build the base OAuth2 status text and color (DRY helper).
+
+        Args:
+            auth: OAuth2Auth instance
+            info: Token info dict from get_token_info()
+
+        Returns:
+            Tuple of (status_text, color_code)
+        """
         if not auth.access_token:
-            text, color = "Token: None", Colors.RED
-        elif info["needs_refresh"]:
-            text, color = f"Token: Expiring soon  [{info['access_token']}]", Colors.AMBER
+            return _AUTH_TOKEN_NONE, Colors.RED
+        elif info.get("needs_refresh"):
+            token_display = mask_secret(info.get("access_token", ""))
+            return f"{_AUTH_TOKEN_EXPIRING}  [{token_display}]", Colors.AMBER
         else:
-            text, color = f"Token: Valid  [{info['access_token']}]", Colors.GREEN
-        if info["expires_at"]:
-            try:
-                secs = int((datetime.fromisoformat(info["expires_at"]) -
-                            utc_now()).total_seconds())
-                text += f"  (expires in {secs}s)" if secs > 0 else "  (expired)"
-            except Exception:
-                logger.debug("Failed to parse OAuth2 token expiry", exc_info=True)
-        self.auth_status_label.setText(text)
-        self.auth_status_label.setStyleSheet(f"color: {color};")
+            token_display = mask_secret(info.get("access_token", ""))
+            return f"{_AUTH_TOKEN_VALID}  [{token_display}]", Colors.GREEN
+
+    @staticmethod
+    def _append_oauth2_expiry_countdown(text: str, info: dict) -> str:
+        """Append time-to-expiry countdown to OAuth2 status text (DRY helper).
+
+        Args:
+            text: Base status text
+            info: Token info dict
+
+        Returns:
+            Text with expiry countdown appended (if available)
+        """
+        expires_at = info.get("expires_at")
+        if not expires_at or not isinstance(expires_at, str):
+            return text
+        try:
+            expiry_dt = datetime.fromisoformat(expires_at)
+            secs = int((expiry_dt - utc_now()).total_seconds())
+            if secs > 0:
+                text += f"  (expires in {secs}s)"
+            else:
+                text += "  (expired)"
+        except (ValueError, TypeError) as exc:
+            logger.debug("Failed to parse OAuth2 token expiry: %s", exc)
+        return text
 
