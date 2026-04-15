@@ -263,11 +263,20 @@ class AuthDialog(QDialog):
         self.oauth2_refresh_token = QLineEdit()
         self.oauth2_refresh_token.setEchoMode(QLineEdit.EchoMode.Password)
         self.oauth2_refresh_token.setPlaceholderText("Refresh token  (optional)")
+        self.oauth2_token_auth    = QComboBox()
+        self.oauth2_token_auth.addItem("Body (RFC 6749 default)", userData="body")
+        self.oauth2_token_auth.addItem("HTTP Basic Auth (D&B Direct+, GitHub…)", userData="basic")
+        self.oauth2_token_auth.setToolTip(
+            "How client credentials are sent to the token endpoint.\n"
+            "• Body — client_id/client_secret in the POST body (default, RFC 6749 §2.3.1)\n"
+            "• Basic — Base64-encoded Authorization header (required by some providers)"
+        )
 
         lay.addRow("Token URL:*",     self.oauth2_token_url)
         lay.addRow("Client ID:*",     self.oauth2_client_id)
         lay.addRow("Client Secret:",  make_secret_row(self.oauth2_client_secret))
         lay.addRow("Scope:",          self.oauth2_scope)
+        lay.addRow("Client Auth:",    self.oauth2_token_auth)
         lay.addRow("Access Token:",   make_secret_row(self.oauth2_access_token))
         lay.addRow("Refresh Token:",  make_secret_row(self.oauth2_refresh_token))
         lay.addRow(self._info(
@@ -392,6 +401,7 @@ class AuthDialog(QDialog):
             client_id=client_id,
             client_secret=client_secret,
             scope=scope,
+            token_auth=self.oauth2_token_auth.currentData() or "body",
         )
         self.oauth2_fetch_btn.setEnabled(False)
         self.oauth2_fetch_status.setText("Fetching…")
@@ -503,6 +513,8 @@ class AuthDialog(QDialog):
             self.oauth2_client_id.setText(cfg.get("client_id", ""))
             self.oauth2_client_secret.setText(cfg.get("client_secret", ""))
             self.oauth2_scope.setText(cfg.get("scope", ""))
+            ta_idx = self.oauth2_token_auth.findData(cfg.get("token_auth", "body") or "body")
+            self.oauth2_token_auth.setCurrentIndex(max(ta_idx, 0))
             # Clear tokens so a fresh fetch is triggered at send time.
             # Without this, stale tokens from a previously-loaded auth
             # could remain in the form and suppress the auto-fetch.
@@ -560,6 +572,10 @@ class AuthDialog(QDialog):
             self.oauth2_scope.setText(self.current_auth.scope or "")
             self.oauth2_access_token.setText(self.current_auth.access_token or "")
             self.oauth2_refresh_token.setText(self.current_auth.refresh_token or "")
+            ta_idx = self.oauth2_token_auth.findData(
+                getattr(self.current_auth, "token_auth", "body") or "body"
+            )
+            self.oauth2_token_auth.setCurrentIndex(max(ta_idx, 0))
         elif isinstance(self.current_auth, APIKeyAuth):
             self.tabs.setCurrentIndex(self._TAB_APIKEY)
             self.api_key_name.setText(self.current_auth.key)
@@ -641,6 +657,7 @@ class AuthDialog(QDialog):
                 scope=_sanitize_field(self.oauth2_scope.text().strip()) or None,
                 access_token=_sanitize_field(self.oauth2_access_token.text().strip()) or None,
                 refresh_token=_sanitize_field(self.oauth2_refresh_token.text().strip()) or None,
+                token_auth=self.oauth2_token_auth.currentData() or "body",
             )
             # Carry forward expires_at from a successful "Fetch Token…"
             # so the token isn't treated as eternal.

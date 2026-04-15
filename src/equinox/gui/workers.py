@@ -86,6 +86,7 @@ class OAuthTokenTester(QThread):
         scope: str,
         grant_type: str,
         extra_params: dict,
+        token_auth: str = "body",
         parent=None,
     ):
         super().__init__(parent)
@@ -95,6 +96,7 @@ class OAuthTokenTester(QThread):
         self.scope = scope
         self.grant_type = grant_type
         self.extra_params = extra_params
+        self.token_auth = token_auth if token_auth in ("body", "basic") else "body"
         self._cancelled = False
 
     def cancel(self) -> None:
@@ -103,20 +105,31 @@ class OAuthTokenTester(QThread):
 
     def run(self) -> None:
         try:
+            import base64
             import httpx
 
             data = {
                 "grant_type": self.grant_type,
-                "client_id": self.client_id,
-                "client_secret": self.secret,
             }
+            headers: dict = {}
+
+            if self.token_auth == "basic":
+                # RFC 6749 §2.3.1 — credentials in HTTP Basic Authorization header
+                credentials = f"{self.client_id}:{self.secret}"
+                encoded = base64.b64encode(credentials.encode("utf-8")).decode("ascii")
+                headers["Authorization"] = f"Basic {encoded}"
+            else:
+                # Default: credentials in the POST body
+                data["client_id"] = self.client_id
+                data["client_secret"] = self.secret
+
             if self.scope:
                 data["scope"] = self.scope
             if self.grant_type == "refresh_token":
                 data["refresh_token"] = ""  # placeholder
             data.update(self.extra_params)
 
-            resp = httpx.post(self.token_url, data=data, timeout=10.0)
+            resp = httpx.post(self.token_url, data=data, headers=headers, timeout=10.0)
             if resp.status_code == 200:
                 payload = resp.json()
                 token_type = payload.get("token_type", "bearer")

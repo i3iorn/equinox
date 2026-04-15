@@ -213,6 +213,14 @@ class SavedCredentialsDialog(DirtyDialogMixin, QDialog):
         self.o_client_secret.setPlaceholderText("client_secret")
         self.o_scope         = QLineEdit()
         self.o_scope.setPlaceholderText("read write  (optional)")
+        self.o_token_auth    = QComboBox()
+        self.o_token_auth.addItem("Body (RFC 6749 default)", userData="body")
+        self.o_token_auth.addItem("HTTP Basic Auth (D&B Direct+, GitHub…)", userData="basic")
+        self.o_token_auth.setToolTip(
+            "How client credentials are sent to the token endpoint.\n"
+            "• Body — client_id/client_secret in the POST body (default, RFC 6749 §2.3.1)\n"
+            "• Basic — Base64-encoded Authorization header (required by some providers)"
+        )
         self.o_grant_type    = QComboBox()
         self.o_grant_type.addItems(list(GRANT_TYPES))
         self.o_extra         = QTextEdit()
@@ -224,11 +232,13 @@ class SavedCredentialsDialog(DirtyDialogMixin, QDialog):
         lay.addRow("Client ID:*",    self.o_client_id)
         lay.addRow("Client Secret:", _secret_row(self.o_client_secret))
         lay.addRow("Scope:",         self.o_scope)
+        lay.addRow("Client Auth:",   self.o_token_auth)
         lay.addRow("Grant Type:",    self.o_grant_type)
         lay.addRow("Extra Params:",  self.o_extra)
 
         for w2 in (self.o_token_url, self.o_client_id, self.o_client_secret, self.o_scope):
             w2.textChanged.connect(self._mark_dirty)
+        self.o_token_auth.currentIndexChanged.connect(self._mark_dirty)
         self.o_grant_type.currentIndexChanged.connect(self._mark_dirty)
         self.o_extra.textChanged.connect(self._mark_dirty)
         return w
@@ -424,6 +434,8 @@ class SavedCredentialsDialog(DirtyDialogMixin, QDialog):
             self.o_client_id.setText(cfg.get("client_id", ""))
             self.o_client_secret.setText(cfg.get("client_secret", ""))
             self.o_scope.setText(cfg.get("scope", ""))
+            ta_idx = self.o_token_auth.findData(cfg.get("token_auth", "body") or "body")
+            self.o_token_auth.setCurrentIndex(max(ta_idx, 0))
             gt_idx = self.o_grant_type.findText(
                 cfg.get("grant_type", "client_credentials")
             )
@@ -468,7 +480,7 @@ class SavedCredentialsDialog(DirtyDialogMixin, QDialog):
             self.aws_region, self.aws_service, self.aws_session_token,
         ):
             w.blockSignals(block)
-        for cb in (self.f_type, self.o_grant_type, self.ak_location):
+        for cb in (self.f_type, self.o_token_auth, self.o_grant_type, self.ak_location):
             cb.blockSignals(block)
 
     def _set_form_enabled(self, enabled: bool) -> None:
@@ -623,6 +635,7 @@ class SavedCredentialsDialog(DirtyDialogMixin, QDialog):
                 "client_id":     client_id,
                 "client_secret": self.o_client_secret.text(),
                 "scope":         self.o_scope.text().strip(),
+                "token_auth":    self.o_token_auth.currentData() or "body",
                 "grant_type":    self.o_grant_type.currentText(),
                 "extra_params":  extra_params,
             }, None
@@ -697,6 +710,7 @@ class SavedCredentialsDialog(DirtyDialogMixin, QDialog):
         client_id  = self.o_client_id.text().strip()
         secret     = self.o_client_secret.text()
         scope      = self.o_scope.text().strip()
+        token_auth = self.o_token_auth.currentData() or "body"
         grant_type = self.o_grant_type.currentText()
         extra_raw  = self.o_extra.toPlainText().strip()
 
@@ -719,7 +733,8 @@ class SavedCredentialsDialog(DirtyDialogMixin, QDialog):
         self._set_status("Connecting\u2026", ok=None)
 
         self._tester = OAuthTokenTester(
-            token_url, client_id, secret, scope, grant_type, extra_params
+            token_url, client_id, secret, scope, grant_type, extra_params,
+            token_auth=token_auth,
         )
         self._tester.done.connect(self._on_test_done)
         self._tester.start()
