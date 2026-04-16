@@ -25,17 +25,37 @@ class _RedirectSafeAuth(httpx.Auth):
     ``auth_flow`` to be re-executed on *every* leg of the redirect chain,
     ensuring the injected headers are always present regardless of origin
     changes.
+
+    Args:
+        auth_headers: Dict of HTTP headers to inject (must not be empty).
+
+    Raises:
+        ValueError: If auth_headers is empty.
     """
 
     def __init__(self, auth_headers: Dict[str, str]) -> None:
         if not auth_headers:
-            raise ValueError("auth_headers must not be empty")
-        self._auth_headers = dict(auth_headers)  # defensive copy
+            raise ValueError(
+                "auth_headers required for redirect-safe auth "
+                "(must contain at least one header)"
+            )
+        # Defensive copy prevents external modification of stored headers
+        self._auth_headers = dict(auth_headers)
 
     def auth_flow(
         self, request: httpx.Request
     ) -> Generator[httpx.Request, httpx.Response, None]:
-        """Inject stored auth headers then yield the request for sending."""
+        """Inject stored auth headers then yield the request for sending.
+
+        Re-executed on every redirect leg, ensuring auth headers persist
+        across origin changes (scheme, host, port).
+
+        Args:
+            request: The HTTP request being sent.
+
+        Yields:
+            The modified request with auth headers injected.
+        """
         for key, value in self._auth_headers.items():
             request.headers[key] = value
         logger.debug(
@@ -47,5 +67,6 @@ class _RedirectSafeAuth(httpx.Auth):
         yield request
 
     def __repr__(self) -> str:
+        """Return developer-friendly representation."""
         keys = sorted(self._auth_headers.keys())
         return f"_RedirectSafeAuth(headers={keys})"
