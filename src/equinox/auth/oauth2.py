@@ -29,6 +29,13 @@ _MAX_TOKEN_RETRIES = 3
 # Assume a 1-hour lifetime when the server omits the ``expires_in`` field.
 _DEFAULT_TOKEN_EXPIRY_SECONDS = 3600
 
+# Token timeout bounds (seconds)
+_MIN_TOKEN_TIMEOUT: float = 0.1
+_MAX_TOKEN_TIMEOUT: float = 300.0
+
+# Lock acquisition timeout to prevent deadlock (seconds)
+_LOCK_TIMEOUT: float = 5.0
+
 # Token snapshot — fields whose values are partially redacted for safe display.
 _REDACTABLE_TOKEN_FIELDS: frozenset = frozenset({"access_token", "refresh_token", "id_token"})
 
@@ -154,8 +161,20 @@ class OAuth2Auth(AuthStrategy):
 
         # Validate and clamp token_timeout
         if not isinstance(token_timeout, (int, float)) or token_timeout <= 0:
+            logger.warning(
+                "Invalid token_timeout %r, using default %s seconds",
+                token_timeout, self.DEFAULT_TOKEN_TIMEOUT
+            )
             token_timeout = self.DEFAULT_TOKEN_TIMEOUT
-        self.token_timeout = max(0.1, min(token_timeout, 300.0))
+
+        original_timeout = token_timeout
+        self.token_timeout = max(_MIN_TOKEN_TIMEOUT, min(token_timeout, _MAX_TOKEN_TIMEOUT))
+
+        if original_timeout != self.token_timeout:
+            logger.debug(
+                "Clamped token_timeout from %s to %s seconds",
+                original_timeout, self.token_timeout
+            )
 
         self.secure_storage = secure_storage
         # Prevent storage-key collision when client_id is None.
@@ -187,10 +206,28 @@ class OAuth2Auth(AuthStrategy):
 
         Refreshes the token first when it is missing, expired, or expiring soon.
         Concurrent callers share the same refresh attempt via a lock.
+
+        Args:
+            request: The HTTP request object (may be used by subclasses).
+            headers: Headers dict to modify in-place.
+
+        Raises:
+            AuthError: If token refresh fails, lock timeout occurs, or no token available.
         """
-        with self._refresh_lock:
+        # Acquire lock with timeout to prevent indefinite deadlock
+        acquired = self._refresh_lock.acquire(timeout=_LOCK_TIMEOUT)
+        if not acquired:
+            logger.error("Failed to acquire token refresh lock within %.1f seconds", _LOCK_TIMEOUT)
+            raise AuthError(
+                f"Token refresh lock timeout — possible deadlock or high contention "
+                f"(waited {_LOCK_TIMEOUT}s)"
+            )
+
+        try:
             if self._needs_refresh():
                 self._refresh_access_token()
+        finally:
+            self._refresh_lock.release()
 
         if not self.access_token:
             raise AuthError("No access token available")
@@ -331,6 +368,24 @@ class OAuth2Auth(AuthStrategy):
             "needs_refresh": self._needs_refresh(),
         }
 
+    def _validate_token_from_endpoint(self, raw_token: str, token_type: str) -> str:
+        """Validate and return a token received from the endpoint.
+
+        Prevents CRLF injection and validates token format from untrusted source.
+
+        Args:
+            raw_token: The raw token value from the token endpoint.
+            token_type: Token type for error messages (e.g., "access_token", "refresh_token").
+
+        Returns:
+            The validated token string.
+
+        Raises:
+            AuthError: If token validation fails (injection attempt, invalid format, etc).
+        """
+        label = f"OAuth2 {token_type} (from endpoint)"
+        return _validate_credential(raw_token, label)
+
     # ── Secure storage ────────────────────────────────────────────────────────
 
     def _load_from_storage(self) -> None:
@@ -343,7 +398,15 @@ class OAuth2Auth(AuthStrategy):
             logger.debug("Loading OAuth2 tokens from secure storage (key=%s)", self.storage_key)
             stored = self.secure_storage.retrieve(self.storage_key)
             if stored:
-                data = json.loads(stored)
+                try:
+                    data = json.loads(stored)
+                except (json.JSONDecodeError, ValueError) as parse_exc:
+                    logger.warning(
+                        "Failed to parse stored OAuth2 tokens (corrupted data): %s",
+                        parse_exc
+                    )
+                    return
+
                 self.access_token = data.get("access_token")
                 self.refresh_token = data.get("refresh_token")
                 self.expires_at = self._parse_expires_at(data.get("expires_at"))
@@ -353,8 +416,10 @@ class OAuth2Auth(AuthStrategy):
                 )
             else:
                 logger.debug("No stored OAuth2 tokens found for key=%s", self.storage_key)
+        except (OSError, IOError) as io_exc:
+            logger.warning("Failed to access secure storage (I/O error): %s", io_exc)
         except Exception as storage_exc:
-            logger.warning("Failed to load OAuth2 tokens from storage: %s", storage_exc)
+            logger.error("Unexpected error loading OAuth2 tokens: %s", storage_exc, exc_info=True)
 
     def _save_to_storage(self) -> None:
         """Persist current tokens to secure storage."""
@@ -369,13 +434,21 @@ class OAuth2Auth(AuthStrategy):
                 "refresh_token": self.refresh_token,
                 "expires_at": self._expires_at_iso(),
             }
-            self.secure_storage.store(self.storage_key, json.dumps(data))
+            try:
+                json_str = json.dumps(data)
+            except (TypeError, ValueError) as json_exc:
+                logger.error("Failed to serialize OAuth2 tokens for storage: %s", json_exc)
+                return
+
+            self.secure_storage.store(self.storage_key, json_str)
             logger.info(
                 "OAuth2 tokens saved to storage (expires_at=%s)",
                 self._expires_at_iso() or "None",
             )
+        except (OSError, IOError) as io_exc:
+            logger.warning("Failed to write to secure storage (I/O error): %s", io_exc)
         except Exception as storage_exc:
-            logger.warning("Failed to save OAuth2 tokens to storage: %s", storage_exc)
+            logger.error("Unexpected error saving OAuth2 tokens: %s", storage_exc, exc_info=True)
 
     def _expires_at_iso(self) -> Optional[str]:
         """Return ``expires_at`` as an ISO-8601 string, or ``None`` if unset."""
@@ -657,9 +730,13 @@ class OAuth2Auth(AuthStrategy):
         """
         try:
             token_data = response.json()
-        except ValueError as parse_exc:
-            error_msg = f"Invalid token endpoint response: {parse_exc}"
-            logger.error(error_msg)
+        except (json.JSONDecodeError, ValueError) as parse_exc:
+            error_msg = (
+                f"Token endpoint returned non-JSON response. "
+                f"Status: {response.status_code}, "
+                f"Content-Type: {response.headers.get('content-type', 'unknown')}"
+            )
+            logger.error("%s — Parse error: %s", error_msg, parse_exc)
             self._audit.log_auth_failure("oauth2", error_msg)
             raise AuthError(error_msg)
 
@@ -669,9 +746,7 @@ class OAuth2Auth(AuthStrategy):
 
         # Validate tokens from the (untrusted) token endpoint immediately
         # — prevents CRLF header injection and oversized payloads.
-        self.access_token = _validate_credential(
-            raw_access, "OAuth2 access token (from endpoint)"
-        )
+        self.access_token = self._validate_token_from_endpoint(raw_access, "access_token")
 
         expires_in_seconds = self._parse_expires_in(token_data.get("expires_in"))
         self.expires_at = utc_now() + timedelta(seconds=expires_in_seconds)
@@ -679,8 +754,8 @@ class OAuth2Auth(AuthStrategy):
 
         if "refresh_token" in token_data:
             try:
-                self.refresh_token = _validate_credential(
-                    token_data["refresh_token"], "OAuth2 refresh token (from endpoint)"
+                self.refresh_token = self._validate_token_from_endpoint(
+                    token_data["refresh_token"], "refresh_token"
                 )
             except AuthError:
                 logger.warning(
