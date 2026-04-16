@@ -18,13 +18,19 @@ __all__ = ["AuthApplier"]
 
 # Substrings (lowercased) that indicate the proxy refused the TCP connection.
 # Checked against the redacted error message to emit an actionable hint.
-_PROXY_REFUSED_MARKERS = ("10061", "connection refused", "econnrefused")
+_PROXY_REFUSED_MARKERS: frozenset[str] = frozenset({
+    "10061", "connection refused", "econnrefused"
+})
 
 
 def _is_proxy_connection_refused(message: str) -> bool:
-    """Return ``True`` when *message* suggests the proxy refused a TCP connection."""
-    lower = message.lower()
-    return any(marker in lower for marker in _PROXY_REFUSED_MARKERS)
+    """Return ``True`` when *message* suggests the proxy refused a TCP connection.
+
+    Args:
+        message: Error message (lowercased before checking).
+    """
+    lower_msg = message.lower()
+    return any(marker in lower_msg for marker in _PROXY_REFUSED_MARKERS)
 
 
 class AuthApplier:
@@ -62,6 +68,9 @@ class AuthApplier:
                           message.  Proxy connection failures receive an
                           actionable hint about checking proxy settings.
         """
+        if not request:
+            raise ValueError("request cannot be None")
+
         auth_strategy = explicit_auth or request.auth
         if not auth_strategy:
             logger.debug("No auth strategy active for %s %s", request.method, request.url)
@@ -91,9 +100,18 @@ class AuthApplier:
         headers: Dict[str, str],
         proxy: Optional[str],
     ) -> None:
-        """Call ``strategy.apply()``, converting any exception to :class:`RequestError`."""
-        # Some strategies (e.g. OAuth2) support an optional proxy for token
-        # refresh; inject it via the private attribute if present.
+        """Call ``strategy.apply()``, converting any exception to :class:`RequestError`.
+
+        Args:
+            strategy: The auth strategy to apply.
+            request: The request object (passed to strategy).
+            headers: Mutable headers dict (modified by strategy).
+            proxy: Optional proxy URL to inject into strategy if supported.
+
+        Raises:
+            RequestError: If strategy.apply() raises any exception.
+        """
+        # ...existing code...
         if proxy and hasattr(strategy, "_proxy"):
             strategy._proxy = proxy
         logger.debug("Applying auth strategy: %s", type(strategy).__name__)
@@ -108,7 +126,16 @@ class AuthApplier:
         strategy: AuthStrategy,
         proxy: Optional[str],
     ) -> RequestError:
-        """Build a descriptive :class:`RequestError` from a raw auth exception."""
+        """Build a descriptive :class:`RequestError` from a raw auth exception.
+
+        Args:
+            exc: The exception raised by the strategy.
+            strategy: The auth strategy that failed.
+            proxy: Optional proxy in use (for context in error).
+
+        Returns:
+            A RequestError with user-friendly message and context.
+        """
         safe_msg = redact_body(str(exc), max_length=200) or "unknown error"
         logger.error(
             "Authentication failed (%s via %s): %s",
