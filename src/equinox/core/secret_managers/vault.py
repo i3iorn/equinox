@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import json
 import logging
+import hashlib
 from typing import Any, Dict, Optional
 from urllib.parse import urljoin
 
@@ -131,7 +132,8 @@ class VaultManager(SecretManager):
             value_str = str(value)
             self._validate_secret_length(value_str, secret_name)
             self._store_in_cache(secret_name, value_str)
-            logger.debug("Retrieved secret from Vault: %s", secret_name)
+            secret_name_fingerprint = hashlib.sha256(secret_name.encode("utf-8")).hexdigest()[:12]
+            logger.debug("Retrieved secret from Vault (secret fingerprint: %s)", secret_name_fingerprint)
             return value_str
 
         except SecretNotFoundError:
