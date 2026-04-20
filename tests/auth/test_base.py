@@ -14,6 +14,9 @@ from equinox.core.exceptions import AuthError
 class ConcreteAuth(AuthStrategy):
     """Minimal concrete implementation used by tests."""
 
+    AUTH_TYPE = "test_concrete_auth_base"
+    DISPLAY_NAME = "Test Concrete Auth Base"
+
     def __init__(self, token: str = "tok") -> None:
         self.token = token
 
@@ -146,6 +149,9 @@ class TestAuthStrategyABC:
 
     def test_subclass_missing_apply_raises_on_instantiation(self):
         class MissingApply(AuthStrategy):
+            AUTH_TYPE = "test_missing_apply"
+            DISPLAY_NAME = "Test Missing Apply"
+
             def to_dict(self):
                 return {}
 
@@ -158,6 +164,9 @@ class TestAuthStrategyABC:
 
     def test_subclass_missing_to_dict_raises_on_instantiation(self):
         class MissingToDict(AuthStrategy):
+            AUTH_TYPE = "test_missing_to_dict"
+            DISPLAY_NAME = "Test Missing To Dict"
+
             def apply(self, request, headers):
                 pass
 
@@ -170,6 +179,9 @@ class TestAuthStrategyABC:
 
     def test_subclass_missing_from_dict_raises_on_instantiation(self):
         class MissingFromDict(AuthStrategy):
+            AUTH_TYPE = "test_missing_from_dict"
+            DISPLAY_NAME = "Test Missing From Dict"
+
             def apply(self, request, headers):
                 pass
 

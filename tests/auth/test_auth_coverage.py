@@ -78,6 +78,9 @@ class TestAWSSigV4Coverage:
 class _ConcreteAuth(AuthStrategy):
     """Minimal concrete subclass for testing abstract base."""
 
+    AUTH_TYPE = "test_concrete_auth_coverage"
+    DISPLAY_NAME = "Test Concrete Auth Coverage"
+
     def apply(self, request: Any, headers: Dict[str, str]) -> None:
         super().apply(request, headers)
 
