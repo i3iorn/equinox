@@ -109,7 +109,11 @@ def auth_from_dict(data: Dict[str, Any]) -> AuthStrategy:
     """
     from equinox.auth.factory import auth_from_dict as _auth_from_dict
 
-    return _auth_from_dict(data)
+    auth_type = data["type"]
+    auth = _auth_from_dict(auth_type, data)
+    if auth is None:
+        raise ValueError(f"Failed to deserialize auth type: {auth_type!r}")
+    return auth
 
 
 def get_auth_type(name: str) -> Type[AuthStrategy]:

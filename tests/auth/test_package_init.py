@@ -88,7 +88,7 @@ class TestFactoryFunctions:
         data = {"type": "bearer", "token": "my-test-token"}
         auth = auth_from_dict(data)
         assert isinstance(auth, BearerAuth)
-        assert auth.access_token == "my-test-token"
+        assert auth.token == "my-test-token"
 
     def test_auth_from_dict_basic(self):
         """Test deserializing basic auth."""
