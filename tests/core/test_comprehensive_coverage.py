@@ -219,16 +219,16 @@ class TestScriptRunnerComprehensive:
         assert result.error is None
         assert "old" not in result.output_vars
 
-    # ── Thread fallback when multiprocessing unavailable ──────────────────
+    # ── Process isolation availability ────────────────────────────────────
 
-    def test_thread_fallback_on_oserror(self):
-        """If multiprocessing.get_context raises OSError, fall back to thread."""
+    def test_process_isolation_required_on_oserror(self):
+        """If multiprocessing is unavailable, fail closed (no thread fallback)."""
         with patch("equinox.core.scripts.multiprocessing") as mock_mp:
             mock_mp.get_context.side_effect = OSError("no mp")
             mock_mp.Queue.side_effect = OSError("no mp")
             result = ScriptRunner.run_pre('env["x"] = "thread"', {}, {})
-        assert result.error is None
-        assert result.output_vars["x"] == "thread"
+        assert result.error is not None
+        assert "sandbox unavailable" in result.error.lower()
 
     # ── ScriptResult ──────────────────────────────────────────────────────
 

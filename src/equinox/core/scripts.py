@@ -27,7 +27,7 @@ import ast
 import builtins
 import logging
 import multiprocessing
-import threading
+import queue
 from dataclasses import dataclass, field
 from typing import Any, Dict, FrozenSet, Optional
 
@@ -46,7 +46,6 @@ ALLOWED_MODULES: FrozenSet[str] = frozenset(
         "time",
         "math",
         "random",
-        "urllib",
         "urllib.parse",
         "collections",
         "itertools",
@@ -63,6 +62,10 @@ ALLOWED_MODULES: FrozenSet[str] = frozenset(
     }
 )
 
+# Parent packages that may be imported only when fromlist is restricted to an
+# explicitly allowed submodule (e.g. ``from urllib import parse``).
+_ALLOWED_PARENT_PACKAGES: FrozenSet[str] = frozenset({"urllib"})
+
 
 def _safe_import(
     name: str,
@@ -71,10 +74,18 @@ def _safe_import(
     fromlist: Any = (),
     level: int = 0,
 ) -> Any:
-    top = name.split(".")[0]
-    if top not in ALLOWED_MODULES:
-        raise ImportError(f"Module '{name}' is not allowed in scripts")
-    return __import__(name, globals, locals, fromlist, level)
+    if level != 0:
+        raise ImportError("Relative imports are not allowed in scripts")
+
+    if name in ALLOWED_MODULES:
+        return __import__(name, globals, locals, fromlist, level)
+
+    if name in _ALLOWED_PARENT_PACKAGES and fromlist:
+        normalized = [item for item in fromlist if isinstance(item, str)]
+        if normalized and all(f"{name}.{item}" in ALLOWED_MODULES for item in normalized):
+            return __import__(name, globals, locals, fromlist, level)
+
+    raise ImportError(f"Module '{name}' is not allowed in scripts")
 
 
 # Build a restricted builtins dict: keep most standard ones, remove
@@ -264,6 +275,13 @@ class ScriptRunner:
     MAX_SOURCE_LENGTH = 64 * 1024
     # Maximum execution time in seconds
     EXECUTION_TIMEOUT = 10.0
+    # Max number of changed env vars accepted from one script run
+    MAX_OUTPUT_VARS = 128
+    # Max UTF-8 bytes for all changed env keys+values combined
+    MAX_OUTPUT_TOTAL_BYTES = 16 * 1024
+    # Max key and value lengths for a single env entry
+    MAX_ENV_KEY_LENGTH = 128
+    MAX_ENV_VALUE_LENGTH = 4096
 
     @classmethod
     def run_pre(
@@ -346,13 +364,11 @@ class ScriptRunner:
                 error=f"Script too long ({len(script)} chars, max {cls.MAX_SOURCE_LENGTH})"
             )
 
-        globs: Dict[str, Any] = {"__builtins__": SAFE_BUILTINS}
-        locs: Dict[str, Any] = {"env": dict(session_vars)}
-        locs.update(extra_locals)
-
         try:
             tree = _validate_ast(script, filename)
-            code = compile(tree, filename, "exec")
+            # Compile once to surface syntax issues before process start.
+            # Child process still compiles independently from source.
+            compile(tree, filename, "exec")
             logger.debug("Script AST validation passed: %s", filename)
         except Exception as exc:  # noqa: BLE001
             logger.warning("Script AST/compile error in %s: %s", filename, exc)
@@ -391,50 +407,81 @@ class ScriptRunner:
                     error=f"Script timed out after {cls.EXECUTION_TIMEOUT}s"
                 )
 
-            if result_queue.empty():
+            try:
+                status, payload = result_queue.get(timeout=0.2)
+            except queue.Empty:
                 logger.warning("Script subprocess exited without a result (filename=%s)", filename)
                 return ScriptResult(error="Script process exited without producing a result")
 
-            status, payload = result_queue.get_nowait()
             if status == "error":
                 logger.warning("Script runtime error in %s: %s", filename, payload)
                 return ScriptResult(error=payload)
 
             new_env = payload
         except (OSError, RuntimeError) as exc:
-            # Fallback to thread-based execution when multiprocessing is unavailable.
-            logger.debug("Multiprocessing unavailable (%s), falling back to thread execution", exc)
-            error_container: list = [None]
-
-            def _thread_exec() -> None:
-                try:
-                    exec(code, globs, locs)  # noqa: S102
-                except Exception as exc:  # noqa: BLE001
-                    error_container[0] = exc
-
-            t = threading.Thread(target=_thread_exec, daemon=True)
-            t.start()
-            t.join(timeout=cls.EXECUTION_TIMEOUT)
-
-            if t.is_alive():
-                logger.warning("Thread-based script timed out after %.1fs in %s",
-                               cls.EXECUTION_TIMEOUT, filename)
-                return ScriptResult(
-                    error=f"Script timed out after {cls.EXECUTION_TIMEOUT}s"
-                )
-            if error_container[0] is not None:
-                logger.warning("Thread-based script error in %s: %s", filename, error_container[0])
-                return ScriptResult(error=str(error_container[0]))
-
-            new_env = locs.get("env", {})
+            # Do not fall back to threads for untrusted scripts; a stuck thread
+            # cannot be force-terminated safely and defeats timeout guarantees.
+            logger.error("Process sandbox unavailable in %s: %s", filename, exc)
+            return ScriptResult(error="Script sandbox unavailable: process isolation failed")
 
         # Collect any new or changed env entries, coercing values to str
-        changed = {
-            k: str(v)
-            for k, v in new_env.items()
-            if k not in session_vars or session_vars.get(k) != str(v)
-        }
+        changed, limit_error = cls._collect_changed_env(new_env, session_vars)
+        if limit_error is not None:
+            logger.warning("Script env output rejected in %s: %s", filename, limit_error)
+            return ScriptResult(error=limit_error)
+
         if changed:
             logger.debug("Script set session vars: %s (script=%s, count=%d)",
                          list(changed.keys()), filename, len(changed))
         return ScriptResult(output_vars=changed)
+
+    @classmethod
+    def _collect_changed_env(
+        cls,
+        new_env: Any,
+        session_vars: Dict[str, str],
+    ) -> tuple[Dict[str, str], Optional[str]]:
+        """Return changed env entries subject to strict output limits."""
+        if not isinstance(new_env, dict):
+            return {}, "Script env must be a dictionary"
+
+        changed: Dict[str, str] = {}
+        total_bytes = 0
+
+        for raw_key, raw_value in new_env.items():
+            if not isinstance(raw_key, str):
+                return {}, "Script env keys must be strings"
+            if len(raw_key) > cls.MAX_ENV_KEY_LENGTH:
+                return {}, (
+                    f"Script env key too long ({len(raw_key)} chars, "
+                    f"max {cls.MAX_ENV_KEY_LENGTH})"
+                )
+
+            value_str = str(raw_value)
+            if len(value_str) > cls.MAX_ENV_VALUE_LENGTH:
+                return {}, (
+                    f"Script env value too long for key '{raw_key}' "
+                    f"({len(value_str)} chars, max {cls.MAX_ENV_VALUE_LENGTH})"
+                )
+
+            if session_vars.get(raw_key) == value_str and raw_key in session_vars:
+                continue
+
+            if len(changed) >= cls.MAX_OUTPUT_VARS:
+                return {}, (
+                    f"Script produced too many env vars "
+                    f"(max {cls.MAX_OUTPUT_VARS})"
+                )
+
+            entry_bytes = len(raw_key.encode("utf-8")) + len(value_str.encode("utf-8"))
+            total_bytes += entry_bytes
+            if total_bytes > cls.MAX_OUTPUT_TOTAL_BYTES:
+                return {}, (
+                    f"Script env output too large ({total_bytes} bytes, "
+                    f"max {cls.MAX_OUTPUT_TOTAL_BYTES})"
+                )
+
+            changed[raw_key] = value_str
+
+        return changed, None
+

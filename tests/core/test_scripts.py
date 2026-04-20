@@ -98,6 +98,21 @@ class TestSandbox:
     def test_socket_blocked(self):
         self._blocked("import socket")
 
+    def test_urllib_request_blocked(self):
+        self._blocked("import urllib.request")
+
+    def test_from_urllib_request_blocked(self):
+        self._blocked("from urllib import request")
+
+    def test_from_urllib_parse_allowed(self):
+        result = ScriptRunner.run_pre(
+            "from urllib import parse; env['q'] = parse.quote('a b')",
+            {},
+            {},
+        )
+        assert result.error is None
+        assert result.output_vars["q"] == "a%20b"
+
     def test_open_builtin_blocked(self):
         result = ScriptRunner.run_pre("open('/etc/passwd')", {}, {})
         assert result.error is not None
@@ -142,3 +157,26 @@ class TestSandbox:
         # print should not raise but should produce no output (no-op)
         result = ScriptRunner.run_pre("print('hello')", {}, {})
         assert result.error is None
+
+
+class TestSandboxOutputLimits:
+    def test_non_string_env_key_rejected(self):
+        result = ScriptRunner.run_pre("env[1] = 'x'", {}, {})
+        assert result.error is not None
+        assert "keys must be strings" in result.error
+
+    def test_env_value_length_limit_enforced(self):
+        script = (
+            "env['k'] = 'x' * "
+            f"{ScriptRunner.MAX_ENV_VALUE_LENGTH + 1}"
+        )
+        result = ScriptRunner.run_pre(script, {}, {})
+        assert result.error is not None
+        assert "value too long" in result.error
+
+    def test_env_var_count_limit_enforced(self):
+        script_lines = [f"env['k{i}'] = 'v'" for i in range(ScriptRunner.MAX_OUTPUT_VARS + 1)]
+        result = ScriptRunner.run_pre("\n".join(script_lines), {}, {})
+        assert result.error is not None
+        assert "too many env vars" in result.error
+
