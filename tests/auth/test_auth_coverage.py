@@ -107,7 +107,7 @@ class TestAuthBaseCoverage:
 
     def test_abstract_from_dict_body(self):
         """Line 66: abstract from_dict() body executes."""
-        result = _ConcreteAuth.from_dict({})
+        result = _ConcreteAuth.from_dict({"type": "test"})
         assert result is None
 
 
