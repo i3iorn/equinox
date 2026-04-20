@@ -15,6 +15,7 @@ from equinox.core.secret_managers.base import (
     SecretNotFoundError,
     SecretAuthError,
 )
+from equinox.core.redact import mask_secret
 
 logger = logging.getLogger(__name__)
 
@@ -89,6 +90,8 @@ class AWSSecretsManagerBackend(SecretManager):
         if cached is not None:
             return cached
 
+        secret_ref = mask_secret(secret_name, keep=4)
+
         try:
             response = self.client.get_secret_value(SecretId=secret_name)
 
@@ -98,17 +101,17 @@ class AWSSecretsManagerBackend(SecretManager):
             elif "SecretBinary" in response:
                 value = response["SecretBinary"].decode("utf-8")
             else:
-                raise SecretManagerError(f"Invalid secret response for {secret_name}")
+                raise SecretManagerError(f"Invalid secret response for {secret_ref}")
 
             self._validate_secret_length(value, secret_name)
             self._store_in_cache(secret_name, value)
-            logger.debug("Retrieved secret from AWS Secrets Manager: %s", secret_name)
+            logger.debug("Retrieved secret from AWS Secrets Manager: %s", secret_ref)
             return value
 
         except self.client.exceptions.ResourceNotFoundException:
-            raise SecretNotFoundError(f"Secret not found in AWS: {secret_name}")
+            raise SecretNotFoundError(f"Secret not found in AWS: {secret_ref}")
         except self.client.exceptions.AccessDeniedException as exc:
-            raise SecretAuthError(f"Access denied to AWS secret: {secret_name}") from exc
+            raise SecretAuthError(f"Access denied to AWS secret: {secret_ref}") from exc
         except Exception as exc:
             raise SecretManagerError(
                 f"Failed to retrieve secret from AWS: {exc}"
@@ -132,7 +135,7 @@ class AWSSecretsManagerBackend(SecretManager):
             return json.loads(value)
         except json.JSONDecodeError as exc:
             raise SecretManagerError(
-                f"Secret '{secret_name}' is not valid JSON: {exc}"
+                f"Secret '{mask_secret(secret_name, keep=4)}' is not valid JSON: {exc}"
             )
 
     def is_available(self) -> bool:

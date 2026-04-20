@@ -17,6 +17,7 @@ from equinox.core.secret_managers.base import (
     SecretNotFoundError,
     SecretAuthError,
 )
+from equinox.core.redact import mask_secret
 
 logger = logging.getLogger(__name__)
 
@@ -137,6 +138,8 @@ class BitwardenManager(SecretManager):
         if cached is not None:
             return cached
 
+        secret_ref = mask_secret(secret_name, keep=4)
+
         try:
             item = self._get_item(secret_name)
 
@@ -149,12 +152,12 @@ class BitwardenManager(SecretManager):
                     value = item["login"]["password"]
 
             if not value:
-                raise SecretManagerError(f"No secret value found in item: {secret_name}")
+                raise SecretManagerError(f"No secret value found in item: {secret_ref}")
 
             value_str = str(value)
             self._validate_secret_length(value_str, secret_name)
             self._store_in_cache(secret_name, value_str)
-            logger.debug("Retrieved secret from Bitwarden: %s", secret_name)
+            logger.debug("Retrieved secret from Bitwarden: %s", secret_ref)
             return value_str
 
         except SecretNotFoundError:
@@ -185,6 +188,8 @@ class BitwardenManager(SecretManager):
         cached = self._get_from_cache(cache_key)
         if cached is not None:
             return cached
+
+        secret_ref = mask_secret(secret_name, keep=4)
 
         try:
             item = self._get_item(secret_name)
@@ -219,7 +224,7 @@ class BitwardenManager(SecretManager):
             result["id"] = item.get("id", "")
 
             self._store_in_cache(cache_key, result)
-            logger.debug("Retrieved secret dict from Bitwarden: %s", secret_name)
+            logger.debug("Retrieved secret dict from Bitwarden: %s", secret_ref)
             return result
 
         except SecretNotFoundError:
@@ -256,6 +261,7 @@ class BitwardenManager(SecretManager):
             SecretNotFoundError: If item not found
             SecretManagerError: If retrieval fails
         """
+        secret_ref = mask_secret(secret_name, keep=4)
         try:
             # Try to get by ID first (assumes UUID format)
             if self._is_uuid(secret_name):
@@ -275,11 +281,11 @@ class BitwardenManager(SecretManager):
                 )
 
                 if search_result.returncode != 0:
-                    raise SecretNotFoundError(f"Item not found: {secret_name}")
+                    raise SecretNotFoundError(f"Item not found: {secret_ref}")
 
                 items = json.loads(search_result.stdout)
                 if not items:
-                    raise SecretNotFoundError(f"Item not found: {secret_name}")
+                    raise SecretNotFoundError(f"Item not found: {secret_ref}")
 
                 # Use the first matching item
                 item_id = items[0]["id"]
@@ -293,7 +299,7 @@ class BitwardenManager(SecretManager):
             if result.returncode != 0:
                 stderr = result.stderr.lower()
                 if "not found" in stderr or "invalid" in stderr:
-                    raise SecretNotFoundError(f"Item not found: {secret_name}")
+                    raise SecretNotFoundError(f"Item not found: {secret_ref}")
                 raise SecretManagerError(f"Failed to retrieve item: {result.stderr}")
 
             return json.loads(result.stdout)

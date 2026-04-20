@@ -11,7 +11,14 @@ from abc import ABC, abstractmethod
 from datetime import datetime
 from typing import Any, Dict, Optional
 
+from equinox.core.redact import mask_secret
+
 logger = logging.getLogger(__name__)
+
+
+def _safe_secret_ref(secret_name: str) -> str:
+    """Return a display-safe secret identifier for logs/errors."""
+    return mask_secret(secret_name, keep=4)
 
 # Maximum age for cached secrets (seconds)
 _DEFAULT_CACHE_TTL = 300
@@ -145,7 +152,7 @@ class SecretManager(ABC):
         """
         if secret_name:
             self._cache.pop(secret_name, None)
-            logger.debug("Cleared cache for secret: %s", secret_name)
+            logger.debug("Cleared cache for secret: %s", _safe_secret_ref(secret_name))
         else:
             self._cache.clear()
             logger.debug("Cleared entire secret cache")
@@ -164,12 +171,12 @@ class SecretManager(ABC):
 
         entry = self._cache.get(secret_name)
         if entry and not entry.is_expired():
-            logger.debug("Cache hit for secret: %s", secret_name)
+            logger.debug("Cache hit for secret: %s", _safe_secret_ref(secret_name))
             return entry.value
 
         if entry:
             del self._cache[secret_name]
-            logger.debug("Cache expired for secret: %s", secret_name)
+            logger.debug("Cache expired for secret: %s", _safe_secret_ref(secret_name))
 
         return None
 
@@ -184,7 +191,7 @@ class SecretManager(ABC):
             return
 
         self._cache[secret_name] = SecretCacheEntry(value, self.cache_ttl)
-        logger.debug("Cached secret: %s", secret_name)
+        logger.debug("Cached secret: %s", _safe_secret_ref(secret_name))
 
     @staticmethod
     def _validate_secret_length(value: str, secret_name: str) -> None:
@@ -199,6 +206,6 @@ class SecretManager(ABC):
         """
         if len(value) > _MAX_SECRET_LENGTH:
             raise SecretManagerError(
-                f"Secret '{secret_name}' exceeds maximum length ({_MAX_SECRET_LENGTH})"
+                f"Secret '{_safe_secret_ref(secret_name)}' exceeds maximum length ({_MAX_SECRET_LENGTH})"
             )
 

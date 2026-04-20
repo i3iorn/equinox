@@ -6,6 +6,7 @@ from typing import Dict, Any, Optional
 from dataclasses import dataclass
 
 from equinox.core.request import Request, Response
+from equinox.core.redact import redact_body, redact_url
 
 logger = logging.getLogger(__name__)
 
@@ -90,7 +91,9 @@ class Plugin(ABC):
             request: Request object
             error: Exception that occurred
         """
-        logger.debug("Plugin %s on_error: %s %s → %s", self.name, request.method, request.url, error)
+        safe_url = redact_url(request.url) if request and request.url else ""
+        safe_error = redact_body(str(error), max_length=200)
+        logger.debug("Plugin %s on_error: %s %s → %s", self.name, request.method, safe_url, safe_error)
 
 
 class AuthPlugin(Plugin):

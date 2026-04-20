@@ -65,6 +65,7 @@ import logging
 from typing import Any, Dict, Optional
 
 from equinox.core.exceptions import StorageError, SecurityError, AuthError
+from equinox.core.redact import mask_secret, redact_body
 from equinox.core.secret_managers import (
     get_secret_manager,
     SecretManager,
@@ -141,9 +142,9 @@ class CredentialSecretResolver:
         # Determine the secret identifier based on manager type
         secret_identifier = config.get("secret_name") or config.get("path")
         if not secret_identifier:
-            raise StorageError(
-                f"Secret config must include 'secret_name' or 'path': {config}"
-            )
+            raise StorageError("Secret config must include 'secret_name' or 'path'")
+
+        secret_ref = mask_secret(str(secret_identifier), keep=4)
 
         try:
             # For JSON secrets, optionally extract a specific key
@@ -155,7 +156,7 @@ class CredentialSecretResolver:
                     key = config["key"]
                     if key not in secret_dict:
                         raise StorageError(
-                            f"Key '{key}' not found in secret '{secret_identifier}'"
+                            f"Key '{key}' not found in secret '{secret_ref}'"
                         )
                     return str(secret_dict[key])
 
@@ -165,7 +166,7 @@ class CredentialSecretResolver:
                 for key in json_keys:
                     if key not in secret_dict:
                         raise StorageError(
-                            f"Required key '{key}' not found in secret '{secret_identifier}'"
+                            f"Required key '{key}' not found in secret '{secret_ref}'"
                         )
 
                 # Return the entire dict as JSON string if multiple keys needed
@@ -176,11 +177,16 @@ class CredentialSecretResolver:
                 return manager.get_secret(secret_identifier)
 
         except SecretNotFoundError:
-            logger.warning("Secret not found in %s: %s", manager_type, secret_identifier)
+            logger.warning("Secret not found in %s: %s", manager_type, secret_ref)
             raise
         except Exception as exc:
-            logger.error("Failed to resolve secret from %s: %s", manager_type, exc)
-            raise StorageError(f"Failed to retrieve secret: {exc}")
+            safe_error = redact_body(str(exc), max_length=200) or "secret resolution failed"
+            logger.error(
+                "Failed to resolve secret from %s: %s",
+                manager_type,
+                safe_error,
+            )
+            raise StorageError(f"Failed to retrieve secret: {safe_error}")
 
     def hydrate_credential(
         self, credential_row: Dict[str, Any]

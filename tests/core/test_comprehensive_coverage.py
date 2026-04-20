@@ -1,17 +1,3 @@
-"""Comprehensive coverage tests — fills gaps in every core module.
-
-Organised into one class per module:
-  1. ScriptRunner  — sandbox depth, timeout, AST, allowed modules
-  2. Redact        — mask_secret, sanitize_details, multi-secret, unicode
-  3. Validation    — CRLF, SSRF, XSS, command-injection, fuzz
-  4. Interpolation — edge cases, non-string vars, MAX_OUTPUT, fuzz
-  5. Interceptors  — safe_body_preview, STOP/REPLACE actions, StructuredLogger
-  6. Request/Response — HeaderDict, Response cached props, to_curl, from_dict
-  7. Dotenv        — inline comments, unicode, CRLF, tabs
-  8. AuthCipher    — round-trip, reset, concurrency
-  9. Exceptions    — hierarchy, details, aliases
-"""
-
 from __future__ import annotations
 
 import concurrent.futures

@@ -6,6 +6,7 @@ from typing import Any, Dict, List, Optional
 
 from equinox.core.request import Request, Response
 from equinox.core.exceptions import StorageError, ValidationError, SecurityError
+from equinox.core.redact import redact_url
 from equinox.storage.database import Database
 from equinox.storage.utils import require_positive_int as _require_positive_int
 from ._serializer import _HistorySerializer
@@ -57,7 +58,8 @@ class HistoryManager:
             SecurityError: If size limits are exceeded.
             StorageError: If the DB write fails.
         """
-        logger.debug("save_history() called for %s %s", request.method, request.url[:60])
+        safe_url = redact_url(request.url)[:60] if request.url else ""
+        logger.debug("save_history() called for %s %s", request.method, safe_url)
         self._prune_oldest_entry_if_limit_reached()
 
         req       = self._serializer.prepare_request(request)
