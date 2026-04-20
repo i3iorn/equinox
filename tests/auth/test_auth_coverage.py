@@ -470,7 +470,7 @@ class TestOAuth2Coverage:
             client_secret="s",
             token_url="https://auth.example.com/token",
         )
-        with pytest.raises(AuthError, match="Invalid token endpoint response"):
+        with pytest.raises(AuthError, match="non-JSON response"):
             auth._refresh_access_token()
 
     # ── Line 458: no access_token in response ─────────────────────────────
