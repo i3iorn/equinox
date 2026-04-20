@@ -153,7 +153,7 @@ class InterceptorChain:
     def process_request(self, request: Request) -> Request:
         context = InterceptorContext(request=request)
         logger.debug("Processing request through %d interceptor(s)", len(self.request_interceptors),
-                     extra={"method": request.method, "url": request.url})
+                     extra={"method": request.method, "url": redact_url(request.url)})
 
         for interceptor in self.request_interceptors:
             if not interceptor.can_intercept(context.request):

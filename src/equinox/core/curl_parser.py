@@ -5,6 +5,7 @@ import re
 import shlex
 from typing import Optional
 from equinox.core import urls
+from equinox.core.redact import redact_url
 
 logger = logging.getLogger(__name__)
 
@@ -130,8 +131,14 @@ def parse_curl(curl_cmd: str) -> dict:
     # Pass through central placeholder expansion (no-op when no variables provided)
     url = urls.expand_placeholders(url, None)
 
-    logger.debug("parse_curl result: method=%s url=%r headers=%d has_body=%s verify_ssl=%s",
-                 method, url, len(headers), bool(body), verify_ssl)
+    logger.debug(
+        "parse_curl result: method=%s url=%r headers=%d has_body=%s verify_ssl=%s",
+        method,
+        redact_url(url),
+        len(headers),
+        bool(body),
+        verify_ssl,
+    )
 
     return {
         "method": method,

@@ -105,7 +105,8 @@ class _HistorySerializer:
         if not isinstance(url, str):
             raise ValidationError("Request URL must be a string")
         if len(url) > self.MAX_URL_LENGTH:
-            logger.warning("URL too long, truncating: %s...", url[:100])
+            safe_preview = redact_url(url)[:100]
+            logger.warning("URL too long, truncating: %s...", safe_preview)
             url = url[:self.MAX_URL_LENGTH]
         sanitized = redact_url(url)
         if sanitized != url:

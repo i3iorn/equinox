@@ -10,6 +10,7 @@ from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
 
 from equinox.core import urls
 from equinox.core.exceptions import ValidationError
+from equinox.core.redact import redact_url
 from equinox.core.validation import VALID_HTTP_METHODS as VALID_METHODS
 from equinox.core.request.types import (
     DEFAULT_METHOD,
@@ -136,9 +137,10 @@ class Request:
         if self.method not in VALID_METHODS:
             raise ValidationError(f"Invalid HTTP method: {self.method!r}")
         self.headers = HeaderDict(self.headers or {})
+        safe_url = _short(redact_url(self.url))
         logger.debug(
             "Request initialised: %s %s id=%s collection=%s",
-            self.method, _short(self.url), self.id, self.collection_id,
+            self.method, safe_url, self.id, self.collection_id,
         )
 
     # ── Serialisation ─────────────────────────────────────────────────────────
