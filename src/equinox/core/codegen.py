@@ -6,6 +6,7 @@ from typing import Optional
 from urllib.parse import urlencode
 
 from equinox.core.request import Request
+from equinox.core.redact import redact_url
 
 logger = logging.getLogger(__name__)
 
@@ -396,6 +397,11 @@ def generate_code(fmt: str, request: Request) -> str:
     Raises:
         KeyError: If *fmt* is not a known format.
     """
-    logger.debug("generate_code: format=%r method=%s url=%s", fmt, request.method, request.url)
+    logger.debug(
+        "generate_code: format=%r method=%s url=%s",
+        fmt,
+        request.method,
+        redact_url(request.url) if request.url else "",
+    )
     cls = GENERATORS[fmt]
     return cls().generate(request)

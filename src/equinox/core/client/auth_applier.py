@@ -9,7 +9,7 @@ from typing import Dict, Optional
 
 from equinox.auth.base import AuthStrategy
 from equinox.core.exceptions import RequestError
-from equinox.core.redact import redact_body
+from equinox.core.redact import redact_body, redact_url
 from equinox.core.request import Request
 
 logger = logging.getLogger(__name__)
@@ -73,7 +73,8 @@ class AuthApplier:
 
         auth_strategy = explicit_auth or request.auth
         if not auth_strategy:
-            logger.debug("No auth strategy active for %s %s", request.method, request.url)
+            safe_url = redact_url(request.url) if request.url else ""
+            logger.debug("No auth strategy active for %s %s", request.method, safe_url)
             return {}
 
         pre_keys = set(headers.keys())
