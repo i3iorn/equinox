@@ -22,7 +22,7 @@ __all__ = [
     "get_mono_font", "get_ui_font",
     "get_theme_mode", "set_theme_mode",
     "is_dark",
-    "THEME_SYSTEM", "THEME_LIGHT", "THEME_DARK", "THEME_MODES", "THEME_LABELS",
+    "THEME_SYSTEM", "THEME_LIGHT", "THEME_DARK", "THEME_MUTED_DARK", "THEME_MODES", "THEME_LABELS",
     "DEFAULT_FONT_SIZE", "DEFAULT_MONO_SIZE", "MIN_FONT_SIZE", "MAX_FONT_SIZE",
 ]
 
@@ -84,11 +84,45 @@ _DARK: dict[str, str] = {
     "SEND_HOVER": "#6ab5eb",
 }
 
-# Guard: both palettes must expose identical keys so QSS substitution never
+_MUTED_DARK: dict[str, str] = {
+    # Status / method badges — muted and softer for outdoor visibility
+    "GREEN":      "#26a641",
+    "AMBER":      "#9d8501",
+    "RED":        "#d1444f",
+    "BLUE":       "#5fa3e8",
+    "PURPLE":     "#8b7ec1",
+    "MUTED":      "#787e87",
+    "CYAN":       "#3ba7ac",
+    "GRAY":       "#6e7681",
+    "TEAL":       "#3ba7ac",
+    # Surfaces — darker for outdoor use, softer grays
+    "BG":         "#0a0e13",      # Slightly darker than normal dark for outdoor contrast
+    "BG_ALT":     "#131820",      # Softer than normal dark
+    "BORDER":     "#353c47",      # Muted borders
+    "BORDER_FCS": "#6da6f0",      # Softer focus color
+    # Text — excellent contrast for outdoor viewing (>8:1 ratios)
+    "FG":         "#f0f2f5",      # Slightly warmer white
+    "FG_MUTED":   "#c9cdd4",      # Muted secondary text (softer than regular dark)
+    "FG_SUBTLE":  "#8e95a3",      # Subtle text (muted)
+    # Selection / highlight — softer, less harsh
+    "SELECTION":  "#1a2e42",      # Muted selection
+    "SEL_TEXT":   "#3d5a7a",      # Softer selected text
+    "HIGHLIGHT":  "#4a3d1f",      # Softer highlight
+    # Send / cancel button hover — muted but still visible
+    "SEND_HOVER": "#5d95dc",      # Softer hover
+}
+
+# Guard: all palettes must expose identical keys so QSS substitution never
 # produces a KeyError at runtime when the theme switches.
 assert _LIGHT.keys() == _DARK.keys(), (
-    f"Palette key mismatch — only in _LIGHT: {_LIGHT.keys() - _DARK.keys()!r}, "
+    f"Palette key mismatch — _LIGHT vs _DARK: "
+    f"only in _LIGHT: {_LIGHT.keys() - _DARK.keys()!r}, "
     f"only in _DARK: {_DARK.keys() - _LIGHT.keys()!r}"
+)
+assert _LIGHT.keys() == _MUTED_DARK.keys(), (
+    f"Palette key mismatch — _LIGHT vs _MUTED_DARK: "
+    f"only in _LIGHT: {_LIGHT.keys() - _MUTED_DARK.keys()!r}, "
+    f"only in _MUTED_DARK: {_MUTED_DARK.keys() - _LIGHT.keys()!r}"
 )
 
 # The active palette dict — replaced by apply_theme(); read by _ColorProxy at
@@ -149,8 +183,14 @@ Colors = _ColorProxy()
 THEME_SYSTEM: str = "system"
 THEME_LIGHT:  str = "light"
 THEME_DARK:   str = "dark"
-THEME_MODES:  tuple[str, ...] = (THEME_SYSTEM, THEME_LIGHT, THEME_DARK)
-THEME_LABELS: dict[str, str] = {"system": "System", "light": "Light", "dark": "Dark"}
+THEME_MUTED_DARK: str = "muted_dark"
+THEME_MODES:  tuple[str, ...] = (THEME_SYSTEM, THEME_LIGHT, THEME_DARK, THEME_MUTED_DARK)
+THEME_LABELS: dict[str, str] = {
+    "system": "System",
+    "light": "Light",
+    "dark": "Dark",
+    "muted_dark": "Muted Dark",
+}
 
 
 # ── Font / size defaults ─────────────────────────────────────────────────────
@@ -196,7 +236,7 @@ def set_font_size(size: int) -> None:
 
 
 def get_theme_mode() -> str:
-    """Return the persisted theme mode (``system``, ``light``, or ``dark``)."""
+    """Return the persisted theme mode (``system``, ``light``, ``dark``, or ``muted_dark``)."""
     val = _settings().value("appearance/theme", THEME_SYSTEM, type=str)
     return val if val in THEME_MODES else THEME_SYSTEM
 
@@ -255,13 +295,30 @@ def _system_is_dark() -> bool:
 
 
 def _resolve_dark() -> bool:
-    """Return True when the active palette should be dark."""
+    """Return True when the active palette should be dark (including muted dark)."""
     mode = get_theme_mode()
-    if mode == THEME_DARK:
+    if mode == THEME_DARK or mode == THEME_MUTED_DARK:
         return True
     if mode == THEME_LIGHT:
         return False
     return _system_is_dark()
+
+
+def _resolve_palette() -> dict[str, str]:
+    """Return the appropriate palette dict for the current theme settings."""
+    mode = get_theme_mode()
+
+    if mode == THEME_MUTED_DARK:
+        return _MUTED_DARK
+    elif mode == THEME_DARK:
+        return _DARK
+    elif mode == THEME_LIGHT:
+        return _LIGHT
+    else:
+        # System mode: use system detection
+        if _system_is_dark():
+            return _DARK
+        return _LIGHT
 
 
 def is_dark() -> bool:
@@ -596,7 +653,7 @@ _ss_cache: dict[tuple[bool, int], str] = {}
 def apply_theme(app: QApplication | None = None) -> None:
     """(Re-)apply the global stylesheet to the running QApplication.
 
-    Resolves the effective palette (light/dark/system), updates the
+    Resolves the effective palette (light/dark/muted_dark/system), updates the
     ``Colors`` proxy, sets the application font, and installs the
     generated stylesheet.
 
@@ -612,8 +669,8 @@ def apply_theme(app: QApplication | None = None) -> None:
         return
 
     # Resolve effective palette
+    _active = _resolve_palette()
     dark = _resolve_dark()
-    _active = dict(_DARK if dark else _LIGHT)
 
     base_pt = get_font_size()
     app.setFont(get_ui_font(base_pt))
