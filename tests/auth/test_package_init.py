@@ -98,7 +98,7 @@ class TestFactoryFunctions:
 
     def test_auth_from_dict_api_key(self):
         """Test deserializing API key auth."""
-        data = {"type": "api_key", "key": "test-key"}
+        data = {"type": "api_key", "key": "X-API-Key", "value": "test-key"}
         auth = auth_from_dict(data)
         assert isinstance(auth, APIKeyAuth)
 
@@ -258,7 +258,7 @@ class TestIntegration:
         # Deserialize from dict
         restored = auth_from_dict(data)
         assert isinstance(restored, BearerAuth)
-        assert restored.access_token == "test-token"
+        assert restored.token == "test-token"
 
     def test_factory_pattern_for_all_types(self):
         """Test factory pattern works for all available types."""
