@@ -16,7 +16,6 @@ from equinox.core.secret_managers.base import (
     SecretNotFoundError,
     SecretAuthError,
 )
-from equinox.core.redact import mask_secret
 
 logger = logging.getLogger(__name__)
 
@@ -102,8 +101,6 @@ class VaultManager(SecretManager):
         if cached is not None:
             return cached
 
-        secret_ref = mask_secret(secret_name, keep=4)
-
         try:
             import requests
         except ImportError:
@@ -114,7 +111,7 @@ class VaultManager(SecretManager):
             response = requests.get(url, headers=self.headers, timeout=10)
 
             if response.status_code == 404:
-                raise SecretNotFoundError(f"Secret not found in Vault: {secret_ref}")
+                raise SecretNotFoundError(f"Secret not found in Vault: {secret_name}")
 
             response.raise_for_status()
             data = response.json()
@@ -129,12 +126,13 @@ class VaultManager(SecretManager):
             if value is None and secret_data:
                 value = json.dumps(secret_data)
             elif value is None:
-                raise SecretManagerError(f"Empty secret at {secret_ref}")
+                raise SecretManagerError(f"Empty secret at {secret_name}")
 
             value_str = str(value)
             self._validate_secret_length(value_str, secret_name)
             self._store_in_cache(secret_name, value_str)
-            logger.debug("Retrieved secret from Vault: %s", secret_ref)
+            secret_name_fingerprint = hashlib.sha256(secret_name.encode("utf-8")).hexdigest()[:12]
+            logger.debug("Retrieved secret from Vault (secret fingerprint: %s)", secret_name_fingerprint)
             return value_str
 
         except SecretNotFoundError:
@@ -163,14 +161,12 @@ class VaultManager(SecretManager):
         if not self._configured:
             raise SecretManagerError("Vault not configured")
 
-        secret_ref = mask_secret(secret_name, keep=4)
-
         try:
             url = urljoin(f"{self.url}/", f"v1/{secret_name}")
             response = requests.get(url, headers=self.headers, timeout=10)
 
             if response.status_code == 404:
-                raise SecretNotFoundError(f"Secret not found in Vault: {secret_ref}")
+                raise SecretNotFoundError(f"Secret not found in Vault: {secret_name}")
 
             response.raise_for_status()
             data = response.json()
