@@ -23,6 +23,7 @@ class RichError:
     exc_type: str       # e.g. "ConnectError", "TimeoutError"
     message: str        # Human-readable, never empty
     tb: str             # Full traceback string for the log file
+    hint: str = ""      # Optional actionable hint for the user
 
 
 def enrich_exception(exc: Exception) -> RichError:
@@ -30,6 +31,7 @@ def enrich_exception(exc: Exception) -> RichError:
 
     Many httpx / equinox exceptions have useful ``details`` dicts or are
     best described by their *type* rather than their (often empty) message.
+    Also extracts hint_key from Equinox errors to provide actionable suggestions.
     """
 
     exc_type = type(exc).__name__
@@ -46,8 +48,15 @@ def enrich_exception(exc: Exception) -> RichError:
     if msg is None:
         msg = raw or f"Unexpected error ({exc_type})"
 
+    # Extract hint from EquinoxError if present
+    hint = ""
+    if hasattr(exc, "hint_key") and exc.hint_key and hasattr(exc.__class__, "HINTS"):
+        hints_dict = exc.__class__.HINTS
+        if exc.hint_key in hints_dict:
+            hint = f"💡 {hints_dict[exc.hint_key]}"
+
     # Scrub any credential fragments that leaked through exception strings
-    return RichError(exc_type=exc_type, message=_redact(msg), tb=_redact(tb))
+    return RichError(exc_type=exc_type, message=_redact(msg), tb=_redact(tb), hint=hint)
 
 
 def _enrich_httpx_error(exc: Exception, raw: str, exc_type: str) -> "str | None":
