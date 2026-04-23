@@ -83,6 +83,7 @@ def build_error_handlers(client) -> list:
                 error=CertificateError(
                     "SSL certificate verification failed. The server's certificate is invalid or untrusted.",
                     details={"url": redact_url(req.url)},
+                    hint_key="ssl_verify",
                 ),
                 log_message=(f"SSL certificate verification failed for {redact_url(req.url)}" + (f": {exc}" if str(exc) else "")),
             )
@@ -92,6 +93,7 @@ def build_error_handlers(client) -> list:
                 error=RequestError(
                     f"Failed to connect to proxy ({client.proxy}). Please check your proxy settings under Preferences.",
                     details={"url": redact_url(req.url), "proxy": client.proxy},
+                    hint_key="connection",
                 ),
                 log_message=(f"Proxy connection error ({client.proxy})" + (f": {exc}" if str(exc) else "") + f" — for {redact_url(req.url)}"),
             )
@@ -100,6 +102,7 @@ def build_error_handlers(client) -> list:
             error=RequestError(
                 "Failed to connect to server. Please check the URL and your network connection.",
                 details={"url": redact_url(req.url)},
+                hint_key="connection",
             ),
             log_message=(f"Connection error for {redact_url(req.url)}" + (f": {exc}" if str(exc) else "")),
         )
@@ -108,21 +111,33 @@ def build_error_handlers(client) -> list:
         (
             httpx.ConnectTimeout,
             lambda exc, req: dict(
-                error=RequestTimeoutError("Connection timed out", details={"url": redact_url(req.url)}),
+                error=RequestTimeoutError(
+                    "Connection timed out",
+                    details={"url": redact_url(req.url)},
+                    hint_key="timeout",
+                ),
                 log_message=f"Connection timeout for {redact_url(req.url)}",
             ),
         ),
         (
             httpx.ReadTimeout,
             lambda exc, req: dict(
-                error=RequestTimeoutError("Server response timed out", details={"url": redact_url(req.url)}),
+                error=RequestTimeoutError(
+                    "Server response timed out",
+                    details={"url": redact_url(req.url)},
+                    hint_key="timeout",
+                ),
                 log_message=f"Read timeout for {redact_url(req.url)}",
             ),
         ),
         (
             httpx.TimeoutException,
             lambda exc, req: dict(
-                error=RequestTimeoutError(f"Request timed out after {client.timeout} seconds", details={"url": redact_url(req.url), "timeout": client.timeout}),
+                error=RequestTimeoutError(
+                    f"Request timed out after {client.timeout} seconds",
+                    details={"url": redact_url(req.url), "timeout": client.timeout},
+                    hint_key="timeout",
+                ),
                 audit_tag="timeout",
                 log_message=f"Request timeout after {client.timeout}s for {redact_url(req.url)}",
             ),
@@ -134,28 +149,43 @@ def build_error_handlers(client) -> list:
         (
             httpx.TooManyRedirects,
             lambda exc, req: dict(
-                error=RequestError(f"Too many redirects (max: {client.MAX_REDIRECTS})", details={"url": redact_url(req.url)}),
+                error=RequestError(
+                    f"Too many redirects (max: {client.MAX_REDIRECTS})",
+                    details={"url": redact_url(req.url)},
+                    hint_key="connection",
+                ),
                 log_message=f"Too many redirects for {redact_url(req.url)}",
             ),
         ),
         (
             httpx.HTTPStatusError,
             lambda exc, req: dict(
-                error=RequestError(f"HTTP error: {exc.response.status_code}", details={"url": redact_url(req.url), "status": exc.response.status_code}),
+                error=RequestError(
+                    f"HTTP error: {exc.response.status_code}",
+                    details={"url": redact_url(req.url), "status": exc.response.status_code},
+                ),
                 log_message=f"HTTP error status {exc.response.status_code} for {redact_url(req.url)}",
             ),
         ),
         (
             httpx.HTTPError,
             lambda exc, req: dict(
-                error=RequestError("HTTP request failed", details={"url": redact_url(req.url)}),
+                error=RequestError(
+                    "HTTP request failed",
+                    details={"url": redact_url(req.url)},
+                    hint_key="connection",
+                ),
                 log_message=f"HTTP error for {redact_url(req.url)}",
             ),
         ),
         (
             UnicodeEncodeError,
             lambda exc, req: dict(
-                error=RequestError("Request body contains invalid characters", details={}),
+                error=RequestError(
+                    "Request body contains invalid characters",
+                    details={},
+                    hint_key="invalid_json",
+                ),
                 log_message="Encoding error in request body",
             ),
         ),
