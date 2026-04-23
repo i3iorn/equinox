@@ -212,9 +212,14 @@ class HTTPClient:
         request: Request,
         auth: Optional[AuthStrategy],
     ) -> Response:
-        return self._retry_policy.execute_with_http_overload(
+        response = self._retry_policy.execute_with_http_overload(
             lambda: self._execute_single_attempt(request, auth)
         )
+        # Attach retry summary to response for UI display
+        retry_summary = self._retry_policy.get_retry_summary()
+        if retry_summary:
+            response.retry_summary = retry_summary
+        return response
 
     # ── Public API ────────────────────────────────────────────────────────────
 
