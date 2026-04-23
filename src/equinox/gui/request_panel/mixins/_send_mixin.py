@@ -513,9 +513,12 @@ class _RequestSendMixin:
         # ── Error dialog ──
         from equinox.gui.widgets import CopyableMessageBox
         log_hint = f"\n\nFull details in: {get_log_file()}" if get_log_file() else ""
+        dialog_text = f"{result.message}{log_hint}"
+        if result.hint:
+            dialog_text = f"{result.message}\n\n{result.hint}{log_hint}"
         CopyableMessageBox.critical(
             self, f"Request Failed — {result.exc_type}",
-            f"{result.message}{log_hint}",
+            dialog_text,
             copy_text=result.tb,
         )
 
@@ -551,7 +554,7 @@ class _RequestSendMixin:
         self._apply_captures(response)
         self._evaluate_assertions(response)
         self._run_post_script(response)
-        self._refresh_url_completer()
+        self._add_url_to_completer(getattr(response.request, "url", ""))
 
         notify_log_panel(self._logging_panel, "log_response", _sent_request, response)
 
