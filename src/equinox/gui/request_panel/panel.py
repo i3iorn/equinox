@@ -65,6 +65,7 @@ from equinox.gui.request_panel._constants import (
     STATUS_DURATION_LONG,
 )
 from equinox.gui.request_panel.body_mixin import RequestBodyMixin  # noqa: F401
+from equinox.gui.request_panel.validation_mixin import _RequestValidationMixin  # noqa: F401
 from equinox.gui.request_panel.save_dialog import SaveRequestDialog
 from equinox.gui.request_panel.toolbar import TabToolbar
 from equinox.gui.syntax_highlighter.python_highlighter import PythonHighlighter
@@ -116,7 +117,7 @@ class _KvTabResult(NamedTuple):
 # Request panel
 # ─────────────────────────────────────────────────────────────────────────────
 
-class RequestPanel(_RequestSendMixin, _RequestAuthMixin, RequestBodyMixin, QWidget):
+class RequestPanel(_RequestValidationMixin, _RequestSendMixin, _RequestAuthMixin, RequestBodyMixin, QWidget):
     """Panel for building and sending HTTP requests."""
 
     response_received = pyqtSignal(object)
@@ -164,6 +165,7 @@ class RequestPanel(_RequestSendMixin, _RequestAuthMixin, RequestBodyMixin, QWidg
         self._init_ui()
         self._setup_dirty_tracking()
         self._setup_url_completer()
+        self._init_validation()  # Initialize real-time validation
 
         # Ctrl+Enter sends from anywhere in the panel (#8)
         send_shortcut = QShortcut(QKeySequence("Ctrl+Return"), self)
@@ -172,6 +174,10 @@ class RequestPanel(_RequestSendMixin, _RequestAuthMixin, RequestBodyMixin, QWidg
         # Ctrl+S saves to collection from anywhere in the panel
         save_shortcut = QShortcut(QKeySequence("Ctrl+S"), self)
         save_shortcut.activated.connect(self._save_request)
+
+        # Ctrl+L focuses and selects the URL field for fast keyboard editing.
+        focus_url_shortcut = QShortcut(QKeySequence("Ctrl+L"), self)
+        focus_url_shortcut.activated.connect(self._focus_url_input)
 
         # Ctrl+Shift+F formats JSON body (#6)
         fmt_shortcut = QShortcut(QKeySequence("Ctrl+Shift+F"), self)
@@ -326,6 +332,8 @@ class RequestPanel(_RequestSendMixin, _RequestAuthMixin, RequestBodyMixin, QWidg
 
     def _setup_url_completer(self) -> None:
         self._url_model = QStringListModel(self)
+        self._known_urls: set = set()
+        self._url_values: list = []
         completer = QCompleter(self._url_model, self)
         completer.setCaseSensitivity(Qt.CaseSensitivity.CaseInsensitive)
         completer.setFilterMode(Qt.MatchFlag.MatchContains)
@@ -338,11 +346,33 @@ class RequestPanel(_RequestSendMixin, _RequestAuthMixin, RequestBodyMixin, QWidg
         """Populate the completer model from recent history URLs."""
         try:
             entries = HistoryManager(self.db).list_history(limit=HISTORY_COMPLETER_LIMIT)
-            urls = list(dict.fromkeys(e["url"] for e in entries))  # deduplicate, keep order
-            self._url_model.setStringList(urls)
-            logger.debug("URL completer refreshed: %d URLs", len(urls))
+            urls = [e["url"] for e in entries if e.get("url")]
+            # Deduplicate while preserving order (most-recent first from history).
+            unique_urls = list(dict.fromkeys(urls))
+            self._known_urls = set(unique_urls)
+            self._url_values = unique_urls
+            self._url_model.setStringList(self._url_values)
+            logger.debug("URL completer refreshed: %d URLs", len(self._url_values))
         except Exception:
             logger.debug("Failed to refresh URL completer", exc_info=True)
+
+    def _add_url_to_completer(self, url: str) -> None:
+        """Incrementally add a URL to the completer without re-querying history."""
+        cleaned = (url or "").strip()
+        if not cleaned or cleaned in self._known_urls:
+            return
+        self._known_urls.add(cleaned)
+        # Keep most-recent URLs near the top while honoring history limit.
+        self._url_values.insert(0, cleaned)
+        if len(self._url_values) > HISTORY_COMPLETER_LIMIT:
+            dropped = self._url_values.pop()
+            self._known_urls.discard(dropped)
+        self._url_model.setStringList(self._url_values)
+
+    def _focus_url_input(self) -> None:
+        """Focus URL input and select its full text (browser-like behavior)."""
+        self.url_input.setFocus(Qt.FocusReason.ShortcutFocusReason)
+        self.url_input.selectAll()
 
     # ── UI construction ───────────────────────────────────────────────
 
@@ -871,9 +901,10 @@ class RequestPanel(_RequestSendMixin, _RequestAuthMixin, RequestBodyMixin, QWidg
             self.method_combo.setCurrentIndex(idx)
         self.url_input.setText(url)
         self.headers_table.set_data(headers)
-        if body:
-            self.body_text.setPlainText(body)
-            self.body_type_combo.setCurrentText(self._detect_body_type(body, headers))
+        if body is not None:
+            body_text = body if isinstance(body, str) else str(body)
+            self.body_text.setPlainText(body_text)
+            self.body_type_combo.setCurrentText(self._detect_body_type(body_text, headers))
         else:
             self.body_text.clear()
             self.body_type_combo.setCurrentIndex(0)
