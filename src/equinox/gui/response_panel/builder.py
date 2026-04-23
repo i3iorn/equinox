@@ -63,9 +63,9 @@ def _make_muted_label(text: str = "") -> QLabel:
 
 
 def _make_button(text: str, width: int, tooltip: str = "", parent=None) -> QPushButton:
-    """Create a button with fixed width and optional tooltip."""
+    """Create a button with minimum width and optional tooltip."""
     btn = QPushButton(text, parent)
-    btn.setFixedWidth(width)
+    btn.setMinimumWidth(width)
     if tooltip:
         btn.setToolTip(tooltip)
     return btn

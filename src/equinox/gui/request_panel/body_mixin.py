@@ -159,11 +159,11 @@ class RequestBodyMixin:
         toolbar.addWidget(lbl)
 
         add_btn = QPushButton("+ Add")
-        add_btn.setFixedWidth(_BUTTON_ADD_WIDTH)
+        add_btn.setMinimumWidth(_BUTTON_ADD_WIDTH)
         add_btn.clicked.connect(add_slot)
 
         remove_btn = QPushButton("− Remove")
-        remove_btn.setFixedWidth(_BUTTON_REMOVE_WIDTH)
+        remove_btn.setMinimumWidth(_BUTTON_REMOVE_WIDTH)
         remove_btn.clicked.connect(remove_slot)
 
         toolbar.addWidget(add_btn)

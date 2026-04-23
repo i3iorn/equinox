@@ -75,13 +75,13 @@ class LoggingPanel(QWidget):
         toolbar.addStretch()
 
         open_log_btn = QPushButton("Open Log File")
-        open_log_btn.setFixedWidth(95)
+        open_log_btn.setMinimumWidth(95)
         open_log_btn.setToolTip("Open the structured JSON log file")
         open_log_btn.clicked.connect(self._open_log_file)
         toolbar.addWidget(open_log_btn)
 
         clear_btn = QPushButton("Clear")
-        clear_btn.setFixedWidth(50)
+        clear_btn.setMinimumWidth(50)
         clear_btn.clicked.connect(self._clear)
         toolbar.addWidget(clear_btn)
         layout.addLayout(toolbar)

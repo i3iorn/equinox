@@ -153,7 +153,8 @@ class TabToolbar(QWidget):
         """
         text, width, tooltip = _BUTTON_CONFIG[key]
         btn = QPushButton(text)
-        btn.setFixedWidth(width)
+        # Keep compact defaults while allowing wider text/font settings to fit.
+        btn.setMinimumWidth(width)
         if tooltip:
             btn.setToolTip(tooltip)
         btn.clicked.connect(signal.emit)

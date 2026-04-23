@@ -256,7 +256,7 @@ class JsonTree(QWidget):
             Configured button
         """
         btn = QPushButton(text)
-        btn.setFixedWidth(_BUTTON_WIDTH)
+        btn.setMinimumWidth(_BUTTON_WIDTH)
         btn.clicked.connect(callback)
         return btn
 
