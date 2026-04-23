@@ -6,22 +6,56 @@ class EquinoxError(Exception):
     """Base exception for Equinox.
 
     All Equinox exceptions inherit from this base class.
+    All Equinox exceptions inherit from this base class.
     """
 
-    def __init__(self, message: str, details: Optional[dict] = None):
+    # Hint templates for common errors — provides actionable suggestions
+    HINTS = {
+        "url_scheme": "Did you include the scheme? Use 'http://' or 'https://'.",
+        "url_too_long": "URL is too long (max 2048 characters). Shorten query string or use POST body.",
+        "timeout": "Try increasing the timeout or checking if the server is reachable.",
+        "ssl_verify": "If using a self-signed certificate, disable verification (⚠️ security risk).",
+        "auth_failed": "Check if credentials are correct and not expired.",
+        "rate_limit": "You've hit the API rate limit. Equinox will auto-retry; or wait before retrying.",
+        "connection": "Check network connectivity. Is the server reachable? Try: ping example.com",
+        "empty_response": "Server returned empty response. Check if the endpoint exists.",
+        "invalid_json": "Request body is not valid JSON. Check for missing quotes, trailing commas, etc.",
+        "header_size": "Total header size exceeds limit (16 KB). Remove some headers.",
+        "body_size": "Request body exceeds size limit (100 MB). Split into chunks or use CDN.",
+    }
+
+    def __init__(
+        self,
+        message: str,
+        details: Optional[dict] = None,
+        hint_key: Optional[str] = None,
+    ):
         """Initialize exception.
 
         Args:
             message: Human-readable error message
             details: Optional dict with additional error context (never shown to user)
+            hint_key: Optional key to hint dictionary for actionable suggestion
         """
         super().__init__(message)
         self.message = message
         self.details = details or {}
+        self.hint_key = hint_key
 
     def __str__(self) -> str:
         """Return user-friendly error message."""
         return self.message
+
+    def user_facing_message(self) -> str:
+        """Return message + hint for user display.
+
+        Combines the error message with an actionable hint if one is available.
+        Used in GUI and CLI to show helpful guidance to users.
+        """
+        msg = self.message
+        if self.hint_key and self.hint_key in self.HINTS:
+            msg += f"\n\n💡 {self.HINTS[self.hint_key]}"
+        return msg
 
 
 class RequestError(EquinoxError):
