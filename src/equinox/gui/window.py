@@ -56,6 +56,9 @@ _KEY_REQRESP_SPLIT  = "splitter/req_resp"
 _KEY_LEFT_TAB       = "left_tabs/index"
 _KEY_INTEL_DISABLED = "intelligence/disabled_analyzers"
 
+_TAB_HISTORY = 1
+_TAB_COOKIES = 4
+
 
 class MainWindow(QMainWindow):
     """Main application window."""
@@ -65,6 +68,7 @@ class MainWindow(QMainWindow):
         self.db = db
         self._settings = QSettings(_SETTINGS_KEY, _SETTINGS_KEY)
         self._intelligence_worker = None  # keep reference to avoid GC
+        self._pending_panel_refreshes: set = set()
         self.setWindowTitle("Equinox — API Testing")
         self.setGeometry(_WINDOW_X, _WINDOW_Y, _WINDOW_W, _WINDOW_H)
 
@@ -194,6 +198,7 @@ class MainWindow(QMainWindow):
         # Connect AFTER addTab so that addTab's internal currentChanged (index 0)
         # does NOT fire _ensure_tab_initialized during construction.
         self._left_tabs.currentChanged.connect(self._ensure_tab_initialized)
+        self._left_tabs.currentChanged.connect(self._on_left_tab_changed)
 
         # ── Right panel (Request / Response) ─────────────────────────
         right_widget = QWidget()
@@ -233,6 +238,7 @@ class MainWindow(QMainWindow):
     # Keyboard shortcut table — displayed by _show_shortcuts_dialog.
     _KEYBOARD_SHORTCUTS: list[tuple[str, str]] = [
         ("Ctrl+N",       "New request (clear editor)"),
+        ("Ctrl+L",       "Focus URL field"),
         ("Ctrl+Return",  "Send request"),
         ("Ctrl+S",       "Save to Collection"),
         ("Ctrl+,",       "Open Preferences"),
@@ -280,6 +286,7 @@ class MainWindow(QMainWindow):
         self._left_tabs.insertTab(index, panel, label)
         self._left_tabs.setCurrentIndex(index)
         self._left_tabs.blockSignals(False)
+        self._flush_pending_panel_refresh(index)
         logger.debug("Lazy-initialized left panel index=%d (%s)", index, label)
 
     def _init_collections_panel(self):
@@ -336,11 +343,12 @@ class MainWindow(QMainWindow):
         rp.response_received.connect(self._run_intelligence_analysis)
         # Refresh lazy side-panels after each response.  Use _safe_refresh so
         # an error in one panel's refresh does not suppress the other's.
+        # Hidden tabs are deferred and refreshed when selected to keep sends snappy.
         rp.response_received.connect(
-            lambda _r: self._safe_refresh(self.cookies_panel)
+            lambda _r: self._refresh_side_panel_on_response(_TAB_COOKIES, self.cookies_panel)
         )
         rp.response_received.connect(
-            lambda _r: self._safe_refresh(self.history_panel)
+            lambda _r: self._refresh_side_panel_on_response(_TAB_HISTORY, self.history_panel)
         )
 
         # Connect splitter moved signals to save layout in real-time
@@ -356,6 +364,45 @@ class MainWindow(QMainWindow):
             panel.refresh()  # type: ignore[union-attr]
         except Exception:
             logger.debug("Panel refresh failed for %r", panel, exc_info=True)
+
+    def _left_panel_for_index(self, index: int) -> object:
+        if index == 0:
+            return self.collections_panel
+        if index == _TAB_HISTORY:
+            return self.history_panel
+        if index == 2:
+            return self.variables_panel
+        if index == 3:
+            return self.logging_panel
+        if index == _TAB_COOKIES:
+            return self.cookies_panel
+        if index == 5:
+            return self.websocket_panel
+        return None
+
+    def _flush_pending_panel_refresh(self, index: int) -> None:
+        """Apply one queued refresh for a panel when its tab becomes active."""
+        if index not in self._pending_panel_refreshes:
+            return
+        panel = self._left_panel_for_index(index)
+        if panel is None:
+            return
+        self._pending_panel_refreshes.discard(index)
+        self._safe_refresh(panel)
+
+    def _on_left_tab_changed(self, index: int) -> None:
+        """Refresh deferred side panels when the user activates their tab."""
+        self._flush_pending_panel_refresh(index)
+
+    def _refresh_side_panel_on_response(self, index: int, panel: object) -> None:
+        """Refresh panel now if visible, otherwise defer until tab activation."""
+        if panel is None:
+            self._pending_panel_refreshes.add(index)
+            return
+        if self._left_tabs.currentIndex() == index and self._left_tabs.isVisible():
+            self._safe_refresh(panel)
+            return
+        self._pending_panel_refreshes.add(index)
 
     def _on_splitter_moved(self, pos: int, index: int) -> None:
         """Handle splitter movement — debounced to avoid per-pixel disk flushes."""
@@ -387,10 +434,15 @@ class MainWindow(QMainWindow):
                 size /= 1024.0
             else:
                 size_str = f"{size:.1f} TB"
-            self.status_bar.showMessage(
-                f"{code} {response.reason}  ·  {elapsed_ms} ms  ·  {size_str}",
-                _STATUS_TIMEOUT_MS,
-            )
+
+            # Build status message
+            status_msg = f"{code} {response.reason}  ·  {elapsed_ms} ms  ·  {size_str}"
+
+            # Add retry info if present
+            if response.retry_summary:
+                status_msg = f"{status_msg}  ({response.retry_summary})"
+
+            self.status_bar.showMessage(status_msg, _STATUS_TIMEOUT_MS)
         except Exception:
             logger.debug("Failed to update status bar after response", exc_info=True)
 
@@ -557,7 +609,8 @@ class MainWindow(QMainWindow):
             return None
 
         body_bytes = self._coerce_body_to_bytes(entry.get("response_body") or "")
-        timestamp  = self._parse_timestamp(entry.get("executed_at"))
+        # Keep Response construction type-safe even when legacy rows have bad timestamps.
+        timestamp  = self._parse_timestamp(entry.get("executed_at")) or datetime.now()
         headers    = self._coerce_to_dict(
             entry.get("response_headers") or {}, "response_headers"
         )
