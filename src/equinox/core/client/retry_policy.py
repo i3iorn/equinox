@@ -72,6 +72,7 @@ class RetryPolicy:
         )
         self._retry_after_cap_seconds: float = float(retry_after_cap_seconds)
         self._sleep: Callable[[float], None] = interruptible_sleep or time.sleep
+        self._retry_events: list = []  # Track retry attempts for UI feedback
 
     # ── Properties ────────────────────────────────────────────────────────────
 
@@ -90,6 +91,38 @@ class RetryPolicy:
         """Immutable set of status codes that trigger HTTP overload retries."""
         return self._retryable_status_codes
 
+    def get_retry_summary(self) -> str:
+        """Return a human-readable summary of retries that occurred.
+
+        Returns:
+            String like "retried 2× after 429" or empty string if no retries.
+        """
+        if not self._retry_events:
+            return ""
+
+        # Summarize retry events
+        # Format: "retried N× after STATUS_CODE" or "retried N× after timeout"
+        http_retries = [e for e in self._retry_events if e.get("type") == "http"]
+        timeout_retries = [e for e in self._retry_events if e.get("type") == "timeout"]
+
+        parts = []
+        if timeout_retries:
+            parts.append(f"{len(timeout_retries)}× after timeout")
+        if http_retries:
+            # Get the most common status code
+            statuses = [e.get("status") for e in http_retries if e.get("status")]
+            if statuses:
+                main_status = statuses[0]
+                parts.append(f"{len(http_retries)}× after {main_status}")
+
+        if parts:
+            return "retried " + ", ".join(parts)
+        return ""
+
+    def clear_retry_events(self) -> None:
+        """Clear recorded retry events (called before each execute())."""
+        self._retry_events = []
+
     # ── Public API ────────────────────────────────────────────────────────────
 
     def execute(self, func: Callable[[], Response]) -> Response:
@@ -104,6 +137,8 @@ class RetryPolicy:
         Raises:
             RequestTimeoutError: When all timeout attempts are exhausted.
         """
+        self.clear_retry_events()  # Reset retry tracking before execution
+
         for attempt in range(self._timeout_retries):
             logger.debug(
                 "RetryPolicy: timeout attempt %d/%d",
@@ -114,6 +149,14 @@ class RetryPolicy:
                 return func()
             except RequestTimeoutError:
                 if attempt < self._timeout_retries - 1:
+                    wait_seconds = 2 ** attempt  # 1 s, 2 s, 4 s, …
+                    # Record retry event for UI
+                    self._retry_events.append({
+                        "type": "timeout",
+                        "attempt": attempt + 1,
+                        "total_attempts": self._timeout_retries,
+                        "wait_seconds": wait_seconds,
+                    })
                     self._sleep_backoff(attempt)
                 else:
                     logger.error(
@@ -165,6 +208,14 @@ class RetryPolicy:
                 self._http_retries,
                 retry_after,
             )
+            # Record retry event for UI
+            self._retry_events.append({
+                "type": "http",
+                "attempt": attempt + 1,
+                "total_attempts": self._http_retries,
+                "status": response.status_code,
+                "wait_seconds": retry_after,
+            })
             self._sleep(retry_after)
             response = func()
             logger.debug(
