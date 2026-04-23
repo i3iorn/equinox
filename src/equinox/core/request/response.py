@@ -79,6 +79,7 @@ class Response:
     sent_headers: Optional[Dict[str, str]] = None
     sent_url: Optional[str] = None
     timings: Optional[Dict[str, float]] = None
+    retry_summary: Optional[str] = None  # Human-readable summary of retries (e.g. "retried 2× after 429")
 
     def __post_init__(self) -> None:
         self.headers = HeaderDict(self.headers or {})
