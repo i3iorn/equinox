@@ -262,7 +262,9 @@ def _send_request(ctx, method, url, body, headers, params, auth, timeout,
 
     except EquinoxError as exc:
         logger.error("Request failed (%s): %s", type(exc).__name__, exc)
-        click.echo(f"Error: {redact_body(str(exc))}", err=True)
+        # Use user_facing_message() if available to include hints
+        msg = exc.user_facing_message() if hasattr(exc, 'user_facing_message') else str(exc)
+        click.echo(f"Error: {redact_body(msg)}", err=True)
         sys.exit(1)
     except Exception as exc:
         logger.error("Unexpected error during CLI request: %s", exc, exc_info=True)
