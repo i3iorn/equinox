@@ -20,6 +20,8 @@ import traceback
 
 logger = logging.getLogger(__name__)
 
+_AUTO_REFRESH_INTERVAL_MS = 30_000
+
 
 # ── Lightweight "new request" dialog ─────────────────────────────────────────
 
@@ -331,7 +333,7 @@ class CollectionsPanel(_CollectionsActionsMixin, QWidget):
         self.refresh_timer = QTimer(self)
         # #5 — Lazy fallback (30 s); immediate refresh via signal wiring
         self.refresh_timer.timeout.connect(self._refresh_if_visible)
-        self.refresh_timer.start(30_000)
+        self.refresh_timer.start(_AUTO_REFRESH_INTERVAL_MS)
 
     def _refresh_if_visible(self):
         if self.isVisible():
@@ -340,7 +342,7 @@ class CollectionsPanel(_CollectionsActionsMixin, QWidget):
     def _toggle_auto_refresh(self, state):
         self.auto_refresh_enabled = (state == Qt.CheckState.Checked.value)
         if self.auto_refresh_enabled:
-            self.refresh_timer.start(5000)
+            self.refresh_timer.start(_AUTO_REFRESH_INTERVAL_MS)
         else:
             self.refresh_timer.stop()
 
