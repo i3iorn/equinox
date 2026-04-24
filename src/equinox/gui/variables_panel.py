@@ -26,6 +26,7 @@ from PyQt6.QtWidgets import (
     QTableWidget,
     QTableWidgetItem,
     QTextEdit,
+    QSizePolicy,
     QVBoxLayout,
     QWidget,
 )
@@ -40,6 +41,8 @@ logger = logging.getLogger(__name__)
 
 # Module-level constant — compiled once, reused on every tooltip refresh.
 _VALID_VAR_NAME = re.compile(r'^[a-zA-Z0-9_-]+$')
+_SESSION_TABLE_MAX_VISIBLE_ROWS = 4
+_SESSION_TABLE_MIN_VISIBLE_ROWS = 1
 
 
 # ── Variable edit dialog ──────────────────────────────────────────────────────
@@ -120,7 +123,10 @@ class VariablesPanel(QWidget):
         # ── Session Variables (captured at runtime) ───────────────────
         self._session_group = QGroupBox("Session Variables")
         self._session_group.setCheckable(True)
-        self._session_group.setChecked(False)
+        self._session_group.setChecked(True)
+        self._session_group.setSizePolicy(
+            QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Maximum
+        )
         session_layout = QVBoxLayout(self._session_group)
         session_layout.setContentsMargins(4, 4, 4, 4)
         session_layout.setSpacing(4)
@@ -161,8 +167,13 @@ class VariablesPanel(QWidget):
         self._session_table.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self._session_table.customContextMenuRequested.connect(self._show_session_context_menu)
         self._session_table.itemSelectionChanged.connect(self._on_session_selection)
-        self._session_table.setMaximumHeight(200)
+        self._session_table.verticalHeader().setVisible(False)
+        self._session_table.setSizePolicy(
+            QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Maximum
+        )
         session_layout.addWidget(self._session_table)
+
+        self._session_group.toggled.connect(self._on_session_group_toggled)
 
         layout.addWidget(self._session_group)
 
@@ -238,6 +249,30 @@ class VariablesPanel(QWidget):
         )
 
         layout.addWidget(splitter)
+        self._resize_session_table_to_content()
+
+    def _session_table_target_height(self) -> int:
+        """Return a compact, content-based height for the session table."""
+        header_h = self._session_table.horizontalHeader().height()
+        frame_h = self._session_table.frameWidth() * 2
+        row_h = self._session_table.verticalHeader().defaultSectionSize()
+        visible_rows = max(
+            _SESSION_TABLE_MIN_VISIBLE_ROWS,
+            min(self._session_var_count, _SESSION_TABLE_MAX_VISIBLE_ROWS),
+        )
+        return frame_h + header_h + (row_h * visible_rows) + 2
+
+    def _resize_session_table_to_content(self) -> None:
+        """Keep session table height compact while still allowing scrolling."""
+        if not self._session_group.isChecked():
+            self._session_table.setFixedHeight(0)
+            return
+        self._session_table.setFixedHeight(self._session_table_target_height())
+
+    def _on_session_group_toggled(self, checked: bool) -> None:
+        """Collapse/expand session table area when the group is toggled."""
+        self._session_table.setVisible(checked)
+        self._resize_session_table_to_content()
 
     # ── Public refresh methods ────────────────────────────────────────────────
 
@@ -547,6 +582,7 @@ class VariablesPanel(QWidget):
         )
         if has_vars and not self._session_group.isChecked():
             self._session_group.setChecked(True)
+        self._resize_session_table_to_content()
         self._update_tab_badge()
 
     def _on_session_selection(self) -> None:
