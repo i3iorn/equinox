@@ -182,6 +182,29 @@ class _RequestSendMixin:
         return variables
 
     @staticmethod
+    def _resolve_path_params(
+        path_params: Dict[str, str], variables: Dict[str, str]
+    ) -> Dict[str, str]:
+        """Resolve path params against global vars and other path params.
+
+        Supports chained references such as:
+        ``item = {{id}}`` and ``id = {{USER_ID}}``.
+        """
+        resolved: Dict[str, str] = {}
+        # Resolve keys first so unusual key templates are stable before merging.
+        for k, v in path_params.items():
+            key = VariableInterpolator.interpolate(k, variables)
+            resolved[key] = v
+
+        # Path params can reference each other, so include them in context.
+        context = dict(variables)
+        context.update(resolved)
+        return {
+            k: VariableInterpolator.interpolate(v, context)
+            for k, v in resolved.items()
+        }
+
+    @staticmethod
     def _interpolate_request_fields(
         url: str,
         headers: Dict[str, str],
@@ -196,24 +219,25 @@ class _RequestSendMixin:
         Raises on interpolation failure (caller handles & shows error dialog).
         """
         logger.debug("Interpolating variables in request (url_len=%d)", len(url))
-        url = VariableInterpolator.interpolate(url, variables)
+        path_params = _RequestSendMixin._resolve_path_params(path_params, variables)
+
+        # Allow URL/headers/query/body to reference resolved path parameters.
+        merged_vars = dict(variables)
+        merged_vars.update(path_params)
+
+        url = VariableInterpolator.interpolate(url, merged_vars)
         headers = {
-            VariableInterpolator.interpolate(k, variables):
-            VariableInterpolator.interpolate(v, variables)
+            VariableInterpolator.interpolate(k, merged_vars):
+            VariableInterpolator.interpolate(v, merged_vars)
             for k, v in headers.items()
         }
         params = {
-            VariableInterpolator.interpolate(k, variables):
-            VariableInterpolator.interpolate(v, variables)
+            VariableInterpolator.interpolate(k, merged_vars):
+            VariableInterpolator.interpolate(v, merged_vars)
             for k, v in params.items()
         }
-        path_params = {
-            VariableInterpolator.interpolate(k, variables):
-            VariableInterpolator.interpolate(v, variables)
-            for k, v in path_params.items()
-        }
         if body:
-            body = VariableInterpolator.interpolate(body, variables)
+            body = VariableInterpolator.interpolate(body, merged_vars)
         logger.debug("Variable interpolation completed successfully")
         return url, headers, params, body, path_params
 

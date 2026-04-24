@@ -141,6 +141,10 @@ class VariablesPanel(QWidget):
         self._session_copy_btn.clicked.connect(self._copy_session_vars)
         self._session_copy_btn.setEnabled(False)
         session_header.addWidget(self._session_copy_btn)
+        self._session_add_btn = QPushButton("Add")
+        self._session_add_btn.setToolTip("Add or update a custom session variable")
+        self._session_add_btn.clicked.connect(self._add_session_var)
+        session_header.addWidget(self._session_add_btn)
         self._session_delete_btn = QPushButton("Delete")
         self._session_delete_btn.setToolTip("Delete selected session variable")
         self._session_delete_btn.clicked.connect(self._delete_session_var)
@@ -591,6 +595,48 @@ class VariablesPanel(QWidget):
     def _on_clear_session(self) -> None:
         if self._session_var_count > 0:
             self.clear_session_requested.emit()
+
+    def _current_session_vars(self) -> dict[str, str]:
+        """Return current session vars from the table as a key/value dict."""
+        result: dict[str, str] = {}
+        for row in range(self._session_table.rowCount()):
+            key_item = self._session_table.item(row, 0)
+            val_item = self._session_table.item(row, 1)
+            if key_item and val_item:
+                result[key_item.text()] = val_item.text()
+        return result
+
+    def _add_session_var(self) -> None:
+        """Prompt for a custom session variable and publish it to RequestPanel."""
+        key, ok = QInputDialog.getText(self, "Add Session Variable", "Variable name:")
+        if not ok:
+            return
+        key = key.strip()
+        if not key:
+            QMessageBox.warning(self, "Error", "Variable name is required")
+            return
+        if not _VALID_VAR_NAME.match(key):
+            QMessageBox.warning(
+                self,
+                "Invalid Variable Name",
+                "Variable names may contain only letters, numbers, underscore, and hyphen.",
+            )
+            return
+
+        value, ok = QInputDialog.getText(self, "Add Session Variable", "Value:")
+        if not ok:
+            return
+
+        rp = getattr(self.window(), "request_panel", None)
+        if rp is not None and isinstance(getattr(rp, "_session_vars", None), dict):
+            rp._session_vars[key] = value
+            rp.session_vars_changed.emit(dict(rp._session_vars))
+            return
+
+        # Fallback for tests or unusual embedding: update panel-local view.
+        session_vars = self._current_session_vars()
+        session_vars[key] = value
+        self.refresh_session_vars(session_vars)
 
     def _delete_session_var(self) -> None:
         row = self._session_table.currentRow()

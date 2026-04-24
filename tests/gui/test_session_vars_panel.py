@@ -30,7 +30,7 @@ def variables_panel(qapp):
     parent = QWidget()
     vp = VariablesPanel(db, parent=parent)
     # Prevent Python GC from collecting the parent while the test runs
-    vp.__test_parent_ref = parent
+    vp._test_parent_ref = parent
     yield vp
     # Cleanup: explicitly delete so Qt C++ side is freed deterministically
     vp.setParent(None)
@@ -152,6 +152,48 @@ class TestVariablesPanelRefresh:
         vp.clear_session_requested.connect(lambda: emitted.append(True))
         vp._on_clear_session()
         assert emitted == []
+
+    def test_add_custom_session_var_publishes_to_request_panel(self, variables_panel):
+        """Add action writes to RequestPanel._session_vars and emits update signal."""
+        vp = variables_panel
+        rp = MagicMock()
+        rp._session_vars = {}
+        parent = vp._test_parent_ref
+        parent.request_panel = rp
+
+        with patch("equinox.gui.variables_panel.QInputDialog.getText") as mock_get_text:
+            mock_get_text.side_effect = [("TOKEN", True), ("abc123", True)]
+            vp._add_session_var()
+
+        assert rp._session_vars["TOKEN"] == "abc123"
+        rp.session_vars_changed.emit.assert_called_once_with({"TOKEN": "abc123"})
+
+    def test_add_custom_session_var_fallback_updates_local_table(self, variables_panel):
+        """If no RequestPanel is available, Add action still updates the local table."""
+        vp = variables_panel
+        vp.refresh_session_vars({"A": "1"})
+
+        with patch("equinox.gui.variables_panel.QInputDialog.getText") as mock_get_text:
+            mock_get_text.side_effect = [("B", True), ("2", True)]
+            vp._add_session_var()
+
+        table = {
+            vp._session_table.item(r, 0).text(): vp._session_table.item(r, 1).text()
+            for r in range(vp._session_table.rowCount())
+        }
+        assert table == {"A": "1", "B": "2"}
+
+    def test_add_custom_session_var_rejects_invalid_name(self, variables_panel):
+        """Invalid names are rejected before value prompt is shown."""
+        vp = variables_panel
+        with patch("equinox.gui.variables_panel.QInputDialog.getText") as mock_get_text, patch(
+            "equinox.gui.variables_panel.QMessageBox.warning"
+        ) as mock_warn:
+            mock_get_text.return_value = ("bad key", True)
+            vp._add_session_var()
+
+        mock_warn.assert_called_once()
+        assert mock_get_text.call_count == 1
 
 
 # ── Capture engine integration ────────────────────────────────────────────────
