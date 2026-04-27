@@ -18,6 +18,7 @@ Responsibilities:
 from __future__ import annotations
 
 import logging
+import re
 from typing import Any, Dict, List, Optional, Tuple
 
 from PyQt6.QtCore import QTimer
@@ -26,7 +27,10 @@ from PyQt6.QtWidgets import QMessageBox
 from equinox.auth import OAuth2Auth
 from equinox.core.captures import CaptureEngine
 from equinox.core.error_enrichment import RichError, enrich_exception
-from equinox.core.interpolation import VariableInterpolator, collect_interpolation_variables
+from equinox.core.interpolation import (
+    VariableInterpolator,
+    collect_interpolation_variables_detailed,
+)
 from equinox.core.log_setup import get_log_file
 from equinox.core.request import Request, Response
 from equinox.core.scripts import ScriptRunner
@@ -61,6 +65,7 @@ _MSG_AUTH_VAR_FAILED = "Failed to expand variables in auth fields"
 # ── String truncation for safe logging ────────────────────────────────────────
 _URL_LOG_LIMIT = 80
 _URL_ERROR_LOG_LIMIT = 80
+_UNRESOLVED_VAR_RE = re.compile(r"\{\{([a-zA-Z0-9_-]+)\}\}")
 
 
 class _RequestSendMixin:
@@ -196,13 +201,17 @@ class _RequestSendMixin:
             key = VariableInterpolator.interpolate(k, variables)
             resolved[key] = v
 
-        # Path params can reference each other, so include them in context.
-        context = dict(variables)
-        context.update(resolved)
-        return {
-            k: VariableInterpolator.interpolate(v, context)
-            for k, v in resolved.items()
-        }
+        # Path params can reference each other, but a key must not shadow itself.
+        # Example: BASE_URL={{BASE_URL}} should resolve from global variables.
+        resolved_values: Dict[str, str] = {}
+        for k, v in resolved.items():
+            context = dict(variables)
+            context.update(resolved)
+            if k in variables:
+                context[k] = variables[k]
+            resolved_values[k] = VariableInterpolator.interpolate(v, context)
+
+        return resolved_values
 
     @staticmethod
     def _interpolate_request_fields(
@@ -240,6 +249,29 @@ class _RequestSendMixin:
             body = VariableInterpolator.interpolate(body, merged_vars)
         logger.debug("Variable interpolation completed successfully")
         return url, headers, params, body, path_params
+
+    @staticmethod
+    def _collect_unresolved_placeholders(
+        url: str,
+        headers: Dict[str, str],
+        params: Dict[str, str],
+        body: Optional[str],
+        path_params: Dict[str, str],
+    ) -> List[str]:
+        """Return unresolved placeholder names across all request fields."""
+        unresolved = set(_UNRESOLVED_VAR_RE.findall(url or ""))
+        for k, v in headers.items():
+            unresolved.update(_UNRESOLVED_VAR_RE.findall(k or ""))
+            unresolved.update(_UNRESOLVED_VAR_RE.findall(v or ""))
+        for k, v in params.items():
+            unresolved.update(_UNRESOLVED_VAR_RE.findall(k or ""))
+            unresolved.update(_UNRESOLVED_VAR_RE.findall(v or ""))
+        if body:
+            unresolved.update(_UNRESOLVED_VAR_RE.findall(body))
+        for k, v in path_params.items():
+            unresolved.update(_UNRESOLVED_VAR_RE.findall(k or ""))
+            unresolved.update(_UNRESOLVED_VAR_RE.findall(v or ""))
+        return sorted(unresolved)
 
     @staticmethod
     def _resolve_proxy_url() -> Optional[str]:
@@ -309,7 +341,7 @@ class _RequestSendMixin:
             )
             headers = inject_content_type(body, body_type, headers)
 
-            variables = collect_interpolation_variables(
+            variables, variable_sources = collect_interpolation_variables_detailed(
                 self.db,
                 collection_id=getattr(self.current_request, "collection_id", None),
                 session_vars=self._session_vars,
@@ -324,6 +356,31 @@ class _RequestSendMixin:
                 from equinox.core.urls import expand_placeholders
                 url = expand_placeholders(url, path_params)
                 logger.debug("URL expanded with path_params: %s", url[:100])
+
+            unresolved = self._collect_unresolved_placeholders(
+                url, headers, params, body, path_params
+            )
+            if unresolved:
+                unresolved_details = []
+                for name in unresolved:
+                    value = variables.get(name)
+                    unresolved_details.append(
+                        f"{name}(source={variable_sources.get(name, 'missing')}, "
+                        f"value_type={type(value).__name__ if value is not None else 'missing'}, "
+                        f"value_is_template={bool(isinstance(value, str) and VariableInterpolator.has_variables(value))})"
+                    )
+                logger.warning(
+                    "Unresolved placeholders before dispatch: %s (available_keys=%s)",
+                    unresolved_details,
+                    sorted(str(k) for k in variables.keys()),
+                )
+                QMessageBox.warning(
+                    self,
+                    "Variable Error",
+                    "Failed to expand variables:\n"
+                    f"Unresolved placeholders: {', '.join(unresolved_details)}",
+                )
+                return
 
         except Exception as exc:
             logger.warning("Variable interpolation failed: %s", exc)
