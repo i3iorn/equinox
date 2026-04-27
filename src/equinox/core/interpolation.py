@@ -25,8 +25,10 @@ import copy
 import re
 import logging
 import os
+import calendar
+from datetime import date, datetime
 from dataclasses import replace as dataclass_replace
-from typing import Dict, Any, Optional, TypeVar, List
+from typing import Dict, Any, Optional, TypeVar, List, Tuple
 
 from equinox.core.exceptions import ValidationError, SecurityError
 
@@ -45,6 +47,29 @@ _TEXT_ENCODING: str = "utf-8"
 # Pattern for valid variable names — shared by key validation and OS env filtering.
 # Matches names that can appear inside {{...}} placeholders.
 _VARIABLE_NAME_RE: re.Pattern = re.compile(r'^[a-zA-Z0-9_-]+$')
+
+
+def _shift_months(base: date, delta_months: int) -> date:
+    """Shift a date by whole months, clamping day to month length."""
+    month0 = (base.month - 1) + delta_months
+    year = base.year + (month0 // 12)
+    month = (month0 % 12) + 1
+    day = min(base.day, calendar.monthrange(year, month)[1])
+    return date(year, month, day)
+
+
+def _magic_variables(today: Optional[date] = None, now: Optional[datetime] = None) -> Dict[str, str]:
+    """Return built-in dynamic variables for date/time convenience."""
+    now_value = now or datetime.now()
+    today_value = today or now_value.date()
+    one_month_ago = _shift_months(today_value, -1)
+    one_year_ago = _shift_months(today_value, -12)
+    return {
+        "TODAY": today_value.isoformat(),
+        "ONE_MONTH_AGO": one_month_ago.isoformat(),
+        "ONE_YEAR_AGO": one_year_ago.isoformat(),
+        "NOW_ISO": now_value.isoformat(timespec="seconds"),
+    }
 
 
 class VariableInterpolator:
@@ -124,6 +149,20 @@ class VariableInterpolator:
                 continue
             sanitized_variables[key] = value
 
+        # Build a case-insensitive fallback map so {{BASE_URL}} and {{base_url}}
+        # can resolve to the same variable when only one casing is defined.
+        # If multiple keys differ only by case and have conflicting values,
+        # treat the folded key as ambiguous and leave placeholders unchanged.
+        casefold_map: Dict[str, str] = {}
+        ambiguous_casefolds = set()
+        for key, value in sanitized_variables.items():
+            folded = key.casefold()
+            current = casefold_map.get(folded)
+            if current is None:
+                casefold_map[folded] = value
+            elif current != value:
+                ambiguous_casefolds.add(folded)
+
         # ── Early exit cases ──────────────────────────────────────────────────
         if not text:
             return text
@@ -144,7 +183,16 @@ class VariableInterpolator:
         def substitute_variable(match: re.Match) -> str:
             """Replace matched {{variable}} with its value or leave unchanged."""
             var_name = match.group(1)
-            return sanitized_variables.get(var_name, match.group(0))
+            exact = sanitized_variables.get(var_name)
+            if exact is not None:
+                return exact
+
+            folded = var_name.casefold()
+            if folded in ambiguous_casefolds:
+                return match.group(0)
+
+            fallback = casefold_map.get(folded)
+            return fallback if fallback is not None else match.group(0)
 
         for iteration in range(iteration_limit):
             previous_text = text
@@ -298,55 +346,93 @@ class VariableInterpolator:
         return bool(cls.VARIABLE_PATTERN.search(text))
 
 
-def collect_interpolation_variables(
+def collect_interpolation_variables_detailed(
     db,
     collection_id: Optional[int] = None,
     session_vars: Optional[Dict[str, str]] = None,
-) -> Dict[str, str]:
-    """Collect all variable sources into a single ordered dict.
+) -> Tuple[Dict[str, str], Dict[str, str]]:
+    """Collect interpolation vars and their source labels.
 
-    Resolution order (each layer overrides the previous):
+    Resolution order (later layers only override where noted):
     1. Active database environment variables
     2. Collection-level variables (if *collection_id* is given)
-    3. OS environment variables with valid interpolation-safe names
-    4. *session_vars* (script-captured values, highest precedence)
-
-    This is the canonical implementation — both the CLI
-    (:func:`equinox.cli.main.get_interpolation_variables`) and the GUI
-    (:class:`~equinox.gui.request_panel.mixins._RequestSendMixin`) delegate
-    to this function so the resolution order is never inconsistent.
-
-    Args:
-        db: Open :class:`~equinox.storage.database.Database` instance.
-        collection_id: When provided, collection variables are included.
-        session_vars: Script-captured session variables (optional).
-
-    Returns:
-        Dict mapping variable name → string value.
+    3. OS environment variables (fill only; no overwrite of DB-scoped vars)
+    4. *session_vars* (highest precedence)
     """
-    # Lazy imports — avoid hard-coupling storage into the core package at
-    # import time; these modules may not be available in all test contexts.
     from equinox.storage.environments import EnvironmentManager
 
-    variables: Dict[str, str] = {}
+    def _normalize_values(raw: Dict[str, Any], source: str) -> Dict[str, str]:
+        normalized: Dict[str, str] = {}
+        for key, value in raw.items():
+            if not isinstance(key, str):
+                logger.debug(
+                    "collect_interpolation_variables: skipping %s var with non-string key: %r",
+                    source, key,
+                )
+                continue
+            if value is None:
+                logger.debug(
+                    "collect_interpolation_variables: skipping %s var %r with None value",
+                    source, key,
+                )
+                continue
+            if isinstance(value, str):
+                normalized[key] = value
+                continue
+            try:
+                normalized[key] = str(value)
+                logger.debug(
+                    "collect_interpolation_variables: coerced %s var %r from %s to string",
+                    source, key, type(value).__name__,
+                )
+            except Exception as exc:
+                logger.debug(
+                    "collect_interpolation_variables: failed to coerce %s var %r (%s)",
+                    source, key, exc,
+                )
+        return normalized
 
-    # 1. Active environment
+    variables: Dict[str, str] = {}
+    sources: Dict[str, str] = {}
+
+    builtin = _magic_variables()
+    variables.update(builtin)
+    for key in builtin.keys():
+        sources[key] = "magic"
+    logger.debug("collect_interpolation_variables: %d magic vars", len(builtin))
+
+    try:
+        from equinox.storage.global_variables import GlobalVariablesManager
+        global_mgr = GlobalVariablesManager(db)
+        global_vars = _normalize_values(global_mgr.get_variables_dict(), "global")
+        variables.update(global_vars)
+        for key in global_vars.keys():
+            sources[str(key)] = "global"
+        logger.debug("collect_interpolation_variables: %d global vars", len(global_vars))
+    except Exception as exc:
+        logger.warning("Failed to load global variables: %s", exc)
+
     try:
         env_mgr = EnvironmentManager(db)
         active = env_mgr.get_active_environment()
         if active and isinstance(active.get("variables"), dict):
-            variables.update(active["variables"])
-            logger.debug("collect_interpolation_variables: %d env vars", len(active["variables"]))
+            env_vars = _normalize_values(active["variables"], "environment")
+            variables.update(env_vars)
+            for key in env_vars.keys():
+                sources[str(key)] = "environment"
+            logger.debug("collect_interpolation_variables: %d env vars", len(env_vars))
     except Exception as exc:
         logger.warning("Failed to load active environment variables: %s", exc)
 
-    # 2. Collection variables
     if collection_id is not None:
         try:
             from equinox.storage.collections import CollectionManager
             col_mgr = CollectionManager(db)
-            col_vars = col_mgr.get_all_collection_variables(collection_id)
+            raw_col_vars = col_mgr.get_all_collection_variables(collection_id)
+            col_vars = _normalize_values(raw_col_vars, "collection")
             variables.update(col_vars)
+            for key in col_vars.keys():
+                sources[str(key)] = "collection"
             logger.debug(
                 "collect_interpolation_variables: %d collection vars (coll=%d)",
                 len(col_vars), collection_id,
@@ -357,16 +443,50 @@ def collect_interpolation_variables(
                 collection_id, exc,
             )
 
-    # 3. OS environment variables — only names safe for {{VAR}} interpolation
     os_vars = {k: v for k, v in os.environ.items() if isinstance(v, str) and _VARIABLE_NAME_RE.match(k)}
-    variables.update(os_vars)
-    logger.debug("collect_interpolation_variables: %d OS env vars", len(os_vars))
+    os_inserted = 0
+    os_skipped = 0
+    for key, value in os_vars.items():
+        if key in variables:
+            os_skipped += 1
+            continue
+        variables[key] = value
+        sources[key] = "os"
+        os_inserted += 1
+    logger.debug(
+        "collect_interpolation_variables: %d OS env vars (%d inserted, %d skipped due to higher-priority vars)",
+        len(os_vars), os_inserted, os_skipped,
+    )
 
-    # 4. Session variables (highest precedence — script output)
     if session_vars:
-        variables.update(session_vars)
-        logger.debug("collect_interpolation_variables: %d session vars", len(session_vars))
+        normalized_session = _normalize_values(session_vars, "session")
+        variables.update(normalized_session)
+        for key in normalized_session.keys():
+            sources[str(key)] = "session"
+        logger.debug("collect_interpolation_variables: %d session vars", len(normalized_session))
+
+    base_url_value = variables.get("BASE_URL")
+    if isinstance(base_url_value, str):
+        logger.debug(
+            "collect_interpolation_variables: BASE_URL source=%s value_is_template=%s",
+            sources.get("BASE_URL", "unknown"),
+            bool(VariableInterpolator.has_variables(base_url_value)),
+        )
 
     logger.debug("collect_interpolation_variables: %d total variables", len(variables))
+    return variables, sources
+
+
+def collect_interpolation_variables(
+    db,
+    collection_id: Optional[int] = None,
+    session_vars: Optional[Dict[str, str]] = None,
+) -> Dict[str, str]:
+    """Compatibility wrapper returning only collected variables."""
+    variables, _sources = collect_interpolation_variables_detailed(
+        db,
+        collection_id=collection_id,
+        session_vars=session_vars,
+    )
     return variables
 
