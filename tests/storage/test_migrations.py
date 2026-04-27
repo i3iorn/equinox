@@ -104,6 +104,7 @@ class TestMigrationRunner:
             "collections", "requests", "history", "environments",
             "collection_variables", "variable_groups",
             "variable_group_items", "collection_variable_groups",
+            "global_variables",
             "schema_version",
         }
         assert expected.issubset(tables)

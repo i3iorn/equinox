@@ -195,6 +195,20 @@ class TestVariablesPanelRefresh:
         mock_warn.assert_called_once()
         assert mock_get_text.call_count == 1
 
+    def test_magic_hint_is_visible_in_global_section(self, variables_panel):
+        vp = variables_panel
+        assert "{{TODAY}}" in vp._magic_hint.text()
+        assert "{{ONE_MONTH_AGO}}" in vp._magic_hint.text()
+
+    def test_global_table_height_scales_with_content(self, variables_panel):
+        vp = variables_panel
+        small_h = vp._global_table.height()
+        vp._global_mgr.set_variable("A", "1")
+        vp._global_mgr.set_variable("B", "2")
+        vp.refresh_global_vars()
+        larger_h = vp._global_table.height()
+        assert larger_h >= small_h
+
 
 # ── Capture engine integration ────────────────────────────────────────────────
 

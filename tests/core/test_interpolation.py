@@ -1,8 +1,12 @@
 """Tests for variable interpolation"""
 
 import pytest
+from unittest.mock import MagicMock, patch
 
-from equinox.core.interpolation import VariableInterpolator
+from equinox.core.interpolation import (
+    VariableInterpolator,
+    collect_interpolation_variables_detailed,
+)
 from equinox.core.request import Request
 from equinox.core.exceptions import ValidationError, SecurityError
 
@@ -421,3 +425,97 @@ class TestEdgeCases:
         variables = {"var": ""}
         result = VariableInterpolator.interpolate(text, variables)
         assert result == "prefixsuffix"
+
+    def test_case_insensitive_fallback_when_single_casing_exists(self):
+        """Exact case remains preferred, but single-case definitions can still resolve."""
+        result = VariableInterpolator.interpolate(
+            "https://{{BASE_URL}}/health",
+            {"base_url": "api.example.com"},
+        )
+        assert result == "https://api.example.com/health"
+
+    def test_case_insensitive_fallback_preserves_ambiguous_collisions(self):
+        """When two values differ only by case, unresolved placeholder is safer."""
+        result = VariableInterpolator.interpolate(
+            "{{foo}}/{{FOO}}/{{FoO}}",
+            {"foo": "a", "FOO": "b"},
+        )
+        assert result == "a/b/{{FoO}}"
+
+
+class TestCollectInterpolationVariables:
+    """Tests for source-aware variable collection and precedence."""
+
+    def test_os_vars_do_not_override_collection_vars(self, monkeypatch):
+        monkeypatch.setenv("BASE_URL", "https://os.example")
+        db = MagicMock()
+
+        with patch("equinox.storage.environments.EnvironmentManager") as mock_env:
+            mock_env.return_value.get_active_environment.return_value = None
+            with patch("equinox.storage.collections.CollectionManager") as mock_col:
+                mock_col.return_value.get_all_collection_variables.return_value = {
+                    "BASE_URL": "https://collection.example"
+                }
+                variables, sources = collect_interpolation_variables_detailed(db, collection_id=25)
+
+        assert variables["BASE_URL"] == "https://collection.example"
+        assert sources["BASE_URL"] == "collection"
+
+    def test_session_vars_override_and_are_tagged_as_session(self):
+        db = MagicMock()
+
+        with patch("equinox.storage.environments.EnvironmentManager") as mock_env:
+            mock_env.return_value.get_active_environment.return_value = {
+                "variables": {"BASE_URL": "https://env.example"}
+            }
+            variables, sources = collect_interpolation_variables_detailed(
+                db,
+                session_vars={"BASE_URL": "https://session.example"},
+            )
+
+        assert variables["BASE_URL"] == "https://session.example"
+        assert sources["BASE_URL"] == "session"
+
+    def test_collection_non_string_values_are_coerced_for_interpolation(self):
+        db = MagicMock()
+
+        with patch("equinox.storage.environments.EnvironmentManager") as mock_env:
+            mock_env.return_value.get_active_environment.return_value = None
+            with patch("equinox.storage.collections.CollectionManager") as mock_col:
+                mock_col.return_value.get_all_collection_variables.return_value = {
+                    "BASE_URL": 12345,
+                }
+                variables, sources = collect_interpolation_variables_detailed(db, collection_id=25)
+
+        assert variables["BASE_URL"] == "12345"
+        assert sources["BASE_URL"] == "collection"
+        assert VariableInterpolator.interpolate("https://{{BASE_URL}}/livez", variables) == "https://12345/livez"
+
+    def test_magic_variables_are_available(self):
+        db = MagicMock()
+
+        with patch("equinox.storage.environments.EnvironmentManager") as mock_env:
+            mock_env.return_value.get_active_environment.return_value = None
+            with patch("equinox.storage.global_variables.GlobalVariablesManager") as mock_global:
+                mock_global.return_value.get_variables_dict.return_value = {}
+                variables, sources = collect_interpolation_variables_detailed(db)
+
+        assert "TODAY" in variables
+        assert "ONE_MONTH_AGO" in variables
+        assert "ONE_YEAR_AGO" in variables
+        assert "NOW_ISO" in variables
+        assert sources["TODAY"] == "magic"
+
+    def test_global_variables_override_magic_defaults(self):
+        db = MagicMock()
+
+        with patch("equinox.storage.environments.EnvironmentManager") as mock_env:
+            mock_env.return_value.get_active_environment.return_value = None
+            with patch("equinox.storage.global_variables.GlobalVariablesManager") as mock_global:
+                mock_global.return_value.get_variables_dict.return_value = {"TODAY": "2099-01-01"}
+                variables, sources = collect_interpolation_variables_detailed(db)
+
+        assert variables["TODAY"] == "2099-01-01"
+        assert sources["TODAY"] == "global"
+
+
