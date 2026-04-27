@@ -8,6 +8,7 @@ from equinox.storage.collections import CollectionManager
 from equinox.storage.environments import EnvironmentManager
 from equinox.storage.history import HistoryManager
 from equinox.storage.variable_groups import VariableGroupManager
+from equinox.storage.global_variables import GlobalVariablesManager
 from equinox.storage.oauth_clients import OAuthClientManager
 from equinox.storage.saved_credentials import SavedCredentialsManager
 from equinox.storage.migrations import MigrationRunner, MIGRATIONS
@@ -37,6 +38,7 @@ __all__ = [
     "EnvironmentManager",
     "HistoryManager",
     "VariableGroupManager",
+    "GlobalVariablesManager",
     "OAuthClientManager",
     "SavedCredentialsManager",
     "MigrationRunner",
