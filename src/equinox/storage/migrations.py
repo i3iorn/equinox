@@ -418,6 +418,20 @@ CREATE TABLE IF NOT EXISTS history_index (
 CREATE INDEX IF NOT EXISTS idx_history_index_method_norm ON history_index(method, normalized_url);
 """,
     ),
+    Migration(
+        version=22,
+        description="Add global_variables table for app-wide interpolation variables",
+        sql="""
+CREATE TABLE IF NOT EXISTS global_variables (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    key         TEXT NOT NULL UNIQUE,
+    value       TEXT NOT NULL,
+    description TEXT DEFAULT '',
+    created_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+""",
+    ),
 ]
 
 # ─────────────────────────────────────────────────────────────────────────────
