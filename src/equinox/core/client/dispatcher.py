@@ -153,7 +153,7 @@ class HttpxDispatcher:
     # ── Response helpers ──────────────────────────────────────────────────────
 
     def _wrap_response(
-        self, raw: httpx.Response, request: Request, elapsed: float
+        self, raw: httpx.Response, request: Request, elapsed: float, sent_headers: dict = None
     ) -> Response:
         # Explicitly read the body to ensure it's properly consumed
         body = raw.content
@@ -161,6 +161,7 @@ class HttpxDispatcher:
             "HttpxDispatcher._wrap_response: status=%d body_len=%d headers_count=%d",
             raw.status_code, len(body), len(raw.headers),
         )
+        # sent_headers: the actual headers sent to httpx (including injected auth)
         return Response(
             status_code=raw.status_code,
             reason=self._extract_reason_phrase(raw),
@@ -169,6 +170,7 @@ class HttpxDispatcher:
             elapsed=elapsed,
             request=request,
             timestamp=utc_now(),
+            sent_headers=sent_headers,
         )
 
     @staticmethod
@@ -226,6 +228,8 @@ class HttpxDispatcher:
         # Route auth headers through the redirect-safe adapter instead of
         # embedding them directly — httpx strips plain headers on redirects.
         httpx_auth: Optional[_RedirectSafeAuth] = None
+        # Make a copy of headers before popping auth headers for sent_headers
+        sent_headers = dict(headers)
         if auth_headers:
             for key in auth_headers:
                 headers.pop(key, None)
@@ -274,7 +278,7 @@ class HttpxDispatcher:
             "HttpxDispatcher: completed in %.3fs — status %d",
             elapsed, raw.status_code,
         )
-        return self._wrap_response(raw, request, elapsed)
+        return self._wrap_response(raw, request, elapsed, sent_headers=sent_headers)
 
     # ── Dunder helpers ────────────────────────────────────────────────────────
 
