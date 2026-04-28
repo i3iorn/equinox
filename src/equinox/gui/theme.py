@@ -193,14 +193,36 @@ THEME_LABELS: dict[str, str] = {
 }
 
 
-# ── Font / size defaults ─────────────────────────────────────────────────────
+
+# ── Font / size / family defaults ─────────────────────────────────────────────
 
 DEFAULT_FONT_SIZE: int = 9
-# DEFAULT_MONO_SIZE is exported for callers that maintain a separate
-# monospaced-font size preference.  It is not used by this module internally.
 DEFAULT_MONO_SIZE: int = 9
 MIN_FONT_SIZE:     int = 6
 MAX_FONT_SIZE:     int = 20
+
+# Platform-aware font family defaults
+_PLATFORM_MONO_FONTS = {
+    "win32": ["Consolas", "Courier New", "Lucida Console", "DejaVu Sans Mono", "Menlo", "Monaco", "monospace"],
+    "darwin": ["Menlo", "Monaco", "Consolas", "DejaVu Sans Mono", "Courier", "monospace"],
+    "linux": ["DejaVu Sans Mono", "Liberation Mono", "Consolas", "Menlo", "Monaco", "monospace"],
+}
+_PLATFORM_UI_FONTS = {
+    "win32": ["Segoe UI", "Arial", "Tahoma", "Verdana", "sans-serif"],
+    "darwin": ["San Francisco", "Helvetica Neue", "Arial", "Verdana", "sans-serif"],
+    "linux": ["DejaVu Sans", "Liberation Sans", "Arial", "Verdana", "sans-serif"],
+}
+
+def _get_platform_fonts(kind: str) -> list[str]:
+    plat = sys.platform
+    if plat.startswith("win"): plat = "win32"
+    elif plat == "darwin": plat = "darwin"
+    else: plat = "linux"
+    return (_PLATFORM_MONO_FONTS if kind == "mono" else _PLATFORM_UI_FONTS)[plat]
+
+# User font family preference keys
+_MONO_FONT_KEY = "appearance/mono_font_family"
+_UI_FONT_KEY = "appearance/ui_font_family"
 
 # Secondary-label size: base_pt minus this reduction, but never below the floor.
 _SM_FONT_REDUCTION: int = 2
@@ -252,19 +274,53 @@ def set_theme_mode(mode: str) -> None:
 # ── Font helpers ─────────────────────────────────────────────────────────────
 
 def get_mono_font(size_override: int | None = None) -> QFont:
-    """Return a monospaced QFont at the user-chosen (or overridden) size."""
+    """Return a monospaced QFont at the user-chosen (or overridden) size and family."""
     sz = size_override if size_override is not None else get_font_size()
-    f = QFont("Consolas", sz)
+    fam = _settings().value(_MONO_FONT_KEY, None, type=str)
+    if fam:
+        f = QFont(fam, sz)
+    else:
+        # Try platform-appropriate fonts in order
+        for font_name in _get_platform_fonts("mono"):
+            f = QFont(font_name, sz)
+            if f.exactMatch():
+                break
+        else:
+            f = QFont("monospace", sz)
     f.setStyleHint(QFont.StyleHint.Monospace)
     return f
 
 
 def get_ui_font(size_override: int | None = None) -> QFont:
-    """Return the default UI QFont at the user-chosen (or overridden) size."""
+    """Return the default UI QFont at the user-chosen (or overridden) size and family."""
     sz = size_override if size_override is not None else get_font_size()
-    f = QFont("Segoe UI", sz)
+    fam = _settings().value(_UI_FONT_KEY, None, type=str)
+    if fam:
+        f = QFont(fam, sz)
+    else:
+        for font_name in _get_platform_fonts("ui"):
+            f = QFont(font_name, sz)
+            if f.exactMatch():
+                break
+        else:
+            f = QFont("sans-serif", sz)
     f.setStyleHint(QFont.StyleHint.SansSerif)
     return f
+# ── Public API ───────────────────────────────────────────────────────────────
+
+# Palette validation: ensure all palettes have the same keys at runtime
+def validate_palettes() -> None:
+    palettes = {"LIGHT": _LIGHT, "DARK": _DARK, "MUTED_DARK": _MUTED_DARK}
+    keys = set(_LIGHT.keys())
+    for name, pal in palettes.items():
+        missing = keys - set(pal.keys())
+        extra = set(pal.keys()) - keys
+        if missing or extra:
+            import warnings
+            warnings.warn(f"Palette {name} mismatch: missing={missing}, extra={extra}")
+
+# Call at module import and after theme changes
+validate_palettes()
 
 
 # ── System dark-mode detection ───────────────────────────────────────────────
@@ -344,22 +400,25 @@ def _build_stylesheet(base_pt: int) -> str:
     }}
 
     /* ── Buttons ────────────────────────────────────────── */
-    QPushButton {{
-        padding: 4px 14px;
+    QPushButton, QToolButton {{
+        padding: 4px 8px;
         border: 1px solid {C["BORDER"]};
         border-radius: 4px;
         background: {C["BG"]};
         color: {C["FG"]};
-        min-height: 24px;
+        min-height: 1.5em;
     }}
-    QPushButton:hover {{
+    QToolButton {{
+        padding-right: 18px;
+    }}
+    QPushButton:hover, QToolButton:hover {{
         background: {C["BG_ALT"]};
         border-color: {C["FG_MUTED"]};
     }}
-    QPushButton:pressed {{
+    QPushButton:pressed, QToolButton:pressed {{
         background: {C["BORDER"]};
     }}
-    QPushButton:disabled {{
+    QPushButton:disabled, QToolButton:disabled {{
         color: {C["FG_SUBTLE"]};
         border-color: {C["BORDER"]};
     }}
@@ -642,11 +701,6 @@ def _build_stylesheet(base_pt: int) -> str:
 
 # ── Public API ───────────────────────────────────────────────────────────────
 
-# Stylesheet cache keyed by (is_dark, base_pt).
-# _build_stylesheet produces a ~450-line f-string that Qt re-parses in full
-# on every setStyleSheet() call.  Caching avoids redundant work when the
-# theme is re-applied without any settings change (e.g. on window creation).
-# The cache has at most 2 × (MAX_FONT_SIZE − MIN_FONT_SIZE + 1) ≈ 30 entries.
 _ss_cache: dict[tuple[bool, int], str] = {}
 
 
@@ -672,6 +726,9 @@ def apply_theme(app: QApplication | None = None) -> None:
     _active = _resolve_palette()
     dark = _resolve_dark()
 
+    # Validate palettes after theme change
+    validate_palettes()
+
     base_pt = get_font_size()
     app.setFont(get_ui_font(base_pt))
 
@@ -679,4 +736,3 @@ def apply_theme(app: QApplication | None = None) -> None:
     if cache_key not in _ss_cache:
         _ss_cache[cache_key] = _build_stylesheet(base_pt)
     app.setStyleSheet(_ss_cache[cache_key])
-
