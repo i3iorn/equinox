@@ -1,15 +1,22 @@
-"""Code generation — convert a Request object to client code in various languages."""
+"""
+Code generation — convert a Response object (and its embedded Request)
+into client code in various languages.
+"""
 
 import json
 import logging
 from typing import Optional
 from urllib.parse import urlencode
 
-from equinox.core.request import Request
+from equinox.core.request import Request, Response
 from equinox.core.redact import redact_url
 
 logger = logging.getLogger(__name__)
 
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Helpers
+# ─────────────────────────────────────────────────────────────────────────────
 
 def _auth_type_name(auth) -> str:
     return type(auth).__name__ if auth else ""
@@ -22,26 +29,24 @@ _REDACTED_KEY = "<YOUR_API_KEY>"
 
 
 def _escape_go_string(s: str) -> str:
-    """Escape a string for use inside Go double-quoted string literals."""
-    return s.replace("\\", "\\\\").replace('"', '\\"').replace("\n", "\\n").replace("\r", "\\r").replace("\t", "\\t")
+    return (
+        s.replace("\\", "\\\\")
+        .replace('"', '\\"')
+        .replace("\n", "\\n")
+        .replace("\r", "\\r")
+        .replace("\t", "\\t")
+    )
 
 
 def _escape_single_quoted(s: str) -> str:
-    """Escape a string for use inside single-quoted string literals (Ruby/PHP)."""
     return s.replace("\\", "\\\\").replace("'", "\\\\'")
 
 
-# Backward-compatible aliases so existing callers are not broken.
 _escape_ruby_single = _escape_single_quoted
 _escape_php_single = _escape_single_quoted
 
 
 def _inject_auth_into_headers(request: Request, headers: dict) -> None:
-    """Inject auth credentials into *headers* as redacted placeholders.
-
-    Handles Bearer, Basic (as header), and API-Key (header location).
-    Shared by all code generators to avoid duplication.
-    """
     if not request.auth:
         return
     name = _auth_type_name(request.auth)
@@ -55,14 +60,12 @@ def _inject_auth_into_headers(request: Request, headers: dict) -> None:
 
 
 def _auth_kwarg_for_basic(request: Request) -> Optional[str]:
-    """Return an ``auth=(…)`` keyword string for Basic auth, or None."""
     if request.auth and _auth_type_name(request.auth) == "BasicAuth":
         return f"auth=({_REDACTED_USER!r}, {_REDACTED_PASS!r})"
     return None
 
 
 def _build_url_with_params(url: str, params: dict) -> str:
-    """Append URL-encoded query params to *url*."""
     if not params:
         return url
     qs = urlencode(params)
@@ -71,7 +74,6 @@ def _build_url_with_params(url: str, params: dict) -> str:
 
 
 def _python_body_lines(request: Request) -> tuple:
-    """Return (extra_lines, body_arg) for Python-based generators."""
     extra: list = []
     body_arg = ""
     if request.body:
@@ -87,10 +89,13 @@ def _python_body_lines(request: Request) -> tuple:
     return extra, body_arg
 
 
-class PythonRequestsGenerator:
-    """Generate Python code using the ``requests`` library."""
+# ─────────────────────────────────────────────────────────────────────────────
+# Generators
+# ─────────────────────────────────────────────────────────────────────────────
 
-    def generate(self, request: Request) -> str:
+class PythonRequestsGenerator:
+    def generate(self, response: Response) -> str:
+        request = response.request
         lines = ["import requests", ""]
 
         headers = dict(request.headers or {})
@@ -121,15 +126,17 @@ class PythonRequestsGenerator:
 
         args_str = ", ".join(args)
         lines.append(f"response = requests.{method}({args_str})")
+        lines.append("")
+        lines.append("# Response details")
         lines.append("print(response.status_code)")
+        lines.append("print(response.headers)")
         lines.append("print(response.text)")
         return "\n".join(lines)
 
 
 class PythonHttpxGenerator:
-    """Generate Python code using the ``httpx`` library."""
-
-    def generate(self, request: Request) -> str:
+    def generate(self, response: Response) -> str:
+        request = response.request
         lines = ["import httpx", ""]
 
         headers = dict(request.headers or {})
@@ -162,14 +169,14 @@ class PythonHttpxGenerator:
         lines.append("with httpx.Client() as client:")
         lines.append(f"    response = client.{method}({args_str})")
         lines.append("    print(response.status_code)")
+        lines.append("    print(response.headers)")
         lines.append("    print(response.text)")
         return "\n".join(lines)
 
 
 class JavaScriptFetchGenerator:
-    """Generate JavaScript code using the Fetch API."""
-
-    def generate(self, request: Request) -> str:
+    def generate(self, response: Response) -> str:
+        request = response.request
         lines = []
 
         headers = dict(request.headers or {})
@@ -202,15 +209,15 @@ class JavaScriptFetchGenerator:
         lines.append("  }")
         lines.append(");")
         lines.append("")
-        lines.append("const data = await response.json();")
-        lines.append("console.log(response.status, data);")
+        lines.append("console.log(response.status);")
+        lines.append("console.log(Object.fromEntries(response.headers.entries()));")
+        lines.append("console.log(await response.text());")
         return "\n".join(lines)
 
 
 class GoHttpGenerator:
-    """Generate Go code using the standard ``net/http`` package."""
-
-    def generate(self, request: Request) -> str:
+    def generate(self, response: Response) -> str:
+        request = response.request
         lines = [
             "package main",
             "",
@@ -251,15 +258,15 @@ class GoHttpGenerator:
 
         lines.append("    resp, _ := http.DefaultClient.Do(req)")
         lines.append("    defer resp.Body.Close()")
-        lines.append("    fmt.Println(resp.Status)")
+        lines.append("    fmt.Println(\"Status:\", resp.Status)")
+        lines.append("    fmt.Println(\"Headers:\", resp.Header)")
         lines.append("}")
         return "\n".join(lines)
 
 
 class RubyNetHttpGenerator:
-    """Generate Ruby code using the standard ``net/http`` library."""
-
-    def generate(self, request: Request) -> str:
+    def generate(self, response: Response) -> str:
+        request = response.request
         lines = [
             "require 'net/http'",
             "require 'uri'",
@@ -299,14 +306,14 @@ class RubyNetHttpGenerator:
         lines.append("")
         lines.append("response = http.request(request)")
         lines.append("puts response.code")
+        lines.append("puts response.to_hash")
         lines.append("puts response.body")
         return "\n".join(lines)
 
 
 class PhpCurlGenerator:
-    """Generate PHP code using the cURL extension."""
-
-    def generate(self, request: Request) -> str:
+    def generate(self, response: Response) -> str:
+        request = response.request
         lines = ["<?php", ""]
 
         url = _build_url_with_params(request.url, request.params or {})
@@ -341,9 +348,8 @@ class PhpCurlGenerator:
 
 
 class CurlGenerator:
-    """Generate a ``curl`` command-line invocation."""
-
-    def generate(self, request: Request) -> str:
+    def generate(self, response: Response) -> str:
+        request = response.request
         parts: list = ["curl"]
 
         method = request.method.upper()
@@ -366,12 +372,65 @@ class CurlGenerator:
                 if isinstance(request.body, str)
                 else request.body.decode("utf-8", errors="replace")
             )
-            # Single-quote escaping: ' → '\''
             safe_body = body.replace("'", "'\\''")
             parts.append(f"--data '{safe_body}'")
 
+        parts.append("\n# Expected response:")
+        parts.append(f"# Status: {response.status_code}")
+        parts.append(f"# Headers: {dict(response.headers)}")
+        parts.append(f"# Body (truncated): {response.text[:200]!r}")
+
         return " \\\n  ".join(parts)
 
+
+class HARGenerator:
+    def generate(self, response: Response) -> str:
+        request = response.request
+
+        har = {
+            "log": {
+                "version": "1.2",
+                "creator": {"name": "Equinox", "version": "2.0"},
+                "entries": [
+                    {
+                        "startedDateTime": response.timestamp.isoformat(),
+                        "time": response.elapsed * 1000,
+                        "request": {
+                            "method": request.method,
+                            "url": response.sent_url or request.url,
+                            "httpVersion": "HTTP/1.1",
+                            "headers": [{"name": k, "value": v} for k, v in (request.headers or {}).items()],
+                            "queryString": [{"name": k, "value": v} for k, v in (request.params or {}).items()],
+                            "postData": {
+                                "mimeType": request.headers.get("Content-Type", ""),
+                                "text": request.body or "",
+                            },
+                        },
+                        "response": {
+                            "status": response.status_code,
+                            "statusText": response.reason,
+                            "httpVersion": "HTTP/1.1",
+                            "headers": [{"name": k, "value": v} for k, v in response.headers.items()],
+                            "content": {
+                                "size": response.size,
+                                "mimeType": response.content_type or "",
+                                "text": response.text,
+                            },
+                            "redirectURL": "",
+                            "headersSize": -1,
+                            "bodySize": response.size,
+                        },
+                        "timings": response.timings or {},
+                    }
+                ],
+            }
+        }
+        return json.dumps(har, indent=4)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Registry
+# ─────────────────────────────────────────────────────────────────────────────
 
 GENERATORS: dict = {
     "Python (requests)": PythonRequestsGenerator,
@@ -381,27 +440,21 @@ GENERATORS: dict = {
     "Ruby": RubyNetHttpGenerator,
     "PHP (cURL)": PhpCurlGenerator,
     "cURL": CurlGenerator,
+    "HAR": HARGenerator,
 }
 
 
-def generate_code(fmt: str, request: Request) -> str:
-    """Generate client code for *request* in the given format.
+# ─────────────────────────────────────────────────────────────────────────────
+# Public API
+# ─────────────────────────────────────────────────────────────────────────────
 
-    Args:
-        fmt: One of the keys in :data:`GENERATORS`.
-        request: The request to generate code for.
-
-    Returns:
-        Generated code as a string.
-
-    Raises:
-        KeyError: If *fmt* is not a known format.
-    """
+def generate_code(fmt: str, response: Response) -> str:
     logger.debug(
-        "generate_code: format=%r method=%s url=%s",
+        "generate_code: format=%r method=%s url=%s status=%s",
         fmt,
-        request.method,
-        redact_url(request.url) if request.url else "",
+        response.request.method,
+        redact_url(response.request.url) if response.request.url else "",
+        response.status_code,
     )
     cls = GENERATORS[fmt]
-    return cls().generate(request)
+    return cls().generate(response)

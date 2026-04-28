@@ -311,7 +311,7 @@ class ResponseActionsMixin:
         if self.current_response is None:
             return "# No response available"
         try:
-            return generate_code(fmt, self.current_response.request)
+            return generate_code(fmt, self.current_response)
         except Exception as exc:
             return f"# Error generating code: {exc}"
 
