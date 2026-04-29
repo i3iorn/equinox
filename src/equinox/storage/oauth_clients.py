@@ -238,8 +238,7 @@ class OAuthClientManager:
             client_id=client["client_id"],
             client_secret=client["client_secret"],
             scope=client.get("scope") or None,
-            # extra_params not directly supported by OAuth2Auth constructor yet;
-            # future enhancement can pass them via a subclass or monkey-patch.
+            extra_params=client.get("extra_params"),
         )
 
     @staticmethod
