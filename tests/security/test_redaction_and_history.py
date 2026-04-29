@@ -10,7 +10,7 @@ from equinox.core.request.request import Request
 from equinox.core.request.headers import HeaderDict
 from equinox.core.history_config import set_capture_bodies
 from equinox.storage.history._serializer import _HistorySerializer
-from equinox.core.redact import redact_headers
+from equinox.core.security import redact_headers
 
 
 def _capture_log_for(func, *args, **kwargs):

@@ -18,7 +18,7 @@ from enum import Enum
 
 from equinox.core.time import utc_now
 from equinox.core.request import Request, Response
-from equinox.core.security_policy import redact_headers, redact_url, redact_body
+from equinox.core.security import redact_headers, redact_url, redact_body
 from equinox.core.logging_helpers import log_request_with_payload, log_response_with_payload, log_error_with_payload
 from equinox.core.logging_payload import request_payload, response_payload, error_payload
 
