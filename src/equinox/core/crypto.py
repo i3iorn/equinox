@@ -25,6 +25,13 @@ from typing import Optional
 
 from cryptography.fernet import Fernet
 
+# Optional OS-keyring based key storage support. Imported lazily to avoid
+# import-time coupling in environments where the feature is disabled.
+try:
+    from equinox.core.keystore import get_or_create_os_key
+except Exception:  # pragma: no cover - optional import
+    get_or_create_os_key = None  # type: ignore
+
 logger = logging.getLogger(__name__)
 
 __all__ = [
@@ -76,6 +83,13 @@ def get_or_create_raw_key(key_path: Optional[Path] = None) -> bytes:
     """
     if key_path is None:
         key_path = default_key_path()
+
+    # Prefers OS-keyring key when enabled; otherwise fall back to local key file.
+    if get_or_create_os_key is not None:
+        os_key = get_or_create_os_key()
+        if os_key is not None:
+            logger.debug("Using OS-backed encryption key from keyring (%d bytes)", len(os_key))
+            return os_key
 
     key_path.parent.mkdir(parents=True, exist_ok=True)
 

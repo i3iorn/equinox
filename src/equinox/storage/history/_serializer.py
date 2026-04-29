@@ -7,6 +7,7 @@ from typing import Any, Dict, Optional
 from equinox.core.request import Request, Response
 from equinox.core.exceptions import SecurityError, ValidationError
 from equinox.core.redact import redact_headers, redact_url
+from equinox.core.history_config import should_capture_bodies
 from equinox.storage.utils import coerce_body_to_str, safe_json_dumps, safe_json_loads
 
 __all__ = ["_HistorySerializer"]
@@ -37,11 +38,12 @@ class _HistorySerializer:
         Raises:
             ValidationError: If *url* or *headers* are invalid.
         """
+        body_val = request.body if should_capture_bodies() else None
         return {
             "method":       self._validate_method(request.method),
             "url":          self._prepare_url(request.url),
             "headers_json": self._prepare_headers(request.headers or {}),
-            "body":         self._prepare_body(request.body),
+            "body":         self._prepare_body(body_val),
         }
 
     def prepare_response(self, response: Optional[Response]) -> Dict[str, Any]:
@@ -70,7 +72,7 @@ class _HistorySerializer:
             "reason":       response.reason,
             "elapsed":      response.elapsed,
             "headers_json": headers_json,
-            "body":         self._prepare_body(coerce_body_to_str(response.body)),
+            "body":         self._prepare_body(coerce_body_to_str(response.body)) if should_capture_bodies() else None,
         }
 
     def truncate_error(self, error: Optional[str]) -> Optional[str]:
