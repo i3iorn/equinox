@@ -9,7 +9,7 @@ from typing import Optional
 from urllib.parse import urlencode
 
 from equinox.core.request import Request, Response
-from equinox.core.redact import redact_url
+from equinox.core.security_policy import redact_url
 
 logger = logging.getLogger(__name__)
 

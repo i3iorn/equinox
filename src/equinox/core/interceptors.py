@@ -292,8 +292,8 @@ class RequestResponseLogger:
     def log_response(
         self,
         request_or_payload,
-        response: Response,
-        elapsed_time: float,
+        response: Optional[Response] = None,
+        elapsed_time: float = 0.0,
         level: int = logging.INFO,
         include_body: bool = False,
     ) -> None:
@@ -304,12 +304,12 @@ class RequestResponseLogger:
             payload = {
                 "method": request.method,
                 "url": redact_url(request.url),
-                "status_code": response.status_code,
-                "reason": response.reason,
+                "status_code": response.status_code if response else None,
+                "reason": response.reason if response else None,
                 "elapsed_time_seconds": elapsed_time,
-                "headers": redact_headers(dict(response.headers or {})),
+                "headers": redact_headers(dict(response.headers or {})) if response else {},
             }
-            if include_body:
+            if include_body and response:
                 payload["body"] = redact_body(
                     _safe_body_preview(response.body),
                     max_length=1000,
