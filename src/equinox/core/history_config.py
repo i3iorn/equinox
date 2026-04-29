@@ -6,7 +6,8 @@ for privacy and data-retention purposes.
 
 from __future__ import annotations
 
-import os
+# Centralized flag access - keep simple while enabling future extension
+from equinox.core.config import flags
 from typing import Optional
 
 _CAPTURE_BODIES_DEFAULT = True
@@ -24,11 +25,10 @@ def should_capture_bodies() -> bool:
     global _capture_bodies
     if _capture_bodies is not None:
         return bool(_capture_bodies)
-    val = os.environ.get("EQUINOX_HISTORY_CAPTURE_BODIES")
-    if val is None:
+    # Use centralized flag reader for consistency
+    _capture_bodies = flags.is_history_capture_enabled()  # type: ignore
+    if _capture_bodies is None:
         _capture_bodies = _CAPTURE_BODIES_DEFAULT
-    else:
-        _capture_bodies = str(val).lower() in {"1", "true", "yes"}
     return bool(_capture_bodies)
 
 

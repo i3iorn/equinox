@@ -8,6 +8,8 @@ from equinox.core.request import Request, Response
 from equinox.core.exceptions import SecurityError, ValidationError
 from equinox.core.redact import redact_headers, redact_url
 from equinox.core.history_config import should_capture_bodies
+from equinox.core.serialization import serialize_headers, serialize_body
+from equinox.core.constants import MAX_HEADERS_SIZE, MAX_URL_LENGTH, MAX_BODY_SIZE as _MAX_BODY, MAX_ERROR_MESSAGE_LENGTH as _MAX_ERROR_MESSAGE_LENGTH
 from equinox.storage.utils import coerce_body_to_str, safe_json_dumps, safe_json_loads
 
 __all__ = ["_HistorySerializer"]
@@ -22,10 +24,10 @@ class _HistorySerializer:
     what is stored in the history table.
     """
 
-    MAX_BODY_SIZE            = 10 * 1024 * 1024   # 10 MB
-    MAX_HEADERS_SIZE         = 100 * 1024          # 100 KB
-    MAX_URL_LENGTH           = 2048
-    MAX_ERROR_MESSAGE_LENGTH = 10_000
+    MAX_BODY_SIZE            = _MAX_BODY           # 10 MB
+    MAX_HEADERS_SIZE         = MAX_HEADERS_SIZE    # 100 KB
+    MAX_URL_LENGTH           = MAX_URL_LENGTH      # 2048
+    MAX_ERROR_MESSAGE_LENGTH = _MAX_ERROR_MESSAGE_LENGTH
 
     # ── Public interface ──────────────────────────────────────────────────────
 
@@ -62,10 +64,10 @@ class _HistorySerializer:
 
         sanitized = redact_headers(dict(response.headers) if response.headers else {})
         try:
-            headers_json = safe_json_dumps(sanitized, max_len=self.MAX_HEADERS_SIZE)
+            headers_json = safe_json_dumps(sanitized, max_len=MAX_HEADERS_SIZE)
         except SecurityError:
             logger.warning("Response headers too large, storing truncated version")
-            headers_json = safe_json_dumps(sanitized)[:self.MAX_HEADERS_SIZE] + "..."
+            headers_json = safe_json_dumps(sanitized)[:MAX_HEADERS_SIZE] + "..."
 
         return {
             "status_code":  response.status_code,
@@ -106,7 +108,7 @@ class _HistorySerializer:
     def _prepare_url(self, url: str) -> str:
         if not isinstance(url, str):
             raise ValidationError("Request URL must be a string")
-        if len(url) > self.MAX_URL_LENGTH:
+        if len(url) > MAX_URL_LENGTH:
             safe_preview = redact_url(url)[:100]
             logger.warning("URL too long, truncating: %s...", safe_preview)
             url = url[:self.MAX_URL_LENGTH]
@@ -124,17 +126,17 @@ class _HistorySerializer:
     def _prepare_headers(self, headers: Dict[str, Any]) -> str:
         if not isinstance(headers, dict):
             raise ValidationError("Request headers must be a dictionary")
-        return safe_json_dumps(redact_headers(headers), max_len=self.MAX_HEADERS_SIZE)
+        return serialize_headers(headers)
 
     def _prepare_body(self, body: Any) -> Optional[str]:
         if body is None:
             return None
         text = body if isinstance(body, str) else str(body)
-        if len(text) > self.MAX_BODY_SIZE:
+        if len(text) > _MAX_BODY:
             logger.warning(
                 "Body too large, truncating from %d to %d bytes",
-                len(text), self.MAX_BODY_SIZE,
+                len(text), _MAX_BODY,
             )
-            return text[:self.MAX_BODY_SIZE] + "... [TRUNCATED]"
+            return text[:_MAX_BODY] + "... [TRUNCATED]"
         return text
 

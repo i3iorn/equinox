@@ -19,6 +19,7 @@ from enum import Enum
 from equinox.core.time import utc_now
 from equinox.core.request import Request, Response
 from equinox.core.redact import redact_headers, redact_body, redact_url
+from equinox.core.logging_payload import request_payload, response_payload, error_payload
 
 logger = logging.getLogger(__name__)
 
@@ -263,64 +264,74 @@ class RequestResponseLogger:
 
     def log_request(
         self,
-        request: Request,
+        request_or_payload,
         level: int = logging.INFO,
         include_body: bool = False,
     ) -> None:
-        payload = {
-            "method": request.method,
-            "url": redact_url(request.url),
-            "headers": redact_headers(request.headers or {}),
-            "params": dict(request.params or {}),
-            "timeout": request.timeout,
-            "verify_ssl": request.verify_ssl,
-        }
-
-        if include_body:
-            payload["body"] = redact_body(
-                _safe_body_preview(request.body),
-                max_length=1000,
-            )
+        if isinstance(request_or_payload, dict):
+            payload = request_or_payload
+        else:
+            req = request_or_payload
+            payload = {
+                "method": req.method,
+                "url": redact_url(req.url),
+                "headers": redact_headers(req.headers or {}),
+                "params": dict(req.params or {}),
+                "timeout": req.timeout,
+                "verify_ssl": req.verify_ssl,
+            }
+            if include_body:
+                payload["body"] = redact_body(
+                    _safe_body_preview(req.body),
+                    max_length=1000,
+                )
 
         self._logger.log(level, "request_sent", payload)
 
     def log_response(
         self,
-        request: Request,
+        request_or_payload,
         response: Response,
         elapsed_time: float,
         level: int = logging.INFO,
         include_body: bool = False,
     ) -> None:
-        payload = {
-            "method": request.method,
-            "url": redact_url(request.url),
-            "status_code": response.status_code,
-            "reason": response.reason,
-            "elapsed_time_seconds": elapsed_time,
-            "headers": redact_headers(dict(response.headers or {})),
-        }
-
-        if include_body:
-            payload["body"] = redact_body(
-                _safe_body_preview(response.body),
-                max_length=1000,
-            )
+        if isinstance(request_or_payload, dict):
+            payload = request_or_payload
+        else:
+            request = request_or_payload
+            payload = {
+                "method": request.method,
+                "url": redact_url(request.url),
+                "status_code": response.status_code,
+                "reason": response.reason,
+                "elapsed_time_seconds": elapsed_time,
+                "headers": redact_headers(dict(response.headers or {})),
+            }
+            if include_body:
+                payload["body"] = redact_body(
+                    _safe_body_preview(response.body),
+                    max_length=1000,
+                )
 
         self._logger.log(level, "response_received", payload)
 
     def log_error(
         self,
-        request: Request,
-        error: Exception,
+        request_or_payload,
+        error: Optional[Exception] = None,
         level: int = logging.ERROR,
     ) -> None:
-        payload = {
-            "method": request.method,
-            "url": redact_url(request.url),
-            "error_type": type(error).__name__,
-            "error_message": redact_body(str(error), max_length=500),
-        }
+        if isinstance(request_or_payload, dict):
+            payload = request_or_payload
+        else:
+            req = request_or_payload
+            payload = {
+                "method": req.method,
+                "url": redact_url(req.url),
+                "error_type": type(error).__name__ if error else "Exception",
+                "error_message": redact_body(str(error), max_length=500) if error else "",
+            }
 
         self._logger.log(level, "request_failed", payload)
 
@@ -334,7 +345,9 @@ class LoggingRequestInterceptor(RequestInterceptor):
         self.logger = logger or RequestResponseLogger()
 
     def intercept(self, context: InterceptorContext) -> InterceptorResult[Request]:
-        self.logger.log_request(context.request, include_body=True)
+        # Build a DRY request payload for logging
+        payload = request_payload(context.request, include_body=True)
+        self.logger.log_request(payload)  # type: ignore[arg-type]
         return InterceptorResult.continue_()
 
 
@@ -344,12 +357,8 @@ class LoggingResponseInterceptor(ResponseInterceptor):
 
     def intercept(self, context: InterceptorContext) -> InterceptorResult[Response]:
         elapsed = context.response.elapsed if context.response else 0
-        self.logger.log_response(
-            context.request,
-            context.response,
-            elapsed,
-            include_body=True,
-        )
+        payload = response_payload(context.request, context.response, elapsed, include_body=True)
+        self.logger.log_response(payload)  # type: ignore[arg-type]
         return InterceptorResult.continue_()
 
 
@@ -358,5 +367,6 @@ class LoggingErrorInterceptor(ErrorInterceptor):
         self.logger = logger or RequestResponseLogger()
 
     def intercept(self, context: InterceptorContext) -> InterceptorResult[Exception]:
-        self.logger.log_error(context.request, context.error)
+        payload = error_payload(context.request, context.error)
+        self.logger.log_error(payload)  # type: ignore[arg-type]
         return InterceptorResult.continue_()

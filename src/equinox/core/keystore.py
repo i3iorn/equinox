@@ -21,6 +21,7 @@ except Exception:  # pragma: no cover - missing optional dependency
     keyring = None  # type: ignore
 
 from pathlib import Path
+from equinox.core.config.flags import is_os_keystore_enabled
 
 logger = logging.getLogger(__name__)
 
@@ -33,7 +34,7 @@ def _os_keyring_available() -> bool:
 
 
 def _env_os_keystore_enabled() -> bool:
-    return os.environ.get("EQUINOX_USE_OS_KEYRING", "0") in {"1", "true", "yes"}
+    return is_os_keystore_enabled()
 
 
 def get_from_os_store() -> Optional[bytes]:
