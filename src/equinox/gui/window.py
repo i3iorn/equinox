@@ -823,7 +823,6 @@ class MainWindow(QMainWindow):
         self._env_btn.setPopupMode(QToolButton.ToolButtonPopupMode.MenuButtonPopup)
         self._env_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self._env_btn.setToolTip("Active environment — click to switch, ▸ to manage")
-        self._env_btn.setStyleSheet("border: none; padding: 0 6px;")
 
         self._env_menu = QMenu(self._env_btn)
         self._env_btn.setMenu(self._env_menu)
