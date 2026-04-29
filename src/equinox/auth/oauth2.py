@@ -130,6 +130,7 @@ class OAuth2Auth(AuthStrategy):
         storage_key: Optional[str] = None,
         token_timeout: float = 10.0,
         token_auth: Literal["body", "basic"] = "body",
+        extra_params: Optional[Dict[str, Any]] = None,
     ):
         """Initialize OAuth2 auth with optional secure storage.
 
@@ -152,6 +153,7 @@ class OAuth2Auth(AuthStrategy):
         self.client_secret = client_secret
         self.scope = scope
         self.refresh_token = refresh_token
+        self.extra_params = extra_params or {}
         self.expires_at: Optional[datetime] = None
 
         # Validate token_auth parameter
@@ -258,6 +260,7 @@ class OAuth2Auth(AuthStrategy):
             "expires_at": self._expires_at_iso(),
             "token_timeout": self.token_timeout,
             "token_auth": self.token_auth,
+            "extra_params": self.extra_params,
         }
 
     @classmethod
@@ -274,6 +277,7 @@ class OAuth2Auth(AuthStrategy):
             secure_storage=secure_storage,
             token_timeout=data.get("token_timeout", cls.DEFAULT_TOKEN_TIMEOUT),
             token_auth=data.get("token_auth", "body"),
+            extra_params=data.get("extra_params") if data.get("extra_params") is not None else None,
         )
         # Restore expiration so _needs_refresh() can make the right decision.
         instance.expires_at = cls._parse_expires_at(data.get("expires_at"))
@@ -296,6 +300,7 @@ class OAuth2Auth(AuthStrategy):
             refresh_token=_interpolate_field(self.refresh_token, interp),
             token_timeout=self.token_timeout,
             token_auth=self.token_auth,
+            extra_params=self.extra_params,
         )
         # Preserve token expiry so pre-fetched token isn't treated as eternal
         new_auth.expires_at = self.expires_at
@@ -588,6 +593,9 @@ class OAuth2Auth(AuthStrategy):
         # RFC 6749 §6: scope is OPTIONAL on refresh, but many servers honour it.
         if self.scope:
             data["scope"] = self.scope
+        # Include any extra params for token endpoint requests
+        if self.extra_params:
+            data.update(self.extra_params)
         return data
 
     def _make_token_timeout(self) -> httpx.Timeout:
