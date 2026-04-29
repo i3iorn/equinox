@@ -476,6 +476,14 @@ def _build_stylesheet(base_pt: int) -> str:
         border: 1px solid {C["BORDER"]};
         selection-background-color: {C["SELECTION"]};
     }}
+    
+    QWidget#field-valid {{
+        border-color: {C["GREEN"]} !important;
+    }}
+    
+    QWidget#field-error {{
+        border-color: {C["RED"]} !important;
+    }}
 
     /* ── Tabs ───────────────────────────────────────────── */
     QTabWidget::pane {{
