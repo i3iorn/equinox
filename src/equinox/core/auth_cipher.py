@@ -22,6 +22,7 @@ from typing import Optional
 from cryptography.fernet import Fernet, InvalidToken
 
 from equinox.core import crypto
+from equinox.core.secrets_password import ensure_master_password_initialized
 from equinox.core.exceptions import SecurityError
 
 logger = logging.getLogger(__name__)
@@ -56,6 +57,15 @@ def _get_fernet() -> Fernet:
     with _fernet_lock:
         if _fernet is not None:
             return _fernet
+        # Prefer master-password derived key if configured
+        try:
+            f = ensure_master_password_initialized()
+        except Exception:
+            f = None
+        if f is not None:
+            _fernet = f
+            return _fernet
+        # Fallback to legacy key-based path
         key = get_or_create_key()
         _fernet = crypto.make_fernet(key)
         return _fernet

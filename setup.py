@@ -49,5 +49,9 @@ setup(
             "pre-commit>=3.0.0",
         ],
     },
-    entry_points={},
+    entry_points={
+        "console_scripts": [
+            "equinox=equinox.cli.main:main_entry"
+        ]
+    },
 )
