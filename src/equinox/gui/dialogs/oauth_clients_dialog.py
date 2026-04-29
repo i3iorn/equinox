@@ -181,7 +181,6 @@ class OAuthClientsDialog(DirtyDialogMixin, QDialog):
         self.test_btn = QPushButton("🔌  Test Connection")
         self.default_btn = QPushButton("★  Set as Default")
         self.save_btn = QPushButton("💾  Save")
-        self.save_btn.setStyleSheet("font-weight: bold;")
 
         for b in (self.test_btn, self.default_btn, self.save_btn):
             b.setEnabled(False)
@@ -337,10 +336,6 @@ class OAuthClientsDialog(DirtyDialogMixin, QDialog):
         for b in (self.test_btn, self.default_btn, self.save_btn):
             b.setEnabled(has)
         self.delete_btn.setEnabled(has)
-        self.save_btn.setStyleSheet(
-            "font-weight: bold; color: #9a6700;" if self._dirty
-            else "font-weight: bold;"
-        )
         self.save_btn.setText("💾  Save *" if self._dirty else "💾  Save")
 
     def _mark_dirty(self) -> None:

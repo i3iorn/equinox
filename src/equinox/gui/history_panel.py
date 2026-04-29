@@ -185,9 +185,6 @@ class HistoryPanel(QWidget):
 
         # Validation label (for regex / JSONPath errors)
         self.filter_error_label = QLabel()
-        self.filter_error_label.setStyleSheet(
-            f"color: {Colors.ERROR}; font-size: 11px;"
-        )
         self.filter_error_label.setVisible(False)
         layout.addWidget(self.filter_error_label)
 
@@ -306,18 +303,7 @@ class HistoryPanel(QWidget):
             logger.warning("History filter error: %s", exc)
             self.filter_error_label.setText(str(exc))
             self.filter_error_label.setVisible(True)
-            # Mark the offending input with a red border
-            self.regex_input.setStyleSheet(
-                "border: 1px solid red;" if body_regex and "regex" in str(exc).lower() else ""
-            )
-            self.jsonpath_input.setStyleSheet(
-                "border: 1px solid red;" if jsonpath and "jsonpath" in str(exc).lower() else ""
-            )
             return
-
-        # Clear any previous error styling
-        self.regex_input.setStyleSheet("")
-        self.jsonpath_input.setStyleSheet("")
 
         self._populate_list(entries)
 
@@ -544,7 +530,6 @@ class HistoryPanel(QWidget):
         dlg_layout.addWidget(spin)
 
         info = QLabel("This cannot be undone.")
-        info.setStyleSheet("color: grey; font-size: 11px;")
         dlg_layout.addWidget(info)
 
         btns = QDialogButtonBox(

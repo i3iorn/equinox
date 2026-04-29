@@ -60,20 +60,14 @@ class _FindingCard(QFrame):
 
         sev_label = QLabel(icon)
         sev_label.setFixedWidth(18)
-        sev_label.setStyleSheet(f"font-size: 13px; color: {color};")
         header_row.addWidget(sev_label)
 
         title_label = QLabel(finding.title)
         title_label.setTextFormat(Qt.TextFormat.PlainText)
-        title_label.setStyleSheet(f"font-weight: bold; color: {Colors.FG};")
         title_label.setWordWrap(True)
         header_row.addWidget(title_label, 1)
 
         sev_badge = QLabel(f" {finding.severity.value.upper()} ")
-        sev_badge.setStyleSheet(
-            f"color: white; background: {color}; border-radius: 3px; "
-            f"font-size: 10px; padding: 1px 5px; font-weight: bold;"
-        )
         sev_badge.setFixedHeight(18)
         header_row.addWidget(sev_badge)
 
@@ -81,7 +75,6 @@ class _FindingCard(QFrame):
             self._toggle_btn: QToolButton | None = QToolButton()
             self._toggle_btn.setText("▶")
             self._toggle_btn.setFixedSize(20, 20)
-            self._toggle_btn.setStyleSheet(f"color: {Colors.FG_MUTED}; border: none;")
             self._toggle_btn.clicked.connect(self._toggle_details)
             header_row.addWidget(self._toggle_btn)
         else:
@@ -93,7 +86,6 @@ class _FindingCard(QFrame):
         desc = QLabel(finding.description)
         desc.setTextFormat(Qt.TextFormat.PlainText)
         desc.setWordWrap(True)
-        desc.setStyleSheet(f"color: {Colors.FG_MUTED}; padding-left: 24px;")
         layout.addWidget(desc)
 
         # ── Collapsible details ───────────────────────────────────────
@@ -106,12 +98,6 @@ class _FindingCard(QFrame):
             self._details_widget.setTextInteractionFlags(
                 Qt.TextInteractionFlag.TextSelectableByMouse
             )
-            self._details_widget.setStyleSheet(
-                f"color: {Colors.FG_MUTED}; background: {Colors.BG_ALT}; "
-                f"padding: 6px; border-radius: 4px; margin-left: 24px; font-size: 11px;"
-            )
-            # json.dumps may raise for unusual types not covered by default=str;
-            # fall back gracefully so the card still renders.
             try:
                 detail_text = json.dumps(
                     finding.details, indent=2, ensure_ascii=False, default=str
@@ -154,9 +140,6 @@ class IntelligencePanel(QWidget):
         # ── Summary bar ───────────────────────────────────────────────
         self._summary_bar = QHBoxLayout()
         self._summary_label = QLabel("")
-        self._summary_label.setStyleSheet(
-            f"font-weight: bold; color: {Colors.FG}; padding: 2px 4px;"
-        )
         self._summary_bar.addWidget(self._summary_label)
         self._summary_bar.addStretch()
         outer.addLayout(self._summary_bar)
@@ -242,9 +225,6 @@ class IntelligencePanel(QWidget):
     ) -> None:
         """Update the summary bar label with *text* styled in *color*."""
         self._summary_label.setText(text)
-        self._summary_label.setStyleSheet(
-            f"font-weight: bold; color: {color}; padding: 2px 4px;"
-        )
         self._summary_label.setTextFormat(
             Qt.TextFormat.RichText if rich_text else Qt.TextFormat.PlainText
         )
@@ -296,10 +276,6 @@ class IntelligencePanel(QWidget):
                 if not cat_findings:
                     continue
                 cat_label = QLabel(f"─── {cat.value} ───")
-                cat_label.setStyleSheet(
-                    f"font-weight: bold; color: {Colors.FG_MUTED}; "
-                    f"padding: 4px 0 2px 0; font-size: 11px;"
-                )
                 # Insert before the trailing stretch (always at count - 1).
                 self._scroll_layout.insertWidget(
                     self._scroll_layout.count() - 1, cat_label

@@ -97,12 +97,10 @@ class SecretManagerSettingsPanel(QWidget):
         browser_info = QLabel(
             "Use the browser below to search for and retrieve secrets from the configured manager."
         )
-        browser_info.setStyleSheet("color: #666; font-size: 10px;")
         browser_layout.addWidget(browser_info)
 
         self.browser_placeholder = QLabel("No configuration selected")
         self.browser_placeholder.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.browser_placeholder.setStyleSheet("color: #999;")
         browser_layout.addWidget(self.browser_placeholder)
 
         layout.addWidget(browser_group)

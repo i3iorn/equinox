@@ -47,7 +47,6 @@ class ResponseDisplayMixin:
         )
 
         self.status_label.setText(f"{code}  {response.reason}")
-        self.status_label.setStyleSheet(f"font-weight: bold; color: {color};")
         self.time_label.setText(f"{int(response.elapsed * 1000)} ms")
         self.size_label.setText(format_size(response.size))
 
@@ -249,10 +248,6 @@ class ResponseDisplayMixin:
         """Display method badge with color."""
         color = Colors.METHOD.get(method, Colors.FG)
         self.sent_method_label.setText(f" {method} ")
-        self.sent_method_label.setStyleSheet(
-            f"font-weight: bold; color: white; "
-            f"background: {color}; padding: 2px 8px; border-radius: 3px;"
-        )
 
     def _display_sent_request_url(self, response: Response) -> None:
         """Display the URL that was sent (prefer expanded httpx URL)."""

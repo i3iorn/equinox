@@ -51,7 +51,6 @@ class _AddCookieDialog(QDialog):
         layout.addLayout(form)
 
         self._error_label = QLabel()
-        self._error_label.setStyleSheet(f"color: {Colors.ERROR};")
         self._error_label.setVisible(False)
         layout.addWidget(self._error_label)
 

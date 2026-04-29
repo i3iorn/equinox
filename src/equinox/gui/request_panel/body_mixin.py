@@ -155,7 +155,6 @@ class RequestBodyMixin:
         toolbar.setSpacing(_TOOLBAR_SPACING)
 
         lbl = QLabel(title)
-        lbl.setStyleSheet("font-weight: bold;")
         toolbar.addWidget(lbl)
 
         add_btn = QPushButton("+ Add")

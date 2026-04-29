@@ -72,7 +72,6 @@ class _TokenResponseDialog(QDialog):
         method = data.get("method", "POST")
         url = data.get("url", "")
         status_lbl = QLabel(f"{method}  {url}  →  {status}")
-        status_lbl.setStyleSheet(f"font-weight: bold; color: {Colors.GREEN if status == 200 else Colors.YELLOW};")
         status_lbl.setWordWrap(True)
         layout.addWidget(status_lbl)
 
@@ -172,7 +171,6 @@ class AuthDialog(QDialog):
 
         manage_btn = QPushButton("Manage Credentials…")
         manage_btn.setFlat(True)
-        manage_btn.setStyleSheet(f"color: {Colors.BLUE}; text-decoration: underline;")
         manage_btn.clicked.connect(self._open_client_manager)
         pfl.addWidget(manage_btn)
 
@@ -213,7 +211,6 @@ class AuthDialog(QDialog):
     def _info(self, text: str) -> QLabel:
         lbl = QLabel(text)
         lbl.setWordWrap(True)
-        lbl.setStyleSheet(f"color: {Colors.FG_MUTED};")
         return lbl
 
     def _create_no_auth_tab(self) -> QWidget:
@@ -374,7 +371,6 @@ class AuthDialog(QDialog):
         client_id = self.oauth2_client_id.text().strip()
         if not token_url or not client_id:
             self.oauth2_fetch_status.setText("Token URL and Client ID are required.")
-            self.oauth2_fetch_status.setStyleSheet(f"color: {Colors.RED};")
             return
 
         # Interpolate {{VAR}} placeholders in OAuth2 fields so the user can
@@ -390,7 +386,6 @@ class AuthDialog(QDialog):
             except Exception as exc:
                 logger.warning("Variable interpolation failed in OAuth2 fetch: %s", exc)
                 self.oauth2_fetch_status.setText(f"Variable error: {exc}")
-                self.oauth2_fetch_status.setStyleSheet(f"color: {Colors.RED};")
                 return
         else:
             client_secret = self.oauth2_client_secret.text().strip() or None
@@ -405,7 +400,6 @@ class AuthDialog(QDialog):
         )
         self.oauth2_fetch_btn.setEnabled(False)
         self.oauth2_fetch_status.setText("Fetching…")
-        self.oauth2_fetch_status.setStyleSheet(f"color: {Colors.FG_MUTED};")
 
         # Store as instance attribute to prevent garbage-collection mid-run
         self._fetch_worker = _TokenFetchWorker(auth, self)
@@ -418,7 +412,6 @@ class AuthDialog(QDialog):
         if isinstance(result, str):
             # Error message
             self.oauth2_fetch_status.setText(f"Error: {result}")
-            self.oauth2_fetch_status.setStyleSheet(f"color: {Colors.RED};")
         else:
             auth: OAuth2Auth = result
             self._last_fetched_auth = auth
@@ -446,7 +439,6 @@ class AuthDialog(QDialog):
             self.oauth2_fetch_status.setText(
                 f"Token acquired{expiry}  [{preview}]"
             )
-            self.oauth2_fetch_status.setStyleSheet(f"color: {Colors.GREEN};")
 
     def _view_token_response(self) -> None:
         """Open a dialog showing the redacted token endpoint response."""

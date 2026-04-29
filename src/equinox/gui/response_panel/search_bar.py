@@ -463,7 +463,6 @@ class SearchBar(QWidget):
         close_btn = QToolButton()
         close_btn.setText("✕")
         close_btn.setFixedSize(24, 24)
-        close_btn.setStyleSheet(f"color: {Colors.FG_MUTED};")
         close_btn.setToolTip("Close search bar (Esc)")
         close_btn.clicked.connect(self.hide)
 

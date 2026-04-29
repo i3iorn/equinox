@@ -122,7 +122,7 @@ class TabToolbar(QWidget):
             label: The label text.
         """
         title = QLabel(label)
-        title.setStyleSheet("font-weight: bold;")
+        title.setObjectName("title")
         layout.addWidget(title)
 
     def _add_standard_buttons(self, layout: QHBoxLayout) -> None:

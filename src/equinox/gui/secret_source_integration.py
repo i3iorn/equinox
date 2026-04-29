@@ -93,7 +93,6 @@ class SecretSourceConfigWidget(QGroupBox):
             "secret management."
         )
         info_label.setWordWrap(True)
-        info_label.setStyleSheet("color: #666; font-size: 10px;")
         self.info_label = info_label
         layout.addRow("", info_label)
 

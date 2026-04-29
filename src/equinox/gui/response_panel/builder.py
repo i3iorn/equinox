@@ -101,7 +101,6 @@ class ResponseBuilderMixin:
         row = QHBoxLayout()
 
         self.status_label = QLabel("No response yet")
-        self.status_label.setStyleSheet(f"font-weight: bold; color: {Colors.FG_MUTED};")
 
         self.time_label = _make_muted_label()
         self.size_label = _make_muted_label()
@@ -234,7 +233,6 @@ class ResponseBuilderMixin:
         warn_row.setContentsMargins(*_BODY_WARNING_MARGINS)
 
         self._body_warn_label = QLabel()
-        self._body_warn_label.setStyleSheet(f"color: {Colors.AMBER}; font-weight: bold;")
 
         load_btn = _make_button("Load Full", _BTN_WIDTH_MEDIUM)
         load_btn.clicked.connect(self._load_large_body)
@@ -337,10 +335,6 @@ class ResponseBuilderMixin:
         # Request line
         row = QHBoxLayout()
         self.sent_method_label = QLabel("—")
-        self.sent_method_label.setStyleSheet(
-            f"font-weight: bold; "
-            f"background: {Colors.BG_ALT}; padding: 2px 8px; border-radius: 3px;"
-        )
 
         self.sent_url_label = QLabel("—")
         self.sent_url_label.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)

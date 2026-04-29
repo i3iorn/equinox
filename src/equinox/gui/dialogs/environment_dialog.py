@@ -120,7 +120,6 @@ class EnvironmentDialog(DirtyDialogMixin, QDialog):
         self.import_dotenv_btn = QPushButton("Import .env…")
         self.import_dotenv_btn.setToolTip("Load variables from a .env file (merged with existing)")
         self.save_vars_btn     = QPushButton("💾  Save Variables")
-        self.save_vars_btn.setStyleSheet("font-weight: bold;")
         for b in (self.add_var_btn, self.remove_var_btn, self.import_dotenv_btn, self.save_vars_btn):
             b.setEnabled(False)
             var_btns.addWidget(b)
@@ -244,10 +243,8 @@ class EnvironmentDialog(DirtyDialogMixin, QDialog):
 
     def _update_save_btn(self) -> None:
         if self._dirty:
-            self.save_vars_btn.setStyleSheet("font-weight: bold; color: #9a6700;")
             self.save_vars_btn.setText("💾  Save Variables *")
         else:
-            self.save_vars_btn.setStyleSheet("font-weight: bold;")
             self.save_vars_btn.setText("💾  Save Variables")
 
     # ── Variable table helpers ────────────────────────────────────────

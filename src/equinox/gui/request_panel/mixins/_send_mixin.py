@@ -290,13 +290,14 @@ class _RequestSendMixin:
     @staticmethod
     def _display_script_result(label, result) -> None:
         """Update script-result label with success/error styling."""
+        label.setObjectName(
+            "script-result-error" if result.error else "script-result-ok"
+        )
         if result.error:
             label.setText(f"Error: {result.error}")
-            label.setStyleSheet(f"color: {Colors.RED};")
         else:
             count = len(result.output_vars)
             label.setText(f"OK — {count} var(s) set" if count else "OK")
-            label.setStyleSheet(f"color: {Colors.GREEN};")
 
     def _apply_script_vars(self, result) -> None:
         """Merge script output variables into session state.

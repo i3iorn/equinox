@@ -36,7 +36,6 @@ def make_secret_row(line_edit: QLineEdit) -> QHBoxLayout:
     toggle.setText(_EYE_ICON)
     toggle.setFixedWidth(_TOGGLE_WIDTH)
     toggle.setToolTip("Show / hide")
-    toggle.setStyleSheet(_TOGGLE_STYLE)
 
     # Sync the initial checked state with the line edit's *current* echo mode.
     # Without this, a line_edit already in Normal mode starts with a mismatched

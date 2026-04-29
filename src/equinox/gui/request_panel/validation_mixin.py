@@ -152,21 +152,12 @@ class _RequestValidationMixin:
             status: "valid" (green ✓), "error" (red ✗), None (reset to default)
             message: Tooltip message for error details
         """
+        field.setObjectName("field-valid" if status == "valid" else "field-error" if status == "error" else "")
         if status == "valid":
-            # Green border for valid input
-            field.setStyleSheet(
-                "border: 1px solid #2ecc71; background-color: rgba(46, 204, 113, 0.05);"
-            )
             field.setToolTip("✓ Valid input")
         elif status == "error":
-            # Red border for invalid input
-            field.setStyleSheet(
-                "border: 2px solid #e74c3c; background-color: rgba(231, 76, 60, 0.1);"
-            )
             field.setToolTip(f"✗ {message}")
         else:
-            # Reset to default styling
-            field.setStyleSheet("")
             field.setToolTip("")
 
     def _update_send_button_state(self) -> None:

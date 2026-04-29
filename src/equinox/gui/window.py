@@ -876,14 +876,8 @@ class MainWindow(QMainWindow):
             env = EnvironmentManager(self.db).get_active_environment()
             if env:
                 self._env_btn.setText(f"🌍  {env['name']}")
-                self._env_btn.setStyleSheet(
-                    f"color: {Colors.GREEN}; font-weight: bold; padding: 0 8px; border: none;"
-                )
             else:
                 self._env_btn.setText("No environment")
-                self._env_btn.setStyleSheet(
-                    f"color: {Colors.FG_SUBTLE}; padding: 0 8px; border: none;"
-                )
         except Exception:
             logger.debug("Failed to refresh env label", exc_info=True)
 

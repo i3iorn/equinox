@@ -173,7 +173,6 @@ class SavedCredentialsDialog(DirtyDialogMixin, QDialog):
         self.test_btn    = QPushButton("\U0001f50c  Test Connection")
         self.default_btn = QPushButton("\u2605  Set as Default")
         self.save_btn    = QPushButton("\U0001f4be  Save")
-        self.save_btn.setStyleSheet("font-weight: bold;")
         for b in (self.test_btn, self.default_btn, self.save_btn):
             b.setEnabled(False)
             act_row.addWidget(b)
@@ -506,10 +505,6 @@ class SavedCredentialsDialog(DirtyDialogMixin, QDialog):
             self._update_test_btn()
         else:
             self.test_btn.setEnabled(False)
-        self.save_btn.setStyleSheet(
-            "font-weight: bold; color: #9a6700;" if self._dirty
-            else "font-weight: bold;"
-        )
         self.save_btn.setText(
             "\U0001f4be  Save *" if self._dirty else "\U0001f4be  Save"
         )

@@ -145,7 +145,7 @@ class _RequestAuthMixin:
         """
         label = QLabel(text)
         if bold:
-            label.setStyleSheet("font-weight: bold;")
+            label.setObjectName("boldLabel")
         if muted:
             label.setObjectName("mutedLabel")
         if wrap:
@@ -342,7 +342,6 @@ class _RequestAuthMixin:
         """
         # Reset status line (used only by OAuth2)
         self.auth_status_label.setText("")
-        self.auth_status_label.setStyleSheet("")
 
         # Determine what to display: own auth or inherited
         display_auth = auth or self._get_inherited_auth_safe()
@@ -433,7 +432,6 @@ class _RequestAuthMixin:
             text, color = self._build_oauth2_status_text(auth, info)
             text = self._append_oauth2_expiry_countdown(text, info)
             self.auth_status_label.setText(text)
-            self.auth_status_label.setStyleSheet(f"color: {color};")
         except Exception as exc:
             logger.debug("Failed to render OAuth2 token status: %s", exc, exc_info=True)
 

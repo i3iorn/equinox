@@ -138,7 +138,6 @@ class PreferencesDialog(QDialog):
 
         desc = QLabel("Select which analyzers run automatically after each response.")
         desc.setWordWrap(True)
-        desc.setStyleSheet(f"color: {Colors.FG_MUTED};")
         intel_layout.addWidget(desc)
 
         # Load the disabled-analyzer set from persistent settings
@@ -167,10 +166,6 @@ class PreferencesDialog(QDialog):
                 if cat != current_cat:
                     current_cat = cat
                     cat_label = QLabel(f"── {cat} ──")
-                    cat_label.setStyleSheet(
-                        f"font-weight: bold; color: {Colors.FG_MUTED}; "
-                        f"padding-top: 4px; font-size: 11px;"
-                    )
                     scroll_layout.addWidget(cat_label)
                 cb = QCheckBox(info["name"])
                 cb.setChecked(info["id"] not in self._disabled_set)
@@ -199,10 +194,7 @@ class PreferencesDialog(QDialog):
         self._update_preview(size)
 
     def _update_preview(self, size: int) -> None:
-        self._preview.setStyleSheet(
-            f"padding: 8px; border: 1px solid {Colors.BORDER}; border-radius: 4px; "
-            f"background: {Colors.BG_ALT}; color: {Colors.FG}; font-size: {size}pt;"
-        )
+        pass
 
     def _restore_defaults(self) -> None:
         self._spin.setValue(DEFAULT_FONT_SIZE)

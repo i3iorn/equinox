@@ -55,7 +55,7 @@ class _NewRequestDialog(QDialog):
         if folder_hint:
             hint = QLineEdit(folder_hint)
             hint.setReadOnly(True)
-            hint.setStyleSheet("color: grey;")
+            hint.setObjectName("hint")
             lay.addRow("Folder:", hint)
 
         buttons = QDialogButtonBox(

@@ -187,7 +187,6 @@ class SecretManagerConfigDialog(QDialog):
             "  bw login your-email@example.com\n"
             "  bw unlock your-password"
         )
-        info_label.setStyleSheet("color: #888; font-size: 10px;")
         self.config_layout.addRow("", info_label)
 
     def _get_config_dict(self) -> Dict[str, Any]:

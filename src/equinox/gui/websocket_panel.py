@@ -190,7 +190,6 @@ class WebSocketPanel(QWidget):
             return
         if not url.startswith(("ws://", "wss://")):
             self.status_label.setText("URL must start with ws:// or wss://")
-            self.status_label.setStyleSheet(f"color: {Colors.RED};")
             return
 
         self._thread = _WSThread(url)
@@ -204,18 +203,15 @@ class WebSocketPanel(QWidget):
         self._thread.start()
         self.connect_btn.setText("Disconnect")
         self.status_label.setText("Connecting…")
-        self.status_label.setStyleSheet("")
 
     def _on_connected(self) -> None:
         self.status_label.setText("Connected")
-        self.status_label.setStyleSheet(f"color: {Colors.GREEN};")
         self.send_btn.setEnabled(True)
         self.connect_btn.setEnabled(True)
         self.connect_btn.setText("Disconnect")
 
     def _on_disconnected(self) -> None:
         self.status_label.setText("Disconnected")
-        self.status_label.setStyleSheet("")
         self.connect_btn.setText("Connect")
         self.connect_btn.setEnabled(True)
         self.send_btn.setEnabled(False)
