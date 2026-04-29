@@ -50,7 +50,7 @@ class EquinoxError(Exception):
         """Return message + hint for user display.
 
         Combines the error message with an actionable hint if one is available.
-        Used in GUI and CLI to show helpful guidance to users.
+        Used in GUI to show helpful guidance to users.
         """
         msg = self.message
         if self.hint_key and self.hint_key in self.HINTS:
