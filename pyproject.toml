@@ -5,17 +5,16 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "equinox"
 version = "0.1.0"
-description = "A local-first API testing tool with CLI and GUI"
+description = "A local-first API testing tool with GUI"
 readme = "README.md"
 requires-python = ">=3.9"
 license = {text = "MIT"}
 authors = [
     {name = "Equinox Team"}
 ]
-keywords = ["api", "testing", "http", "rest", "postman", "cli", "gui"]
+keywords = ["api", "testing", "http", "rest", "postman", "gui"]
 dependencies = [
     "httpx>=0.24.0",
-    "click>=8.0.0",
     "PyQt6>=6.5.0",
     "pygments>=2.15.0",
     "jsonschema>=4.0.0",
@@ -41,9 +40,6 @@ dev = [
     "safety>=2.3.0",
     "pre-commit>=3.0.0",
 ]
-
-[project.scripts]
-equinox = "equinox.cli.main:cli"
 
 [tool.black]
 line-length = 100

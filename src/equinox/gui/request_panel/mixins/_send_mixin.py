@@ -417,9 +417,9 @@ class _RequestSendMixin:
         )
         notify_log_panel(self._logging_panel, "log_request", request)
 
+        self.request_sent.emit(request)
         self._set_sending_state(True)
         self._dispatch_worker(request)
-        self.request_sent.emit(request)
 
     def _display_preflight_warnings(self) -> None:
         """Run preflight checks and show/hide the warning banner."""

@@ -129,59 +129,7 @@ class TestInheritedVariablePrecedence:
         assert col_mgr.get_all_collection_variables(col_b)["URL"] == "https://shared.example.com"
 
 
-# ── CLI get_interpolation_variables with collection_id ────────────────────────
-
-
-class TestCLIInterpolationWithCollectionVars:
-    """``get_interpolation_variables(db, collection_id=...)`` should merge
-    collection-inherited variables into the result."""
-
-    def test_includes_collection_vars(self, db, col_mgr, var_mgr, collection_id):
-        from equinox.cli.main import get_interpolation_variables
-
-        gid = var_mgr.create_group("Globals")
-        var_mgr.add_variable(gid, "BASE_URL", "https://api.example.com")
-        col_mgr.add_variable_group(collection_id, gid)
-        col_mgr.add_variable(collection_id, "TOKEN", "abc")
-
-        result = get_interpolation_variables(db, collection_id=collection_id)
-        assert result["BASE_URL"] == "https://api.example.com"
-        assert result["TOKEN"] == "abc"
-
-    def test_without_collection_id_omits_collection_vars(self, db, col_mgr, collection_id):
-        from equinox.cli.main import get_interpolation_variables
-
-        col_mgr.add_variable(collection_id, "ONLY_IN_COL", "secret")
-
-        result = get_interpolation_variables(db)
-        assert "ONLY_IN_COL" not in result
-
-    def test_equinox_env_vars_override_collection_vars(self, db, col_mgr, collection_id, monkeypatch):
-        from equinox.cli.main import get_interpolation_variables
-
-        col_mgr.add_variable(collection_id, "EQUINOX_OVERRIDE", "from-collection")
-        monkeypatch.setenv("EQUINOX_OVERRIDE", "from-env")
-
-        result = get_interpolation_variables(db, collection_id=collection_id)
-        assert result["EQUINOX_OVERRIDE"] == "from-env"
-
-    def test_collection_vars_override_environment(self, db, col_mgr, var_mgr, collection_id):
-        """Collection variables override the active DB environment."""
-        from equinox.cli.main import get_interpolation_variables
-        from equinox.storage import EnvironmentManager
-
-        env_mgr = EnvironmentManager(db)
-        env_id = env_mgr.create_environment("dev", variables={"SHARED": "from-env"})
-        env_mgr.set_active_environment(env_id)
-
-        col_mgr.add_variable(collection_id, "SHARED", "from-collection")
-
-        result = get_interpolation_variables(db, collection_id=collection_id)
-        assert result["SHARED"] == "from-collection"
-
-
 # ── Folder grouping in list_requests ──────────────────────────────────────────
-
 
 class TestFolderGrouping:
     """Requests with a ``folder`` column should be grouped under folder nodes
