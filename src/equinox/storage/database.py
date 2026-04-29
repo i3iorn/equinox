@@ -233,7 +233,9 @@ class Database:
         than waiting for the persistent one.
         """
         try:
-            conn = sqlite3.connect(self.db_path, timeout=_CONNECTION_TIMEOUT_SECONDS)
+            # Use string path to ensure compatibility across Python versions
+            # and because sqlite3.connect expects a path-like object.
+            conn = sqlite3.connect(str(self.db_path), timeout=_CONNECTION_TIMEOUT_SECONDS)
         except sqlite3.Error as exc:
             raise StorageError(
                 f"Cannot open database to configure PRAGMAs: {exc}"
