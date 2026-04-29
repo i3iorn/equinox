@@ -20,6 +20,7 @@ from __future__ import annotations
 import logging
 import re
 from typing import Any, Dict, List, Optional, Tuple
+from uuid import uuid4
 
 from PyQt6.QtCore import QTimer
 from PyQt6.QtWidgets import QMessageBox
@@ -407,6 +408,7 @@ class _RequestSendMixin:
             method, url, headers, params, params_list, body,
             effective_auth, multipart_data, path_params,
         )
+        request.headers["X-Request-ID"] = request.headers.get("X-Request-ID", str(uuid4()))
         self.current_request = request
 
         logger.info(
@@ -415,9 +417,9 @@ class _RequestSendMixin:
         )
         notify_log_panel(self._logging_panel, "log_request", request)
 
-        self.request_sent.emit(request)
         self._set_sending_state(True)
         self._dispatch_worker(request)
+        self.request_sent.emit(request)
 
     def _display_preflight_warnings(self) -> None:
         """Run preflight checks and show/hide the warning banner."""
