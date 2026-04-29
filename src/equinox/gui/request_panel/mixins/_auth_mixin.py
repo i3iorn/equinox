@@ -29,7 +29,7 @@ from PyQt6.QtWidgets import (
 )
 
 from equinox.auth import OAuth2Auth
-from equinox.core.redact import mask_secret
+from equinox.core.security import mask_secret
 from equinox.core.time import utc_now
 from equinox.gui.theme import Colors
 

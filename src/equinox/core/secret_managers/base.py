@@ -11,7 +11,7 @@ from abc import ABC, abstractmethod
 from datetime import datetime
 from typing import Any, Dict, Optional
 
-from equinox.core.redact import mask_secret
+from equinox.core.security import mask_secret
 
 logger = logging.getLogger(__name__)
 

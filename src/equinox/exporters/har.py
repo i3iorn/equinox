@@ -6,7 +6,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from equinox.core.redact import redact_headers
+from equinox.core.security import redact_headers
 from equinox.core.request import Request, Response
 from equinox.core.time import to_iso_z
 from equinox.importers._utils import write_json_file

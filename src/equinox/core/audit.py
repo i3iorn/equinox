@@ -17,8 +17,8 @@ from pathlib import Path
 from typing import Optional, Dict, Any
 from enum import Enum
 
+from equinox.core.security import sanitize_details, redact_body, redact_url
 from equinox.core.time import utc_now
-from equinox.core.redact import redact_url, redact_body, sanitize_details
 
 logger = logging.getLogger(__name__)
 

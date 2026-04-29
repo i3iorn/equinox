@@ -6,7 +6,7 @@ from typing import Any, Dict, List, Optional
 
 from equinox.core.request import Request, Response
 from equinox.core.exceptions import StorageError, ValidationError, SecurityError
-from equinox.core.redact import redact_url
+from equinox.core.security import redact_url
 from equinox.storage.database import Database
 from equinox.storage.utils import require_positive_int as _require_positive_int
 from ._serializer import _HistorySerializer

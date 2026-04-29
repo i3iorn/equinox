@@ -11,7 +11,7 @@ from equinox.core.security.serialization import serialize_headers as _serialize_
 
 def serialize_headers(headers: Dict[str, Any]) -> str:
     """Redact sensitive headers and JSON-dump with a max length."""
-    from equinox.core.redact import redact_headers as _redact
+    from equinox.core.security import redact_headers as _redact
     sanitized = redact_headers(headers or {})
     return _serialize_headers(headers or {})
 

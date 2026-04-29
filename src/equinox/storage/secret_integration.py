@@ -58,6 +58,8 @@ Security Considerations
 - Failed secret retrieval results in clear error messages
 - Credentials can fall back to local stored values if external store unavailable
 """
+from __future__ import annotations
+from equinox.core.security.secret_integration import *  # type: ignore
 
 from __future__ import annotations
 
@@ -65,7 +67,7 @@ import logging
 from typing import Any, Dict, Optional
 
 from equinox.core.exceptions import StorageError, SecurityError, AuthError
-from equinox.core.redact import mask_secret, redact_body
+from equinox.core.security import mask_secret, redact_body
 from equinox.core.secret_managers import (
     get_secret_manager,
     SecretManager,

@@ -10,7 +10,7 @@ import logging
 from typing import Any, Dict, Optional
 
 from equinox.core.exceptions import CertificateError, RequestError, RequestTimeoutError
-from equinox.core.redact import redact_url
+from equinox.core.security import redact_url
 
 logger = logging.getLogger(__name__)
 

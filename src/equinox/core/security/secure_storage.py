@@ -16,7 +16,7 @@ from cryptography.fernet import Fernet
 from equinox.core.exceptions import SecurityError, ValidationError
 from equinox.core.audit import get_audit_logger
 from equinox.core.security import crypto as _crypto
-from equinox.core.redact import redact_body
+from equinox.core.security import redact_body
 
 logger = logging.getLogger(__name__)
 _audit = get_audit_logger()
