@@ -10,9 +10,11 @@ from __future__ import annotations
 
 from typing import Dict, Any, Optional
 
-from equinox.core.redact import redact_headers as _redact_headers
-from equinox.core.redact import redact_url as _redact_url
-from equinox.core.redact import redact_body as _redact_body
+from equinox.core.security.redactor import (
+    redact_headers as _redact_headers,
+    redact_url as _redact_url,
+    redact_body as _redact_body,
+)
 
 
 def redact_headers(headers: Optional[Dict[str, Any]]) -> Dict[str, Any]:

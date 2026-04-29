@@ -8,6 +8,7 @@ redaction logic.
 from __future__ import annotations
 
 # Re-export the main redaction wrappers
-from .security_policy import redact_headers, redact_url, redact_body  # noqa: F401
+from .redactor import redact_headers, redact_url, redact_body  # noqa: F401
+from .redactor import mask_secret, sanitize_details, SENSITIVE_HEADER_NAMES, SENSITIVE_PAYLOAD_KEYS  # noqa: F401
 
-__all__ = ["redact_headers", "redact_url", "redact_body"]
+__all__ = ["redact_headers", "redact_url", "redact_body", "mask_secret", "sanitize_details", "SENSITIVE_HEADER_NAMES", "SENSITIVE_PAYLOAD_KEYS"]
