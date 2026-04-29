@@ -4,16 +4,16 @@ from __future__ import annotations
 
 from typing import Any, Dict, Optional
 
-from equinox.core.redact import redact_headers
+from equinox.core.security import redact_headers
 from equinox.core.constants import MAX_HEADERS_SIZE, MAX_BODY_SIZE
-from equinox.storage.utils import safe_json_dumps
+from equinox.core.security.serialization import serialize_headers as _serialize_headers, serialize_body as _serialize_body
 
 
 def serialize_headers(headers: Dict[str, Any]) -> str:
     """Redact sensitive headers and JSON-dump with a max length."""
     from equinox.core.redact import redact_headers as _redact
-    sanitized = _redact(headers or {})
-    return safe_json_dumps(sanitized, max_len=MAX_HEADERS_SIZE)
+    sanitized = redact_headers(headers or {})
+    return _serialize_headers(headers or {})
 
 
 def serialize_body(body: Any, *, max_len: int = MAX_BODY_SIZE, capture: bool = True) -> Optional[str]:
@@ -30,3 +30,6 @@ def serialize_body(body: Any, *, max_len: int = MAX_BODY_SIZE, capture: bool = T
     if len(text) > max_len:
         return text[:max_len] + "... [TRUNCATED]"
     return text
+
+# Compatibility shim: re-export from new security path
+from equinox.core.security.serialization import *  # noqa: F401,F403

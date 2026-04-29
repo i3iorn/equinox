@@ -22,7 +22,7 @@ from typing import Optional
 from cryptography.fernet import Fernet, InvalidToken
 
 from equinox.core import crypto
-from equinox.core.secrets_password import ensure_master_password_initialized
+from equinox.core.security.secrets_password import ensure_master_password_initialized
 from equinox.core.exceptions import SecurityError
 
 logger = logging.getLogger(__name__)

@@ -6,7 +6,7 @@ import pytest
 
 from equinox.storage.database import Database
 from equinox.storage.oauth_clients import OAuthClientManager
-from equinox.core.secrets_password import rotate_all_secrets
+from equinox.core.security.secrets_password import rotate_all_secrets
 
 
 def _init_db(tmp_path: Path) -> str:

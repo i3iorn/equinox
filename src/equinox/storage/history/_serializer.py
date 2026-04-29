@@ -8,7 +8,7 @@ from equinox.core.request import Request, Response
 from equinox.core.exceptions import SecurityError, ValidationError
 from equinox.core.security import redact_headers, redact_url
 from equinox.core.history_config import should_capture_bodies
-from equinox.core.serialization import serialize_headers, serialize_body
+from equinox.core.security.serialization import serialize_headers, serialize_body
 from equinox.core.constants import MAX_HEADERS_SIZE, MAX_URL_LENGTH, MAX_BODY_SIZE as _MAX_BODY, MAX_ERROR_MESSAGE_LENGTH as _MAX_ERROR_MESSAGE_LENGTH
 from equinox.storage.utils import coerce_body_to_str, safe_json_dumps, safe_json_loads
 
@@ -64,17 +64,19 @@ class _HistorySerializer:
 
         sanitized = redact_headers(dict(response.headers) if response.headers else {})
         try:
-            headers_json = safe_json_dumps(sanitized, max_len=MAX_HEADERS_SIZE)
+            headers_json = serialize_headers(sanitized)
         except SecurityError:
             logger.warning("Response headers too large, storing truncated version")
             headers_json = safe_json_dumps(sanitized)[:MAX_HEADERS_SIZE] + "..."
 
+        # Build redacted body using the centralized serializer (respect capture toggle)
+        body_val = serialize_body(coerce_body_to_str(response.body), max_len=self.MAX_BODY_SIZE, capture=should_capture_bodies())
         return {
             "status_code":  response.status_code,
             "reason":       response.reason,
             "elapsed":      response.elapsed,
             "headers_json": headers_json,
-            "body":         self._prepare_body(coerce_body_to_str(response.body)) if should_capture_bodies() else None,
+            "body":         body_val,
         }
 
     def truncate_error(self, error: Optional[str]) -> Optional[str]:
