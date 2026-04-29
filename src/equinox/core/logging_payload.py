@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any, Dict, Optional
 
-from equinox.core.redact import redact_headers, redact_url, redact_body
+from equinox.core.security_policy import redact_headers, redact_url, redact_body
 from equinox.core.request.request import Request
 from equinox.core.request.response import Response
 

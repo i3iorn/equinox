@@ -18,7 +18,8 @@ from enum import Enum
 
 from equinox.core.time import utc_now
 from equinox.core.request import Request, Response
-from equinox.core.redact import redact_headers, redact_body, redact_url
+from equinox.core.security_policy import redact_headers, redact_url, redact_body
+from equinox.core.logging_helpers import log_request_with_payload, log_response_with_payload, log_error_with_payload
 from equinox.core.logging_payload import request_payload, response_payload, error_payload
 
 logger = logging.getLogger(__name__)
@@ -345,9 +346,9 @@ class LoggingRequestInterceptor(RequestInterceptor):
         self.logger = logger or RequestResponseLogger()
 
     def intercept(self, context: InterceptorContext) -> InterceptorResult[Request]:
-        # Build a DRY request payload for logging
+        # Build a DRY request payload for logging and delegate to unified helper
         payload = request_payload(context.request, include_body=True)
-        self.logger.log_request(payload)  # type: ignore[arg-type]
+        log_request_with_payload(self.logger, payload)
         return InterceptorResult.continue_()
 
 
@@ -358,7 +359,7 @@ class LoggingResponseInterceptor(ResponseInterceptor):
     def intercept(self, context: InterceptorContext) -> InterceptorResult[Response]:
         elapsed = context.response.elapsed if context.response else 0
         payload = response_payload(context.request, context.response, elapsed, include_body=True)
-        self.logger.log_response(payload)  # type: ignore[arg-type]
+        log_response_with_payload(self.logger, payload)
         return InterceptorResult.continue_()
 
 
@@ -368,5 +369,5 @@ class LoggingErrorInterceptor(ErrorInterceptor):
 
     def intercept(self, context: InterceptorContext) -> InterceptorResult[Exception]:
         payload = error_payload(context.request, context.error)
-        self.logger.log_error(payload)  # type: ignore[arg-type]
+        log_error_with_payload(self.logger, payload)
         return InterceptorResult.continue_()
