@@ -21,7 +21,7 @@ from cryptography.hazmat.primitives.kdf.scrypt import Scrypt
 
 from equinox.core.exceptions import SecurityError, ValidationError
 from equinox.core.audit import get_audit_logger
-from equinox.core import crypto
+from equinox.security import crypto
 
 logger = logging.getLogger(__name__)
 

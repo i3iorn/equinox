@@ -1,36 +1,22 @@
-"""Centralized crypto helpers for key management and Fernet creation.
+"""Security-focused crypto helpers moved from core.crypto.
 
-This module consolidates key file location, atomic creation, permission
-handling and Fernet construction so callers don't duplicate semantics.
-
-Fernet (AES-128-CBC + HMAC-SHA256) requires a 32-byte raw key encoded as
-URL-safe base64.  :func:`get_or_create_raw_key` reads or generates that
-32-byte value; :func:`make_fernet` performs the base64 encoding step.
-Use :func:`get_or_create_fernet` when you need both operations in one call.
-
-Note on key size vs. AES key size
-----------------------------------
-Although this module generates and stores **32 bytes** (256 bits) of
-entropy, Fernet splits the encoded key into a 16-byte signing key
-(HMAC-SHA256) and a 16-byte encryption key (AES-128-CBC).  The *AES*
-block-cipher key is therefore 128 bits, not 256.
+This module implements key management and Fernet construction, preferring
+an OS-backed key when available (via the keystore) and falling back to the
+local key file when not.
 """
 
-import os
-import logging
+from __future__ import annotations
+
 import base64
+import logging
+import os
 import tempfile
 from pathlib import Path
 from typing import Optional
 
 from cryptography.fernet import Fernet
 
-# Optional OS-keyring based key storage support. Imported lazily to avoid
-# import-time coupling in environments where the feature is disabled.
-try:
-    from equinox.core.keystore import get_or_create_os_key
-except Exception:  # pragma: no cover - optional import
-    get_or_create_os_key = None  # type: ignore
+from equinox.security.keystore import get_or_create_os_key
 
 logger = logging.getLogger(__name__)
 
@@ -159,10 +145,5 @@ def get_or_create_fernet(key_path: Optional[Path] = None) -> Fernet:
 
     Equivalent to ``make_fernet(get_or_create_raw_key(key_path))`` but
     expressed as a single call for callers that do not need the raw key bytes.
-
-    >>> f = get_or_create_fernet()
-    >>> token = f.encrypt(b"secret")
-    >>> f.decrypt(token)
-    b'secret'
     """
     return make_fernet(get_or_create_raw_key(key_path))

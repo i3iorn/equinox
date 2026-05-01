@@ -5,12 +5,12 @@ at rest, replacing the previous file-based Fernet key approach when a master
 password is configured. It also provides a lightweight rotation helper to
 re-encrypt plaintext secrets with a new master password.
 """
+
 from __future__ import annotations
 
 import base64
 import hashlib
 import os
-import json
 from pathlib import Path
 from typing import Optional
 from getpass import getpass
@@ -118,7 +118,6 @@ def ensure_master_password_initialized() -> Optional[Fernet]:
         try:
             db_path = os.environ.get("EQUINOX_DB_PATH")
             if db_path:
-                from equinox.core.secrets_password import rotate_all_secrets
                 rotate_all_secrets(db_path, new_password=get_master_password())
         except Exception:
             # Do not fail startup if rotation fails; log and continue.
@@ -203,6 +202,3 @@ def rotate_all_secrets(db_path: str, new_password: Optional[str] = None) -> None
             conn.close()
         except Exception:
             pass
-
-# Compatibility shim: re-export from the security namespace for unified access
-from equinox.core.security.secrets_password import *  # noqa: F401,F403
