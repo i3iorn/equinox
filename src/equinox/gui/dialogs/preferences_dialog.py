@@ -88,7 +88,7 @@ class PreferencesDialog(QDialog):
         self._slider.setRange(MIN_FONT_SIZE, MAX_FONT_SIZE)
         self._slider.setValue(self._original_size)
         self._slider.setTickInterval(1)
-        self._slider.setTickPosition(QSlider.TickPosition.TicksBelow)
+        self._slider.setTickPosition(QSlider.TickPosition.TicksBothSides)
         self._slider.setMinimumWidth(180)
 
         self._spin = QSpinBox()

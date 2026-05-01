@@ -246,7 +246,7 @@ class MainWindow(QMainWindow):
         ("Ctrl+Q",       "Exit"),
         ("F5",           "Refresh collections"),
         ("F1",           "Keyboard Shortcuts (this dialog)"),
-        ("Ctrl+=",       "Zoom in"),
+        ("Ctrl++",       "Zoom in"),
         ("Ctrl+-",       "Zoom out"),
         ("Ctrl+0",       "Reset zoom"),
         ("Ctrl+Shift+F", "Format JSON body"),

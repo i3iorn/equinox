@@ -525,7 +525,7 @@ class RequestPanel(_RequestValidationMixin, _RequestSendMixin, _RequestAuthMixin
         layout = QVBoxLayout(w)
         layout.setContentsMargins(0, 2, 0, 0)
         layout.setSpacing(2)
-        toolbar = TabToolbar(title, presets=presets, parent=self)
+        toolbar = TabToolbar("", presets=presets, parent=self)
         table = CheckableKeyValueTable(enable_key_completer=enable_key_completer)
         toolbar.add_clicked.connect(lambda: self._add_row_and_focus(table))
         toolbar.remove_clicked.connect(lambda: self._remove_table_rows(table))

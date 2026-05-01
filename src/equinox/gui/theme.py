@@ -533,7 +533,7 @@ def _build_stylesheet(base_pt: int) -> str:
         border: 1px solid transparent;
         margin-right: 4px;
         color: {C["FG_MUTED"]};
-        font-size: {sm}pt;
+        font-size: {int(sm*1.2)}pt;
         background: transparent;
         border-radius: 4px;
     }}
