@@ -15,7 +15,7 @@ from equinox.core.secret_managers.base import (
     SecretNotFoundError,
     SecretAuthError,
 )
-from equinox.core.security import mask_secret
+from equinox.security import mask_secret
 
 logger = logging.getLogger(__name__)
 
