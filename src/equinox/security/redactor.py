@@ -1,6 +1,6 @@
 """Redaction engine moved from redact.py. See tests for behavior.
 This file now contains the actual implementation; other modules should import
-from equinox.core.security.redactor import redact_headers, redact_body, redact_url.
+from equinox.security.redactor import redact_headers, redact_body, redact_url.
 """
 
 from __future__ import annotations
@@ -68,13 +68,17 @@ def redact_headers(headers: Optional[Dict[str, Any]]) -> Dict[str, Any]:
     return {k: (_REDACTED if k.lower() in SENSITIVE_HEADER_NAMES else v) for k, v in headers.items()}
 
 
-def redact_body(body: Optional[str], *, max_length: int = 0) -> Optional[str]:
+def redact_body(body: Optional[str], *, max_length: int = 0, max_len: int = 0) -> Optional[str]:
     if not body:
         return body
+    
+    # Support both max_length and max_len for backward compatibility and DRY surface
+    limit = max_length or max_len
+    
     result = _BODY_SECRET_KEYS.sub(r"\g<1>" + _REDACTED, body)
     result = _JSON_SECRET_KEYS.sub(r"\g<1>" + _REDACTED + r"\3", result)
-    if max_length and len(result) > max_length:
-        result = result[:max_length] + _TRUNCATION_SUFFIX
+    if limit and len(result) > limit:
+        result = result[:limit] + _TRUNCATION_SUFFIX
     return result
 
 
