@@ -22,7 +22,7 @@ __all__ = [
     "get_mono_font", "get_ui_font",
     "get_theme_mode", "set_theme_mode",
     "is_dark",
-    "THEME_SYSTEM", "THEME_LIGHT", "THEME_DARK", "THEME_MUTED_DARK", "THEME_MODES", "THEME_LABELS",
+    "THEME_SYSTEM", "THEME_LIGHT", "THEME_DARK", "THEME_MUTED_DARK", "THEME_OCEANIC", "THEME_MODES", "THEME_LABELS",
     "DEFAULT_FONT_SIZE", "DEFAULT_MONO_SIZE", "MIN_FONT_SIZE", "MAX_FONT_SIZE",
 ]
 
@@ -112,6 +112,34 @@ _MUTED_DARK: dict[str, str] = {
     "SEND_HOVER": "#5d95dc",      # Softer hover
 }
 
+_OCEANIC: dict[str, str] = {
+    # Status / method badges
+    "GREEN":      "#40c463",
+    "AMBER":      "#e3b341",
+    "RED":        "#f85149",
+    "BLUE":       "#58a6ff",
+    "PURPLE":     "#bc8cff",
+    "MUTED":      "#8b949e",
+    "CYAN":       "#39c5cf",
+    "GRAY":       "#6e7681",
+    "TEAL":       "#56d4dd",
+    # Surfaces — Deep oceanic blues
+    "BG":         "#011627",      # Night owl dark blue
+    "BG_ALT":     "#011f35",      # Slightly lighter blue
+    "BORDER":     "#1d3b53",      # Muted blue border
+    "BORDER_FCS": "#00d1ff",      # Bright cyan focus
+    # Text
+    "FG":         "#d6deeb",      # Soft white/blue
+    "FG_MUTED":   "#92a1b5",
+    "FG_SUBTLE":  "#5f7e97",
+    # Selection / highlight
+    "SELECTION":  "#1d3b53",
+    "SEL_TEXT":   "#234d70",
+    "HIGHLIGHT":  "#0b2942",
+    # Send / cancel button hover
+    "SEND_HOVER": "#70b1ff",
+}
+
 # Guard: all palettes must expose identical keys so QSS substitution never
 # produces a KeyError at runtime when the theme switches.
 assert _LIGHT.keys() == _DARK.keys(), (
@@ -123,6 +151,11 @@ assert _LIGHT.keys() == _MUTED_DARK.keys(), (
     f"Palette key mismatch — _LIGHT vs _MUTED_DARK: "
     f"only in _LIGHT: {_LIGHT.keys() - _MUTED_DARK.keys()!r}, "
     f"only in _MUTED_DARK: {_MUTED_DARK.keys() - _LIGHT.keys()!r}"
+)
+assert _LIGHT.keys() == _OCEANIC.keys(), (
+    f"Palette key mismatch — _LIGHT vs _OCEANIC: "
+    f"only in _LIGHT: {_LIGHT.keys() - _OCEANIC.keys()!r}, "
+    f"only in _OCEANIC: {_OCEANIC.keys() - _LIGHT.keys()!r}"
 )
 
 # The active palette dict — replaced by apply_theme(); read by _ColorProxy at
@@ -184,12 +217,14 @@ THEME_SYSTEM: str = "system"
 THEME_LIGHT:  str = "light"
 THEME_DARK:   str = "dark"
 THEME_MUTED_DARK: str = "muted_dark"
-THEME_MODES:  tuple[str, ...] = (THEME_SYSTEM, THEME_LIGHT, THEME_DARK, THEME_MUTED_DARK)
+THEME_OCEANIC: str = "oceanic"
+THEME_MODES:  tuple[str, ...] = (THEME_SYSTEM, THEME_LIGHT, THEME_DARK, THEME_MUTED_DARK, THEME_OCEANIC)
 THEME_LABELS: dict[str, str] = {
     "system": "System",
     "light": "Light",
     "dark": "Dark",
     "muted_dark": "Muted Dark",
+    "oceanic": "Oceanic (Deep Blue)",
 }
 
 
@@ -353,7 +388,7 @@ def _system_is_dark() -> bool:
 def _resolve_dark() -> bool:
     """Return True when the active palette should be dark (including muted dark)."""
     mode = get_theme_mode()
-    if mode == THEME_DARK or mode == THEME_MUTED_DARK:
+    if mode in (THEME_DARK, THEME_MUTED_DARK, THEME_OCEANIC):
         return True
     if mode == THEME_LIGHT:
         return False
@@ -368,6 +403,8 @@ def _resolve_palette() -> dict[str, str]:
         return _MUTED_DARK
     elif mode == THEME_DARK:
         return _DARK
+    elif mode == THEME_OCEANIC:
+        return _OCEANIC
     elif mode == THEME_LIGHT:
         return _LIGHT
     else:
@@ -488,24 +525,54 @@ def _build_stylesheet(base_pt: int) -> str:
     /* ── Tabs ───────────────────────────────────────────── */
     QTabWidget::pane {{
         border: 1px solid {C["BORDER"]};
-        border-top: none;
         background: {C["BG"]};
+        border-radius: 4px;
     }}
     QTabBar::tab {{
-        padding: 6px 14px;
+        padding: 8px 16px;
         border: 1px solid transparent;
-        border-bottom: 2px solid transparent;
-        margin-right: 2px;
+        margin-right: 4px;
         color: {C["FG_MUTED"]};
         font-size: {sm}pt;
+        background: transparent;
+        border-radius: 4px;
     }}
     QTabBar::tab:selected {{
-        color: {C["FG"]};
+        color: {C["BLUE"]};
+        background: {C["BG"]};
+        border: 1px solid {C["BORDER"]};
+    }}
+    QTabBar[tabPosition="0"]::tab:selected {{
         border-bottom: 2px solid {C["BLUE"]};
+    }}
+    QTabBar[tabPosition="1"]::tab:selected {{
+        border-top: 2px solid {C["BLUE"]};
     }}
     QTabBar::tab:hover:!selected {{
         color: {C["FG"]};
-        border-bottom: 2px solid {C["BORDER"]};
+        background: {C["BG_ALT"]};
+    }}
+
+    /* ── Main Sidebar (Prototyping) ───────────────────────── */
+    QWidget#sidebar {{
+        background: {C["BG_ALT"]};
+        border-right: 1px solid {C["BORDER"]};
+        min-width: 50px;
+        max-width: 50px;
+    }}
+    QToolButton#sidebarBtn {{
+        border: none;
+        border-radius: 0px;
+        background: transparent;
+        padding: 10px;
+        min-height: 40px;
+    }}
+    QToolButton#sidebarBtn:hover {{
+        background: {C["SELECTION"]};
+    }}
+    QToolButton#sidebarBtn:checked {{
+        background: {C["BG"]};
+        border-left: 3px solid {C["BLUE"]};
     }}
 
     /* ── Tables ─────────────────────────────────────────── */
@@ -552,10 +619,15 @@ def _build_stylesheet(base_pt: int) -> str:
         background: {C["BORDER"]};
     }}
     QSplitter::handle:horizontal {{
-        width: 5px;
+        width: 1px;
+        margin: 0px 2px;
     }}
     QSplitter::handle:vertical {{
-        height: 5px;
+        height: 1px;
+        margin: 2px 0px;
+    }}
+    QSplitter::handle:hover {{
+        background: {C["BLUE"]};
     }}
 
     /* ── Scrollbars (slim) ─────────────────────────────── */
