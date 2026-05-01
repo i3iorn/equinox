@@ -16,7 +16,8 @@ from equinox.core import error_mapper
 from equinox.core import urls
 from equinox.core.cookies import CookieManager
 from equinox.core.exceptions import RequestError, ValidationError
-from equinox.core.interceptors import InterceptorChain, RequestResponseLogger
+from equinox.core.interceptors.chain import InterceptorChain
+from equinox.core.interceptors.logging import RequestResponseLogger
 from equinox.core.log_setup import generate_request_id
 from equinox.core.rate_limiter import RateLimiter
 from equinox.core.request import Request, Response
@@ -215,7 +216,7 @@ class HTTPClient:
         response = self._retry_policy.execute_with_http_overload(
             lambda: self._execute_single_attempt(request, auth)
         )
-        # Attach retry summary to response for UI display
+
         retry_summary = self._retry_policy.get_retry_summary()
         if retry_summary:
             response.retry_summary = retry_summary
