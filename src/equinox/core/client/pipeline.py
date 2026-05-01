@@ -4,8 +4,8 @@ from typing import Callable, Iterable, List, Optional, Tuple, Type
 
 from equinox.core.request import Request, Response
 from equinox.core.exceptions import EquinoxError, RequestError
-from equinox.core.interceptors import InterceptorChain
-from equinox.core.security import redact_body, redact_url
+from equinox.core.interceptors.chain import InterceptorChain
+from equinox.security import redact_body, redact_url
 
 logger = logging.getLogger(__name__)
 
