@@ -18,7 +18,7 @@ from PyQt6.QtCore import Qt, QSettings
 from PyQt6.QtGui import QColor
 
 from equinox.core.log_setup import get_log_file
-from equinox.core.security import redact_body, redact_headers, redact_url
+from equinox.security import redact_body, redact_headers, redact_url
 from equinox.core.time import utc_now
 from equinox.gui.theme import Colors, get_mono_font
 
