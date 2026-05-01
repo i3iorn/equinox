@@ -6,8 +6,7 @@ from urllib.parse import urlparse
 
 from equinox.core import urls
 from equinox.core.exceptions import ValidationError
-from ._limits import _Limits
-from ._guards import _Guards
+from ._base import _Limits, _Guards
 from ._ssrf import _SsrfGuard
 
 __all__ = ["_UrlValidator"]
