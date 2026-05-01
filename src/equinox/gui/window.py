@@ -19,6 +19,8 @@ from PyQt6.QtWidgets import (
     QMessageBox, QFileDialog, QInputDialog,
 )
 
+from equinox.gui.logging_utils import log_gui_event
+
 from equinox.core.request import Request, Response
 from equinox.storage import Database, EnvironmentManager, HistoryManager, CollectionManager
 from equinox.storage.cookies import CookieJarManager
@@ -80,6 +82,8 @@ class MainWindow(QMainWindow):
         self._layout_save_timer.timeout.connect(self._save_layout)
 
         self._init_ui()
+        log_gui_event("window_initialized", {"title": self.windowTitle()})
+        log_gui_event("window_initialized", {"title": self.windowTitle()})
         self._create_menu_bar()
         self._create_status_bar()
         self._restore_layout()
@@ -92,16 +96,19 @@ class MainWindow(QMainWindow):
         if isinstance(geo, QByteArray):
             self.restoreGeometry(geo)
             logger.debug("Restored window geometry")
+            log_gui_event("window_geometry_restored", {"geometry_present": isinstance(geo, QByteArray)})
         state = self._settings.value(_KEY_WIN_STATE)
         if isinstance(state, QByteArray):
             self.restoreState(state)
             logger.debug("Restored window state")
+            log_gui_event("window_state_restored")
         ms = self._settings.value(_KEY_MAIN_SPLIT)
         if ms is not None:
             try:
                 sizes = [int(x) for x in ms]
                 self._main_splitter.setSizes(sizes)
                 logger.debug("Restored main splitter sizes: %s", sizes)
+                log_gui_event("window_main_splitter_restored", {"sizes": sizes})
             except Exception as e:
                 logger.debug("Failed to restore main splitter sizes: %s", e, exc_info=True)
         else:
@@ -112,6 +119,7 @@ class MainWindow(QMainWindow):
                 sizes = [int(x) for x in rs]
                 self._req_resp_splitter.setSizes(sizes)
                 logger.debug("Restored req/resp splitter sizes: %s", sizes)
+                log_gui_event("window_req_resp_splitter_restored", {"sizes": sizes})
             except Exception as e:
                 logger.debug("Failed to restore req/resp splitter sizes: %s", e, exc_info=True)
         else:
@@ -122,6 +130,7 @@ class MainWindow(QMainWindow):
         # so the window is fully constructed before any panel DB queries run.
         self._left_tabs.blockSignals(True)
         self._left_tabs.setCurrentIndex(tab_idx)
+        log_gui_event("window_left_tab_restored", {"index": tab_idx, "tab": self._left_tabs.tabText(tab_idx)})
         self._left_tabs.blockSignals(False)
         QTimer.singleShot(0, lambda: self._ensure_tab_initialized(self._left_tabs.currentIndex()))
         logger.debug("Restored left tabs index: %d (initialization deferred)", tab_idx)
@@ -231,6 +240,7 @@ class MainWindow(QMainWindow):
         main_layout.addWidget(self._main_splitter)
 
         self._wire_signals()
+        log_gui_event("window_signals_wired", {"module": "window"})
 
     # ── Lazy left-panel initialization ────────────────────────────────
 
@@ -885,6 +895,7 @@ class MainWindow(QMainWindow):
     # ── Log file ──────────────────────────────────────────────────────
 
     def _open_log_file(self) -> None:
+        log_gui_event("log_file_open_requested")
         from equinox.core.log_setup import get_log_file
         log_path = get_log_file()
         if not log_path or not log_path.exists():
