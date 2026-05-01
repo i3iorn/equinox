@@ -9,7 +9,7 @@ fall back to plaintext for databases created before encryption was enabled
 
 Encryption uses Fernet (AES-128-CBC + HMAC-SHA256).  The 32-byte raw key
 is stored at ``~/.equinox/.key`` and is shared with
-:class:`~equinox.core.secure_storage.SecureStorage`.  If the key file does
+:class:`~equinox.security.secure_storage.SecureStorage`.  If the key file does
 not yet exist it is created automatically with restrictive permissions.
 """
 
@@ -21,8 +21,8 @@ from typing import Optional
 
 from cryptography.fernet import Fernet, InvalidToken
 
-from equinox.core import crypto
-from equinox.core.security.secrets_password import ensure_master_password_initialized
+from equinox.security import crypto
+from equinox.security.secrets_password import ensure_master_password_initialized
 from equinox.core.exceptions import SecurityError
 
 logger = logging.getLogger(__name__)
@@ -36,11 +36,11 @@ _ENC_PREFIX = "enc:"
 
 
 def get_or_create_key(key_path: Optional[Path] = None) -> bytes:
-    """Compatibility wrapper that delegates to :mod:`equinox.core.crypto`.
+    """Compatibility wrapper that delegates to :mod:`equinox.security.crypto`.
 
     Keeps the original public function name so callers in the codebase
     continue to work while the canonical implementation lives in
-    :mod:`equinox.core.crypto`.
+    :mod:`equinox.security.crypto`.
     """
     return crypto.get_or_create_raw_key(key_path)
 
