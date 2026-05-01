@@ -5,9 +5,7 @@ import logging
 from typing import Dict
 
 from equinox.core.exceptions import ValidationError
-from ._limits import _Limits
-from ._patterns import _Patterns
-from ._guards import _Guards
+from ._base import _Limits, _Patterns, _Guards
 
 __all__ = ["_HeaderValidator"]
 

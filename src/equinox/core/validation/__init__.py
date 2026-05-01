@@ -26,9 +26,7 @@ import re
 from pathlib import Path
 from typing import Any, Dict, Optional, Tuple
 
-from ._limits import VALID_HTTP_METHODS, _Limits
-from ._patterns import _Patterns
-from ._guards import _Guards
+from ._base import VALID_HTTP_METHODS, _Limits, _Patterns, _Guards
 from ._ssrf import _SsrfGuard
 from ._url import _UrlValidator
 from ._headers import _HeaderValidator
@@ -144,10 +142,17 @@ class Validator:
         # Strip control characters while preserving newlines (\n) and tabs (\t).
         return re.sub(r"[\x00-\x08\x0B-\x0C\x0E-\x1F\x7F]", "", text)
 
-    # -- SSRF (backward-compatible internal entry-point) ----------------------
+    # -- SSRF (Hostname validation) -------------------------------------------
+
+    @classmethod
+    def validate_hostname(cls, hostname: str) -> str:
+        """Raise ``ValidationError`` if *hostname* targets a private network."""
+        _Guards.require_nonempty_str(hostname, "Hostname")
+        _SsrfGuard.check(hostname)
+        return hostname
 
     @classmethod
     def _check_ssrf(cls, hostname: str) -> None:
-        """Backward-compatible shim — delegates to ``_SsrfGuard.check``."""
-        _SsrfGuard.check(hostname)
+        """Deprecated: use ``validate_hostname`` instead."""
+        cls.validate_hostname(hostname)
 

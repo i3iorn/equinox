@@ -6,8 +6,7 @@ import logging
 from typing import Any, Optional
 
 from equinox.core.exceptions import ValidationError
-from ._limits import _Limits
-from ._patterns import _Patterns
+from ._base import _Limits, _Patterns
 
 __all__ = ["_BodyValidator"]
 

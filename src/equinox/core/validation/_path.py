@@ -6,8 +6,7 @@ from typing import Optional
 from urllib.parse import unquote_plus
 
 from equinox.core.exceptions import ValidationError
-from ._patterns import _Patterns
-from ._guards import _Guards
+from ._base import _Patterns, _Guards
 
 __all__ = ["_PathValidator"]
 

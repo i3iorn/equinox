@@ -4,8 +4,7 @@ from __future__ import annotations
 from typing import Any, Dict
 
 from equinox.core.exceptions import ValidationError
-from ._limits import _Limits
-from ._guards import _Guards
+from ._base import _Limits, _Guards
 
 __all__ = ["_ParamValidator"]
 
