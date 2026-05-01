@@ -1,6 +1,9 @@
 """Analysis engine — discovers and runs all analyzers."""
 
 import logging
+import pkgutil
+import importlib
+import inspect
 from typing import Dict, List, Optional, Set
 from equinox.core import urls
 
@@ -41,75 +44,28 @@ class AnalysisEngine:
 
     @classmethod
     def discover_analyzers(cls) -> List[Analyzer]:
-        """Instantiate all built-in analyzers."""
-        from equinox.core.response_intelligence.security import (
-            MissingSecurityHeadersAnalyzer,
-            CookieFlagsAnalyzer,
-            PIILeakDetectionAnalyzer,
-            CORSMisconfigAnalyzer,
-            JWTDecodeAnalyzer,
-        )
-        from equinox.core.response_intelligence.performance import (
-            CompressionAnalyzer,
-            TimingBreakdownAnalyzer,
-            ResponseTimePercentileAnalyzer,
-            PaginationDetectionAnalyzer,
-        )
-        from equinox.core.response_intelligence.consistency import (
-            StatusBodyMismatchAnalyzer,
-            ContentTypeMismatchAnalyzer,
-            DuplicateJsonKeysAnalyzer,
-            DateFormatInconsistencyAnalyzer,
-            NullVsMissingAnalyzer,
-            SchemaDriftAnalyzer,
-        )
-        from equinox.core.response_intelligence.server import (
-            ServerFingerprintAnalyzer,
-            RateLimitDashboardAnalyzer,
-            CachingBehaviorAnalyzer,
-            APIVersionDetectionAnalyzer,
-            ResponseTimeAnomalyAnalyzer,
-        )
-        from equinox.core.response_intelligence.hints import (
-            DeprecatedAPIAnalyzer,
-            SuggestedEncodingAnalyzer,
-            NPlusOneDetectionAnalyzer,
-            ResponseEncodingIssuesAnalyzer,
-            LinkHeaderParsingAnalyzer,
-        )
+        """Instantiate all built-in analyzers using dynamic discovery."""
+        import equinox.core.response_intelligence as ri_pkg
 
-        return [
-            # Security
-            MissingSecurityHeadersAnalyzer(),
-            CookieFlagsAnalyzer(),
-            PIILeakDetectionAnalyzer(),
-            CORSMisconfigAnalyzer(),
-            JWTDecodeAnalyzer(),
-            # Performance
-            CompressionAnalyzer(),
-            TimingBreakdownAnalyzer(),
-            ResponseTimePercentileAnalyzer(),
-            PaginationDetectionAnalyzer(),
-            # Consistency
-            StatusBodyMismatchAnalyzer(),
-            ContentTypeMismatchAnalyzer(),
-            DuplicateJsonKeysAnalyzer(),
-            DateFormatInconsistencyAnalyzer(),
-            NullVsMissingAnalyzer(),
-            SchemaDriftAnalyzer(),
-            # Server
-            ServerFingerprintAnalyzer(),
-            RateLimitDashboardAnalyzer(),
-            CachingBehaviorAnalyzer(),
-            APIVersionDetectionAnalyzer(),
-            ResponseTimeAnomalyAnalyzer(),
-            # Hints
-            DeprecatedAPIAnalyzer(),
-            SuggestedEncodingAnalyzer(),
-            NPlusOneDetectionAnalyzer(),
-            ResponseEncodingIssuesAnalyzer(),
-            LinkHeaderParsingAnalyzer(),
-        ]
+        analyzers: List[Analyzer] = []
+        # Find all modules in the response_intelligence package
+        for _, name, is_pkg in pkgutil.iter_modules(ri_pkg.__path__, ri_pkg.__name__ + "."):
+            if is_pkg or name.endswith(".base") or name.endswith(".models") or name.endswith(".engine"):
+                continue
+
+            try:
+                module = importlib.import_module(name)
+                for _, obj in inspect.getmembers(module, inspect.isclass):
+                    # Check if it's a subclass of Analyzer but not the Analyzer class itself
+                    if issubclass(obj, Analyzer) and obj is not Analyzer:
+                        try:
+                            analyzers.append(obj())
+                        except Exception:
+                            logger.error("Failed to instantiate analyzer %s", obj, exc_info=True)
+            except Exception:
+                logger.error("Failed to load module %s for analyzer discovery", name, exc_info=True)
+
+        return analyzers
 
     def load_analyzers(self) -> None:
         """Populate ``self._analyzers`` from the built-in registry."""
