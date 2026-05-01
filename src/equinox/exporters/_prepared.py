@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 from equinox.core.exceptions import ValidationError
-from equinox.core.security import redact_headers
+from equinox.security import redact_headers
 from equinox.core import urls
 from equinox.importers._utils import json_to_dict as _json_to_dict, parse_url_parts, write_json_file
 from equinox.storage.collections import CollectionManager
