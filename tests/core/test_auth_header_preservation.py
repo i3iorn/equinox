@@ -20,10 +20,10 @@ def test_auth_header_preserved_in_sent_headers():
         method="GET",
         url="https://httpbin.org/get",
         auth=DummyAuth(),
+        verify_ssl=False
     )
     response = client.send(request)
-    # The sent_headers should include the Authorization header
+
     assert response.sent_headers is not None
     assert "Authorization" in response.sent_headers
     assert response.sent_headers["Authorization"] == "Bearer test-token"
-    # The response panel should display this header (UI test not included here)

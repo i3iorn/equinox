@@ -2,20 +2,13 @@
 
 import json
 import logging
-import pytest
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
-from equinox.core.interceptors import (
-    InterceptorContext,
-    RequestInterceptor,
-    ResponseInterceptor,
-    ErrorInterceptor,
-    InterceptorChain,
-    RequestResponseLogger,
-    LoggingRequestInterceptor,
-    LoggingResponseInterceptor,
-    LoggingErrorInterceptor, InterceptorAction, InterceptorResult,
-)
+from equinox.core.interceptors._base import RequestInterceptor, ResponseInterceptor, \
+    ErrorInterceptor, InterceptorContext, InterceptorAction, InterceptorResult
+from equinox.core.interceptors.chain import InterceptorChain
+from equinox.core.interceptors.logging import RequestResponseLogger, \
+    LoggingRequestInterceptor, LoggingResponseInterceptor, LoggingErrorInterceptor
 from equinox.core.request import Request, Response
 
 

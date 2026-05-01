@@ -6,7 +6,7 @@ import sqlite3
 from pathlib import Path
 from unittest.mock import Mock, patch, MagicMock
 from equinox.core.validation import Validator
-from equinox.core.secure_storage import SecureStorage
+from equinox.security.secure_storage import SecureStorage
 from equinox.storage.database import Database
 from equinox.core.exceptions import ValidationError, SecurityError, StorageError
 

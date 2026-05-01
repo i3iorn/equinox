@@ -3,7 +3,7 @@
 import json
 import pytest
 from pathlib import Path
-from equinox.core.secure_storage import SecureStorage, _wipe_bytes
+from equinox.security.secure_storage import SecureStorage, _wipe_bytes
 from equinox.core.exceptions import ValidationError, SecurityError
 
 

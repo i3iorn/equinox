@@ -177,7 +177,7 @@ class TestOAuth2Coverage:
         mock_resp.json.side_effect = ValueError("bad json")
 
         auth = OAuth2Auth(token_url="https://x.com/token", client_id="c", client_secret="s")
-        with pytest.raises(AuthError, match="Invalid token endpoint"):
+        with pytest.raises(AuthError, match="Token endpoint returned non-JSON response"):
             auth._apply_token_response(mock_resp)
 
     def test_apply_token_response_with_refresh_token(self):

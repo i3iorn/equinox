@@ -25,7 +25,7 @@ def test_os_keyring_integration_monkeypatched(monkeypatch):
     os.environ["EQUINOX_USE_OS_KEYRING"] = "1"
 
     # Import after monkeypatching to ensure the OS path is exercised
-    from equinox.core.crypto import get_or_create_raw_key
+    from equinox.security.crypto import get_or_create_raw_key
 
     k1 = get_or_create_raw_key(None)
     assert isinstance(k1, (bytes, bytearray))

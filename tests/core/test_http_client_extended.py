@@ -7,7 +7,7 @@ import httpx
 
 from equinox.core.client import HTTPClient
 from equinox.core.request import Request, Response
-from equinox.core.interceptors import RequestInterceptor, ResponseInterceptor
+from equinox.core.interceptors._base import RequestInterceptor, ResponseInterceptor
 from equinox.core.exceptions import ValidationError
 
 

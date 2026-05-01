@@ -1,8 +1,8 @@
-"""Tests for equinox.core.redact — centralised credential redaction."""
+"""Tests for equinox.security.redactor — centralised credential redaction."""
 
 import pytest
 
-from equinox.core.redact import (
+from equinox.security.redactor import (
     redact_headers,
     redact_body,
     redact_url,

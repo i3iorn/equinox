@@ -33,7 +33,7 @@ def _run_auth_flow(auth: _RedirectSafeAuth, request: httpx.Request) -> httpx.Req
 
 class TestRedirectSafeAuthInit:
     def test_empty_dict_raises_value_error(self):
-        with pytest.raises(ValueError, match="auth_headers must not be empty"):
+        with pytest.raises(ValueError, match="auth_headers required for redirect-safe auth \(must contain at least one header\)"):
             _RedirectSafeAuth({})
 
     def test_none_equivalent_empty_raises(self):

@@ -144,15 +144,10 @@ class TestRelease:
         guard.release()
         assert guard._active == 0
 
-    def test_release_when_already_zero_logs_warning(self, caplog):
-        guard = ConcurrencyGuard(3)
-        with caplog.at_level(logging.WARNING, logger="equinox.core.client.concurrency_guard"):
-            guard.release()
-        assert "mismatch" in caplog.text
-
     def test_release_when_zero_does_not_go_negative(self):
         guard = ConcurrencyGuard(3)
-        guard.release()
+        with pytest.raises(RuntimeError, match="no active slots"):
+            guard.release()
         assert guard._active == 0
 
     def test_release_logs_debug(self, caplog):

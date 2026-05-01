@@ -29,7 +29,7 @@ from equinox.core.exceptions import (
     ValidationError,
 )
 from equinox.core.exceptions import TimeoutError as TimeoutAlias
-
+from equinox.core.logging_payload import _safe_body_preview
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # 1. ScriptRunner — sandbox depth
@@ -64,7 +64,7 @@ class TestScriptRunnerComprehensive:
         assert len(small_script) < ScriptRunner.MAX_SOURCE_LENGTH
         result = ScriptRunner.run_pre(small_script, {}, {})
         assert result.error is None
-        assert result.output_vars.get("ok") == "yes"
+        assert result.env_changes.get("ok") == "yes"
 
     # ── AST dangerous attribute access ────────────────────────────────────
 
@@ -88,7 +88,7 @@ class TestScriptRunnerComprehensive:
         script = 'env["t"] = str(1)'
         result = ScriptRunner.run_pre(script, {}, {})
         assert result.error is None
-        assert result.output_vars["t"] == "1"
+        assert result.env_changes["t"] == "1"
 
     def test_setattr_blocked(self):
         script = 'setattr(object, "x", 1)'
@@ -115,7 +115,7 @@ class TestScriptRunnerComprehensive:
             {}, {},
         )
         assert result.error is None
-        assert result.output_vars["t"] == "True"
+        assert result.env_changes["t"] == "True"
 
     def test_allowed_math(self):
         result = ScriptRunner.run_pre(
@@ -123,7 +123,7 @@ class TestScriptRunnerComprehensive:
             {}, {},
         )
         assert result.error is None
-        assert result.output_vars["pi"] == "3.14"
+        assert result.env_changes["pi"] == "3.14"
 
     def test_allowed_datetime(self):
         result = ScriptRunner.run_pre(
@@ -131,7 +131,7 @@ class TestScriptRunnerComprehensive:
             {}, {},
         )
         assert result.error is None
-        assert result.output_vars["y"] == "2024"
+        assert result.env_changes["y"] == "2024"
 
     def test_allowed_uuid(self):
         result = ScriptRunner.run_pre(
@@ -139,7 +139,7 @@ class TestScriptRunnerComprehensive:
             {}, {},
         )
         assert result.error is None
-        assert int(result.output_vars["u"]) == 36  # UUID string length
+        assert int(result.env_changes["u"]) == 36  # UUID string length
 
     def test_allowed_string(self):
         result = ScriptRunner.run_pre(
@@ -147,7 +147,7 @@ class TestScriptRunnerComprehensive:
             {}, {},
         )
         assert result.error is None
-        assert result.output_vars["d"] == "0123456789"
+        assert result.env_changes["d"] == "0123456789"
 
     def test_allowed_collections(self):
         result = ScriptRunner.run_pre(
@@ -165,8 +165,8 @@ class TestScriptRunnerComprehensive:
         )
         result = ScriptRunner.run_pre(script, {}, {})
         assert result.error is None
-        assert result.output_vars["a"] == "[1]"
-        assert result.output_vars["b"] == "ayb"
+        assert result.env_changes["a"] == "[1]"
+        assert result.env_changes["b"] == "ayb"
 
     # ── Blocked modules ───────────────────────────────────────────────────
 
@@ -182,19 +182,19 @@ class TestScriptRunnerComprehensive:
 
     def test_coerce_bool_to_str(self):
         result = ScriptRunner.run_pre('env["b"] = True', {}, {})
-        assert result.output_vars["b"] == "True"
+        assert result.env_changes["b"] == "True"
 
     def test_coerce_none_to_str(self):
         result = ScriptRunner.run_pre('env["n"] = None', {}, {})
-        assert result.output_vars["n"] == "None"
+        assert result.env_changes["n"] == "None"
 
     def test_coerce_float_to_str(self):
         result = ScriptRunner.run_pre('env["f"] = 3.14', {}, {})
-        assert result.output_vars["f"] == "3.14"
+        assert result.env_changes["f"] == "3.14"
 
     def test_coerce_list_to_str(self):
         result = ScriptRunner.run_pre('env["l"] = [1,2]', {}, {})
-        assert result.output_vars["l"] == "[1, 2]"
+        assert result.env_changes["l"] == "[1, 2]"
 
     # ── Env var deletion ──────────────────────────────────────────────────
 
@@ -203,18 +203,18 @@ class TestScriptRunnerComprehensive:
         script = 'del env["old"]'
         result = ScriptRunner.run_pre(script, {}, {"old": "val"})
         assert result.error is None
-        assert "old" not in result.output_vars
+        assert "old" not in result.env_changes
 
     # ── Process isolation availability ────────────────────────────────────
 
     def test_process_isolation_required_on_oserror(self):
         """If multiprocessing is unavailable, fail closed (no thread fallback)."""
-        with patch("equinox.core.scripts.multiprocessing") as mock_mp:
+        with patch("equinox.core.scripts.runner.multiprocessing") as mock_mp:
             mock_mp.get_context.side_effect = OSError("no mp")
             mock_mp.Queue.side_effect = OSError("no mp")
             result = ScriptRunner.run_pre('env["x"] = "thread"', {}, {})
         assert result.error is not None
-        assert "sandbox unavailable" in result.error.lower()
+        assert "failed to start script execution" in result.error.lower()
 
     # ── ScriptResult ──────────────────────────────────────────────────────
 
@@ -232,7 +232,7 @@ class TestScriptRunnerComprehensive:
         )
         result = ScriptRunner.run_post(script, resp, {})
         assert result.error is None
-        assert result.output_vars["count"] == "3"
+        assert result.env_changes["count"] == "3"
 
     def test_post_script_unchanged_vars_not_in_output(self):
         resp = {"status_code": 200, "body": "", "json": None}
@@ -240,14 +240,14 @@ class TestScriptRunnerComprehensive:
             'env["keep"] = "same"', resp, {"keep": "same"}
         )
         # Value didn't change → not in output
-        assert result.output_vars == {}
+        assert result.env_changes == {}
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # 2. Redact — mask_secret, sanitize_details, multi-secret, unicode
 # ═══════════════════════════════════════════════════════════════════════════════
 
-from equinox.core.redact import (
+from equinox.security.redactor import (
     SENSITIVE_PAYLOAD_KEYS,
     mask_secret,
     redact_body,
@@ -796,17 +796,16 @@ class TestInterpolationComprehensive:
 # 5. Interceptors — safe_body_preview, STOP/REPLACE, StructuredLogger
 # ═══════════════════════════════════════════════════════════════════════════════
 
-from equinox.core.interceptors import (
+from equinox.core.interceptors._base import (
     InterceptorAction,
-    InterceptorChain,
     InterceptorContext,
     InterceptorResult,
     RequestInterceptor,
     ResponseInterceptor,
-    ErrorInterceptor,
-    StructuredLogger,
-    _safe_body_preview,
+    ErrorInterceptor
 )
+from equinox.core.interceptors.chain import InterceptorChain
+from equinox.core.interceptors.logging import StructuredLogger
 from equinox.core.request import Request, Response
 
 
@@ -1390,7 +1389,7 @@ class TestAuthCipherComprehensive:
         key_file.parent.mkdir(parents=True, exist_ok=True)
         # Patch crypto module to use tmp key path
         monkeypatch.setattr(
-            "equinox.core.crypto.default_key_path",
+            "equinox.security.crypto.default_key_path",
             lambda: key_file,
         )
         auth_cipher.reset_cipher()

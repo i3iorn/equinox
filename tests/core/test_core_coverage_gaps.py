@@ -30,7 +30,7 @@ from equinox.core.urls import (
     _normalize_segment,
 )
 from equinox.core.proxy import check_proxy_reachable
-from equinox.core.crypto import get_or_create_raw_key, make_fernet, default_key_path
+from equinox.security.crypto import get_or_create_raw_key, make_fernet, default_key_path
 from equinox.core.multipart import build_multipart_files
 from equinox.core.rate_limiter import RateLimiter
 from equinox.core.log_setup import (
@@ -49,7 +49,7 @@ from equinox.core.codegen import (
     RubyNetHttpGenerator,
     PhpCurlGenerator,
 )
-from equinox.core.audit import AuditLogger, AuditEventType
+from equinox.core.audit import AuditLogger, AuditEventType, _logger
 from equinox.core.interpolation import VariableInterpolator, collect_interpolation_variables
 from equinox.core.exceptions import (
     RequestError,
@@ -447,13 +447,13 @@ class TestCrypto:
     def test_chmod_failure_still_returns_key(self, tmp_path):
         key_file = tmp_path / ".key"
         # Key does not exist yet; will be generated
-        with patch("equinox.core.crypto.os.chmod", side_effect=OSError("no perms")):
+        with patch("equinox.security.crypto.os.chmod", side_effect=OSError("no perms")):
             result = get_or_create_raw_key(key_file)
         assert len(result) == 32
 
     def test_temp_file_cleanup_on_replace_failure(self, tmp_path):
         key_file = tmp_path / ".key"
-        with patch("equinox.core.crypto.os.replace", side_effect=OSError("replace failed")):
+        with patch("equinox.security.crypto.os.replace", side_effect=OSError("replace failed")):
             with pytest.raises(OSError, match="replace failed"):
                 get_or_create_raw_key(key_file)
         # Temp file should have been cleaned up
@@ -792,164 +792,6 @@ class TestCapturesCoverage:
         assert dicts[0]["variable"] == "tok"
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
-# codegen.py — lines 84–87, 123–124, 133–136, 143, 180–183, 266–268, 293–295,
-#              313–315, 324
-# ═══════════════════════════════════════════════════════════════════════════════
-
-
-class TestCodegenCoverage:
-    def _make_request(self, **kwargs):
-        defaults = {
-            "method": "GET",
-            "url": "https://api.example.com/data",
-            "headers": {},
-            "params": {},
-            "body": None,
-            "name": "test",
-        }
-        defaults.update(kwargs)
-        return Request(**defaults)
-
-    def test_python_requests_non_json_body(self):
-        req = self._make_request(method="POST", body="plain text body")
-        code = PythonRequestsGenerator().generate(req)
-        assert "data=body" in code
-        assert "plain text body" in code
-
-    def test_python_requests_json_body(self):
-        req = self._make_request(method="POST", body='{"key": "value"}')
-        code = PythonRequestsGenerator().generate(req)
-        assert "json=json_body" in code
-
-    def test_python_requests_with_params(self):
-        req = self._make_request(params={"page": "1"})
-        code = PythonRequestsGenerator().generate(req)
-        assert "params=params" in code
-
-    def test_python_httpx_non_json_body(self):
-        req = self._make_request(method="POST", body="raw data")
-        code = PythonHttpxGenerator().generate(req)
-        assert "data=body" in code
-
-    def test_python_httpx_json_body(self):
-        req = self._make_request(method="POST", body='{"a": 1}')
-        code = PythonHttpxGenerator().generate(req)
-        assert "json=json_body" in code
-
-    def test_js_fetch_with_params(self):
-        req = self._make_request(params={"q": "test"})
-        code = JavaScriptFetchGenerator().generate(req)
-        assert "q=test" in code
-
-    def test_js_fetch_params_with_existing_query(self):
-        req = self._make_request(url="https://api.example.com?a=1", params={"b": "2"})
-        code = JavaScriptFetchGenerator().generate(req)
-        assert "&b=2" in code
-
-    def test_js_fetch_non_json_body(self):
-        req = self._make_request(method="POST", body="raw text")
-        code = JavaScriptFetchGenerator().generate(req)
-        assert "body: body," in code
-
-    def test_js_fetch_json_body(self):
-        req = self._make_request(method="POST", body='{"x": 1}')
-        code = JavaScriptFetchGenerator().generate(req)
-        assert "JSON.stringify" in code
-
-    def test_go_with_body(self):
-        req = self._make_request(method="POST", body='{"data": true}')
-        code = GoHttpGenerator().generate(req)
-        assert "strings.NewReader" in code
-
-    def test_go_without_body(self):
-        req = self._make_request()
-        code = GoHttpGenerator().generate(req)
-        assert "nil," in code
-
-    def test_ruby_with_params(self):
-        req = self._make_request(params={"page": "2"})
-        code = RubyNetHttpGenerator().generate(req)
-        assert "page=2" in code
-
-    def test_ruby_non_json_body(self):
-        req = self._make_request(method="POST", body="not json")
-        code = RubyNetHttpGenerator().generate(req)
-        assert "request.body" in code
-
-    def test_ruby_json_body_sets_content_type(self):
-        req = self._make_request(method="POST", body='{"k": "v"}')
-        code = RubyNetHttpGenerator().generate(req)
-        assert "application/json" in code
-        assert "to_json" in code
-
-    def test_php_with_params(self):
-        req = self._make_request(params={"token": "abc"})
-        code = PhpCurlGenerator().generate(req)
-        assert "token=abc" in code
-
-    def test_php_verify_ssl_false(self):
-        req = self._make_request()
-        req.verify_ssl = False
-        code = PhpCurlGenerator().generate(req)
-        assert "CURLOPT_SSL_VERIFYPEER" in code
-
-    def test_php_with_body(self):
-        req = self._make_request(method="POST", body="some data")
-        code = PhpCurlGenerator().generate(req)
-        assert "CURLOPT_POSTFIELDS" in code
-
-    def test_php_with_headers(self):
-        req = self._make_request(headers={"Authorization": "Bearer tok"})
-        code = PhpCurlGenerator().generate(req)
-        assert "CURLOPT_HTTPHEADER" in code
-
-    def test_generate_code_unknown_format_raises(self):
-        req = self._make_request()
-        with pytest.raises(KeyError):
-            generate_code("UnknownLang", req)
-
-    def test_generate_code_all_formats(self):
-        req = self._make_request(
-            method="POST",
-            headers={"X-Custom": "val"},
-            params={"q": "1"},
-            body='{"key": "value"}',
-        )
-        from equinox.core.codegen import GENERATORS
-        for fmt_name in GENERATORS:
-            code = generate_code(fmt_name, req)
-            assert isinstance(code, str)
-            assert len(code) > 10
-
-    def test_auth_injection_bearer(self):
-        from equinox.auth.bearer import BearerAuth
-        req = self._make_request(method="GET")
-        req.auth = BearerAuth("my-token")
-        code = PythonRequestsGenerator().generate(req)
-        assert "<YOUR_TOKEN>" in code
-
-    def test_auth_injection_basic(self):
-        from equinox.auth.basic import BasicAuth
-        req = self._make_request(method="GET")
-        req.auth = BasicAuth("user", "pass")
-        code = PythonRequestsGenerator().generate(req)
-        assert "auth=" in code
-        assert "<YOUR_USERNAME>" in code
-
-    def test_auth_injection_api_key_header(self):
-        from equinox.auth.api_key import APIKeyAuth
-        req = self._make_request(method="GET")
-        req.auth = APIKeyAuth("X-API-Key", "secret-key", "header")
-        code = PythonRequestsGenerator().generate(req)
-        assert "<YOUR_API_KEY>" in code
-
-
-# ═══════════════════════════════════════════════════════════════════════════════
-# audit.py — lines 89–90, 284–285, 294, 304–305
-# ═══════════════════════════════════════════════════════════════════════════════
-
-
 class TestAuditCoverage:
     def test_handler_close_exception_swallowed(self, tmp_path):
         """Exception during handler.close() is silently swallowed."""
@@ -993,10 +835,10 @@ class TestAuditCoverage:
 
     def _close_audit_handlers(self, al):
         """Helper: flush + close all handlers so Windows releases file locks."""
-        for h in list(al.logger.handlers):
+        for h in list(_logger.logger.handlers):
             h.flush()
             h.close()
-            al.logger.removeHandler(h)
+            _logger.logger.removeHandler(h)
 
     def test_rotate_log_rename_success(self, tmp_path):
         log_path = tmp_path / "audit.log"

@@ -10,7 +10,7 @@ from equinox.core.request.request import Request
 from equinox.core.request.headers import HeaderDict
 from equinox.core.history_config import set_capture_bodies
 from equinox.storage.history._serializer import _HistorySerializer
-from equinox.core.security import redact_headers
+from equinox.security import redact_headers
 
 
 def _capture_log_for(func, *args, **kwargs):
@@ -46,7 +46,8 @@ def test_interceptor_redacts_sensitive_headers_and_body(caplog):
     caplog.clear()
     caplog.set_level(logging.INFO)
     # Use the logging interceptor to emit a request log
-    from equinox.core.interceptors import LoggingRequestInterceptor, InterceptorChain
+    from equinox.core.interceptors.chain import InterceptorChain
+    from equinox.core.interceptors.logging import LoggingRequestInterceptor
     chain = InterceptorChain()
     chain.add_request_interceptor(LoggingRequestInterceptor())
 
