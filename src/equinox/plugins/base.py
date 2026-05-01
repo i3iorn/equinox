@@ -6,7 +6,7 @@ from typing import Dict, Any, Optional
 from dataclasses import dataclass
 
 from equinox.core.request import Request, Response
-from equinox.core.security import redact_body, redact_url
+from equinox.security import redact_body, redact_url
 
 logger = logging.getLogger(__name__)
 

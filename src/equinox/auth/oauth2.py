@@ -13,9 +13,9 @@ import httpx
 
 from equinox.auth.base import AuthStrategy, _validate_credential, _interpolate_field
 from equinox.core.exceptions import AuthError
-from equinox.core.secure_storage import SecureStorage
+from equinox.security.secure_storage import SecureStorage
 from equinox.core.audit import get_audit_logger, AuditEventType, AuditLevel
-from equinox.core.security import mask_secret
+from equinox.security import mask_secret
 from equinox.core.time import utc_now
 from equinox.core.validation import Validator
 

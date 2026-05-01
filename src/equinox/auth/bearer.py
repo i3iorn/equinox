@@ -4,7 +4,7 @@ import logging
 from typing import Any, Dict, Optional
 from equinox.auth.base import AuthStrategy, _validate_credential
 from equinox.core.exceptions import AuthError
-from equinox.core.security import mask_secret
+from equinox.security import mask_secret
 
 logger = logging.getLogger(__name__)
 

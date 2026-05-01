@@ -5,7 +5,7 @@ import re
 import shlex
 from typing import Optional
 from equinox.core import urls
-from equinox.core.security import redact_url
+from equinox.security import redact_url
 
 logger = logging.getLogger(__name__)
 

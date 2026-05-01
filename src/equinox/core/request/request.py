@@ -10,7 +10,7 @@ from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
 
 from equinox.core import urls
 from equinox.core.exceptions import ValidationError
-from equinox.core.security import redact_url
+from equinox.security import redact_url
 from equinox.core.validation import VALID_HTTP_METHODS as VALID_METHODS
 from equinox.core.request.types import (
     DEFAULT_METHOD,

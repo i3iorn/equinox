@@ -5,7 +5,7 @@ import logging
 import platform
 import shlex
 
-from equinox.core.security import redact_headers
+from equinox.security import redact_headers
 from equinox.core.validation import Validator
 from equinox.core import urls
 from equinox.core.request import Request

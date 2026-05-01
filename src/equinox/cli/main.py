@@ -11,7 +11,7 @@ from typing import Optional
 import click
 from getpass import getpass
 
-from equinox.core.security.secrets_password import rotate_all_secrets
+from equinox.security.secrets_password import rotate_all_secrets
 
 
 @click.group()

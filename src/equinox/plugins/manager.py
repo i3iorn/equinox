@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import List, Dict, Any, Optional
 
 from equinox.plugins.base import Plugin, PluginContext
-from equinox.core.security.plugins import PluginManifest, PluginSandbox, validate_plugin_file
+from equinox.security.plugins import PluginManifest, PluginSandbox, validate_plugin_file
 from equinox.core.audit import get_audit_logger
 from equinox.core.exceptions import PluginError
 from equinox.core.request import Request, Response

@@ -10,7 +10,7 @@ import logging
 import traceback
 from typing import Optional
 
-from equinox.core.security import redact_body as _redact, redact_url as _redact_url
+from equinox.security import redact_body as _redact, redact_url as _redact_url
 
 logger = logging.getLogger(__name__)
 
