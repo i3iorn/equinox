@@ -192,6 +192,7 @@ class MainWindow(QMainWindow):
         self._tabs_initialized: set = set()
 
         self._left_tabs = QTabWidget()
+        self._left_tabs.setTabPosition(QTabWidget.TabPosition.South)
         for label in ("Collections", "History", "Variables", "Logs", "Cookies", "WebSocket"):
             self._left_tabs.addTab(QWidget(), label)
         self._left_tabs.setMinimumWidth(_MIN_LEFT_W)
