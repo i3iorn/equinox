@@ -59,13 +59,13 @@ class HttpxDispatcher:
         ctx.minimum_version = ssl.TLSVersion.TLSv1_2
         return ctx
 
-    def _ensure_client(self) -> httpx.Client:
+    def _ensure_client(self, verify_ssl: bool = True) -> httpx.Client:
         if self._client is None:
             logger.debug("HttpxDispatcher: creating shared httpx.Client")
             self._client = httpx.Client(
                 timeout=self._timeout,
                 follow_redirects=self._follow_redirects,
-                verify=self._build_ssl_context(),
+                verify=self._build_ssl_context() if verify_ssl else False,
                 proxy=self._proxy,
                 cookies=self._cookie_handler.get_httpx_cookies(),
             )
@@ -217,7 +217,7 @@ class HttpxDispatcher:
         native ``auth`` parameter so they survive cross-origin redirects (see
         :class:`~equinox.core.client.auth_redirect._RedirectSafeAuth`).
         """
-        client = self._ensure_client()
+        client = self._ensure_client(request.verify_ssl)
 
         logger.debug(
             "HttpxDispatcher: sending %s %s",
