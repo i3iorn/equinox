@@ -378,10 +378,14 @@ class RequestPanel(_RequestValidationMixin, _RequestSendMixin, _RequestAuthMixin
 
     def _init_ui(self) -> None:
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(6, 6, 6, 4)
+        layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(4)
 
-        layout.addLayout(self._build_url_bar())
+        url_container = QWidget()
+        url_layout = QVBoxLayout(url_container)
+        url_layout.setContentsMargins(6, 6, 6, 0)
+        url_layout.addLayout(self._build_url_bar())
+        layout.addWidget(url_container)
 
         self._preflight_banner = self._build_preflight_banner()
         layout.addWidget(self._preflight_banner)
@@ -400,7 +404,11 @@ class RequestPanel(_RequestValidationMixin, _RequestSendMixin, _RequestAuthMixin
         self.tabs.addTab(self._build_notes_tab(), "Notes")
         layout.addWidget(self.tabs, 1)
 
-        layout.addLayout(self._build_bottom_bar())
+        bottom_container = QWidget()
+        bottom_layout = QVBoxLayout(bottom_container)
+        bottom_layout.setContentsMargins(6, 0, 6, 6)
+        bottom_layout.addLayout(self._build_bottom_bar())
+        layout.addWidget(bottom_container)
 
     # ── UI sub-builders (called once from _init_ui) ────────────────────
 
