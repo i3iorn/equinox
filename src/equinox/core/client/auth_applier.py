@@ -10,7 +10,7 @@ from typing import Dict, Optional
 from equinox.auth.base import AuthStrategy
 from equinox.core.exceptions import RequestError
 from equinox.core.request import Request
-from equinox.core.security import redact_url, redact_body
+from equinox.security import redact_url, redact_body
 
 logger = logging.getLogger(__name__)
 
