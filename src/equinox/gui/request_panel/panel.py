@@ -385,6 +385,10 @@ class RequestPanel(_RequestValidationMixin, _RequestSendMixin, _RequestAuthMixin
         url_layout = QVBoxLayout(url_container)
         url_layout.setContentsMargins(6, 6, 6, 0)
         url_layout.addLayout(self._build_url_bar())
+        self._url_hint_label = QLabel("")
+        self._url_hint_label.setObjectName("mutedLabel")
+        self._url_hint_label.setVisible(False)
+        url_layout.addWidget(self._url_hint_label)
         layout.addWidget(url_container)
 
         self._preflight_banner = self._build_preflight_banner()
@@ -423,6 +427,12 @@ class RequestPanel(_RequestValidationMixin, _RequestSendMixin, _RequestAuthMixin
             "https://api.example.com/v1/resource  ·  {{VAR}} for variables  ·  Ctrl+N = new"
         )
         self.url_input.returnPressed.connect(self._send_request)
+        self._url_fix_button = QToolButton()
+        self._url_fix_button.setText("Fix URL")
+        self._url_fix_button.setToolTip("Apply suggested URL fix")
+        self._url_fix_button.clicked.connect(self._apply_url_fix)
+        self._url_fix_button.setVisible(False)
+        self._url_fix_suggestion = None
         self.send_button = QPushButton("Send")
         self.send_button.setObjectName("sendBtn")
         self.send_button.setMinimumWidth(SEND_BTN_WIDTH)
@@ -437,9 +447,33 @@ class RequestPanel(_RequestValidationMixin, _RequestSendMixin, _RequestAuthMixin
         self.cancel_button.setVisible(False)
         row.addWidget(self.method_combo)
         row.addWidget(self.url_input, 1)
+        row.addWidget(self._url_fix_button)
         row.addWidget(self.send_button)
         row.addWidget(self.cancel_button)
         return row
+
+    def _set_url_validation_hint(self, message: str, is_error: bool = False) -> None:
+        """Show a small inline hint below the URL field."""
+        msg = (message or "").strip()
+        self._url_hint_label.setVisible(bool(msg))
+        self._url_hint_label.setText(msg)
+        self._url_hint_label.setObjectName("field-error" if is_error else "mutedLabel")
+
+    def _set_url_fix_suggestion(self, suggestion: Optional[str], reason: str = "") -> None:
+        """Expose a one-click URL fix when validation can safely auto-correct."""
+        self._url_fix_suggestion = suggestion
+        can_fix = bool(suggestion)
+        self._url_fix_button.setVisible(can_fix)
+        if can_fix:
+            self._url_fix_button.setToolTip(reason or "Apply suggested URL fix")
+
+    def _apply_url_fix(self) -> None:
+        """Apply the pending URL fix suggestion, if available."""
+        if not self._url_fix_suggestion:
+            return
+        self.url_input.setText(self._url_fix_suggestion)
+        self._set_url_fix_suggestion(None)
+        self._set_url_validation_hint("URL auto-correct applied.", is_error=False)
 
     def _build_bottom_bar(self) -> QHBoxLayout:
         """Bottom toolbar with save/import/benchmark controls and session-vars summary.
