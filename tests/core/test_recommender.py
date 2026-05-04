@@ -63,3 +63,42 @@ def test_recommender_find_and_suggest_headers():
     keys = {s.get("key") for s in suggestions if s.get("type") == "header"}
     assert "accept" in keys
 
+
+def test_generate_suggestions_skips_headers_and_query_already_present():
+    cand = make_candidate(
+        query_params={"include": "details"},
+        headers={"Accept": "application/json", "X-Trace": "true"},
+    )
+    db = FakeDB([cand])
+    rec = recommender.Recommender(db)
+
+    new_request = {
+        "method": "GET",
+        "url": "https://api.example.com/users/42?include=details",
+        "headers": {"Accept": "application/json"},
+    }
+    suggestions = rec.generate_suggestions(new_request, top_n=10)
+
+    keys = {(s.get("type"), s.get("key")) for s in suggestions}
+    assert ("header", "accept") not in keys
+    assert ("query", "include") not in keys
+    assert ("header", "x-trace") in keys
+
+
+def test_suggestions_to_findings_maps_to_hints_category():
+    suggestions = [
+        {
+            "type": "header",
+            "key": "x-request-id",
+            "suggested_value": "abc-123",
+            "confidence": 0.9,
+            "based_on": 4,
+        }
+    ]
+    findings = recommender.suggestions_to_findings(suggestions)
+    assert len(findings) == 1
+    finding = findings[0]
+    assert finding.analyzer_id == "recommender"
+    assert finding.category.value == "Developer Hints"
+
+

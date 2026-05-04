@@ -394,3 +394,40 @@ class TestMainWindow:
         win._load_history_entry(history_id)
         _process()
         _close_win(win)
+
+
+class TestIntelligenceWorker:
+    def test_execute_includes_recommender_hints(self, db):
+        from equinox.core.request import Request, Response
+        from equinox.gui.intelligence_worker import IntelligenceWorker
+
+        req = Request(method="GET", url="https://example.com/api/users/42")
+        resp = Response(
+            status_code=200,
+            reason="OK",
+            headers={"Content-Type": "application/json"},
+            body=b'{"ok": true}',
+            elapsed=0.02,
+            request=req,
+        )
+        worker = IntelligenceWorker(request=req, response=resp, db=db)
+
+        suggestion = {
+            "type": "header",
+            "key": "x-trace-id",
+            "suggested_value": "abc-123",
+            "confidence": 0.9,
+            "based_on": 3,
+        }
+
+        with patch.object(worker, "_fetch_analysis_context", return_value=MagicMock()):
+            with patch.object(worker, "_run_engine", return_value=[]):
+                with patch.object(worker, "_persist_results"):
+                    with patch(
+                        "equinox.gui.intelligence_worker.Recommender.generate_suggestions",
+                        return_value=[suggestion],
+                    ):
+                        findings = worker._execute()
+
+        assert any(f.analyzer_id == "recommender" for f in findings)
+

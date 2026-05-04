@@ -9,13 +9,20 @@ body) weighted to produce a single score in [0, 1].
 """
 
 import logging
-from typing import Any, Dict, List, Optional, Tuple
+import re
+from typing import Any, Dict, List, Optional, Set, Tuple, cast
 
 from equinox.storage.database import Database
 from equinox.storage.utils import safe_json_loads
 from equinox.core import urls
 
 logger = logging.getLogger(__name__)
+
+# Conservative token pattern for HTTP header names.
+_HEADER_NAME_RE = re.compile(r"^[!#$%&'*+.^_`|~0-9A-Za-z-]+$")
+
+# Conservative key pattern for query parameters.
+_QUERY_KEY_RE = re.compile(r"^[A-Za-z0-9_.~-]+$")
 
 # ──────────────────────────────────────────────────────────────────────────────
 # Constants
@@ -43,10 +50,15 @@ _DEFAULT_MAX_CANDIDATES:  int   = 500
 _DEFAULT_MIN_SCORE:       float = 0.5
 _DEFAULT_RESULT_LIMIT:    int   = 10
 _DEFAULT_TOP_N:           int   = 5
+_MAX_RESULT_LIMIT:        int   = 100
+_MAX_TOP_N:               int   = 20
+_MIN_SUGGESTION_CONFIDENCE: float = 0.2
+_MAX_SUGGESTION_VALUE_LEN: int = 512
 
 # Internal thresholds used by generate_suggestions when it calls find_best_matches.
 _SUGGESTION_MIN_SCORE: float = 0.4
 _SUGGESTION_FETCH_LIMIT: int  = 50
+_SUCCESS_WEIGHT_FLOOR: float = 0.01
 
 # SQL used by _get_candidates — separated for readability and easy tuning.
 _CANDIDATES_SQL = """
@@ -191,7 +203,7 @@ def _parse_candidate_row(row: Any) -> Optional[Dict[str, Any]]:
         row: A row returned by ``Database.fetchall`` (dict-like).
     """
     try:
-        r: Dict[str, Any] = dict(row)
+        r = dict(row)
 
         segments = safe_json_loads(r.get("path_segments") or "[]")
         r["path_segments"] = segments if isinstance(segments, list) else []
@@ -202,8 +214,9 @@ def _parse_candidate_row(row: Any) -> Optional[Dict[str, Any]]:
         req_headers = safe_json_loads(r.get("request_headers") or "{}")
         r["request_headers"] = req_headers if isinstance(req_headers, dict) else {}
 
-        return r
+        return cast(Dict[str, Any], r)
     except Exception:
+        logger.debug("recommender_parse_candidate_failed", exc_info=True)
         return None
 
 
@@ -216,13 +229,119 @@ def _is_successful(candidate: Dict[str, Any]) -> bool:
     return int(candidate.get("response_success", 0)) == 1
 
 
-def _most_frequent_value(freq_map: Dict[str, int]) -> str:
+def _most_frequent_value(freq_map: Dict[str, float]) -> str:
     """Return the key with the highest count in *freq_map*.
 
     Args:
         freq_map: Mapping of value → occurrence count.
     """
     return max(freq_map.items(), key=lambda kv: kv[1])[0]
+
+
+def _normalize_header_key(key: Any) -> Optional[str]:
+    """Return a canonical lower-case header name, or ``None`` if invalid."""
+    key_str = str(key).strip().lower()
+    if not key_str or key_str in IGNORED_HEADERS:
+        return None
+    if not _HEADER_NAME_RE.match(key_str):
+        return None
+    return key_str
+
+
+def _normalize_query_key(key: Any) -> Optional[str]:
+    """Return a normalized query key, or ``None`` when invalid/unsafe."""
+    key_str = str(key).strip()
+    if not key_str:
+        return None
+    if not _QUERY_KEY_RE.match(key_str):
+        return None
+    return key_str
+
+
+def _stringify_value(value: Any) -> str:
+    """Return a bounded string representation safe for UI suggestion rendering."""
+    text = str(value).strip()
+    return text[:_MAX_SUGGESTION_VALUE_LEN]
+
+
+def _request_header_set(new_request: Dict[str, Any]) -> Set[str]:
+    """Extract normalized header keys present on the new request."""
+    headers = new_request.get("headers") or {}
+    if not isinstance(headers, dict):
+        return set()
+    result: Set[str] = set()
+    for key in headers:
+        norm = _normalize_header_key(key)
+        if norm is not None:
+            result.add(norm)
+    return result
+
+
+def _request_query_set(new_request: Dict[str, Any]) -> Set[str]:
+    """Extract normalized query keys present on the new request."""
+    result: Set[str] = set()
+
+    parsed = urls.normalized_parts(str(new_request.get("url") or ""))
+    query = parsed.get("query_params") or {}
+    if isinstance(query, dict):
+        for key in query:
+            norm = _normalize_query_key(key)
+            if norm is not None:
+                result.add(norm)
+
+    params = new_request.get("params") or {}
+    if isinstance(params, dict):
+        for key in params:
+            norm = _normalize_query_key(key)
+            if norm is not None:
+                result.add(norm)
+
+    return result
+
+
+def suggestions_to_findings(
+    suggestions: List[Dict[str, Any]],
+    high_confidence: float = 0.75,
+) -> List[Any]:
+    """Convert recommender suggestions into Response Intelligence findings."""
+    from equinox.core.response_intelligence.models import Category, Finding, Severity
+
+    findings: List[Finding] = []
+    for suggestion in suggestions:
+        confidence = float(suggestion.get("confidence") or 0.0)
+        key = str(suggestion.get("key") or "")
+        stype = suggestion.get("type")
+
+        if stype == "header":
+            title = f"Suggested header: {key}"
+            desc = (
+                f"Set header {key} = {suggestion.get('suggested_value')} "
+                f"(confidence {confidence:.2f})"
+            )
+        elif stype == "query":
+            title = f"Suggested query parameter: {key}"
+            desc = (
+                f"Add query param {key} "
+                f"(seen in {suggestion.get('based_on')} requests, "
+                f"confidence {confidence:.2f})"
+            )
+        else:
+            title = "Suggested change"
+            desc = str(suggestion)
+
+        severity = Severity.WARNING if confidence >= high_confidence else Severity.INFO
+        findings.append(
+            Finding(
+                Category.HINTS,
+                severity,
+                title,
+                desc,
+                analyzer_id="recommender",
+                details=dict(suggestion),
+            )
+        )
+
+    return findings
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -259,14 +378,27 @@ class Recommender:
         norm_url = enriched_request.get("normalized_url", "")
         prefix = urls.base_path(norm_url)
 
-        rows = self.db.fetchall(
-            _CANDIDATES_SQL,
-            (
-                enriched_request.get("method", "").upper(),
-                prefix + "%",
-                self.max_candidates,
-            ),
-        )
+        try:
+            rows = self.db.fetchall(
+                _CANDIDATES_SQL,
+                (
+                    enriched_request.get("method", "").upper(),
+                    prefix + "%",
+                    self.max_candidates,
+                ),
+            )
+        except Exception:
+            logger.warning(
+                "recommender_candidate_query_failed",
+                extra={
+                    "operation": "recommender_candidates",
+                    "method": enriched_request.get("method", ""),
+                    "prefix": prefix,
+                    "limit": self.max_candidates,
+                },
+                exc_info=True,
+            )
+            return []
 
         candidates = []
         for row in rows:
@@ -297,20 +429,29 @@ class Recommender:
         Returns:
             List of ``(candidate_dict, score_dict)`` tuples, best first.
         """
-        norm = urls.normalized_parts(new_request.get("url", ""))
+        method = str(new_request.get("method") or "").upper().strip()
+        raw_url = str(new_request.get("url") or "").strip()
+        if not method or not raw_url:
+            return []
+
+        min_score = max(0.0, min(1.0, float(min_score)))
+        limit = max(1, min(int(limit), _MAX_RESULT_LIMIT))
+
+        norm = urls.normalized_parts(raw_url)
         # Build an enriched local copy — never mutate the caller's dict.
         enriched: Dict[str, Any] = {
             **new_request,
+            "method": method,
             "normalized_url": norm.get("normalized_url"),
             "path_segments":  norm.get("path_segments"),
             "query_params":   norm.get("query_params"),
         }
 
-        scored = [
-            (cand, score)
-            for cand in self._get_candidates(enriched)
-            if (score := _compute_similarity(enriched, cand))["total"] >= min_score
-        ]
+        scored: List[Tuple[Dict[str, Any], Dict[str, Any]]] = []
+        for cand in self._get_candidates(enriched):
+            score = _compute_similarity(enriched, cand)
+            if score["total"] >= min_score:
+                scored.append((cand, score))
         scored.sort(key=lambda cs: cs[1]["total"], reverse=True)
         return scored[:limit]
 
@@ -333,6 +474,11 @@ class Recommender:
             containing ``"type"``, ``"key"``, ``"suggested_value"``,
             ``"confidence"``, and ``"based_on"`` fields.
         """
+        top_n = max(1, min(int(top_n), _MAX_TOP_N))
+
+        existing_header_keys = _request_header_set(new_request)
+        existing_query_keys = _request_query_set(new_request)
+
         matches = self.find_best_matches(
             new_request,
             min_score=_SUGGESTION_MIN_SCORE,
@@ -346,44 +492,77 @@ class Recommender:
             return []
 
         total = len(successful)
+        total_weight = sum(
+            max(float(score.get("total") or 0.0), _SUCCESS_WEIGHT_FLOOR)
+            for _, score in successful
+        )
+        if total_weight <= 0:
+            return []
+
         suggestions: List[Dict[str, Any]] = []
 
         # ── Header suggestions ────────────────────────────────────────────────
         # Build a frequency map: header_name → {value → count}
-        header_freq: Dict[str, Dict[str, int]] = {}
-        for cand, _ in successful:
+        header_freq: Dict[str, Dict[str, float]] = {}
+        for cand, score in successful:
+            weight = max(float(score.get("total") or 0.0), _SUCCESS_WEIGHT_FLOOR)
             for k, v in (cand.get("request_headers") or {}).items():
-                if k.lower() in IGNORED_HEADERS:
+                norm_key = _normalize_header_key(k)
+                if norm_key is None or norm_key in existing_header_keys:
                     continue
-                value_counts = header_freq.setdefault(k.lower(), {})
-                str_v = str(v)
-                value_counts[str_v] = value_counts.get(str_v, 0) + 1
+                value_counts = header_freq.setdefault(norm_key, {})
+                str_v = _stringify_value(v)
+                value_counts[str_v] = value_counts.get(str_v, 0.0) + weight
 
         for key, value_counts in header_freq.items():
-            freq = sum(value_counts.values())
+            freq = float(sum(value_counts.values()))
+            confidence = (freq / total_weight) * _HEADER_CONFIDENCE_SCALE
+            if confidence < _MIN_SUGGESTION_CONFIDENCE:
+                continue
             suggestions.append({
                 "type":            "header",
                 "key":             key,
                 "suggested_value": _most_frequent_value(value_counts),
-                "confidence":      (freq / total) * _HEADER_CONFIDENCE_SCALE,
+                "confidence":      confidence,
                 "based_on":        total,
             })
 
         # ── Query parameter suggestions ───────────────────────────────────────
-        param_freq: Dict[str, int] = {}
-        for cand, _ in successful:
+        param_freq: Dict[str, float] = {}
+        for cand, score in successful:
+            weight = max(float(score.get("total") or 0.0), _SUCCESS_WEIGHT_FLOOR)
             for k in (cand.get("query_params") or {}):
-                param_freq[k] = param_freq.get(k, 0) + 1
+                norm_key = _normalize_query_key(k)
+                if norm_key is None or norm_key in existing_query_keys:
+                    continue
+                param_freq[norm_key] = param_freq.get(norm_key, 0.0) + weight
 
         for key, freq in param_freq.items():
+            confidence = (float(freq) / total_weight) * _QUERY_CONFIDENCE_SCALE
+            if confidence < _MIN_SUGGESTION_CONFIDENCE:
+                continue
             suggestions.append({
                 "type":            "query",
                 "key":             key,
                 "suggested_value": None,
-                "confidence":      (freq / total) * _QUERY_CONFIDENCE_SCALE,
+                "confidence":      confidence,
                 "based_on":        total,
             })
 
-        suggestions.sort(key=lambda s: s["confidence"], reverse=True)
+        suggestions.sort(
+            key=lambda s: (s["confidence"], s["type"], s["key"]),
+            reverse=True,
+        )
+
+        logger.debug(
+            "recommender_generated_suggestions",
+            extra={
+                "operation": "recommender_suggestions",
+                "method": str(new_request.get("method") or "").upper(),
+                "suggestion_count": len(suggestions),
+                "top_n": top_n,
+            },
+        )
+
         return suggestions[:top_n]
 

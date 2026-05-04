@@ -8,7 +8,7 @@ This module exposes the high-level Recommender class so callers can import
 internal module path.
 """
 
-from .recommender import Recommender  # re-export for convenience
+from .recommender import Recommender, suggestions_to_findings  # re-export for convenience
 
-__all__ = ["Recommender"]
+__all__ = ["Recommender", "suggestions_to_findings"]
 

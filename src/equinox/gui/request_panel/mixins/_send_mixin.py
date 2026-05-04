@@ -2,7 +2,7 @@
 
 Contains ``_RequestSendMixin`` — all methods related to dispatching HTTP
 requests, handling responses, running pre/post scripts, applying captures,
-persisting history, and publishing recommender hints.
+and persisting history.
 
 This mixin has no ``__init__`` and relies on ``self.*`` attributes set by
 ``RequestPanel.__init__`` (PyQt6 MRO is respected).
@@ -12,7 +12,7 @@ Responsibilities:
 - Worker thread lifecycle management
 - Response processing pipeline (success/error/post-request tasks)
 - Session state updates (captures, scripts, auth tokens)
-- Deferred persistence (history, recommender suggestions)
+- Deferred persistence (history)
 """
 
 from __future__ import annotations
@@ -36,14 +36,11 @@ from equinox.core.log_setup import get_log_file
 from equinox.core.request import Request, Response
 from equinox.core.scripts import ScriptRunner
 from equinox.gui.request_panel.builder import assemble_body, inject_content_type, interpolate_auth
-from equinox.gui.theme import Colors
 from equinox.gui.workers import RequestWorker
 
 from equinox.gui.request_panel._constants import (
     HTTP_SCHEME_RE,
     PREFLIGHT_SEPARATOR,
-    RECOMMENDER_HIGH_CONFIDENCE,
-    RECOMMENDER_TOP_N,
     STATUS_DURATION_LONG,
     STATUS_DURATION_SHORT,
     WORKER_WAIT_MS,
@@ -612,14 +609,13 @@ class _RequestSendMixin:
         # ── Deferred tasks ──
         self._defer_task(save_history_safe, self.db, _sent_request, error=result.message)
         self._persist_inherited_auth_tokens()
-        self._defer_task(self._publish_recommender_hints, _sent_request)
 
     def _handle_success_result(self, result: Response, worker: RequestWorker) -> None:
         """Process successful response from worker.
 
         Execute in two phases:
         1. Sync: Update UI, emit signals, run scripts/captures
-        2. Deferred: DB writes, recommender, expensive operations
+        2. Deferred: DB writes and other expensive operations
         """
         response: Response = result
         elapsed_ms = int(response.elapsed * 1000)
@@ -645,9 +641,6 @@ class _RequestSendMixin:
         # ── Phase 2: Deferred tasks (async-safe on main thread) ──
 
         self._defer_task(save_history_safe, self.db, _sent_request, response)
-
-        if response.status_code >= 400:
-            self._defer_task(self._publish_recommender_hints, _sent_request)
 
         # Persist refreshed tokens (separate ownership paths)
         self._persist_inherited_auth_tokens()
@@ -760,82 +753,6 @@ class _RequestSendMixin:
         except Exception as exc:
             logger.debug("Failed to persist own OAuth2 token: %s", exc)
 
-    # ── Recommender ───────────────────────────────────────────────────────────
-
-    def _publish_recommender_hints(self, request: Request) -> None:
-        """Generate suggestions from history and publish to Intelligence panel.
-
-        All exceptions are swallowed so this never interrupts send/error flow.
-        """
-        try:
-            from equinox.intelligence import Recommender
-            from equinox.core.response_intelligence.models import (
-                Category, Finding, Severity,
-            )
-        except Exception:
-            logger.debug("Recommender or intelligence models unavailable", exc_info=True)
-            return
-
-        try:
-            suggestions = Recommender(self.db).generate_suggestions(
-                {"method": getattr(request, "method", ""),
-                 "url": getattr(request, "url", "")},
-                top_n=RECOMMENDER_TOP_N,
-            )
-            if not suggestions:
-                return
-
-            findings = self._suggestions_to_findings(suggestions, Category, Finding, Severity)
-
-            win = self.window()
-            rp = getattr(win, "response_panel", None)
-            if rp and hasattr(rp, "intelligence_panel"):
-                rp.intelligence_panel.display_findings(findings)
-                rp.set_intelligence_badge(len(findings))
-            else:
-                self._status_message(
-                    "Suggestions available (open Intelligence panel)",
-                    STATUS_DURATION_LONG,
-                )
-        except Exception:
-            logger.debug("Recommender failed", exc_info=True)
-
-    @staticmethod
-    def _suggestions_to_findings(
-        suggestions: List[Dict[str, Any]],
-        Category: Any,
-        Finding: Any,
-        Severity: Any,
-    ) -> list:
-        """Convert recommender suggestions to Finding objects."""
-        findings = []
-        for s in suggestions:
-            stype = s.get("type")
-            if stype == "header":
-                title = f"Suggested header: {s.get('key')}"
-                desc = (
-                    f"Set header {s.get('key')} = {s.get('suggested_value')} "
-                    f"(confidence {s.get('confidence'):.2f})"
-                )
-            elif stype == "query":
-                title = f"Suggested query parameter: {s.get('key')}"
-                desc = (
-                    f"Add query param {s.get('key')} "
-                    f"(seen in {s.get('based_on')} requests, "
-                    f"confidence {s.get('confidence'):.2f})"
-                )
-            else:
-                title = "Suggested change"
-                desc = str(s)
-            severity = (
-                Severity.WARNING if s.get("confidence", 0) >= RECOMMENDER_HIGH_CONFIDENCE
-                else Severity.INFO
-            )
-            findings.append(Finding(
-                Category.HINTS, severity, title, desc,
-                analyzer_id="recommender", details=dict(s),
-            ))
-        return findings
 
     # ── UI state management ───────────────────────────────────────────────────
 

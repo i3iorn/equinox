@@ -7,6 +7,7 @@ from typing import Callable, Optional, TypeVar
 from PyQt6.QtCore import QObject, QThread, pyqtSignal
 
 from equinox.core.request import Request, Response
+from equinox.intelligence import Recommender, suggestions_to_findings
 from equinox.storage import Database
 from equinox.core.response_intelligence.consistency import SchemaDriftAnalyzer
 from equinox.core.response_intelligence.engine import AnalysisEngine, normalize_url_pattern
@@ -104,6 +105,10 @@ class IntelligenceWorker(QThread):
 
         findings = self._run_engine(ctx)
 
+        # Generate request-level hints from historical similarity and merge
+        # them with response analyzers before presenting in the Intelligence panel.
+        findings.extend(self._run_recommender_hints())
+
         # Allow cancellation before the write-back phase so we don't issue
         # unnecessary DB writes for a discarded result.
         if self.isInterruptionRequested():
@@ -112,6 +117,32 @@ class IntelligenceWorker(QThread):
 
         self._persist_results(mgr, url_pattern, method)
         return findings
+
+    def _run_recommender_hints(self) -> list[Finding]:
+        """Generate recommender hints for the current request.
+
+        This executes inside the worker thread to keep GUI interactions non-blocking.
+        """
+        try:
+            req_payload = {
+                "method": self._request.method,
+                "url": self._request.url,
+                "headers": dict(self._request.headers or {}),
+                "params": dict(self._request.params or {}),
+            }
+            suggestions = Recommender(self._db).generate_suggestions(req_payload)
+            if not suggestions:
+                return []
+
+            findings = suggestions_to_findings(suggestions)
+            logger.debug(
+                "Intelligence worker: recommender generated %d findings",
+                len(findings),
+            )
+            return findings
+        except Exception:
+            logger.debug("Intelligence worker: recommender hints failed", exc_info=True)
+            return []
 
     # ── URL resolution ────────────────────────────────────────────────────────
 
