@@ -231,16 +231,21 @@ class HttpxDispatcher:
             if cert.get("serialNumber"):
                 info["cert_serial"] = cert.get("serialNumber")
             san = cert.get("subjectAltName") or []
-            if isinstance(san, list):
+            if isinstance(san, (list, tuple)):
                 info["cert_san_count"] = len(san)
 
         return info
 
     def _extract_connection_info(self, raw: httpx.Response, request: Request) -> Dict[str, Any]:
         """Extract transport metadata (TLS/cert/peer) for response diagnostics."""
+        follow_redirects = (
+            request.follow_redirects
+            if request.follow_redirects is not None
+            else self._follow_redirects
+        )
         info: Dict[str, Any] = {
             "verify_ssl": bool(getattr(request, "verify_ssl", True)),
-            "follow_redirects": bool(getattr(request, "follow_redirects", True)),
+            "follow_redirects": bool(follow_redirects),
         }
 
         try:

@@ -370,8 +370,8 @@ class ResponseDisplayMixin:
             f"URL: {url}",
             f"Host: {parts.netloc or '(unknown)'}",
             f"Transport: {'HTTPS' if is_https else 'HTTP'}",
-            f"Verify SSL: {bool(getattr(response.request, 'verify_ssl', True))}",
-            f"Follow redirects: {bool(getattr(response.request, 'follow_redirects', True))}",
+            f"Verify SSL: {bool(meta.get('verify_ssl', getattr(response.request, 'verify_ssl', True)))}",
+            f"Follow redirects: {bool(meta.get('follow_redirects', getattr(response.request, 'follow_redirects', True)))}",
         ]
 
         timings = getattr(response, "timings", None) or {}
