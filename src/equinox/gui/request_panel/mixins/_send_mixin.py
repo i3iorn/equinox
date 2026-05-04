@@ -20,7 +20,6 @@ from __future__ import annotations
 import logging
 import re
 from typing import Any, Dict, List, Optional, Tuple
-from uuid import uuid4
 
 from PyQt6.QtCore import QTimer
 from PyQt6.QtWidgets import QMessageBox
@@ -50,6 +49,7 @@ from equinox.gui.request_panel.mixins._helpers import (
     save_history_safe,
     write_auth_to_source,
 )
+from equinox.gui.request_panel.mixins._default_headers import apply_default_headers
 
 logger = logging.getLogger(__name__)
 
@@ -448,7 +448,7 @@ class _RequestSendMixin:
             method, url, headers, params, params_list, body,
             effective_auth, multipart_data, path_params,
         )
-        request.headers["X-Request-ID"] = request.headers.get("X-Request-ID", str(uuid4()))
+        apply_default_headers(request)
         self.current_request = request
 
         logger.info(
