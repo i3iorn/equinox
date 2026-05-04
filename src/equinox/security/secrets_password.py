@@ -12,7 +12,7 @@ import base64
 import hashlib
 import os
 from pathlib import Path
-from typing import Optional
+from typing import Callable, Optional, cast
 from getpass import getpass
 from cryptography.fernet import Fernet
 
@@ -22,6 +22,7 @@ _MASTER_PW_ENV = "EQUINOX_MASTER_PASSWORD"
 # In-memory cache for performance and to preserve password during runtime
 _cached_password: Optional[str] = None
 _cached_fernet: Optional[Fernet] = None
+_password_prompt_callback: Optional[Callable[[], Optional[str]]] = None
 
 _ENC_PREFIX = "enc:"
 
@@ -55,7 +56,21 @@ def get_master_password() -> Optional[str]:
     if pw:
         _cached_password = pw
         return pw
-    # Otherwise, prompt the user interactively (startup requirement)
+    # GUI can register a secure prompt callback to avoid terminal prompts.
+    callback = cast(Optional[Callable[[], Optional[str]]], _password_prompt_callback)
+    if callback is not None:
+        try:
+            pw = callback()
+        except Exception:
+            pw = None
+        if pw:
+            _cached_password = pw
+            return pw
+        # If a callback is explicitly set (e.g., GUI), do not fall back to
+        # terminal getpass so the app never blocks on hidden CLI input.
+        return None
+
+    # Otherwise, prompt the user interactively in terminal contexts.
     try:
         pw = getpass("Enter master password for encrypted secrets: ")
     except Exception:
@@ -71,6 +86,18 @@ def set_master_password(password: str) -> None:
     global _cached_password, _cached_fernet
     _cached_password = password
     _cached_fernet = None
+
+
+def set_master_password_prompt(
+    callback: Optional[Callable[[], Optional[str]]]
+) -> None:
+    """Set or clear the runtime password prompt callback.
+
+    GUI startup should register a callback that opens a modal dialog.
+    Passing ``None`` clears any existing callback.
+    """
+    global _password_prompt_callback
+    _password_prompt_callback = callback
 
 
 def is_master_password_configured() -> bool:

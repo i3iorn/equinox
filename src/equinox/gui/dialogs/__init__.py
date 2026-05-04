@@ -12,6 +12,10 @@ from equinox.gui.dialogs.collection_variables_dialog import (
     CollectionVariablesDialog,
     AddVariableGroupDialog,
 )
+from equinox.gui.dialogs.master_password_dialog import (
+    MasterPasswordDialog,
+    prompt_master_password,
+)
 
 __all__ = [
     "AuthDialog",
@@ -20,5 +24,7 @@ __all__ = [
     "PreferencesDialog",
     "CollectionVariablesDialog",
     "AddVariableGroupDialog",
+    "MasterPasswordDialog",
+    "prompt_master_password",
 ]
 
