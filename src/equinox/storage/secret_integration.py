@@ -59,9 +59,6 @@ Security Considerations
 - Credentials can fall back to local stored values if external store unavailable
 """
 from __future__ import annotations
-from equinox.security.secret_integration import *  # type: ignore
-
-from __future__ import annotations
 
 import logging
 from typing import Any, Dict, Optional
