@@ -1,10 +1,17 @@
-import os
 
 import pytest
 
 from equinox.core.history_config import set_capture_bodies
 from equinox.storage.history._serializer import _HistorySerializer
 from equinox.core.request.request import Request
+
+
+@pytest.fixture(autouse=True)
+def _reset_history_capture_toggle():
+    """Keep process-global history capture mode isolated per test."""
+    set_capture_bodies(True)
+    yield
+    set_capture_bodies(True)
 
 
 def test_history_body_capture_toggle_off(monkeypatch):
