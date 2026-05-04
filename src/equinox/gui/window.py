@@ -4,8 +4,6 @@ from __future__ import annotations
 import json
 import logging
 import os
-import subprocess
-import sys
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
@@ -19,6 +17,7 @@ from PyQt6.QtWidgets import (
 )
 
 from equinox.gui.logging_utils import log_gui_event
+from equinox.gui.log_file_actions import LogOpenStatus, try_open_current_log_file
 
 from equinox.core.request import Request, Response
 from equinox.storage import Database, EnvironmentManager, HistoryManager, CollectionManager
@@ -983,31 +982,22 @@ class MainWindow(QMainWindow):
 
     def _open_log_file(self) -> None:
         log_gui_event("log_file_open_requested")
-        from equinox.core.log_setup import get_log_file
-        log_path = get_log_file()
-        if not log_path or not log_path.exists():
+        result = try_open_current_log_file()
+        if result.status == LogOpenStatus.MISSING:
             QMessageBox.information(
                 self, "Log File", "No log file found yet — send a request first."
             )
             return
 
-        # SECURITY: validate the path before handing it to OS open commands
-        resolved = log_path.resolve()
-        if not str(resolved).endswith(".log"):
-            logger.warning("Refusing to open non-log file: %s", resolved)
+        if result.status == LogOpenStatus.INVALID_PATH:
+            logger.warning("Refusing to open non-log file: %s", result.resolved_path)
             return
 
-        try:
-            if sys.platform == "win32":
-                os.startfile(str(resolved))  # type: ignore[attr-defined]
-            elif sys.platform == "darwin":
-                subprocess.Popen(["open", str(resolved)])  # noqa: S603
-            else:
-                subprocess.Popen(["xdg-open", str(resolved)])  # noqa: S603
-        except Exception as exc:
+        if result.status == LogOpenStatus.OPEN_FAILED:
             QMessageBox.information(
                 self, "Log File",
-                f"Log file:\n{log_path}\n\n(Could not open automatically: {exc})"
+                f"Log file:\n{result.log_path}\n\n"
+                f"(Could not open automatically: {result.error})"
             )
 
     # ── Shortcuts dialog ──────────────────────────────────────────────

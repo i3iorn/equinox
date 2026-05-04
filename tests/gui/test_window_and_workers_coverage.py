@@ -301,7 +301,7 @@ class TestMainWindow:
         from equinox.gui.window import MainWindow
         win = MainWindow(db)
         with patch("equinox.gui.window.QMessageBox.information"):
-            with patch("equinox.core.log_setup.get_log_file", return_value=None):
+            with patch("equinox.gui.log_file_actions.get_log_file", return_value=None):
                 win._open_log_file()
         _close_win(win)
 

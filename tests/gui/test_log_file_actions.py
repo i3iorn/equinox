@@ -1,0 +1,60 @@
+from __future__ import annotations
+
+from pathlib import Path
+
+from equinox.gui.log_file_actions import LogOpenStatus, try_open_current_log_file
+
+
+def test_try_open_current_log_file_missing(monkeypatch) -> None:
+    monkeypatch.setattr("equinox.gui.log_file_actions.get_log_file", lambda: None)
+
+    result = try_open_current_log_file()
+
+    assert result.status == LogOpenStatus.MISSING
+
+
+def test_try_open_current_log_file_rejects_non_log(monkeypatch, tmp_path: Path) -> None:
+    bad = tmp_path / "not_a_log.txt"
+    bad.write_text("x", encoding="utf-8")
+    monkeypatch.setattr("equinox.gui.log_file_actions.get_log_file", lambda: bad)
+
+    result = try_open_current_log_file()
+
+    assert result.status == LogOpenStatus.INVALID_PATH
+    assert result.resolved_path == bad.resolve()
+
+
+def test_try_open_current_log_file_opened(monkeypatch, tmp_path: Path) -> None:
+    log = tmp_path / "equinox.log"
+    log.write_text("line", encoding="utf-8")
+    monkeypatch.setattr("equinox.gui.log_file_actions.get_log_file", lambda: log)
+
+    opened = {"count": 0}
+
+    def _fake_open(path: Path) -> None:
+        assert path == log.resolve()
+        opened["count"] += 1
+
+    monkeypatch.setattr("equinox.gui.log_file_actions.open_path_in_os", _fake_open)
+
+    result = try_open_current_log_file()
+
+    assert result.status == LogOpenStatus.OPENED
+    assert opened["count"] == 1
+
+
+def test_try_open_current_log_file_open_failed(monkeypatch, tmp_path: Path) -> None:
+    log = tmp_path / "equinox.log"
+    log.write_text("line", encoding="utf-8")
+    monkeypatch.setattr("equinox.gui.log_file_actions.get_log_file", lambda: log)
+
+    def _boom(_path: Path) -> None:
+        raise OSError("no opener")
+
+    monkeypatch.setattr("equinox.gui.log_file_actions.open_path_in_os", _boom)
+
+    result = try_open_current_log_file()
+
+    assert result.status == LogOpenStatus.OPEN_FAILED
+    assert "no opener" in (result.error or "")
+
