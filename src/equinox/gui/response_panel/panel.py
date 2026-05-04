@@ -12,11 +12,12 @@ This module wires them together and owns the response display pipeline.
 
 from __future__ import annotations
 
+import json
 import logging
 from typing import Any, Callable, Optional
 
 from PyQt6.QtWidgets import QWidget, QVBoxLayout, QMessageBox
-from PyQt6.QtCore import QThreadPool
+from PyQt6.QtCore import QThreadPool, QSettings
 
 from equinox.core.request import Response
 from equinox.gui.response_panel.builder import ResponseBuilderMixin
@@ -35,6 +36,13 @@ _LAYOUT_SPACING = 4
 # View modes (used for view preference state)
 _VIEW_MODE_RAW = "raw"
 _VIEW_MODE_JSON = "json"
+
+_READ_MODE_PRETTY = "pretty"
+_READ_MODE_RAW = "raw"
+_READ_MODE_SPLIT = "split"
+_READ_MODE_DIFF = "diff"
+_READABILITY_MODES = (_READ_MODE_PRETTY, _READ_MODE_RAW, _READ_MODE_SPLIT, _READ_MODE_DIFF)
+_KEY_READABILITY_PREFS = "response/readability_by_content_type"
 
 
 class ResponsePanel(
@@ -77,10 +85,15 @@ class ResponsePanel(
 
         # Thread pool for async operations (e.g., response intelligence)
         self._thread_pool = QThreadPool.globalInstance()
+        self._settings = QSettings("Equinox", "Equinox")
 
         # View state
         self._body_highlighter: Optional[Any] = None
         self._view_preference = _VIEW_MODE_RAW  # Preferred view: "raw" or "json"
+        self._readability_mode = _READ_MODE_PRETTY
+        self._raw_body_text = ""
+        self._pretty_body_text = ""
+        self._readability_by_type = self._load_readability_preferences()
 
         # Initialize UI
         self._init_ui()
@@ -156,6 +169,7 @@ class ResponsePanel(
         self._safe_display(self._update_status_bar, response)
         self._safe_display(self._apply_highlighter_for_response, response)
         self._safe_display(self._populate_all_tabs, response)
+        self._safe_display(self._apply_readability_mode_for_response, response)
 
         # Apply user's preferred view mode
         self._apply_view_preference()
@@ -164,6 +178,72 @@ class ResponsePanel(
         self._refresh_display()
 
         logger.debug("display_response: pipeline complete")
+
+    def _load_readability_preferences(self) -> dict:
+        """Load saved readability preferences from QSettings."""
+        raw = self._settings.value(_KEY_READABILITY_PREFS, "{}")
+        try:
+            data = json.loads(raw) if isinstance(raw, str) else {}
+            if isinstance(data, dict):
+                return {
+                    str(k): str(v)
+                    for k, v in data.items()
+                    if str(v) in _READABILITY_MODES
+                }
+        except Exception:
+            logger.debug("Failed to parse readability preferences", exc_info=True)
+        return {}
+
+    def _save_readability_preferences(self) -> None:
+        """Persist readability preferences to QSettings."""
+        try:
+            self._settings.setValue(_KEY_READABILITY_PREFS, json.dumps(self._readability_by_type))
+        except Exception:
+            logger.debug("Failed to save readability preferences", exc_info=True)
+
+    @staticmethod
+    def _content_type_family(content_type: str) -> str:
+        ct = (content_type or "").lower()
+        if "json" in ct:
+            return "json"
+        if "xml" in ct:
+            return "xml"
+        if "html" in ct:
+            return "html"
+        if "text" in ct:
+            return "text"
+        return "other"
+
+    def _apply_readability_mode_for_response(self, response: Response) -> None:
+        """Apply the saved readability mode for the response content type."""
+        family = self._content_type_family(response.headers.get("content-type", ""))
+        mode = self._readability_by_type.get(family, _READ_MODE_PRETTY)
+        self._switch_readability_mode(mode, persist=False)
+
+    def _on_readability_selected(self, mode: str) -> None:
+        """Handle readability mode selection from the toolbar menu."""
+        self._switch_readability_mode(mode, persist=True)
+
+    def _switch_readability_mode(self, mode: str, persist: bool = True) -> None:
+        """Switch response body readability mode and update checked actions."""
+        if mode not in _READABILITY_MODES:
+            mode = _READ_MODE_PRETTY
+        self._readability_mode = mode
+
+        for key, action in getattr(self, "_readability_actions", {}).items():
+            action.blockSignals(True)
+            action.setChecked(key == mode)
+            action.blockSignals(False)
+
+        if self.current_response is not None:
+            self._render_body_by_mode(mode)
+
+            if persist:
+                family = self._content_type_family(
+                    self.current_response.headers.get("content-type", "")
+                )
+                self._readability_by_type[family] = mode
+                self._save_readability_preferences()
 
 
     def _apply_highlighter_for_response(self, response: Response) -> None:
