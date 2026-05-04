@@ -131,7 +131,10 @@ class ResponseActionsMixin:
             return
 
         try:
-            self.body_text.set_code(formatted_text)
+            self._pretty_body_text = formatted_text
+            if self.current_response is not None:
+                self._raw_body_text = self._decode_response_body(self.current_response)
+            self._render_body_by_mode(getattr(self, "_readability_mode", "pretty"))
         except Exception:
             logger.exception("Failed to display formatted body; falling back to raw")
             try:
