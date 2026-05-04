@@ -1,0 +1,50 @@
+"""Theme application orchestration and stylesheet caching."""
+
+from __future__ import annotations
+
+from typing import Dict, Optional, Tuple
+
+from PyQt6.QtWidgets import QApplication
+
+from .detection import system_is_dark
+from .palettes import (
+    is_dark_mode,
+    palette_cache_key,
+    resolve_palette,
+    set_active_palette,
+    validate_palettes,
+)
+from .settings import get_font_size, get_theme_mode, get_ui_font
+from .stylesheet import build_stylesheet
+
+_ss_cache: Dict[Tuple[str, int], str] = {}
+
+
+def apply_theme(app: Optional[QApplication] = None) -> None:
+    """Re-apply the global stylesheet to the running QApplication."""
+    qt_app = app if app is not None else QApplication.instance()
+    if not isinstance(qt_app, QApplication):
+        return
+
+    mode = get_theme_mode()
+    dark = system_is_dark(qt_app)
+    palette = resolve_palette(mode, dark)
+    set_active_palette(palette)
+
+    validate_palettes()
+
+    base_pt = get_font_size()
+    qt_app.setFont(get_ui_font(base_pt))
+
+    cache_key = (palette_cache_key(palette), base_pt)
+    if cache_key not in _ss_cache:
+        _ss_cache[cache_key] = build_stylesheet(base_pt, palette)
+    qt_app.setStyleSheet(_ss_cache[cache_key])
+
+
+def is_dark() -> bool:
+    """Return True when current resolved theme is dark."""
+    mode = get_theme_mode()
+    return is_dark_mode(mode, system_is_dark())
+
+
