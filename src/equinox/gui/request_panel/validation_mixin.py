@@ -6,7 +6,7 @@ Shows validation status with visual indicators and prevents send if critical err
 
 import json
 import logging
-from typing import Optional
+from typing import Optional, Tuple
 
 from PyQt6.QtWidgets import QWidget
 from PyQt6.QtCore import QTimer
@@ -67,24 +67,62 @@ class _RequestValidationMixin:
         # Empty is OK (user hasn't entered anything yet)
         if not url_text:
             self._set_field_valid(self.url_input, None)
+            if hasattr(self, "_set_url_validation_hint"):
+                self._set_url_validation_hint("")
+            if hasattr(self, "_set_url_fix_suggestion"):
+                self._set_url_fix_suggestion(None)
             self._url_valid = True
             return
 
         # Skip validation if URL contains unresolved variables
         if "{{" in url_text and "}}" in url_text:
             self._set_field_valid(self.url_input, None)  # Don't validate templates
+            if hasattr(self, "_set_url_validation_hint"):
+                self._set_url_validation_hint("URL contains template variables; resolved at send time.")
+            if hasattr(self, "_set_url_fix_suggestion"):
+                self._set_url_fix_suggestion(None)
             self._url_valid = True
             return
 
         try:
             Validator.validate_resolved_url(url_text)
             self._set_field_valid(self.url_input, "valid")
+            if hasattr(self, "_set_url_validation_hint"):
+                self._set_url_validation_hint("URL looks valid.")
+            if hasattr(self, "_set_url_fix_suggestion"):
+                self._set_url_fix_suggestion(None)
             self._url_valid = True
             logger.debug("URL validation passed: %s", url_text[:50])
         except ValidationError as e:
-            self._set_field_valid(self.url_input, "error", str(e))
+            err_msg = str(e)
+            self._set_field_valid(self.url_input, "error", err_msg)
+            if hasattr(self, "_set_url_validation_hint"):
+                self._set_url_validation_hint(err_msg, is_error=True)
+            fix = self._suggest_url_fix(url_text)
+            if hasattr(self, "_set_url_fix_suggestion"):
+                if fix is None:
+                    self._set_url_fix_suggestion(None)
+                else:
+                    fixed_url, reason = fix
+                    self._set_url_fix_suggestion(fixed_url, reason)
             self._url_valid = False
             logger.debug("URL validation failed: %s", str(e))
+
+    @staticmethod
+    def _suggest_url_fix(url_text: str) -> Optional[Tuple[str, str]]:
+        """Return a safe URL correction suggestion, if one is obvious."""
+        text = (url_text or "").strip()
+        if not text:
+            return None
+        if " " in text:
+            compact = "".join(text.split())
+            if compact != text:
+                return compact, "Remove whitespace from URL"
+        if not text.lower().startswith(("http://", "https://")):
+            if text.startswith("//"):
+                return f"https:{text}", "Add https scheme"
+            return f"https://{text}", "Add https scheme"
+        return None
 
     def _validate_headers(self) -> None:
         """Validate headers and show inline feedback."""
@@ -116,8 +154,12 @@ class _RequestValidationMixin:
             return
 
         # Check if body format is JSON (from body type picker)
-        body_format = getattr(self, 'body_format', None) or "text"
-        if body_format != "json":
+        body_type = ""
+        try:
+            body_type = self.body_type_combo.currentText().lower()
+        except Exception:
+            body_type = ""
+        if "json" not in body_type and "graphql" not in body_type:
             self._set_field_valid(self.body_text, None)  # Don't validate non-JSON
             self._body_valid = True
             return
