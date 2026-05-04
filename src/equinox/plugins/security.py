@@ -7,8 +7,7 @@ This module provides security features for plugins including:
 - Security validation
 """
 
-import os
-import sys
+import ast
 import time
 import hashlib
 import logging
@@ -17,8 +16,8 @@ from typing import Set, Optional, Dict, Any, List
 from pathlib import Path
 from dataclasses import dataclass, field
 
-from equinox.core.exceptions import SecurityError, PluginError
-from equinox.core.audit import get_audit_logger, AuditEventType
+from equinox.core.exceptions import SecurityError
+from equinox.core.audit import get_audit_logger
 
 logger = logging.getLogger(__name__)
 audit_logger = get_audit_logger()
@@ -495,6 +494,135 @@ def validate_plugin_file(plugin_path: Path) -> bool:
         raise SecurityError(f"Plugin failed security validation: {detail}")
 
     return True
+
+
+def _is_within(root: Path, candidate: Path) -> bool:
+    """Return True when *candidate* resolves under *root* (inclusive)."""
+    try:
+        candidate.resolve().relative_to(root.resolve())
+        return True
+    except ValueError:
+        return False
+
+
+def _resolve_import_target(base: Path) -> List[Path]:
+    """Return potential .py targets for a module base path."""
+    return [base.with_suffix(".py"), base / "__init__.py"]
+
+
+def _iter_package_python_files(package_dir: Path, plugin_root: Path) -> List[Path]:
+    """Return Python files beneath *package_dir* constrained to *plugin_root*."""
+    if not package_dir.exists() or not package_dir.is_dir() or not _is_within(plugin_root, package_dir):
+        return []
+
+    files: List[Path] = []
+    for path in package_dir.rglob("*.py"):
+        if "__pycache__" in path.parts:
+            continue
+        if _is_within(plugin_root, path):
+            files.append(path)
+    return files
+
+
+def _resolve_absolute_import_chain(module_name: str, plugin_root: Path) -> List[Path]:
+    """Resolve package/module files touched by an absolute import chain."""
+    targets: List[Path] = []
+    parts = [part for part in module_name.split(".") if part]
+    if not parts:
+        return targets
+
+    current = plugin_root
+    for index, part in enumerate(parts):
+        current = current / part
+        candidates = _resolve_import_target(current)
+        for candidate in candidates:
+            if candidate.exists() and _is_within(plugin_root, candidate):
+                targets.append(candidate)
+        # Stop descending if the current segment is clearly not a local package.
+        if not (current.is_dir() or current.with_suffix(".py").exists()):
+            break
+
+    return targets
+
+
+def _iter_local_import_targets(node: ast.AST, current_file: Path, plugin_root: Path) -> List[Path]:
+    """Resolve local import candidates for *node* limited to *plugin_root*."""
+    targets: List[Path] = []
+
+    if isinstance(node, ast.Import):
+        for alias in node.names:
+            targets.extend(_resolve_absolute_import_chain(alias.name, plugin_root))
+        return [p for p in targets if p.exists() and _is_within(plugin_root, p)]
+
+    if not isinstance(node, ast.ImportFrom):
+        return []
+
+    # Relative import: from .x import y / from ..pkg import z
+    if node.level and node.level > 0:
+        anchor = current_file.parent
+        for _ in range(node.level - 1):
+            anchor = anchor.parent
+        if node.module:
+            anchor = anchor.joinpath(*node.module.split("."))
+
+        targets.extend(_resolve_import_target(anchor))
+        for alias in node.names:
+            if alias.name == "*":
+                targets.extend(_iter_package_python_files(anchor, plugin_root))
+                continue
+            targets.extend(_resolve_import_target(anchor / alias.name))
+        return [p for p in targets if p.exists() and _is_within(plugin_root, p)]
+
+    # Absolute import-from: from pkg.mod import x
+    if node.module:
+        anchor = plugin_root.joinpath(*node.module.split("."))
+        targets.extend(_resolve_import_target(anchor))
+        for alias in node.names:
+            if alias.name == "*":
+                targets.extend(_iter_package_python_files(anchor, plugin_root))
+                continue
+            targets.extend(_resolve_import_target(anchor / alias.name))
+
+    return [p for p in targets if p.exists() and _is_within(plugin_root, p)]
+
+
+def validate_plugin_dependency_graph(entry_file: Path, plugin_root: Optional[Path] = None) -> Set[Path]:
+    """Validate *entry_file* and all locally imported plugin modules.
+
+    Traverses local Python imports reachable from the plugin entry point and
+    applies ``validate_plugin_file`` to every discovered module before runtime
+    loading. This blocks bypasses where a clean entry file imports unsafe code
+    from neighboring files.
+    """
+    root = (plugin_root or entry_file.parent).resolve()
+    to_visit: List[Path] = [entry_file.resolve()]
+    visited: Set[Path] = set()
+
+    while to_visit:
+        current = to_visit.pop()
+        if current in visited:
+            continue
+        if not _is_within(root, current):
+            raise SecurityError(f"Plugin import escapes plugin directory: {current}")
+
+        validate_plugin_file(current)
+        visited.add(current)
+
+        try:
+            source = current.read_text(encoding="utf-8")
+            tree = ast.parse(source, str(current))
+        except SyntaxError as exc:
+            raise SecurityError(f"Plugin has syntax errors: {exc}")
+        except Exception as exc:
+            raise SecurityError(f"Failed to inspect plugin dependency '{current}': {exc}")
+
+        for node in ast.walk(tree):
+            if isinstance(node, (ast.Import, ast.ImportFrom)):
+                for target in _iter_local_import_targets(node, current, root):
+                    if target not in visited:
+                        to_visit.append(target)
+
+    return visited
 
 
 def calculate_checksum(plugin_path: Path) -> str:

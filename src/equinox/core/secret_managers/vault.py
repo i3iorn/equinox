@@ -16,6 +16,8 @@ from equinox.core.secret_managers.base import (
     SecretNotFoundError,
     SecretAuthError,
 )
+from equinox.core.validation import Validator
+from equinox.security import mask_secret
 
 logger = logging.getLogger(__name__)
 
@@ -60,7 +62,19 @@ class VaultManager(SecretManager):
                 "requests is required for Vault. Install with: pip install requests"
             )
 
-        self.url = url.rstrip("/")
+        try:
+            validated_url = Validator.validate_resolved_url(str(url).strip())
+        except Exception as exc:
+            raise SecretManagerError(f"Invalid Vault URL: {exc}")
+
+        # Deny insecure transport by default for secret backends.
+        allow_insecure_http = bool(kwargs.get("allow_insecure_http", False))
+        if validated_url.lower().startswith("http://") and not allow_insecure_http:
+            raise SecretManagerError(
+                "Vault URL must use https:// (set allow_insecure_http=True only for local testing)"
+            )
+
+        self.url = validated_url.rstrip("/")
         self.token = token
         self.headers = {"X-Vault-Token": token}
 
@@ -131,8 +145,10 @@ class VaultManager(SecretManager):
             value_str = str(value)
             self._validate_secret_length(value_str, secret_name)
             self._store_in_cache(secret_name, value_str)
-            secret_name_fingerprint = hashlib.sha256(secret_name.encode("utf-8")).hexdigest()[:12]
-            logger.debug("Retrieved secret from Vault (secret fingerprint: %s)", secret_name_fingerprint)
+            logger.debug(
+                "Retrieved secret from Vault (secret ref: %s)",
+                mask_secret(secret_name, keep=4),
+            )
             return value_str
 
         except SecretNotFoundError:

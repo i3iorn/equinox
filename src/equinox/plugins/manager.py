@@ -3,32 +3,58 @@
 import json
 import importlib.util
 import logging
+import os
 import sys
 from pathlib import Path
 from typing import List, Dict, Any, Optional
 
 from equinox.plugins.base import Plugin, PluginContext
-from equinox.security.plugins import PluginManifest, PluginSandbox, validate_plugin_file
+from equinox.security.plugins import (
+    PluginManifest,
+    PluginSandbox,
+    SecurePluginContext,
+    validate_plugin_dependency_graph,
+    verify_checksum,
+)
 from equinox.core.audit import get_audit_logger
 from equinox.core.exceptions import PluginError
 from equinox.core.request import Request, Response
 
 logger = logging.getLogger(__name__)
 _audit = get_audit_logger()
+_STRICT_CHECKSUM_ENV = "EQUINOX_REQUIRE_PLUGIN_CHECKSUMS"
+
+
+def _env_flag_enabled(name: str) -> bool:
+    """Return True when environment variable *name* is set to a truthy value."""
+    return os.environ.get(name, "").strip().lower() in {"1", "true", "yes", "on"}
 
 
 class PluginManager:
     """Manage plugins"""
 
-    def __init__(self, plugin_dir: str, context: PluginContext):
+    def __init__(
+        self,
+        plugin_dir: str,
+        context: PluginContext,
+        require_checksums: Optional[bool] = None,
+    ):
         """Initialize plugin manager.
 
         Args:
             plugin_dir: Directory containing plugins
             context: Plugin context
+            require_checksums: When True, every plugin manifest must include a
+                checksum and the entry file must match it. When None, falls
+                back to ``EQUINOX_REQUIRE_PLUGIN_CHECKSUMS``.
         """
         self.plugin_dir = Path(plugin_dir)
         self.context = context
+        self.require_checksums = (
+            require_checksums
+            if require_checksums is not None
+            else _env_flag_enabled(_STRICT_CHECKSUM_ENV)
+        )
         self.plugins: List[Plugin] = []
         self._load_plugins()
 
@@ -75,9 +101,18 @@ class PluginManager:
                 logger.error("Plugin entry point not found: %s", plugin_file)
                 raise PluginError(f"Plugin entry point not found: {plugin_file}")
 
-            # Security: validate plugin source before loading
-            logger.debug("Validating plugin file: %s", plugin_file)
-            validate_plugin_file(plugin_file)
+            # Security: validate entry + all locally imported plugin modules.
+            logger.debug("Validating plugin dependency graph: %s", plugin_file)
+            validate_plugin_dependency_graph(plugin_file, plugin_path)
+
+            # Optional integrity enforcement when manifest provides checksum,
+            # or mandatory enforcement when strict mode is enabled.
+            if self.require_checksums and not plugin_manifest.checksum:
+                raise PluginError(
+                    f"Plugin '{plugin_manifest.name}' is missing required manifest checksum"
+                )
+            if plugin_manifest.checksum:
+                verify_checksum(plugin_file, plugin_manifest.checksum)
 
             spec = importlib.util.spec_from_file_location(plugin_manifest.name, plugin_file)
             if spec is None or spec.loader is None:
@@ -106,7 +141,13 @@ class PluginManager:
                 raise PluginError(f"Plugin must define 'PluginClass': {plugin_manifest.name}")
 
             plugin_class = getattr(module, "PluginClass")
-            plugin = plugin_class(self.context)
+            secure_context = SecurePluginContext(
+                sandbox=sandbox,
+                storage=self.context.storage,
+                http_client=self.context.http_client,
+                config=self.context.config,
+            )
+            plugin = plugin_class(secure_context)
 
             if not isinstance(plugin, Plugin):
                 sys.modules.pop(plugin_manifest.name, None)

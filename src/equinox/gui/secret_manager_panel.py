@@ -21,9 +21,9 @@ from PyQt6.QtWidgets import (
     QTextEdit,
 )
 
-from equinox.core.secret_managers import list_available_managers
 from equinox.gui.dialogs.secret_manager_config_dialog import SecretManagerConfigDialog
 from equinox.gui.widgets.secret_browser import SecretBrowserWidget
+from equinox.security import sanitize_details
 
 logger = logging.getLogger(__name__)
 
@@ -210,13 +210,26 @@ class SecretManagerSettingsPanel(QWidget):
             self.config_display.setText("No configuration loaded")
             return
 
+        config = self._current_config.get('config', {})
+        safe_config = sanitize_details(config)
+        warning_text = ""
+        if (
+            self._current_config.get('type') in ('vault', 'hashicorp_vault')
+            and config.get('allow_insecure_http')
+            and str(config.get('url', '')).strip().lower().startswith('http://')
+        ):
+            warning_text = (
+                "\nWARNING: insecure Vault HTTP override is enabled. Use only for trusted local development.\n"
+            )
+
         display_text = f"""
 Manager Type: {self._current_config.get('type', 'N/A')}
 Cache Enabled: {self._current_config.get('enable_cache', True)}
 Cache TTL: {self._current_config.get('cache_ttl', 300)}s
+{warning_text}
 
 Configuration:
-{json.dumps(self._current_config.get('config', {}), indent=2)}
+{json.dumps(safe_config, indent=2)}
 """
         self.config_display.setText(display_text)
 
