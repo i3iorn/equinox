@@ -171,7 +171,103 @@ class HttpxDispatcher:
             request=request,
             timestamp=utc_now(),
             sent_headers=sent_headers,
+            sent_url=str(raw.request.url) if getattr(raw, "request", None) is not None else None,
+            connection_info=self._extract_connection_info(raw, request),
         )
+
+    @staticmethod
+    def _extract_tls_info_from_stream(stream: Any) -> Dict[str, Any]:
+        """Best-effort TLS/certificate extraction from a transport stream."""
+        info: Dict[str, Any] = {}
+        if stream is None or not hasattr(stream, "get_extra_info"):
+            return info
+
+        try:
+            ssl_obj = stream.get_extra_info("ssl_object")
+        except Exception:
+            ssl_obj = None
+
+        if ssl_obj is None:
+            return info
+
+        try:
+            info["tls_version"] = ssl_obj.version()
+        except Exception:
+            pass
+        try:
+            cipher = ssl_obj.cipher()
+            if cipher:
+                info["cipher"] = cipher[0]
+                if len(cipher) > 2:
+                    info["cipher_bits"] = cipher[2]
+        except Exception:
+            pass
+
+        try:
+            cert = ssl_obj.getpeercert()
+        except Exception:
+            cert = None
+
+        if isinstance(cert, dict) and cert:
+            subject = cert.get("subject") or []
+            issuer = cert.get("issuer") or []
+
+            def _first_name(parts: Any, key: str) -> str:
+                try:
+                    for item in parts:
+                        for kv in item:
+                            if isinstance(kv, tuple) and len(kv) == 2 and kv[0] == key:
+                                return str(kv[1])
+                except Exception:
+                    return ""
+                return ""
+
+            info["cert_subject"] = _first_name(subject, "commonName")
+            info["cert_issuer"] = _first_name(issuer, "commonName")
+            if cert.get("notBefore"):
+                info["cert_not_before"] = cert.get("notBefore")
+            if cert.get("notAfter"):
+                info["cert_not_after"] = cert.get("notAfter")
+            if cert.get("serialNumber"):
+                info["cert_serial"] = cert.get("serialNumber")
+            san = cert.get("subjectAltName") or []
+            if isinstance(san, list):
+                info["cert_san_count"] = len(san)
+
+        return info
+
+    def _extract_connection_info(self, raw: httpx.Response, request: Request) -> Dict[str, Any]:
+        """Extract transport metadata (TLS/cert/peer) for response diagnostics."""
+        info: Dict[str, Any] = {
+            "verify_ssl": bool(getattr(request, "verify_ssl", True)),
+            "follow_redirects": bool(getattr(request, "follow_redirects", True)),
+        }
+
+        try:
+            req_url = str(raw.request.url)
+            info["sent_url"] = req_url
+        except Exception:
+            req_url = request.url
+            info["sent_url"] = req_url
+
+        stream = None
+        try:
+            ext = getattr(raw, "extensions", {}) or {}
+            stream = ext.get("network_stream") or ext.get("stream")
+        except Exception:
+            stream = None
+
+        info.update(self._extract_tls_info_from_stream(stream))
+
+        if stream is not None and hasattr(stream, "get_extra_info"):
+            try:
+                peer = stream.get_extra_info("server_addr")
+                if peer:
+                    info["server_addr"] = str(peer)
+            except Exception:
+                pass
+
+        return info
 
     @staticmethod
     def _extract_reason_phrase(raw: httpx.Response) -> str:

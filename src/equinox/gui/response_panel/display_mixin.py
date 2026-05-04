@@ -364,6 +364,7 @@ class ResponseDisplayMixin:
         parts = urlsplit(url or "")
         scheme = (parts.scheme or "").lower()
         is_https = scheme == "https"
+        meta = getattr(response, "connection_info", None) or {}
 
         lines = [
             f"URL: {url}",
@@ -382,7 +383,45 @@ class ResponseDisplayMixin:
         if hsts:
             lines.append(f"HSTS value: {hsts}")
 
-        lines.append("Certificate details: not available from current transport metadata")
+        tls_version = meta.get("tls_version")
+        if tls_version:
+            lines.append(f"TLS version: {tls_version}")
+
+        cipher = meta.get("cipher")
+        if cipher:
+            bits = meta.get("cipher_bits")
+            if bits:
+                lines.append(f"Cipher: {cipher} ({bits} bits)")
+            else:
+                lines.append(f"Cipher: {cipher}")
+
+        cert_subject = meta.get("cert_subject")
+        cert_issuer = meta.get("cert_issuer")
+        cert_not_after = meta.get("cert_not_after")
+        cert_not_before = meta.get("cert_not_before")
+        cert_serial = meta.get("cert_serial")
+        cert_san_count = meta.get("cert_san_count")
+
+        if cert_subject or cert_issuer or cert_not_after:
+            lines.append("Certificate details:")
+            if cert_subject:
+                lines.append(f"  Subject CN: {cert_subject}")
+            if cert_issuer:
+                lines.append(f"  Issuer CN: {cert_issuer}")
+            if cert_not_before:
+                lines.append(f"  Valid from: {cert_not_before}")
+            if cert_not_after:
+                lines.append(f"  Valid to: {cert_not_after}")
+            if cert_serial:
+                lines.append(f"  Serial: {cert_serial}")
+            if cert_san_count is not None:
+                lines.append(f"  SAN entries: {cert_san_count}")
+        else:
+            lines.append("Certificate details: not available from current transport metadata")
+
+        server_addr = meta.get("server_addr")
+        if server_addr:
+            lines.append(f"Server address: {server_addr}")
         self.connection_text.set_code("\n".join(lines))
 
     @staticmethod

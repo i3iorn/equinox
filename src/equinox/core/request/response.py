@@ -79,6 +79,7 @@ class Response:
     sent_headers: Optional[Dict[str, str]] = None
     sent_url: Optional[str] = None
     timings: Optional[Dict[str, float]] = None
+    connection_info: Optional[Dict[str, Any]] = None
     retry_summary: Optional[str] = None  # Human-readable summary of retries (e.g. "retried 2× after 429")
 
     def __post_init__(self) -> None:
@@ -175,5 +176,6 @@ class Response:
             "content_type": self.content_type,
             "size": self.size,
             "sent_url": self.sent_url,
+            "connection_info": self.connection_info,
         }
 
