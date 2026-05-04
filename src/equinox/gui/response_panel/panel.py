@@ -43,6 +43,7 @@ _READ_MODE_SPLIT = "split"
 _READ_MODE_DIFF = "diff"
 _READABILITY_MODES = (_READ_MODE_PRETTY, _READ_MODE_RAW, _READ_MODE_SPLIT, _READ_MODE_DIFF)
 _KEY_READABILITY_PREFS = "response/readability_by_content_type"
+_KEY_REDACTION_PREVIEW = "response/redaction_preview"
 
 
 class ResponsePanel(
@@ -91,6 +92,7 @@ class ResponsePanel(
         self._body_highlighter: Optional[Any] = None
         self._view_preference = _VIEW_MODE_RAW  # Preferred view: "raw" or "json"
         self._readability_mode = _READ_MODE_PRETTY
+        self._redaction_preview = bool(self._settings.value(_KEY_REDACTION_PREVIEW, False, type=bool))
         self._raw_body_text = ""
         self._pretty_body_text = ""
         self._readability_by_type = self._load_readability_preferences()
@@ -112,6 +114,7 @@ class ResponsePanel(
         self._build_status_bar(layout)
         self._build_timings_row(layout)
         self._build_tabs(layout)
+        self._redact_btn.setChecked(self._redaction_preview)
 
     # ------------------------------------------------------------------
     # Response Display Pipeline
@@ -178,6 +181,18 @@ class ResponsePanel(
         self._refresh_display()
 
         logger.debug("display_response: pipeline complete")
+
+    def _on_redaction_toggled(self, checked: bool) -> None:
+        """Toggle sensitive-data redaction preview and re-render current response."""
+        self._redaction_preview = bool(checked)
+        try:
+            self._settings.setValue(_KEY_REDACTION_PREVIEW, self._redaction_preview)
+        except Exception:
+            logger.debug("Failed to persist redaction preview setting", exc_info=True)
+
+        if self.current_response is not None:
+            self._safe_display(self._populate_all_tabs, self.current_response)
+            self._safe_display(self._apply_readability_mode_for_response, self.current_response)
 
     def _load_readability_preferences(self) -> dict:
         """Load saved readability preferences from QSettings."""
@@ -287,6 +302,7 @@ class ResponsePanel(
         self._safe_display(self._display_timings, response)
         self._safe_display(self._load_cookies_tab, response.headers)
         self._safe_display(self._display_sent_request, response)
+        self._safe_display(self._display_connection_details, response)
 
         logger.debug("populate_all_tabs: completed")
 

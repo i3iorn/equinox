@@ -3,8 +3,10 @@ from __future__ import annotations
 
 import json
 import logging
+from datetime import datetime, timedelta, timezone
+from pathlib import Path
 from contextlib import contextmanager
-from typing import Callable, Generator
+from typing import Callable, Generator, Optional
 
 from PyQt6.QtWidgets import (
     QWidget,
@@ -14,8 +16,12 @@ from PyQt6.QtWidgets import (
     QScrollArea,
     QFrame,
     QToolButton,
+    QPushButton,
+    QListWidget,
+    QListWidgetItem,
 )
-from PyQt6.QtCore import Qt
+from PyQt6.QtCore import Qt, QSettings
+from PyQt6.QtGui import QGuiApplication
 
 from equinox.core.response_intelligence.models import Category, Finding, Severity
 from equinox.gui.theme import Colors, get_mono_font
@@ -35,14 +41,47 @@ _SEV_STYLE: dict[Severity, tuple[str, Callable[[], str]]] = {
 
 # Fallback used when a Severity value has no entry in _SEV_STYLE.
 _SEV_STYLE_DEFAULT: tuple[str, Callable[[], str]] = ("ℹ", lambda: Colors.INFO)
+_KEY_MUTED_FINDINGS = "intelligence/muted_findings"
+
+
+def _finding_key(finding: Finding) -> str:
+    """Return a stable key used for muting a finding class."""
+    return finding.analyzer_id or finding.title
+
+
+def _missing_headers_template(missing: list[dict]) -> str:
+    """Build a copy/paste security header template from missing-header findings."""
+    defaults = {
+        "strict-transport-security": "max-age=31536000; includeSubDomains",
+        "content-security-policy": "default-src 'self'",
+        "x-content-type-options": "nosniff",
+        "x-frame-options": "DENY",
+        "permissions-policy": "camera=(), microphone=(), geolocation=()",
+        "referrer-policy": "strict-origin-when-cross-origin",
+    }
+    lines = []
+    for row in missing:
+        name = str(row.get("header") or "").strip().lower()
+        if not name:
+            continue
+        lines.append(f"{name}: {defaults.get(name, '<set-value>')}")
+    return "\n".join(lines)
 
 
 class _FindingCard(QFrame):
     """A single finding rendered as a collapsible card."""
 
-    def __init__(self, finding: Finding, parent: QWidget | None = None) -> None:
+    def __init__(
+        self,
+        finding: Finding,
+        on_apply: Optional[Callable[[Finding], None]] = None,
+        on_mute: Optional[Callable[[Finding], None]] = None,
+        parent: QWidget | None = None,
+    ) -> None:
         super().__init__(parent)
         self._finding = finding
+        self._on_apply = on_apply
+        self._on_mute = on_mute
         self._expanded = False
         self.setObjectName("intelCard")
         self.setFrameShape(QFrame.Shape.StyledPanel)
@@ -103,6 +142,33 @@ class _FindingCard(QFrame):
             rec.setWordWrap(True)
             layout.addWidget(rec)
 
+        # ── Actions ─────────────────────────────────────────────────────
+        actions = QHBoxLayout()
+        actions.setSpacing(6)
+
+        copy_fix = QPushButton("Copy Fix")
+        copy_fix.setObjectName("intelActionBtn")
+        copy_fix.clicked.connect(self._copy_fix)
+        actions.addWidget(copy_fix)
+
+        apply_btn = QPushButton("Apply")
+        apply_btn.setObjectName("intelActionBtn")
+        apply_btn.clicked.connect(self._apply_fix)
+        actions.addWidget(apply_btn)
+
+        task_btn = QPushButton("Copy Task")
+        task_btn.setObjectName("intelActionBtn")
+        task_btn.clicked.connect(self._copy_task)
+        actions.addWidget(task_btn)
+
+        mute_btn = QPushButton("Mute 7d")
+        mute_btn.setObjectName("intelActionBtn")
+        mute_btn.clicked.connect(self._mute_finding)
+        actions.addWidget(mute_btn)
+
+        actions.addStretch()
+        layout.addLayout(actions)
+
         # ── Collapsible details ───────────────────────────────────────
         self._details_widget: QLabel | None = None
         if finding.details:
@@ -136,6 +202,27 @@ class _FindingCard(QFrame):
         if self._toggle_btn:
             self._toggle_btn.setText("▼" if self._expanded else "▶")
 
+    def _copy_fix(self) -> None:
+        text = self._finding.recommendation or self._finding.description
+        QGuiApplication.clipboard().setText(text)
+
+    def _copy_task(self) -> None:
+        task = (
+            f"- [ ] [{self._finding.severity.value.upper()}] {self._finding.title}\n"
+            f"  - Finding: {self._finding.description}\n"
+            f"  - Action: {self._finding.recommendation or 'Investigate and remediate'}\n"
+            f"  - Analyzer: {self._finding.analyzer_id}"
+        )
+        QGuiApplication.clipboard().setText(task)
+
+    def _apply_fix(self) -> None:
+        if self._on_apply is not None:
+            self._on_apply(self._finding)
+
+    def _mute_finding(self) -> None:
+        if self._on_mute is not None:
+            self._on_mute(self._finding)
+
 
 class IntelligencePanel(QWidget):
     """Scrollable panel that displays Response Intelligence findings.
@@ -146,6 +233,8 @@ class IntelligencePanel(QWidget):
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self._findings: list[Finding] = []
+        self._settings = QSettings("Equinox", "Equinox")
+        self._muted_until = self._load_muted_rules()
         self._init_ui()
 
     def _init_ui(self) -> None:
@@ -159,6 +248,14 @@ class IntelligencePanel(QWidget):
         self._summary_label = QLabel("")
         self._summary_label.setObjectName("intelSummary")
         self._summary_bar.addWidget(self._summary_label)
+        self._audit_refresh_btn = QPushButton("Refresh Timeline")
+        self._audit_refresh_btn.setObjectName("intelActionBtn")
+        self._audit_refresh_btn.clicked.connect(self._refresh_audit_timeline)
+        self._summary_bar.addWidget(self._audit_refresh_btn)
+        self._unmute_btn = QPushButton("Unmute All")
+        self._unmute_btn.setObjectName("intelActionBtn")
+        self._unmute_btn.clicked.connect(self._clear_muted_rules)
+        self._summary_bar.addWidget(self._unmute_btn)
         self._summary_bar.addStretch()
         outer.addLayout(self._summary_bar)
 
@@ -176,6 +273,14 @@ class IntelligencePanel(QWidget):
         self._scroll.setWidget(self._scroll_content)
         outer.addWidget(self._scroll, 1)
 
+        self._audit_title = QLabel("Security Timeline")
+        self._audit_title.setObjectName("intelCategory")
+        outer.addWidget(self._audit_title)
+        self._audit_list = QListWidget()
+        self._audit_list.setObjectName("intelAuditList")
+        self._audit_list.setMaximumHeight(120)
+        outer.addWidget(self._audit_list)
+
         # ── Placeholder ───────────────────────────────────────────────
         self._placeholder = QLabel("Send a request to see analysis results.")
         self._placeholder.setObjectName("mutedLabel")
@@ -192,18 +297,21 @@ class IntelligencePanel(QWidget):
         to avoid per-card repaint overhead.
         """
         self._findings = list(findings)  # defensive copy
+        visible = [f for f in findings if not self._is_muted(f)]
 
-        if not findings:
+        if not visible:
             self._set_summary("✓ No issues found", Colors.SUCCESS)
             self._set_placeholder("✓ No issues found", Colors.SUCCESS, bold=True)
             with self._suspend_card_updates():
                 self._clear_cards()
             self._show_content(show_scroll=False)
+            self._refresh_audit_timeline()
             return
 
-        self._set_summary(self._build_summary_html(findings), Colors.FG, rich_text=True)
-        self._rebuild_cards(findings)
+        self._set_summary(self._build_summary_html(visible), Colors.FG, rich_text=True)
+        self._rebuild_cards(visible)
         self._show_content(show_scroll=True)
+        self._refresh_audit_timeline()
 
     def set_analyzing(self) -> None:
         """Show a 'running' state while analysis is in progress."""
@@ -221,6 +329,7 @@ class IntelligencePanel(QWidget):
         self._set_summary("", Colors.FG)
         self._set_placeholder("Send a request to see analysis results.")
         self._show_content(show_scroll=False)
+        self._audit_list.clear()
 
     # ── Private helpers ───────────────────────────────────────────────────────
 
@@ -302,8 +411,135 @@ class IntelligencePanel(QWidget):
                 )
                 for finding in cat_findings:
                     self._scroll_layout.insertWidget(
-                        self._scroll_layout.count() - 1, _FindingCard(finding)
+                        self._scroll_layout.count() - 1,
+                        _FindingCard(
+                            finding,
+                            on_apply=self._apply_finding_action,
+                            on_mute=self._mute_for_seven_days,
+                        ),
                     )
+
+    def _apply_finding_action(self, finding: Finding) -> None:
+        """Apply finding action to request editor when supported, else copy a fix template."""
+        try:
+            win = self.window()
+            rp = getattr(win, "request_panel", None)
+            if rp is None:
+                self._copy_finding_template(finding)
+                return
+
+            if finding.analyzer_id == "security.missing_headers":
+                missing = list((finding.details or {}).get("missing") or [])
+                template = _missing_headers_template(missing)
+                for line in template.splitlines():
+                    if ":" not in line:
+                        continue
+                    key, value = [p.strip() for p in line.split(":", 1)]
+                    rp.headers_table.add_row(key, value, enabled=True)
+                return
+
+            if finding.analyzer_id == "recommender":
+                ftype = str((finding.details or {}).get("type") or "")
+                key = str((finding.details or {}).get("key") or "")
+                value = (finding.details or {}).get("suggested_value")
+                if ftype == "header" and key:
+                    rp.headers_table.add_row(key, str(value or ""), enabled=True)
+                    return
+                if ftype == "query" and key:
+                    rp.params_table.add_row(key, str(value or ""), enabled=True)
+                    return
+
+            self._copy_finding_template(finding)
+        except Exception:
+            logger.debug("Failed to apply finding action", exc_info=True)
+            self._copy_finding_template(finding)
+
+    @staticmethod
+    def _copy_finding_template(finding: Finding) -> None:
+        """Copy a textual remediation template for unsupported auto-apply findings."""
+        text = finding.recommendation or finding.description
+        if finding.analyzer_id == "security.missing_headers":
+            text = _missing_headers_template(list((finding.details or {}).get("missing") or []))
+        QGuiApplication.clipboard().setText(text)
+
+    def _mute_for_seven_days(self, finding: Finding) -> None:
+        key = _finding_key(finding)
+        self._muted_until[key] = (datetime.now(timezone.utc) + timedelta(days=7)).isoformat()
+        self._save_muted_rules()
+        self.display_findings(self._findings)
+
+    def _is_muted(self, finding: Finding) -> bool:
+        key = _finding_key(finding)
+        expires = self._muted_until.get(key)
+        if not expires:
+            return False
+        try:
+            dt = datetime.fromisoformat(expires)
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=timezone.utc)
+            return datetime.now(timezone.utc) < dt
+        except Exception:
+            return False
+
+    def _load_muted_rules(self) -> dict[str, str]:
+        raw = self._settings.value(_KEY_MUTED_FINDINGS, "{}")
+        try:
+            data = json.loads(raw) if isinstance(raw, str) else {}
+            if isinstance(data, dict):
+                return {str(k): str(v) for k, v in data.items()}
+        except Exception:
+            logger.debug("Failed to parse muted finding rules", exc_info=True)
+        return {}
+
+    def _save_muted_rules(self) -> None:
+        try:
+            self._settings.setValue(_KEY_MUTED_FINDINGS, json.dumps(self._muted_until))
+        except Exception:
+            logger.debug("Failed to save muted finding rules", exc_info=True)
+
+    def _clear_muted_rules(self) -> None:
+        self._muted_until = {}
+        self._save_muted_rules()
+        self.display_findings(self._findings)
+
+    def _refresh_audit_timeline(self) -> None:
+        """Refresh compact audit timeline with recent security-relevant events."""
+        self._audit_list.clear()
+        audit_path = Path.home() / ".equinox" / "audit.log"
+        if not audit_path.exists():
+            self._audit_list.addItem(QListWidgetItem("No audit events yet."))
+            return
+
+        wanted = {
+            "validation_failure",
+            "rate_limit_exceeded",
+            "ssl_verification_failed",
+            "injection_attempt",
+            "auth_failure",
+            "auth_token_refresh",
+        }
+        try:
+            lines = audit_path.read_text(encoding="utf-8", errors="replace").splitlines()
+            shown = 0
+            for line in reversed(lines):
+                if shown >= 20:
+                    break
+                try:
+                    event = json.loads(line)
+                except Exception:
+                    continue
+                etype = str(event.get("event_type") or "")
+                if etype not in wanted:
+                    continue
+                ts = str(event.get("timestamp") or "")[:19]
+                msg = str(event.get("message") or etype)
+                self._audit_list.addItem(QListWidgetItem(f"{ts}  {msg}"))
+                shown += 1
+            if shown == 0:
+                self._audit_list.addItem(QListWidgetItem("No recent security events."))
+        except Exception:
+            logger.debug("Failed to refresh audit timeline", exc_info=True)
+            self._audit_list.addItem(QListWidgetItem("Unable to load audit timeline."))
 
     def _clear_cards(self) -> None:
         """Remove all finding cards and category labels from the scroll layout.

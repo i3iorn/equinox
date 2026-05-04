@@ -20,7 +20,7 @@ from equinox.gui.response_panel.header_table import HeaderTable
 from equinox.gui.response_panel.json_tree import JsonTree
 from equinox.gui.response_panel.read_only_text import ReadOnlyText
 from equinox.gui.response_panel.search_bar import SearchBar
-from equinox.gui.theme import Colors, get_mono_font
+from equinox.gui.theme import get_mono_font
 
 # Layout spacing constants
 _STATUS_BAR_SPACING = 0
@@ -123,6 +123,12 @@ class ResponseBuilderMixin:
         self._view_btn, self._view_menu = self._build_view_selector()
         self._readability_btn, self._readability_menu = self._build_readability_selector()
 
+        self._redact_btn = QToolButton()
+        self._redact_btn.setText("Redact")
+        self._redact_btn.setCheckable(True)
+        self._redact_btn.setToolTip("Preview response with sensitive values masked")
+        self._redact_btn.toggled.connect(self._on_redaction_toggled)
+
         diff_btn = _make_button("Diff…", _BTN_WIDTH_SMALL, "Compare response body with a history entry")
         diff_btn.clicked.connect(self._diff_with_history)
 
@@ -132,6 +138,7 @@ class ResponseBuilderMixin:
         row.addWidget(QLabel(_BODY_WARNING_SEPARATOR))
         row.addWidget(self.size_label)
         row.addWidget(self._wrap_btn)
+        row.addWidget(self._redact_btn)
         row.addWidget(self._readability_btn)
         row.addWidget(self._view_btn)
         row.addWidget(diff_btn)
@@ -249,6 +256,7 @@ class ResponseBuilderMixin:
         self._build_cookies_tab()
         self._build_json_tab()
         self._build_sent_request_tab()
+        self._build_connection_tab()
         self._build_intelligence_tab()
 
         layout.addWidget(self.tabs, 1)
@@ -396,6 +404,17 @@ class ResponseBuilderMixin:
         layout.addWidget(self.sent_body_text, 1)
 
         self.tabs.addTab(container, "Sent Request")
+
+    # ------------------------------------------------------------------
+    # Connection Tab
+    # ------------------------------------------------------------------
+
+    def _build_connection_tab(self) -> None:
+        container, layout = _make_container(_SENT_REQUEST_TAB_MARGINS, _SENT_REQUEST_TAB_SPACING)
+        layout.addWidget(QLabel("Connection & TLS details:"))
+        self.connection_text = ReadOnlyText()
+        layout.addWidget(self.connection_text, 1)
+        self.tabs.addTab(container, "Connection")
 
     # ------------------------------------------------------------------
     # Intelligence Tab

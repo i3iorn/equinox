@@ -104,6 +104,22 @@ class _RequestSendMixin:
         if url and "{{" not in url and not HTTP_SCHEME_RE.match(url):
             warnings.append("URL does not start with http:// or https://")
 
+        profile = ""
+        try:
+            profile = str(self.get_policy_profile()).lower()
+        except Exception:
+            profile = "balanced"
+
+        if profile == "strict":
+            if url.lower().startswith("http://"):
+                warnings.append("Strict policy blocks insecure HTTP requests; use https://")
+            if not self.verify_ssl_check.isChecked():
+                warnings.append("Strict policy requires SSL verification")
+            if self.follow_redirects_check.isChecked():
+                warnings.append("Strict policy recommends disabling redirects")
+            if self.pre_script_editor.toPlainText().strip() or self.post_script_editor.toPlainText().strip():
+                warnings.append("Strict policy disables pre/post scripts")
+
         auth = self._auth or self._inherited_auth
         if auth is not None and hasattr(auth, "get_preflight_warning"):
             warning = auth.get_preflight_warning()
@@ -167,6 +183,13 @@ class _RequestSendMixin:
         Script execution is isolated: exceptions are logged, not raised.
         Session variables are merged into the return dict.
         """
+        try:
+            if str(self.get_policy_profile()).lower() == "strict":
+                self.pre_script_result.setText("Skipped by strict policy")
+                return variables
+        except Exception:
+            pass
+
         pre_src = self.pre_script_editor.toPlainText()
         if not pre_src.strip():
             return variables
@@ -329,6 +352,25 @@ class _RequestSendMixin:
         logger.debug("_send_request() initiated: url=%s", url[:80])
 
         self._display_preflight_warnings()
+
+        try:
+            if str(self.get_policy_profile()).lower() == "strict":
+                if url.lower().startswith("http://"):
+                    QMessageBox.warning(
+                        self,
+                        "Strict Policy",
+                        "Strict policy blocks insecure HTTP requests. Use https:// instead.",
+                    )
+                    return
+                if not self.verify_ssl_check.isChecked():
+                    QMessageBox.warning(
+                        self,
+                        "Strict Policy",
+                        "Strict policy requires SSL certificate verification.",
+                    )
+                    return
+        except Exception:
+            logger.debug("Failed to evaluate strict policy block checks", exc_info=True)
 
         if self._worker is not None and self._worker.isRunning():
             return
@@ -691,6 +733,13 @@ class _RequestSendMixin:
 
     def _run_post_script(self, response: Response) -> None:
         """Execute post-response script if defined."""
+        try:
+            if str(self.get_policy_profile()).lower() == "strict":
+                self.post_script_result.setText("Skipped by strict policy")
+                return
+        except Exception:
+            pass
+
         post_src = self.post_script_editor.toPlainText()
         if not post_src.strip():
             return

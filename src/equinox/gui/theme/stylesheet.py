@@ -406,6 +406,23 @@ def build_stylesheet(base_pt: int, colors: dict[str, str]) -> str:
         background: {c["BG"]};
         color: {c["FG"]};
     }}
+    QPushButton#intelActionBtn {{
+        min-height: 22px;
+        padding: 2px 8px;
+        border-radius: 4px;
+        border: 1px solid {c["BORDER"]};
+        background: {c["BG"]};
+        color: {c["FG"]};
+    }}
+    QPushButton#intelActionBtn:hover {{
+        background: {c["BG_ALT"]};
+    }}
+    QListWidget#intelAuditList {{
+        border: 1px solid {c["BORDER"]};
+        border-radius: 4px;
+        background: {c["BG"]};
+        color: {c["FG_MUTED"]};
+    }}
 
     /* -- Sliders / spin boxes -- */
     QSlider::groove:horizontal {{

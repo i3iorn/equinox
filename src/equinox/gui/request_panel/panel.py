@@ -35,11 +35,11 @@ from PyQt6.QtWidgets import (
     QToolButton,
     QApplication,
 )
-from PyQt6.QtCore import pyqtSignal, Qt, QTimer, QStringListModel
+from PyQt6.QtCore import pyqtSignal, Qt, QTimer, QStringListModel, QSettings
 from PyQt6.QtGui import QKeySequence, QShortcut
 
 from equinox.gui.request_panel.body_text_proxy import BodyTextProxy
-from equinox.gui.theme import Colors, get_mono_font
+from equinox.gui.theme import get_mono_font
 from equinox.gui.widgets import UrlLineEdit, CheckableKeyValueTable, JsonBodyEditor, PathParamsTable
 from equinox.core.request import Request
 from equinox.core.error_enrichment import RichError, enrich_exception  # noqa: F401 (used in mixin layer)
@@ -71,6 +71,11 @@ from equinox.gui.request_panel.toolbar import TabToolbar
 from equinox.gui.syntax_highlighter.python_highlighter import PythonHighlighter
 
 logger = logging.getLogger(__name__)
+_KEY_POLICY_PROFILE = "request/policy_profile"
+_POLICY_STRICT = "Strict"
+_POLICY_BALANCED = "Balanced"
+_POLICY_PERMISSIVE = "Permissive"
+
 
 __all__ = ["RequestPanel"]
 
@@ -161,6 +166,8 @@ class RequestPanel(_RequestValidationMixin, _RequestSendMixin, _RequestAuthMixin
         self._elapsed_timer.timeout.connect(self._tick_elapsed)
         self._elapsed_secs = 0.0
         self._dirty = False
+        self._settings = QSettings("Equinox", "Equinox")
+        self._policy_profile = str(self._settings.value(_KEY_POLICY_PROFILE, _POLICY_BALANCED))
 
         self._init_ui()
         self._setup_dirty_tracking()
@@ -322,7 +329,9 @@ class RequestPanel(_RequestValidationMixin, _RequestSendMixin, _RequestAuthMixin
         safe_connect(lambda: self._multipart_table.itemChanged, self._update_tab_labels, "_multipart_table.itemChanged->update_tab_labels")
         safe_connect(lambda: self.timeout_spin.valueChanged, self._mark_dirty, "timeout_spin.valueChanged")
         safe_connect(lambda: self.verify_ssl_check.stateChanged, self._mark_dirty, "verify_ssl_check.stateChanged")
+        safe_connect(lambda: self.verify_ssl_check.stateChanged, lambda: self._update_auth_display(self._auth), "verify_ssl_check.stateChanged->auth_display")
         safe_connect(lambda: self.follow_redirects_check.stateChanged, self._mark_dirty, "follow_redirects_check.stateChanged")
+        safe_connect(lambda: self.url_input.textChanged, lambda: self._update_auth_display(self._auth), "url_input.textChanged->auth_display")
         safe_connect(lambda: self.notes_editor.textChanged, self._mark_dirty, "notes_editor.textChanged")
         safe_connect(lambda: self._gql_query.textChanged, self._mark_dirty, "_gql_query.textChanged")
         safe_connect(lambda: self._gql_vars.textChanged, self._mark_dirty, "_gql_vars.textChanged")
@@ -849,6 +858,24 @@ class RequestPanel(_RequestValidationMixin, _RequestSendMixin, _RequestAuthMixin
         self.follow_redirects_check.setChecked(True)
         settings_form.addRow("", self.follow_redirects_check)
 
+        self.policy_profile_combo = QComboBox()
+        self.policy_profile_combo.addItems([
+            _POLICY_STRICT,
+            _POLICY_BALANCED,
+            _POLICY_PERMISSIVE,
+        ])
+        idx = self.policy_profile_combo.findText(self._policy_profile)
+        if idx >= 0:
+            self.policy_profile_combo.setCurrentIndex(idx)
+        self.policy_profile_combo.currentTextChanged.connect(self._on_policy_profile_changed)
+        settings_form.addRow("Policy profile:", self.policy_profile_combo)
+
+        self._policy_hint = QLabel("")
+        self._policy_hint.setObjectName("mutedLabel")
+        self._policy_hint.setWordWrap(True)
+        settings_form.addRow("", self._policy_hint)
+        self._on_policy_profile_changed(self.policy_profile_combo.currentText())
+
         layout.addWidget(settings_group)
 
         # ── Certificate fields ────────────────────────────────────────
@@ -881,6 +908,36 @@ class RequestPanel(_RequestValidationMixin, _RequestSendMixin, _RequestAuthMixin
         layout.addWidget(cert_group)
         layout.addStretch()
         return w
+
+    def _on_policy_profile_changed(self, profile: str) -> None:
+        """Apply and persist guardrail profile selection."""
+        profile = str(profile or _POLICY_BALANCED)
+        self._policy_profile = profile
+        try:
+            self._settings.setValue(_KEY_POLICY_PROFILE, profile)
+        except Exception:
+            logger.debug("Failed to persist policy profile", exc_info=True)
+
+        if profile == _POLICY_STRICT:
+            self.verify_ssl_check.setChecked(True)
+            self.follow_redirects_check.setChecked(False)
+            self._policy_hint.setText(
+                "Strict: blocks insecure HTTP, enforces SSL verification, disables scripts, and warns on redirects."
+            )
+        elif profile == _POLICY_PERMISSIVE:
+            self._policy_hint.setText(
+                "Permissive: allows advanced flows with fewer preflight guardrails. Use for trusted test environments only."
+            )
+        else:
+            self.verify_ssl_check.setChecked(True)
+            self.follow_redirects_check.setChecked(True)
+            self._policy_hint.setText(
+                "Balanced: secure defaults with practical flexibility for day-to-day API testing."
+            )
+
+    def get_policy_profile(self) -> str:
+        """Return currently selected request-policy profile."""
+        return str(getattr(self, "_policy_profile", _POLICY_BALANCED))
 
     def _browse_file_to_input(self, title: str, filters: str, target: QLineEdit) -> None:
         """Open a file-picker dialog and write the chosen path into *target* QLineEdit."""

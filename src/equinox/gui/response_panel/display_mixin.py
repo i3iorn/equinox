@@ -10,8 +10,9 @@ from __future__ import annotations
 import json
 import logging
 import difflib
+import re
 from typing import Dict, Any, Optional
-from urllib.parse import urlencode
+from urllib.parse import urlencode, urlsplit
 
 from PyQt6.QtWidgets import QTableWidgetItem
 
@@ -25,6 +26,13 @@ from equinox.gui.response_panel._formatting import (
 from equinox.gui.theme import Colors
 
 logger = logging.getLogger(__name__)
+
+_SENSITIVE_PATTERNS = [
+    re.compile(r"(?i)(authorization\s*:\s*)([^\r\n]+)"),
+    re.compile(r"(?i)(api[-_]?key\s*[:=]\s*)([^\s\"']+)"),
+    re.compile(r"(?i)(access[_-]?token\s*[:=]\s*[\"']?)([^\"'\s]+)"),
+    re.compile(r"(?i)\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b"),
+]
 
 
 class ResponseDisplayMixin:
@@ -129,8 +137,8 @@ class ResponseDisplayMixin:
 
     def _render_body_by_mode(self, mode: str) -> None:
         """Render cached body text in the requested readability mode."""
-        raw = getattr(self, "_raw_body_text", "") or ""
-        pretty = getattr(self, "_pretty_body_text", "") or raw
+        raw = self._maybe_redact_text(getattr(self, "_raw_body_text", "") or "")
+        pretty = self._maybe_redact_text(getattr(self, "_pretty_body_text", "") or raw)
         mode = (mode or "pretty").lower()
 
         if mode == "raw":
@@ -150,6 +158,32 @@ class ResponseDisplayMixin:
             text = pretty
 
         self.body_text.set_code(text)
+
+    def _maybe_redact_text(self, text: str) -> str:
+        """Return redacted text when preview mode is enabled."""
+        if not getattr(self, "_redaction_preview", False):
+            return text
+        redacted = text
+        for pattern in _SENSITIVE_PATTERNS:
+            if pattern.groups >= 2:
+                redacted = pattern.sub(r"\1[REDACTED]", redacted)
+            else:
+                redacted = pattern.sub("[REDACTED]", redacted)
+        return redacted
+
+    def _maybe_redact_headers(self, headers: Dict[str, str]) -> Dict[str, str]:
+        """Return headers with sensitive values masked when redaction preview is enabled."""
+        if not getattr(self, "_redaction_preview", False):
+            return dict(headers)
+
+        sensitive = {"authorization", "cookie", "set-cookie", "x-api-key", "proxy-authorization"}
+        masked: Dict[str, str] = {}
+        for key, value in headers.items():
+            if key.lower() in sensitive:
+                masked[key] = "[REDACTED]"
+            else:
+                masked[key] = self._maybe_redact_text(str(value))
+        return masked
 
     # ------------------------------------------------------------------
     # JSON Tree
@@ -195,7 +229,7 @@ class ResponseDisplayMixin:
             type(self.tabs).__name__,
         )
 
-        self.resp_headers_table.load(response.headers)
+        self.resp_headers_table.load(self._maybe_redact_headers(dict(response.headers)))
         count = len(response.headers)
         self._hdrs_count_label.setText(str(count))
         logger.debug("_display_headers: %d headers loaded, tabs visible=%s", count, self.tabs.isVisible())
@@ -314,15 +348,42 @@ class ResponseDisplayMixin:
         """Display headers sent (prefer sent_headers which include auth)."""
         req = response.request
         sent_hdrs = response.sent_headers or req.headers or {}
-        self.sent_headers_table.load(sent_hdrs)
+        self.sent_headers_table.load(self._maybe_redact_headers(dict(sent_hdrs)))
 
     def _display_sent_request_body(self, body: Optional[Any]) -> None:
         """Display the request body, if present."""
         if body:
-            self.sent_body_text.set_code(self._format_request_body(body))
+            self.sent_body_text.set_code(self._maybe_redact_text(self._format_request_body(body)))
         else:
             self.sent_body_text.setPlaceholderText("(no body)")
             self.sent_body_text.clear()
+
+    def _display_connection_details(self, response: Response) -> None:
+        """Populate connection tab with transport and TLS-related metadata."""
+        url = getattr(response, "sent_url", None) or response.request.url
+        parts = urlsplit(url or "")
+        scheme = (parts.scheme or "").lower()
+        is_https = scheme == "https"
+
+        lines = [
+            f"URL: {url}",
+            f"Host: {parts.netloc or '(unknown)'}",
+            f"Transport: {'HTTPS' if is_https else 'HTTP'}",
+            f"Verify SSL: {bool(getattr(response.request, 'verify_ssl', True))}",
+            f"Follow redirects: {bool(getattr(response.request, 'follow_redirects', True))}",
+        ]
+
+        timings = getattr(response, "timings", None) or {}
+        if "tls_ms" in timings:
+            lines.append(f"TLS handshake: {timings.get('tls_ms')} ms")
+
+        hsts = response.headers.get("strict-transport-security", "")
+        lines.append(f"HSTS: {'present' if hsts else 'missing'}")
+        if hsts:
+            lines.append(f"HSTS value: {hsts}")
+
+        lines.append("Certificate details: not available from current transport metadata")
+        self.connection_text.set_code("\n".join(lines))
 
     @staticmethod
     def _format_request_body(body: Any) -> str:

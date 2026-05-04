@@ -56,6 +56,7 @@ _AUTH_INHERITED_FROM_FOLDER = '  (inherited from folder "{}")'
 
 _BTN_CONFIGURE = "Configure Authentication…"
 _BTN_CLEAR = "Clear Auth"
+_TRUST_PREFIX = "Trust: "
 
 
 class _RequestAuthMixin:
@@ -116,6 +117,7 @@ class _RequestAuthMixin:
             _AUTH_NONE_DESC, muted=True, wrap=True
         )
         self.auth_status_label = self._create_styled_label("", wrap=True)
+        self.auth_trust_label = self._create_styled_label("", muted=True, wrap=True)
 
         # Create button row
         btn_row = self._create_auth_button_row()
@@ -124,6 +126,7 @@ class _RequestAuthMixin:
         layout.addWidget(self.auth_type_label)
         layout.addWidget(self.auth_details_label)
         layout.addWidget(self.auth_status_label)
+        layout.addWidget(self.auth_trust_label)
         layout.addLayout(btn_row)
         layout.addStretch()
         return w
@@ -347,6 +350,7 @@ class _RequestAuthMixin:
         display_auth = auth or self._get_inherited_auth_safe()
         if not display_auth:
             self._set_auth_display_none()
+            self._update_trust_indicator(None)
             return
 
         # Get inherited label if applicable
@@ -355,6 +359,7 @@ class _RequestAuthMixin:
             inherited_label = self._format_inherited_label(self._inherited_auth_source)
 
         self._set_auth_display_for_strategy(display_auth, inherited_label)
+        self._update_trust_indicator(display_auth)
 
     def _get_inherited_auth_safe(self) -> Optional[Any]:
         """Safely retrieve inherited auth (handles missing attributes).
@@ -368,6 +373,31 @@ class _RequestAuthMixin:
         """Set display labels for the 'no auth' state."""
         self.auth_type_label.setText(_AUTH_NONE_LABEL)
         self.auth_details_label.setText(_AUTH_NONE_DESC)
+
+    def _update_trust_indicator(self, auth: Optional[Any]) -> None:
+        """Render quick trust-source indicators for auth/environment/transport posture."""
+        chips = []
+        if auth is None:
+            chips.append("NoAuth")
+        elif self._auth is not None:
+            chips.append("OwnAuth")
+        elif self._inherited_auth_source:
+            chips.append(f"Inherited:{self._inherited_auth_source}")
+        else:
+            chips.append("Inherited")
+
+        try:
+            url = self.url_input.text().strip()
+            chips.append("EnvVars" if "{{" in url else "DirectURL")
+        except Exception:
+            chips.append("URL:unknown")
+
+        try:
+            chips.append("SSL:verified" if self.verify_ssl_check.isChecked() else "SSL:unverified")
+        except Exception:
+            chips.append("SSL:unknown")
+
+        self.auth_trust_label.setText(_TRUST_PREFIX + " | ".join(chips))
 
     def _set_auth_display_for_strategy(self, auth: Any, inherited_label: str) -> None:
         """Set display labels for a specific auth strategy.
