@@ -8,7 +8,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
-from PyQt6.QtCore import Qt, QTimer, QSettings, QByteArray
+from PyQt6.QtCore import Qt, QTimer, QSettings, QByteArray, QEvent
 from PyQt6.QtGui import QAction, QKeySequence
 from PyQt6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QSplitter,
@@ -73,6 +73,7 @@ class MainWindow(QMainWindow):
         self._pending_panel_refreshes: set = set()
         self.setWindowTitle("Equinox — API Testing")
         self.setGeometry(_WINDOW_X, _WINDOW_Y, _WINDOW_W, _WINDOW_H)
+        self.setWindowFlags(Qt.WindowType.FramelessWindowHint)
 
         # Debounce splitter-drag saves: only flush to disk 350 ms after the
         # user *stops* dragging, instead of on every pixel movement.
@@ -689,6 +690,8 @@ class MainWindow(QMainWindow):
 
     def _create_menu_bar(self) -> None:
         menubar = self.menuBar()
+        if menubar is None:
+            return
 
         # File
         file_menu = menubar.addMenu("&File")
@@ -804,6 +807,60 @@ class MainWindow(QMainWindow):
         setup_act = QAction("Run Setup Wizard…", self)
         setup_act.triggered.connect(self._run_setup_wizard)
         help_menu.addAction(setup_act)
+
+        self._add_window_controls_to_menu_bar(menubar)
+
+    def _add_window_controls_to_menu_bar(self, menubar) -> None:
+        """Attach frameless-window controls to the right side of the menu bar."""
+        container = QWidget(menubar)
+        layout = QHBoxLayout(container)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
+
+        self._win_min_btn = QToolButton(container)
+        self._win_min_btn.setText("—")
+        self._win_min_btn.setToolTip("Minimize")
+        self._win_min_btn.clicked.connect(self.showMinimized)
+
+        self._win_max_btn = QToolButton(container)
+        self._win_max_btn.clicked.connect(self._toggle_max_restore)
+
+        self._win_close_btn = QToolButton(container)
+        self._win_close_btn.setText("✕")
+        self._win_close_btn.setToolTip("Close")
+        self._win_close_btn.clicked.connect(self.close)
+
+        for btn in (self._win_min_btn, self._win_max_btn, self._win_close_btn):
+            btn.setObjectName("windowControlBtn")
+            btn.setFixedSize(28, 22)
+            layout.addWidget(btn)
+
+        menubar.setCornerWidget(container, Qt.Corner.TopRightCorner)
+        self._sync_window_controls()
+
+    def _toggle_max_restore(self) -> None:
+        """Toggle between maximized and normal states."""
+        if self.isMaximized():
+            self.showNormal()
+        else:
+            self.showMaximized()
+        self._sync_window_controls()
+
+    def _sync_window_controls(self) -> None:
+        """Update maximize button icon/tooltip to reflect current window state."""
+        if not hasattr(self, "_win_max_btn"):
+            return
+        if self.isMaximized():
+            self._win_max_btn.setText("❐")
+            self._win_max_btn.setToolTip("Restore")
+        else:
+            self._win_max_btn.setText("□")
+            self._win_max_btn.setToolTip("Maximize")
+
+    def changeEvent(self, event) -> None:  # type: ignore[override]
+        if event.type() == QEvent.Type.WindowStateChange:
+            self._sync_window_controls()
+        super().changeEvent(event)
 
     # ── Zoom ──────────────────────────────────────────────────────────
 

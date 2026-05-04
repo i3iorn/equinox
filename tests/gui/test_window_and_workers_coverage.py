@@ -322,6 +322,30 @@ class TestMainWindow:
         assert len(win.menuBar().actions()) > 0
         _close_win(win)
 
+    def test_menu_bar_has_window_controls(self, db):
+        from PyQt6.QtCore import Qt
+        from equinox.gui.window import MainWindow
+
+        win = MainWindow(db)
+        assert hasattr(win, "_win_min_btn")
+        assert hasattr(win, "_win_max_btn")
+        assert hasattr(win, "_win_close_btn")
+        assert win.menuBar().cornerWidget(Qt.Corner.TopRightCorner) is not None
+        _close_win(win)
+
+    def test_window_controls_sync_on_state_change(self, db):
+        from equinox.gui.window import MainWindow
+
+        win = MainWindow(db)
+        win.showMaximized()
+        win._sync_window_controls()
+        assert win._win_max_btn.toolTip() == "Restore"
+
+        win.showNormal()
+        win._sync_window_controls()
+        assert win._win_max_btn.toolTip() == "Maximize"
+        _close_win(win)
+
     def test_fetch_history_entry_not_found(self, db):
         from equinox.gui.window import MainWindow
         win = MainWindow(db)
