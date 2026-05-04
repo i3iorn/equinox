@@ -8,11 +8,11 @@ from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
-from PyQt6.QtCore import Qt, QTimer, QSettings, QByteArray, QEvent
+from PyQt6.QtCore import Qt, QTimer, QSettings, QByteArray, QEvent, QPoint
 from PyQt6.QtGui import QAction, QKeySequence
 from PyQt6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QSplitter,
-    QTabWidget, QStatusBar, QToolButton, QMenu,
+    QTabWidget, QStatusBar, QToolButton, QMenu, QLabel,
     QMessageBox, QFileDialog, QInputDialog, QProgressDialog,
 )
 
@@ -67,6 +67,8 @@ class MainWindow(QMainWindow):
     def __init__(self, db: Database) -> None:
         super().__init__()
         self.db = db
+        self._drag_menu_active = False
+        self._drag_menu_offset = QPoint()
         self._settings = QSettings(_SETTINGS_KEY, _SETTINGS_KEY)
         self._intelligence_worker = None  # keep reference to avoid GC
         self._background_workers = set()
@@ -809,9 +811,30 @@ class MainWindow(QMainWindow):
         help_menu.addAction(setup_act)
 
         self._add_window_controls_to_menu_bar(menubar)
+        menubar.installEventFilter(self)
+
+    def setWindowTitle(self, title: str) -> None:  # type: ignore[override]
+        """Keep the menu-bar title label synchronized with the window title."""
+        super().setWindowTitle(title)
+        if hasattr(self, "_menu_title_label"):
+            self._menu_title_label.setText(title)
 
     def _add_window_controls_to_menu_bar(self, menubar) -> None:
         """Attach frameless-window controls to the right side of the menu bar."""
+        title_container = QWidget(menubar)
+        title_layout = QHBoxLayout(title_container)
+        title_layout.setContentsMargins(8, 0, 8, 0)
+
+        self._menu_title_label = QLabel(self.windowTitle(), title_container)
+        self._menu_title_label.setObjectName("menuBarWindowTitle")
+        self._menu_title_label.setTextInteractionFlags(Qt.TextInteractionFlag.NoTextInteraction)
+        self._menu_title_label.setCursor(Qt.CursorShape.ArrowCursor)
+        title_layout.addWidget(self._menu_title_label)
+
+        menubar.setCornerWidget(title_container, Qt.Corner.TopLeftCorner)
+        title_container.installEventFilter(self)
+        self._menu_title_label.installEventFilter(self)
+
         container = QWidget(menubar)
         layout = QHBoxLayout(container)
         layout.setContentsMargins(0, 0, 0, 0)
@@ -837,6 +860,31 @@ class MainWindow(QMainWindow):
 
         menubar.setCornerWidget(container, Qt.Corner.TopRightCorner)
         self._sync_window_controls()
+
+    def eventFilter(self, watched, event):  # type: ignore[override]
+        """Enable dragging the frameless window from empty menu-bar/title area."""
+        if event.type() == QEvent.Type.MouseButtonPress and event.button() == Qt.MouseButton.LeftButton:
+            menu_bar = self.menuBar()
+            if watched is menu_bar:
+                action = menu_bar.actionAt(event.pos())
+                if action is not None:
+                    self._drag_menu_active = False
+                    return super().eventFilter(watched, event)
+            self._drag_menu_active = not self.isMaximized()
+            if self._drag_menu_active:
+                self._drag_menu_offset = event.globalPosition().toPoint() - self.frameGeometry().topLeft()
+            return False
+
+        if event.type() == QEvent.Type.MouseMove and self._drag_menu_active:
+            if event.buttons() & Qt.MouseButton.LeftButton:
+                self.move(event.globalPosition().toPoint() - self._drag_menu_offset)
+                return True
+            self._drag_menu_active = False
+
+        if event.type() == QEvent.Type.MouseButtonRelease and event.button() == Qt.MouseButton.LeftButton:
+            self._drag_menu_active = False
+
+        return super().eventFilter(watched, event)
 
     def _toggle_max_restore(self) -> None:
         """Toggle between maximized and normal states."""

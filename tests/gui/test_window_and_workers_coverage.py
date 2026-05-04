@@ -3,7 +3,8 @@
 import pytest
 from unittest.mock import MagicMock, patch
 from PyQt6.QtWidgets import QApplication
-from PyQt6.QtCore import QCoreApplication
+from PyQt6.QtCore import QCoreApplication, QPointF, Qt
+from PyQt6.QtGui import QMouseEvent
 
 _APP = QApplication.instance() or QApplication([])
 
@@ -323,7 +324,6 @@ class TestMainWindow:
         _close_win(win)
 
     def test_menu_bar_has_window_controls(self, db):
-        from PyQt6.QtCore import Qt
         from equinox.gui.window import MainWindow
 
         win = MainWindow(db)
@@ -331,6 +331,67 @@ class TestMainWindow:
         assert hasattr(win, "_win_max_btn")
         assert hasattr(win, "_win_close_btn")
         assert win.menuBar().cornerWidget(Qt.Corner.TopRightCorner) is not None
+        _close_win(win)
+
+    def test_menu_bar_shows_window_title(self, db):
+        from equinox.gui.window import MainWindow
+
+        win = MainWindow(db)
+        assert hasattr(win, "_menu_title_label")
+        assert win.menuBar().cornerWidget(Qt.Corner.TopLeftCorner) is not None
+        assert win._menu_title_label.text() == win.windowTitle()
+
+        win.setWindowTitle("Equinox Test Title")
+        assert win._menu_title_label.text() == "Equinox Test Title"
+        _close_win(win)
+
+    def test_dragging_menu_bar_title_moves_window(self, db):
+        from equinox.gui.window import MainWindow
+
+        win = MainWindow(db)
+        win.show()
+        _process()
+        win.move(120, 120)
+        _process()
+
+        title_label = win._menu_title_label
+        start_pos = win.pos()
+        local = QPointF(6.0, 6.0)
+        global_start = QPointF(title_label.mapToGlobal(local.toPoint()))
+
+        press = QMouseEvent(
+            QMouseEvent.Type.MouseButtonPress,
+            local,
+            global_start,
+            Qt.MouseButton.LeftButton,
+            Qt.MouseButton.LeftButton,
+            Qt.KeyboardModifier.NoModifier,
+        )
+        QApplication.sendEvent(title_label, press)
+
+        global_end = QPointF(global_start.x() + 40.0, global_start.y() + 30.0)
+        move = QMouseEvent(
+            QMouseEvent.Type.MouseMove,
+            local,
+            global_end,
+            Qt.MouseButton.NoButton,
+            Qt.MouseButton.LeftButton,
+            Qt.KeyboardModifier.NoModifier,
+        )
+        QApplication.sendEvent(title_label, move)
+
+        release = QMouseEvent(
+            QMouseEvent.Type.MouseButtonRelease,
+            local,
+            global_end,
+            Qt.MouseButton.LeftButton,
+            Qt.MouseButton.NoButton,
+            Qt.KeyboardModifier.NoModifier,
+        )
+        QApplication.sendEvent(title_label, release)
+        _process()
+
+        assert win.pos() != start_pos
         _close_win(win)
 
     def test_window_controls_sync_on_state_change(self, db):
