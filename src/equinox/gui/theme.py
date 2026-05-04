@@ -345,7 +345,12 @@ def get_ui_font(size_override: int | None = None) -> QFont:
 
 # Palette validation: ensure all palettes have the same keys at runtime
 def validate_palettes() -> None:
-    palettes = {"LIGHT": _LIGHT, "DARK": _DARK, "MUTED_DARK": _MUTED_DARK}
+    palettes = {
+        "LIGHT": _LIGHT,
+        "DARK": _DARK,
+        "MUTED_DARK": _MUTED_DARK,
+        "OCEANIC": _OCEANIC,
+    }
     keys = set(_LIGHT.keys())
     for name, pal in palettes.items():
         missing = keys - set(pal.keys())
@@ -781,7 +786,21 @@ def _build_stylesheet(base_pt: int) -> str:
 
 # ── Public API ───────────────────────────────────────────────────────────────
 
-_ss_cache: dict[tuple[bool, int], str] = {}
+_ss_cache: dict[tuple[str, int], str] = {}
+
+
+def _palette_cache_key(palette: dict[str, str]) -> str:
+    """Return a stable cache key for a resolved palette object."""
+    if palette is _LIGHT:
+        return THEME_LIGHT
+    if palette is _DARK:
+        return THEME_DARK
+    if palette is _MUTED_DARK:
+        return THEME_MUTED_DARK
+    if palette is _OCEANIC:
+        return THEME_OCEANIC
+    # Fallback keeps cache safe even if a future custom palette is injected.
+    return "custom"
 
 
 def apply_theme(app: QApplication | None = None) -> None:
@@ -791,7 +810,7 @@ def apply_theme(app: QApplication | None = None) -> None:
     ``Colors`` proxy, sets the application font, and installs the
     generated stylesheet.
 
-    The stylesheet string is cached by ``(is_dark, base_pt)`` so repeated
+    The stylesheet string is cached by ``(resolved_palette, base_pt)`` so repeated
     calls with unchanged settings avoid the cost of rebuilding and re-parsing
     a ~450-line QSS document.
     """
@@ -803,8 +822,8 @@ def apply_theme(app: QApplication | None = None) -> None:
         return
 
     # Resolve effective palette
-    _active = _resolve_palette()
-    dark = _resolve_dark()
+    palette = _resolve_palette()
+    _active = palette
 
     # Validate palettes after theme change
     validate_palettes()
@@ -812,7 +831,7 @@ def apply_theme(app: QApplication | None = None) -> None:
     base_pt = get_font_size()
     app.setFont(get_ui_font(base_pt))
 
-    cache_key = (dark, base_pt)
+    cache_key = (_palette_cache_key(palette), base_pt)
     if cache_key not in _ss_cache:
         _ss_cache[cache_key] = _build_stylesheet(base_pt)
     app.setStyleSheet(_ss_cache[cache_key])
