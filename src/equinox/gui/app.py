@@ -14,13 +14,15 @@ import traceback
 import types
 from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
-from typing import NoReturn, Any
+from typing import NoReturn, Any, Optional
 
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QColor, QPixmap
 from PyQt6.QtWidgets import QApplication, QSplashScreen
 
 from equinox.core.log_setup import configure_logging
+from equinox.security.secrets_password import set_master_password_prompt
+from equinox.gui.dialogs.master_password_dialog import prompt_master_password
 from equinox.gui.theme import apply_theme
 from equinox.gui.widgets import CopyableMessageBox
 from equinox.gui.window import MainWindow
@@ -231,6 +233,16 @@ def _init_database(splash: _SplashScreen) -> Any:
         )
 
 
+def _configure_master_password_gui_prompt(app: QApplication) -> None:
+    """Route master-password prompts through a Qt dialog for GUI sessions."""
+
+    def _prompt() -> Optional[str]:
+        parent = app.activeWindow() if app.activeWindow() is not None else None
+        return prompt_master_password(parent)
+
+    set_master_password_prompt(_prompt)
+
+
 def _init_main_window(splash: _SplashScreen, db: object) -> MainWindow:
     """Initialize the main application window.
 
@@ -313,6 +325,9 @@ def main() -> NoReturn:
 
     # Step 3: Initialize Qt application
     app = _init_qt_application(app_version)
+
+    # Route master-password prompts through GUI dialog (no terminal getpass).
+    _configure_master_password_gui_prompt(app)
 
     # Step 4: Apply theme
     apply_theme(app)
