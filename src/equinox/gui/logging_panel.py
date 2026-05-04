@@ -8,7 +8,7 @@ from typing import Any
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout,
     QTextEdit, QPushButton, QComboBox, QLabel, QSplitter,
-    QListWidget, QListWidgetItem, QMessageBox,
+    QListWidget, QListWidgetItem,
 )
 from PyQt6.QtCore import Qt, QSettings
 from PyQt6.QtGui import QColor
@@ -16,7 +16,7 @@ from PyQt6.QtGui import QColor
 from equinox.security import redact_body, redact_headers, redact_url
 from equinox.core.time import utc_now
 from equinox.gui.theme import Colors, get_mono_font
-from equinox.gui.log_file_actions import LogOpenStatus, try_open_current_log_file
+from equinox.gui.log_file_actions import show_log_file_open_result, try_open_current_log_file
 
 __all__ = ["LoggingPanel"]
 
@@ -264,23 +264,11 @@ class LoggingPanel(QWidget):
 
     def _open_log_file(self) -> None:
         """Open the structured log file in the OS default text viewer."""
-        result = try_open_current_log_file()
-        if result.status == LogOpenStatus.MISSING:
-            QMessageBox.information(
-                self, "Log File",
-                "No log file found yet — send a request first to generate entries.",
-            )
-            return
-
-        if result.status == LogOpenStatus.INVALID_PATH:
-            _py_logger.warning("Refusing to open non-.log path: %s", result.resolved_path)
-            return
-
-        if result.status == LogOpenStatus.OPEN_FAILED:
-            QMessageBox.information(
-                self, "Log File",
-                f"Log file:\n{result.log_path}\n\n(Could not open automatically: {result.error})",
-            )
+        show_log_file_open_result(
+            self,
+            try_open_current_log_file(),
+            "No log file found yet — send a request first to generate entries.",
+        )
 
     # ── Private helpers ───────────────────────────────────────────────────────
 

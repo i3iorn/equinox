@@ -28,8 +28,21 @@ from equinox.core.secret_managers import (
     list_available_managers,
     test_secret_manager_connection,
 )
+from equinox.gui.secret_manager_feedback import (
+    SecretManagerConnectionMessages,
+    show_secret_manager_connection_feedback,
+)
 
 logger = logging.getLogger(__name__)
+
+
+_DIALOG_CONNECTION_MESSAGES = SecretManagerConnectionMessages(
+    success="Draft configuration for {manager_type} validated successfully.",
+    unavailable="Draft configuration could not reach {manager_type}.\n\n{error}",
+    auth="Draft credentials were rejected by {manager_type}.\n\n{error}",
+    config="Draft configuration for {manager_type} is invalid.\n\n{error}",
+    unexpected="Unexpected error while validating draft configuration.\n\n{error}",
+)
 
 
 class SecretManagerConfigDialog(QDialog):
@@ -299,43 +312,7 @@ class SecretManagerConfigDialog(QDialog):
             return
 
         result = test_secret_manager_connection(manager_type, config)
-        if result.ok:
-            QMessageBox.information(
-                self,
-                "Connection Successful",
-                f"Draft configuration for {manager_type} validated successfully.",
-            )
-            return
-
-        if result.error_kind == "unavailable":
-            QMessageBox.warning(
-                self,
-                "Connection Failed",
-                f"Draft configuration could not reach {manager_type}.\n\n{result.error_message}",
-            )
-            return
-
-        if result.error_kind == "auth":
-            QMessageBox.critical(
-                self,
-                "Authentication Error",
-                f"Draft credentials were rejected by {manager_type}.\n\n{result.error_message}",
-            )
-            return
-
-        if result.error_kind == "config":
-            QMessageBox.critical(
-                self,
-                "Configuration Error",
-                f"Draft configuration for {manager_type} is invalid.\n\n{result.error_message}",
-            )
-            return
-
-        QMessageBox.critical(
-            self,
-            "Error",
-            f"Unexpected error while validating draft configuration.\n\n{result.error_message}",
-        )
+        show_secret_manager_connection_feedback(self, result, _DIALOG_CONNECTION_MESSAGES)
 
     def _save_configuration(self) -> None:
         """Save the configuration and emit signal."""

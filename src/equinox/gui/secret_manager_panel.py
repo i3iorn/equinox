@@ -21,13 +21,26 @@ from PyQt6.QtWidgets import (
     QTextEdit,
 )
 
-from equinox.core.secret_managers import get_secret_manager, test_secret_manager_connection
+from equinox.core.secret_managers import SecretManagerProfile, test_secret_manager_connection
 from equinox.gui.dialogs.secret_manager_config_dialog import SecretManagerConfigDialog
+from equinox.gui.secret_manager_feedback import (
+    SecretManagerConnectionMessages,
+    show_secret_manager_connection_feedback,
+)
 from equinox.gui.widgets.secret_browser import SecretBrowserWidget
 from equinox.security import sanitize_details
 from equinox.storage.secret_manager_configs import SecretManagerConfigStore
 
 logger = logging.getLogger(__name__)
+
+
+_PANEL_CONNECTION_MESSAGES = SecretManagerConnectionMessages(
+    success="Saved profile '{profile_name}' connected to {manager_type}.",
+    unavailable="Saved profile '{profile_name}' could not reach {manager_type}.\n\n{error}",
+    auth="Saved profile '{profile_name}' was rejected by {manager_type}.\n\n{error}",
+    config="Saved profile '{profile_name}' is invalid for {manager_type}.\n\n{error}",
+    unexpected="Unexpected error while testing saved profile '{profile_name}'.\n\n{error}",
+)
 
 
 class SecretManagerSettingsPanel(QWidget):
@@ -149,6 +162,12 @@ class SecretManagerSettingsPanel(QWidget):
         dialog.config_saved.connect(self._on_config_created)
         dialog.exec()
 
+    def _current_profile(self) -> Optional[SecretManagerProfile]:
+        """Return the selected secret-manager profile, if any."""
+        if not self._current_config:
+            return None
+        return SecretManagerProfile.from_payload(self._current_config)
+
     def _on_config_created(self, manager_type: str, config: Dict[str, Any]) -> None:
         """Handle configuration creation.
 
@@ -173,12 +192,12 @@ class SecretManagerSettingsPanel(QWidget):
             return
 
         # Store the configuration
-        payload = {
-            "type": manager_type,
-            "config": {k: v for k, v in config.items() if k not in ("enable_cache", "cache_ttl")},
-            "enable_cache": config.get("enable_cache", True),
-            "cache_ttl": config.get("cache_ttl", 300),
-        }
+        payload = SecretManagerProfile.from_manager_config(
+            manager_type,
+            {k: v for k, v in config.items() if k not in ("enable_cache", "cache_ttl")},
+            enable_cache=bool(config.get("enable_cache", True)),
+            cache_ttl=int(config.get("cache_ttl", 300)),
+        ).to_payload()
         self._configs[name] = payload
         self._current_config_name = name
         self._current_config = dict(payload)
@@ -224,15 +243,16 @@ class SecretManagerSettingsPanel(QWidget):
 
     def _display_config(self) -> None:
         """Display current configuration details."""
-        if not self._current_config:
+        profile = self._current_profile()
+        if profile is None:
             self.config_display.setText("No configuration loaded")
             return
 
-        config = self._current_config.get('config', {})
+        config = profile.config
         safe_config = sanitize_details(config)
         warning_text = ""
         if (
-            self._current_config.get('type') in ('vault', 'hashicorp_vault')
+            profile.manager_type in ('vault', 'hashicorp_vault')
             and config.get('allow_insecure_http')
             and str(config.get('url', '')).strip().lower().startswith('http://')
         ):
@@ -241,9 +261,9 @@ class SecretManagerSettingsPanel(QWidget):
             )
 
         display_text = f"""
-Manager Type: {self._current_config.get('type', 'N/A')}
-Cache Enabled: {self._current_config.get('enable_cache', True)}
-Cache TTL: {self._current_config.get('cache_ttl', 300)}s
+Manager Type: {profile.manager_type}
+Cache Enabled: {profile.enable_cache}
+Cache TTL: {profile.cache_ttl}s
 {warning_text}
 
 Configuration:
@@ -253,7 +273,8 @@ Configuration:
 
     def _create_browser(self) -> None:
         """Create and display the secret browser widget."""
-        if not self._current_config:
+        profile = self._current_profile()
+        if profile is None:
             return
 
         layout = self.browser_placeholder.parent().layout()
@@ -264,10 +285,13 @@ Configuration:
         self.browser_placeholder.setVisible(False)
 
         # Create new browser
-        manager_type = self._current_config.get("type", "env")
-        config = self._current_config.get("config", {})
-
-        self._browser_widget = SecretBrowserWidget(manager_type, config, self)
+        self._browser_widget = SecretBrowserWidget(
+            profile.manager_type,
+            profile.config,
+            enable_cache=profile.enable_cache,
+            cache_ttl=profile.cache_ttl,
+            parent=self,
+        )
         self._browser_widget.secret_selected.connect(self.secret_selected)
         if hasattr(layout, "insertWidget"):
             layout.insertWidget(0, self._browser_widget)  # type: ignore[attr-defined]
@@ -290,64 +314,34 @@ Configuration:
 
     def _test_connection(self) -> None:
         """Test connection to the configured secret manager."""
-        if not self._current_config:
+        profile = self._current_profile()
+        if profile is None:
             QMessageBox.warning(self, "Configuration", "No configuration selected")
             return
 
-        manager_type = self._current_config.get("type", "env")
-        config = self._current_config.get("config", {})
+        manager_type = profile.manager_type
+        config = profile.to_payload()["config"]
+        config["enable_cache"] = profile.enable_cache
+        config["cache_ttl"] = profile.cache_ttl
         result = test_secret_manager_connection(manager_type, config)
-
-        if result.ok:
-            QMessageBox.information(
-                self,
-                "Connection Successful",
-                f"Saved profile '{self._current_config_name}' connected to {manager_type}.",
-            )
-            return
-
-        if result.error_kind == "unavailable":
-            QMessageBox.warning(
-                self,
-                "Connection Failed",
-                f"Saved profile '{self._current_config_name}' could not reach {manager_type}.\n\n"
-                f"{result.error_message}",
-            )
-            return
-
-        if result.error_kind == "auth":
-            QMessageBox.critical(
-                self,
-                "Authentication Error",
-                f"Saved profile '{self._current_config_name}' was rejected by {manager_type}.\n\n"
-                f"{result.error_message}",
-            )
-            return
-
-        if result.error_kind == "config":
-            QMessageBox.critical(
-                self,
-                "Configuration Error",
-                f"Saved profile '{self._current_config_name}' is invalid for {manager_type}.\n\n"
-                f"{result.error_message}",
-            )
-            return
-
-        QMessageBox.critical(
-            self,
-            "Error",
-            f"Unexpected error while testing saved profile '{self._current_config_name}'.\n\n"
-            f"{result.error_message}",
+        messages = SecretManagerConnectionMessages(
+            success=_PANEL_CONNECTION_MESSAGES.success.format(profile_name=self._current_config_name, manager_type="{manager_type}"),
+            unavailable=_PANEL_CONNECTION_MESSAGES.unavailable.format(profile_name=self._current_config_name, manager_type="{manager_type}", error="{error}"),
+            auth=_PANEL_CONNECTION_MESSAGES.auth.format(profile_name=self._current_config_name, manager_type="{manager_type}", error="{error}"),
+            config=_PANEL_CONNECTION_MESSAGES.config.format(profile_name=self._current_config_name, manager_type="{manager_type}", error="{error}"),
+            unexpected=_PANEL_CONNECTION_MESSAGES.unexpected.format(profile_name=self._current_config_name, manager_type="{manager_type}", error="{error}"),
         )
+        show_secret_manager_connection_feedback(self, result, messages)
 
     def _clear_cache(self) -> None:
         """Clear the secret manager cache."""
-        if not self._current_config:
+        profile = self._current_profile()
+        if profile is None:
             return
 
         try:
-            manager_type = self._current_config.get("type", "env")
-            mgr = get_secret_manager(manager_type)
+            manager_type = profile.manager_type
+            mgr = profile.get_manager()
             mgr.clear_cache()
 
             QMessageBox.information(self, "Cache Cleared", "Secret cache has been cleared")

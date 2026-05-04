@@ -3,13 +3,18 @@
 from __future__ import annotations
 
 import os
+import logging
 import subprocess
 import sys
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
 
+from PyQt6.QtWidgets import QMessageBox, QWidget
+
 from equinox.core.log_setup import get_log_file
+
+logger = logging.getLogger(__name__)
 
 
 class LogOpenStatus:
@@ -70,4 +75,33 @@ def try_open_current_log_file() -> LogOpenResult:
         log_path=log_path,
         resolved_path=resolved,
     )
+
+
+def show_log_file_open_result(
+    parent: Optional[QWidget],
+    result: LogOpenResult,
+    missing_message: str,
+) -> bool:
+    """Display GUI feedback for a log-file open attempt.
+
+    Returns ``True`` when the file was opened successfully, ``False`` otherwise.
+    """
+    if result.status == LogOpenStatus.MISSING:
+        QMessageBox.information(parent, "Log File", missing_message)
+        return False
+
+    if result.status == LogOpenStatus.INVALID_PATH:
+        logger.warning("Refusing to open non-log file: %s", result.resolved_path)
+        return False
+
+    if result.status == LogOpenStatus.OPEN_FAILED:
+        QMessageBox.information(
+            parent,
+            "Log File",
+            f"Log file:\n{result.log_path}\n\n(Could not open automatically: {result.error})",
+        )
+        return False
+
+    return True
+
 

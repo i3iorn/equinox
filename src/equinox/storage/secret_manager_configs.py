@@ -12,6 +12,8 @@ import logging
 from pathlib import Path
 from typing import Any, Dict, Optional
 
+from equinox.core.secret_managers import SecretManagerProfile
+
 logger = logging.getLogger(__name__)
 
 _DEFAULT_CONFIG_PATH = Path.home() / ".equinox" / "secret_managers.json"
@@ -46,27 +48,13 @@ class SecretManagerConfigStore:
         for name, payload in raw.items():
             if not isinstance(name, str) or not isinstance(payload, dict):
                 continue
-            manager_type = payload.get("type")
-            config = payload.get("config", {})
-            if not isinstance(manager_type, str) or not isinstance(config, dict):
-                continue
-            out[name] = {
-                "type": manager_type,
-                "config": dict(config),
-                "enable_cache": bool(payload.get("enable_cache", True)),
-                "cache_ttl": int(payload.get("cache_ttl", 300)),
-            }
+            out[name] = SecretManagerProfile.from_payload(payload).to_payload()
         return out
 
     def save_all(self, configs: Dict[str, Dict[str, Any]]) -> None:
         """Persist *configs* to disk atomically."""
         serializable = {
-            str(name): {
-                "type": str(payload.get("type", "")),
-                "config": dict(payload.get("config", {})),
-                "enable_cache": bool(payload.get("enable_cache", True)),
-                "cache_ttl": int(payload.get("cache_ttl", 300)),
-            }
+            str(name): SecretManagerProfile.from_payload(payload).to_payload()
             for name, payload in configs.items()
             if isinstance(payload, dict)
         }

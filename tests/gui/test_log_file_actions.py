@@ -2,7 +2,12 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from equinox.gui.log_file_actions import LogOpenStatus, try_open_current_log_file
+from equinox.gui.log_file_actions import (
+    LogOpenResult,
+    LogOpenStatus,
+    show_log_file_open_result,
+    try_open_current_log_file,
+)
 
 
 def test_try_open_current_log_file_missing(monkeypatch) -> None:
@@ -57,4 +62,45 @@ def test_try_open_current_log_file_open_failed(monkeypatch, tmp_path: Path) -> N
 
     assert result.status == LogOpenStatus.OPEN_FAILED
     assert "no opener" in (result.error or "")
+
+
+def test_show_log_file_open_result_missing(monkeypatch) -> None:
+    calls = []
+
+    monkeypatch.setattr(
+        "equinox.gui.log_file_actions.QMessageBox.information",
+        lambda *args: calls.append(args),
+    )
+
+    opened = show_log_file_open_result(
+        None,
+        LogOpenResult(status=LogOpenStatus.MISSING),
+        "No log file yet.",
+    )
+
+    assert opened is False
+    assert calls
+    assert calls[0][2] == "No log file yet."
+
+
+def test_show_log_file_open_result_open_failed(monkeypatch, tmp_path: Path) -> None:
+    calls = []
+    log = tmp_path / "equinox.log"
+    log.write_text("x", encoding="utf-8")
+
+    monkeypatch.setattr(
+        "equinox.gui.log_file_actions.QMessageBox.information",
+        lambda *args: calls.append(args),
+    )
+
+    opened = show_log_file_open_result(
+        None,
+        LogOpenResult(status=LogOpenStatus.OPEN_FAILED, log_path=log, error="boom"),
+        "ignored",
+    )
+
+    assert opened is False
+    assert calls
+    assert "boom" in calls[0][2]
+
 

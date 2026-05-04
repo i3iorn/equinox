@@ -74,6 +74,7 @@ from equinox.core.secret_managers.connection import (
     SecretManagerConnectionResult,
     test_secret_manager_connection,
 )
+from equinox.core.secret_managers.profiles import SecretManagerProfile
 
 __all__ = [
     # Base classes and exceptions
@@ -91,6 +92,7 @@ __all__ = [
     "get_secret_manager",
     "list_available_managers",
     "register_manager",
+    "SecretManagerProfile",
     "SecretManagerConnectionResult",
     "test_secret_manager_connection",
 ]

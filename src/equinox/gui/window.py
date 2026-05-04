@@ -17,7 +17,7 @@ from PyQt6.QtWidgets import (
 )
 
 from equinox.gui.logging_utils import log_gui_event
-from equinox.gui.log_file_actions import LogOpenStatus, try_open_current_log_file
+from equinox.gui.log_file_actions import show_log_file_open_result, try_open_current_log_file
 
 from equinox.core.request import Request, Response
 from equinox.storage import Database, EnvironmentManager, HistoryManager, CollectionManager
@@ -877,7 +877,7 @@ class MainWindow(QMainWindow):
             return False
 
         if event.type() == QEvent.Type.MouseMove and self._drag_menu_active:
-            if event.buttons() & Qt.MouseButton.LeftButton:
+            if event.buttons() != Qt.MouseButton.NoButton:
                 self.move(event.globalPosition().toPoint() - self._drag_menu_offset)
                 return True
             self._drag_menu_active = False
@@ -1088,23 +1088,11 @@ class MainWindow(QMainWindow):
 
     def _open_log_file(self) -> None:
         log_gui_event("log_file_open_requested")
-        result = try_open_current_log_file()
-        if result.status == LogOpenStatus.MISSING:
-            QMessageBox.information(
-                self, "Log File", "No log file found yet — send a request first."
-            )
-            return
-
-        if result.status == LogOpenStatus.INVALID_PATH:
-            logger.warning("Refusing to open non-log file: %s", result.resolved_path)
-            return
-
-        if result.status == LogOpenStatus.OPEN_FAILED:
-            QMessageBox.information(
-                self, "Log File",
-                f"Log file:\n{result.log_path}\n\n"
-                f"(Could not open automatically: {result.error})"
-            )
+        show_log_file_open_result(
+            self,
+            try_open_current_log_file(),
+            "No log file found yet — send a request first.",
+        )
 
     # ── Shortcuts dialog ──────────────────────────────────────────────
 
@@ -1298,7 +1286,7 @@ class MainWindow(QMainWindow):
         col_name, ok = QInputDialog.getItem(
             self, "Select Collection", "Choose collection to export:", col_names, 0, False
         )
-        if not ok:
+        if not ok or not isinstance(col_name, str) or not col_name:
             return
 
         # Use next() with a default to avoid StopIteration → RuntimeError (PEP 479)
@@ -1319,7 +1307,7 @@ class MainWindow(QMainWindow):
         file_path, _ = QFileDialog.getSaveFileName(
             self, f"Export as {format_type.title()}", "", file_filter
         )
-        if not file_path:
+        if not isinstance(file_path, str) or not file_path:
             return
 
         openapi_title = col_name
@@ -1390,17 +1378,8 @@ class MainWindow(QMainWindow):
         SavedCredentialsDialog(self.db, self).exec()
 
     def _manage_secret_managers(self) -> None:
-        """Open the Secret Manager settings panel in a dialog."""
-        from equinox.gui.secret_manager_panel import SecretManagerSettingsPanel
-        from PyQt6.QtWidgets import QDialog, QVBoxLayout
-        
-        dialog = QDialog(self)
-        dialog.setWindowTitle("Secret Managers")
-        dialog.setMinimumSize(600, 500)
-        
-        layout = QVBoxLayout(dialog)
-        panel = SecretManagerSettingsPanel(parent=dialog)
-        layout.addWidget(panel)
-        
-        dialog.exec()
+        """Open the dedicated Secret Manager settings dialog."""
+        from equinox.gui.dialogs.secret_manager_settings_dialog import SecretManagerSettingsDialog
+
+        SecretManagerSettingsDialog(parent=self).exec()
 

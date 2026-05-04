@@ -17,11 +17,11 @@ from PyQt6.QtWidgets import (
     QLabel,
     QMessageBox,
     QProgressBar,
-    QComboBox,
+    QApplication,
 )
 
 from equinox.core.secret_managers import (
-    get_secret_manager,
+    SecretManagerProfile,
     SecretManagerError,
     SecretNotFoundError,
 )
@@ -40,18 +40,26 @@ class SecretRetrievalWorker(QObject):
         self,
         manager_type: str,
         config: Dict[str, Any],
+        enable_cache: bool,
+        cache_ttl: int,
         secret_name: str,
     ):
         super().__init__()
         self.manager_type = manager_type
         self.config = config
+        self.enable_cache = enable_cache
+        self.cache_ttl = cache_ttl
         self.secret_name = secret_name
 
     def run(self) -> None:
         """Retrieve the secret."""
         try:
-            mgr = get_secret_manager(self.manager_type)
-            mgr.configure(**self.config)
+            mgr = SecretManagerProfile.from_manager_config(
+                self.manager_type,
+                self.config,
+                enable_cache=self.enable_cache,
+                cache_ttl=self.cache_ttl,
+            ).get_manager()
 
             try:
                 secret_dict = mgr.get_secret_dict(self.secret_name)
@@ -88,6 +96,8 @@ class SecretBrowserWidget(QWidget):
         self,
         manager_type: str,
         config: Dict[str, Any],
+        enable_cache: bool = True,
+        cache_ttl: int = 300,
         parent=None
     ):
         """Initialize the secret browser.
@@ -100,6 +110,8 @@ class SecretBrowserWidget(QWidget):
         super().__init__(parent)
         self.manager_type = manager_type
         self.config = config
+        self.enable_cache = enable_cache
+        self.cache_ttl = cache_ttl
         self._init_ui()
         self._retrieval_thread: Optional[QThread] = None
 
@@ -177,6 +189,8 @@ class SecretBrowserWidget(QWidget):
         worker = SecretRetrievalWorker(
             self.manager_type,
             self.config,
+            self.enable_cache,
+            self.cache_ttl,
             secret_name
         )
 
@@ -246,7 +260,6 @@ class SecretBrowserWidget(QWidget):
             return
 
         value = self._current_secret.get(self._selected_key, "")
-        from PyQt6.QtGui import QApplication
         QApplication.clipboard().setText(str(value))
         QMessageBox.information(self, "Copied", "Value copied to clipboard")
 

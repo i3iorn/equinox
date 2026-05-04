@@ -57,3 +57,48 @@ def test_secret_manager_panel_loads_profiles_from_storage(qtbot, tmp_path: Path)
     assert panel._current_config.get("type") == "env"
     assert "Manager Type: env" in panel.config_display.toPlainText()
 
+
+def test_secret_manager_panel_clear_cache_uses_profile_cache_settings(qtbot, monkeypatch, tmp_path: Path) -> None:
+    panel = SecretManagerSettingsPanel(config_path=tmp_path / "secret_managers.json")
+    qtbot.addWidget(panel)
+
+    panel._current_config = {
+        "type": "vault",
+        "config": {"url": "https://vault.example.com:8200", "token": "token-value"},
+        "enable_cache": False,
+        "cache_ttl": 42,
+    }
+
+    captured = {}
+
+    class _Manager:
+        def configure(self, **kwargs):
+            captured["configured"] = kwargs
+
+        def clear_cache(self):
+            captured["cleared"] = True
+
+    def _fake_get_secret_manager(manager_type, enable_cache=True, cache_ttl=300):
+        captured["manager_type"] = manager_type
+        captured["enable_cache"] = enable_cache
+        captured["cache_ttl"] = cache_ttl
+        return _Manager()
+
+    monkeypatch.setattr(
+        "equinox.core.secret_managers.profiles.get_secret_manager",
+        _fake_get_secret_manager,
+    )
+    monkeypatch.setattr(
+        "equinox.gui.secret_manager_panel.QMessageBox.information",
+        lambda *args, **kwargs: None,
+    )
+
+    panel._clear_cache()
+
+    assert captured["manager_type"] == "vault"
+    assert captured["enable_cache"] is False
+    assert captured["cache_ttl"] == 42
+    assert captured["configured"]["url"].startswith("https://")
+    assert captured["cleared"] is True
+
+

@@ -24,6 +24,10 @@ from equinox.gui.theme import Colors, get_mono_font
 from equinox.gui.widgets.secret_row import make_secret_row as _secret_row
 from equinox.gui.workers import OAuthTokenTester
 from equinox.gui.dialogs._dirty_dialog_mixin import DirtyDialogMixin
+from equinox.gui.dialogs._oauth_form_utils import (
+    parse_json_object_field,
+    parse_json_object_field_lenient,
+)
 from equinox.storage import Database
 from equinox.storage.saved_credentials import (
     AUTH_TYPE_LABELS, AUTH_TYPES, SavedCredentialsManager,
@@ -616,15 +620,9 @@ class SavedCredentialsDialog(DirtyDialogMixin, QDialog):
                 return None, "Token URL is required for OAuth 2.0."
             if not client_id:
                 return None, "Client ID is required for OAuth 2.0."
-            extra_raw = self.o_extra.toPlainText().strip()
-            extra_params: dict = {}
-            if extra_raw:
-                try:
-                    extra_params = json.loads(extra_raw)
-                    if not isinstance(extra_params, dict):
-                        raise ValueError("must be a JSON object")
-                except (json.JSONDecodeError, ValueError) as exc:
-                    return None, f"Extra Params must be a valid JSON object:\n{exc}"
+            extra_params, error = parse_json_object_field(self.o_extra.toPlainText())
+            if extra_params is None:
+                return None, error
             return {
                 "token_url":     token_url,
                 "client_id":     client_id,
@@ -716,12 +714,7 @@ class SavedCredentialsDialog(DirtyDialogMixin, QDialog):
             )
             return
 
-        extra_params: dict = {}
-        if extra_raw:
-            try:
-                extra_params = json.loads(extra_raw)
-            except json.JSONDecodeError:
-                pass
+        extra_params = parse_json_object_field_lenient(extra_raw)
 
         self.test_btn.setEnabled(False)
         self.test_btn.setText("Testing\u2026")

@@ -5,8 +5,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Dict, Optional
 
-from equinox.core.secret_managers.registry import get_secret_manager
 from equinox.core.secret_managers.base import SecretAuthError, SecretManagerError
+from equinox.core.secret_managers.profiles import SecretManagerProfile
 
 
 @dataclass
@@ -25,8 +25,22 @@ def test_secret_manager_connection(
 ) -> SecretManagerConnectionResult:
     """Test a secret manager connection and normalize outcomes."""
     try:
-        mgr = get_secret_manager(manager_type)
-        mgr.configure(**config)
+        enable_cache = bool(config.get("enable_cache", True))
+        try:
+            cache_ttl = int(config.get("cache_ttl", 300))
+        except (TypeError, ValueError):
+            cache_ttl = 300
+        manager_config = {
+            key: value
+            for key, value in config.items()
+            if key not in {"enable_cache", "cache_ttl"}
+        }
+        mgr = SecretManagerProfile.from_manager_config(
+            manager_type,
+            manager_config,
+            enable_cache=enable_cache,
+            cache_ttl=cache_ttl,
+        ).get_manager()
         if mgr.is_available():
             return SecretManagerConnectionResult(manager_type=manager_type, ok=True)
         return SecretManagerConnectionResult(

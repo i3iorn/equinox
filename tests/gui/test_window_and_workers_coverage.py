@@ -194,7 +194,7 @@ class TestMainWindow:
 
     def test_zoom_reset(self, db):
         from equinox.gui.window import MainWindow
-        from equinox.gui.theme import DEFAULT_FONT_SIZE, get_font_size, set_font_size
+        from equinox.gui.theme import DEFAULT_FONT_SIZE, get_font_size
         win = MainWindow(db)
         win._zoom_reset()
         assert get_font_size() == DEFAULT_FONT_SIZE
@@ -314,6 +314,17 @@ class TestMainWindow:
         win._set_theme("dark")
         _process()
         set_theme_mode(original)
+        _close_win(win)
+
+    def test_manage_secret_managers_opens_dedicated_dialog(self, db):
+        from equinox.gui.window import MainWindow
+
+        win = MainWindow(db)
+        with patch(
+            "equinox.gui.dialogs.secret_manager_settings_dialog.SecretManagerSettingsDialog.exec",
+            return_value=0,
+        ):
+            win._manage_secret_managers()
         _close_win(win)
 
     def test_menu_bar_created(self, db):
