@@ -2,13 +2,11 @@
 
 import json
 import time
-import pytest
 
 from equinox.core.request import Request, Response
 from equinox.core.response_intelligence.models import (
     AnalysisContext,
     Category,
-    Finding,
     Severity,
 )
 from equinox.core.response_intelligence.engine import (
@@ -133,6 +131,11 @@ class TestEngine:
         assert len(info) == 25
         assert all("id" in i and "name" in i and "category" in i for i in info)
 
+    def test_get_all_analyzer_info_sorted_by_id(self):
+        info = AnalysisEngine().get_all_analyzer_info()
+        ids = [i["id"] for i in info]
+        assert ids == sorted(ids)
+
 
 class TestNormalizeUrl:
     def test_numeric_segments(self):
@@ -220,6 +223,16 @@ class TestCORS:
         findings = CORSMisconfigAnalyzer().analyze(ctx)
         assert len(findings) == 0
 
+    def test_wildcard_with_credentials_is_critical(self):
+        hdrs = {
+            "access-control-allow-origin": "*",
+            "access-control-allow-credentials": "true",
+        }
+        ctx = _make_ctx(headers=hdrs, body=b"ok")
+        findings = CORSMisconfigAnalyzer().analyze(ctx)
+        assert len(findings) == 1
+        assert findings[0].severity == Severity.CRITICAL
+
 
 class TestJWTDecode:
     def _make_jwt(self, claims: dict, exp: int = None) -> str:
@@ -295,6 +308,15 @@ class TestPercentiles:
 
     def test_insufficient_data(self):
         stats = {"elapsed_values": json.dumps([100]), "call_count": 1}
+        ctx = _make_ctx(endpoint_stats=stats, body=b'{}')
+        findings = ResponseTimePercentileAnalyzer().analyze(ctx)
+        assert len(findings) == 0
+
+    def test_ignores_malformed_sample_values(self):
+        stats = {
+            "elapsed_values": json.dumps([100, "bad", None, "101", float("inf")]),
+            "call_count": 5,
+        }
         ctx = _make_ctx(endpoint_stats=stats, body=b'{}')
         findings = ResponseTimePercentileAnalyzer().analyze(ctx)
         assert len(findings) == 0
@@ -530,6 +552,15 @@ class TestResponseTimeAnomaly:
         findings = ResponseTimeAnomalyAnalyzer().analyze(ctx)
         assert len(findings) == 0
 
+    def test_malformed_samples_no_crash(self):
+        stats = {
+            "elapsed_values": json.dumps(["bad", None, "oops", {}]),
+            "call_count": 4,
+        }
+        ctx = _make_ctx(endpoint_stats=stats, elapsed=0.2, body=b'{}')
+        findings = ResponseTimeAnomalyAnalyzer().analyze(ctx)
+        assert findings == []
+
 
 # ── Hints tests ───────────────────────────────────────────────────────
 
@@ -590,6 +621,27 @@ class TestNPlusOne:
         ctx = _make_ctx(body=b'{}', history_rows=history)
         findings = NPlusOneDetectionAnalyzer().analyze(ctx)
         assert len(findings) == 0
+
+    def test_groups_same_pattern_with_different_n(self):
+        history = [
+            {"method": "GET", "url": "https://api.com/users/1"},
+            {"method": "GET", "url": "https://api.com/users/2"},
+            {"method": "GET", "url": "https://api.com/users/3"},
+            {"method": "GET", "url": "https://api.com/users/4"},
+            {"method": "POST", "url": "https://api.com/orders"},
+            {"method": "GET", "url": "https://api.com/users/10"},
+            {"method": "GET", "url": "https://api.com/users/11"},
+            {"method": "GET", "url": "https://api.com/users/12"},
+            {"method": "GET", "url": "https://api.com/users/13"},
+            {"method": "GET", "url": "https://api.com/users/14"},
+        ]
+        ctx = _make_ctx(body=b'{}', history_rows=history)
+        findings = NPlusOneDetectionAnalyzer().analyze(ctx)
+        assert len(findings) == 1
+        detail = findings[0].details
+        assert detail["counts"] == [4, 5]
+        assert detail["n_min"] == 4
+        assert detail["n_max"] == 5
 
 
 class TestEncodingIssues:

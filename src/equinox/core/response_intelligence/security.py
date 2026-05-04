@@ -76,6 +76,7 @@ class MissingSecurityHeadersAnalyzer(Analyzer):
             title=f"{len(missing)} security header(s) missing",
             description="The response is missing recommended security headers.",
             analyzer_id=self.analyzer_id,
+            recommendation="Add HSTS, CSP, and related browser hardening headers at your API gateway or app middleware.",
             details={"missing": missing},
         ))
         return findings
@@ -118,6 +119,7 @@ class CookieFlagsAnalyzer(Analyzer):
                 title=f"{len(issues)} cookie(s) missing security flags",
                 description="Cookies should use Secure, HttpOnly, and SameSite attributes.",
                 analyzer_id=self.analyzer_id,
+                recommendation="Set Secure, HttpOnly, and SameSite=Strict or Lax for all session cookies.",
                 details={"cookies": issues},
             ))
         return findings
@@ -172,6 +174,7 @@ class PIILeakDetectionAnalyzer(Analyzer):
                 title="Potential sensitive data in response body",
                 description="The response body contains patterns that may be PII or secrets.",
                 analyzer_id=self.analyzer_id,
+                recommendation="Remove or mask sensitive fields in API responses and rotate any exposed credentials.",
                 details={"detected": detected},
             ))
         return findings
@@ -185,15 +188,17 @@ class CORSMisconfigAnalyzer(Analyzer):
     def analyze(self, ctx: AnalysisContext) -> List[Finding]:
         findings: List[Finding] = []
         acao = ctx.response.headers.get("access-control-allow-origin", "")
+        creds = ctx.response.headers.get("access-control-allow-credentials", "")
         if not acao:
             return findings
 
         issues: List[str] = []
+        severity = Severity.WARNING
         if acao == "*":
             issues.append("Access-Control-Allow-Origin is wildcard (*) — any origin can read the response.")
-            creds = ctx.response.headers.get("access-control-allow-credentials", "")
             if creds.lower() == "true":
                 issues.append("Combined with Allow-Credentials: true this is a critical misconfiguration.")
+                severity = Severity.CRITICAL
 
         if issues:
             logger.warning(
@@ -203,11 +208,12 @@ class CORSMisconfigAnalyzer(Analyzer):
             )
             findings.append(Finding(
                 category=self.category,
-                severity=Severity.WARNING,
+                severity=severity,
                 title="Overly permissive CORS policy",
                 description="\n".join(issues),
                 analyzer_id=self.analyzer_id,
-                details={"allow_origin": acao},
+                recommendation="Restrict Access-Control-Allow-Origin to trusted origins and avoid credentials with wildcard origins.",
+                details={"allow_origin": acao, "allow_credentials": creds},
             ))
         return findings
 
@@ -264,6 +270,7 @@ class JWTDecodeAnalyzer(Analyzer):
                     title=f"JWT found in {source_label}",
                     description=self._summarise(decoded, detail),
                     analyzer_id=self.analyzer_id,
+                    recommendation="Avoid returning tokens in response bodies when possible and enforce short token expiry windows.",
                     details=detail,
                 ))
                 break  # one per source

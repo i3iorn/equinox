@@ -31,6 +31,7 @@ class Finding:
     title: str
     description: str
     analyzer_id: str
+    recommendation: Optional[str] = None
     details: Dict[str, Any] = field(default_factory=dict)
 
 

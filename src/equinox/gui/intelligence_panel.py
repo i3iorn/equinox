@@ -44,6 +44,7 @@ class _FindingCard(QFrame):
         super().__init__(parent)
         self._finding = finding
         self._expanded = False
+        self.setObjectName("intelCard")
         self.setFrameShape(QFrame.Shape.StyledPanel)
         self.setLineWidth(1)
 
@@ -55,24 +56,30 @@ class _FindingCard(QFrame):
         header_row = QHBoxLayout()
         header_row.setSpacing(6)
 
-        icon, color_fn = _SEV_STYLE.get(finding.severity, _SEV_STYLE_DEFAULT)
-        color = color_fn()
+        icon, _ = _SEV_STYLE.get(finding.severity, _SEV_STYLE_DEFAULT)
 
         sev_label = QLabel(icon)
+        sev_label.setObjectName("intelSeverityIcon")
+        sev_label.setProperty("severity", finding.severity.value)
         sev_label.setFixedWidth(18)
         header_row.addWidget(sev_label)
 
         title_label = QLabel(finding.title)
+        title_label.setObjectName("intelTitle")
         title_label.setTextFormat(Qt.TextFormat.PlainText)
         title_label.setWordWrap(True)
         header_row.addWidget(title_label, 1)
 
         sev_badge = QLabel(f" {finding.severity.value.upper()} ")
+        sev_badge.setObjectName("intelSeverityBadge")
+        sev_badge.setProperty("severity", finding.severity.value)
+        sev_badge.setAlignment(Qt.AlignmentFlag.AlignCenter)
         sev_badge.setFixedHeight(18)
         header_row.addWidget(sev_badge)
 
         if finding.details:
             self._toggle_btn: QToolButton | None = QToolButton()
+            self._toggle_btn.setObjectName("intelToggle")
             self._toggle_btn.setText("▶")
             self._toggle_btn.setFixedSize(20, 20)
             self._toggle_btn.clicked.connect(self._toggle_details)
@@ -84,14 +91,23 @@ class _FindingCard(QFrame):
 
         # ── Description ───────────────────────────────────────────────
         desc = QLabel(finding.description)
+        desc.setObjectName("intelDescription")
         desc.setTextFormat(Qt.TextFormat.PlainText)
         desc.setWordWrap(True)
         layout.addWidget(desc)
+
+        if finding.recommendation:
+            rec = QLabel(f"Suggested action: {finding.recommendation}")
+            rec.setObjectName("intelRecommendation")
+            rec.setTextFormat(Qt.TextFormat.PlainText)
+            rec.setWordWrap(True)
+            layout.addWidget(rec)
 
         # ── Collapsible details ───────────────────────────────────────
         self._details_widget: QLabel | None = None
         if finding.details:
             self._details_widget = QLabel()
+            self._details_widget.setObjectName("intelDetails")
             self._details_widget.setFont(get_mono_font())
             self._details_widget.setWordWrap(True)
             self._details_widget.setTextFormat(Qt.TextFormat.PlainText)
@@ -133,6 +149,7 @@ class IntelligencePanel(QWidget):
         self._init_ui()
 
     def _init_ui(self) -> None:
+        self.setObjectName("intelligencePanel")
         outer = QVBoxLayout(self)
         outer.setContentsMargins(0, 0, 0, 0)
         outer.setSpacing(4)
@@ -140,6 +157,7 @@ class IntelligencePanel(QWidget):
         # ── Summary bar ───────────────────────────────────────────────
         self._summary_bar = QHBoxLayout()
         self._summary_label = QLabel("")
+        self._summary_label.setObjectName("intelSummary")
         self._summary_bar.addWidget(self._summary_label)
         self._summary_bar.addStretch()
         outer.addLayout(self._summary_bar)
@@ -225,6 +243,7 @@ class IntelligencePanel(QWidget):
     ) -> None:
         """Update the summary bar label with *text* styled in *color*."""
         self._summary_label.setText(text)
+        self._summary_label.setStyleSheet(f"color: {color};")
         self._summary_label.setTextFormat(
             Qt.TextFormat.RichText if rich_text else Qt.TextFormat.PlainText
         )
@@ -276,6 +295,7 @@ class IntelligencePanel(QWidget):
                 if not cat_findings:
                     continue
                 cat_label = QLabel(f"─── {cat.value} ───")
+                cat_label.setObjectName("intelCategory")
                 # Insert before the trailing stretch (always at count - 1).
                 self._scroll_layout.insertWidget(
                     self._scroll_layout.count() - 1, cat_label

@@ -1,8 +1,8 @@
 """Coverage-boosting tests for GUI panels."""
 
 import pytest
-from unittest.mock import MagicMock, patch
-from PyQt6.QtWidgets import QApplication
+from unittest.mock import MagicMock
+from PyQt6.QtWidgets import QApplication, QLabel
 from PyQt6.QtCore import QCoreApplication
 
 _APP = QApplication.instance() or QApplication([])
@@ -268,6 +268,24 @@ class TestIntelligencePanel:
         card = _FindingCard(finding)
         assert card._toggle_btn is None
 
+    def test_finding_card_recommendation_visible(self):
+        from equinox.gui.intelligence_panel import _FindingCard
+        from equinox.core.response_intelligence.models import Finding, Severity, Category
+
+        finding = Finding(
+            category=Category.SECURITY,
+            severity=Severity.WARNING,
+            title="Use secure cookies",
+            description="Cookie flags are missing.",
+            analyzer_id="security.cookie_flags",
+            recommendation="Enable Secure, HttpOnly, and SameSite.",
+        )
+        card = _FindingCard(finding)
+
+        labels = card.findChildren(QLabel)
+        texts = [lbl.text() for lbl in labels if isinstance(lbl, QLabel)]
+        assert any("Suggested action:" in text for text in texts)
+
 
 # ─────────────────────────────────────────────────────────────────────────────
 # IntelligenceWorker
@@ -276,7 +294,7 @@ class TestIntelligencePanel:
 class TestIntelligenceWorker:
     def test_instantiate(self, db):
         from equinox.gui.intelligence_worker import IntelligenceWorker
-        from equinox.core.request import Request, Response
+        from equinox.core.request import Request
         req = Request(method="GET", url="https://example.com/api")
         resp = MagicMock()
         resp.status_code = 200

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+import math
 import re
 import time
 from typing import Any, Dict, List, Optional
@@ -17,6 +18,25 @@ from equinox.core.response_intelligence.models import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+def _coerce_numeric_samples(values: object, max_samples: int = 500) -> List[float]:
+    """Return finite numeric samples from possibly malformed stored values."""
+    if not isinstance(values, list):
+        return []
+
+    numeric: List[float] = []
+    for item in values:
+        try:
+            value = float(item)
+        except (TypeError, ValueError):
+            continue
+        if math.isfinite(value):
+            numeric.append(value)
+
+    if len(numeric) > max_samples:
+        return numeric[-max_samples:]
+    return numeric
 
 
 class ServerFingerprintAnalyzer(Analyzer):
@@ -61,6 +81,7 @@ class ServerFingerprintAnalyzer(Analyzer):
             title=f"Server stack: {detected.get('Server', next(iter(detected.values())))}",
             description=" · ".join(parts[:6]),
             analyzer_id=self.analyzer_id,
+            recommendation="Avoid exposing detailed server fingerprint headers in production unless required.",
             details=detected,
         ))
         return findings
@@ -140,6 +161,7 @@ class RateLimitDashboardAnalyzer(Analyzer):
             title="Rate limit status" + (f" ({usage:.0f}% used)" if usage else ""),
             description=" · ".join(parts) if parts else "Rate limit headers detected.",
             analyzer_id=self.analyzer_id,
+            recommendation="Back off or retry later when near limit, and consider client-side throttling.",
             details=detail,
         ))
         return findings
@@ -199,6 +221,7 @@ class CachingBehaviorAnalyzer(Analyzer):
             title="Caching: " + (self._short_summary(cc) if cc else "headers present"),
             description=" · ".join(parts),
             analyzer_id=self.analyzer_id,
+            recommendation="Set explicit Cache-Control directives and validators (ETag/Last-Modified) for predictable caching.",
             details=detail,
         ))
         return findings
@@ -296,6 +319,7 @@ class APIVersionDetectionAnalyzer(Analyzer):
             title=f"API version: {next(iter(versions_found.values()))}",
             description=" · ".join(parts),
             analyzer_id=self.analyzer_id,
+            recommendation="Use one canonical API versioning strategy (path, header, or media type) across endpoints.",
             details=versions_found,
         ))
         return findings
@@ -320,7 +344,12 @@ class ResponseTimeAnomalyAnalyzer(Analyzer):
         except Exception:
             return findings
 
-        if not values or len(values) < 5:
+        values = _coerce_numeric_samples(values)
+        if not values:
+            logger.debug("ResponseTimeAnomalyAnalyzer: no valid numeric samples")
+            return findings
+
+        if len(values) < 5:
             return findings
 
         import statistics as _stats
@@ -355,6 +384,7 @@ class ResponseTimeAnomalyAnalyzer(Analyzer):
                 description=f"Average for this endpoint: {round(mean)}ms ± {round(stdev)}ms. "
                             f"Current response is {zscore:.1f} standard deviations above average.",
                 analyzer_id=self.analyzer_id,
+                recommendation="Inspect recent backend dependencies and slow queries for this endpoint.",
                 details=detail,
             ))
         else:
@@ -364,6 +394,7 @@ class ResponseTimeAnomalyAnalyzer(Analyzer):
                 title=f"Response {round(current_ms)}ms is unusually fast (z={zscore:.1f})",
                 description=f"Average for this endpoint: {round(mean)}ms ± {round(stdev)}ms.",
                 analyzer_id=self.analyzer_id,
+                recommendation="Track whether the improvement is sustained and capture what changed.",
                 details=detail,
             ))
         return findings

@@ -69,21 +69,44 @@ class AnalysisEngine:
 
     def load_analyzers(self) -> None:
         """Populate ``self._analyzers`` from the built-in registry."""
-        self._analyzers = [
+        discovered = [
             a for a in self.discover_analyzers()
             if a.analyzer_id not in self._disabled
         ]
 
+        unique: Dict[str, Analyzer] = {}
+        for analyzer in discovered:
+            analyzer_id = (analyzer.analyzer_id or "").strip()
+            if not analyzer_id:
+                logger.warning(
+                    "Skipping analyzer with empty analyzer_id: %s",
+                    type(analyzer).__name__,
+                )
+                continue
+            if analyzer_id in unique:
+                logger.warning(
+                    "Duplicate analyzer_id %r ignored (%s)",
+                    analyzer_id,
+                    type(analyzer).__name__,
+                )
+                continue
+            unique[analyzer_id] = analyzer
+
+        self._analyzers = [unique[k] for k in sorted(unique.keys())]
+
     def get_all_analyzer_info(self) -> List[Dict[str, str]]:
         """Return metadata for every known analyzer (for preferences UI)."""
-        return [
+        info = [
             {
                 "id": a.analyzer_id,
                 "name": a.display_name or a.analyzer_id,
                 "category": a.category.value,
             }
             for a in self.discover_analyzers()
+            if (a.analyzer_id or "").strip()
         ]
+        info.sort(key=lambda i: i["id"])
+        return info
 
     # ------------------------------------------------------------------
     # Execution
@@ -98,6 +121,13 @@ class AnalysisEngine:
         for analyzer in self._analyzers:
             try:
                 results = analyzer.analyze(ctx)
+                if not isinstance(results, list):
+                    logger.warning(
+                        "Analyzer %s returned non-list result (%s)",
+                        analyzer.analyzer_id,
+                        type(results).__name__,
+                    )
+                    continue
                 findings.extend(results)
             except Exception:
                 logger.debug(
@@ -105,6 +135,13 @@ class AnalysisEngine:
                     analyzer.analyzer_id,
                     exc_info=True,
                 )
-        findings.sort(key=lambda f: _SEVERITY_ORDER.get(f.severity, 99))
+        findings.sort(
+            key=lambda f: (
+                _SEVERITY_ORDER.get(f.severity, 99),
+                f.category.value,
+                f.title.lower(),
+                f.analyzer_id,
+            )
+        )
         return findings
 

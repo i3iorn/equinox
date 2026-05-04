@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+import math
 from typing import List
 
 from equinox.core.response_intelligence.base import Analyzer
@@ -15,6 +16,25 @@ from equinox.core.response_intelligence.models import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+def _coerce_numeric_samples(values: object, max_samples: int = 500) -> List[float]:
+    """Return finite numeric samples from possibly malformed stored values."""
+    if not isinstance(values, list):
+        return []
+
+    numeric: List[float] = []
+    for item in values:
+        try:
+            value = float(item)
+        except (TypeError, ValueError):
+            continue
+        if math.isfinite(value):
+            numeric.append(value)
+
+    if len(numeric) > max_samples:
+        return numeric[-max_samples:]
+    return numeric
 
 
 class CompressionAnalyzer(Analyzer):
@@ -40,6 +60,7 @@ class CompressionAnalyzer(Analyzer):
                 title=f"Response compressed ({encoding})",
                 description=f"Transfer encoding: {encoding}. Body size: {self._fmt(size)}.",
                 analyzer_id=self.analyzer_id,
+                recommendation="Keep compression enabled for text payloads and monitor CPU impact on high-traffic endpoints.",
                 details={"encoding": encoding, "body_size": size},
             ))
         elif size >= self._MIN_BODY_FOR_COMPRESSION:
@@ -62,6 +83,7 @@ class CompressionAnalyzer(Analyzer):
                     title="Response not compressed",
                     description=desc,
                     analyzer_id=self.analyzer_id,
+                    recommendation="Enable gzip/br compression for compressible response types and include Accept-Encoding on clients.",
                     details={
                         "body_size": size,
                         "content_type": ct,
@@ -127,6 +149,7 @@ class TimingBreakdownAnalyzer(Analyzer):
             title=f"Response time: {total} ms",
             description=" · ".join(parts) if parts else f"Total: {total} ms",
             analyzer_id=self.analyzer_id,
+            recommendation="Investigate the slowest timing phase first (DNS/connect/TLS/TTFB/transfer) to reduce latency.",
             details=details,
         ))
         return findings
@@ -149,7 +172,10 @@ class ResponseTimePercentileAnalyzer(Analyzer):
         except Exception:
             return findings
 
-        if not values or len(values) < 3:
+        values = _coerce_numeric_samples(values)
+        if len(values) < 3:
+            if not values:
+                logger.debug("ResponseTimePercentileAnalyzer: no valid numeric samples")
             return findings
 
         values_sorted = sorted(values)
@@ -182,6 +208,7 @@ class ResponseTimePercentileAnalyzer(Analyzer):
             title=f"P50: {detail['p50_ms']} ms · P95: {detail['p95_ms']} ms · P99: {detail['p99_ms']} ms",
             description=f"Based on {detail['sample_size']} recent calls. Current: {detail['current_ms']} ms.",
             analyzer_id=self.analyzer_id,
+            recommendation="Prioritize reducing P95/P99 latency by profiling slow code paths and backend dependencies.",
             details=detail,
         ))
         return findings
@@ -276,6 +303,7 @@ class PaginationDetectionAnalyzer(Analyzer):
             title="Paginated response detected",
             description=" · ".join(parts) if parts else "Response contains pagination fields.",
             analyzer_id=self.analyzer_id,
+            recommendation="Expose consistent pagination metadata (page, size, total, next cursor) across similar endpoints.",
             details=detected,
         ))
         return findings

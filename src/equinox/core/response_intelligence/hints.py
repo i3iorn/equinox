@@ -59,6 +59,7 @@ class DeprecatedAPIAnalyzer(Analyzer):
             title="API deprecation notice",
             description=" · ".join(signals),
             analyzer_id=self.analyzer_id,
+            recommendation="Plan migration to the replacement endpoint/version before the sunset date.",
             details=detail,
         ))
         return findings
@@ -94,6 +95,7 @@ class SuggestedEncodingAnalyzer(Analyzer):
                 f"response ({ct}) could likely be compressed."
             ),
             analyzer_id=self.analyzer_id,
+            recommendation="Send Accept-Encoding: gzip, br on clients calling large text-based endpoints.",
             details={"body_size": size, "content_type": ct},
         ))
         return findings
@@ -140,21 +142,40 @@ class NPlusOneDetectionAnalyzer(Analyzer):
         if current_count >= self._THRESHOLD:
             runs.append((current_pattern, current_count))
 
+        grouped: Dict[str, List[int]] = {}
         for pattern, count in runs:
+            grouped.setdefault(pattern, []).append(count)
+
+        for pattern in sorted(grouped.keys()):
+            counts = grouped[pattern]
+            bursts = len(counts)
+            total_calls = sum(counts)
+            n_min = min(counts)
+            n_max = max(counts)
+            n_label = f"N={n_min}" if n_min == n_max else f"N={n_min}-{n_max}"
+
             logger.debug(
-                "NPlusOneDetectionAnalyzer: possible N+1 — pattern=%r count=%d",
-                pattern, count,
+                "NPlusOneDetectionAnalyzer: grouped N+1 pattern=%r bursts=%d counts=%r",
+                pattern, bursts, counts,
             )
             findings.append(Finding(
                 category=self.category,
                 severity=Severity.WARNING,
-                title=f"Possible N+1 pattern: {count} sequential calls",
+                title=f"Possible N+1 pattern: {bursts} burst(s)",
                 description=(
-                    f'"{pattern}" was called {count} times in a row. '
-                    f"Consider batching or using a list endpoint."
+                    f'"{pattern}" repeated across {bursts} burst(s) '
+                    f"({n_label}, total {total_calls} calls). Consider batching or using a list endpoint."
                 ),
                 analyzer_id=self.analyzer_id,
-                details={"pattern": pattern, "count": count},
+                recommendation="Replace per-item calls with bulk/list endpoints or batch loading.",
+                details={
+                    "pattern": pattern,
+                    "counts": counts,
+                    "bursts": bursts,
+                    "n_min": n_min,
+                    "n_max": n_max,
+                    "total_calls": total_calls,
+                },
             ))
         return findings
 
@@ -219,6 +240,7 @@ class ResponseEncodingIssuesAnalyzer(Analyzer):
             title="Response encoding issue" + ("s" if len(issues) > 1 else ""),
             description=" · ".join(issues),
             analyzer_id=self.analyzer_id,
+            recommendation="Standardize response encoding to UTF-8 and ensure Content-Type charset matches payload bytes.",
             details=detail,
         ))
         return findings
@@ -251,6 +273,7 @@ class LinkHeaderParsingAnalyzer(Analyzer):
             title=f"{len(links)} Link relation(s) found",
             description=" · ".join(parts),
             analyzer_id=self.analyzer_id,
+            recommendation="Use Link headers consistently for pagination and include rel=next/prev where applicable.",
             details={"links": links},
         ))
         return findings

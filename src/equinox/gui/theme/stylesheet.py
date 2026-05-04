@@ -338,6 +338,75 @@ def build_stylesheet(base_pt: int, colors: dict[str, str]) -> str:
         font-size: {sm}pt;
     }}
 
+    /* -- Intelligence panel -- */
+    QWidget#intelligencePanel {{
+        background: {c["BG"]};
+        color: {c["FG"]};
+    }}
+    QLabel#intelSummary {{
+        color: {c["FG"]};
+    }}
+    QLabel#intelCategory {{
+        color: {c["FG_MUTED"]};
+        font-size: {sm}pt;
+        font-weight: bold;
+    }}
+    QFrame#intelCard {{
+        border: 1px solid {c["BORDER"]};
+        border-radius: 6px;
+        background: {c["BG_ALT"]};
+        color: {c["FG"]};
+    }}
+    QLabel#intelTitle, QLabel#intelDescription {{
+        color: {c["FG"]};
+        background: transparent;
+    }}
+    QLabel#intelRecommendation {{
+        color: {c["FG_MUTED"]};
+        background: transparent;
+        font-size: {sm}pt;
+    }}
+    QLabel#intelSeverityIcon {{
+        font-weight: bold;
+        background: transparent;
+    }}
+    QLabel#intelSeverityIcon[severity="critical"] {{
+        color: {c["RED"]};
+    }}
+    QLabel#intelSeverityIcon[severity="warning"] {{
+        color: {c["AMBER"]};
+    }}
+    QLabel#intelSeverityIcon[severity="info"] {{
+        color: {c["BLUE"]};
+    }}
+    QLabel#intelSeverityBadge {{
+        border: 1px solid {c["BORDER"]};
+        border-radius: 9px;
+        padding: 0 6px;
+        font-size: {sm}pt;
+        color: {c["FG_MUTED"]};
+        background: transparent;
+    }}
+    QLabel#intelSeverityBadge[severity="critical"] {{
+        border-color: {c["RED"]};
+        color: {c["RED"]};
+    }}
+    QLabel#intelSeverityBadge[severity="warning"] {{
+        border-color: {c["AMBER"]};
+        color: {c["AMBER"]};
+    }}
+    QLabel#intelSeverityBadge[severity="info"] {{
+        border-color: {c["BLUE"]};
+        color: {c["BLUE"]};
+    }}
+    QLabel#intelDetails {{
+        border: 1px solid {c["BORDER"]};
+        border-radius: 4px;
+        padding: 6px;
+        background: {c["BG"]};
+        color: {c["FG"]};
+    }}
+
     /* -- Sliders / spin boxes -- */
     QSlider::groove:horizontal {{
         height: 4px;

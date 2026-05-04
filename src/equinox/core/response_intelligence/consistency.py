@@ -36,6 +36,7 @@ class StatusBodyMismatchAnalyzer(Analyzer):
                 title="204 No Content with non-empty body",
                 description=f"Status 204 should have no body, but response has {len(body)} bytes.",
                 analyzer_id=self.analyzer_id,
+                recommendation="Return an empty body for 204 responses, or use 200/201 when returning content.",
                 details={"status_code": code, "body_size": len(body)},
             ))
 
@@ -47,6 +48,7 @@ class StatusBodyMismatchAnalyzer(Analyzer):
                 title="201 Created with empty body",
                 description="A 201 response typically includes the created resource or a Location header.",
                 analyzer_id=self.analyzer_id,
+                recommendation="Return the created resource or include a Location header pointing to it.",
                 details={"status_code": code, "has_location": "location" in ctx.response.headers},
             ))
 
@@ -68,6 +70,7 @@ class StatusBodyMismatchAnalyzer(Analyzer):
                                 title=f"{code} success but body contains error fields",
                                 description=f"Found error-related keys: {', '.join(truthy)}.",
                                 analyzer_id=self.analyzer_id,
+                                recommendation="Align HTTP status codes with payload semantics and avoid error objects on successful responses.",
                                 details={"status_code": code, "error_keys": list(truthy)},
                             ))
             except Exception:
@@ -101,6 +104,7 @@ class ContentTypeMismatchAnalyzer(Analyzer):
                     title="Content-Type says JSON but body is not valid JSON",
                     description=f"Content-Type: {ct}",
                     analyzer_id=self.analyzer_id,
+                    recommendation="Return valid JSON for JSON content types or correct the Content-Type header.",
                     details={"content_type": ct},
                 ))
 
@@ -114,6 +118,7 @@ class ContentTypeMismatchAnalyzer(Analyzer):
                     title="Content-Type says XML but body doesn't start with '<'",
                     description=f"Content-Type: {ct}",
                     analyzer_id=self.analyzer_id,
+                    recommendation="Ensure XML payloads are serialized correctly and set Content-Type accordingly.",
                     details={"content_type": ct},
                 ))
 
@@ -127,6 +132,7 @@ class ContentTypeMismatchAnalyzer(Analyzer):
                     title="Content-Type says HTML but body doesn't look like HTML",
                     description=f"Content-Type: {ct}",
                     analyzer_id=self.analyzer_id,
+                    recommendation="Serve HTML with valid markup or switch to a more accurate Content-Type.",
                     details={"content_type": ct},
                 ))
 
@@ -170,6 +176,7 @@ class DuplicateJsonKeysAnalyzer(Analyzer):
                 description=f"Duplicate keys: {', '.join(dupes[:10])}. "
                             "Behaviour varies across parsers.",
                 analyzer_id=self.analyzer_id,
+                recommendation="Remove duplicate keys in serializers to avoid parser-dependent behavior.",
                 details={"duplicate_keys": dupes[:20]},
             ))
         return findings
@@ -212,6 +219,7 @@ class DateFormatInconsistencyAnalyzer(Analyzer):
                 description=f"Found: {', '.join(formats_found)}. "
                             "Consider standardising on a single format (e.g. ISO 8601).",
                 analyzer_id=self.analyzer_id,
+                recommendation="Use one date format across the API, ideally ISO 8601 with timezone.",
                 details={"formats": formats_found},
             ))
         return findings
@@ -265,6 +273,7 @@ class NullVsMissingAnalyzer(Analyzer):
                 description=f"Fields: {', '.join(inconsistent[:10])}. "
                             "Consider using one convention (null or omit).",
                 analyzer_id=self.analyzer_id,
+                recommendation="Pick one convention (null or omitted) for optional fields and document it.",
                 details={"fields": inconsistent[:20]},
             ))
         return findings
@@ -320,6 +329,7 @@ class SchemaDriftAnalyzer(Analyzer):
             title="Response schema changed since last call",
             description=" · ".join(parts),
             analyzer_id=self.analyzer_id,
+            recommendation="Version the contract or update clients/tests before deploying schema changes.",
             details={
                 "added": sorted(added)[:20],
                 "removed": sorted(removed)[:20],
