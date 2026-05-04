@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import logging
+import difflib
 from typing import Dict, Any, Optional
 from urllib.parse import urlencode
 
@@ -94,20 +95,61 @@ class ResponseDisplayMixin:
             )
             self.body_text.setPlaceholderText("Click 'Load Full' to display the body.")
             self.body_text.clear()
+            self._raw_body_text = ""
+            self._pretty_body_text = ""
             logger.debug("_display_body: large body — deferred rendering")
         else:
             self._body_warning.setVisible(False)
-            text = pretty_print_body(response)
-            logger.debug("_display_body: calling body_text.set_code with %d chars", len(text))
-            self.body_text.set_code(text)
+            self._raw_body_text = self._decode_response_body(response)
+            self._pretty_body_text = pretty_print_body(response)
+            self._render_body_by_mode(getattr(self, "_readability_mode", "pretty"))
             # Verify it was set
             actual_text = self.body_text.toPlainText() if hasattr(self.body_text, 'toPlainText') else '(N/A)'
-            logger.debug("_display_body: set %d chars, body_text now contains %d chars", len(text), len(actual_text))
+            logger.debug(
+                "_display_body: rendered mode=%s body_text now contains %d chars",
+                getattr(self, "_readability_mode", "pretty"),
+                len(actual_text),
+            )
 
             # Force Qt to refresh the text widget after content change
             logger.debug("_display_body: forcing body_text widget refresh")
             self.body_text.update()
             self.body_text.viewport().update()
+
+    @staticmethod
+    def _decode_response_body(response: Response) -> str:
+        """Decode response bytes to text for raw readability mode."""
+        try:
+            if isinstance(response.body, (bytes, bytearray)):
+                return bytes(response.body).decode("utf-8", errors="replace")
+            return str(response.body)
+        except Exception:
+            logger.debug("Failed decoding response body", exc_info=True)
+            return ""
+
+    def _render_body_by_mode(self, mode: str) -> None:
+        """Render cached body text in the requested readability mode."""
+        raw = getattr(self, "_raw_body_text", "") or ""
+        pretty = getattr(self, "_pretty_body_text", "") or raw
+        mode = (mode or "pretty").lower()
+
+        if mode == "raw":
+            text = raw
+        elif mode == "split":
+            text = "=== Pretty ===\n" + pretty + "\n\n=== Raw ===\n" + raw
+        elif mode == "diff":
+            diff_lines = difflib.unified_diff(
+                raw.splitlines(keepends=True),
+                pretty.splitlines(keepends=True),
+                fromfile="raw",
+                tofile="pretty",
+                lineterm="",
+            )
+            text = "".join(diff_lines) or "(No differences between raw and pretty views)"
+        else:
+            text = pretty
+
+        self.body_text.set_code(text)
 
     # ------------------------------------------------------------------
     # JSON Tree
