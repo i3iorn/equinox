@@ -80,8 +80,6 @@ from equinox.auth.aws_sigv4 import AWSSigV4Auth
 if TYPE_CHECKING:
     from equinox.auth.factory import AUTH_REGISTRY
 
-__version__ = "1.0.0"
-
 __all__ = [
     "AuthStrategy",
     "BearerAuth",

@@ -146,19 +146,6 @@ class TestModuleMetadata:
         assert auth_from_dict.__doc__ is not None
         assert len(auth_from_dict.__doc__) > 50
 
-    def test_version_string_exists(self):
-        """Verify __version__ is defined and valid."""
-        import equinox.auth
-        assert hasattr(equinox.auth, "__version__")
-        version = equinox.auth.__version__
-
-        assert isinstance(version, str)
-        # Check basic semver format
-        parts = version.split(".")
-        assert len(parts) >= 2
-        for part in parts:
-            assert part.isdigit(), f"Version {version} not valid semver"
-
     def test_all_list_defined(self):
         """Verify __all__ is properly defined."""
         import equinox.auth
