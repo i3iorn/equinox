@@ -822,8 +822,9 @@ class MainWindow(QMainWindow):
     def _add_window_controls_to_menu_bar(self, menubar) -> None:
         """Attach frameless-window controls to the right side of the menu bar."""
         title_container = QWidget(menubar)
+        title_container.setObjectName("menuBarWindowTitleContainer")
         title_layout = QHBoxLayout(title_container)
-        title_layout.setContentsMargins(8, 0, 8, 0)
+        title_layout.setContentsMargins(18, 0, 18, 0)
 
         self._menu_title_label = QLabel(self.windowTitle(), title_container)
         self._menu_title_label.setObjectName("menuBarWindowTitle")

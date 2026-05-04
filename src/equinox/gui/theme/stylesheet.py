@@ -286,9 +286,13 @@ def build_stylesheet(base_pt: int, colors: dict[str, str]) -> str:
     QMenuBar::item {{
         padding: 4px 10px;
         border-radius: 3px;
+        margin-top: 3px;
     }}
     QMenuBar::item:selected {{
         background: {c["BORDER"]};
+    }}
+    QMenuBar #menuBarWindowTitleContainer {{
+        border-right: 1px solid {c["BORDER_FCS"]};
     }}
     QMenu {{
         background: {c["BG"]};
