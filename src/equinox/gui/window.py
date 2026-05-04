@@ -13,10 +13,9 @@ from typing import Optional
 from PyQt6.QtCore import Qt, QTimer, QSettings, QByteArray
 from PyQt6.QtGui import QAction, QKeySequence
 from PyQt6.QtWidgets import (
-    QApplication,
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QSplitter,
     QTabWidget, QStatusBar, QToolButton, QMenu,
-    QMessageBox, QFileDialog, QInputDialog,
+    QMessageBox, QFileDialog, QInputDialog, QProgressDialog,
 )
 
 from equinox.gui.logging_utils import log_gui_event
@@ -27,7 +26,7 @@ from equinox.storage.cookies import CookieJarManager
 from equinox.gui.request_panel import RequestPanel
 from equinox.gui.response_panel import ResponsePanel
 from equinox.gui.theme import (
-    Colors, get_font_size, set_font_size,
+    get_font_size, set_font_size,
     DEFAULT_FONT_SIZE, get_theme_mode, set_theme_mode, THEME_MODES, THEME_LABELS,
 )
 
@@ -57,6 +56,7 @@ _KEY_MAIN_SPLIT     = "splitter/main"
 _KEY_REQRESP_SPLIT  = "splitter/req_resp"
 _KEY_LEFT_TAB       = "left_tabs/index"
 _KEY_INTEL_DISABLED = "intelligence/disabled_analyzers"
+_KEY_SETUP_DONE     = "onboarding/setup_wizard_completed"
 
 _TAB_HISTORY = 1
 _TAB_COOKIES = 4
@@ -70,6 +70,7 @@ class MainWindow(QMainWindow):
         self.db = db
         self._settings = QSettings(_SETTINGS_KEY, _SETTINGS_KEY)
         self._intelligence_worker = None  # keep reference to avoid GC
+        self._background_workers = set()
         self._pending_panel_refreshes: set = set()
         self.setWindowTitle("Equinox — API Testing")
         self.setGeometry(_WINDOW_X, _WINDOW_Y, _WINDOW_W, _WINDOW_H)
@@ -83,10 +84,10 @@ class MainWindow(QMainWindow):
 
         self._init_ui()
         log_gui_event("window_initialized", {"title": self.windowTitle()})
-        log_gui_event("window_initialized", {"title": self.windowTitle()})
         self._create_menu_bar()
         self._create_status_bar()
         self._restore_layout()
+        QTimer.singleShot(0, self._maybe_run_setup_wizard)
 
     # ── Layout persistence ────────────────────────────────────────────
 
@@ -260,6 +261,7 @@ class MainWindow(QMainWindow):
         ("Ctrl+-",       "Zoom out"),
         ("Ctrl+0",       "Reset zoom"),
         ("Ctrl+Shift+F", "Format JSON body"),
+        ("Ctrl+K",       "Command Palette"),
         ("Ctrl+F",       "Find in response body"),
         ("F2",           "Rename selected collection item"),
         ("Delete",       "Delete selected collection item"),
@@ -738,6 +740,12 @@ class MainWindow(QMainWindow):
             self._theme_actions[mode] = a
 
         view_menu.addSeparator()
+        cmd_palette = QAction("Command &Palette…", self)
+        cmd_palette.setShortcut(QKeySequence("Ctrl+K"))
+        cmd_palette.triggered.connect(self._open_command_palette)
+        view_menu.addAction(cmd_palette)
+
+        view_menu.addSeparator()
         prefs_act = QAction("&Preferences…", self)
         prefs_act.setShortcut("Ctrl+,")
         prefs_act.triggered.connect(self._open_preferences)
@@ -793,6 +801,10 @@ class MainWindow(QMainWindow):
         about_act = QAction("&About", self)
         about_act.triggered.connect(self._show_about)
         help_menu.addAction(about_act)
+        help_menu.addSeparator()
+        setup_act = QAction("Run Setup Wizard…", self)
+        setup_act.triggered.connect(self._run_setup_wizard)
+        help_menu.addAction(setup_act)
 
     # ── Zoom ──────────────────────────────────────────────────────────
 
@@ -823,6 +835,81 @@ class MainWindow(QMainWindow):
         from equinox.gui.dialogs.preferences_dialog import PreferencesDialog
         PreferencesDialog(self).exec()
         self._sync_theme_checks()
+
+    def _maybe_run_setup_wizard(self) -> None:
+        """Run onboarding wizard once per profile on first launch."""
+        if os.environ.get("PYTEST_CURRENT_TEST"):
+            return
+        if self._settings.value(_KEY_SETUP_DONE, False, type=bool):
+            return
+        self._run_setup_wizard(mark_complete_on_cancel=False)
+
+    def _run_setup_wizard(self, mark_complete_on_cancel: bool = True) -> None:
+        """Open setup wizard and apply selected onboarding choices."""
+        from equinox.gui.dialogs.setup_wizard_dialog import SetupWizardDialog
+
+        dlg = SetupWizardDialog(self)
+        if dlg.exec() != dlg.DialogCode.Accepted:
+            if mark_complete_on_cancel:
+                self._settings.setValue(_KEY_SETUP_DONE, True)
+            return
+
+        data = dlg.result_data()
+        selected_theme = data.get("theme_mode")
+        if isinstance(selected_theme, str):
+            self._set_theme(selected_theme)
+
+        self._settings.setValue(_KEY_SETUP_DONE, True)
+        self.status_bar.showMessage("Setup complete", 3000)
+
+        if data.get("open_environment_manager"):
+            QTimer.singleShot(0, self._manage_environments)
+        if data.get("open_saved_credentials"):
+            QTimer.singleShot(0, self._manage_oauth_clients)
+
+    def _command_palette_items(self) -> list:
+        """Return command palette entries with stable IDs and callbacks."""
+        return [
+            {"id": "new_request", "label": "New Request", "shortcut": "Ctrl+N", "callback": self._new_request},
+            {"id": "send_request", "label": "Send Request", "shortcut": "Ctrl+Enter", "callback": self.request_panel.send},
+            {"id": "save_request", "label": "Save Request", "shortcut": "Ctrl+S", "callback": self.request_panel._save_request},
+            {"id": "focus_url", "label": "Focus URL", "shortcut": "Ctrl+L", "callback": self.request_panel._focus_url_input},
+            {"id": "import_postman", "label": "Import Postman", "callback": self._import_postman},
+            {"id": "import_openapi", "label": "Import OpenAPI", "callback": self._import_openapi},
+            {"id": "import_har", "label": "Import HAR", "callback": self._import_har},
+            {"id": "import_insomnia", "label": "Import Insomnia", "callback": self._import_insomnia},
+            {"id": "export_postman", "label": "Export Collection as Postman", "callback": lambda: self._export_collection("postman")},
+            {"id": "export_openapi", "label": "Export Collection as OpenAPI", "callback": lambda: self._export_collection("openapi")},
+            {"id": "export_insomnia", "label": "Export Collection as Insomnia", "callback": lambda: self._export_collection("insomnia")},
+            {"id": "manage_env", "label": "Manage Environments", "callback": self._manage_environments},
+            {"id": "preferences", "label": "Open Preferences", "shortcut": "Ctrl+,", "callback": self._open_preferences},
+            {"id": "setup_wizard", "label": "Run Setup Wizard", "callback": self._run_setup_wizard},
+        ]
+
+    def _open_command_palette(self) -> None:
+        """Open searchable command palette and execute selected command."""
+        from equinox.gui.dialogs.command_palette_dialog import CommandPaletteDialog
+
+        commands = self._command_palette_items()
+        view_items = [{"id": c["id"], "label": c["label"], "shortcut": c.get("shortcut", "")} for c in commands]
+        dlg = CommandPaletteDialog(view_items, self)
+        if dlg.exec() != dlg.DialogCode.Accepted:
+            return
+
+        selected_id = dlg.selected_command_id()
+        if not selected_id:
+            return
+        command = next((c for c in commands if c["id"] == selected_id), None)
+        if command is None:
+            return
+
+        callback = command.get("callback")
+        try:
+            if callable(callback):
+                callback()
+        except Exception:
+            logger.error("Command palette command failed: %s", selected_id, exc_info=True)
+            QMessageBox.warning(self, "Command Failed", f"Could not execute command: {selected_id}")
 
     # ── Status bar ────────────────────────────────────────────────────
 
@@ -976,24 +1063,97 @@ class MainWindow(QMainWindow):
         file_filter: str,
         success_msg: str,
     ) -> None:
-        """Generic import handler — opens a file dialog, runs the importer, refreshes."""
+        """Generic import handler with background execution and retry."""
         file_path, _ = QFileDialog.getOpenFileName(self, dialog_title, "", file_filter)
         if not file_path:
             return
-        mgr = CollectionManager(self.db)
-        importer = importer_class(mgr)
-        self.status_bar.showMessage("Importing…")
-        QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
-        try:
-            importer.import_file(Path(file_path))
-            if self.collections_panel:
-                self.collections_panel.refresh()
-            self.status_bar.showMessage(success_msg, 4000)
-        except Exception as exc:
-            self.status_bar.clearMessage()
-            QMessageBox.critical(self, "Import Error", f"Failed to import: {exc}")
-        finally:
-            QApplication.restoreOverrideCursor()
+        self._start_import(importer_class, Path(file_path), success_msg)
+
+    def _start_import(self, importer_class, file_path: Path, success_msg: str) -> None:
+        """Run selected importer in background with retry on error."""
+
+        def _operation() -> bool:
+            mgr = CollectionManager(self.db)
+            importer = importer_class(mgr)
+            importer.import_file(file_path)
+            return True
+
+        self._run_background_task(
+            operation=_operation,
+            operation_name=f"Importing {file_path.name}...",
+            success_msg=success_msg,
+            error_title="Import Error",
+            on_success=lambda _result: self._refresh_collections_after_background(),
+            retry_operation=lambda: self._start_import(importer_class, file_path, success_msg),
+        )
+
+    def _refresh_collections_after_background(self) -> None:
+        """Refresh collections panel now, or queue refresh until tab is opened."""
+        if self.collections_panel is not None:
+            self._safe_refresh(self.collections_panel)
+            return
+        self._pending_panel_refreshes.add(0)
+
+    def _run_background_task(
+        self,
+        operation,
+        operation_name: str,
+        success_msg: str,
+        error_title: str,
+        on_success=None,
+        retry_operation=None,
+    ) -> None:
+        """Execute a blocking operation on a worker thread with progress UX."""
+        from equinox.gui.workers import BackgroundTaskWorker
+
+        progress = QProgressDialog(operation_name, "Cancel", 0, 0, self)
+        progress.setWindowTitle("Working")
+        progress.setWindowModality(Qt.WindowModality.WindowModal)
+        progress.setMinimumDuration(0)
+        progress.setAutoClose(False)
+        progress.setAutoReset(False)
+        progress.show()
+
+        worker = BackgroundTaskWorker(operation, parent=self)
+        self._background_workers.add(worker)
+
+        def _cleanup() -> None:
+            try:
+                progress.close()
+            except Exception:
+                pass
+            self._background_workers.discard(worker)
+            worker.deleteLater()
+
+        def _on_cancel() -> None:
+            worker.cancel()
+            progress.setLabelText("Cancelling...")
+            progress.setCancelButton(None)
+
+        def _on_finished(success: bool, payload: object) -> None:
+            _cleanup()
+            if success:
+                self.status_bar.showMessage(success_msg, 4000)
+                if callable(on_success):
+                    on_success(payload)
+                return
+
+            error_text = str(payload)
+            retry_btn = QMessageBox.StandardButton.Retry
+            cancel_btn = QMessageBox.StandardButton.Cancel
+            choice = QMessageBox.question(
+                self,
+                error_title,
+                f"{error_text}\n\nRetry the operation?",
+                retry_btn | cancel_btn,
+                retry_btn,
+            )
+            if choice == retry_btn and callable(retry_operation):
+                retry_operation()
+
+        progress.canceled.connect(_on_cancel)
+        worker.finished.connect(_on_finished)
+        worker.start()
 
     def _import_postman(self) -> None:
         from equinox.importers import PostmanImporter
@@ -1032,8 +1192,6 @@ class MainWindow(QMainWindow):
         )
 
     def _export_collection(self, format_type: str) -> None:
-        from equinox.exporters import PostmanExporter, OpenAPIExporter, InsomniaExporter
-
         mgr = CollectionManager(self.db)
         collections = mgr.list_collections()
         if not collections:
@@ -1054,6 +1212,7 @@ class MainWindow(QMainWindow):
                 self, "Export Error", f"Collection '{col_name}' not found."
             )
             return
+        collection_id = int(collection_id)
 
         # Offer YAML as the primary format for OpenAPI exports
         if format_type == "openapi":
@@ -1067,27 +1226,58 @@ class MainWindow(QMainWindow):
         if not file_path:
             return
 
-        try:
-            QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
+        openapi_title = col_name
+        if format_type == "openapi":
+            title, ok = QInputDialog.getText(
+                self, "OpenAPI Title", "API Title:", text=col_name
+            )
+            if not ok:
+                return
+            openapi_title = title
+
+        self._start_export(
+            format_type=format_type,
+            collection_id=collection_id,
+            file_path=Path(file_path),
+            openapi_title=openapi_title,
+        )
+
+    def _start_export(
+        self,
+        format_type: str,
+        collection_id: int,
+        file_path: Path,
+        openapi_title: str,
+    ) -> None:
+        """Run collection export in the background with retry support."""
+        from equinox.exporters import PostmanExporter, OpenAPIExporter, InsomniaExporter
+
+        def _operation() -> str:
             if format_type == "postman":
                 data = PostmanExporter.export_collection(self.db, collection_id)
-                PostmanExporter.export_to_file(data, Path(file_path))
+                PostmanExporter.export_to_file(data, file_path)
             elif format_type == "openapi":
-                title, ok = QInputDialog.getText(
-                    self, "OpenAPI Title", "API Title:", text=col_name
-                )
-                if not ok:
-                    return
-                data = OpenAPIExporter.export_collection(self.db, collection_id, title)
-                OpenAPIExporter.export_to_file(data, Path(file_path))
+                data = OpenAPIExporter.export_collection(self.db, collection_id, openapi_title)
+                OpenAPIExporter.export_to_file(data, file_path)
             elif format_type == "insomnia":
                 data = InsomniaExporter.export_collection(self.db, collection_id)
-                InsomniaExporter.export_to_file(data, Path(file_path))
-            self.status_bar.showMessage(f"Exported to {file_path}", 5000)
-        except Exception as exc:
-            QMessageBox.critical(self, "Export Error", f"Failed to export: {exc}")
-        finally:
-            QApplication.restoreOverrideCursor()
+                InsomniaExporter.export_to_file(data, file_path)
+            else:
+                raise ValueError(f"Unsupported export format: {format_type}")
+            return str(file_path)
+
+        self._run_background_task(
+            operation=_operation,
+            operation_name=f"Exporting {file_path.name}...",
+            success_msg=f"Exported to {file_path}",
+            error_title="Export Error",
+            retry_operation=lambda: self._start_export(
+                format_type=format_type,
+                collection_id=collection_id,
+                file_path=file_path,
+                openapi_title=openapi_title,
+            ),
+        )
 
     # ── Environment management ────────────────────────────────────────
 
