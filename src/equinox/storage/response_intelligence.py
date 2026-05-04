@@ -29,6 +29,8 @@ class ResponseIntelligenceManager:
     _MAX_SCHEMA_JSON_LEN: int = 200_000
     # Number of hex characters taken from the SHA-256 schema hash.
     _SCHEMA_HASH_LENGTH: int = 16
+    # Key used when schema_json stores per-status snapshots.
+    _SCHEMA_BY_STATUS_KEY: str = "_by_status"
     # Hard cap on rows returned by get_recent_history to avoid runaway queries.
     _MAX_HISTORY_LIMIT: int = 500
 
@@ -108,9 +110,18 @@ class ResponseIntelligenceManager:
     # ── Schema snapshots ──────────────────────────────────────────────
 
     def get_schema(
-        self, url_pattern: str, method: str
+        self,
+        url_pattern: str,
+        method: str,
+        status_code: Optional[int] = None,
     ) -> Optional[Dict[str, Any]]:
-        """Return the stored schema fingerprint dict or ``None``."""
+        """Return stored schema fingerprint for an endpoint/status.
+
+        When *status_code* is provided, only the schema captured for that exact
+        response code is returned. Legacy rows (single flat schema payload with
+        no status metadata) return ``None`` in that mode to avoid cross-status
+        comparisons.
+        """
         row = self.db.fetchone(
             "SELECT schema_json FROM response_schemas "
             "WHERE url_pattern = ? AND method = ?",
@@ -118,17 +129,53 @@ class ResponseIntelligenceManager:
         )
         if row is None:
             return None
-        return safe_json_loads(row["schema_json"]) or None
+
+        payload = safe_json_loads(row["schema_json"]) or None
+        if not isinstance(payload, dict):
+            return None
+
+        by_status = payload.get(self._SCHEMA_BY_STATUS_KEY)
+        if isinstance(by_status, dict):
+            if status_code is not None:
+                schema = by_status.get(str(int(status_code)))
+                return schema if isinstance(schema, dict) else None
+            default_schema = by_status.get("200")
+            if isinstance(default_schema, dict):
+                return default_schema
+            for value in by_status.values():
+                if isinstance(value, dict):
+                    return value
+            return None
+
+        if status_code is not None:
+            # Legacy payload: no reliable status binding available.
+            return None
+        return payload
 
     def save_schema(
-        self, url_pattern: str, method: str, schema: Dict[str, str]
+        self,
+        url_pattern: str,
+        method: str,
+        schema: Dict[str, str],
+        status_code: Optional[int] = None,
     ) -> None:
         """Insert or replace the schema fingerprint for an endpoint.
 
         Uses a single-statement UPSERT to avoid the read-then-write race that
         two separate SELECT + INSERT/UPDATE calls would introduce.
         """
-        schema_json = safe_json_dumps(schema, max_len=self._MAX_SCHEMA_JSON_LEN)
+        payload: Dict[str, Any]
+        if status_code is None:
+            payload = schema
+        else:
+            payload = self._build_status_scoped_payload(
+                url_pattern=url_pattern,
+                method=method,
+                status_code=int(status_code),
+                schema=schema,
+            )
+
+        schema_json = safe_json_dumps(payload, max_len=self._MAX_SCHEMA_JSON_LEN)
         schema_hash = hashlib.sha256(schema_json.encode()).hexdigest()[: self._SCHEMA_HASH_LENGTH]
 
         self.db.execute(
@@ -141,6 +188,32 @@ class ResponseIntelligenceManager:
                    captured_at = CURRENT_TIMESTAMP""",
             (url_pattern, self._normalize_method(method), schema_hash, schema_json),
         )
+
+    def _build_status_scoped_payload(
+        self,
+        url_pattern: str,
+        method: str,
+        status_code: int,
+        schema: Dict[str, str],
+    ) -> Dict[str, Any]:
+        """Return merged schema payload keyed by HTTP status code."""
+        existing = self.db.fetchone(
+            "SELECT schema_json FROM response_schemas WHERE url_pattern = ? AND method = ?",
+            (url_pattern, self._normalize_method(method)),
+        )
+
+        by_status: Dict[str, Dict[str, str]] = {}
+        if existing and existing.get("schema_json"):
+            parsed = safe_json_loads(existing["schema_json"]) or {}
+            if isinstance(parsed, dict):
+                raw_map = parsed.get(self._SCHEMA_BY_STATUS_KEY)
+                if isinstance(raw_map, dict):
+                    for key, value in raw_map.items():
+                        if isinstance(value, dict):
+                            by_status[str(key)] = value
+
+        by_status[str(status_code)] = schema
+        return {self._SCHEMA_BY_STATUS_KEY: by_status}
 
     # ── Recent history for N+1 detection ──────────────────────────────
 

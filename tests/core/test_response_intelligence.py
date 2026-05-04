@@ -727,15 +727,44 @@ class TestResponseIntelligenceManager:
             mgr = ResponseIntelligenceManager(db)
 
             schema = {"name": "str", "age": "int"}
-            mgr.save_schema("/users/{id}", "GET", schema)
-            loaded = mgr.get_schema("/users/{id}", "GET")
+            mgr.save_schema("/users/{id}", "GET", schema, status_code=200)
+            loaded = mgr.get_schema("/users/{id}", "GET", status_code=200)
             assert loaded == schema
 
             # Update
             new_schema = {"name": "str", "age": "int", "role": "str"}
-            mgr.save_schema("/users/{id}", "GET", new_schema)
-            loaded = mgr.get_schema("/users/{id}", "GET")
+            mgr.save_schema("/users/{id}", "GET", new_schema, status_code=200)
+            loaded = mgr.get_schema("/users/{id}", "GET", status_code=200)
             assert loaded == new_schema
+
+    def test_schema_isolated_by_status_code(self, tmp_path):
+        from equinox.storage.database import Database
+        from equinox.storage.response_intelligence import ResponseIntelligenceManager
+
+        with Database(str(tmp_path / "test.db")) as db:
+            mgr = ResponseIntelligenceManager(db)
+
+            ok_schema = {"id": "int", "name": "str"}
+            not_found_schema = {"error": "str", "code": "int"}
+            mgr.save_schema("/users/{id}", "GET", ok_schema, status_code=200)
+            mgr.save_schema("/users/{id}", "GET", not_found_schema, status_code=404)
+
+            assert mgr.get_schema("/users/{id}", "GET", status_code=200) == ok_schema
+            assert mgr.get_schema("/users/{id}", "GET", status_code=404) == not_found_schema
+            assert mgr.get_schema("/users/{id}", "GET", status_code=500) is None
+
+    def test_legacy_schema_does_not_cross_match_status(self, tmp_path):
+        from equinox.storage.database import Database
+        from equinox.storage.response_intelligence import ResponseIntelligenceManager
+
+        with Database(str(tmp_path / "test.db")) as db:
+            mgr = ResponseIntelligenceManager(db)
+
+            legacy_schema = {"legacy": "str"}
+            mgr.save_schema("/users/{id}", "GET", legacy_schema)
+
+            assert mgr.get_schema("/users/{id}", "GET") == legacy_schema
+            assert mgr.get_schema("/users/{id}", "GET", status_code=200) is None
 
     def test_recent_history(self, tmp_path):
         from equinox.storage.database import Database

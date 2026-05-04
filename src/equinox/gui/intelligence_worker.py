@@ -177,7 +177,7 @@ class IntelligenceWorker(QThread):
             "endpoint stats",
         )
         stored_schema = self._try_fetch(
-            lambda: mgr.get_schema(url_pattern, method),
+            lambda: mgr.get_schema(url_pattern, method, status_code=self._response.status_code),
             "stored schema",
         )
         history_rows: list[dict] = (
@@ -254,6 +254,7 @@ class IntelligenceWorker(QThread):
                 url_pattern,
                 method,
                 SchemaDriftAnalyzer.build_schema_fingerprint(self._response.json()),
+                status_code=self._response.status_code,
             ),
             "schema snapshot",
         )
