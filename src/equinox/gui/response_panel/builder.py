@@ -121,6 +121,7 @@ class ResponseBuilderMixin:
         self._wrap_btn.toggled.connect(self._toggle_word_wrap)
 
         self._view_btn, self._view_menu = self._build_view_selector()
+        self._readability_btn, self._readability_menu = self._build_readability_selector()
 
         diff_btn = _make_button("Diff…", _BTN_WIDTH_SMALL, "Compare response body with a history entry")
         diff_btn.clicked.connect(self._diff_with_history)
@@ -131,6 +132,7 @@ class ResponseBuilderMixin:
         row.addWidget(QLabel(_BODY_WARNING_SEPARATOR))
         row.addWidget(self.size_label)
         row.addWidget(self._wrap_btn)
+        row.addWidget(self._readability_btn)
         row.addWidget(self._view_btn)
         row.addWidget(diff_btn)
         row.addWidget(copy_btn)
@@ -180,6 +182,37 @@ class ResponseBuilderMixin:
         self._view_raw_act = raw_act
         self._view_json_act = json_act
 
+        return btn, menu
+
+    def _build_readability_selector(self):
+        btn = QToolButton()
+        btn.setText("Mode")
+        btn.setToolTip("Switch body readability mode")
+        btn.setPopupMode(QToolButton.ToolButtonPopupMode.MenuButtonPopup)
+
+        menu = QMenu(btn)
+        pretty_act = menu.addAction("Pretty")
+        raw_act = menu.addAction("Raw")
+        split_act = menu.addAction("Split")
+        diff_act = menu.addAction("Diff")
+        for action in (pretty_act, raw_act, split_act, diff_act):
+            action.setCheckable(True)
+        pretty_act.setChecked(True)
+
+        pretty_act.triggered.connect(lambda: self._on_readability_selected("pretty"))
+        raw_act.triggered.connect(lambda: self._on_readability_selected("raw"))
+        split_act.triggered.connect(lambda: self._on_readability_selected("split"))
+        diff_act.triggered.connect(lambda: self._on_readability_selected("diff"))
+
+        btn.setMenu(menu)
+        btn.clicked.connect(btn.showMenu)
+
+        self._readability_actions = {
+            "pretty": pretty_act,
+            "raw": raw_act,
+            "split": split_act,
+            "diff": diff_act,
+        }
         return btn, menu
 
     # ------------------------------------------------------------------
