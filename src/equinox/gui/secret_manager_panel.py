@@ -21,9 +21,11 @@ from PyQt6.QtWidgets import (
     QTextEdit,
 )
 
+from equinox.core.secret_managers import get_secret_manager, test_secret_manager_connection
 from equinox.gui.dialogs.secret_manager_config_dialog import SecretManagerConfigDialog
 from equinox.gui.widgets.secret_browser import SecretBrowserWidget
 from equinox.security import sanitize_details
+from equinox.storage.secret_manager_configs import SecretManagerConfigStore
 
 logger = logging.getLogger(__name__)
 
@@ -48,10 +50,11 @@ class SecretManagerSettingsPanel(QWidget):
             parent: Parent widget
         """
         super().__init__(parent)
-        self.config_path = config_path or (Path.home() / ".equinox" / "secret_managers.json")
-        self.config_path.parent.mkdir(parents=True, exist_ok=True)
+        self._config_store = SecretManagerConfigStore(config_path)
 
         self._current_config: Dict[str, Any] = {}
+        self._configs: Dict[str, Dict[str, Any]] = {}
+        self._current_config_name: str = ""
         self._browser_widget: Optional[SecretBrowserWidget] = None
 
         self._init_ui()
@@ -120,27 +123,21 @@ class SecretManagerSettingsPanel(QWidget):
         layout.addStretch()
 
     def _load_configurations(self) -> None:
-        """Load saved configurations from file."""
-        if self.config_path.exists():
-            try:
-                with open(self.config_path, "r") as f:
-                    configs = json.load(f)
-                    self.config_combo.addItems(configs.keys())
-                    logger.info("Loaded %d secret manager configurations", len(configs))
-            except Exception as exc:
-                logger.error("Failed to load configurations: %s", exc)
+        """Load saved configurations from storage and populate the selector."""
+        self._configs = self._config_store.load_all()
+        self.config_combo.blockSignals(True)
+        self.config_combo.clear()
+        self.config_combo.addItems(sorted(self._configs.keys()))
+        self.config_combo.blockSignals(False)
+        logger.info("Loaded %d secret manager configurations", len(self._configs))
+        if self.config_combo.count() > 0:
+            self.config_combo.setCurrentIndex(0)
+            self._on_config_selected(self.config_combo.currentText())
 
     def _save_configurations(self) -> None:
-        """Save all configurations to file."""
+        """Persist in-memory configurations via storage layer."""
         try:
-            configs = {}
-            for i in range(self.config_combo.count()):
-                name = self.config_combo.itemText(i)
-                # Retrieve config data (would need to store in combo data)
-                # For now, just save what we have
-
-            with open(self.config_path, "w") as f:
-                json.dump(configs, f, indent=2)
+            self._config_store.save_all(self._configs)
             logger.debug("Saved secret manager configurations")
         except Exception as exc:
             logger.error("Failed to save configurations: %s", exc)
@@ -171,21 +168,29 @@ class SecretManagerSettingsPanel(QWidget):
         if not ok or not name:
             return
 
+        name = name.strip()
+        if not name:
+            return
+
         # Store the configuration
-        self._current_config = {
+        payload = {
             "type": manager_type,
             "config": {k: v for k, v in config.items() if k not in ("enable_cache", "cache_ttl")},
             "enable_cache": config.get("enable_cache", True),
             "cache_ttl": config.get("cache_ttl", 300),
         }
+        self._configs[name] = payload
+        self._current_config_name = name
+        self._current_config = dict(payload)
 
-        # Add to combo if not already there
+        self.config_combo.blockSignals(True)
         if name not in [self.config_combo.itemText(i) for i in range(self.config_combo.count())]:
             self.config_combo.addItem(name)
-
+        self.config_combo.model().sort(0)
+        self.config_combo.blockSignals(False)
         self.config_combo.setCurrentText(name)
+        self._on_config_selected(name)
         self._display_config()
-        self._create_browser()
         self._save_configurations()
 
         logger.info("Created new configuration: %s (%s)", name, manager_type)
@@ -197,12 +202,25 @@ class SecretManagerSettingsPanel(QWidget):
             name: Configuration name
         """
         if not name:
+            self._current_config_name = ""
+            self._current_config = {}
+            self._remove_browser()
+            self.config_display.setText("No configuration loaded")
             self.browser_placeholder.setText("No configuration selected")
             return
 
-        # In a real implementation, load from saved configurations
-        # For now, just display placeholder
+        cfg = self._configs.get(name)
+        if cfg is None:
+            self._current_config_name = ""
+            self._current_config = {}
+            self._remove_browser()
+            self.config_display.setText("No configuration loaded")
+            return
+
+        self._current_config_name = name
+        self._current_config = dict(cfg)
         self._display_config()
+        self._create_browser()
 
     def _display_config(self) -> None:
         """Display current configuration details."""
@@ -238,14 +256,10 @@ Configuration:
         if not self._current_config:
             return
 
-        # Remove old browser if exists
-        parent = self.browser_placeholder.parent()
-        layout = parent.layout()
-
-        if self._browser_widget:
-            layout.removeWidget(self._browser_widget)
-            self._browser_widget.deleteLater()
-
+        layout = self.browser_placeholder.parent().layout()
+        self._remove_browser()
+        if layout is None:
+            return
         layout.removeWidget(self.browser_placeholder)
         self.browser_placeholder.setVisible(False)
 
@@ -255,7 +269,24 @@ Configuration:
 
         self._browser_widget = SecretBrowserWidget(manager_type, config, self)
         self._browser_widget.secret_selected.connect(self.secret_selected)
-        layout.insertWidget(0, self._browser_widget)
+        if hasattr(layout, "insertWidget"):
+            layout.insertWidget(0, self._browser_widget)  # type: ignore[attr-defined]
+        else:
+            layout.addWidget(self._browser_widget)
+
+    def _remove_browser(self) -> None:
+        """Remove and destroy the current browser widget (if any)."""
+        layout = self.browser_placeholder.parent().layout()
+        if layout is None:
+            return
+        if self._browser_widget:
+            layout.removeWidget(self._browser_widget)
+            self._browser_widget.deleteLater()
+            self._browser_widget = None
+        if self.browser_placeholder.parent() is not None:
+            if layout.indexOf(self.browser_placeholder) == -1:
+                layout.addWidget(self.browser_placeholder)
+            self.browser_placeholder.setVisible(True)
 
     def _test_connection(self) -> None:
         """Test connection to the configured secret manager."""
@@ -263,36 +294,56 @@ Configuration:
             QMessageBox.warning(self, "Configuration", "No configuration selected")
             return
 
-        from equinox.core.secret_managers import get_secret_manager
+        manager_type = self._current_config.get("type", "env")
+        config = self._current_config.get("config", {})
+        result = test_secret_manager_connection(manager_type, config)
 
-        try:
-            manager_type = self._current_config.get("type", "env")
-            config = self._current_config.get("config", {})
+        if result.ok:
+            QMessageBox.information(
+                self,
+                "Connection Successful",
+                f"Saved profile '{self._current_config_name}' connected to {manager_type}.",
+            )
+            return
 
-            mgr = get_secret_manager(manager_type)
-            mgr.configure(**config)
+        if result.error_kind == "unavailable":
+            QMessageBox.warning(
+                self,
+                "Connection Failed",
+                f"Saved profile '{self._current_config_name}' could not reach {manager_type}.\n\n"
+                f"{result.error_message}",
+            )
+            return
 
-            if mgr.is_available():
-                QMessageBox.information(
-                    self,
-                    "Connection Successful",
-                    f"Successfully connected to {manager_type} secret manager."
-                )
-            else:
-                QMessageBox.warning(
-                    self,
-                    "Connection Failed",
-                    f"Cannot connect to {manager_type} secret manager."
-                )
-        except Exception as exc:
-            QMessageBox.critical(self, "Error", f"Error: {exc}")
+        if result.error_kind == "auth":
+            QMessageBox.critical(
+                self,
+                "Authentication Error",
+                f"Saved profile '{self._current_config_name}' was rejected by {manager_type}.\n\n"
+                f"{result.error_message}",
+            )
+            return
+
+        if result.error_kind == "config":
+            QMessageBox.critical(
+                self,
+                "Configuration Error",
+                f"Saved profile '{self._current_config_name}' is invalid for {manager_type}.\n\n"
+                f"{result.error_message}",
+            )
+            return
+
+        QMessageBox.critical(
+            self,
+            "Error",
+            f"Unexpected error while testing saved profile '{self._current_config_name}'.\n\n"
+            f"{result.error_message}",
+        )
 
     def _clear_cache(self) -> None:
         """Clear the secret manager cache."""
         if not self._current_config:
             return
-
-        from equinox.core.secret_managers import get_secret_manager
 
         try:
             manager_type = self._current_config.get("type", "env")
@@ -319,8 +370,12 @@ Configuration:
         if reply != QMessageBox.StandardButton.Yes:
             return
 
+        self._configs.pop(current_name, None)
         self.config_combo.removeItem(self.config_combo.currentIndex())
+        self._current_config_name = ""
         self._current_config = {}
+        self._remove_browser()
+        self.config_display.setText("No configuration loaded")
         self._save_configurations()
         logger.info("Deleted configuration: %s", current_name)
 

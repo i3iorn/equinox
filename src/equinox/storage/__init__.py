@@ -11,6 +11,7 @@ from equinox.storage.variable_groups import VariableGroupManager
 from equinox.storage.global_variables import GlobalVariablesManager
 from equinox.storage.oauth_clients import OAuthClientManager
 from equinox.storage.saved_credentials import SavedCredentialsManager
+from equinox.storage.secret_manager_configs import SecretManagerConfigStore
 from equinox.storage.migrations import MigrationRunner, MIGRATIONS
 
 # Canonical database path shared by CLI and GUI
@@ -41,6 +42,7 @@ __all__ = [
     "GlobalVariablesManager",
     "OAuthClientManager",
     "SavedCredentialsManager",
+    "SecretManagerConfigStore",
     "MigrationRunner",
     "MIGRATIONS",
     "get_db",

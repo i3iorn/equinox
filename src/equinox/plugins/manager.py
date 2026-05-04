@@ -37,24 +37,16 @@ class PluginManager:
         self,
         plugin_dir: str,
         context: PluginContext,
-        require_checksums: Optional[bool] = None,
     ):
         """Initialize plugin manager.
 
         Args:
             plugin_dir: Directory containing plugins
             context: Plugin context
-            require_checksums: When True, every plugin manifest must include a
-                checksum and the entry file must match it. When None, falls
-                back to ``EQUINOX_REQUIRE_PLUGIN_CHECKSUMS``.
         """
         self.plugin_dir = Path(plugin_dir)
         self.context = context
-        self.require_checksums = (
-            require_checksums
-            if require_checksums is not None
-            else _env_flag_enabled(_STRICT_CHECKSUM_ENV)
-        )
+        self.require_checksums = _env_flag_enabled(_STRICT_CHECKSUM_ENV)
         self.plugins: List[Plugin] = []
         self._load_plugins()
 

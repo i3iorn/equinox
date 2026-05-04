@@ -3,7 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 from pathlib import Path
-from typing import Dict, Optional
+from typing import Any, Dict, Optional
 
 from equinox.plugins.base import PluginContext
 from equinox.plugins.manager import PluginManager
@@ -14,7 +14,7 @@ def _write_plugin(
     root: Path,
     plugin_dir_name: str,
     plugin_module: str,
-    manifest_overrides: Optional[Dict[str, object]] = None,
+    manifest_overrides: Optional[Dict[str, Any]] = None,
     extra_files: Optional[Dict[str, str]] = None,
 ) -> Path:
     plugin_dir = root / plugin_dir_name
@@ -24,7 +24,7 @@ def _write_plugin(
     plugin_file.write_text(plugin_module, encoding="utf-8")
 
     digest = hashlib.sha256(plugin_file.read_bytes()).hexdigest()
-    manifest = {
+    manifest: Dict[str, Any] = {
         "name": f"plugin_{plugin_dir_name}",
         "version": "1.0.0",
         "author": "tests",
@@ -32,7 +32,8 @@ def _write_plugin(
         "checksum": digest,
     }
     if manifest_overrides:
-        manifest.update(manifest_overrides)
+        for key, value in manifest_overrides.items():
+            manifest[key] = value
 
     (plugin_dir / "manifest.json").write_text(
         json.dumps(manifest),
@@ -157,7 +158,7 @@ class PluginClass(Plugin):
     assert manager.plugins == []
 
 
-def test_plugin_manager_strict_checksum_mode_requires_manifest_checksum(tmp_path: Path) -> None:
+def test_plugin_manager_strict_checksum_mode_requires_manifest_checksum(tmp_path: Path, monkeypatch) -> None:
     _write_plugin(
         tmp_path,
         "strict_plugin",
@@ -176,7 +177,8 @@ class PluginClass(Plugin):
         manifest_overrides={"checksum": None},
     )
 
-    manager = PluginManager(str(tmp_path), _manager_context(), require_checksums=True)
+    monkeypatch.setenv("EQUINOX_REQUIRE_PLUGIN_CHECKSUMS", "1")
+    manager = PluginManager(str(tmp_path), _manager_context())
 
     assert manager.plugins == []
 

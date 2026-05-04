@@ -25,10 +25,8 @@ from PyQt6.QtWidgets import (
 )
 
 from equinox.core.secret_managers import (
-    get_secret_manager,
     list_available_managers,
-    SecretManagerError,
-    SecretAuthError,
+    test_secret_manager_connection,
 )
 
 logger = logging.getLogger(__name__)
@@ -300,40 +298,44 @@ class SecretManagerConfigDialog(QDialog):
         if not self._confirm_insecure_vault_http(manager_type, config, "Test"):
             return
 
-        try:
-            mgr = get_secret_manager(manager_type)
-            mgr.configure(**config)
+        result = test_secret_manager_connection(manager_type, config)
+        if result.ok:
+            QMessageBox.information(
+                self,
+                "Connection Successful",
+                f"Draft configuration for {manager_type} validated successfully.",
+            )
+            return
 
-            if mgr.is_available():
-                QMessageBox.information(
-                    self,
-                    "Connection Successful",
-                    f"Successfully connected to {manager_type} secret manager."
-                )
-            else:
-                QMessageBox.warning(
-                    self,
-                    "Connection Failed",
-                    f"Unable to connect to {manager_type} secret manager."
-                )
-        except SecretAuthError as exc:
+        if result.error_kind == "unavailable":
+            QMessageBox.warning(
+                self,
+                "Connection Failed",
+                f"Draft configuration could not reach {manager_type}.\n\n{result.error_message}",
+            )
+            return
+
+        if result.error_kind == "auth":
             QMessageBox.critical(
                 self,
                 "Authentication Error",
-                f"Authentication failed: {exc}"
+                f"Draft credentials were rejected by {manager_type}.\n\n{result.error_message}",
             )
-        except SecretManagerError as exc:
+            return
+
+        if result.error_kind == "config":
             QMessageBox.critical(
                 self,
                 "Configuration Error",
-                f"Configuration error: {exc}"
+                f"Draft configuration for {manager_type} is invalid.\n\n{result.error_message}",
             )
-        except Exception as exc:
-            QMessageBox.critical(
-                self,
-                "Error",
-                f"Error: {exc}"
-            )
+            return
+
+        QMessageBox.critical(
+            self,
+            "Error",
+            f"Unexpected error while validating draft configuration.\n\n{result.error_message}",
+        )
 
     def _save_configuration(self) -> None:
         """Save the configuration and emit signal."""
