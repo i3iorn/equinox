@@ -31,8 +31,8 @@ def build_stylesheet(base_pt: int, colors: dict[str, str]) -> str:
     }}
 
     /* -- Buttons -- */
-    QPushButton, QToolButton {{
-        padding: 4px 8px;
+    QPushButton {{
+        padding: 4px 10px;
         border: 1px solid {c["BORDER"]};
         border-radius: 4px;
         background: {c["BG"]};
@@ -40,6 +40,14 @@ def build_stylesheet(base_pt: int, colors: dict[str, str]) -> str:
         min-height: 1.5em;
     }}
     QToolButton {{
+        padding: 2px 4px;
+        border: 1px solid {c["BORDER"]};
+        border-radius: 4px;
+        background: {c["BG"]};
+        color: {c["FG"]};
+        min-height: 1.5em;
+    }}
+    QToolButton[popupMode="1"], QToolButton[popupMode="2"] {{
         padding-right: 18px;
     }}
     QPushButton:hover, QToolButton:hover {{
