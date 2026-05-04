@@ -6,7 +6,7 @@ import logging
 import threading
 import time
 from datetime import datetime as _dt
-from typing import Optional
+from typing import Optional, Callable, Any
 
 from PyQt6.QtWidgets import (
     QDialog,
@@ -213,6 +213,32 @@ class RequestWorker(QThread):
         except Exception as exc:
             if not self._cancelled:
                 self.finished.emit(enrich_exception(exc))
+
+
+class BackgroundTaskWorker(QThread):
+    """Run a Python callable in a worker thread and return its result."""
+
+    finished = pyqtSignal(bool, object)
+
+    def __init__(self, operation: Callable[[], Any], parent=None):
+        super().__init__(parent)
+        self._operation = operation
+        self._cancelled = False
+
+    def cancel(self) -> None:
+        """Mark this task as cancelled; result will be ignored."""
+        self._cancelled = True
+
+    def run(self) -> None:
+        if self._cancelled:
+            return
+        try:
+            result = self._operation()
+            if not self._cancelled:
+                self.finished.emit(True, result)
+        except Exception as exc:
+            if not self._cancelled:
+                self.finished.emit(False, exc)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
