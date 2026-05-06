@@ -15,7 +15,7 @@ from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QKeySequence, QShortcut
 
 from equinox.core.codegen import GENERATORS
-from equinox.gui.intelligence_panel import IntelligencePanel
+from equinox.gui.response_panel.intelligence_panel import IntelligencePanel
 from equinox.gui.response_panel.header_table import HeaderTable
 from equinox.gui.response_panel.json_tree import JsonTree
 from equinox.gui.response_panel.read_only_text import ReadOnlyText
