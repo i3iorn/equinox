@@ -38,6 +38,8 @@ _WINDOW_X           = 100
 _WINDOW_Y           = 100
 _WINDOW_W           = 1400
 _WINDOW_H           = 900
+# Window edge grab-zone for frameless resize.
+_RESIZE_BORDER_PX   = 6
 _LEFT_PANEL_W       = 300
 _RIGHT_PANEL_W      = 1100
 _REQ_PANEL_H        = 400
@@ -69,6 +71,7 @@ class MainWindow(QMainWindow):
         self.db = db
         self._drag_menu_active = False
         self._drag_menu_offset = QPoint()
+        self._resize_active = False
         self._settings = QSettings(_SETTINGS_KEY, _SETTINGS_KEY)
         self._intelligence_worker = None  # keep reference to avoid GC
         self._background_workers = set()
@@ -76,6 +79,7 @@ class MainWindow(QMainWindow):
         self.setWindowTitle("Equinox — API Testing")
         self.setGeometry(_WINDOW_X, _WINDOW_Y, _WINDOW_W, _WINDOW_H)
         self.setWindowFlags(Qt.WindowType.FramelessWindowHint)
+        self.setMouseTracking(True)
 
         # Debounce splitter-drag saves: only flush to disk 350 ms after the
         # user *stops* dragging, instead of on every pixel movement.
@@ -871,7 +875,7 @@ class MainWindow(QMainWindow):
                 if action is not None:
                     self._drag_menu_active = False
                     return super().eventFilter(watched, event)
-            self._drag_menu_active = not self.isMaximized()
+            self._drag_menu_active = not self.isMaximized() and not self.isFullScreen()
             if self._drag_menu_active:
                 self._drag_menu_offset = event.globalPosition().toPoint() - self.frameGeometry().topLeft()
             return False
@@ -909,6 +913,8 @@ class MainWindow(QMainWindow):
     def changeEvent(self, event) -> None:  # type: ignore[override]
         if event.type() == QEvent.Type.WindowStateChange:
             self._sync_window_controls()
+            if not self._can_resize_frameless():
+                self.setCursor(Qt.CursorShape.ArrowCursor)
         super().changeEvent(event)
 
     # ── Zoom ──────────────────────────────────────────────────────────
@@ -1383,3 +1389,80 @@ class MainWindow(QMainWindow):
 
         SecretManagerSettingsDialog(parent=self).exec()
 
+    def _resize_edges_for_pos(self, pos: QPoint) -> Qt.Edge:
+        """Return the window-edge flags under *pos* for frameless resizing."""
+        x = pos.x()
+        y = pos.y()
+        w = self.width()
+        h = self.height()
+
+        edges = Qt.Edge(0)
+        if x <= _RESIZE_BORDER_PX:
+            edges |= Qt.Edge.LeftEdge
+        elif x >= w - _RESIZE_BORDER_PX:
+            edges |= Qt.Edge.RightEdge
+
+        if y <= _RESIZE_BORDER_PX:
+            edges |= Qt.Edge.TopEdge
+        elif y >= h - _RESIZE_BORDER_PX:
+            edges |= Qt.Edge.BottomEdge
+
+        return edges
+
+    def _can_resize_frameless(self) -> bool:
+        """Frameless resize is enabled only in normal windowed mode."""
+        return not self.isMaximized() and not self.isFullScreen()
+
+    def _cursor_for_edges(self, edges: Qt.Edge) -> Qt.CursorShape:
+        """Map edge flags to the expected resize cursor shape."""
+        has_left = bool(edges & Qt.Edge.LeftEdge)
+        has_right = bool(edges & Qt.Edge.RightEdge)
+        has_top = bool(edges & Qt.Edge.TopEdge)
+        has_bottom = bool(edges & Qt.Edge.BottomEdge)
+
+        if (has_left and has_top) or (has_right and has_bottom):
+            return Qt.CursorShape.SizeFDiagCursor
+        if (has_right and has_top) or (has_left and has_bottom):
+            return Qt.CursorShape.SizeBDiagCursor
+        if has_left or has_right:
+            return Qt.CursorShape.SizeHorCursor
+        if has_top or has_bottom:
+            return Qt.CursorShape.SizeVerCursor
+        return Qt.CursorShape.ArrowCursor
+
+    def _update_resize_cursor(self, pos: QPoint) -> None:
+        """Show resize cursors near window borders when resize is available."""
+        if not self._can_resize_frameless() or self._drag_menu_active:
+            self.setCursor(Qt.CursorShape.ArrowCursor)
+            return
+        edges = self._resize_edges_for_pos(pos)
+        self.setCursor(self._cursor_for_edges(edges))
+
+    def mousePressEvent(self, event) -> None:  # type: ignore[override]
+        if (
+            event.button() == Qt.MouseButton.LeftButton
+            and self._can_resize_frameless()
+            and not self._drag_menu_active
+        ):
+            edges = self._resize_edges_for_pos(event.position().toPoint())
+            if edges:
+                handle = self.windowHandle()
+                if handle is not None and handle.startSystemResize(edges):
+                    self._resize_active = True
+                    event.accept()
+                    return
+        super().mousePressEvent(event)
+
+    def mouseMoveEvent(self, event) -> None:  # type: ignore[override]
+        self._update_resize_cursor(event.position().toPoint())
+        super().mouseMoveEvent(event)
+
+    def mouseReleaseEvent(self, event) -> None:  # type: ignore[override]
+        self._resize_active = False
+        self._update_resize_cursor(event.position().toPoint())
+        super().mouseReleaseEvent(event)
+
+    def leaveEvent(self, event) -> None:  # type: ignore[override]
+        if not self._resize_active:
+            self.setCursor(Qt.CursorShape.ArrowCursor)
+        super().leaveEvent(event)

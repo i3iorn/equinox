@@ -3,7 +3,7 @@
 import pytest
 from unittest.mock import MagicMock, patch
 from PyQt6.QtWidgets import QApplication
-from PyQt6.QtCore import QCoreApplication, QPointF, Qt
+from PyQt6.QtCore import QCoreApplication, QPointF, Qt, QPoint
 from PyQt6.QtGui import QMouseEvent
 
 _APP = QApplication.instance() or QApplication([])
@@ -489,6 +489,46 @@ class TestMainWindow:
         win = MainWindow(db)
         win._load_history_entry(history_id)
         _process()
+        _close_win(win)
+
+    def test_resize_edges_detected_on_border(self, db):
+        from equinox.gui.window import MainWindow
+
+        win = MainWindow(db)
+        win.resize(800, 600)
+
+        left_top = win._resize_edges_for_pos(QPoint(1, 1))
+        assert bool(left_top & Qt.Edge.LeftEdge)
+        assert bool(left_top & Qt.Edge.TopEdge)
+
+        right_bottom = win._resize_edges_for_pos(QPoint(win.width() - 1, win.height() - 1))
+        assert bool(right_bottom & Qt.Edge.RightEdge)
+        assert bool(right_bottom & Qt.Edge.BottomEdge)
+
+        center = win._resize_edges_for_pos(QPoint(win.width() // 2, win.height() // 2))
+        assert center == Qt.Edge(0)
+        _close_win(win)
+
+    def test_resize_cursor_changes_near_edges(self, db):
+        from equinox.gui.window import MainWindow
+
+        win = MainWindow(db)
+        win.resize(800, 600)
+
+        win._update_resize_cursor(QPoint(1, 1))
+        assert win.cursor().shape() == Qt.CursorShape.SizeFDiagCursor
+
+        win._update_resize_cursor(QPoint(win.width() // 2, win.height() // 2))
+        assert win.cursor().shape() == Qt.CursorShape.ArrowCursor
+        _close_win(win)
+
+    def test_resize_cursor_forced_arrow_when_fullscreen(self, db):
+        from equinox.gui.window import MainWindow
+
+        win = MainWindow(db)
+        with patch.object(win, "isFullScreen", return_value=True):
+            win._update_resize_cursor(QPoint(1, 1))
+            assert win.cursor().shape() == Qt.CursorShape.ArrowCursor
         _close_win(win)
 
 
