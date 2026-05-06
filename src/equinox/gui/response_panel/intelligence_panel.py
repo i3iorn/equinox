@@ -554,3 +554,4 @@ class IntelligencePanel(QWidget):
             if w:
                 w.deleteLater()
 
+
