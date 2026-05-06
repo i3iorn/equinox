@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import List, Dict, Any, Optional
 
 from equinox.plugins.base import Plugin, PluginContext
-from equinox.security.plugins import (
+from equinox.plugins.security import (
     PluginManifest,
     PluginSandbox,
     SecurePluginContext,
