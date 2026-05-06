@@ -489,3 +489,52 @@ class TestPostmanImporter:
         # Check urlencoded body - should be converted to form params
         form_req = col_mgr.get_request(requests[1]["id"])
         assert form_req.body == "field1=value1&field2=value2"
+
+    def test_raw_url_colon_path_variable_normalized(self, col_mgr, importer):
+        collection = {
+            "info": {
+                "name": "Path Vars",
+                "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+            },
+            "item": [
+                {
+                    "name": "Get User",
+                    "request": {
+                        "method": "GET",
+                        "url": "https://api.example.com/users/:userId",
+                    },
+                }
+            ],
+        }
+
+        collection_id = importer.import_dict(collection)
+        requests = col_mgr.list_requests(collection_id)
+        request_obj = col_mgr.get_request(requests[0]["id"])
+        assert request_obj.url == "https://api.example.com/users/{{userId}}"
+
+    def test_structured_url_single_brace_variable_normalized(self, col_mgr, importer):
+        collection = {
+            "info": {
+                "name": "Path Vars Structured",
+                "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+            },
+            "item": [
+                {
+                    "name": "Get User",
+                    "request": {
+                        "method": "GET",
+                        "url": {
+                            "protocol": "https",
+                            "host": ["api", "example", "com"],
+                            "path": ["users", "{userId}"],
+                        },
+                    },
+                }
+            ],
+        }
+
+        collection_id = importer.import_dict(collection)
+        requests = col_mgr.list_requests(collection_id)
+        request_obj = col_mgr.get_request(requests[0]["id"])
+        assert request_obj.url == "https://api.example.com/users/{{userId}}"
+

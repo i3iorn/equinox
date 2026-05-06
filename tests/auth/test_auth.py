@@ -499,6 +499,7 @@ class TestAuthSerialization:
             client_id="client123",
             client_secret="secret",
             scope="read write",
+            verify_ssl=False,
         )
         data = auth.to_dict()
 
@@ -507,6 +508,7 @@ class TestAuthSerialization:
         assert data["client_id"] == "client123"
         assert data["client_secret"] == "secret"
         assert data["scope"] == "read write"
+        assert data["verify_ssl"] is False
 
     def test_oauth2_auth_from_dict(self):
         """Test OAuth2Auth deserialization"""
@@ -516,6 +518,7 @@ class TestAuthSerialization:
             "client_id": "client123",
             "client_secret": "secret",
             "scope": "read write",
+            "verify_ssl": False,
         }
         auth = OAuth2Auth.from_dict(data)
 
@@ -523,6 +526,7 @@ class TestAuthSerialization:
         assert auth.client_id == "client123"
         assert auth.client_secret == "secret"
         assert auth.scope == "read write"
+        assert auth.verify_ssl is False
 
     def test_api_key_auth_to_dict(self):
         """Test APIKeyAuth serialization"""

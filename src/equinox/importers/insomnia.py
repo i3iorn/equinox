@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from equinox.core.request import Request
-from equinox.importers._utils import validate_import_file
+from equinox.importers._utils import validate_import_file, normalize_path_variables
 
 logger = logging.getLogger(__name__)
 
@@ -156,7 +156,7 @@ class InsomniaImporter:
 
         request = Request(
             method=res.get("method", "GET").upper(),
-            url=res.get("url", ""),
+            url=normalize_path_variables(res.get("url", "")),
             headers=headers,
             params=params,
             body=body,

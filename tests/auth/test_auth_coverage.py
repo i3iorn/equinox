@@ -689,12 +689,14 @@ class TestOAuth2Coverage:
             client_id="c",
             client_secret="s",
             token_url="https://auth.example.com/token",
+            verify_ssl=False,
         )
         auth._proxy = "http://proxy.local:8080"
         auth._refresh_access_token()
-        # Verify proxy was passed
+        # Verify proxy + verify_ssl were passed
         call_kwargs = mock_client_class.call_args[1]
         assert call_kwargs["proxy"] == "http://proxy.local:8080"
+        assert call_kwargs["verify"] is False
 
     # ── repr ──────────────────────────────────────────────────────────────
 

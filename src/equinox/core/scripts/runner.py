@@ -3,7 +3,7 @@ import logging
 import multiprocessing
 import queue
 import time
-from typing import Any, Dict, Optional
+from typing import Any, Dict
 
 from .models import ScriptResult
 from .sandbox import get_safe_builtins
@@ -110,8 +110,8 @@ class ScriptRunner:
             if status == "error":
                 return ScriptResult(error=data, duration=time.time() - start_time)
             
-            output_vars = cls._collect_changed_env(data, session_vars)
-            return ScriptResult(env_changes=output_vars, duration=time.time() - start_time)
+            env_changes = cls._collect_changed_env(data, session_vars)
+            return ScriptResult(env_changes=env_changes, duration=time.time() - start_time)
         except queue.Empty:
             p.terminate()
             return ScriptResult(error=f"Script timed out after {cls.EXECUTION_TIMEOUT}s", duration=time.time() - start_time)

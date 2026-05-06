@@ -6,7 +6,7 @@ import logging
 from PyQt6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QTabWidget, QWidget,
     QLabel, QLineEdit, QComboBox, QPushButton, QFormLayout,
-    QMessageBox, QFrame, QTextEdit,
+    QMessageBox, QFrame, QTextEdit, QCheckBox,
 )
 from PyQt6.QtCore import QThread, pyqtSignal
 from typing import Dict, Any
@@ -268,12 +268,15 @@ class AuthDialog(QDialog):
             "• Body — client_id/client_secret in the POST body (default, RFC 6749 §2.3.1)\n"
             "• Basic — Base64-encoded Authorization header (required by some providers)"
         )
+        self.oauth2_verify_ssl_check = QCheckBox("Verify token endpoint SSL certificates")
+        self.oauth2_verify_ssl_check.setChecked(True)
 
         lay.addRow("Token URL:*",     self.oauth2_token_url)
         lay.addRow("Client ID:*",     self.oauth2_client_id)
         lay.addRow("Client Secret:",  make_secret_row(self.oauth2_client_secret))
         lay.addRow("Scope:",          self.oauth2_scope)
         lay.addRow("Client Auth:",    self.oauth2_token_auth)
+        lay.addRow("",                 self.oauth2_verify_ssl_check)
         lay.addRow("Access Token:",   make_secret_row(self.oauth2_access_token))
         lay.addRow("Refresh Token:",  make_secret_row(self.oauth2_refresh_token))
         lay.addRow(self._info(
@@ -396,6 +399,7 @@ class AuthDialog(QDialog):
             client_id=client_id,
             client_secret=client_secret,
             scope=scope,
+            verify_ssl=self.oauth2_verify_ssl_check.isChecked(),
             token_auth=self.oauth2_token_auth.currentData() or "body",
         )
         self.oauth2_fetch_btn.setEnabled(False)
@@ -505,6 +509,7 @@ class AuthDialog(QDialog):
             self.oauth2_client_id.setText(cfg.get("client_id", ""))
             self.oauth2_client_secret.setText(cfg.get("client_secret", ""))
             self.oauth2_scope.setText(cfg.get("scope", ""))
+            self.oauth2_verify_ssl_check.setChecked(bool(cfg.get("verify_ssl", True)))
             ta_idx = self.oauth2_token_auth.findData(cfg.get("token_auth", "body") or "body")
             self.oauth2_token_auth.setCurrentIndex(max(ta_idx, 0))
             # Clear tokens so a fresh fetch is triggered at send time.
@@ -562,6 +567,7 @@ class AuthDialog(QDialog):
             self.oauth2_client_id.setText(self.current_auth.client_id or "")
             self.oauth2_client_secret.setText(self.current_auth.client_secret or "")
             self.oauth2_scope.setText(self.current_auth.scope or "")
+            self.oauth2_verify_ssl_check.setChecked(getattr(self.current_auth, "verify_ssl", True))
             self.oauth2_access_token.setText(self.current_auth.access_token or "")
             self.oauth2_refresh_token.setText(self.current_auth.refresh_token or "")
             ta_idx = self.oauth2_token_auth.findData(
@@ -649,6 +655,7 @@ class AuthDialog(QDialog):
                 scope=_sanitize_field(self.oauth2_scope.text().strip()) or None,
                 access_token=_sanitize_field(self.oauth2_access_token.text().strip()) or None,
                 refresh_token=_sanitize_field(self.oauth2_refresh_token.text().strip()) or None,
+                verify_ssl=self.oauth2_verify_ssl_check.isChecked(),
                 token_auth=self.oauth2_token_auth.currentData() or "body",
             )
             # Carry forward expires_at from a successful "Fetch Token…"

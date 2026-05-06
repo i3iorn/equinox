@@ -129,6 +129,7 @@ class OAuth2Auth(AuthStrategy):
         secure_storage: Optional[SecureStorage] = None,
         storage_key: Optional[str] = None,
         token_timeout: float = 10.0,
+        verify_ssl: bool = True,
         token_auth: Literal["body", "basic"] = "body",
         extra_params: Optional[Dict[str, Any]] = None,
     ):
@@ -144,6 +145,7 @@ class OAuth2Auth(AuthStrategy):
             secure_storage: SecureStorage instance for storing tokens (optional)
             storage_key: Key to store tokens in secure storage
             token_timeout: HTTP timeout for token endpoint requests in seconds
+            verify_ssl: Whether to verify TLS certificates for token endpoint requests
             token_auth: How to send credentials to token endpoint — "body" (default, RFC 6749 §2.3.1)
                        or "basic" (HTTP Basic Auth, RFC 6749 §2.3.1, used by D&B Direct+, etc.)
         """
@@ -171,6 +173,7 @@ class OAuth2Auth(AuthStrategy):
 
         original_timeout = token_timeout
         self.token_timeout = max(_MIN_TOKEN_TIMEOUT, min(token_timeout, _MAX_TOKEN_TIMEOUT))
+        self._verify_ssl = bool(verify_ssl)
 
         if original_timeout != self.token_timeout:
             logger.debug(
@@ -259,6 +262,7 @@ class OAuth2Auth(AuthStrategy):
             "has_refresh_token": bool(self.refresh_token),
             "expires_at": self._expires_at_iso(),
             "token_timeout": self.token_timeout,
+            "verify_ssl": self._verify_ssl,
             "token_auth": self.token_auth,
             "extra_params": self.extra_params,
         }
@@ -276,6 +280,7 @@ class OAuth2Auth(AuthStrategy):
             refresh_token=data.get("refresh_token"),
             secure_storage=secure_storage,
             token_timeout=data.get("token_timeout", cls.DEFAULT_TOKEN_TIMEOUT),
+            verify_ssl=data.get("verify_ssl", True),
             token_auth=data.get("token_auth", "body"),
             extra_params=data.get("extra_params") if data.get("extra_params") is not None else None,
         )
@@ -299,6 +304,7 @@ class OAuth2Auth(AuthStrategy):
             access_token=_interpolate_field(self.access_token, interp),
             refresh_token=_interpolate_field(self.refresh_token, interp),
             token_timeout=self.token_timeout,
+            verify_ssl=self._verify_ssl,
             token_auth=self.token_auth,
             extra_params=self.extra_params,
         )
@@ -345,6 +351,11 @@ class OAuth2Auth(AuthStrategy):
     def _proxy_for_httpx(self) -> Optional[str]:
         """Proxy URL passed to httpx, or ``None`` when no proxy is configured."""
         return self._proxy or None
+
+    @property
+    def verify_ssl(self) -> bool:
+        """Whether TLS certificate verification is enabled for token requests."""
+        return self._verify_ssl
 
     def _needs_refresh(self) -> bool:
         """Return True when the token is missing, expired, or about to expire."""
@@ -654,7 +665,11 @@ class OAuth2Auth(AuthStrategy):
             body.pop("client_id", None)
             body.pop("client_secret", None)
 
-        with httpx.Client(timeout=self._make_token_timeout(), proxy=self._proxy_for_httpx) as client:
+        with httpx.Client(
+            timeout=self._make_token_timeout(),
+            proxy=self._proxy_for_httpx,
+            verify=self._verify_ssl,
+        ) as client:
             response = client.post(self.token_url, data=body, headers=headers)
         response.raise_for_status()
         return response

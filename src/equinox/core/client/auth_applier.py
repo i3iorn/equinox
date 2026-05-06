@@ -115,6 +115,8 @@ class AuthApplier:
         # ...existing code...
         if proxy and hasattr(strategy, "_proxy"):
             strategy._proxy = proxy
+        if hasattr(strategy, "_verify_ssl"):
+            strategy._verify_ssl = bool(getattr(request, "verify_ssl", True))
         logger.debug("Applying auth strategy: %s", type(strategy).__name__)
         try:
             strategy.apply(request, headers)

@@ -331,6 +331,24 @@ class TestImportRequestDetails:
         req = mock_manager.save_request.call_args[0][0]
         assert req.method == "PATCH"
 
+    def test_colon_path_variable_normalized(self, importer, mock_manager):
+        data = {
+            "resources": [
+                {"_type": "workspace", "_id": "wrk_1", "name": "API"},
+                {
+                    "_type": "request",
+                    "_id": "req_1",
+                    "parentId": "wrk_1",
+                    "name": "By ID",
+                    "method": "GET",
+                    "url": "https://example.com/users/:userId",
+                },
+            ]
+        }
+        importer._import_data(data)
+        req = mock_manager.save_request.call_args[0][0]
+        assert req.url == "https://example.com/users/{{userId}}"
+
 
 # ── import_file: file-level checks ────────────────────────────────────────
 

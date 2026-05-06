@@ -316,17 +316,17 @@ class _RequestSendMixin:
         if result.error:
             label.setText(f"Error: {result.error}")
         else:
-            count = len(result.output_vars)
+            count = len(result.env_changes)
             label.setText(f"OK — {count} var(s) set" if count else "OK")
 
     def _apply_script_vars(self, result) -> None:
         """Merge script output variables into session state.
 
-        No-op if the script produced an error or zero output vars.
+        No-op if the script produced an error or zero env changes.
         """
-        if result.error or not result.output_vars:
+        if result.error or not result.env_changes:
             return
-        self._session_vars.update(result.output_vars)
+        self._session_vars.update(result.env_changes)
         self.session_vars_changed.emit(dict(self._session_vars))
 
     # ── Core send pipeline ────────────────────────────────────────────────────

@@ -208,6 +208,21 @@ class TestInvokeStrategyProxyInjection:
         # _proxy must remain unchanged
         assert auth._proxy == "old"
 
+    def test_verify_ssl_injected_when_strategy_has_verify_attr(self):
+        applier = AuthApplier()
+        auth = _make_auth()
+        auth._verify_ssl = True  # signal that attribute exists
+        request = _make_request(verify_ssl=False)
+        applier._invoke_strategy(auth, request, {}, proxy=None)
+        assert auth._verify_ssl is False
+
+    def test_verify_ssl_not_injected_when_strategy_lacks_verify_attr(self):
+        applier = AuthApplier()
+        auth = _make_auth()
+        request = _make_request(verify_ssl=False)
+        applier._invoke_strategy(auth, request, {}, proxy=None)
+        assert not hasattr(auth, "_verify_ssl")
+
     def test_strategy_apply_called_with_request_and_headers(self):
         applier = AuthApplier()
         auth = _make_auth()

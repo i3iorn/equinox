@@ -18,7 +18,7 @@ from equinox.core.request import Request
 from equinox.core.exceptions import ValidationError, SecurityError
 from equinox.core.validation import Validator
 from equinox.storage.collections import CollectionManager
-from equinox.importers._utils import validate_import_file
+from equinox.importers._utils import validate_import_file, normalize_path_variables
 
 logger = logging.getLogger(__name__)
 
@@ -418,6 +418,7 @@ class OpenAPIImporter:
             base_url = "https://{{BASE_URL}}"
 
         ops: List[Request] = []
+        folders = set()
         for path, path_item in paths.items():
             if not isinstance(path_item, dict):
                 continue
@@ -430,8 +431,17 @@ class OpenAPIImporter:
                             path, method, operation, base_url, spec_data, version
                         )
                         ops.append(request)
+                        if request.folder:
+                            folders.add(request.folder)
                     except (ValidationError, SecurityError) as exc:
                         logger.warning("Skipping %s %s: %s", method.upper(), path, exc)
+
+        # Create folders before inserting requests
+        for folder_path in sorted(folders):
+            try:
+                self.collection_manager.create_folder(collection_id, folder_path)
+            except Exception as exc:
+                logger.debug("Failed to create folder %r: %s", folder_path, exc)
 
         # Insert all parsed requests in a single transaction for performance
         if ops:
@@ -479,7 +489,7 @@ class OpenAPIImporter:
         name = operation_id or summary or f"{method.upper()} {path}"
         description = operation.get("description", "")
 
-        url = Validator.validate_url(base_url + path)
+        url = Validator.validate_url(base_url + normalize_path_variables(path))
 
         headers: Dict[str, str] = {}
         params: Dict[str, str] = {}

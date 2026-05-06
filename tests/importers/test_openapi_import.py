@@ -360,3 +360,22 @@ paths:
         requests = col_mgr.list_requests(collection_id)
 
         assert requests[0]["name"] == "List all users"
+
+    def test_path_template_normalized_without_param_definition(self, col_mgr, importer):
+        """OpenAPI paths with {var} are still normalized even when parameters[] omits the path entry."""
+        spec = {
+            "openapi": "3.0.0",
+            "info": {"title": "Test"},
+            "servers": [{"url": "https://api.example.com"}],
+            "paths": {
+                "/orders/{orderId}": {
+                    "get": {"summary": "Get order"}
+                }
+            },
+        }
+
+        collection_id = importer.import_dict(spec)
+        requests = col_mgr.list_requests(collection_id)
+        assert len(requests) == 1
+        assert requests[0]["url"] == "https://api.example.com/orders/{{orderId}}"
+

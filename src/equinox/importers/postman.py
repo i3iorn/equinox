@@ -15,7 +15,7 @@ from equinox.core.exceptions import ValidationError, SecurityError
 from equinox.core.validation import Validator
 from equinox.storage.collections import CollectionManager
 from equinox.core import urls
-from equinox.importers._utils import validate_import_file
+from equinox.importers._utils import validate_import_file, normalize_path_variables
 
 logger = logging.getLogger(__name__)
 
@@ -289,7 +289,9 @@ class PostmanImporter:
         if isinstance(request_data, str):
             # Simple string format (v2.0)
             method = "GET"
-            url = _resolve_postman_variable(request_data, col_variables)
+            url = normalize_path_variables(
+                _resolve_postman_variable(request_data, col_variables)
+            )
             headers: Dict[str, str] = {}
             body = None
             params_list = []
@@ -299,7 +301,9 @@ class PostmanImporter:
             url_data = request_data.get("url", {})
             params_list: list = []
             if isinstance(url_data, str):
-                url = _resolve_postman_variable(url_data, col_variables)
+                url = normalize_path_variables(
+                    _resolve_postman_variable(url_data, col_variables)
+                )
             elif isinstance(url_data, dict):
                 url, params_list = self._build_url(url_data, col_variables)
             else:
@@ -392,7 +396,9 @@ class PostmanImporter:
         # If there is no structured query array, fall back to the raw URL
         # (which may already have params embedded as a query string).
         if "raw" in url_data and not query:
-            return _resolve_postman_variable(str(url_data["raw"]), col_variables), []
+            return normalize_path_variables(
+                _resolve_postman_variable(str(url_data["raw"]), col_variables)
+            ), []
 
         # Build base URL from components (excluding query string)
         protocol = url_data.get("protocol", "https")
@@ -411,7 +417,7 @@ class PostmanImporter:
             for p in path_parts
         )
 
-        base_url = f"{protocol}://{host_str}{path_str}"
+        base_url = normalize_path_variables(f"{protocol}://{host_str}{path_str}")
 
         # Build structured params list preserving disabled state
         params_list = []

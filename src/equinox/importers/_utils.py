@@ -6,6 +6,7 @@ HAR, Insomnia) to avoid code duplication.
 
 import json
 import logging
+import re
 from pathlib import Path
 from typing import Any, Dict, Optional, Sequence
 from urllib.parse import urlparse
@@ -14,6 +15,10 @@ from equinox.core.exceptions import ValidationError
 from equinox.storage.utils import safe_json_loads
 
 logger = logging.getLogger(__name__)
+
+
+_SINGLE_BRACE_PATH_VAR_RE = re.compile(r"(?<!\{)\{([A-Za-z_][A-Za-z0-9_-]*)}(?!})")
+_COLON_PATH_VAR_RE = re.compile(r"(^|/):([A-Za-z_][A-Za-z0-9_-]*)(?=/|$)")
 
 
 def validate_import_file(
@@ -135,4 +140,20 @@ def write_json_file(data: Dict[str, Any], file_path: Path) -> None:
     except IOError as exc:
         logger.error("Failed to write %s: %s", file_path, exc)
         raise
+
+
+def normalize_path_variables(url: str) -> str:
+    """Normalize path variables to Equinox ``{{var}}`` format.
+
+    Supported input syntaxes:
+    - OpenAPI style ``/users/{id}``
+    - Colon style ``/users/:id``
+    """
+    if not isinstance(url, str) or not url:
+        return url
+
+    normalized = _SINGLE_BRACE_PATH_VAR_RE.sub(r"{{\1}}", url)
+    normalized = _COLON_PATH_VAR_RE.sub(r"\1{{\2}}", normalized)
+    return normalized
+
 
