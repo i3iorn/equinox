@@ -7,11 +7,13 @@ of the guard and is not part of the public API of this package.
 from __future__ import annotations
 
 import concurrent.futures
+import time
 import ipaddress
 import logging
 import socket
 import threading
-from typing import Optional
+from collections import OrderedDict
+from typing import Optional, Tuple
 
 from equinox.core.exceptions import ValidationError
 
@@ -45,7 +47,10 @@ class _DnsPool:
                         max_workers=1,
                         thread_name_prefix="equinox-dns",
                     )
-        return cls._instance
+        executor = cls._instance
+        if executor is None:
+            raise RuntimeError("DNS executor initialization failed")
+        return executor
 
 
 # ---------------------------------------------------------------------------
@@ -66,6 +71,10 @@ class _SsrfGuard:
     })
 
     _DNS_TIMEOUT: float = 2.0   # seconds
+    _DNS_CACHE_TTL_SECONDS: float = 60.0
+    _DNS_CACHE_MAX_ENTRIES: int = 512
+    _dns_cache_lock: threading.Lock = threading.Lock()
+    _dns_cache: "OrderedDict[str, Tuple[float, bool]]" = OrderedDict()
 
     @classmethod
     def check(cls, hostname: str) -> None:
@@ -111,8 +120,17 @@ class _SsrfGuard:
     @classmethod
     def _resolve_and_check(cls, normalized: str, original: str) -> None:
         """DNS-resolve *normalized* and reject any private addresses found."""
+        cached = cls._get_cached_dns_result(normalized)
+        if cached is not None:
+            if cached:
+                raise ValidationError(
+                    f"Hostname '{original}' resolves to private IP (SSRF protection)"
+                )
+            return
+
         future: Optional[concurrent.futures.Future[list]] = None
         try:
+            has_private = False
             future = _DnsPool.get().submit(
                 socket.getaddrinfo,
                 normalized, None, socket.AF_UNSPEC, socket.SOCK_STREAM,
@@ -122,14 +140,44 @@ class _SsrfGuard:
             ):
                 addr = ipaddress.ip_address(sockaddr[0])
                 if addr.is_private or addr.is_loopback or addr.is_link_local:
-                    raise ValidationError(
-                        f"Hostname '{original}' resolves to private IP "
-                        f"{sockaddr[0]} (SSRF protection)"
-                    )
+                    has_private = True
+                    break
+
+            cls._cache_dns_result(normalized, has_private)
+            if has_private:
+                raise ValidationError(
+                    f"Hostname '{original}' resolves to private IP (SSRF protection)"
+                )
         except (socket.gaierror, OSError):
             pass   # DNS failure — allow; will fail at connect time.
         except concurrent.futures.TimeoutError:
             if future is not None:
                 future.cancel()
             # DNS timed out — allow; will fail at connect time.
+
+    @classmethod
+    def _get_cached_dns_result(cls, hostname: str) -> Optional[bool]:
+        """Return cached private-IP result when fresh, otherwise ``None``."""
+        now = time.monotonic()
+        with cls._dns_cache_lock:
+            cached = cls._dns_cache.get(hostname)
+            if cached is None:
+                return None
+
+            ts, has_private = cached
+            if now - ts > cls._DNS_CACHE_TTL_SECONDS:
+                cls._dns_cache.pop(hostname, None)
+                return None
+
+            cls._dns_cache.move_to_end(hostname)
+            return has_private
+
+    @classmethod
+    def _cache_dns_result(cls, hostname: str, has_private: bool) -> None:
+        """Store DNS classification in a bounded LRU-like cache."""
+        with cls._dns_cache_lock:
+            cls._dns_cache[hostname] = (time.monotonic(), has_private)
+            cls._dns_cache.move_to_end(hostname)
+            while len(cls._dns_cache) > cls._DNS_CACHE_MAX_ENTRIES:
+                cls._dns_cache.popitem(last=False)
 
