@@ -188,24 +188,24 @@ class TestLoggingPanel:
 
 class TestIntelligencePanel:
     def test_instantiate(self):
-        from equinox.gui.intelligence_panel import IntelligencePanel
+        from equinox.gui.response_panel.intelligence_panel import IntelligencePanel
         p = IntelligencePanel()
         assert p is not None
 
     def test_set_analyzing(self):
-        from equinox.gui.intelligence_panel import IntelligencePanel
+        from equinox.gui.response_panel.intelligence_panel import IntelligencePanel
         p = IntelligencePanel()
         p.set_analyzing()
         _process()
 
     def test_display_findings_empty(self):
-        from equinox.gui.intelligence_panel import IntelligencePanel
+        from equinox.gui.response_panel.intelligence_panel import IntelligencePanel
         p = IntelligencePanel()
         p.display_findings([])
         _process()
 
     def test_display_findings_with_findings(self):
-        from equinox.gui.intelligence_panel import IntelligencePanel
+        from equinox.gui.response_panel.intelligence_panel import IntelligencePanel
         from equinox.core.response_intelligence.models import Finding, Severity, Category
         p = IntelligencePanel()
         findings = [
@@ -236,7 +236,7 @@ class TestIntelligencePanel:
         _process()
 
     def test_finding_card_toggle(self):
-        from equinox.gui.intelligence_panel import _FindingCard
+        from equinox.gui.response_panel.intelligence_panel import _FindingCard
         from equinox.core.response_intelligence.models import Finding, Severity, Category
         finding = Finding(
             category=Category.SECURITY,
@@ -256,7 +256,7 @@ class TestIntelligencePanel:
         assert card._expanded is False
 
     def test_finding_card_no_details(self):
-        from equinox.gui.intelligence_panel import _FindingCard
+        from equinox.gui.response_panel.intelligence_panel import _FindingCard
         from equinox.core.response_intelligence.models import Finding, Severity, Category
         finding = Finding(
             category=Category.SECURITY,
@@ -269,7 +269,7 @@ class TestIntelligencePanel:
         assert card._toggle_btn is None
 
     def test_finding_card_recommendation_visible(self):
-        from equinox.gui.intelligence_panel import _FindingCard
+        from equinox.gui.response_panel.intelligence_panel import _FindingCard
         from equinox.core.response_intelligence.models import Finding, Severity, Category
 
         finding = Finding(

@@ -96,6 +96,7 @@ class ResponsePanel(
         self._raw_body_text = ""
         self._pretty_body_text = ""
         self._readability_by_type = self._load_readability_preferences()
+        self._suppress_tab_sync = False
 
         # Initialize UI
         self._init_ui()
@@ -114,6 +115,7 @@ class ResponsePanel(
         self._build_status_bar(layout)
         self._build_timings_row(layout)
         self._build_tabs(layout)
+        self.tabs.currentChanged.connect(self._on_tab_changed)
         self._redact_btn.setChecked(self._redaction_preview)
 
     # ------------------------------------------------------------------
@@ -377,8 +379,36 @@ class ResponsePanel(
 
         # Switch to appropriate tab
         tab_idx = self._json_tab_idx if is_json else self._body_tab_idx
-        self.tabs.setCurrentIndex(tab_idx)
+        self._suppress_tab_sync = True
+        try:
+            self.tabs.setCurrentIndex(tab_idx)
+        finally:
+            self._suppress_tab_sync = False
+        self._on_tab_changed(tab_idx)
         logger.debug("switch_view: switched to %s view (tab_idx=%d)", mode, tab_idx)
+
+    def _on_tab_changed(self, idx: int) -> None:
+        """Keep view actions in sync with selected tab and lazy-load JSON tree."""
+        if idx == self._json_tab_idx:
+            self._json_tree.ensure_loaded()
+
+        if getattr(self, "_suppress_tab_sync", False):
+            return
+
+        if idx not in (self._json_tab_idx, self._body_tab_idx):
+            return
+
+        is_json = idx == self._json_tab_idx
+        self._view_json_act.blockSignals(True)
+        self._view_raw_act.blockSignals(True)
+        try:
+            self._view_json_act.setChecked(is_json)
+            self._view_raw_act.setChecked(not is_json)
+        finally:
+            self._view_json_act.blockSignals(False)
+            self._view_raw_act.blockSignals(False)
+
+        self._view_preference = _VIEW_MODE_JSON if is_json else _VIEW_MODE_RAW
 
     # ------------------------------------------------------------------
     # Utility Methods & Error Handling

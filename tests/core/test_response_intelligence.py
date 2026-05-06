@@ -19,6 +19,7 @@ from equinox.core.response_intelligence.security import (
     PIILeakDetectionAnalyzer,
     CORSMisconfigAnalyzer,
     JWTDecodeAnalyzer,
+    SensitiveDataCachingAnalyzer,
 )
 from equinox.core.response_intelligence.performance import (
     CompressionAnalyzer,
@@ -97,7 +98,7 @@ def _make_ctx(
 class TestEngine:
     def test_discover_all_analyzers(self):
         analyzers = AnalysisEngine.discover_analyzers()
-        assert len(analyzers) == 25
+        assert len(analyzers) == 26
         ids = {a.analyzer_id for a in analyzers}
         assert "security.missing_headers" in ids
         assert "hints.link_header" in ids
@@ -128,7 +129,7 @@ class TestEngine:
 
     def test_get_all_analyzer_info(self):
         info = AnalysisEngine().get_all_analyzer_info()
-        assert len(info) == 25
+        assert len(info) == 26
         assert all("id" in i and "name" in i and "category" in i for i in info)
 
     def test_get_all_analyzer_info_sorted_by_id(self):
@@ -188,6 +189,13 @@ class TestCookieFlags:
         assert len(findings) == 1
         assert findings[0].severity == Severity.WARNING
 
+    def test_samesite_none_without_secure_is_critical(self):
+        hdrs = {"set-cookie": "id=abc; HttpOnly; SameSite=None"}
+        ctx = _make_ctx(headers=hdrs, body=b"ok")
+        findings = CookieFlagsAnalyzer().analyze(ctx)
+        assert len(findings) == 1
+        assert findings[0].severity == Severity.CRITICAL
+
 
 class TestPIILeak:
     def test_email_detected(self):
@@ -209,6 +217,12 @@ class TestPIILeak:
         findings = PIILeakDetectionAnalyzer().analyze(ctx)
         assert len(findings) == 1
         assert findings[0].severity == Severity.CRITICAL
+
+    def test_invalid_credit_card_number_not_flagged(self):
+        body = json.dumps({"card": "1111111111111111"}).encode()
+        ctx = _make_ctx(body=body)
+        findings = PIILeakDetectionAnalyzer().analyze(ctx)
+        assert len(findings) == 0
 
 
 class TestCORS:
@@ -232,6 +246,20 @@ class TestCORS:
         findings = CORSMisconfigAnalyzer().analyze(ctx)
         assert len(findings) == 1
         assert findings[0].severity == Severity.CRITICAL
+
+    def test_reflected_origin_with_credentials_requires_vary(self):
+        hdrs = {
+            "access-control-allow-origin": "https://app.example.com",
+            "access-control-allow-credentials": "true",
+        }
+        ctx = _make_ctx(
+            headers=hdrs,
+            req_headers={"Origin": "https://app.example.com"},
+            body=b"ok",
+        )
+        findings = CORSMisconfigAnalyzer().analyze(ctx)
+        assert len(findings) == 1
+        assert "vary" in findings[0].description.lower()
 
 
 class TestJWTDecode:
@@ -258,6 +286,42 @@ class TestJWTDecode:
         ctx = _make_ctx(body=body)
         findings = JWTDecodeAnalyzer().analyze(ctx)
         assert any(f.severity == Severity.WARNING for f in findings)
+
+    def test_alg_none_is_critical(self):
+        import base64
+
+        header = base64.urlsafe_b64encode(json.dumps({"alg": "none"}).encode()).rstrip(b"=").decode()
+        payload = base64.urlsafe_b64encode(json.dumps({"sub": "u1", "exp": int(time.time()) + 600}).encode()).rstrip(b"=").decode()
+        token = f"{header}.{payload}.fakesig"
+        body = json.dumps({"access_token": token}).encode()
+        ctx = _make_ctx(body=body)
+        findings = JWTDecodeAnalyzer().analyze(ctx)
+        assert any(f.severity == Severity.CRITICAL for f in findings)
+
+
+class TestSensitiveDataCaching:
+    def test_sensitive_body_without_no_store(self):
+        body = json.dumps({"access_token": "abc", "user": "alice"}).encode()
+        hdrs = {"cache-control": "private, max-age=600"}
+        ctx = _make_ctx(headers=hdrs, body=body)
+        findings = SensitiveDataCachingAnalyzer().analyze(ctx)
+        assert len(findings) == 1
+        assert findings[0].severity == Severity.WARNING
+
+    def test_sensitive_body_with_public_cache_is_critical(self):
+        body = json.dumps({"refresh_token": "abc"}).encode()
+        hdrs = {"cache-control": "public, max-age=3600"}
+        ctx = _make_ctx(headers=hdrs, body=body)
+        findings = SensitiveDataCachingAnalyzer().analyze(ctx)
+        assert len(findings) == 1
+        assert findings[0].severity == Severity.CRITICAL
+
+    def test_sensitive_body_with_no_store_no_finding(self):
+        body = json.dumps({"access_token": "abc"}).encode()
+        hdrs = {"cache-control": "no-store"}
+        ctx = _make_ctx(headers=hdrs, body=body)
+        findings = SensitiveDataCachingAnalyzer().analyze(ctx)
+        assert len(findings) == 0
 
 
 # ── Performance tests ─────────────────────────────────────────────────
