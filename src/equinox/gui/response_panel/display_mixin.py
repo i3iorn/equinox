@@ -198,7 +198,8 @@ class ResponseDisplayMixin:
             )
             if can_show_json:
                 obj = response.json()
-                self._json_tree.load_json(obj)
+                defer_tree = self.tabs.currentIndex() != self._json_tab_idx
+                self._json_tree.load_json(obj, defer=defer_tree)
                 self._search_bar.set_json_doc(obj)
             else:
                 self._json_tree.clear()

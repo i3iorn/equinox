@@ -5,6 +5,7 @@ import pytest
 from PyQt6.QtWidgets import QApplication
 
 from equinox.gui.response_panel import ResponsePanel
+from equinox.gui.response_panel.json_tree import JsonTree
 
 
 class DummyReq:
@@ -52,6 +53,7 @@ def ensure_qapp():
 
 def test_json_tree_populates_and_view_toggle():
     panel = ResponsePanel()
+    panel._view_preference = "raw"
 
     obj = {"a": 1, "b": {"c": [1, 2, 3]}}
     resp = DummyResp(obj)
@@ -59,12 +61,11 @@ def test_json_tree_populates_and_view_toggle():
     # Display the response — should populate body and JSON tree
     panel.display_response(resp)
 
-    # JSON tree should be populated (placeholder hidden)
-    assert not panel._json_tree._placeholder.isVisible()
     assert panel._view_json_act.isEnabled()
 
     # Switch to JSON view and confirm tab switched
     panel._on_view_selected("json")
+    assert not panel._json_tree._placeholder.isVisible()
     assert panel._view_json_act.isChecked()
     assert panel.tabs.tabText(panel.tabs.currentIndex()) == "JSON"
 
@@ -78,4 +79,32 @@ def test_json_tree_populates_and_view_toggle():
     panel._json_tree._on_collapse_all()
     # Copy shouldn't raise
     panel._json_tree._on_copy_json()
+
+
+def test_json_tree_deferred_load_until_ensure():
+    tree = JsonTree()
+    tree.load_json({"nested": {"value": 1}}, defer=True)
+
+    assert not tree._is_loaded
+    assert tree.tree.invisibleRootItem().childCount() == 0
+
+    tree.ensure_loaded()
+    assert tree._is_loaded
+    assert tree.tree.invisibleRootItem().childCount() > 0
+
+
+def test_view_actions_follow_manual_tab_selection():
+    panel = ResponsePanel()
+    panel._view_preference = "raw"
+    resp = DummyResp({"ok": True})
+    panel.display_response(resp)
+
+    panel.tabs.setCurrentIndex(panel._json_tab_idx)
+    assert panel._view_json_act.isChecked()
+    assert not panel._view_raw_act.isChecked()
+
+    panel.tabs.setCurrentIndex(panel._body_tab_idx)
+    assert panel._view_raw_act.isChecked()
+    assert not panel._view_json_act.isChecked()
+
 

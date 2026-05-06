@@ -200,6 +200,8 @@ class JsonTree(QWidget):
     def __init__(self, parent: Optional[QWidget] = None) -> None:
         super().__init__(parent)
         self._last_obj: Optional[Any] = None
+        self._pending_obj: Optional[Any] = None
+        self._is_loaded = False
         self._builder = _JsonTreeBuilder(_MAX_NODES, _MAX_DEPTH)
 
         self._init_ui()
@@ -294,10 +296,13 @@ class JsonTree(QWidget):
     def clear(self) -> None:
         """Clear the tree and show placeholder."""
         self._last_obj = None
+        self._pending_obj = None
+        self._is_loaded = False
+        self._placeholder.setText("(no JSON to display)")
         self.tree.clear()
         self._show_placeholder(True)
 
-    def load_json(self, obj: Any) -> None:
+    def load_json(self, obj: Any, defer: bool = False) -> None:
         """Load and display a JSON object.
 
         Safely loads a Python object (from json.loads) into the tree.
@@ -318,6 +323,27 @@ class JsonTree(QWidget):
             return
 
         self._last_obj = obj
+        self._pending_obj = obj
+
+        if defer:
+            self._is_loaded = False
+            self.tree.clear()
+            self._placeholder.setText("(JSON ready - open tab to render)")
+            self._show_placeholder(True)
+            return
+
+        self.ensure_loaded()
+
+    def ensure_loaded(self) -> None:
+        """Build the tree if it has a pending JSON object and is not loaded yet."""
+        if self._is_loaded:
+            return
+
+        obj = self._pending_obj
+        if obj is None:
+            self._show_placeholder(True)
+            return
+
         self.tree.clear()
         root = self.tree.invisibleRootItem()
 
@@ -329,6 +355,8 @@ class JsonTree(QWidget):
             self._builder.build(root, obj)
             self.tree.expandToDepth(0)
             self._show_placeholder(False)
+            self._placeholder.setText("(no JSON to display)")
+            self._is_loaded = True
         except RecursionError:
             logger.exception("RecursionError while building tree (JSON too deeply nested)")
             self._handle_load_error()
@@ -358,14 +386,18 @@ class JsonTree(QWidget):
             self.tree.clear()
         except Exception:
             pass
+        self._is_loaded = False
+        self._placeholder.setText("(no JSON to display)")
         self._show_placeholder(True)
 
     def _on_expand_all(self) -> None:
         """Expand all tree nodes."""
+        self.ensure_loaded()
         self.tree.expandAll()
 
     def _on_collapse_all(self) -> None:
         """Collapse all tree nodes."""
+        self.ensure_loaded()
         self.tree.collapseAll()
 
     def _on_copy_json(self) -> None:
