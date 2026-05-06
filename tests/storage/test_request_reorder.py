@@ -199,7 +199,7 @@ class TestGUIReorder:
 
     @pytest.fixture
     def panel(self, qapp, db):
-        from equinox.gui.collections_panel_pkg import CollectionsPanel
+        from equinox.gui.collection_panel import CollectionsPanel
         p = CollectionsPanel(db)
         yield p
         p.close()

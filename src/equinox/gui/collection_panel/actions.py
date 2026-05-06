@@ -174,7 +174,7 @@ class _CollectionsActionsMixin:
         """Create a new request at the collection root and open it in the editor."""
         if col_id is None:
             return
-        from equinox.gui.collections_panel_pkg.panel import _NewRequestDialog
+        from equinox.gui.collection_panel.panel import _NewRequestDialog
         dlg = _NewRequestDialog(self, title="New Request")
         if dlg.exec() != QDialog.DialogCode.Accepted:
             return
@@ -185,7 +185,7 @@ class _CollectionsActionsMixin:
         """Create a new request inside *folder_path* and open it in the editor."""
         if col_id is None:
             return
-        from equinox.gui.collections_panel_pkg.panel import _NewRequestDialog
+        from equinox.gui.collection_panel.panel import _NewRequestDialog
         dlg = _NewRequestDialog(
             self, title=f"New Request in \"{folder_path}\"", folder_hint=folder_path
         )

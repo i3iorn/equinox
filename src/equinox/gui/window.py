@@ -305,7 +305,7 @@ class MainWindow(QMainWindow):
         logger.debug("Lazy-initialized left panel index=%d (%s)", index, label)
 
     def _init_collections_panel(self):
-        from equinox.gui.collections_panel_pkg import CollectionsPanel
+        from equinox.gui.collection_panel import CollectionsPanel
         self.collections_panel = CollectionsPanel(self.db, self)
         rp = self.request_panel
         self.collections_panel.request_selected.connect(self._load_request_guarded)

@@ -8,13 +8,15 @@ This guide helps AI agents understand Equinox architecture and development pract
 
 ### Component Structure
 
-- **`core/`**: HTTP client (package), request/response models (package), validation (package), secure storage, audit (package), interceptors (package), assertions, captures, scripts (package), codegen (package), curl parser, proxy checker, error enrichment, response intelligence (package)
+- **`core/`**: HTTP client (package), request/response models (package), validation (package), audit (package), interceptors (package), assertions, captures, scripts (package), codegen (package), curl parser, proxy checker, error enrichment, response intelligence (package), secret managers (package), feature flags (`config/flags.py`)
 - **`gui/`**: PyQt6 panels — request builder (package), response viewer (package), collections (package), history, variables, logs, intelligence, websocket; shared widgets, dialogs (package), syntax highlighter (package)
 - **`storage/`**: SQLite layer — **versioned migrations** (`migrations.py`), collection/env/history (package) managers, variable groups, cookies, saved credentials, response intelligence
 - **`auth/`**: Auth strategies — OAuth2 (auto-refresh + encrypted token storage), Bearer, API Key, Basic, AWS SigV4; factory module
 - **`importers/`**: OpenAPI (multi-server, server-variable expansion), Postman (`{{baseUrl}}` resolution), HAR, Insomnia
 - **`exporters/`**: Standalone package — Postman, OpenAPI, Insomnia, HAR, cURL exporters
 - **`intelligence/`**: Request recommender (header/param suggestions from history)
+- **`cli/`**: Click-based operational commands (currently `rotate-secrets`)
+- **`security/`**: Shared security primitives (redaction, secure storage, keystore, secret rotation)
 - **`plugins/`**: Plugin system for extending functionality
 
 ### Data Flow
@@ -35,6 +37,7 @@ User input → Validator (zero-trust, package) → Request model
 ### Critical Entry Points
 
 - **GUI**: `src/equinox/gui/app.py` — PyQt6 main entry; `window.py` wires panels together
+- **CLI**: `src/equinox/cli/main.py` — Click command group (`rotate-secrets`)
 - **Database**: `src/equinox/storage/database.py` — `Database.__init__` always calls `MigrationRunner.run()`
 - **Migrations**: `src/equinox/storage/migrations.py` — add new `Migration` entries to `MIGRATIONS` list
 - **HTTP**: `src/equinox/core/client/http_client.py` — `HTTPClient` runs `InterceptorChain` around every request
@@ -48,7 +51,7 @@ User input → Validator (zero-trust, package) → Request model
 
 1. Append a new `Migration` entry to `MIGRATIONS` in `migrations.py` with the next version number.
 2. Use `CREATE TABLE IF NOT EXISTS` or — for `ALTER TABLE ADD COLUMN` — the runner automatically skips the statement if the column already exists (`_execute_stmt` uses `PRAGMA table_info` check).
-3. Write a test in `tests/test_migrations.py` that verifies the column/table exists after migration.
+3. Write a test in `tests/storage/test_migrations.py` that verifies the column/table exists after migration.
 
 ```python
 # Example — migrations.py
@@ -120,14 +123,13 @@ pytest tests/storage/test_request_persistence.py  # autosave & path_params round
 pytest --cov=equinox --cov-report=html
 ```
 
-**Test directory layout**: Tests are organized to mirror the source tree — `tests/storage/`, `tests/core/`, `tests/core/client/`, `tests/auth/`, `tests/importers/`, `tests/gui/`, `tests/intelligence/`, `tests/plugins/`, `tests/cli/`.
+**Test directory layout**: Tests are organized to mirror the source tree — `tests/storage/`, `tests/core/`, `tests/core/client/`, `tests/auth/`, `tests/importers/`, `tests/gui/`, `tests/intelligence/`, `tests/plugins/`, `tests/security/`, `tests/flags/`.
 
 ### Running the app
 
 ```bash
-equinox gui             # PyQt6 GUI
-equinox --env-file .env get {{BASE_URL}}/users   # env-var interpolation
-equinox collection export 1 --format postman -o out.json  # export
+python -m equinox.gui.app  # PyQt6 GUI bootstrap
+equinox rotate-secrets --db-path ./equinox.db  # rotate plaintext secrets to enc: blobs
 ```
 
 ### CI & Developer Hygiene
@@ -168,6 +170,24 @@ Uses `urlps` when available; falls back to `urllib.parse`. The parser is selecte
 All auth classes implement `to_dict()` / `from_dict()`. `OAuth2Auth.to_dict()` includes `client_secret` and `token_timeout` (needed for storage round-trip). Display-only contexts should omit secrets manually. The `_serialize_auth()` / `_deserialize_auth()` boundary in `storage/collections/auth.py` encrypts all auth data via `core/auth_cipher.py` before writing to SQLite. Legacy plaintext rows are read transparently.
 
 AWS SigV4 auth is available via `auth/aws_sigv4.py` (`AWSSigV4Auth`). Auth instances are constructed via `auth/factory.py`.
+
+### Secret manager integration
+
+External secret-manager backends live in `core/secret_managers/` and are created via `get_secret_manager()` in `core/secret_managers/registry.py`.
+
+- Built-in manager aliases include `env`, `aws`/`aws_secrets_manager`, `vault`, and `bitwarden`.
+- `storage/secret_integration.py` (`CredentialSecretResolver`) hydrates saved credentials from external secret sources before auth strategy construction.
+- GUI secret-manager connection profiles are persisted by `storage/secret_manager_configs.py` (`SecretManagerConfigStore`) at `~/.equinox/secret_managers.json`.
+
+### Security facade and redaction
+
+Use `security/__init__.py` as the public security facade for cross-module imports (`redact_headers`, `redact_url`, `redact_body`, key helpers, `SecureStorage`) so redaction and crypto behavior stays centralized.
+
+### Feature flags (`core/config/flags.py`)
+
+Environment-toggled behavior is centralized in `core/config/flags.py`:
+- `EQUINOX_USE_OS_KEYRING` → `is_os_keystore_enabled()`
+- `EQUINOX_HISTORY_CAPTURE_BODIES` → `is_history_capture_enabled()`
 
 ### Assertions and captures
 
@@ -313,6 +333,8 @@ The intelligence panel (`gui/intelligence_panel.py`) and its background worker (
 | `storage/history/_searcher.py` | `_HistorySearcher` — SQL filter construction and post-filters |
 | `storage/history/_serializer.py` | `_HistorySerializer` — request/response ↔ DB row conversion |
 | `storage/saved_credentials.py` | `SavedCredentialsManager` — unified multi-type credential storage |
+| `storage/secret_integration.py` | `CredentialSecretResolver` — resolve credential values from external secret managers |
+| `storage/secret_manager_configs.py` | `SecretManagerConfigStore` — persist GUI secret-manager connection profiles |
 | `storage/variable_groups.py` | `VariableGroupManager` — named variable groups |
 | `storage/database.py` | `Database` — SQLite ORM; `.lock` is a **read-only property** |
 | `importers/openapi.py` | Multi-server resolution helpers (`ServerInfo`, `_resolve_servers_openapi3`, `_resolve_servers_swagger2`) |
@@ -326,6 +348,8 @@ The intelligence panel (`gui/intelligence_panel.py`) and its background worker (
 | `gui/window.py` | Signal wiring hub — connects all panels and menu actions |
 | `core/interceptors/` | `InterceptorChain`, logging interceptors |
 | `core/log_setup.py` | JSON structured logging to `~/.equinox/logs/equinox.log` |
+| `core/config/flags.py` | Environment-based feature toggles (`EQUINOX_USE_OS_KEYRING`, `EQUINOX_HISTORY_CAPTURE_BODIES`) |
+| `core/secret_managers/` | Secret manager backends + registry (`get_secret_manager`, `register_manager`) |
 | `core/auth_cipher.py` | Column-level Fernet encryption for `auth_data` / `config` columns |
 | `core/assertions.py` | `evaluate_assertion(rule, response)` — post-response test rules |
 | `core/captures.py` | `CaptureEngine` — extract response values into session variables |
@@ -343,8 +367,12 @@ The intelligence panel (`gui/intelligence_panel.py`) and its background worker (
 | `auth/oauth2.py` | `OAuth2Auth` with auto-refresh; tokens encrypted at DB layer |
 | `auth/aws_sigv4.py` | `AWSSigV4Auth` — pure-Python AWS Signature V4 signing |
 | `auth/factory.py` | Auth instance factory |
+| `security/__init__.py` | Public security facade for redaction + crypto helpers + `SecureStorage` |
+| `cli/main.py` | Click operational entrypoint (`rotate-secrets`) |
 | `intelligence/recommender.py` | `Recommender` — confidence-ranked header/param suggestions |
 | `tests/storage/test_migrations.py` | Reference for how to test new migrations |
 | `tests/importers/` | Reference for importer tests |
 | `tests/core/test_security_comprehensive.py` | Reference for security tests |
+| `tests/security/` | Secret rotation, redaction, keystore integration, and master-password prompt tests |
+| `tests/flags/test_flags.py` | Environment flag behavior tests |
 | `tests/storage/test_request_persistence.py` | Reference for autosave & path_params round-trip tests |

@@ -13,7 +13,7 @@ import json
 import logging
 from equinox.storage import Database, CollectionManager
 from equinox.gui.widgets.drag_drop_tree import DragDropTree
-from equinox.gui.collections_panel_pkg.actions import _CollectionsActionsMixin
+from equinox.gui.collection_panel.actions import _CollectionsActionsMixin
 from equinox.exporters import OpenAPIExporter, PostmanExporter, CurlExporter
 from equinox.gui.dialogs.api_spec_dialog import ApiSpecDialog
 import traceback
@@ -110,6 +110,12 @@ class CollectionsPanel(_CollectionsActionsMixin, QWidget):
         toolbar = QHBoxLayout()
         self.new_collection_btn = QPushButton("New Collection")
         self.new_collection_btn.clicked.connect(self.create_collection)
+        self.import_btn = QPushButton("Import Openapi/Swagger")
+        parent_widget = self.parent()
+        if parent_widget is not None and hasattr(parent_widget, "_import_openapi"):
+            self.import_btn.clicked.connect(parent_widget._import_openapi)
+        else:
+            self.import_btn.setEnabled(False)
         self.refresh_btn = QPushButton("Refresh")
         self.refresh_btn.clicked.connect(self.refresh)
 
@@ -118,6 +124,7 @@ class CollectionsPanel(_CollectionsActionsMixin, QWidget):
         self.auto_refresh_checkbox.stateChanged.connect(self._toggle_auto_refresh)
 
         toolbar.addWidget(self.new_collection_btn)
+        toolbar.addWidget(self.import_btn)
         toolbar.addWidget(self.refresh_btn)
         toolbar.addWidget(self.auto_refresh_checkbox)
         toolbar.addStretch()
