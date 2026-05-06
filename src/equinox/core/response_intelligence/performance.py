@@ -4,8 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
-import math
-from typing import List
+from typing import Any, Dict, List
 
 from equinox.core.response_intelligence.base import Analyzer
 from equinox.core.response_intelligence.models import (
@@ -14,27 +13,16 @@ from equinox.core.response_intelligence.models import (
     Finding,
     Severity,
 )
+from equinox.core.response_intelligence.shared.content import (
+    format_bytes,
+    is_compressible_content_type,
+)
+from equinox.core.response_intelligence.shared.stats import (
+    coerce_numeric_samples,
+    percentile,
+)
 
 logger = logging.getLogger(__name__)
-
-
-def _coerce_numeric_samples(values: object, max_samples: int = 500) -> List[float]:
-    """Return finite numeric samples from possibly malformed stored values."""
-    if not isinstance(values, list):
-        return []
-
-    numeric: List[float] = []
-    for item in values:
-        try:
-            value = float(item)
-        except (TypeError, ValueError):
-            continue
-        if math.isfinite(value):
-            numeric.append(value)
-
-    if len(numeric) > max_samples:
-        return numeric[-max_samples:]
-    return numeric
 
 
 class CompressionAnalyzer(Analyzer):
@@ -42,63 +30,55 @@ class CompressionAnalyzer(Analyzer):
     category = Category.PERFORMANCE
     display_name = "Compression Analysis"
 
-    _MIN_BODY_FOR_COMPRESSION = 1024  # 1 KB
+    _MIN_BODY_FOR_COMPRESSION = 1024
 
     def analyze(self, ctx: AnalysisContext) -> List[Finding]:
         findings: List[Finding] = []
-        resp = ctx.response
-        size = resp.size
-
-        encoding = resp.headers.get("content-encoding", "").lower()
+        response = ctx.response
+        size = response.size
+        encoding = response.headers.get("content-encoding", "").lower()
         sent_accept = (ctx.request.headers or {}).get("Accept-Encoding", "")
 
         if encoding:
-            # Compression is active — report it as info
             findings.append(Finding(
                 category=self.category,
                 severity=Severity.INFO,
                 title=f"Response compressed ({encoding})",
-                description=f"Transfer encoding: {encoding}. Body size: {self._fmt(size)}.",
+                description=f"Transfer encoding: {encoding}. Body size: {format_bytes(size)}.",
                 analyzer_id=self.analyzer_id,
                 recommendation="Keep compression enabled for text payloads and monitor CPU impact on high-traffic endpoints.",
                 details={"encoding": encoding, "body_size": size},
             ))
-        elif size >= self._MIN_BODY_FOR_COMPRESSION:
-            ct = resp.content_type or ""
-            compressible = any(t in ct for t in (
-                "json", "xml", "html", "text", "javascript", "css", "svg",
-            ))
-            if compressible:
-                sev = Severity.WARNING if size > 10_000 else Severity.INFO
-                desc = (
-                    f"Response is {self._fmt(size)} but not compressed. "
-                )
-                if not sent_accept:
-                    desc += "No Accept-Encoding header was sent in the request."
-                else:
-                    desc += "Server did not compress despite Accept-Encoding being sent."
-                findings.append(Finding(
-                    category=self.category,
-                    severity=sev,
-                    title="Response not compressed",
-                    description=desc,
-                    analyzer_id=self.analyzer_id,
-                    recommendation="Enable gzip/br compression for compressible response types and include Accept-Encoding on clients.",
-                    details={
-                        "body_size": size,
-                        "content_type": ct,
-                        "accept_encoding_sent": bool(sent_accept),
-                    },
-                ))
-        return findings
+            return findings
 
-    @staticmethod
-    def _fmt(n: int) -> str:
-        if n >= 1_048_576:
-            return f"{n / 1_048_576:.1f} MB"
-        if n >= 1024:
-            return f"{n / 1024:.1f} KB"
-        return f"{n} B"
+        if size < self._MIN_BODY_FOR_COMPRESSION:
+            return findings
+
+        content_type = response.content_type or ""
+        if not is_compressible_content_type(content_type):
+            return findings
+
+        severity = Severity.WARNING if size > 10_000 else Severity.INFO
+        description = f"Response is {format_bytes(size)} but not compressed. "
+        if not sent_accept:
+            description += "No Accept-Encoding header was sent in the request."
+        else:
+            description += "Server did not compress despite Accept-Encoding being sent."
+
+        findings.append(Finding(
+            category=self.category,
+            severity=severity,
+            title="Response not compressed",
+            description=description,
+            analyzer_id=self.analyzer_id,
+            recommendation="Enable gzip/br compression for compressible response types and include Accept-Encoding on clients.",
+            details={
+                "body_size": size,
+                "content_type": content_type,
+                "accept_encoding_sent": bool(sent_accept),
+            },
+        ))
+        return findings
 
 
 class TimingBreakdownAnalyzer(Analyzer):
@@ -112,8 +92,9 @@ class TimingBreakdownAnalyzer(Analyzer):
         if not timings:
             return findings
 
+        details: Dict[str, Any] = {}
         parts: List[str] = []
-        details: dict = {}
+
         total = timings.get("total_ms", int(ctx.response.elapsed * 1000))
         details["total_ms"] = total
 
@@ -125,29 +106,29 @@ class TimingBreakdownAnalyzer(Analyzer):
             ("transfer_ms", "Transfer"),
         ):
             if key in timings:
-                val = timings[key]
-                details[key] = val
-                pct = (val / total * 100) if total else 0
-                parts.append(f"{label}: {val} ms ({pct:.0f}%)")
+                value = timings[key]
+                details[key] = value
+                pct = (value / total * 100) if total else 0
+                parts.append(f"{label}: {value} ms ({pct:.0f}%)")
 
-        # Identify the slowest phase
-        phase_items = {k: v for k, v in details.items() if k != "total_ms" and isinstance(v, (int, float))}
-        if phase_items:
-            slowest = max(phase_items, key=phase_items.get)  # type: ignore[arg-type]
-            details["slowest_phase"] = slowest
+        phase_values = {
+            key: value
+            for key, value in details.items()
+            if key != "total_ms" and isinstance(value, (int, float))
+        }
+        if phase_values:
+            slowest_phase, _ = max(phase_values.items(), key=lambda item: item[1])
+            details["slowest_phase"] = slowest_phase
 
-        sev = Severity.INFO
-        ttfb = timings.get("ttfb_ms", 0)
-        if ttfb > 2000:
-            sev = Severity.WARNING
-        elif total > 5000:
-            sev = Severity.WARNING
+        severity = Severity.INFO
+        if timings.get("ttfb_ms", 0) > 2000 or total > 5000:
+            severity = Severity.WARNING
 
         findings.append(Finding(
             category=self.category,
-            severity=sev,
+            severity=severity,
             title=f"Response time: {total} ms",
-            description=" · ".join(parts) if parts else f"Total: {total} ms",
+            description=" | ".join(parts) if parts else f"Total: {total} ms",
             analyzer_id=self.analyzer_id,
             recommendation="Investigate the slowest timing phase first (DNS/connect/TLS/TTFB/transfer) to reduce latency.",
             details=details,
@@ -166,69 +147,54 @@ class ResponseTimePercentileAnalyzer(Analyzer):
         if not stats:
             return findings
 
-        elapsed_values_raw = stats.get("elapsed_values", "[]")
+        values_raw = stats.get("elapsed_values", "[]")
         try:
-            values = json.loads(elapsed_values_raw) if isinstance(elapsed_values_raw, str) else elapsed_values_raw
+            values = json.loads(values_raw) if isinstance(values_raw, str) else values_raw
         except Exception:
             return findings
 
-        values = _coerce_numeric_samples(values)
-        if len(values) < 3:
-            if not values:
+        samples = coerce_numeric_samples(values)
+        if len(samples) < 3:
+            if not samples:
                 logger.debug("ResponseTimePercentileAnalyzer: no valid numeric samples")
             return findings
 
-        values_sorted = sorted(values)
-        call_count = stats.get("call_count", len(values))
-        p50 = self._percentile(values_sorted, 50)
-        p95 = self._percentile(values_sorted, 95)
-        p99 = self._percentile(values_sorted, 99)
-        current = ctx.response.elapsed * 1000  # ms
+        sorted_samples = sorted(samples)
+        p50 = percentile(sorted_samples, 50)
+        p95 = percentile(sorted_samples, 95)
+        p99 = percentile(sorted_samples, 99)
+        current = ctx.response.elapsed * 1000
 
-        detail = {
+        details = {
             "p50_ms": round(p50, 1),
             "p95_ms": round(p95, 1),
             "p99_ms": round(p99, 1),
             "current_ms": round(current, 1),
-            "call_count": call_count,
-            "sample_size": len(values),
+            "sample_size": len(samples),
+            "call_count": stats.get("call_count", len(samples)),
         }
 
-        sev = Severity.INFO
-        if current > p99 and len(values) >= 5:
-            sev = Severity.WARNING
-            logger.debug(
-                "ResponseTimePercentileAnalyzer: current=%dms exceeds p99=%dms (sample=%d)",
-                round(current), round(p99), len(values),
-            )
+        severity = Severity.INFO
+        if current > p99 and len(samples) >= 5:
+            severity = Severity.WARNING
 
         findings.append(Finding(
             category=self.category,
-            severity=sev,
-            title=f"P50: {detail['p50_ms']} ms · P95: {detail['p95_ms']} ms · P99: {detail['p99_ms']} ms",
-            description=f"Based on {detail['sample_size']} recent calls. Current: {detail['current_ms']} ms.",
+            severity=severity,
+            title=f"P50: {details['p50_ms']} ms | P95: {details['p95_ms']} ms | P99: {details['p99_ms']} ms",
+            description=f"Based on {details['sample_size']} recent calls. Current: {details['current_ms']} ms.",
             analyzer_id=self.analyzer_id,
             recommendation="Prioritize reducing P95/P99 latency by profiling slow code paths and backend dependencies.",
-            details=detail,
+            details=details,
         ))
         return findings
-
-    @staticmethod
-    def _percentile(sorted_data: list, pct: int) -> float:
-        if not sorted_data:
-            return 0.0
-        k = (len(sorted_data) - 1) * pct / 100
-        f = int(k)
-        c = f + 1
-        if c >= len(sorted_data):
-            return float(sorted_data[f])
-        return sorted_data[f] + (k - f) * (sorted_data[c] - sorted_data[f])
 
 
 class PaginationDetectionAnalyzer(Analyzer):
     analyzer_id = "perf.pagination"
     category = Category.PERFORMANCE
     display_name = "Pagination Detection"
+    requires_valid_json_body = True
 
     _PAGE_KEYS = {"next", "previous", "prev", "cursor", "next_cursor", "after", "before"}
     _TOTAL_KEYS = {"total", "total_count", "totalCount", "count", "total_items", "totalItems"}
@@ -241,59 +207,47 @@ class PaginationDetectionAnalyzer(Analyzer):
         if not ctx.response.is_json:
             return findings
         try:
-            obj = ctx.response.json()
+            body = ctx.response.json()
         except Exception:
             return findings
-        if not isinstance(obj, dict):
+        if not isinstance(body, dict):
             return findings
 
-        keys = set(obj.keys())
-        flat = self._flatten_keys(obj)
+        keys = set(body.keys())
+        detected: Dict[str, object] = {}
 
-        detected: dict = {}
         nav = keys & self._PAGE_KEYS
         if nav:
-            detected["navigation_fields"] = list(nav)
-        total_k = keys & self._TOTAL_KEYS
-        if total_k:
-            for k in total_k:
-                detected["total"] = obj[k]
-                break
-        page_k = keys & self._PAGE_NUM_KEYS
-        if page_k:
-            for k in page_k:
-                detected["current_page"] = obj[k]
-                break
-        size_k = keys & self._PAGE_SIZE_KEYS
-        if size_k:
-            for k in size_k:
-                detected["page_size"] = obj[k]
-                break
-        tp_k = keys & self._TOTAL_PAGES_KEYS
-        if tp_k:
-            for k in tp_k:
-                detected["total_pages"] = obj[k]
-                break
+            detected["navigation_fields"] = sorted(nav)
 
-        # Check for Link header pagination
-        link_hdr = ctx.response.headers.get("link", "")
-        if 'rel="next"' in link_hdr or "rel=next" in link_hdr:
+        for alias_group, output_key in (
+            (self._TOTAL_KEYS, "total"),
+            (self._PAGE_NUM_KEYS, "current_page"),
+            (self._PAGE_SIZE_KEYS, "page_size"),
+            (self._TOTAL_PAGES_KEYS, "total_pages"),
+        ):
+            for key in alias_group:
+                if key in body:
+                    detected[output_key] = body[key]
+                    break
+
+        link_header = ctx.response.headers.get("link", "")
+        if 'rel="next"' in link_header or "rel=next" in link_header:
             detected["link_header_next"] = True
 
         if not detected:
             return findings
 
-        # Build a human description
         parts: List[str] = []
-        cp = detected.get("current_page")
-        tp = detected.get("total_pages")
-        total = detected.get("total")
-        if cp is not None and tp is not None:
-            parts.append(f"Page {cp} of {tp}")
-        elif cp is not None:
-            parts.append(f"Page {cp}")
-        if total is not None:
-            parts.append(f"{total} total items")
+        current_page = detected.get("current_page")
+        total_pages = detected.get("total_pages")
+        total_items = detected.get("total")
+        if current_page is not None and total_pages is not None:
+            parts.append(f"Page {current_page} of {total_pages}")
+        elif current_page is not None:
+            parts.append(f"Page {current_page}")
+        if total_items is not None:
+            parts.append(f"{total_items} total items")
         if detected.get("link_header_next"):
             parts.append("Link header contains rel=next")
 
@@ -301,20 +255,10 @@ class PaginationDetectionAnalyzer(Analyzer):
             category=self.category,
             severity=Severity.INFO,
             title="Paginated response detected",
-            description=" · ".join(parts) if parts else "Response contains pagination fields.",
+            description=" | ".join(parts) if parts else "Response contains pagination fields.",
             analyzer_id=self.analyzer_id,
             recommendation="Expose consistent pagination metadata (page, size, total, next cursor) across similar endpoints.",
             details=detected,
         ))
         return findings
-
-    @staticmethod
-    def _flatten_keys(obj: dict, prefix: str = "") -> set:
-        keys: set = set()
-        for k, v in obj.items():
-            full = f"{prefix}.{k}" if prefix else k
-            keys.add(full)
-            if isinstance(v, dict):
-                keys |= PaginationDetectionAnalyzer._flatten_keys(v, full)
-        return keys
 

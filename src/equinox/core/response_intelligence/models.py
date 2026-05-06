@@ -47,4 +47,3 @@ class AnalysisContext:
     history_rows: List[Dict[str, Any]] = field(default_factory=list)
     endpoint_stats: Optional[Dict[str, Any]] = None
     stored_schema: Optional[Dict[str, Any]] = None
-

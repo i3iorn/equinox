@@ -1,13 +1,13 @@
-"""Server Intelligence analyzers."""
+"""V2 Server Intelligence analyzers."""
 
 from __future__ import annotations
 
 import json
 import logging
-import math
 import re
+import statistics
 import time
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List
 
 from equinox.core.response_intelligence.base import Analyzer
 from equinox.core.response_intelligence.models import (
@@ -16,27 +16,14 @@ from equinox.core.response_intelligence.models import (
     Finding,
     Severity,
 )
+from equinox.core.response_intelligence.shared.http import (
+    first_present_header,
+    parse_cache_control,
+    summarize_cache_control,
+)
+from equinox.core.response_intelligence.shared.stats import coerce_numeric_samples
 
 logger = logging.getLogger(__name__)
-
-
-def _coerce_numeric_samples(values: object, max_samples: int = 500) -> List[float]:
-    """Return finite numeric samples from possibly malformed stored values."""
-    if not isinstance(values, list):
-        return []
-
-    numeric: List[float] = []
-    for item in values:
-        try:
-            value = float(item)
-        except (TypeError, ValueError):
-            continue
-        if math.isfinite(value):
-            numeric.append(value)
-
-    if len(numeric) > max_samples:
-        return numeric[-max_samples:]
-    return numeric
 
 
 class ServerFingerprintAnalyzer(Analyzer):
@@ -44,7 +31,6 @@ class ServerFingerprintAnalyzer(Analyzer):
     category = Category.SERVER
     display_name = "Server Technology Fingerprint"
 
-    # header → label
     _FINGERPRINT_HEADERS = {
         "server": "Server",
         "x-powered-by": "Powered By",
@@ -64,22 +50,20 @@ class ServerFingerprintAnalyzer(Analyzer):
 
     def analyze(self, ctx: AnalysisContext) -> List[Finding]:
         findings: List[Finding] = []
-        hdrs = ctx.response.headers
         detected: Dict[str, str] = {}
-        for hdr, label in self._FINGERPRINT_HEADERS.items():
-            val = hdrs.get(hdr, "")
-            if val:
-                detected[label] = val
+        for header, label in self._FINGERPRINT_HEADERS.items():
+            value = ctx.response.headers.get(header, "")
+            if value:
+                detected[label] = value
 
         if not detected:
             return findings
 
-        parts = [f"{label}: {val}" for label, val in detected.items()]
         findings.append(Finding(
             category=self.category,
             severity=Severity.INFO,
             title=f"Server stack: {detected.get('Server', next(iter(detected.values())))}",
-            description=" · ".join(parts[:6]),
+            description=" | ".join([f"{k}: {v}" for k, v in list(detected.items())[:6]]),
             analyzer_id=self.analyzer_id,
             recommendation="Avoid exposing detailed server fingerprint headers in production unless required.",
             details=detected,
@@ -98,81 +82,68 @@ class RateLimitDashboardAnalyzer(Analyzer):
 
     def analyze(self, ctx: AnalysisContext) -> List[Finding]:
         findings: List[Finding] = []
-        hdrs = ctx.response.headers
+        headers = ctx.response.headers
 
-        limit = self._first(hdrs, self._LIMIT_KEYS)
-        remaining = self._first(hdrs, self._REMAINING_KEYS)
-        reset_raw = self._first(hdrs, self._RESET_KEYS)
-        retry_after = hdrs.get("retry-after", "")
+        limit = first_present_header(headers, self._LIMIT_KEYS)
+        remaining = first_present_header(headers, self._REMAINING_KEYS)
+        reset_raw = first_present_header(headers, self._RESET_KEYS)
+        retry_after = headers.get("retry-after", "")
 
         if limit is None and remaining is None and not retry_after:
             return findings
 
-        detail: Dict[str, Any] = {}
+        details: Dict[str, Any] = {}
         parts: List[str] = []
 
         if limit is not None:
-            detail["limit"] = limit
+            details["limit"] = limit
             parts.append(f"Limit: {limit}")
-        if remaining is not None:
-            detail["remaining"] = remaining
-            parts.append(f"Remaining: {remaining}")
 
-            # Usage ratio warning
+        if remaining is not None:
+            details["remaining"] = remaining
+            parts.append(f"Remaining: {remaining}")
             if limit is not None:
                 try:
-                    ratio = 1 - int(remaining) / int(limit)
-                    detail["usage_pct"] = round(ratio * 100, 1)
+                    usage = 1 - int(remaining) / int(limit)
+                    details["usage_pct"] = round(usage * 100, 1)
                 except (ValueError, ZeroDivisionError):
                     pass
 
         if reset_raw is not None:
-            detail["reset_raw"] = reset_raw
+            details["reset_raw"] = reset_raw
             try:
-                reset_ts = int(reset_raw)
-                if reset_ts > 1_000_000_000:
-                    secs = reset_ts - int(time.time())
+                reset_num = int(reset_raw)
+                if reset_num > 1_000_000_000:
+                    secs = reset_num - int(time.time())
                     if secs > 0:
-                        detail["resets_in_seconds"] = secs
+                        details["resets_in_seconds"] = secs
                         parts.append(f"Resets in {secs}s")
                 else:
-                    parts.append(f"Resets in {reset_ts}s")
+                    parts.append(f"Resets in {reset_num}s")
             except ValueError:
                 parts.append(f"Reset: {reset_raw}")
 
         if retry_after:
-            detail["retry_after"] = retry_after
+            details["retry_after"] = retry_after
             parts.append(f"Retry-After: {retry_after}")
 
-        sev = Severity.INFO
-        usage = detail.get("usage_pct", 0)
-        if usage >= 90:
-            sev = Severity.WARNING
+        severity = Severity.INFO
+        usage_pct = details.get("usage_pct", 0)
+        if usage_pct >= 90:
+            severity = Severity.WARNING
         if ctx.response.status_code == 429:
-            sev = Severity.CRITICAL
-            logger.warning(
-                "RateLimitDashboardAnalyzer: 429 Too Many Requests — limit=%s remaining=%s",
-                limit, remaining,
-            )
+            severity = Severity.CRITICAL
 
         findings.append(Finding(
             category=self.category,
-            severity=sev,
-            title="Rate limit status" + (f" ({usage:.0f}% used)" if usage else ""),
-            description=" · ".join(parts) if parts else "Rate limit headers detected.",
+            severity=severity,
+            title="Rate limit status" + (f" ({usage_pct:.0f}% used)" if usage_pct else ""),
+            description=" | ".join(parts) if parts else "Rate limit headers detected.",
             analyzer_id=self.analyzer_id,
             recommendation="Back off or retry later when near limit, and consider client-side throttling.",
-            details=detail,
+            details=details,
         ))
         return findings
-
-    @staticmethod
-    def _first(hdrs: dict, keys: tuple) -> "Optional[str]":
-        for k in keys:
-            v = hdrs.get(k)
-            if v is not None:
-                return v
-        return None
 
 
 class CachingBehaviorAnalyzer(Analyzer):
@@ -182,100 +153,51 @@ class CachingBehaviorAnalyzer(Analyzer):
 
     def analyze(self, ctx: AnalysisContext) -> List[Finding]:
         findings: List[Finding] = []
-        hdrs = ctx.response.headers
+        headers = ctx.response.headers
 
-        cc = hdrs.get("cache-control", "")
-        etag = hdrs.get("etag", "")
-        expires = hdrs.get("expires", "")
-        vary = hdrs.get("vary", "")
-        age = hdrs.get("age", "")
-        pragma = hdrs.get("pragma", "")
+        cache_control = headers.get("cache-control", "")
+        etag = headers.get("etag", "")
+        expires = headers.get("expires", "")
+        vary = headers.get("vary", "")
+        age = headers.get("age", "")
+        pragma = headers.get("pragma", "")
 
-        if not any((cc, etag, expires, vary, age, pragma)):
+        if not any((cache_control, etag, expires, vary, age, pragma)):
             return findings
 
+        details: Dict[str, str] = {}
         parts: List[str] = []
-        detail: Dict[str, str] = {}
 
-        if cc:
-            detail["cache-control"] = cc
-            parts.append(self._explain_cache_control(cc))
+        if cache_control:
+            details["cache-control"] = cache_control
+            directives = parse_cache_control(cache_control)
+            if directives:
+                parts.append("Cache-Control: " + ", ".join(directives))
         if etag:
-            detail["etag"] = etag
+            details["etag"] = etag
             parts.append("Has ETag (conditional requests supported)")
         if expires:
-            detail["expires"] = expires
+            details["expires"] = expires
             parts.append(f"Expires: {expires}")
         if vary:
-            detail["vary"] = vary
+            details["vary"] = vary
             parts.append(f"Vary: {vary}")
         if age:
-            detail["age"] = age
+            details["age"] = age
             parts.append(f"Age: {age}s (served from cache)")
         if pragma:
-            detail["pragma"] = pragma
+            details["pragma"] = pragma
 
         findings.append(Finding(
             category=self.category,
             severity=Severity.INFO,
-            title="Caching: " + (self._short_summary(cc) if cc else "headers present"),
-            description=" · ".join(parts),
+            title="Caching: " + (summarize_cache_control(cache_control) if cache_control else "headers present"),
+            description=" | ".join(parts),
             analyzer_id=self.analyzer_id,
             recommendation="Set explicit Cache-Control directives and validators (ETag/Last-Modified) for predictable caching.",
-            details=detail,
+            details=details,
         ))
         return findings
-
-    @staticmethod
-    def _explain_cache_control(cc: str) -> str:
-        directives = [d.strip() for d in cc.split(",")]
-        explanations: List[str] = []
-        for d in directives:
-            low = d.lower()
-            if low == "no-store":
-                explanations.append("no-store (never cache)")
-            elif low == "no-cache":
-                explanations.append("no-cache (must revalidate)")
-            elif low == "public":
-                explanations.append("public (CDN-cacheable)")
-            elif low == "private":
-                explanations.append("private (browser only)")
-            elif low.startswith("max-age="):
-                try:
-                    secs = int(low.split("=")[1])
-                    if secs >= 86400:
-                        explanations.append(f"max-age={secs} ({secs // 86400}d)")
-                    elif secs >= 3600:
-                        explanations.append(f"max-age={secs} ({secs // 3600}h)")
-                    else:
-                        explanations.append(f"max-age={secs}s")
-                except ValueError:
-                    explanations.append(d)
-            elif low.startswith("s-maxage="):
-                explanations.append(d)
-            elif low == "must-revalidate":
-                explanations.append("must-revalidate")
-            elif low == "immutable":
-                explanations.append("immutable (won't change)")
-        return "Cache-Control: " + ", ".join(explanations) if explanations else f"Cache-Control: {cc}"
-
-    @staticmethod
-    def _short_summary(cc: str) -> str:
-        low = cc.lower()
-        if "no-store" in low:
-            return "no-store"
-        if "no-cache" in low:
-            return "revalidate"
-        if "max-age=" in low:
-            m = re.search(r"max-age=(\d+)", low)
-            if m:
-                secs = int(m.group(1))
-                if secs >= 86400:
-                    return f"cached {secs // 86400}d"
-                if secs >= 3600:
-                    return f"cached {secs // 3600}h"
-                return f"cached {secs}s"
-        return "present"
 
 
 class APIVersionDetectionAnalyzer(Analyzer):
@@ -288,39 +210,35 @@ class APIVersionDetectionAnalyzer(Analyzer):
 
     def analyze(self, ctx: AnalysisContext) -> List[Finding]:
         findings: List[Finding] = []
-        versions_found: Dict[str, str] = {}
+        versions: Dict[str, str] = {}
 
-        # URL path
         url = ctx.response.sent_url or ctx.request.url
-        m = self._URL_VERSION_RE.search(url)
-        if m:
-            versions_found["URL path"] = f"v{m.group(1)}"
+        match = self._URL_VERSION_RE.search(url)
+        if match:
+            versions["URL path"] = f"v{match.group(1)}"
 
-        # Accept header
         accept = (ctx.request.headers or {}).get("Accept", "")
         if "version=" in accept:
-            am = re.search(r"version=([^\s;,]+)", accept)
-            if am:
-                versions_found["Accept header"] = am.group(1)
+            accept_match = re.search(r"version=([^\s;,]+)", accept)
+            if accept_match:
+                versions["Accept header"] = accept_match.group(1)
 
-        # Response headers
-        for hk in self._HEADER_KEYS:
-            val = ctx.response.headers.get(hk, "")
-            if val:
-                versions_found[f"Header ({hk})"] = val
+        for header in self._HEADER_KEYS:
+            value = ctx.response.headers.get(header, "")
+            if value:
+                versions[f"Header ({header})"] = value
 
-        if not versions_found:
+        if not versions:
             return findings
 
-        parts = [f"{src}: {ver}" for src, ver in versions_found.items()]
         findings.append(Finding(
             category=self.category,
             severity=Severity.INFO,
-            title=f"API version: {next(iter(versions_found.values()))}",
-            description=" · ".join(parts),
+            title=f"API version: {next(iter(versions.values()))}",
+            description=" | ".join([f"{src}: {version}" for src, version in versions.items()]),
             analyzer_id=self.analyzer_id,
             recommendation="Use one canonical API versioning strategy (path, header, or media type) across endpoints.",
-            details=versions_found,
+            details=versions,
         ))
         return findings
 
@@ -338,64 +256,58 @@ class ResponseTimeAnomalyAnalyzer(Analyzer):
         if not stats:
             return findings
 
-        elapsed_values_raw = stats.get("elapsed_values", "[]")
+        values_raw = stats.get("elapsed_values", "[]")
         try:
-            values = json.loads(elapsed_values_raw) if isinstance(elapsed_values_raw, str) else elapsed_values_raw
+            values = json.loads(values_raw) if isinstance(values_raw, str) else values_raw
         except Exception:
             return findings
 
-        values = _coerce_numeric_samples(values)
-        if not values:
-            logger.debug("ResponseTimeAnomalyAnalyzer: no valid numeric samples")
+        samples = coerce_numeric_samples(values)
+        if len(samples) < 5:
             return findings
 
-        if len(values) < 5:
-            return findings
-
-        import statistics as _stats
-        mean = _stats.mean(values)
-        stdev = _stats.stdev(values)
+        stdev = statistics.stdev(samples)
         if stdev == 0:
             return findings
 
+        mean = statistics.mean(samples)
         current_ms = ctx.response.elapsed * 1000
         zscore = (current_ms - mean) / stdev
 
         if abs(zscore) < self._ZSCORE_THRESHOLD:
             return findings
 
-        detail = {
+        details = {
             "current_ms": round(current_ms, 1),
             "mean_ms": round(mean, 1),
             "stdev_ms": round(stdev, 1),
             "zscore": round(zscore, 2),
-            "sample_size": len(values),
+            "sample_size": len(samples),
         }
 
         if zscore > 0:
-            logger.debug(
-                "ResponseTimeAnomalyAnalyzer: slow response %dms (z=%.2f, mean=%dms)",
-                round(current_ms), zscore, round(mean),
-            )
             findings.append(Finding(
                 category=self.category,
                 severity=Severity.WARNING,
                 title=f"Response {round(current_ms)}ms is abnormally slow (z={zscore:.1f})",
-                description=f"Average for this endpoint: {round(mean)}ms ± {round(stdev)}ms. "
-                            f"Current response is {zscore:.1f} standard deviations above average.",
+                description=(
+                    f"Average for this endpoint: {round(mean)}ms +/- {round(stdev)}ms. "
+                    f"Current response is {zscore:.1f} standard deviations above average."
+                ),
                 analyzer_id=self.analyzer_id,
                 recommendation="Inspect recent backend dependencies and slow queries for this endpoint.",
-                details=detail,
+                details=details,
             ))
         else:
             findings.append(Finding(
                 category=self.category,
                 severity=Severity.INFO,
                 title=f"Response {round(current_ms)}ms is unusually fast (z={zscore:.1f})",
-                description=f"Average for this endpoint: {round(mean)}ms ± {round(stdev)}ms.",
+                description=f"Average for this endpoint: {round(mean)}ms +/- {round(stdev)}ms.",
                 analyzer_id=self.analyzer_id,
                 recommendation="Track whether the improvement is sustained and capture what changed.",
-                details=detail,
+                details=details,
             ))
+
         return findings
 

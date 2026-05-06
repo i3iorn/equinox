@@ -159,7 +159,7 @@ class PreferencesDialog(QDialog):
 
         scroll_widget.setUpdatesEnabled(False)
         try:
-            from equinox.core.response_intelligence.engine import AnalysisEngine
+            from equinox.core.response_intelligence import AnalysisEngine
             current_cat = ""
             for info in AnalysisEngine().get_all_analyzer_info():
                 cat = info["category"]

@@ -1,17 +1,14 @@
-"""Response Intelligence — automated analysis of HTTP responses.
+"""Response Intelligence package."""
 
-Provides an extensible engine that runs analyzers against request/response
-pairs and returns structured findings with severity levels.
-"""
-
+from equinox.core.response_intelligence.base import Analyzer
+from equinox.core.response_intelligence.consistency import SchemaDriftAnalyzer
+from equinox.core.response_intelligence.engine import AnalysisEngine, normalize_url_pattern
 from equinox.core.response_intelligence.models import (
-    Severity,
+    AnalysisContext,
     Category,
     Finding,
-    AnalysisContext,
+    Severity,
 )
-from equinox.core.response_intelligence.base import Analyzer
-from equinox.core.response_intelligence.engine import AnalysisEngine
 
 __all__ = [
     "Severity",
@@ -20,5 +17,7 @@ __all__ = [
     "AnalysisContext",
     "Analyzer",
     "AnalysisEngine",
+    "SchemaDriftAnalyzer",
+    "normalize_url_pattern"
 ]
 

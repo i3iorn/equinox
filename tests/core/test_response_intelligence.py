@@ -31,6 +31,7 @@ from equinox.core.response_intelligence.consistency import (
     StatusBodyMismatchAnalyzer,
     ContentTypeMismatchAnalyzer,
     DuplicateJsonKeysAnalyzer,
+    RedirectLocationAnalyzer,
     DateFormatInconsistencyAnalyzer,
     NullVsMissingAnalyzer,
     SchemaDriftAnalyzer,
@@ -98,7 +99,7 @@ def _make_ctx(
 class TestEngine:
     def test_discover_all_analyzers(self):
         analyzers = AnalysisEngine.discover_analyzers()
-        assert len(analyzers) == 26
+        assert len(analyzers) == 27
         ids = {a.analyzer_id for a in analyzers}
         assert "security.missing_headers" in ids
         assert "hints.link_header" in ids
@@ -129,7 +130,7 @@ class TestEngine:
 
     def test_get_all_analyzer_info(self):
         info = AnalysisEngine().get_all_analyzer_info()
-        assert len(info) == 26
+        assert len(info) == 27
         assert all("id" in i and "name" in i and "category" in i for i in info)
 
     def test_get_all_analyzer_info_sorted_by_id(self):
@@ -423,6 +424,19 @@ class TestStatusBodyMismatch:
         assert len(findings) == 1
         assert "error" in findings[0].title.lower()
 
+    def test_200_with_nested_error_key(self):
+        body = json.dumps({"meta": {"errorMessage": "upstream failure"}}).encode()
+        ctx = _make_ctx(status=200, body=body)
+        findings = StatusBodyMismatchAnalyzer().analyze(ctx)
+        assert len(findings) == 1
+        assert "meta.errorMessage" in findings[0].details.get("error_paths", [])
+
+    def test_304_with_body(self):
+        ctx = _make_ctx(status=304, body=b"stale")
+        findings = StatusBodyMismatchAnalyzer().analyze(ctx)
+        assert len(findings) == 1
+        assert "304" in findings[0].title
+
     def test_200_clean(self):
         body = json.dumps({"data": [1, 2, 3]}).encode()
         ctx = _make_ctx(status=200, body=body)
@@ -441,6 +455,14 @@ class TestContentTypeMismatch:
     def test_json_header_valid_body(self):
         hdrs = {"content-type": "application/json"}
         ctx = _make_ctx(headers=hdrs, body=b'{"ok": true}')
+        findings = ContentTypeMismatchAnalyzer().analyze(ctx)
+        assert len(findings) == 0
+
+    def test_large_valid_json_not_flagged_by_truncation(self):
+        payload = {"items": [{"id": i, "name": f"user-{i}"} for i in range(700)]}
+        body = json.dumps(payload).encode()
+        hdrs = {"content-type": "application/json"}
+        ctx = _make_ctx(headers=hdrs, body=body)
         findings = ContentTypeMismatchAnalyzer().analyze(ctx)
         assert len(findings) == 0
 
@@ -533,6 +555,27 @@ class TestSchemaDrift:
         body = json.dumps({"name": "Alice"}).encode()
         ctx = _make_ctx(body=body, stored_schema=None)
         findings = SchemaDriftAnalyzer().analyze(ctx)
+        assert len(findings) == 0
+
+    def test_list_schema_drift_detects_fields_beyond_first_item(self):
+        stored = {"[]": "dict", "[].id": "int"}
+        body = json.dumps([{"id": 1}, {"id": 2, "email": "a@example.com"}]).encode()
+        ctx = _make_ctx(body=body, stored_schema=stored)
+        findings = SchemaDriftAnalyzer().analyze(ctx)
+        assert len(findings) == 1
+        assert "[].email" in findings[0].details["added"]
+
+
+class TestRedirectLocation:
+    def test_redirect_without_location(self):
+        ctx = _make_ctx(status=302, headers={}, body=b"")
+        findings = RedirectLocationAnalyzer().analyze(ctx)
+        assert len(findings) == 1
+        assert "location" in findings[0].title.lower()
+
+    def test_redirect_with_location(self):
+        ctx = _make_ctx(status=307, headers={"location": "https://api.example.com/new"}, body=b"")
+        findings = RedirectLocationAnalyzer().analyze(ctx)
         assert len(findings) == 0
 
 

@@ -31,14 +31,13 @@ class MissingSecurityHeadersAnalyzer(Analyzer):
     category = Category.SECURITY
     display_name = "Missing Security Headers"
 
-    # header -> (description, severity)
     _EXPECTED = {
         "strict-transport-security": (
             "HSTS not set - browser will accept plain HTTP connections.",
             Severity.WARNING,
         ),
         "content-security-policy": (
-            "CSP not set - no defence against XSS / injection.",
+            "CSP not set - no defense against XSS / injection.",
             Severity.WARNING,
         ),
         "x-content-type-options": (
@@ -61,20 +60,18 @@ class MissingSecurityHeadersAnalyzer(Analyzer):
 
     def analyze(self, ctx: AnalysisContext) -> List[Finding]:
         findings: List[Finding] = []
-        hdrs = ctx.response.headers
-        missing = []
-        for hdr, (desc, sev) in self._EXPECTED.items():
-            if hdr not in hdrs:
-                missing.append({"header": hdr, "description": desc, "severity": sev.value})
+        missing: List[Dict[str, str]] = []
+
+        for header, (description, severity) in self._EXPECTED.items():
+            if header not in ctx.response.headers:
+                missing.append({"header": header, "description": description, "severity": severity.value})
 
         if not missing:
             return findings
 
         worst = Severity.INFO
-        for entry in missing:
-            if entry["severity"] == Severity.WARNING.value:
-                worst = Severity.WARNING
-                break
+        if any(entry["severity"] == Severity.WARNING.value for entry in missing):
+            worst = Severity.WARNING
 
         findings.append(Finding(
             category=self.category,
@@ -93,53 +90,56 @@ class CookieFlagsAnalyzer(Analyzer):
     category = Category.SECURITY
     display_name = "Cookie Security Flags"
 
+    _SET_COOKIE_SPLIT_RE = re.compile(r",\s*(?=[^;,=\s]+=[^;,]*)")
+
     def analyze(self, ctx: AnalysisContext) -> List[Finding]:
-        import http.cookies as _hc
+        import http.cookies as cookies
 
         findings: List[Finding] = []
+        raw_set_cookie = ctx.response.headers.get("set-cookie", "")
+        if not raw_set_cookie:
+            return findings
+
+        cookies_raw = [part.strip() for part in self._SET_COOKIE_SPLIT_RE.split(raw_set_cookie) if part.strip()]
         issues: List[Dict[str, Any]] = []
-
-        raw_cookie_value = ctx.response.headers.get("set-cookie", "")
-        if not raw_cookie_value:
-            return findings
-
-        parsed = _hc.SimpleCookie()
-        try:
-            parsed.load(raw_cookie_value)
-        except Exception:
-            logger.debug("CookieFlagsAnalyzer: failed to parse Set-Cookie header", exc_info=True)
-            return findings
-
         highest = Severity.INFO
-        for name, morsel in parsed.items():
-            problems: List[str] = []
-            severity = Severity.INFO
 
-            secure_set = bool(morsel["secure"])
-            if not secure_set:
-                problems.append("Secure flag missing")
-                severity = Severity.WARNING
+        for cookie_entry in cookies_raw:
+            jar = cookies.SimpleCookie()
+            try:
+                jar.load(cookie_entry)
+            except Exception:
+                logger.info("CookieFlagsAnalyzer: failed to parse Set-Cookie value", exc_info=True)
+                continue
 
-            if not morsel["httponly"]:
-                problems.append("HttpOnly flag missing")
-                severity = Severity.WARNING
+            for name, morsel in jar.items():
+                problems: List[str] = []
+                severity = Severity.INFO
+                secure_set = bool(morsel["secure"])
 
-            samesite = (morsel.get("samesite", "") or "").strip().lower()
-            if not samesite:
-                problems.append("SameSite not set")
-                severity = Severity.WARNING
-            elif samesite not in ("lax", "strict", "none"):
-                problems.append(f"SameSite has unsupported value: {samesite}")
-                severity = Severity.WARNING
+                if not secure_set:
+                    problems.append("Secure flag missing")
+                    severity = Severity.WARNING
+                if not morsel["httponly"]:
+                    problems.append("HttpOnly flag missing")
+                    severity = Severity.WARNING
 
-            if samesite == "none" and not secure_set:
-                problems.append("SameSite=None requires Secure")
-                severity = Severity.CRITICAL
+                samesite = (morsel.get("samesite", "") or "").strip().lower()
+                if not samesite:
+                    problems.append("SameSite not set")
+                    severity = Severity.WARNING
+                elif samesite not in ("lax", "strict", "none"):
+                    problems.append(f"SameSite has unsupported value: {samesite}")
+                    severity = Severity.WARNING
 
-            if problems:
-                issues.append({"cookie": name, "problems": problems, "severity": severity.value})
-                if _SEVERITY_RANK[severity] > _SEVERITY_RANK[highest]:
-                    highest = severity
+                if samesite == "none" and not secure_set:
+                    problems.append("SameSite=None requires Secure")
+                    severity = Severity.CRITICAL
+
+                if problems:
+                    issues.append({"cookie": name, "problems": problems, "severity": severity.value})
+                    if _SEVERITY_RANK[severity] > _SEVERITY_RANK[highest]:
+                        highest = severity
 
         if issues:
             findings.append(Finding(
@@ -158,21 +158,23 @@ def _luhn_valid(candidate: str) -> bool:
     digits = "".join(ch for ch in candidate if ch.isdigit())
     if len(digits) < 13 or len(digits) > 19:
         return False
+
     total = 0
     parity = len(digits) % 2
-    for i, ch in enumerate(digits):
-        d = int(ch)
-        if i % 2 == parity:
-            d *= 2
-            if d > 9:
-                d -= 9
-        total += d
+    for index, char in enumerate(digits):
+        digit = int(char)
+        if index % 2 == parity:
+            digit *= 2
+            if digit > 9:
+                digit -= 9
+        total += digit
     return total % 10 == 0
 
 
 def _looks_like_high_entropy_secret(candidate: str, body: str, start_idx: int, end_idx: int) -> bool:
     if len(candidate) < 24:
         return False
+
     charset_count = sum(
         bool(re.search(pattern, candidate))
         for pattern in (r"[a-z]", r"[A-Z]", r"\d", r"[_\-+=/]")
@@ -180,9 +182,8 @@ def _looks_like_high_entropy_secret(candidate: str, body: str, start_idx: int, e
     if charset_count < 3:
         return False
 
-    # Reduce noise by requiring nearby secret-like context.
     window = body[max(0, start_idx - 48):min(len(body), end_idx + 48)].lower()
-    context_markers = (
+    markers = (
         "token",
         "secret",
         "password",
@@ -194,16 +195,15 @@ def _looks_like_high_entropy_secret(candidate: str, body: str, start_idx: int, e
         "authorization",
         "session",
     )
-    return any(marker in window for marker in context_markers)
+    return any(marker in window for marker in markers)
 
 
 PatternSpec = Tuple[str, Pattern[str], Severity, Optional[Callable[[str], bool]]]
 
-# Pre-compiled patterns for PII / secret detection
 _PII_PATTERNS: List[PatternSpec] = [
     ("Email address", re.compile(r"\b[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}\b"), Severity.WARNING, None),
     ("Phone number", re.compile(r"\b(?:\+?\d{1,3}[\s.-]?)?(?:\(?\d{2,4}\)?[\s.-]?)?\d{3,4}[\s.-]?\d{4}\b"), Severity.INFO, None),
-    ("Swedish/Finnish SSN", re.compile(r"\b(20|19)?\d{2}(1[0-2]|0[0-9])(3[01]|\d{2})[-+A]?\d{3}[0-9A-Y]\b"), Severity.CRITICAL, _luhn_valid),
+    ("Swedish/Finnish SSN", re.compile(r"\b(?:20|19)?\d{2}(?:1[0-2]|0[0-9])(?:3[01]|\d{2})[-+A]?\d{3}[0-9A-Y]\b"), Severity.CRITICAL, _luhn_valid),
     ("Norwegian SSN", re.compile(r"\b\d{6}[- ]?\d{5}\b"), Severity.CRITICAL, None),
     ("Danish CPR", re.compile(r"\b(?:0[1-9]|[12][0-9]|3[01])(?:0[1-9]|1[0-2])\d{2}-?\d{4}\b"), Severity.CRITICAL, None),
     ("US SSN", re.compile(r"\b\d{3}-\d{2}-\d{4}\b"), Severity.CRITICAL, None),
@@ -224,7 +224,6 @@ class PIILeakDetectionAnalyzer(Analyzer):
     category = Category.SECURITY
     display_name = "PII / Secret Leak Detection"
 
-    # Only scan bodies up to this size to avoid perf issues
     _MAX_SCAN_SIZE = 512_000
 
     def analyze(self, ctx: AnalysisContext) -> List[Finding]:
@@ -235,23 +234,27 @@ class PIILeakDetectionAnalyzer(Analyzer):
 
         detected: List[Dict[str, Any]] = []
         highest = Severity.INFO
+
         for label, pattern, severity, validator in _PII_PATTERNS:
-            raw_matches = pattern.findall(body)
-            matches = raw_matches
-            if validator is not None:
-                matches = [m for m in raw_matches if validator(m)]
-            if matches:
-                # Show count only, never echo the actual sensitive data.
-                detected.append({"type": label, "count": len(matches), "severity": severity.value})
+            count = 0
+            for match in pattern.finditer(body):
+                matched_text = match.group(0)
+                # When a pattern uses capture groups, group(0) keeps a stable validator input.
+                if validator is not None and not validator(matched_text):
+                    continue
+                count += 1
+
+            if count:
+                detected.append({"type": label, "count": count, "severity": severity.value})
                 if _SEVERITY_RANK[severity] > _SEVERITY_RANK[highest]:
                     highest = severity
 
-        # High-entropy detector is intentionally context-gated to reduce noise.
         entropy_hits = 0
         for match in _HIGH_ENTROPY_RE.finditer(body):
             candidate = match.group(0)
             if _looks_like_high_entropy_secret(candidate, body, match.start(), match.end()):
                 entropy_hits += 1
+
         if entropy_hits:
             detected.append({
                 "type": "High entropy secret-like token",
@@ -261,20 +264,28 @@ class PIILeakDetectionAnalyzer(Analyzer):
             if _SEVERITY_RANK[Severity.WARNING] > _SEVERITY_RANK[highest]:
                 highest = Severity.WARNING
 
-        if detected:
-            logger.warning(
-                "PIILeakDetection: potential sensitive data found in response body: %s",
-                [d["type"] for d in detected],
-            )
-            findings.append(Finding(
-                category=self.category,
-                severity=highest,
-                title="Potential sensitive data in response body",
-                description="The response body contains patterns that may be PII or secrets.",
-                analyzer_id=self.analyzer_id,
-                recommendation="Remove or mask sensitive fields in API responses and rotate any exposed credentials.",
-                details={"detected": detected},
-            ))
+        if not detected:
+            return findings
+
+        try:
+            logger_at_level = getattr(logger, highest.name.lower())
+        except AttributeError:
+            logger_at_level = logger.warning
+
+        logger_at_level(
+            "PIILeakDetection: potential sensitive data found in response body: %s",
+            [entry["type"] for entry in detected],
+        )
+
+        findings.append(Finding(
+            category=self.category,
+            severity=highest,
+            title="Potential sensitive data in response body",
+            description="The response body contains patterns that may be PII or secrets.",
+            analyzer_id=self.analyzer_id,
+            recommendation="Remove or mask sensitive fields in API responses and rotate any exposed credentials.",
+            details={"detected": detected},
+        ))
         return findings
 
 
@@ -285,52 +296,50 @@ class CORSMisconfigAnalyzer(Analyzer):
 
     def analyze(self, ctx: AnalysisContext) -> List[Finding]:
         findings: List[Finding] = []
-        acao = (ctx.response.headers.get("access-control-allow-origin", "") or "").strip()
-        creds = (ctx.response.headers.get("access-control-allow-credentials", "") or "").strip()
-        vary = (ctx.response.headers.get("vary", "") or "").lower()
-        req_origin = (ctx.request.headers.get("origin", "") or "").strip()
 
-        if not acao:
+        allow_origin = (ctx.response.headers.get("access-control-allow-origin", "") or "").strip()
+        allow_credentials = (ctx.response.headers.get("access-control-allow-credentials", "") or "").strip()
+        vary = (ctx.response.headers.get("vary", "") or "").lower()
+        request_origin = (ctx.request.headers.get("origin", "") or "").strip()
+
+        if not allow_origin:
             return findings
 
         issues: List[str] = []
         severity = Severity.WARNING
 
-        if "," in acao or " " in acao:
+        if "," in allow_origin or " " in allow_origin:
             issues.append("Access-Control-Allow-Origin should be a single origin value, not a list.")
 
-        if acao == "*":
+        if allow_origin == "*":
             issues.append("Access-Control-Allow-Origin is wildcard (*) - any origin can read the response.")
-            if creds.lower() == "true":
+            if allow_credentials.lower() == "true":
                 issues.append("Combined with Allow-Credentials: true this is a critical misconfiguration.")
                 severity = Severity.CRITICAL
 
-        if acao.lower() == "null":
+        if allow_origin.lower() == "null":
             issues.append("Access-Control-Allow-Origin is 'null' which can unintentionally trust sandboxed/file origins.")
 
-        if creds.lower() == "true" and req_origin and acao == req_origin and "origin" not in vary:
+        if allow_credentials.lower() == "true" and request_origin and allow_origin == request_origin and "origin" not in vary:
             issues.append("Credentialed CORS with reflected origin should include Vary: Origin to avoid cache poisoning.")
 
-        if issues:
-            logger.warning(
-                "CORSMisconfigAnalyzer: overly permissive CORS - allow_origin=%r allow_credentials=%r",
-                acao,
-                ctx.response.headers.get("access-control-allow-credentials", ""),
-            )
-            findings.append(Finding(
-                category=self.category,
-                severity=severity,
-                title="Overly permissive CORS policy",
-                description="\n".join(issues),
-                analyzer_id=self.analyzer_id,
-                recommendation="Restrict Access-Control-Allow-Origin to trusted origins and avoid credentials with wildcard origins.",
-                details={
-                    "allow_origin": acao,
-                    "allow_credentials": creds,
-                    "request_origin": req_origin,
-                    "vary": vary,
-                },
-            ))
+        if not issues:
+            return findings
+
+        findings.append(Finding(
+            category=self.category,
+            severity=severity,
+            title="Overly permissive CORS policy",
+            description="\n".join(issues),
+            analyzer_id=self.analyzer_id,
+            recommendation="Restrict Access-Control-Allow-Origin to trusted origins and avoid credentials with wildcard origins.",
+            details={
+                "allow_origin": allow_origin,
+                "allow_credentials": allow_credentials,
+                "request_origin": request_origin,
+                "vary": vary,
+            },
+        ))
         return findings
 
 
@@ -343,21 +352,21 @@ class JWTDecodeAnalyzer(Analyzer):
 
     def analyze(self, ctx: AnalysisContext) -> List[Finding]:
         findings: List[Finding] = []
-        # Search in body and Authorization header
         sources: List[Tuple[str, str]] = []
+
         if ctx.response.body:
             sources.append(("body", ctx.response.text[:256_000]))
-        auth_hdr = ctx.response.headers.get("authorization", "")
-        if auth_hdr:
-            sources.append(("header", auth_hdr))
 
-        # Also check common JSON fields
+        auth_header = ctx.response.headers.get("authorization", "")
+        if auth_header:
+            sources.append(("header", auth_header))
+
         try:
             if ctx.response.is_json:
-                obj = ctx.response.json()
-                if isinstance(obj, dict):
+                payload = ctx.response.json()
+                if isinstance(payload, dict):
                     for key in ("access_token", "token", "id_token", "jwt"):
-                        value = obj.get(key, "")
+                        value = payload.get(key, "")
                         if isinstance(value, str) and value.startswith("eyJ"):
                             sources.append((f"field '{key}'", value))
         except Exception:
@@ -365,53 +374,55 @@ class JWTDecodeAnalyzer(Analyzer):
 
         for source_label, text in sources:
             for match in self._JWT_RE.finditer(text):
-                jwt_str = match.group(0)
-                decoded_header, decoded_claims = self._decode_jwt(jwt_str)
-                if decoded_claims is None:
+                token = match.group(0)
+                decoded_header, claims = self._decode_jwt(token)
+                if claims is None:
                     continue
 
-                detail: Dict[str, Any] = {"source": source_label, "claims": decoded_claims}
-                exp = decoded_claims.get("exp")
-                sev = Severity.INFO
+                details: Dict[str, Any] = {"source": source_label, "claims": claims}
+                severity = Severity.INFO
 
-                alg = str(decoded_header.get("alg", "")).strip().lower() if decoded_header else ""
-                if alg == "none":
-                    sev = Severity.CRITICAL
-                    detail["algorithm_none"] = True
+                algorithm = str(decoded_header.get("alg", "")).strip().lower() if decoded_header else ""
+                if algorithm == "none":
+                    severity = Severity.CRITICAL
+                    details["algorithm_none"] = True
 
-                if isinstance(exp, str) and exp.isdigit():
-                    exp = int(exp)
-                if isinstance(exp, (int, float)):
-                    remaining = exp - time.time()
-                    detail["expires_in_seconds"] = int(remaining)
+                expiry = claims.get("exp")
+                if isinstance(expiry, str) and expiry.isdigit():
+                    expiry = int(expiry)
+
+                if isinstance(expiry, (int, float)):
+                    remaining = expiry - time.time()
+                    details["expires_in_seconds"] = int(remaining)
                     if remaining <= 0:
-                        sev = Severity.WARNING
-                        detail["expired"] = True
+                        details["expired"] = True
+                        if severity != Severity.CRITICAL:
+                            severity = Severity.WARNING
                     elif remaining < 300:
-                        sev = Severity.WARNING
-                        detail["expiring_soon"] = True
+                        details["expiring_soon"] = True
+                        if severity != Severity.CRITICAL:
+                            severity = Severity.WARNING
                     elif remaining > 60 * 60 * 24 * 30:
-                        detail["long_lived"] = True
-                        if sev == Severity.INFO:
-                            sev = Severity.WARNING
+                        details["long_lived"] = True
+                        if severity == Severity.INFO:
+                            severity = Severity.WARNING
                 else:
-                    detail["missing_exp"] = True
-                    if sev == Severity.INFO:
-                        sev = Severity.WARNING
+                    details["missing_exp"] = True
+                    if severity == Severity.INFO:
+                        severity = Severity.WARNING
 
                 findings.append(Finding(
                     category=self.category,
-                    severity=sev,
+                    severity=severity,
                     title=f"JWT found in {source_label}",
-                    description=self._summarise(decoded_claims, detail),
+                    description=self._summarize(claims, details),
                     analyzer_id=self.analyzer_id,
                     recommendation="Avoid returning tokens in response bodies when possible and enforce short token expiry windows.",
-                    details=detail,
+                    details=details,
                 ))
-                break  # one per source
-        return findings
+                break
 
-    # ------------------------------------------------------------------
+        return findings
 
     @staticmethod
     def _decode_jwt(token: str) -> Tuple[Optional[Dict[str, Any]], Optional[Dict[str, Any]]]:
@@ -419,9 +430,8 @@ class JWTDecodeAnalyzer(Analyzer):
             parts = token.split(".")
             if len(parts) != 3:
                 return None, None
-            header_b64, payload_b64 = parts[0], parts[1]
 
-            # Fix padding
+            header_b64, payload_b64 = parts[0], parts[1]
             header_padding = 4 - len(header_b64) % 4
             if header_padding != 4:
                 header_b64 += "=" * header_padding
@@ -429,10 +439,8 @@ class JWTDecodeAnalyzer(Analyzer):
             if payload_padding != 4:
                 payload_b64 += "=" * payload_padding
 
-            header_bytes = base64.urlsafe_b64decode(header_b64)
-            payload_bytes = base64.urlsafe_b64decode(payload_b64)
-            header = json.loads(header_bytes)
-            payload = json.loads(payload_bytes)
+            header = json.loads(base64.urlsafe_b64decode(header_b64))
+            payload = json.loads(base64.urlsafe_b64decode(payload_b64))
             if not isinstance(header, dict) or not isinstance(payload, dict):
                 return None, None
             return header, payload
@@ -440,28 +448,27 @@ class JWTDecodeAnalyzer(Analyzer):
             return None, None
 
     @staticmethod
-    def _summarise(claims: dict, detail: dict) -> str:
+    def _summarize(claims: Dict[str, Any], details: Dict[str, Any]) -> str:
         parts: List[str] = []
-        sub = claims.get("sub")
-        if sub:
-            parts.append(f"Subject: {sub}")
-        iss = claims.get("iss")
-        if iss:
-            parts.append(f"Issuer: {iss}")
-        if detail.get("expired"):
+        if claims.get("sub"):
+            parts.append(f"Subject: {claims['sub']}")
+        if claims.get("iss"):
+            parts.append(f"Issuer: {claims['iss']}")
+
+        if details.get("expired"):
             parts.append("Token is EXPIRED")
-        elif detail.get("expiring_soon"):
-            secs = detail["expires_in_seconds"]
-            parts.append(f"Token expires in {secs}s")
-        elif detail.get("long_lived"):
+        elif details.get("expiring_soon"):
+            parts.append(f"Token expires in {details['expires_in_seconds']}s")
+        elif details.get("long_lived"):
             parts.append("Long-lived token")
-        elif detail.get("missing_exp"):
+        elif details.get("missing_exp"):
             parts.append("No exp claim")
-        elif "expires_in_seconds" in detail:
-            mins = detail["expires_in_seconds"] // 60
-            parts.append(f"Expires in ~{mins} min")
-        if detail.get("algorithm_none"):
+        elif "expires_in_seconds" in details:
+            parts.append(f"Expires in ~{details['expires_in_seconds'] // 60} min")
+
+        if details.get("algorithm_none"):
             parts.append("Insecure alg=none")
+
         return " | ".join(parts) if parts else "JWT decoded successfully."
 
 
@@ -514,26 +521,29 @@ class SensitiveDataCachingAnalyzer(Analyzer):
         if "no-cache" in pragma and "no-store" not in cache_control:
             issues.append("Pragma: no-cache is set but Cache-Control: no-store is missing.")
 
-        if issues:
-            findings.append(Finding(
-                category=self.category,
-                severity=severity,
-                title="Sensitive response may be cacheable",
-                description="\n".join(issues),
-                analyzer_id=self.analyzer_id,
-                recommendation="For sensitive responses, return Cache-Control: no-store (and avoid public caches).",
-                details={
-                    "signals": exposure_signals,
-                    "cache_control": cache_control,
-                    "pragma": pragma,
-                },
-            ))
+        if not issues:
+            return findings
+
+        findings.append(Finding(
+            category=self.category,
+            severity=severity,
+            title="Sensitive response may be cacheable",
+            description="\n".join(issues),
+            analyzer_id=self.analyzer_id,
+            recommendation="For sensitive responses, return Cache-Control: no-store (and avoid public caches).",
+            details={
+                "signals": exposure_signals,
+                "cache_control": cache_control,
+                "pragma": pragma,
+            },
+        ))
         return findings
 
 
 def _contains_sensitive_keys(value: Any, sensitive_keys: Set[str], depth: int = 0) -> bool:
     if depth > 6:
         return False
+
     if isinstance(value, dict):
         for key, nested in value.items():
             if str(key).lower() in sensitive_keys:
@@ -545,3 +555,4 @@ def _contains_sensitive_keys(value: Any, sensitive_keys: Set[str], depth: int = 
             if _contains_sensitive_keys(nested, sensitive_keys, depth + 1):
                 return True
     return False
+

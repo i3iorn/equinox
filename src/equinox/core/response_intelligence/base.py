@@ -20,6 +20,9 @@ class Analyzer(abc.ABC):
     analyzer_id: str = ""
     category: Category = Category.HINTS
     display_name: str = ""
+    # Engine-level gate: analyzers that cannot operate meaningfully without a
+    # valid JSON response body should set this to True.
+    requires_valid_json_body: bool = False
 
     @abc.abstractmethod
     def analyze(self, ctx: AnalysisContext) -> List[Finding]:

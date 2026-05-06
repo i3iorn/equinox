@@ -23,7 +23,7 @@ from PyQt6.QtWidgets import (
 from PyQt6.QtCore import Qt, QSettings
 from PyQt6.QtGui import QGuiApplication
 
-from equinox.core.response_intelligence.models import Category, Finding, Severity
+from equinox.core.response_intelligence import Category, Finding, Severity
 from equinox.gui.theme import Colors, get_mono_font
 
 __all__ = ["IntelligencePanel"]

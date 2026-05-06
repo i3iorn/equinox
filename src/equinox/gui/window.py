@@ -526,7 +526,7 @@ class MainWindow(QMainWindow):
             worker.start()
             self._intelligence_worker = worker
         except Exception:
-            logger.debug("Intelligence analysis failed to start", exc_info=True)
+            logger.warning("Intelligence analysis failed to start", exc_info=True)
 
     # ── History handlers ──────────────────────────────────────────────
 

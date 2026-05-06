@@ -9,9 +9,13 @@ from PyQt6.QtCore import QObject, QThread, pyqtSignal
 from equinox.core.request import Request, Response
 from equinox.intelligence import Recommender, suggestions_to_findings
 from equinox.storage import Database
-from equinox.core.response_intelligence.consistency import SchemaDriftAnalyzer
-from equinox.core.response_intelligence.engine import AnalysisEngine, normalize_url_pattern
-from equinox.core.response_intelligence.models import AnalysisContext, Finding
+from equinox.core.response_intelligence import (
+    SchemaDriftAnalyzer,
+    AnalysisEngine,
+    normalize_url_pattern,
+    AnalysisContext,
+    Finding
+)
 from equinox.storage.response_intelligence import ResponseIntelligenceManager
 
 __all__ = ["IntelligenceWorker"]
