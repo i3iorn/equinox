@@ -7,7 +7,7 @@ the dispatcher can attach them via httpx's redirect-safe auth flow.
 import logging
 from typing import Dict, Optional
 
-from equinox.auth.base import AuthStrategy
+from equinox.auth import AuthStrategy
 from equinox.core.exceptions import RequestError
 from equinox.core.request import Request
 from equinox.security import redact_url, redact_body

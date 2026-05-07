@@ -17,7 +17,7 @@ from equinox.gui.theme import Colors, get_mono_font
 from equinox.gui.widgets import make_secret_row
 
 from equinox.auth import BasicAuth, OAuth2Auth, BearerAuth, APIKeyAuth
-from equinox.auth.aws_sigv4 import AWSSigV4Auth
+from equinox.auth import AWSSigV4Auth
 from equinox.core.exceptions import AuthError
 from equinox.storage import SavedCredentialsManager
 from equinox.storage.saved_credentials import AUTH_TYPE_LABELS

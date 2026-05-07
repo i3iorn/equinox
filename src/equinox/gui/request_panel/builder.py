@@ -16,7 +16,7 @@ import json as _json
 import logging
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
-from equinox.auth.base import AuthStrategy
+from equinox.auth import AuthStrategy
 
 logger = logging.getLogger(__name__)
 

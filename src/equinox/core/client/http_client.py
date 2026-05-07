@@ -10,7 +10,7 @@ import threading
 import time
 from typing import Optional
 
-from equinox.auth.base import AuthStrategy
+from equinox.auth import AuthStrategy
 from equinox.core.audit import get_audit_logger
 from equinox.core import error_mapper
 from equinox.core import urls
