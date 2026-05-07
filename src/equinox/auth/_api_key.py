@@ -2,8 +2,7 @@
 
 import logging
 from typing import Any, Dict, Literal, Optional
-from equinox.auth.base import AuthStrategy, _validate_credential
-from equinox.core.exceptions import AuthError
+from equinox.auth._base import AuthStrategy, _validate_credential, AuthError
 
 logger = logging.getLogger(__name__)
 

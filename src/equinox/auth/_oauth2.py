@@ -11,8 +11,7 @@ from typing import Any, Callable, Dict, Literal, Optional
 
 import httpx
 
-from equinox.auth.base import AuthStrategy, _validate_credential, _interpolate_field
-from equinox.core.exceptions import AuthError
+from equinox.auth._base import AuthStrategy, _validate_credential, _interpolate_field, AuthError
 from equinox.security.secure_storage import SecureStorage
 from equinox.core.audit import get_audit_logger, AuditEventType, AuditLevel
 from equinox.security import mask_secret

@@ -24,27 +24,27 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 
 def _get_bearer() -> Type:
-    from equinox.auth.bearer import BearerAuth
+    from equinox.auth._bearer import BearerAuth
     return BearerAuth
 
 
 def _get_basic() -> Type:
-    from equinox.auth.basic import BasicAuth
+    from equinox.auth._basic import BasicAuth
     return BasicAuth
 
 
 def _get_api_key() -> Type:
-    from equinox.auth.api_key import APIKeyAuth
+    from equinox.auth._api_key import APIKeyAuth
     return APIKeyAuth
 
 
 def _get_oauth2() -> Type:
-    from equinox.auth.oauth2 import OAuth2Auth
+    from equinox.auth._oauth2 import OAuth2Auth
     return OAuth2Auth
 
 
 def _get_aws_sigv4() -> Type:
-    from equinox.auth.aws_sigv4 import AWSSigV4Auth
+    from equinox.auth._aws_sigv4 import AWSSigV4Auth
     return AWSSigV4Auth
 
 

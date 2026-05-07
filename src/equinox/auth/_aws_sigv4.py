@@ -17,8 +17,7 @@ from datetime import datetime, timezone
 from typing import Any, Callable, Dict, Optional, Tuple
 from urllib.parse import quote, urlparse, parse_qsl
 
-from equinox.auth.base import AuthStrategy, _validate_credential, _interpolate_field
-from equinox.core.exceptions import AuthError
+from equinox.auth._base import AuthStrategy, _validate_credential, _interpolate_field, AuthError
 
 logger = logging.getLogger(__name__)
 

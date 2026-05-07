@@ -70,15 +70,15 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any, Dict, List, Type
 
-from equinox.auth.base import AuthStrategy
-from equinox.auth.bearer import BearerAuth
-from equinox.auth.api_key import APIKeyAuth
-from equinox.auth.basic import BasicAuth
-from equinox.auth.oauth2 import OAuth2Auth
-from equinox.auth.aws_sigv4 import AWSSigV4Auth
+from equinox.auth._base import AuthStrategy
+from equinox.auth._bearer import BearerAuth
+from equinox.auth._api_key import APIKeyAuth
+from equinox.auth._basic import BasicAuth
+from equinox.auth._oauth2 import OAuth2Auth
+from equinox.auth._aws_sigv4 import AWSSigV4Auth
 
 if TYPE_CHECKING:
-    from equinox.auth.factory import AUTH_REGISTRY
+    from equinox.auth._factory import AUTH_REGISTRY
 
 __all__ = [
     "AuthStrategy",
@@ -105,7 +105,7 @@ def auth_from_dict(data: Dict[str, Any]) -> AuthStrategy:
     Raises:
         ValueError: If auth type is unknown
     """
-    from equinox.auth.factory import auth_from_dict as _auth_from_dict
+    from equinox.auth._factory import auth_from_dict as _auth_from_dict
 
     auth_type = data["type"]
     auth = _auth_from_dict(auth_type, data)
@@ -128,7 +128,7 @@ def get_auth_type(name: str) -> Type[AuthStrategy]:
     Raises:
         ValueError: If type name is unknown
     """
-    from equinox.auth.factory import AUTH_REGISTRY
+    from equinox.auth._factory import AUTH_REGISTRY
 
     if name in AUTH_REGISTRY:
         loader = AUTH_REGISTRY[name]
@@ -149,7 +149,7 @@ def list_auth_types() -> List[str]:
     Returns:
         Sorted list of auth type names.
     """
-    from equinox.auth.factory import AUTH_REGISTRY
+    from equinox.auth._factory import AUTH_REGISTRY
 
     return sorted(AUTH_REGISTRY.keys())
 
