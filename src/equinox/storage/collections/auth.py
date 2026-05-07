@@ -43,7 +43,7 @@ class CollectionAuthMixin:
         transparently via :func:`decrypt_auth_data`.
 
         Delegates the type→class dispatch to the unified
-        :func:`~equinox.auth.factory.auth_from_dict` registry so new auth
+        :func:`~equinox.auth.auth_from_dict` registry so new auth
         types only need to be registered in one place.
         """
         if not auth_type or not auth_data:
@@ -75,9 +75,8 @@ class CollectionAuthMixin:
 
         # Use the embedded "type" key when available; fall back to the
         # auth_type column stored alongside the blob.
-        from equinox.auth.factory import auth_from_dict
-        t = d.get("type", auth_type)
-        return auth_from_dict(t, d)
+        from equinox.auth import auth_from_dict
+        return auth_from_dict(auth_type, d)
 
     # ── Collection-level auth ─────────────────────────────────────────
 

@@ -6,8 +6,8 @@ from unittest.mock import Mock
 
 import pytest
 
-from equinox.auth.api_key import APIKeyAuth, _VALID_LOCATIONS
-from equinox.auth.base import _MAX_CREDENTIAL_LENGTH
+from equinox.auth._base import _MAX_CREDENTIAL_LENGTH
+from equinox.auth._api_key import _VALID_LOCATIONS, APIKeyAuth
 from equinox.core.exceptions import AuthError
 
 
@@ -157,14 +157,15 @@ class TestAPIKeyAuthApply:
 
     def test_header_location_logged(self, caplog):
         auth = _make(key="X-Api-Key", value="tok", location="header")
-        with caplog.at_level(logging.DEBUG, logger="equinox.auth.api_key"):
+        with caplog.at_level(logging.DEBUG, logger="equinox.auth._api_key"):
             auth.apply(_request_with_params({}), {})
+        print(caplog.records)
         assert any("header" in r.message for r in caplog.records)
 
     def test_query_location_logged(self, caplog):
         auth = _make(key="api_key", value="tok", location="query")
         req = _request_with_params({})
-        with caplog.at_level(logging.DEBUG, logger="equinox.auth.api_key"):
+        with caplog.at_level(logging.DEBUG, logger="equinox.auth._api_key"):
             auth.apply(req, {})
         assert any("query" in r.message for r in caplog.records)
 

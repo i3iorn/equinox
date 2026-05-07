@@ -232,7 +232,7 @@ class OAuthClientManager:
 
     def to_oauth2_auth(self, client: Dict[str, Any]) -> "OAuth2Auth":
         """Build a live :class:`~equinox.auth.oauth2.OAuth2Auth` from a client row."""
-        from equinox.auth.oauth2 import OAuth2Auth
+        from equinox.auth._oauth2 import OAuth2Auth
         return OAuth2Auth(
             token_url=client["token_url"],
             client_id=client["client_id"],

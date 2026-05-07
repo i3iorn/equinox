@@ -20,11 +20,10 @@ from unittest.mock import MagicMock, Mock, patch, PropertyMock
 import httpx
 import pytest
 
-from equinox.auth.api_key import APIKeyAuth
-from equinox.auth.aws_sigv4 import AWSSigV4Auth
-from equinox.auth.base import AuthStrategy, _validate_credential
-from equinox.auth.factory import AUTH_REGISTRY, auth_from_dict
-from equinox.auth.oauth2 import OAuth2Auth, _DEFAULT_TOKEN_EXPIRY_SECONDS
+from equinox.auth import (
+    auth_from_dict, APIKeyAuth, AWSSigV4Auth, AuthStrategy
+)
+from equinox.auth._oauth2 import OAuth2Auth
 from equinox.core.exceptions import AuthError
 
 
@@ -363,7 +362,7 @@ class TestOAuth2Coverage:
 
     # ── Lines 396-437: transport errors, retries, connection refused ──────
 
-    @patch("equinox.auth.oauth2.httpx.Client")
+    @patch("equinox.auth._oauth2.httpx.Client")
     def test_http_status_error_no_retry(self, mock_client_class):
         """Lines 396-402: HTTPStatusError → immediate AuthError, no retry."""
         mock_client = MagicMock()
@@ -383,8 +382,8 @@ class TestOAuth2Coverage:
         with pytest.raises(AuthError, match="HTTP 400"):
             auth._refresh_access_token()
 
-    @patch("equinox.auth.oauth2.time.sleep")
-    @patch("equinox.auth.oauth2.httpx.Client")
+    @patch("equinox.auth._oauth2.time.sleep")
+    @patch("equinox.auth._oauth2.httpx.Client")
     def test_transport_error_retries_then_fails(self, mock_client_class, mock_sleep):
         """Lines 403-437: transient TransportError retried then raises."""
         mock_client = MagicMock()
@@ -401,7 +400,7 @@ class TestOAuth2Coverage:
         # Should have retried (3 attempts total, sleep called between)
         assert mock_sleep.call_count == 2  # 2 waits between 3 attempts
 
-    @patch("equinox.auth.oauth2.httpx.Client")
+    @patch("equinox.auth._oauth2.httpx.Client")
     def test_connection_refused_skips_retries(self, mock_client_class):
         """Lines 407-419: ConnectError with 'connection refused' skips retries."""
         mock_client = MagicMock()
@@ -420,7 +419,7 @@ class TestOAuth2Coverage:
         # Only 1 attempt — no retries for connection refused
         assert mock_client.post.call_count == 1
 
-    @patch("equinox.auth.oauth2.httpx.Client")
+    @patch("equinox.auth._oauth2.httpx.Client")
     def test_timeout_error_retries(self, mock_client_class):
         """TimeoutException is also retried."""
         mock_client = MagicMock()
@@ -445,13 +444,13 @@ class TestOAuth2Coverage:
             client_secret="s",
             token_url="https://auth.example.com/token",
         )
-        with patch("equinox.auth.oauth2.time.sleep"):
+        with patch("equinox.auth._oauth2.time.sleep"):
             auth._refresh_access_token()
         assert auth.access_token == "recovered-tok"
 
     # ── Lines 450-454: invalid JSON from token endpoint ───────────────────
 
-    @patch("equinox.auth.oauth2.httpx.Client")
+    @patch("equinox.auth._oauth2.httpx.Client")
     def test_apply_token_response_invalid_json(self, mock_client_class):
         """Lines 450-454: AuthError when token endpoint returns non-JSON."""
         mock_client = MagicMock()
@@ -475,7 +474,7 @@ class TestOAuth2Coverage:
 
     # ── Line 458: no access_token in response ─────────────────────────────
 
-    @patch("equinox.auth.oauth2.httpx.Client")
+    @patch("equinox.auth._oauth2.httpx.Client")
     def test_apply_token_response_missing_access_token(self, mock_client_class):
         """Line 458: AuthError when response body lacks access_token."""
         mock_client = MagicMock()
@@ -499,7 +498,7 @@ class TestOAuth2Coverage:
 
     # ── Lines 492-493: invalid refresh token in response ──────────────────
 
-    @patch("equinox.auth.oauth2.httpx.Client")
+    @patch("equinox.auth._oauth2.httpx.Client")
     def test_invalid_refresh_token_from_endpoint_kept_old(self, mock_client_class):
         """Lines 492-493: CRLF in refresh_token from server → keep old one."""
         mock_client = MagicMock()
@@ -669,7 +668,7 @@ class TestOAuth2Coverage:
 
     # ── Proxy attribute ───────────────────────────────────────────────────
 
-    @patch("equinox.auth.oauth2.httpx.Client")
+    @patch("equinox.auth._oauth2.httpx.Client")
     def test_proxy_passed_to_token_request(self, mock_client_class):
         """Line 384: proxy kwarg passed to httpx.Client."""
         mock_client = MagicMock()

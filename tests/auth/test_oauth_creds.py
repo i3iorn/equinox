@@ -138,7 +138,7 @@ class TestOAuthClientManager:
                                 client_id='cid', client_secret='csec', scope='openid')
         client = mgr.get_client(cid)
         auth_obj = mgr.to_oauth2_auth(client)
-        from equinox.auth.oauth2 import OAuth2Auth
+        from equinox.auth._oauth2 import OAuth2Auth
         assert isinstance(auth_obj, OAuth2Auth)
         assert auth_obj.token_url == 'https://auth.com/token'
         assert auth_obj.client_id == 'cid'

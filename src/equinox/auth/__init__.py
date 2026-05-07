@@ -76,9 +76,7 @@ from equinox.auth._api_key import APIKeyAuth
 from equinox.auth._basic import BasicAuth
 from equinox.auth._oauth2 import OAuth2Auth
 from equinox.auth._aws_sigv4 import AWSSigV4Auth
-
-if TYPE_CHECKING:
-    from equinox.auth._factory import AUTH_REGISTRY
+from equinox.auth._factory import AUTH_REGISTRY, get_auth_types, get_auth_type_labels, auth_from_dict
 
 __all__ = [
     "AuthStrategy",
@@ -90,28 +88,9 @@ __all__ = [
     "auth_from_dict",
     "get_auth_type",
     "list_auth_types",
+    "get_auth_types",
+    "get_auth_type_labels"
 ]
-
-
-def auth_from_dict(data: Dict[str, Any]) -> AuthStrategy:
-    """Deserialize an AuthStrategy from a dictionary.
-
-    Args:
-        data: Dictionary with "type" key and auth-specific fields.
-
-    Returns:
-        Deserialized AuthStrategy instance
-
-    Raises:
-        ValueError: If auth type is unknown
-    """
-    from equinox.auth._factory import auth_from_dict as _auth_from_dict
-
-    auth_type = data["type"]
-    auth = _auth_from_dict(auth_type, data)
-    if auth is None:
-        raise ValueError(f"Failed to deserialize auth type: {auth_type!r}")
-    return auth
 
 
 def get_auth_type(name: str) -> Type[AuthStrategy]:

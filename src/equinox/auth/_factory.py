@@ -16,6 +16,8 @@ Display names and labels are derived from the classes themselves
 import logging
 from typing import Any, Callable, Dict, Optional, Type
 
+from equinox.core.exceptions import AuthError
+
 logger = logging.getLogger(__name__)
 
 
@@ -76,7 +78,7 @@ AUTH_TYPE_ORDER: tuple = ("basic", "bearer", "oauth2", "api_key", "aws_sigv4")
 # Public API
 # ---------------------------------------------------------------------------
 
-def auth_from_dict(auth_type: str, data: Dict[str, Any], **kwargs: Any) -> Optional[Any]:
+def auth_from_dict(*args, **kwargs) -> Optional[Any]:
     """Return an auth object reconstructed from *auth_type* and *data*.
 
     Accepts both short type names (``"bearer"``) and class names
@@ -85,6 +87,23 @@ def auth_from_dict(auth_type: str, data: Dict[str, Any], **kwargs: Any) -> Optio
     Raises:
         ValueError: If the type is not in :data:`AUTH_REGISTRY`.
     """
+    if len(args) == 1:
+        arg = args[0]
+        if isinstance(arg, str):
+            auth_type = arg
+        elif isinstance(arg, dict):
+            auth_type = arg["type"]
+            data = arg
+        else:
+            raise AuthError(f"Invalid arguments to auth_from_dict: expected (auth_type) or (data)\ngot {type(args)}")
+    elif len(args) == 2:
+        auth_type, data = args
+        if not isinstance(auth_type, str) or not isinstance(data, dict):
+            raise AuthError("Invalid arguments to auth_from_dict: expected (auth_type, data)")
+    else:
+        raise AuthError("Invalid arguments to auth_from_dict: expected (auth_type) or (data)")
+
+
     loader = AUTH_REGISTRY.get(auth_type)
     if loader is None:
         logger.warning("Unknown auth type in auth_from_dict: %s", auth_type)

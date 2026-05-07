@@ -5,7 +5,7 @@ from typing import Optional
 import pytest
 from unittest.mock import MagicMock
 
-from equinox.auth.base import AuthStrategy
+from equinox.auth import AuthStrategy
 from equinox.core.client.auth_applier import (
     AuthApplier,
     _is_proxy_connection_refused,

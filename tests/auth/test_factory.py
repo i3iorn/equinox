@@ -1,15 +1,13 @@
-"""100% coverage tests for equinox.auth.factory"""
+"""100% coverage tests for equinox.auth._factory"""
 
 import logging
 import pytest
 from unittest.mock import MagicMock, patch
 
-from equinox.auth.factory import AUTH_REGISTRY, auth_from_dict
-from equinox.auth.bearer import BearerAuth
-from equinox.auth.basic import BasicAuth
-from equinox.auth.api_key import APIKeyAuth
-from equinox.auth.oauth2 import OAuth2Auth
-from equinox.auth.aws_sigv4 import AWSSigV4Auth
+from equinox.auth import (
+    AUTH_REGISTRY, auth_from_dict,  BearerAuth, BasicAuth,
+    APIKeyAuth, OAuth2Auth, AWSSigV4Auth
+)
 
 
 # ---------------------------------------------------------------------------
@@ -75,23 +73,23 @@ class TestLazyImportHelpers:
     """Exercise each private loader directly to guarantee import coverage."""
 
     def test_get_bearer_returns_bearer_auth(self):
-        from equinox.auth.factory import _get_bearer
+        from equinox.auth._factory import _get_bearer
         assert _get_bearer() is BearerAuth
 
     def test_get_basic_returns_basic_auth(self):
-        from equinox.auth.factory import _get_basic
+        from equinox.auth._factory import _get_basic
         assert _get_basic() is BasicAuth
 
     def test_get_api_key_returns_api_key_auth(self):
-        from equinox.auth.factory import _get_api_key
+        from equinox.auth._factory import _get_api_key
         assert _get_api_key() is APIKeyAuth
 
     def test_get_oauth2_returns_oauth2_auth(self):
-        from equinox.auth.factory import _get_oauth2
+        from equinox.auth._factory import _get_oauth2
         assert _get_oauth2() is OAuth2Auth
 
     def test_get_aws_sigv4_returns_aws_sigv4_auth(self):
-        from equinox.auth.factory import _get_aws_sigv4
+        from equinox.auth._factory import _get_aws_sigv4
         assert _get_aws_sigv4() is AWSSigV4Auth
 
 
@@ -196,7 +194,7 @@ class TestAuthFromDictUnknownType:
             auth_from_dict("", {})
 
     def test_logs_warning_for_unknown_type(self, caplog):
-        with caplog.at_level(logging.WARNING, logger="equinox.auth.factory"):
+        with caplog.at_level(logging.WARNING, logger="equinox.auth._factory"):
             with pytest.raises(ValueError):
                 auth_from_dict("not_a_type", {})
         assert "Unknown auth type" in caplog.text
@@ -214,7 +212,7 @@ class TestAuthFromDictFromDictFailure:
         assert result is None
 
     def test_logs_error_when_from_dict_raises(self, caplog):
-        with caplog.at_level(logging.ERROR, logger="equinox.auth.factory"):
+        with caplog.at_level(logging.ERROR, logger="equinox.auth._factory"):
             with patch.dict(AUTH_REGISTRY, {"bad_type": lambda: _make_failing_class()}):
                 result = auth_from_dict("bad_type", {})
         assert result is None

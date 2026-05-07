@@ -8,12 +8,11 @@ import pytest
 from unittest.mock import Mock, MagicMock, patch
 from datetime import datetime, timedelta, timezone
 
-from equinox.auth.bearer import BearerAuth
-from equinox.auth.api_key import APIKeyAuth
-from equinox.auth.basic import BasicAuth
-from equinox.auth.oauth2 import OAuth2Auth
-from equinox.auth.aws_sigv4 import AWSSigV4Auth
-from equinox.auth.base import _validate_credential, _MAX_CREDENTIAL_LENGTH
+from equinox.auth import (
+    BearerAuth, BasicAuth,
+    APIKeyAuth, OAuth2Auth, AWSSigV4Auth
+)
+from equinox.auth._base import _validate_credential, _MAX_CREDENTIAL_LENGTH
 from equinox.core.exceptions import AuthError
 
 
@@ -238,7 +237,7 @@ class TestOAuth2AuthSecurity:
         auth = OAuth2Auth(client_id="c", storage_key="custom-key")
         assert auth.storage_key == "custom-key"
 
-    @patch("equinox.auth.oauth2.httpx.Client")
+    @patch("equinox.auth._oauth2.httpx.Client")
     def test_expires_in_float_string_handled(self, mock_client_class):
         """Token endpoint returning expires_in as '3600.5' should not crash."""
         mock_client = MagicMock()
@@ -262,7 +261,7 @@ class TestOAuth2AuthSecurity:
         assert auth.access_token == "tok"
         assert auth.expires_at is not None
 
-    @patch("equinox.auth.oauth2.httpx.Client")
+    @patch("equinox.auth._oauth2.httpx.Client")
     def test_expires_in_non_numeric_uses_default(self, mock_client_class):
         """Token endpoint returning expires_in as 'invalid' should use default."""
         mock_client = MagicMock()
@@ -286,7 +285,7 @@ class TestOAuth2AuthSecurity:
         assert auth.access_token == "tok"
         assert auth.expires_at is not None
 
-    @patch("equinox.auth.oauth2.httpx.Client")
+    @patch("equinox.auth._oauth2.httpx.Client")
     def test_expires_in_negative_uses_default(self, mock_client_class):
         """Token endpoint returning negative expires_in should use default."""
         mock_client = MagicMock()
@@ -309,7 +308,7 @@ class TestOAuth2AuthSecurity:
         auth.apply(Mock(), headers)
         assert auth.access_token == "tok"
 
-    @patch("equinox.auth.oauth2.httpx.Client")
+    @patch("equinox.auth._oauth2.httpx.Client")
     def test_crlf_in_access_token_from_server_rejected(self, mock_client_class):
         """Access token with CRLF from a malicious server must be rejected."""
         mock_client = MagicMock()

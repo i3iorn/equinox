@@ -9,8 +9,9 @@ from pathlib import Path
 from typing import Optional
 
 from PyQt6.QtCore import Qt, QTimer, QSettings, QByteArray, QEvent, QPoint
-from PyQt6.QtGui import QAction, QKeySequence
+from PyQt6.QtGui import QAction, QKeySequence, QMouseEvent
 from PyQt6.QtWidgets import (
+    QApplication,
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QSplitter,
     QTabWidget, QStatusBar, QToolButton, QMenu, QLabel,
     QMessageBox, QFileDialog, QInputDialog, QProgressDialog,
@@ -49,6 +50,7 @@ _MIN_RESP_H         = 120
 _MIN_LEFT_W         = 180
 _SPLITTER_HANDLE_W  = 5
 _STATUS_TIMEOUT_MS  = 10_000
+_MAX_RESIZE_BORDER_PX = 14
 
 # QSettings keys — defined once, shared between _save_layout and _restore_layout.
 _KEY_GEOMETRY       = "window/geometry"
@@ -72,14 +74,22 @@ class MainWindow(QMainWindow):
         self._drag_menu_active = False
         self._drag_menu_offset = QPoint()
         self._resize_active = False
+        self._drag_handles: set = set()
+        self._app_event_filter_installed = False
         self._settings = QSettings(_SETTINGS_KEY, _SETTINGS_KEY)
         self._intelligence_worker = None  # keep reference to avoid GC
         self._background_workers = set()
         self._pending_panel_refreshes: set = set()
         self.setWindowTitle("Equinox — API Testing")
         self.setGeometry(_WINDOW_X, _WINDOW_Y, _WINDOW_W, _WINDOW_H)
-        self.setWindowFlags(Qt.WindowType.FramelessWindowHint)
+        # Preserve existing top-level flags and only add frameless behavior.
+        self.setWindowFlag(Qt.WindowType.FramelessWindowHint, True)
         self.setMouseTracking(True)
+
+        app = QApplication.instance()
+        if app is not None:
+            app.installEventFilter(self)
+            self._app_event_filter_installed = True
 
         # Debounce splitter-drag saves: only flush to disk 350 ms after the
         # user *stops* dragging, instead of on every pixel movement.
@@ -182,6 +192,11 @@ class MainWindow(QMainWindow):
             self._intelligence_worker = None
         self._layout_save_timer.stop()  # cancel any pending debounced write
         self._save_layout()
+        if self._app_event_filter_installed:
+            app = QApplication.instance()
+            if app is not None:
+                app.removeEventFilter(self)
+            self._app_event_filter_installed = False
         logger.info("MainWindow closed successfully")
         super().closeEvent(event)
 
@@ -839,6 +854,7 @@ class MainWindow(QMainWindow):
         menubar.setCornerWidget(title_container, Qt.Corner.TopLeftCorner)
         title_container.installEventFilter(self)
         self._menu_title_label.installEventFilter(self)
+        self._drag_handles.update({menubar, title_container, self._menu_title_label})
 
         container = QWidget(menubar)
         layout = QHBoxLayout(container)
@@ -868,7 +884,14 @@ class MainWindow(QMainWindow):
 
     def eventFilter(self, watched, event):  # type: ignore[override]
         """Enable dragging the frameless window from empty menu-bar/title area."""
-        if event.type() == QEvent.Type.MouseButtonPress and event.button() == Qt.MouseButton.LeftButton:
+        if self._handle_frameless_resize_event(watched, event):
+            return True
+
+        if (
+            watched in self._drag_handles
+            and event.type() == QEvent.Type.MouseButtonPress
+            and event.button() == Qt.MouseButton.LeftButton
+        ):
             menu_bar = self.menuBar()
             if watched is menu_bar:
                 action = menu_bar.actionAt(event.pos())
@@ -880,13 +903,18 @@ class MainWindow(QMainWindow):
                 self._drag_menu_offset = event.globalPosition().toPoint() - self.frameGeometry().topLeft()
             return False
 
-        if event.type() == QEvent.Type.MouseMove and self._drag_menu_active:
-            if event.buttons() != Qt.MouseButton.NoButton:
+        if watched in self._drag_handles and event.type() == QEvent.Type.MouseMove and self._drag_menu_active:
+            pressed_buttons = {b.value for b in event.buttons()}
+            if Qt.MouseButton.LeftButton.value in pressed_buttons:
                 self.move(event.globalPosition().toPoint() - self._drag_menu_offset)
                 return True
             self._drag_menu_active = False
 
-        if event.type() == QEvent.Type.MouseButtonRelease and event.button() == Qt.MouseButton.LeftButton:
+        if (
+            watched in self._drag_handles
+            and event.type() == QEvent.Type.MouseButtonRelease
+            and event.button() == Qt.MouseButton.LeftButton
+        ):
             self._drag_menu_active = False
 
         return super().eventFilter(watched, event)
@@ -1395,19 +1423,30 @@ class MainWindow(QMainWindow):
         y = pos.y()
         w = self.width()
         h = self.height()
+        border_px = self._effective_resize_border_px()
 
         edges = Qt.Edge(0)
-        if x <= _RESIZE_BORDER_PX:
+        if x <= border_px:
             edges |= Qt.Edge.LeftEdge
-        elif x >= w - _RESIZE_BORDER_PX:
+        elif x >= w - border_px:
             edges |= Qt.Edge.RightEdge
 
-        if y <= _RESIZE_BORDER_PX:
+        if y <= border_px:
             edges |= Qt.Edge.TopEdge
-        elif y >= h - _RESIZE_BORDER_PX:
+        elif y >= h - border_px:
             edges |= Qt.Edge.BottomEdge
 
         return edges
+
+    def _effective_resize_border_px(self) -> int:
+        """Scale resize hit target for high-DPI displays while keeping sane bounds."""
+        ratio = 1.0
+        try:
+            ratio = float(self.devicePixelRatioF())
+        except Exception:
+            ratio = 1.0
+        scaled = int(round(_RESIZE_BORDER_PX * max(1.0, ratio)))
+        return max(_RESIZE_BORDER_PX, min(_MAX_RESIZE_BORDER_PX, scaled))
 
     def _can_resize_frameless(self) -> bool:
         """Frameless resize is enabled only in normal windowed mode."""
@@ -1437,6 +1476,47 @@ class MainWindow(QMainWindow):
             return
         edges = self._resize_edges_for_pos(pos)
         self.setCursor(self._cursor_for_edges(edges))
+
+    def _update_resize_cursor_from_global(self, global_pos: QPoint) -> None:
+        """Update resize cursor from a global point emitted by child widgets."""
+        self._update_resize_cursor(self.mapFromGlobal(global_pos))
+
+    def _handle_frameless_resize_event(self, watched, event) -> bool:
+        """Handle resize/cursor behavior for this window from child widget events."""
+        if not isinstance(event, QMouseEvent):
+            return False
+        if not isinstance(watched, QWidget):
+            return False
+        if watched.window() is not self:
+            return False
+
+        if event.type() == QEvent.Type.MouseMove:
+            self._update_resize_cursor_from_global(event.globalPosition().toPoint())
+            return False
+
+        if (
+            event.type() == QEvent.Type.MouseButtonPress
+            and event.button() == Qt.MouseButton.LeftButton
+            and self._can_resize_frameless()
+            and not self._drag_menu_active
+        ):
+            local_pos = self.mapFromGlobal(event.globalPosition().toPoint())
+            edges = self._resize_edges_for_pos(local_pos)
+            if edges:
+                handle = self.windowHandle()
+                if handle is not None and handle.startSystemResize(edges):
+                    self._resize_active = True
+                    event.accept()
+                    return True
+
+        if (
+            event.type() == QEvent.Type.MouseButtonRelease
+            and event.button() == Qt.MouseButton.LeftButton
+        ):
+            self._resize_active = False
+            self._update_resize_cursor_from_global(event.globalPosition().toPoint())
+
+        return False
 
     def mousePressEvent(self, event) -> None:  # type: ignore[override]
         if (

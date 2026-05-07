@@ -198,14 +198,12 @@ def build_stylesheet(base_pt: int, colors: dict[str, str]) -> str:
         background: {c["BG_ALT"]};
         border: none;
         border-bottom: 1px solid {c["BORDER"]};
-        border-right: 1px solid {c["BORDER"]};
         padding: 4px 8px;
         font-weight: bold;
         font-size: {sm}pt;
         color: {c["FG_MUTED"]};
     }}
     QTreeWidget, QListWidget {{
-        border: 1px solid {c["BORDER"]};
         background: {c["BG"]};
         alternate-background-color: {c["BG_ALT"]};
         color: {c["FG"]};
@@ -224,7 +222,7 @@ def build_stylesheet(base_pt: int, colors: dict[str, str]) -> str:
 
     /* -- Splitter -- */
     QSplitter::handle {{
-        background: {c["BORDER"]};
+        background: None;
     }}
     QSplitter::handle:horizontal {{
         width: 1px;

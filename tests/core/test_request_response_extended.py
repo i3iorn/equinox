@@ -4,9 +4,7 @@ import pytest
 import json
 from datetime import datetime, timezone
 from equinox.core.request import Request, Response
-from equinox.auth.bearer import BearerAuth
-from equinox.auth.basic import BasicAuth
-from equinox.auth.api_key import APIKeyAuth
+from equinox.auth import BearerAuth, BasicAuth, APIKeyAuth
 
 
 class TestRequestModel:

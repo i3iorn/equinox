@@ -697,7 +697,7 @@ class TestOAuth2AutoFetch:
 
     def test_needs_refresh_when_no_token(self):
         """OAuth2Auth with no access_token must need refresh."""
-        from equinox.auth.oauth2 import OAuth2Auth
+        from equinox.auth._oauth2 import OAuth2Auth
         auth = OAuth2Auth(
             token_url="https://auth.example.com/token",
             client_id="cid",
@@ -708,7 +708,7 @@ class TestOAuth2AutoFetch:
 
     def test_no_refresh_when_token_present_no_expiry(self):
         """OAuth2Auth with existing token and no expiry should NOT refresh."""
-        from equinox.auth.oauth2 import OAuth2Auth
+        from equinox.auth._oauth2 import OAuth2Auth
         auth = OAuth2Auth(
             token_url="https://auth.example.com/token",
             client_id="cid",
@@ -720,7 +720,7 @@ class TestOAuth2AutoFetch:
     def test_default_expiry_set_after_fetch(self):
         """When token endpoint omits expires_in, a default expiry is set."""
         from unittest.mock import patch, Mock, MagicMock
-        from equinox.auth.oauth2 import OAuth2Auth
+        from equinox.auth._oauth2 import OAuth2Auth
 
         auth = OAuth2Auth(
             token_url="https://auth.example.com/token",
@@ -736,7 +736,7 @@ class TestOAuth2AutoFetch:
             "token_type": "Bearer",
             # NO expires_in
         }
-        with patch("equinox.auth.oauth2.httpx.Client") as mock_client_class:
+        with patch("equinox.auth._oauth2.httpx.Client") as mock_client_class:
             mock_client = MagicMock()
             mock_client_class.return_value.__enter__.return_value = mock_client
             mock_client.post.return_value = mock_resp
@@ -752,7 +752,7 @@ class TestOAuth2AutoFetch:
         from equinox.core.client import HTTPClient
         from equinox.core.request import Request
         from equinox.core.exceptions import RequestError
-        from equinox.auth.oauth2 import OAuth2Auth
+        from equinox.auth._oauth2 import OAuth2Auth
 
         auth = OAuth2Auth(
             token_url="https://will-not-resolve.invalid/token",

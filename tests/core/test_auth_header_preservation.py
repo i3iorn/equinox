@@ -1,7 +1,7 @@
 import pytest
 from equinox.core.client import HTTPClient
 from equinox.core.request import Request
-from equinox.auth.base import AuthStrategy
+from equinox.auth import AuthStrategy
 
 class DummyAuth(AuthStrategy):
     AUTH_TYPE = "dummy"

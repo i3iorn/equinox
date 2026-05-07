@@ -85,7 +85,7 @@ def _mock_response(status=200, body=b'{"ok":true}', method="GET",
 class TestOAuth2Coverage:
 
     def test_repr_with_long_token(self):
-        from equinox.auth.oauth2 import OAuth2Auth
+        from equinox.auth._oauth2 import OAuth2Auth
         auth = OAuth2Auth(client_id="cid", access_token="a" * 20)
         r = repr(auth)
         # Token value must NOT appear — only a safe status label
@@ -93,12 +93,12 @@ class TestOAuth2Coverage:
         assert "present" in r
 
     def test_repr_without_token(self):
-        from equinox.auth.oauth2 import OAuth2Auth
+        from equinox.auth._oauth2 import OAuth2Auth
         auth = OAuth2Auth(client_id="cid")
         assert "None" in repr(auth)
 
     def test_get_token_info(self):
-        from equinox.auth.oauth2 import OAuth2Auth
+        from equinox.auth._oauth2 import OAuth2Auth
         auth = OAuth2Auth(client_id="cid", access_token="tok12345678",
                           refresh_token="rt")
         info = auth.get_token_info()
@@ -106,32 +106,32 @@ class TestOAuth2Coverage:
         assert info["needs_refresh"] is False  # has token, no expiry
 
     def test_get_token_info_no_token(self):
-        from equinox.auth.oauth2 import OAuth2Auth
+        from equinox.auth._oauth2 import OAuth2Auth
         auth = OAuth2Auth(client_id="cid")
         info = auth.get_token_info()
         assert info["needs_refresh"] is True
         assert info["access_token"] == "None"
 
     def test_parse_expires_at_valid_iso(self):
-        from equinox.auth.oauth2 import OAuth2Auth
+        from equinox.auth._oauth2 import OAuth2Auth
         result = OAuth2Auth._parse_expires_at("2025-06-01T12:00:00")
         assert isinstance(result, datetime)
         assert result.tzinfo is None
 
     def test_parse_expires_at_with_tz(self):
-        from equinox.auth.oauth2 import OAuth2Auth
+        from equinox.auth._oauth2 import OAuth2Auth
         result = OAuth2Auth._parse_expires_at("2025-06-01T12:00:00+00:00")
         assert result is not None
         assert result.tzinfo is None  # stripped to naive
 
     def test_parse_expires_at_invalid(self):
-        from equinox.auth.oauth2 import OAuth2Auth
+        from equinox.auth._oauth2 import OAuth2Auth
         assert OAuth2Auth._parse_expires_at("not-a-date") is None
         assert OAuth2Auth._parse_expires_at(None) is None
         assert OAuth2Auth._parse_expires_at("") is None
 
     def test_build_grant_data_refresh_token(self):
-        from equinox.auth.oauth2 import OAuth2Auth
+        from equinox.auth._oauth2 import OAuth2Auth
         auth = OAuth2Auth(
             token_url="https://x.com/token", client_id="c", client_secret="s",
             refresh_token="rt", scope="read",
@@ -142,7 +142,7 @@ class TestOAuth2Coverage:
         assert data["scope"] == "read"
 
     def test_build_grant_data_client_credentials(self):
-        from equinox.auth.oauth2 import OAuth2Auth
+        from equinox.auth._oauth2 import OAuth2Auth
         auth = OAuth2Auth(
             token_url="https://x.com/token", client_id="c", client_secret="s",
         )
@@ -150,19 +150,19 @@ class TestOAuth2Coverage:
         assert data["grant_type"] == "client_credentials"
 
     def test_build_grant_data_no_credentials(self):
-        from equinox.auth.oauth2 import OAuth2Auth
+        from equinox.auth._oauth2 import OAuth2Auth
         auth = OAuth2Auth(token_url="https://x.com/token")
         with pytest.raises(AuthError, match="No refresh token"):
             auth._build_grant_data()
 
     def test_refresh_access_token_no_url(self):
-        from equinox.auth.oauth2 import OAuth2Auth
+        from equinox.auth._oauth2 import OAuth2Auth
         auth = OAuth2Auth(client_id="c", client_secret="s")
         with pytest.raises(AuthError, match="No token URL"):
             auth._refresh_access_token()
 
     def test_apply_token_response_no_access_token(self):
-        from equinox.auth.oauth2 import OAuth2Auth
+        from equinox.auth._oauth2 import OAuth2Auth
         mock_resp = Mock()
         mock_resp.json.return_value = {"token_type": "Bearer"}
         mock_resp.raise_for_status = Mock()
@@ -172,7 +172,7 @@ class TestOAuth2Coverage:
             auth._apply_token_response(mock_resp)
 
     def test_apply_token_response_invalid_json(self):
-        from equinox.auth.oauth2 import OAuth2Auth
+        from equinox.auth._oauth2 import OAuth2Auth
         mock_resp = Mock()
         mock_resp.json.side_effect = ValueError("bad json")
 
@@ -181,7 +181,7 @@ class TestOAuth2Coverage:
             auth._apply_token_response(mock_resp)
 
     def test_apply_token_response_with_refresh_token(self):
-        from equinox.auth.oauth2 import OAuth2Auth
+        from equinox.auth._oauth2 import OAuth2Auth
         mock_resp = Mock()
         mock_resp.json.return_value = {
             "access_token": "new",
@@ -196,7 +196,7 @@ class TestOAuth2Coverage:
         assert auth.expires_at is not None
 
     def test_apply_token_response_default_expiry(self):
-        from equinox.auth.oauth2 import OAuth2Auth
+        from equinox.auth._oauth2 import OAuth2Auth
         mock_resp = Mock()
         mock_resp.json.return_value = {"access_token": "tok"}
         mock_resp.raise_for_status = Mock()
@@ -205,25 +205,25 @@ class TestOAuth2Coverage:
         assert auth.expires_at is not None  # default expiry set
 
     def test_needs_refresh_expiring_soon(self):
-        from equinox.auth.oauth2 import OAuth2Auth
+        from equinox.auth._oauth2 import OAuth2Auth
         auth = OAuth2Auth(client_id="c", access_token="tok")
         auth.expires_at = datetime.now(timezone.utc).replace(tzinfo=None) + timedelta(seconds=5)
         assert auth._needs_refresh() is True  # within 30s buffer
 
     def test_needs_refresh_not_expiring(self):
-        from equinox.auth.oauth2 import OAuth2Auth
+        from equinox.auth._oauth2 import OAuth2Auth
         auth = OAuth2Auth(client_id="c", access_token="tok")
         auth.expires_at = datetime.now(timezone.utc).replace(tzinfo=None) + timedelta(hours=1)
         assert auth._needs_refresh() is False
 
     def test_needs_refresh_tz_aware_expires_at(self):
-        from equinox.auth.oauth2 import OAuth2Auth
+        from equinox.auth._oauth2 import OAuth2Auth
         auth = OAuth2Auth(client_id="c", access_token="tok")
         auth.expires_at = datetime.now(timezone.utc) + timedelta(seconds=5)
         assert auth._needs_refresh() is True
 
     def test_load_from_storage(self):
-        from equinox.auth.oauth2 import OAuth2Auth
+        from equinox.auth._oauth2 import OAuth2Auth
         mock_storage = Mock()
         mock_storage.retrieve.return_value = json.dumps({
             "access_token": "stored-tok",
@@ -238,7 +238,7 @@ class TestOAuth2Coverage:
         assert auth.refresh_token == "stored-rt"
 
     def test_load_from_storage_failure(self):
-        from equinox.auth.oauth2 import OAuth2Auth
+        from equinox.auth._oauth2 import OAuth2Auth
         mock_storage = Mock()
         mock_storage.retrieve.side_effect = Exception("disk error")
         # Should not raise — just logs warning
@@ -246,7 +246,7 @@ class TestOAuth2Coverage:
         assert auth.access_token is None
 
     def test_save_to_storage(self):
-        from equinox.auth.oauth2 import OAuth2Auth
+        from equinox.auth._oauth2 import OAuth2Auth
         mock_storage = Mock()
         mock_storage.retrieve.return_value = None
         auth = OAuth2Auth(
@@ -257,7 +257,7 @@ class TestOAuth2Coverage:
         mock_storage.store.assert_called_once()
 
     def test_save_to_storage_failure(self):
-        from equinox.auth.oauth2 import OAuth2Auth
+        from equinox.auth._oauth2 import OAuth2Auth
         mock_storage = Mock()
         mock_storage.retrieve.return_value = None
         mock_storage.store.side_effect = Exception("write error")
@@ -268,9 +268,9 @@ class TestOAuth2Coverage:
         # Should not raise
         auth._save_to_storage()
 
-    @patch("equinox.auth.oauth2.httpx.Client")
+    @patch("equinox.auth._oauth2.httpx.Client")
     def test_post_token_request_http_status_error(self, mock_client_class):
-        from equinox.auth.oauth2 import OAuth2Auth
+        from equinox.auth._oauth2 import OAuth2Auth
         mock_client = MagicMock()
         mock_client_class.return_value.__enter__.return_value = mock_client
         
@@ -288,7 +288,7 @@ class TestOAuth2Coverage:
             auth._post_token_request({"grant_type": "client_credentials"})
 
     def test_to_dict_and_from_dict_round_trip(self):
-        from equinox.auth.oauth2 import OAuth2Auth
+        from equinox.auth._oauth2 import OAuth2Auth
         auth = OAuth2Auth(
             token_url="https://x.com/token", client_id="c", client_secret="s",
             scope="read", access_token="tok", refresh_token="rt",

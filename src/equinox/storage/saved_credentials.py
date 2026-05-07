@@ -4,7 +4,7 @@ Supports any auth type: OAuth2, API Key, Basic Auth, Bearer Token, AWS SigV4.
 Each credential is stored as a name + auth_type discriminator + config JSON blob.
 
 Type lists and display labels are derived from the auth factory registry
-(:mod:`equinox.auth.factory`) — no parallel constants to maintain.
+(:mod:`equinox.auth`) — no parallel constants to maintain.
 """
 import logging
 from typing import Any, Dict, List, Optional
@@ -25,13 +25,13 @@ logger = logging.getLogger(__name__)
 
 def _get_auth_types() -> tuple:
     """Lazy accessor for canonical auth types (avoids circular import)."""
-    from equinox.auth.factory import get_auth_types
+    from equinox.auth import get_auth_types
     return get_auth_types()
 
 
 def _get_auth_type_labels() -> Dict[str, str]:
     """Lazy accessor for auth type display labels (avoids circular import)."""
-    from equinox.auth.factory import get_auth_type_labels
+    from equinox.auth import get_auth_type_labels
     return get_auth_type_labels()
 
 
@@ -290,14 +290,14 @@ class SavedCredentialsManager:
     def to_auth_strategy(self, row: Dict[str, Any]) -> Any:
         """Build a live auth-strategy object from a saved credential row.
 
-        Delegates to the unified :func:`~equinox.auth.factory.auth_from_dict`
+        Delegates to the unified :func:`~equinox.auth.auth_from_dict`
         registry so new auth types only need to be registered in one place.
 
         Raises:
             ValidationError: If *auth_type* is not recognized.
             StorageError: If the credential config is invalid or incomplete.
         """
-        from equinox.auth.factory import auth_from_dict
+        from equinox.auth import auth_from_dict
 
         auth_type = row["auth_type"]
         cfg = row["config"]

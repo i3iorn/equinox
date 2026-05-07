@@ -4,12 +4,9 @@ list filtering, set_default, clear_default, duplicate, to_auth_strategy."""
 import pytest
 
 from equinox.storage.database import Database
-from equinox.storage.saved_credentials import SavedCredentialsManager, AUTH_TYPES
+from equinox.storage.saved_credentials import SavedCredentialsManager
 from equinox.core.exceptions import StorageError, ValidationError
-from equinox.auth.oauth2 import OAuth2Auth
-from equinox.auth.api_key import APIKeyAuth
-from equinox.auth.basic import BasicAuth
-from equinox.auth.bearer import BearerAuth
+from equinox.auth import OAuth2Auth, APIKeyAuth, BasicAuth, BearerAuth
 
 
 @pytest.fixture

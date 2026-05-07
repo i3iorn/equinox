@@ -3,7 +3,7 @@
 import pytest
 from unittest.mock import MagicMock
 
-from equinox.auth.aws_sigv4 import AWSSigV4Auth
+from equinox.auth._aws_sigv4 import AWSSigV4Auth
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────

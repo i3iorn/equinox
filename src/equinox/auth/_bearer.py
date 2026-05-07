@@ -56,7 +56,7 @@ class BearerAuth(AuthStrategy):
             return cls(token=data["token"])
         except KeyError as exc:
             raise AuthError(
-                f"Invalid {cls.__name__} data: missing key {exc}"
+                f"Invalid {cls.__name__} data: missing key {exc}.\nPresent keys {list(data.keys())}"
             ) from exc
 
     # ── Strategy metadata ─────────────────────────────────────────────────────

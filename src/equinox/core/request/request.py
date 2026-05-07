@@ -205,7 +205,7 @@ class Request:
         )
         if "auth" in data and "auth_type" in data:
             try:
-                from equinox.auth.factory import auth_from_dict
+                from equinox.auth import auth_from_dict
                 request.auth = auth_from_dict(data["auth_type"], data["auth"])
             except Exception as exc:
                 logger.exception("Auth reconstruction failed")

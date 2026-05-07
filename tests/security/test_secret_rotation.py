@@ -75,6 +75,6 @@ def test_extra_params_flow_in_oauth2_auth(tmp_path):
     assert auth.extra_params == {"foo": "bar"}
     d = auth.to_dict()
     assert d.get("extra_params") == {"foo": "bar"}
-    from equinox.auth.oauth2 import OAuth2Auth
+    from equinox.auth._oauth2 import OAuth2Auth
     new_auth = OAuth2Auth.from_dict(d)
     assert new_auth.extra_params == {"foo": "bar"}

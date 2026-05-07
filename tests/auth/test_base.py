@@ -3,8 +3,10 @@
 import pytest
 from typing import Any, Dict
 
-from equinox.auth.base import AuthStrategy, _MAX_CREDENTIAL_LENGTH, _validate_credential
-from equinox.core.exceptions import AuthError
+from equinox.auth._base import (
+    AuthStrategy, _MAX_CREDENTIAL_LENGTH, _validate_credential,
+    AuthError
+)
 
 
 # ---------------------------------------------------------------------------

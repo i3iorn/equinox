@@ -182,7 +182,7 @@ class TestHTTPClientAuth:
     
     def test_bearer_auth(self):
         """Test Bearer token auth."""
-        from equinox.auth.bearer import BearerAuth
+        from equinox.auth._bearer import BearerAuth
         auth = BearerAuth(token="test-token-123")
         req = Request(method="GET", url="https://example.com", auth=auth)
         assert req.auth is not None
@@ -190,7 +190,7 @@ class TestHTTPClientAuth:
     
     def test_basic_auth(self):
         """Test Basic authentication."""
-        from equinox.auth.basic import BasicAuth
+        from equinox.auth._basic import BasicAuth
         auth = BasicAuth(username="user", password="pass")
         req = Request(method="GET", url="https://example.com", auth=auth)
         assert req.auth is not None
@@ -199,7 +199,7 @@ class TestHTTPClientAuth:
     def test_api_key_auth(self):
         """Test API Key authentication."""
         try:
-            from equinox.auth.api_key import APIKeyAuth
+            from equinox.auth._api_key import APIKeyAuth
             auth = APIKeyAuth(key="Authorization", value="Bearer token123", location="header")
             req = Request(method="GET", url="https://example.com", auth=auth)
             assert req.auth is not None

@@ -15,7 +15,7 @@ from equinox.storage.database import Database
 from equinox.storage.collections import CollectionManager
 from equinox.storage.saved_credentials import SavedCredentialsManager
 from equinox.auth import BearerAuth, BasicAuth, APIKeyAuth
-from equinox.auth.oauth2 import OAuth2Auth
+from equinox.auth._oauth2 import OAuth2Auth
 from equinox.core.auth_cipher import encrypt_auth_data, decrypt_auth_data
 
 

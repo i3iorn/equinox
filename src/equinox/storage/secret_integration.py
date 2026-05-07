@@ -287,7 +287,7 @@ def create_auth_from_credential_with_secrets(
     Raises:
         StorageError: If secret resolution fails
     """
-    from equinox.auth.factory import auth_from_dict
+    from equinox.auth import auth_from_dict
 
     # Hydrate with secrets
     hydrated = load_credential_with_secrets(credential_row, resolver)
