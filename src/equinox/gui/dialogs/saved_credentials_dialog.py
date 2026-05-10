@@ -20,6 +20,7 @@ from PyQt6.QtWidgets import (
     QTextEdit, QVBoxLayout, QWidget,
 )
 
+from equinox.auth import AUTH_TYPE_LABELS
 from equinox.gui.theme import Colors, get_mono_font
 from equinox.gui.widgets.secret_row import make_secret_row as _secret_row
 from equinox.gui.workers import OAuthTokenTester
@@ -29,9 +30,7 @@ from equinox.gui.dialogs._oauth_form_utils import (
     parse_json_object_field_lenient,
 )
 from equinox.storage import Database
-from equinox.storage.saved_credentials import (
-    AUTH_TYPE_LABELS, AUTH_TYPES, SavedCredentialsManager,
-)
+from equinox.storage.saved_credentials import SavedCredentialsManager
 from equinox.storage.oauth_clients import GRANT_TYPES
 
 logger = logging.getLogger(__name__)
@@ -144,8 +143,8 @@ class SavedCredentialsDialog(DirtyDialogMixin, QDialog):
         self.f_name = QLineEdit()
         self.f_name.setPlaceholderText("My Credential")
         self.f_type = QComboBox()
-        for at in AUTH_TYPES:
-            self.f_type.addItem(AUTH_TYPE_LABELS[at], userData=at)
+        for key, name in AUTH_TYPE_LABELS.items():
+            self.f_type.addItem(name, userData=key)
         self.f_description = QLineEdit()
         self.f_description.setPlaceholderText("Optional description")
         top_form.addRow("Name:*",       self.f_name)

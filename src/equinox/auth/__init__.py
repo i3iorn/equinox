@@ -88,6 +88,7 @@ __all__ = [
     "auth_from_dict",
     "get_auth_type",
     "list_auth_types",
+    "AUTH_TYPE_LABELS"
     "get_auth_types",
     "get_auth_type_labels"
 ]

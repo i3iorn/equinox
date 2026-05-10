@@ -34,18 +34,6 @@ def _get_auth_type_labels() -> Dict[str, str]:
     from equinox.auth import get_auth_type_labels
     return get_auth_type_labels()
 
-
-# Public aliases for backward-compatibility with code that imported these directly.
-AUTH_TYPES = ("oauth2", "api_key", "basic", "bearer", "aws_sigv4")
-
-AUTH_TYPE_LABELS: Dict[str, str] = {
-    "oauth2":    "OAuth 2.0",
-    "api_key":   "API Key",
-    "basic":     "Basic Auth",
-    "bearer":    "Bearer Token",
-    "aws_sigv4": "AWS SigV4",
-}
-
 # Maximum serialized JSON length for a stored config blob.
 _MAX_CONFIG_JSON_LEN: int = 50_000
 
