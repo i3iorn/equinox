@@ -146,8 +146,11 @@ class ScriptRunner:
 
         start_time = time.time()
 
-        q: multiprocessing.Queue = multiprocessing.Queue()
-        p: Optional[multiprocessing.Process] = None
+        try:
+            q: multiprocessing.Queue = multiprocessing.Queue()
+            p: Optional[multiprocessing.Process] = None
+        except Exception as e:
+            return ScriptResult(error=f"Failed to start script execution: {e}", duration=time.time() - start_time)
 
         try:
             p = multiprocessing.Process(
