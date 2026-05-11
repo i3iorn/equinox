@@ -10,11 +10,14 @@ from __future__ import annotations
 
 import base64
 import hashlib
+import logging
 import os
 from pathlib import Path
 from typing import Callable, Optional, cast
 from getpass import getpass
 from cryptography.fernet import Fernet
+
+from equinox.core.config.flags import is_strict_secret_rotation_enabled
 
 _SALT_FILE = Path.home() / ".equinox" / "salt.bin"
 _MASTER_PW_ENV = "EQUINOX_MASTER_PASSWORD"
@@ -25,6 +28,8 @@ _cached_fernet: Optional[Fernet] = None
 _password_prompt_callback: Optional[Callable[[], Optional[str]]] = None
 
 _ENC_PREFIX = "enc:"
+
+logger = logging.getLogger(__name__)
 
 
 def _read_or_create_salt() -> bytes:
@@ -146,9 +151,16 @@ def ensure_master_password_initialized() -> Optional[Fernet]:
             db_path = os.environ.get("EQUINOX_DB_PATH")
             if db_path:
                 rotate_all_secrets(db_path, new_password=get_master_password())
-        except Exception:
-            # Do not fail startup if rotation fails; log and continue.
-            pass
+        except Exception as exc:
+            logger.error(
+                "secret_rotation_startup_failed op=ensure_master_password_initialized db_path=%r",
+                os.environ.get("EQUINOX_DB_PATH"),
+                exc_info=True,
+            )
+            if is_strict_secret_rotation_enabled():
+                raise RuntimeError(
+                    "Startup secret rotation failed while strict mode is enabled"
+                ) from exc
     return f
 
 

@@ -15,6 +15,7 @@ import threading
 from collections import OrderedDict
 from typing import Optional, Tuple
 
+from equinox.core.config.flags import is_ssrf_allow_on_dns_failure_enabled
 from equinox.core.exceptions import ValidationError
 
 __all__ = ["_SsrfGuard"]
@@ -148,12 +149,28 @@ class _SsrfGuard:
                 raise ValidationError(
                     f"Hostname '{original}' resolves to private IP (SSRF protection)"
                 )
-        except (socket.gaierror, OSError):
-            pass   # DNS failure — allow; will fail at connect time.
+        except (socket.gaierror, OSError) as exc:
+            if is_ssrf_allow_on_dns_failure_enabled():
+                _logger.warning(
+                    "SSRF DNS resolution failed, allowing request due to compatibility flag",
+                    extra={"hostname": normalized, "error": str(exc)},
+                )
+                return
+            raise ValidationError(
+                f"Hostname '{original}' could not be resolved safely (SSRF protection)"
+            ) from exc
         except concurrent.futures.TimeoutError:
             if future is not None:
                 future.cancel()
-            # DNS timed out — allow; will fail at connect time.
+            if is_ssrf_allow_on_dns_failure_enabled():
+                _logger.warning(
+                    "SSRF DNS resolution timed out, allowing request due to compatibility flag",
+                    extra={"hostname": normalized, "timeout_seconds": cls._DNS_TIMEOUT},
+                )
+                return
+            raise ValidationError(
+                f"Hostname '{original}' DNS resolution timed out (SSRF protection)"
+            )
 
     @classmethod
     def _get_cached_dns_result(cls, hostname: str) -> Optional[bool]:

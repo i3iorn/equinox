@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 from typing import Any, Dict, List, Optional
 
+from equinox.core.auth_cipher import decrypt_auth_data, encrypt_auth_data
 from equinox.core.exceptions import DuplicateError, StorageError, ValidationError
 from equinox.storage.database import Database
 from equinox.storage.utils import require_str as _require_str, safe_json_dumps, safe_json_loads
@@ -43,6 +44,7 @@ class OAuthClientManager:
     MAX_SECRET_LEN = 2000
     MAX_SCOPE_LEN = 1000
     MAX_DESC_LEN = 1000
+    _ENC_PREFIX = "enc:"
 
     def __init__(self, db: Database) -> None:
         self.db = db
@@ -72,6 +74,7 @@ class OAuthClientManager:
         token_url = _require_str(token_url, "token_url", self.MAX_URL_LEN, required=False)
         client_id = _require_str(client_id, "client_id", self.MAX_ID_LEN, required=False)
         client_secret = _require_str(client_secret, "client_secret", self.MAX_SECRET_LEN, required=False)
+        encrypted_secret = self._encrypt_client_secret(client_secret)
         scope = _require_str(scope, "scope", self.MAX_SCOPE_LEN, required=False)
         description = _require_str(description, "description", self.MAX_DESC_LEN, required=False)
         self._validate_grant_type(grant_type)
@@ -86,7 +89,7 @@ class OAuthClientManager:
                    grant_type, extra_params, description)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                 """,
-                (name, token_url, client_id, client_secret, scope,
+                (name, token_url, client_id, encrypted_secret, scope,
                  grant_type, extra_json, description),
             )
             logger.info("Created OAuth2 client '%s' (id=%d)", name, row_id)
@@ -105,28 +108,28 @@ class OAuthClientManager:
         row = self.db.fetchone(
             "SELECT * FROM oauth_clients WHERE id = ?", (client_id,)
         )
-        return self._decode(row) if row else None
+        return self._decode_and_maybe_migrate(row) if row else None
 
     def get_client_by_name(self, name: str) -> Optional[Dict[str, Any]]:
         """Return client row by name, or None."""
         row = self.db.fetchone(
             "SELECT * FROM oauth_clients WHERE name = ?", (name,)
         )
-        return self._decode(row) if row else None
+        return self._decode_and_maybe_migrate(row) if row else None
 
     def get_default(self) -> Optional[Dict[str, Any]]:
         """Return the default client, or None."""
         row = self.db.fetchone(
             "SELECT * FROM oauth_clients WHERE is_default = 1 LIMIT 1"
         )
-        return self._decode(row) if row else None
+        return self._decode_and_maybe_migrate(row) if row else None
 
     def list_clients(self) -> List[Dict[str, Any]]:
         """Return all clients sorted by name."""
         rows = self.db.fetchall(
             "SELECT * FROM oauth_clients ORDER BY name"
         )
-        return [self._decode(r) for r in rows]
+        return [self._decode_and_maybe_migrate(r) for r in rows]
 
     # ── Update ────────────────────────────────────────────────────────
 
@@ -160,7 +163,8 @@ class OAuthClientManager:
             params.append(_require_str(client_id_val, "client_id", self.MAX_ID_LEN))
         if client_secret is not None:
             updates.append("client_secret = ?")
-            params.append(_require_str(client_secret, "client_secret", self.MAX_SECRET_LEN, required=False))
+            validated_secret = _require_str(client_secret, "client_secret", self.MAX_SECRET_LEN, required=False)
+            params.append(self._encrypt_client_secret(validated_secret))
         if scope is not None:
             updates.append("scope = ?")
             params.append(_require_str(scope, "scope", self.MAX_SCOPE_LEN, required=False))
@@ -241,11 +245,49 @@ class OAuthClientManager:
             extra_params=client.get("extra_params"),
         )
 
-    @staticmethod
-    def _decode(row) -> Dict[str, Any]:
+    def _decode_and_maybe_migrate(self, row) -> Dict[str, Any]:
         d = dict(row)
+        raw_secret = d.get("client_secret")
+        d["client_secret"] = self._decrypt_client_secret(raw_secret)
         d["extra_params"] = safe_json_loads(d.get("extra_params") or "{}", row_id=d.get("id"))
         d["is_default"] = bool(d.get("is_default", 0))
+        if self._is_legacy_plaintext_secret(raw_secret):
+            self._migrate_legacy_client_secret(d["id"], d["client_secret"])
         return d
+
+    @classmethod
+    def _encrypt_client_secret(cls, secret: str) -> str:
+        if not secret:
+            return secret
+        if secret.startswith(cls._ENC_PREFIX):
+            return secret
+        return encrypt_auth_data(secret)
+
+    @classmethod
+    def _decrypt_client_secret(cls, stored: Optional[str]) -> str:
+        if not stored:
+            return ""
+        return decrypt_auth_data(stored)
+
+    @classmethod
+    def _is_legacy_plaintext_secret(cls, stored: Optional[str]) -> bool:
+        return bool(stored and isinstance(stored, str) and not stored.startswith(cls._ENC_PREFIX))
+
+    def _migrate_legacy_client_secret(self, client_id: int, plaintext_secret: str) -> None:
+        encrypted = self._encrypt_client_secret(plaintext_secret)
+        if encrypted == plaintext_secret:
+            return
+        try:
+            self.db.execute(
+                "UPDATE oauth_clients SET client_secret = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+                (encrypted, client_id),
+            )
+            logger.info("Migrated legacy OAuth2 client secret at read-time (id=%d)", client_id)
+        except Exception as exc:
+            logger.warning(
+                "Failed to migrate legacy OAuth2 client secret at read-time (id=%d): %s",
+                client_id,
+                exc,
+            )
 
 

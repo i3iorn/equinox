@@ -1,4 +1,5 @@
 import pytest
+import socket
 
 from equinox.core.exceptions import ValidationError
 from equinox.core.validation._ssrf import _SsrfGuard
@@ -48,4 +49,30 @@ def test_ssrf_dns_cache_reuses_private_resolution(monkeypatch):
         _SsrfGuard.check("internal.test")
 
     assert calls["count"] == 1
+
+
+def test_ssrf_dns_failure_is_blocked_by_default(monkeypatch):
+    _reset_dns_cache()
+    monkeypatch.delenv("EQUINOX_SSRF_ALLOW_ON_DNS_FAILURE", raising=False)
+
+    def _raise_dns(*_args, **_kwargs):
+        raise socket.gaierror("dns down")
+
+    monkeypatch.setattr("equinox.core.validation._ssrf.socket.getaddrinfo", _raise_dns)
+
+    with pytest.raises(ValidationError, match="could not be resolved safely"):
+        _SsrfGuard.check("unresolved.example")
+
+
+def test_ssrf_dns_failure_can_be_allowed_by_compat_flag(monkeypatch):
+    _reset_dns_cache()
+    monkeypatch.setenv("EQUINOX_SSRF_ALLOW_ON_DNS_FAILURE", "1")
+
+    def _raise_dns(*_args, **_kwargs):
+        raise socket.gaierror("dns down")
+
+    monkeypatch.setattr("equinox.core.validation._ssrf.socket.getaddrinfo", _raise_dns)
+
+    _SsrfGuard.check("unresolved.example")
+
 

@@ -1,4 +1,5 @@
 ﻿"""Tests for OAuthClientManager and SavedCredentialsManager."""
+import sqlite3
 import pytest
 from equinox.storage.database import Database
 from equinox.storage.oauth_clients import OAuthClientManager
@@ -166,6 +167,32 @@ class TestOAuthClientManager:
         cid = mgr.create_client(name='NoExtra', token_url='', client_id='', client_secret='')
         client = mgr.get_client(cid)
         assert client['extra_params'] == {}
+
+    def test_client_secret_is_encrypted_at_rest(self, db):
+        mgr = OAuthClientManager(db)
+        cid = mgr.create_client(name='EncSecret', token_url='', client_id='', client_secret='top-secret')
+        row = db.fetchone("SELECT client_secret FROM oauth_clients WHERE id = ?", (cid,))
+        assert row is not None
+        assert row['client_secret'].startswith('enc:')
+
+    def test_legacy_plaintext_secret_is_migrated_on_read(self, db):
+        with sqlite3.connect(str(db.db_path)) as conn:
+            cur = conn.cursor()
+            cur.execute(
+                "INSERT INTO oauth_clients (name, token_url, client_id, client_secret, scope, grant_type, extra_params, description) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                ('LegacyPlain', '', '', 'plain-legacy', '', 'client_credentials', '{}', ''),
+            )
+            conn.commit()
+            cid = cur.lastrowid
+
+        mgr = OAuthClientManager(db)
+        client = mgr.get_client(cid)
+        assert client is not None
+        assert client['client_secret'] == 'plain-legacy'
+
+        row = db.fetchone("SELECT client_secret FROM oauth_clients WHERE id = ?", (cid,))
+        assert row is not None
+        assert row['client_secret'].startswith('enc:')
 
 # ── SavedCredentialsManager ──────────────────────────────────────────────────
 class TestSavedCredentialsManager:
