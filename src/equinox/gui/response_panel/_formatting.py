@@ -15,7 +15,7 @@ from __future__ import annotations
 import http.cookies as _hc
 import json
 import logging
-from typing import Dict, List, Tuple
+from typing import Any, Dict, Iterable, List, Tuple
 
 from equinox.core.request import Response
 
@@ -99,14 +99,14 @@ def _pretty_print_xml(text: str) -> str:
         return text
 
 
-def parse_cookies(headers: Dict[str, str]) -> List[Tuple[str, Dict[str, str]]]:
+def parse_cookies(headers: Any) -> List[Tuple[str, Dict[str, str]]]:
     """Parse Set-Cookie headers into structured cookie data.
 
     Extracts all Set-Cookie headers and parses them into a list of
     tuples containing (cookie_name, attributes_dict).
 
     Args:
-        headers: Response headers dict (case-insensitive key lookup)
+        headers: Header container, dict-like object, or iterable of (name, value)
 
     Returns:
         List of (cookie_name, attributes) tuples where attributes
@@ -114,10 +114,7 @@ def parse_cookies(headers: Dict[str, str]) -> List[Tuple[str, Dict[str, str]]]:
     """
     cookies: List[Tuple[str, Dict[str, str]]] = []
 
-    for key, value in headers.items():
-        if key.lower() != "set-cookie":
-            continue
-
+    for value in _iter_set_cookie_values(headers):
         try:
             cookies.extend(_parse_cookie_header(value))
         except Exception as e:
@@ -126,6 +123,41 @@ def parse_cookies(headers: Dict[str, str]) -> List[Tuple[str, Dict[str, str]]]:
             cookies.append(("(raw)", {"value": value}))
 
     return cookies
+
+
+def _iter_set_cookie_values(headers: Any) -> Iterable[str]:
+    """Yield all Set-Cookie header values from different header container shapes."""
+    if headers is None:
+        return []
+
+    # Common multi-value APIs first.
+    get_list = getattr(headers, "get_list", None)
+    if callable(get_list):
+        try:
+            values = get_list("set-cookie") or []
+            return [str(v) for v in values if v is not None]
+        except Exception:
+            logger.debug("Header get_list('set-cookie') failed", exc_info=True)
+
+    get_all = getattr(headers, "get_all", None)
+    if callable(get_all):
+        try:
+            values = get_all("set-cookie") or []
+            return [str(v) for v in values if v is not None]
+        except Exception:
+            logger.debug("Header get_all('set-cookie') failed", exc_info=True)
+
+    # Fallback: dict-like or iterable pair handling.
+    try:
+        items = headers.items() if hasattr(headers, "items") else headers
+        out: List[str] = []
+        for key, value in items:
+            if str(key).lower() == "set-cookie" and value is not None:
+                out.append(str(value))
+        return out
+    except Exception:
+        logger.debug("Failed iterating cookie headers", exc_info=True)
+        return []
 
 
 def _parse_cookie_header(value: str) -> List[Tuple[str, Dict[str, str]]]:
