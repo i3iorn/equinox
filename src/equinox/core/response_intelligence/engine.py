@@ -46,7 +46,8 @@ class AnalysisEngine:
     def _get_discovered_analyzers(self) -> List[Analyzer]:
         if self._discovered_cache is None:
             self._discovered_cache = self.discover_analyzers()
-        return list(self._discovered_cache)
+        cache = self._discovered_cache or []
+        return list(cache)
 
     @classmethod
     def discover_analyzers(cls) -> List[Analyzer]:
