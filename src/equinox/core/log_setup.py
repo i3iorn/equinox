@@ -36,9 +36,15 @@ _LOG_ENCODING: str = "utf-8"
 # Safety cap — prevents a single log line from consuming excessive disk / memory.
 MAX_LOG_PAYLOAD_SIZE: int = 8192  # 8 KB per serialised JSON log line
 
-# Appended verbatim when a JSON line is truncated.  Length must fit within the
-# MAX_LOG_PAYLOAD_SIZE budget, so the cutoff is sized accordingly.
-_TRUNCATION_JSON_SUFFIX: str = ',"_truncated":true}'
+# When a field value is truncated, we append this marker so consumers know.
+_FIELD_TRUNCATION_MARKER: str = "...[truncated]"
+
+# Maximum bytes allowed in a single string field before it is shortened.
+# Keeps each field readable while still fitting many fields in one log line.
+_MAX_FIELD_VALUE_LEN: int = 512
+
+# Minimum fields that must survive the final safety-net slim-down.
+_SLIM_FIELDS: tuple = ("ts", "level", "logger", "msg")
 
 # Environment variable names for level overrides
 _ENV_FILE_LOG_LEVEL: str = "EQUINOX_LOG_LEVEL"
@@ -99,10 +105,17 @@ def _format_local_timestamp(ts: float) -> str:
 # ──────────────────────────────────────────────────────────────────────────────
 
 def _safe_serialize(doc: Dict[str, Any]) -> str:
-    """Serialize *doc* to a JSON string, truncating if it exceeds MAX_LOG_PAYLOAD_SIZE.
+    """Serialize *doc* to a JSON string that fits within MAX_LOG_PAYLOAD_SIZE.
 
-    When truncation is needed the suffix ``_TRUNCATION_JSON_SUFFIX`` is appended
-    so consumers can detect incomplete records.
+    Unlike raw string slicing, this approach truncates at the *data* level
+    before serialization so the output is always valid JSON.  The sequence is:
+
+    1. Try a direct ``json.dumps`` — fast path for the common case.
+    2. If over budget, shorten long string fields and re-serialize.
+    3. If still over budget (many fields or non-string blobs), keep only the
+       mandatory slim-down fields so the line is never silently dropped.
+
+    In all truncation cases ``_truncated = true`` is added to the document.
 
     Args:
         doc: Dictionary to serialize.
@@ -111,10 +124,27 @@ def _safe_serialize(doc: Dict[str, Any]) -> str:
         A valid JSON string that fits within MAX_LOG_PAYLOAD_SIZE bytes.
     """
     result = json.dumps(doc, ensure_ascii=True, default=str)
-    if len(result) > MAX_LOG_PAYLOAD_SIZE:
-        cutoff = MAX_LOG_PAYLOAD_SIZE - len(_TRUNCATION_JSON_SUFFIX)
-        result = result[:cutoff] + _TRUNCATION_JSON_SUFFIX
-    return result
+    if len(result) <= MAX_LOG_PAYLOAD_SIZE:
+        return result
+
+    # --- Step 2: shorten long string field values and re-serialize ----------
+    reduced: Dict[str, Any] = {}
+    for k, v in doc.items():
+        if isinstance(v, str) and len(v) > _MAX_FIELD_VALUE_LEN:
+            reduced[k] = v[:_MAX_FIELD_VALUE_LEN] + _FIELD_TRUNCATION_MARKER
+        else:
+            reduced[k] = v
+    reduced["_truncated"] = True
+    result = json.dumps(reduced, ensure_ascii=True, default=str)
+
+    if len(result) <= MAX_LOG_PAYLOAD_SIZE:
+        return result
+
+    # --- Step 3: slim-down safety net — keep only the most critical fields --
+    slim: Dict[str, Any] = {k: reduced[k] for k in _SLIM_FIELDS if k in reduced}
+    slim["msg"] = str(slim.get("msg", ""))[:200]
+    slim["_truncated"] = True
+    return json.dumps(slim, ensure_ascii=True, default=str)
 
 
 # ──────────────────────────────────────────────────────────────────────────────
