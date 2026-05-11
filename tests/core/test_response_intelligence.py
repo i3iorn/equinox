@@ -173,7 +173,19 @@ class TestMissingSecurityHeaders:
         findings = MissingSecurityHeadersAnalyzer().analyze(ctx)
         assert len(findings) == 1
         assert findings[0].severity in (Severity.WARNING, Severity.INFO)
-        assert "missing" in findings[0].title.lower()
+        assert "header" in findings[0].title.lower()
+
+    def test_invalid_header_values(self):
+        hdrs = {
+            "strict-transport-security": "max-age=10",
+            "x-content-type-options": "invalid",
+            "x-frame-options": "ALLOWALL",
+        }
+        ctx = _make_ctx(headers=hdrs, body=b'{"ok":true}')
+        findings = MissingSecurityHeadersAnalyzer().analyze(ctx)
+        assert len(findings) == 1
+        assert findings[0].severity == Severity.WARNING
+        assert findings[0].details["invalid"]
 
 
 class TestCookieFlags:
@@ -196,6 +208,18 @@ class TestCookieFlags:
         findings = CookieFlagsAnalyzer().analyze(ctx)
         assert len(findings) == 1
         assert findings[0].severity == Severity.CRITICAL
+
+    def test_set_cookie_with_expires_and_second_cookie(self):
+        hdrs = {
+            "set-cookie": (
+                "session=abc; Expires=Wed, 21 Oct 2026 07:28:00 GMT; Path=/; Secure; HttpOnly; SameSite=Lax, "
+                "prefs=light; Path=/"
+            )
+        }
+        ctx = _make_ctx(headers=hdrs, body=b"ok")
+        findings = CookieFlagsAnalyzer().analyze(ctx)
+        assert len(findings) == 1
+        assert any(issue["cookie"] == "prefs" for issue in findings[0].details["cookies"])
 
 
 class TestPIILeak:
@@ -299,6 +323,18 @@ class TestJWTDecode:
         findings = JWTDecodeAnalyzer().analyze(ctx)
         assert any(f.severity == Severity.CRITICAL for f in findings)
 
+    def test_claims_are_redacted(self):
+        jwt = self._make_jwt({"sub": "user1", "iss": "auth.example.com", "email": "user@example.com"})
+        body = json.dumps({"access_token": jwt}).encode()
+        ctx = _make_ctx(body=body)
+        findings = JWTDecodeAnalyzer().analyze(ctx)
+        assert len(findings) >= 1
+        details = findings[0].details
+        assert "claims" in details
+        assert "sub" not in details["claims"]
+        assert "email" not in details["claims"]
+        assert details["claims"].get("iss") == "auth.example.com"
+
 
 class TestSensitiveDataCaching:
     def test_sensitive_body_without_no_store(self):
@@ -323,6 +359,14 @@ class TestSensitiveDataCaching:
         ctx = _make_ctx(headers=hdrs, body=body)
         findings = SensitiveDataCachingAnalyzer().analyze(ctx)
         assert len(findings) == 0
+
+    def test_sensitive_value_pattern_detected_without_sensitive_key(self):
+        body = json.dumps({"data": "Bearer abc.def.ghi"}).encode()
+        hdrs = {"cache-control": "private, max-age=600"}
+        ctx = _make_ctx(headers=hdrs, body=body)
+        findings = SensitiveDataCachingAnalyzer().analyze(ctx)
+        assert len(findings) == 1
+        assert "sensitive value patterns in body" in findings[0].details["signals"]
 
 
 # ── Performance tests ─────────────────────────────────────────────────
@@ -466,6 +510,14 @@ class TestContentTypeMismatch:
         findings = ContentTypeMismatchAnalyzer().analyze(ctx)
         assert len(findings) == 0
 
+    def test_huge_json_with_non_json_prefix_warns(self):
+        hdrs = {"content-type": "application/json"}
+        body = (b"x" * 10) + (b" " * 10) + (b"y" * (1_000_100))
+        ctx = _make_ctx(headers=hdrs, body=body)
+        findings = ContentTypeMismatchAnalyzer().analyze(ctx)
+        assert len(findings) == 1
+        assert findings[0].severity == Severity.WARNING
+
 
 class TestDuplicateJsonKeys:
     def test_duplicate_keys(self):
@@ -481,6 +533,14 @@ class TestDuplicateJsonKeys:
         ctx = _make_ctx(body=body)
         findings = DuplicateJsonKeysAnalyzer().analyze(ctx)
         assert len(findings) == 0
+
+    def test_large_body_reports_scan_skipped(self):
+        raw = b"{" + (b'\"a\":1,' * 200_000) + b'\"z\":2}'
+        hdrs = {"content-type": "application/json"}
+        ctx = _make_ctx(headers=hdrs, body=raw)
+        findings = DuplicateJsonKeysAnalyzer().analyze(ctx)
+        assert len(findings) == 1
+        assert "skipped" in findings[0].title.lower()
 
 
 class TestDateFormats:
@@ -613,6 +673,20 @@ class TestRateLimit:
         findings = RateLimitDashboardAnalyzer().analyze(ctx)
         assert len(findings) == 1
         assert findings[0].severity == Severity.CRITICAL
+
+    def test_reset_epoch_milliseconds(self):
+        future_ms = int((time.time() + 60) * 1000)
+        hdrs = {
+            "x-ratelimit-limit": "100",
+            "x-ratelimit-remaining": "10",
+            "x-ratelimit-reset": str(future_ms),
+        }
+        ctx = _make_ctx(headers=hdrs, body=b'{}')
+        findings = RateLimitDashboardAnalyzer().analyze(ctx)
+        assert len(findings) == 1
+        secs = findings[0].details.get("resets_in_seconds")
+        assert isinstance(secs, int)
+        assert 1 <= secs <= 120
 
 
 class TestCaching:
@@ -749,6 +823,15 @@ class TestNPlusOne:
         assert detail["counts"] == [4, 5]
         assert detail["n_min"] == 4
         assert detail["n_max"] == 5
+
+    def test_interleaved_pattern_is_detected(self):
+        history = []
+        for i in range(6):
+            history.append({"method": "GET", "url": f"https://api.com/users/{i}"})
+            history.append({"method": "GET", "url": f"https://api.com/orders/{i}"})
+        ctx = _make_ctx(body=b'{}', history_rows=history)
+        findings = NPlusOneDetectionAnalyzer().analyze(ctx)
+        assert any("GET /users/{id}" in finding.details["pattern"] for finding in findings)
 
 
 class TestEncodingIssues:

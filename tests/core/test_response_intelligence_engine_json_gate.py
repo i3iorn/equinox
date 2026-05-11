@@ -43,6 +43,24 @@ class _AlwaysAnalyzer(Analyzer):
         ]
 
 
+class _RaisingAnalyzer(Analyzer):
+    analyzer_id = "test.raises"
+    category = Category.HINTS
+    display_name = "Raises"
+
+    def analyze(self, ctx: AnalysisContext) -> List[Finding]:
+        raise RuntimeError("boom")
+
+
+class _BadReturnAnalyzer(Analyzer):
+    analyzer_id = "test.bad_return"
+    category = Category.HINTS
+    display_name = "Bad Return"
+
+    def analyze(self, ctx: AnalysisContext):
+        return "not-a-list"
+
+
 def _make_ctx(body: bytes) -> AnalysisContext:
     request = Request(method="GET", url="https://api.example.com/items", headers={})
     response = Response(
@@ -104,4 +122,29 @@ def test_engine_runs_json_required_analyzers_for_valid_json(monkeypatch):
     assert requires_json.calls == 1
     assert always.calls == 1
     assert len(findings) == 1
+
+
+def test_engine_emits_failure_finding_when_analyzer_raises():
+    ctx = _make_ctx(b'{"ok": true}')
+    engine = AnalysisEngine()
+    engine._analyzers = [_RaisingAnalyzer()]
+
+    findings = engine.analyze(ctx)
+
+    assert len(findings) == 1
+    assert findings[0].analyzer_id == "hints.analysis_failure"
+    assert findings[0].details["failed_analyzer"] == "test.raises"
+
+
+def test_engine_emits_failure_finding_for_invalid_return_type():
+    ctx = _make_ctx(b'{"ok": true}')
+    engine = AnalysisEngine()
+    engine._analyzers = [_BadReturnAnalyzer()]
+
+    findings = engine.analyze(ctx)
+
+    assert len(findings) == 1
+    assert findings[0].analyzer_id == "hints.analysis_failure"
+    assert findings[0].details["failed_analyzer"] == "test.bad_return"
+
 
