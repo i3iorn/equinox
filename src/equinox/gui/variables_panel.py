@@ -29,7 +29,7 @@ from PyQt6.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
-from PyQt6.QtCore import Qt, pyqtSignal, QSettings
+from PyQt6.QtCore import Qt, pyqtSignal
 
 from equinox.core.interpolation import VariableInterpolator, collect_interpolation_variables_detailed
 from equinox.storage import (
@@ -37,6 +37,13 @@ from equinox.storage import (
     EnvironmentManager,
     GlobalVariablesManager,
     VariableGroupManager,
+)
+from equinox.gui.ui_common import (
+    configure_splitter_persistence,
+    confirm_yes_no,
+    create_muted_label,
+    create_panel_layout,
+    get_gui_settings,
 )
 
 __all__ = ["VariablesPanel", "VariableDialog"]
@@ -115,7 +122,7 @@ class VariablesPanel(QWidget):
         self._global_mgr = GlobalVariablesManager(db)
         self._env_mgr = EnvironmentManager(db)
         self.current_group_id: int | None = None
-        self._settings = QSettings("Equinox", "Equinox")
+        self._settings = get_gui_settings()
         self._global_var_count = 0
         self._session_var_count = 0
         self._init_ui()
@@ -125,9 +132,7 @@ class VariablesPanel(QWidget):
     # ── UI construction ───────────────────────────────────────────────────────
 
     def _init_ui(self) -> None:
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(4, 4, 4, 4)
-        layout.setSpacing(4)
+        layout = create_panel_layout(self)
 
         # ── Global Variables (persisted app-wide) ─────────────────────
         self._global_group = QGroupBox("Global Variables")
@@ -138,10 +143,9 @@ class VariablesPanel(QWidget):
         global_layout.setContentsMargins(4, 4, 4, 4)
         global_layout.setSpacing(4)
 
-        self._magic_hint = QLabel(
+        self._magic_hint = create_muted_label(
             "Built-in magic vars: {{TODAY}}, {{ONE_MONTH_AGO}}, {{ONE_YEAR_AGO}}, {{NOW_ISO}}"
         )
-        self._magic_hint.setObjectName("mutedLabel")
         self._magic_hint.setWordWrap(True)
         global_layout.addWidget(self._magic_hint)
 
@@ -190,8 +194,7 @@ class VariablesPanel(QWidget):
         session_layout.setSpacing(4)
 
         session_header = QHBoxLayout()
-        self._session_count_label = QLabel("No captured variables")
-        self._session_count_label.setObjectName("mutedLabel")
+        self._session_count_label = create_muted_label("No captured variables")
         session_header.addWidget(self._session_count_label)
         session_header.addStretch()
         self._session_copy_btn = QPushButton("Copy All")
@@ -298,16 +301,11 @@ class VariablesPanel(QWidget):
 
         splitter.setChildrenCollapsible(False)
         splitter.setHandleWidth(5)
-        saved = self._settings.value("splitter/variables")
-        if saved:
-            try:
-                splitter.setSizes([int(x) for x in saved])
-            except Exception:
-                splitter.setSizes([250, 550])
-        else:
-            splitter.setSizes([250, 550])
-        splitter.splitterMoved.connect(
-            lambda: self._settings.setValue("splitter/variables", splitter.sizes())
+        configure_splitter_persistence(
+            splitter,
+            settings_key="splitter/variables",
+            default_sizes=[250, 550],
+            settings=self._settings,
         )
 
         layout.addWidget(splitter)
@@ -437,13 +435,7 @@ class VariablesPanel(QWidget):
         if row < 0:
             return
         key = self._global_table.item(row, 0).text()
-        reply = QMessageBox.question(
-            self,
-            "Confirm Delete",
-            f"Delete global variable '{key}'?",
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-        )
-        if reply != QMessageBox.StandardButton.Yes:
+        if not confirm_yes_no(self, "Confirm Delete", f"Delete global variable '{key}'?"):
             return
         try:
             self._global_mgr.remove_variable(key)
@@ -591,13 +583,12 @@ class VariablesPanel(QWidget):
         if not selected:
             return
         group_name = selected[0].text()
-        reply = QMessageBox.question(
-            self, "Confirm Delete",
+        if not confirm_yes_no(
+            self,
+            "Confirm Delete",
             f"Are you sure you want to delete variable group '{group_name}'?\n"
             "This will also delete all variables in the group.",
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-        )
-        if reply != QMessageBox.StandardButton.Yes:
+        ):
             return
         try:
             self._mgr.delete_group(self.current_group_id)
@@ -692,12 +683,7 @@ class VariablesPanel(QWidget):
         if selected_row < 0:
             return
         key = self.variables_table.item(selected_row, 0).text()
-        reply = QMessageBox.question(
-            self, "Confirm Delete",
-            f"Are you sure you want to delete variable '{key}'?",
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-        )
-        if reply != QMessageBox.StandardButton.Yes:
+        if not confirm_yes_no(self, "Confirm Delete", f"Are you sure you want to delete variable '{key}'?"):
             return
         try:
             self._mgr.remove_variable(self.current_group_id, key)

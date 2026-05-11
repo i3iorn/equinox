@@ -6,17 +6,23 @@ import logging
 from typing import Any
 
 from PyQt6.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout,
-    QTextEdit, QPushButton, QComboBox, QLabel, QSplitter,
+    QWidget, QHBoxLayout,
+    QTextEdit, QPushButton, QComboBox, QSplitter,
     QListWidget, QListWidgetItem,
 )
-from PyQt6.QtCore import Qt, QSettings
+from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QColor
 
 from equinox.security import redact_body, redact_headers, redact_url
 from equinox.core.time import utc_now
 from equinox.gui.theme import Colors, get_mono_font
 from equinox.gui.log_file_actions import show_log_file_open_result, try_open_current_log_file
+from equinox.gui.ui_common import (
+    configure_splitter_persistence,
+    create_muted_label,
+    create_panel_layout,
+    get_gui_settings,
+)
 
 __all__ = ["LoggingPanel"]
 
@@ -48,15 +54,13 @@ class LoggingPanel(QWidget):
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self._entries: list[dict[str, Any]] = []
-        self._settings = QSettings("Equinox", "Equinox")
+        self._settings = get_gui_settings()
         self._init_ui()
 
     # ── UI construction ───────────────────────────────────────────────────────
 
     def _init_ui(self) -> None:
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(4, 4, 4, 4)
-        layout.setSpacing(4)
+        layout = create_panel_layout(self)
 
         toolbar = QHBoxLayout()
         self.filter_combo = QComboBox()
@@ -65,8 +69,7 @@ class LoggingPanel(QWidget):
         self.filter_combo.currentIndexChanged.connect(lambda _: self._refresh_list())
         toolbar.addWidget(self.filter_combo)
 
-        self.count_label = QLabel("0 entries")
-        self.count_label.setObjectName("mutedLabel")
+        self.count_label = create_muted_label("0 entries")
         toolbar.addWidget(self.count_label)
         toolbar.addStretch()
 
@@ -98,13 +101,11 @@ class LoggingPanel(QWidget):
         splitter.setChildrenCollapsible(False)
         splitter.setHandleWidth(5)
 
-        saved = self._settings.value(_SETTINGS_KEY_SPLITTER)
-        try:
-            splitter.setSizes([int(x) for x in saved] if saved else _SPLITTER_DEFAULT_SIZES)
-        except Exception:
-            splitter.setSizes(_SPLITTER_DEFAULT_SIZES)
-        splitter.splitterMoved.connect(
-            lambda: self._settings.setValue(_SETTINGS_KEY_SPLITTER, splitter.sizes())
+        configure_splitter_persistence(
+            splitter,
+            settings_key=_SETTINGS_KEY_SPLITTER,
+            default_sizes=_SPLITTER_DEFAULT_SIZES,
+            settings=self._settings,
         )
 
         layout.addWidget(splitter, 1)

@@ -8,7 +8,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
-from PyQt6.QtCore import Qt, QTimer, QSettings, QByteArray, QEvent, QPoint
+from PyQt6.QtCore import Qt, QTimer, QByteArray, QEvent, QPoint
 from PyQt6.QtGui import QAction, QKeySequence, QMouseEvent
 from PyQt6.QtWidgets import (
     QApplication,
@@ -19,6 +19,7 @@ from PyQt6.QtWidgets import (
 
 from equinox.gui.logging_utils import log_gui_event
 from equinox.gui.log_file_actions import show_log_file_open_result, try_open_current_log_file
+from equinox.gui.ui_common import get_gui_settings
 
 from equinox.core.request import Request, Response
 from equinox.storage import Database, EnvironmentManager, HistoryManager, CollectionManager
@@ -31,8 +32,6 @@ from equinox.gui.theme import (
 )
 
 logger = logging.getLogger(__name__)
-
-_SETTINGS_KEY = "Equinox"
 
 # ── Layout / geometry constants ───────────────────────────────────────────────
 _WINDOW_X           = 100
@@ -76,7 +75,7 @@ class MainWindow(QMainWindow):
         self._resize_active = False
         self._drag_handles: set = set()
         self._app_event_filter_installed = False
-        self._settings = QSettings(_SETTINGS_KEY, _SETTINGS_KEY)
+        self._settings = get_gui_settings()
         self._intelligence_worker = None  # keep reference to avoid GC
         self._background_workers = set()
         self._pending_panel_refreshes: set = set()

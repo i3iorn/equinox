@@ -301,19 +301,9 @@ class _RequestSendMixin:
         QSettings must NOT be accessed from background QThreads (UB on Windows).
         Returns None if proxy is not configured.
         """
-        from PyQt6.QtCore import QSettings as _QSettings
-        settings = _QSettings("Equinox", "Equinox")
-        host = (settings.value("proxy/host") or "").strip()
-        raw_port = settings.value("proxy/port")
-        try:
-            port = int(raw_port or 0)
-        except (TypeError, ValueError):
-            logger.warning(
-                "request_panel.send.proxy_port_invalid op=resolve_proxy_url raw_port=%r",
-                raw_port,
-            )
-            port = 0
-        return f"http://{host}:{port}" if (host and port > 0) else None
+        from equinox.gui.ui_common import resolve_proxy_url
+
+        return resolve_proxy_url(logger=logger)
 
     @staticmethod
     def _display_script_result(label, result) -> None:

@@ -10,7 +10,7 @@ from PyQt6.QtWidgets import (
 )
 from PyQt6.QtCore import Qt
 
-from equinox.gui.theme import Colors
+from equinox.gui.ui_common import confirm_yes_no, create_muted_label, create_panel_layout
 from equinox.storage.cookies import CookieJarManager
 from equinox.storage import Database
 
@@ -108,9 +108,7 @@ class CookiesPanel(QWidget):
     # ── UI construction ───────────────────────────────────────────────────────
 
     def _init_ui(self) -> None:
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(4, 4, 4, 4)
-        layout.setSpacing(4)
+        layout = create_panel_layout(self)
 
         toolbar = QHBoxLayout()
         self.add_btn     = QPushButton("Add…")
@@ -142,8 +140,7 @@ class CookiesPanel(QWidget):
         self.table.itemSelectionChanged.connect(self._on_selection_changed)
         layout.addWidget(self.table)
 
-        self.count_label = QLabel()
-        self.count_label.setObjectName("mutedLabel")
+        self.count_label = create_muted_label()
         layout.addWidget(self.count_label)
 
     # ── Public API ────────────────────────────────────────────────────────────
@@ -213,7 +210,8 @@ class CookiesPanel(QWidget):
             return
 
         count = len(selected)
-        if not self._confirm(
+        if not confirm_yes_no(
+            self,
             "Confirm Delete",
             f"Delete {count} selected cookie{'s' if count != 1 else ''}?",
         ):
@@ -242,7 +240,7 @@ class CookiesPanel(QWidget):
             )
 
     def _clear_all(self) -> None:
-        if not self._confirm("Confirm Clear", "Clear all cookies?"):
+        if not confirm_yes_no(self, "Confirm Clear", "Clear all cookies?"):
             return
         try:
             self._mgr.clear_cookies()
@@ -254,11 +252,5 @@ class CookiesPanel(QWidget):
 
     # ── Private helpers ───────────────────────────────────────────────────────
 
-    def _confirm(self, title: str, question: str) -> bool:
-        """Show a Yes/No confirmation dialog and return ``True`` if the user confirms."""
-        reply = QMessageBox.question(
-            self, title, question,
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-        )
-        return reply == QMessageBox.StandardButton.Yes
+    # Confirmation logic is shared via ``ui_common.confirm_yes_no``.
 

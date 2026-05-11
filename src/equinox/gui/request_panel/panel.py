@@ -36,7 +36,7 @@ from PyQt6.QtWidgets import (
     QToolButton,
     QApplication,
 )
-from PyQt6.QtCore import pyqtSignal, Qt, QTimer, QStringListModel, QSettings
+from PyQt6.QtCore import pyqtSignal, Qt, QTimer, QStringListModel
 from PyQt6.QtGui import QKeySequence, QShortcut
 
 from equinox.gui.request_panel.body_text_proxy import BodyTextProxy
@@ -70,6 +70,7 @@ from equinox.gui.request_panel.validation_mixin import _RequestValidationMixin  
 from equinox.gui.request_panel.save_dialog import SaveRequestDialog
 from equinox.gui.request_panel.toolbar import TabToolbar
 from equinox.gui.syntax_highlighter.python_highlighter import PythonHighlighter
+from equinox.gui.ui_common import get_gui_settings
 
 logger = logging.getLogger(__name__)
 _KEY_POLICY_PROFILE = "request/policy_profile"
@@ -167,7 +168,7 @@ class RequestPanel(_RequestValidationMixin, _RequestSendMixin, _RequestAuthMixin
         self._elapsed_timer.timeout.connect(self._tick_elapsed)
         self._elapsed_secs = 0.0
         self._dirty = False
-        self._settings = QSettings("Equinox", "Equinox")
+        self._settings = get_gui_settings()
         self._policy_profile = str(self._settings.value(_KEY_POLICY_PROFILE, _POLICY_BALANCED))
 
         self._init_ui()

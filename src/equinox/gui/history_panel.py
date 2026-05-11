@@ -15,6 +15,7 @@ from PyQt6.QtWidgets import (
 
 from equinox.gui.dialogs.history_diff_dialog import HistoryDiffDialog
 from equinox.gui.theme import Colors
+from equinox.gui.ui_common import confirm_yes_no, create_muted_label, create_panel_layout
 from equinox.storage import Database, HistoryManager
 
 __all__ = ["HistoryPanel"]
@@ -49,9 +50,7 @@ class HistoryPanel(QWidget):
     # ── UI construction ───────────────────────────────────────────────────────
 
     def _init_ui(self) -> None:
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(4, 4, 4, 4)
-        layout.setSpacing(4)
+        layout = create_panel_layout(self)
 
         toolbar = QHBoxLayout()
         self.refresh_btn = QPushButton("Refresh")
@@ -209,8 +208,7 @@ class HistoryPanel(QWidget):
         btn_row.addStretch()
         layout.addLayout(btn_row)
 
-        self.stats_label = QLabel()
-        self.stats_label.setObjectName("mutedLabel")
+        self.stats_label = create_muted_label()
         layout.addWidget(self.stats_label)
 
         self.list_widget.itemSelectionChanged.connect(self._on_selection_changed)
@@ -431,7 +429,8 @@ class HistoryPanel(QWidget):
         if not ids:
             return
         n = len(ids)
-        if not self._confirm(
+        if not confirm_yes_no(
+            self,
             "Confirm Delete",
             f"Delete {n} selected history entr{'y' if n == 1 else 'ies'}?",
         ):
@@ -505,7 +504,7 @@ class HistoryPanel(QWidget):
             QMessageBox.critical(self, "Error", f"Failed to load history entries:\n{exc}")
 
     def _clear_history(self) -> None:
-        if not self._confirm("Confirm Clear", "Clear all history?"):
+        if not confirm_yes_no(self, "Confirm Clear", "Clear all history?"):
             return
         try:
             self._mgr.clear_history()
@@ -553,13 +552,6 @@ class HistoryPanel(QWidget):
 
     # ── Private helpers ───────────────────────────────────────────────────────
 
-    def _confirm(self, title: str, question: str) -> bool:
-        """Show a Yes/No confirmation dialog and return ``True`` if confirmed."""
-        reply = QMessageBox.question(
-            self, title, question,
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-        )
-        return reply == QMessageBox.StandardButton.Yes
 
     def _selected_real_ids(self) -> list[int]:
         """Return the DB IDs of all selected non-separator list entries.

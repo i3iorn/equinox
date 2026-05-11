@@ -17,12 +17,13 @@ import logging
 from typing import Any, Callable, Optional
 
 from PyQt6.QtWidgets import QWidget, QVBoxLayout, QMessageBox, QLabel
-from PyQt6.QtCore import QThreadPool, QSettings
+from PyQt6.QtCore import QThreadPool
 
 from equinox.core.request import Response
 from equinox.gui.response_panel.builder import ResponseBuilderMixin
 from equinox.gui.response_panel.display_mixin import ResponseDisplayMixin
 from equinox.gui.response_panel.actions_mixin import ResponseActionsMixin
+from equinox.gui.ui_common import get_gui_settings
 
 logger = logging.getLogger(__name__)
 
@@ -86,7 +87,7 @@ class ResponsePanel(
 
         # Thread pool for async operations (e.g., response intelligence)
         self._thread_pool = QThreadPool.globalInstance()
-        self._settings = QSettings("Equinox", "Equinox")
+        self._settings = get_gui_settings()
 
         # View state
         self._body_highlighter: Optional[Any] = None

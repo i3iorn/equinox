@@ -20,11 +20,12 @@ from PyQt6.QtWidgets import (
     QListWidget,
     QListWidgetItem,
 )
-from PyQt6.QtCore import Qt, QSettings
+from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QGuiApplication
 
 from equinox.core.response_intelligence import Category, Finding, Severity
 from equinox.gui.theme import Colors, get_mono_font
+from equinox.gui.ui_common import get_gui_settings
 
 __all__ = ["IntelligencePanel"]
 
@@ -236,7 +237,7 @@ class IntelligencePanel(QWidget):
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self._findings: list[Finding] = []
-        self._settings = QSettings("Equinox", "Equinox")
+        self._settings = get_gui_settings()
         self._muted_until = self._load_muted_rules()
         self._init_ui()
 

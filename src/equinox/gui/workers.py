@@ -401,7 +401,7 @@ class BenchmarkDialog(QDialog):
         }
 
     def _run(self) -> None:
-        from PyQt6.QtCore import QSettings
+        from equinox.gui.ui_common import get_gui_settings, resolve_proxy_url
 
         n = self._count_spin.value()
         self._progress.setMaximum(n)
@@ -413,11 +413,8 @@ class BenchmarkDialog(QDialog):
         self._results.setPlainText("Running\u2026")
         self._was_cancelled = False
 
-        # Resolve proxy on the main thread (safe for QSettings on all platforms)
-        s = QSettings("Equinox", "Equinox")
-        ph = (s.value("proxy/host") or "").strip()
-        pp = int(s.value("proxy/port") or 0)
-        proxy = f"http://{ph}:{pp}" if (ph and pp > 0) else None
+        # Resolve proxy on the main thread (safe for QSettings on all platforms).
+        proxy = resolve_proxy_url(settings=get_gui_settings(), logger=logger)
 
         self._worker = BenchmarkWorker(
             request=self._request,
