@@ -588,7 +588,7 @@ class TestLogSetupCoverage:
         record.payload = {"big": "x" * (MAX_LOG_PAYLOAD_SIZE + 1000)}
         output = fmt.format(record)
         assert len(output) <= MAX_LOG_PAYLOAD_SIZE
-        assert '"_truncated":true' in output
+        assert "[truncated]" in output
 
     def test_json_formatter_extra_fields(self):
         fmt = JsonFormatter()

@@ -12,6 +12,7 @@ Covers every uncovered line in:
 
 import json
 import logging
+import os
 import time
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict
@@ -380,7 +381,9 @@ class TestOAuth2Coverage:
             token_url="https://auth.example.com/token",
         )
         with pytest.raises(AuthError, match="HTTP 400"):
+            os.environ["EQUINOX_SSRF_ALLOW_ON_DNS_FAILURE"] = "1"
             auth._refresh_access_token()
+            os.environ["EQUINOX_SSRF_ALLOW_ON_DNS_FAILURE"] = "0"
 
     @patch("equinox.auth._oauth2.time.sleep")
     @patch("equinox.auth._oauth2.httpx.Client")

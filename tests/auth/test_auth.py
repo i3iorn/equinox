@@ -1,4 +1,5 @@
 """Tests for authentication modules."""
+import os
 
 import pytest
 from unittest.mock import Mock, MagicMock, patch
@@ -158,7 +159,10 @@ class TestOAuth2Auth:
         # Trigger token refresh by applying auth
         request = Mock()
         headers = {}
+
+        os.environ["EQUINOX_SSRF_ALLOW_ON_DNS_FAILURE"] = "1"
         auth.apply(request, headers)
+        os.environ["EQUINOX_SSRF_ALLOW_ON_DNS_FAILURE"] = "0"
 
         assert auth.access_token == "new-token"
         assert headers["Authorization"] == "Bearer new-token"
@@ -206,7 +210,9 @@ class TestOAuth2Auth:
         request = Mock()
         headers = {}
 
+        os.environ["EQUINOX_SSRF_ALLOW_ON_DNS_FAILURE"] = "1"
         auth.apply(request, headers)
+        os.environ["EQUINOX_SSRF_ALLOW_ON_DNS_FAILURE"] = "0"
 
         assert auth.access_token == "auto-requested-token"
         assert headers["Authorization"] == "Bearer auto-requested-token"
@@ -238,7 +244,9 @@ class TestOAuth2Auth:
         # Trigger refresh by applying auth (which checks if refresh is needed)
         request = Mock()
         headers = {}
+        os.environ["EQUINOX_SSRF_ALLOW_ON_DNS_FAILURE"] = "1"
         auth.apply(request, headers)
+        os.environ["EQUINOX_SSRF_ALLOW_ON_DNS_FAILURE"] = "0"
 
         assert auth.access_token == "refreshed-token"
         assert auth.refresh_token == "new-refresh-token"

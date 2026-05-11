@@ -285,7 +285,9 @@ class TestOAuth2Coverage:
             client_id="c", client_secret="s",
         )
         with pytest.raises(AuthError, match="HTTP 401"):
+            os.environ["EQUINOX_SSRF_ALLOW_ON_DNS_FAILURE"] = "1"
             auth._post_token_request({"grant_type": "client_credentials"})
+            os.environ["EQUINOX_SSRF_ALLOW_ON_DNS_FAILURE"] = "0"
 
     def test_to_dict_and_from_dict_round_trip(self):
         from equinox.auth._oauth2 import OAuth2Auth
