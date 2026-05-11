@@ -30,6 +30,9 @@ __all__ = ["IntelligencePanel"]
 
 logger = logging.getLogger(__name__)
 
+_AUDIT_TAIL_BYTES = 256 * 1024
+_AUDIT_MAX_LINES = 400
+
 # Severity → (icon, color_callable).
 # Storing a callable (instead of a string attribute name resolved via getattr)
 # keeps the Colors reference explicit and statically checkable.
@@ -519,7 +522,7 @@ class IntelligencePanel(QWidget):
             "auth_token_refresh",
         }
         try:
-            lines = audit_path.read_text(encoding="utf-8", errors="replace").splitlines()
+            lines = self._read_recent_audit_lines(audit_path)
             shown = 0
             for line in reversed(lines):
                 if shown >= 20:
@@ -540,6 +543,25 @@ class IntelligencePanel(QWidget):
         except Exception:
             logger.debug("Failed to refresh audit timeline", exc_info=True)
             self._audit_list.addItem(QListWidgetItem("Unable to load audit timeline."))
+
+    @staticmethod
+    def _read_recent_audit_lines(path: Path) -> list[str]:
+        """Read a bounded tail of the audit log to keep refresh responsive."""
+        try:
+            with path.open("rb") as fh:
+                fh.seek(0, 2)
+                size = fh.tell()
+                read_from = max(0, size - _AUDIT_TAIL_BYTES)
+                fh.seek(read_from)
+                data = fh.read()
+            text = data.decode("utf-8", errors="replace")
+            lines = text.splitlines()
+            if len(lines) > _AUDIT_MAX_LINES:
+                lines = lines[-_AUDIT_MAX_LINES:]
+            return lines
+        except Exception:
+            logger.debug("Failed to read audit log tail", exc_info=True)
+            return []
 
     def _clear_cards(self) -> None:
         """Remove all finding cards and category labels from the scroll layout.
