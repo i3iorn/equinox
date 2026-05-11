@@ -189,6 +189,11 @@ class OAuth2Auth(AuthStrategy):
         else:
             self.storage_key = f"oauth2_anonymous_{uuid.uuid4().hex[:_ANON_KEY_ID_LENGTH]}"
 
+        # Tracks whether secure-storage operations are succeeding.
+        # Set to False on the first I/O failure so callers / the GUI can
+        # surface a prominent warning instead of silently degrading security.
+        self._storage_available: bool = True
+
         # Prevent concurrent token-refresh races
         self._refresh_lock = Lock()
         self._audit = get_audit_logger()
@@ -342,6 +347,16 @@ class OAuth2Auth(AuthStrategy):
         return bool(self.secure_storage and self.storage_key)
 
     @property
+    def storage_available(self) -> bool:
+        """Return False if a secure-storage I/O error has been observed.
+
+        Once set to ``False``, tokens cannot be persisted between sessions.
+        Callers and the GUI should surface a visible warning when this is
+        ``False`` so the user knows their tokens are only held in memory.
+        """
+        return self._storage_available
+
+    @property
     def _proxy_label(self) -> str:
         """Human-readable proxy label used in log messages."""
         return self._proxy or "none"
@@ -433,8 +448,10 @@ class OAuth2Auth(AuthStrategy):
                 logger.debug("No stored OAuth2 tokens found for key=%s", self.storage_key)
         except (OSError, IOError) as io_exc:
             logger.warning("Failed to access secure storage (I/O error): %s", io_exc)
+            self._storage_available = False
         except Exception as storage_exc:
             logger.error("Unexpected error loading OAuth2 tokens: %s", storage_exc, exc_info=True)
+            self._storage_available = False
 
     def _save_to_storage(self) -> None:
         """Persist current tokens to secure storage."""
@@ -462,8 +479,10 @@ class OAuth2Auth(AuthStrategy):
             )
         except (OSError, IOError) as io_exc:
             logger.warning("Failed to write to secure storage (I/O error): %s", io_exc)
+            self._storage_available = False
         except Exception as storage_exc:
             logger.error("Unexpected error saving OAuth2 tokens: %s", storage_exc, exc_info=True)
+            self._storage_available = False
 
     def _expires_at_iso(self) -> Optional[str]:
         """Return ``expires_at`` as an ISO-8601 string, or ``None`` if unset."""
