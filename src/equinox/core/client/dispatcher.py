@@ -185,7 +185,7 @@ class HttpxDispatcher:
         return Response(
             status_code=raw.status_code,
             reason=self._extract_reason_phrase(raw),
-            headers=dict(raw.headers),
+            headers={str(k): str(v) for k, v in raw.headers.items()},
             body=body,
             elapsed=elapsed,
             request=request,

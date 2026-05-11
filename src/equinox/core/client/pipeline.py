@@ -194,7 +194,7 @@ class RequestPipeline:
 
             self._audit.log_request(
                 request.method,
-                redact_url(request.url or ""),
+                (redact_url(request.url or "") or ""),
                 status_code=response.status_code,
             )
             logger.debug(
