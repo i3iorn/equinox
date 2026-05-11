@@ -243,15 +243,25 @@ class RetryPolicy:
         self._sleep(wait_seconds)
 
     def _parse_retry_after(self, response: Response) -> float:
-        """Return the ``Retry-After`` delay in seconds, capped at the configured maximum.
+        """Return the ``Retry-After`` delay in seconds, clamped to ``[0, cap]``.
 
-        Falls back to ``1.0 s`` when the header is absent or unparseable.
+        Falls back to ``1.0 s`` when the header is absent, unparseable, negative,
+        or zero — a negative ``Retry-After`` would cause ``time.sleep()`` to raise
+        ``ValueError`` and break the retry loop entirely.
         """
         if not response.headers:
             return 1.0
         try:
             retry_after = float(response.headers.get("retry-after", 1))
         except (ValueError, TypeError):
+            retry_after = 1.0
+        # Guard: negative or zero values are treated as "retry immediately with a
+        # brief back-off" so sleep() never receives a non-positive argument.
+        if retry_after <= 0:
+            logger.info(
+                "Retry-After header value %r is non-positive; using 1.0 s fallback",
+                retry_after,
+            )
             retry_after = 1.0
         return min(retry_after, self._retry_after_cap_seconds)
 
