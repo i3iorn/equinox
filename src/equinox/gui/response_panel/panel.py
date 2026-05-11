@@ -16,7 +16,7 @@ import json
 import logging
 from typing import Any, Callable, Optional
 
-from PyQt6.QtWidgets import QWidget, QVBoxLayout, QMessageBox
+from PyQt6.QtWidgets import QWidget, QVBoxLayout, QMessageBox, QLabel
 from PyQt6.QtCore import QThreadPool, QSettings
 
 from equinox.core.request import Response
@@ -114,6 +114,10 @@ class ResponsePanel(
         # Build tab structure from mixins
         self._build_status_bar(layout)
         self._build_timings_row(layout)
+        self._render_warning_label = QLabel("")
+        self._render_warning_label.setObjectName("field-error")
+        self._render_warning_label.setVisible(False)
+        layout.addWidget(self._render_warning_label)
         self._build_tabs(layout)
         self.tabs.currentChanged.connect(self._on_tab_changed)
         self._redact_btn.setChecked(self._redaction_preview)
@@ -171,16 +175,23 @@ class ResponsePanel(
         self.current_response = response
 
         # Execute display pipeline with error isolation
-        self._safe_display(self._update_status_bar, response)
-        self._safe_display(self._apply_highlighter_for_response, response)
-        self._safe_display(self._populate_all_tabs, response)
-        self._safe_display(self._apply_readability_mode_for_response, response)
+        failed_sections = []
+        steps = (
+            ("status", self._update_status_bar),
+            ("highlight", self._apply_highlighter_for_response),
+            ("tabs", self._populate_all_tabs),
+            ("mode", self._apply_readability_mode_for_response),
+        )
+        for name, fn in steps:
+            if not self._safe_display(fn, response):
+                failed_sections.append(name)
 
         # Apply user's preferred view mode
         self._apply_view_preference()
 
         # Force Qt to refresh widgets after content updates
         self._refresh_display()
+        self._update_render_warning(failed_sections)
 
         logger.debug("display_response: pipeline complete")
 
@@ -193,8 +204,24 @@ class ResponsePanel(
             logger.debug("Failed to persist redaction preview setting", exc_info=True)
 
         if self.current_response is not None:
-            self._safe_display(self._populate_all_tabs, self.current_response)
-            self._safe_display(self._apply_readability_mode_for_response, self.current_response)
+            failed_sections = []
+            if not self._safe_display(self._populate_all_tabs, self.current_response):
+                failed_sections.append("tabs")
+            if not self._safe_display(self._apply_readability_mode_for_response, self.current_response):
+                failed_sections.append("mode")
+            self._update_render_warning(failed_sections)
+
+    def _update_render_warning(self, failed_sections: list[str]) -> None:
+        """Show or clear a non-blocking render warning banner."""
+        if not failed_sections:
+            self._render_warning_label.setVisible(False)
+            self._render_warning_label.setText("")
+            return
+        unique = ", ".join(sorted(set(failed_sections)))
+        self._render_warning_label.setText(
+            f"Some sections failed to render ({unique}). See logs for details."
+        )
+        self._render_warning_label.setVisible(True)
 
     def _load_readability_preferences(self) -> dict:
         """Load saved readability preferences from QSettings."""
@@ -453,7 +480,7 @@ class ResponsePanel(
             )
 
     @staticmethod
-    def _safe_display(fn: Callable[[Any], None], *args: Any) -> None:
+    def _safe_display(fn: Callable[[Any], None], *args: Any) -> bool:
         """Safely call a display function with comprehensive error isolation.
 
         Wraps a display function call in try-catch so that one failure
@@ -472,6 +499,8 @@ class ResponsePanel(
         try:
             fn(*args)
             logger.debug("safe_display: %s completed successfully", fn.__name__)
+            return True
         except Exception:
             logger.exception("safe_display: %s failed with error", fn.__name__)
+            return False
 
