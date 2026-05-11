@@ -11,6 +11,7 @@ from equinox.core import urls
 from equinox.core.response_intelligence.base import Analyzer
 from equinox.core.response_intelligence.models import (
     AnalysisContext,
+    Category,
     Finding,
     Severity,
 )
@@ -40,6 +41,12 @@ class AnalysisEngine:
     def __init__(self, disabled: Optional[Set[str]] = None) -> None:
         self._disabled = disabled or set()
         self._analyzers: List[Analyzer] = []
+        self._discovered_cache: Optional[List[Analyzer]] = None
+
+    def _get_discovered_analyzers(self) -> List[Analyzer]:
+        if self._discovered_cache is None:
+            self._discovered_cache = self.discover_analyzers()
+        return list(self._discovered_cache)
 
     @classmethod
     def discover_analyzers(cls) -> List[Analyzer]:
@@ -63,7 +70,7 @@ class AnalysisEngine:
     def load_analyzers(self) -> None:
         discovered = [
             analyzer
-            for analyzer in self.discover_analyzers()
+            for analyzer in self._get_discovered_analyzers()
             if analyzer.analyzer_id not in self._disabled
         ]
 
@@ -87,11 +94,24 @@ class AnalysisEngine:
                 "name": analyzer.display_name or analyzer.analyzer_id,
                 "category": analyzer.category.value,
             }
-            for analyzer in self.discover_analyzers()
+            for analyzer in self._get_discovered_analyzers()
             if (analyzer.analyzer_id or "").strip()
         ]
         info.sort(key=lambda item: item["id"])
         return info
+
+    @staticmethod
+    def _failure_finding(analyzer_id: str, reason: str) -> Finding:
+        safe_id = analyzer_id or "unknown"
+        return Finding(
+            category=Category.HINTS,
+            severity=Severity.WARNING,
+            title=f"Analyzer failed: {safe_id}",
+            description=reason,
+            analyzer_id="hints.analysis_failure",
+            recommendation="Review analyzer implementation and logs to restore complete analysis coverage.",
+            details={"failed_analyzer": safe_id, "reason": reason},
+        )
 
     def analyze(self, ctx: AnalysisContext) -> List[Finding]:
         if not self._analyzers:
@@ -114,10 +134,18 @@ class AnalysisEngine:
                         analyzer.analyzer_id,
                         type(results).__name__,
                     )
+                    findings.append(self._failure_finding(
+                        analyzer.analyzer_id,
+                        f"Analyzer returned invalid result type: {type(results).__name__}",
+                    ))
                     continue
                 findings.extend(results)
-            except Exception:
-                logger.debug("Analyzer %s raised and was skipped", analyzer.analyzer_id, exc_info=True)
+            except Exception as exc:
+                logger.warning("Analyzer %s raised and was skipped", analyzer.analyzer_id, exc_info=True)
+                findings.append(self._failure_finding(
+                    analyzer.analyzer_id,
+                    f"Analyzer raised {type(exc).__name__}",
+                ))
 
         findings.sort(
             key=lambda finding: (
