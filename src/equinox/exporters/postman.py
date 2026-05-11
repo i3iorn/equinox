@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import logging
+import warnings
 from typing import Any, Dict, List
 
 from equinox.storage.collections import CollectionManager
@@ -35,7 +36,8 @@ class PostmanExporter(_BaseCollectionExporter):
         Args:
             db:              Open database connection.
             collection_id:   ID of the collection to export.
-            include_history: Reserved for future use (ignored).
+            include_history: Deprecated / reserved.  Raises a ``FutureWarning``
+                when ``True``; history export is not yet implemented.
 
         Returns:
             A dict conforming to the Postman Collection v2.1 schema.
@@ -43,18 +45,32 @@ class PostmanExporter(_BaseCollectionExporter):
         Raises:
             ValidationError: If the collection is not found.
         """
+        if include_history:
+            warnings.warn(
+                "PostmanExporter.export_collection: include_history=True has no effect — "
+                "history export is not yet implemented.",
+                FutureWarning,
+                stacklevel=2,
+            )
+            logger.warning(
+                "PostmanExporter.export_collection called with include_history=True, "
+                "which is not yet implemented and has been ignored."
+            )
+
         collection, requests = PostmanExporter._load_collection(db, collection_id)
         items: List[Dict[str, Any]] = [PostmanExporter._build_item(req) for req in requests]
 
         variables: List[Dict[str, Any]] = []
         try:
             var_list  = CollectionManager(db).list_collection_variables(collection_id)
+            # Storage schema uses "key"/"value" columns — not "name"/"value".
             variables = [
-                {"key": v["name"], "value": v["value"], "type": "string"}
+                {"key": v["key"], "value": v["value"], "type": "string"}
                 for v in var_list
             ]
         except Exception as exc:
-            logger.warning("Failed to export collection variables: %s", exc)
+            logger.warning("Failed to export collection variables (%d variable(s) skipped): %s",
+                           len(variables), exc)
 
         return {
             "info": {
