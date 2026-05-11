@@ -42,6 +42,7 @@ _DEBOUNCE_INTERVAL_MS = 250
 # Preview truncation limit for JSONPath results
 _PREVIEW_VALUE_LIMIT = 50
 _PREVIEW_MAX_VALUES = 6
+_ASYNC_MIN_DOC_CHARS = 20_000
 
 # UI Configuration
 _INPUT_HEIGHT = 24
@@ -263,30 +264,9 @@ class _SearchRunnable(QRunnable):
         # Build preview string
         preview = self._build_jsonpath_preview(values)
 
-        # Map primitive values back into document text
-        text = cfg.doc_text
-        offsets: List[Tuple[int, int]] = []
-        seen_terms: set[str] = set()
-        for v in values:
-            if cfg.cancel_token.cancelled or len(offsets) >= _MAX_MATCHES:
-                break
-            if isinstance(v, (dict, list)):
-                continue
-            term = json.dumps(v, ensure_ascii=False)
-            if term in seen_terms:
-                continue
-            seen_terms.add(term)
-
-            start = 0
-            while not cfg.cancel_token.cancelled and len(offsets) < _MAX_MATCHES:
-                idx = text.find(term, start)
-                if idx == -1:
-                    break
-                end = idx + len(term)
-                offsets.append((idx, end))
-                start = end
-
-        return offsets, values, preview
+        # Mapping JSONPath values back into text offsets is ambiguous when the
+        # same scalar appears multiple times. Return preview/filter values only.
+        return [], values, preview
 
     @staticmethod
     def _build_jsonpath_preview(values: List[Any]) -> str:
@@ -603,10 +583,15 @@ class SearchBar(QWidget):
         runnable.signals.result.connect(self._on_search_result)
         runnable.signals.partial_result.connect(self._on_search_partial)
 
-        # Run the search synchronously to keep behavior deterministic in
-        # environments without a functioning thread pool (e.g. many test
-        # harnesses). Background threading previously made tests flaky as
-        # they relied on immediate results.
+        run_async = len(cfg.doc_text) >= _ASYNC_MIN_DOC_CHARS
+        if run_async:
+            try:
+                self._thread_pool.start(runnable)
+                return
+            except Exception:
+                logger.exception("Failed to dispatch async search job; falling back to sync")
+
+        # Keep small-document behavior deterministic for tests and quick edits.
         try:
             runnable.run()
         except Exception:
