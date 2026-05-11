@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import logging
 import ssl
+import threading
 import time
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
@@ -19,6 +20,7 @@ from equinox.core.exceptions import ValidationError
 from equinox.core.request import Request, Response
 from equinox.core.time import utc_now
 from equinox.core.validation import Validator
+from equinox.security import redact_headers
 
 logger = logging.getLogger(__name__)
 
@@ -47,7 +49,8 @@ class HttpxDispatcher:
         self._verify_ssl = verify_ssl
         self._proxy = proxy
         self._cookie_handler = cookie_handler
-        self._client: Optional[httpx.Client] = None
+        self._clients: Dict[bool, httpx.Client] = {}
+        self._client_lock = threading.Lock()
 
     # ── Client lifecycle ──────────────────────────────────────────────────────
 
@@ -60,16 +63,24 @@ class HttpxDispatcher:
         return ctx
 
     def _ensure_client(self, verify_ssl: bool = True) -> httpx.Client:
-        if self._client is None:
-            logger.debug("HttpxDispatcher: creating shared httpx.Client")
-            self._client = httpx.Client(
+        client_key = bool(verify_ssl)
+        with self._client_lock:
+            existing = self._clients.get(client_key)
+            if existing is not None:
+                return existing
+            logger.debug(
+                "HttpxDispatcher: creating shared httpx.Client (verify_ssl=%s)",
+                client_key,
+            )
+            created = httpx.Client(
                 timeout=self._timeout,
                 follow_redirects=self._follow_redirects,
-                verify=self._build_ssl_context() if verify_ssl else False,
+                verify=self._build_ssl_context() if client_key else False,
                 proxy=self._proxy,
                 cookies=self._cookie_handler.get_httpx_cookies(),
             )
-        return self._client
+            self._clients[client_key] = created
+            return created
 
     def open(self) -> None:
         """Pre-warm the shared ``httpx.Client`` (called from ``HTTPClient.__enter__``)."""
@@ -77,10 +88,14 @@ class HttpxDispatcher:
 
     def close(self) -> None:
         """Close and discard the shared ``httpx.Client``."""
-        if self._client is not None:
-            logger.debug("HttpxDispatcher: closing shared httpx.Client")
-            self._client.close()
-            self._client = None
+        with self._client_lock:
+            clients = list(self._clients.values())
+            self._clients.clear()
+        for client in clients:
+            try:
+                client.close()
+            except Exception as exc:
+                logger.debug("HttpxDispatcher: failed to close client cleanly: %s", exc)
 
     # ── Cookie sync ───────────────────────────────────────────────────────────
 
@@ -95,11 +110,15 @@ class HttpxDispatcher:
 
     def _sync_cookies_to_client(self) -> None:
         """Merge the latest CookieManager state into the live httpx.Client jar."""
-        if self._client is None:
+        with self._client_lock:
+            clients = list(self._clients.values())
+        if not clients:
             return
         try:
-            for name, value in self._cookie_handler.get_httpx_cookies().items():
-                self._client.cookies.set(name, value)
+            cookies = self._cookie_handler.get_httpx_cookies()
+            for client in clients:
+                for name, value in cookies.items():
+                    client.cookies.set(name, value)
         except Exception as exc:
             logger.debug("HttpxDispatcher: failed to sync cookies to client: %s", exc)
 
@@ -127,7 +146,8 @@ class HttpxDispatcher:
         opened_handles: List[Any] = []
 
         try:
-            for field, value in request.files.items():
+            request_files = getattr(request, "files", {}) or {}
+            for field, value in request_files.items():
                 if isinstance(value, (str, Path)):
                     fh = Path(value).open("rb")
                     opened_handles.append(fh)
@@ -170,7 +190,7 @@ class HttpxDispatcher:
             elapsed=elapsed,
             request=request,
             timestamp=utc_now(),
-            sent_headers=sent_headers,
+            sent_headers=redact_headers(sent_headers),
             sent_url=str(raw.request.url) if getattr(raw, "request", None) is not None else None,
             connection_info=self._extract_connection_info(raw, request),
         )
@@ -339,7 +359,8 @@ class HttpxDispatcher:
         multipart_files, opened_handles = self._build_multipart_files(request)
         user_set_content_type = any(k.lower() == "content-type" for k in headers)
 
-        start_time = time.time()
+        start_time = time.perf_counter()
+        raw: Optional[httpx.Response] = None
         try:
             httpx_request = client.build_request(
                 method=request.method,
@@ -373,8 +394,10 @@ class HttpxDispatcher:
                 except Exception as exc:
                     logger.debug("Failed to close file handle: %s", exc)
 
+        if raw is None:
+            raise RuntimeError("HttpxDispatcher.execute: transport returned no response")
         self._log_redirect_chain(raw)
-        elapsed = time.time() - start_time
+        elapsed = time.perf_counter() - start_time
         logger.debug(
             "HttpxDispatcher: completed in %.3fs — status %d",
             elapsed, raw.status_code,
@@ -384,8 +407,10 @@ class HttpxDispatcher:
     # ── Dunder helpers ────────────────────────────────────────────────────────
 
     def __repr__(self) -> str:
-        state = "open" if self._client is not None else "closed"
+        with self._client_lock:
+            state = "open" if self._clients else "closed"
+            client_count = len(self._clients)
         return (
             f"HttpxDispatcher(state={state!r}, timeout={self._timeout}, "
-            f"verify_ssl={self._verify_ssl}, proxy={self._proxy!r})"
+            f"verify_ssl={self._verify_ssl}, proxy={self._proxy!r}, clients={client_count})"
         )
