@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import logging
+import threading
 import time
 from typing import AbstractSet, Callable, Optional
 
@@ -72,7 +73,14 @@ class RetryPolicy:
         )
         self._retry_after_cap_seconds: float = float(retry_after_cap_seconds)
         self._sleep: Callable[[float], None] = interruptible_sleep or time.sleep
-        self._retry_events: list = []  # Track retry attempts for UI feedback
+        self._retry_state = threading.local()  # Per-thread retry tracking for UI feedback
+
+    def _get_retry_events(self) -> list:
+        events = getattr(self._retry_state, "events", None)
+        if events is None:
+            events = []
+            self._retry_state.events = events
+        return events
 
     # ── Properties ────────────────────────────────────────────────────────────
 
@@ -97,13 +105,14 @@ class RetryPolicy:
         Returns:
             String like "retried 2× after 429" or empty string if no retries.
         """
-        if not self._retry_events:
+        retry_events = self._get_retry_events()
+        if not retry_events:
             return ""
 
         # Summarize retry events
         # Format: "retried N× after STATUS_CODE" or "retried N× after timeout"
-        http_retries = [e for e in self._retry_events if e.get("type") == "http"]
-        timeout_retries = [e for e in self._retry_events if e.get("type") == "timeout"]
+        http_retries = [e for e in retry_events if e.get("type") == "http"]
+        timeout_retries = [e for e in retry_events if e.get("type") == "timeout"]
 
         parts = []
         if timeout_retries:
@@ -121,7 +130,7 @@ class RetryPolicy:
 
     def clear_retry_events(self) -> None:
         """Clear recorded retry events (called before each execute())."""
-        self._retry_events = []
+        self._retry_state.events = []
 
     # ── Public API ────────────────────────────────────────────────────────────
 
@@ -151,7 +160,7 @@ class RetryPolicy:
                 if attempt < self._timeout_retries - 1:
                     wait_seconds = 2 ** attempt  # 1 s, 2 s, 4 s, …
                     # Record retry event for UI
-                    self._retry_events.append({
+                    self._get_retry_events().append({
                         "type": "timeout",
                         "attempt": attempt + 1,
                         "total_attempts": self._timeout_retries,
@@ -209,7 +218,7 @@ class RetryPolicy:
                 retry_after,
             )
             # Record retry event for UI
-            self._retry_events.append({
+            self._get_retry_events().append({
                 "type": "http",
                 "attempt": attempt + 1,
                 "total_attempts": self._http_retries,
