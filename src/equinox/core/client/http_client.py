@@ -112,7 +112,7 @@ class HTTPClient:
         parameter validation while each collaborator has a clear construction
         site here.
         """
-        self._active_requests: int = 0  # counter for check_concurrent_limit / _release_concurrent_slot
+        self._active_requests: int = 0  # legacy compatibility mirror of ConcurrencyGuard.active
         self.interceptors = InterceptorChain()
         self.logger = RequestResponseLogger()
         self._audit = get_audit_logger()
@@ -226,6 +226,8 @@ class HTTPClient:
 
     def check_proxy_reachable(self) -> None:
         from equinox.core.proxy import check_proxy_reachable
+        if not self.proxy:
+            raise ValidationError("Proxy URL is not configured")
         check_proxy_reachable(self.proxy)
 
     def check_concurrent_limit(self) -> None:
@@ -238,12 +240,8 @@ class HTTPClient:
         Raises:
             RequestError: If ``_active_requests >= max_concurrent_requests``.
         """
-        if self._active_requests >= self.max_concurrent_requests:
-            raise RequestError(
-                f"Too many concurrent requests: {self._active_requests} active "
-                f"(max {self.max_concurrent_requests})"
-            )
-        self._active_requests += 1
+        self._concurrency.acquire(timeout=None)
+        self._active_requests = self._concurrency.active
 
     def _release_concurrent_slot(self) -> None:
         """Return one concurrency slot acquired by :meth:`check_concurrent_limit`.
@@ -251,8 +249,9 @@ class HTTPClient:
         Safe to call even when ``_active_requests`` is already 0 — the counter
         is never allowed to go below zero.
         """
-        if self._active_requests > 0:
-            self._active_requests -= 1
+        if self._concurrency.active > 0:
+            self._concurrency.release()
+        self._active_requests = self._concurrency.active
 
     def check_rate_limit(self) -> int:
         """Trigger the rate limiter and increment the active-request counter.
@@ -265,7 +264,7 @@ class HTTPClient:
         """
         logger.debug("HTTPClient: checking rate limit (max=%d/min)", self.max_rate_per_minute)
         self._rate_limiter.try_acquire()
-        self._active_requests += 1
+        self._active_requests = self._concurrency.active
         return self._active_requests
 
     def send(self, request: Request, auth: Optional[AuthStrategy] = None) -> Response:
@@ -293,13 +292,16 @@ class HTTPClient:
         )
 
         self._validate_request(request)
-        self.check_rate_limit()
-
-        with self._concurrency.slot():
-            return self._pipeline.execute(
-                request,
-                dispatch=lambda req: self._dispatch_with_retries(req, auth),
-            )
+        try:
+            with self._concurrency.slot():
+                self._active_requests = self._concurrency.active
+                self.check_rate_limit()
+                return self._pipeline.execute(
+                    request,
+                    dispatch=lambda req: self._dispatch_with_retries(req, auth),
+                )
+        finally:
+            self._active_requests = self._concurrency.active
 
     # ── Dunder helpers ────────────────────────────────────────────────────────
 
