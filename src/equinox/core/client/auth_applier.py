@@ -112,14 +112,20 @@ class AuthApplier:
         Raises:
             RequestError: If strategy.apply() raises any exception.
         """
-        # ...existing code...
-        if proxy and hasattr(strategy, "_proxy"):
-            strategy._proxy = proxy
-        if hasattr(strategy, "_verify_ssl"):
-            strategy._verify_ssl = bool(getattr(request, "verify_ssl", True))
+        verify_ssl = bool(getattr(request, "verify_ssl", True))
         logger.debug("Applying auth strategy: %s", type(strategy).__name__)
         try:
-            strategy.apply(request, headers)
+            # Prefer explicit runtime context over mutating strategy internals.
+            apply_with_context = getattr(strategy, "apply_with_context", None)
+            if callable(apply_with_context):
+                apply_with_context(
+                    request,
+                    headers,
+                    proxy=proxy,
+                    verify_ssl=verify_ssl,
+                )
+            else:
+                strategy.apply(request, headers)
         except Exception as exc:
             raise self._map_auth_error(exc, strategy, proxy) from exc
 
