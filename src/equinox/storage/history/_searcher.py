@@ -27,6 +27,11 @@ class _HistorySearcher:
     MAX_REGEX_LENGTH = 500
     MAX_LIMIT        = 10_000
 
+    # Body bytes examined during regex/JSONPath post-filtering.
+    # Applying a user-supplied regex to multi-MB response bodies can cause
+    # catastrophic backtracking; this cap keeps worst-case linear with the limit.
+    _MAX_BODY_BYTES_FOR_FILTER: int = 512 * 1024  # 512 KB
+
     def __init__(self, db: Database, serializer: _HistorySerializer) -> None:
         self._db         = db
         self._serializer = serializer
@@ -232,6 +237,10 @@ class _HistorySearcher:
     @staticmethod
     def _matches_body_regex(row: Dict[str, Any], compiled_regex: "re.Pattern[str]") -> bool:
         body = coerce_body_to_str(row.get("response_body") or "") or ""
+        # Cap the body before matching to prevent catastrophic backtracking on
+        # user-supplied patterns against large response bodies.
+        if len(body) > _HistorySearcher._MAX_BODY_BYTES_FOR_FILTER:
+            body = body[: _HistorySearcher._MAX_BODY_BYTES_FOR_FILTER]
         return bool(compiled_regex.search(body))
 
     @staticmethod
@@ -241,6 +250,9 @@ class _HistorySearcher:
         jsonpath_value: Optional[str] = None,
     ) -> bool:
         body = coerce_body_to_str(row.get("response_body") or "") or ""
+        # Cap before JSON decode for the same reason as regex filtering.
+        if len(body) > _HistorySearcher._MAX_BODY_BYTES_FOR_FILTER:
+            body = body[: _HistorySearcher._MAX_BODY_BYTES_FOR_FILTER]
         try:
             from equinox.storage.utils import safe_json_loads as _loads
             data = _loads(body)
