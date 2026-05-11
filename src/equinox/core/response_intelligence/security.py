@@ -25,6 +25,22 @@ _SEVERITY_RANK = {
     Severity.CRITICAL: 2,
 }
 
+_SAFE_REFERRER_POLICIES = {
+    "no-referrer",
+    "strict-origin",
+    "strict-origin-when-cross-origin",
+    "same-origin",
+    "origin",
+    "origin-when-cross-origin",
+    "no-referrer-when-downgrade",
+    "unsafe-url",
+}
+
+_SENSITIVE_VALUE_PATTERNS: List[Pattern[str]] = [
+    re.compile(r"\beyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]+\b"),
+    re.compile(r"(?i)\bbearer\s+[A-Za-z0-9\-._~+/]+=*"),
+]
+
 
 class MissingSecurityHeadersAnalyzer(Analyzer):
     analyzer_id = "security.missing_headers"
@@ -58,29 +74,72 @@ class MissingSecurityHeadersAnalyzer(Analyzer):
         ),
     }
 
+    @staticmethod
+    def _parse_hsts_max_age(value: str) -> Optional[int]:
+        match = re.search(r"(?i)max-age\s*=\s*(\d+)", value or "")
+        if not match:
+            return None
+        try:
+            return int(match.group(1))
+        except ValueError:
+            return None
+
+    def _invalid_security_header_issues(self, headers: Dict[str, str]) -> List[Dict[str, str]]:
+        invalid: List[Dict[str, str]] = []
+
+        hsts = headers.get("strict-transport-security", "")
+        if hsts:
+            max_age = self._parse_hsts_max_age(hsts)
+            if max_age is None:
+                invalid.append({"header": "strict-transport-security", "description": "HSTS missing max-age directive.", "severity": Severity.WARNING.value})
+            elif max_age < 31536000:
+                invalid.append({"header": "strict-transport-security", "description": "HSTS max-age is below recommended 31536000 seconds.", "severity": Severity.WARNING.value})
+
+        csp = headers.get("content-security-policy", "")
+        if csp:
+            low = csp.lower()
+            if "unsafe-inline" in low or "unsafe-eval" in low:
+                invalid.append({"header": "content-security-policy", "description": "CSP includes unsafe directives (unsafe-inline or unsafe-eval).", "severity": Severity.WARNING.value})
+
+        if headers.get("x-content-type-options", "") and headers.get("x-content-type-options", "").strip().lower() != "nosniff":
+            invalid.append({"header": "x-content-type-options", "description": "X-Content-Type-Options should be 'nosniff'.", "severity": Severity.WARNING.value})
+
+        if headers.get("x-frame-options", "") and headers.get("x-frame-options", "").strip().upper() not in ("DENY", "SAMEORIGIN"):
+            invalid.append({"header": "x-frame-options", "description": "X-Frame-Options should be DENY or SAMEORIGIN.", "severity": Severity.INFO.value})
+
+        referrer = headers.get("referrer-policy", "")
+        if referrer:
+            policy = referrer.split(",", 1)[0].strip().lower()
+            if policy and policy not in _SAFE_REFERRER_POLICIES:
+                invalid.append({"header": "referrer-policy", "description": f"Unrecognized Referrer-Policy value: {policy}", "severity": Severity.INFO.value})
+
+        return invalid
+
     def analyze(self, ctx: AnalysisContext) -> List[Finding]:
         findings: List[Finding] = []
         missing: List[Dict[str, str]] = []
+        invalid = self._invalid_security_header_issues(ctx.response.headers)
 
         for header, (description, severity) in self._EXPECTED.items():
             if header not in ctx.response.headers:
                 missing.append({"header": header, "description": description, "severity": severity.value})
 
-        if not missing:
+        if not missing and not invalid:
             return findings
 
         worst = Severity.INFO
-        if any(entry["severity"] == Severity.WARNING.value for entry in missing):
+        all_issues = [*missing, *invalid]
+        if any(entry["severity"] == Severity.WARNING.value for entry in all_issues):
             worst = Severity.WARNING
 
         findings.append(Finding(
             category=self.category,
             severity=worst,
-            title=f"{len(missing)} security header(s) missing",
-            description="The response is missing recommended security headers.",
+            title=f"{len(all_issues)} security header issue(s)",
+            description="The response is missing or misconfigures recommended security headers.",
             analyzer_id=self.analyzer_id,
             recommendation="Add HSTS, CSP, and related browser hardening headers at your API gateway or app middleware.",
-            details={"missing": missing},
+            details={"missing": missing, "invalid": invalid},
         ))
         return findings
 
@@ -90,7 +149,34 @@ class CookieFlagsAnalyzer(Analyzer):
     category = Category.SECURITY
     display_name = "Cookie Security Flags"
 
-    _SET_COOKIE_SPLIT_RE = re.compile(r",\s*(?=[^;,=\s]+=[^;,]*)")
+    @staticmethod
+    def _split_set_cookie_header(raw: str) -> List[str]:
+        if not raw:
+            return []
+        parts: List[str] = []
+        token: List[str] = []
+        in_expires = False
+        idx = 0
+        while idx < len(raw):
+            char = raw[idx]
+            token.append(char)
+            if raw[idx:idx + 8].lower() == "expires=":
+                in_expires = True
+            elif char == ";" and in_expires:
+                in_expires = False
+            elif char == "," and not in_expires:
+                candidate = "".join(token[:-1]).strip()
+                if candidate:
+                    parts.append(candidate)
+                token = []
+                while idx + 1 < len(raw) and raw[idx + 1].isspace():
+                    idx += 1
+            idx += 1
+
+        tail = "".join(token).strip()
+        if tail:
+            parts.append(tail)
+        return parts
 
     def analyze(self, ctx: AnalysisContext) -> List[Finding]:
         import http.cookies as cookies
@@ -100,7 +186,7 @@ class CookieFlagsAnalyzer(Analyzer):
         if not raw_set_cookie:
             return findings
 
-        cookies_raw = [part.strip() for part in self._SET_COOKIE_SPLIT_RE.split(raw_set_cookie) if part.strip()]
+        cookies_raw = self._split_set_cookie_header(raw_set_cookie)
         issues: List[Dict[str, Any]] = []
         highest = Severity.INFO
 
@@ -349,6 +435,7 @@ class JWTDecodeAnalyzer(Analyzer):
     display_name = "JWT Decode & Expiry Check"
 
     _JWT_RE = re.compile(r"eyJ[A-Za-z0-9_-]{10,}\.eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]+")
+    _SAFE_CLAIM_KEYS = {"iss", "aud", "exp", "iat", "nbf", "jti", "scope", "scp", "token_use", "azp", "kid"}
 
     def analyze(self, ctx: AnalysisContext) -> List[Finding]:
         findings: List[Finding] = []
@@ -381,6 +468,10 @@ class JWTDecodeAnalyzer(Analyzer):
 
                 details: Dict[str, Any] = {"source": source_label, "claims": claims}
                 severity = Severity.INFO
+
+                safe_claims = self._sanitize_claims(claims)
+                details["claims"] = safe_claims
+                details["claim_keys"] = sorted(list(claims.keys()))[:20]
 
                 algorithm = str(decoded_header.get("alg", "")).strip().lower() if decoded_header else ""
                 if algorithm == "none":
@@ -447,6 +538,20 @@ class JWTDecodeAnalyzer(Analyzer):
         except Exception:
             return None, None
 
+    @classmethod
+    def _sanitize_claims(cls, claims: Dict[str, Any]) -> Dict[str, Any]:
+        sanitized: Dict[str, Any] = {}
+        for key, value in claims.items():
+            key_name = str(key)
+            if key_name in cls._SAFE_CLAIM_KEYS:
+                if isinstance(value, (str, int, float, bool)):
+                    sanitized[key_name] = value
+                elif isinstance(value, list):
+                    sanitized[key_name] = [str(item) for item in value[:10]]
+                else:
+                    sanitized[key_name] = str(value)[:128]
+        return sanitized
+
     @staticmethod
     def _summarize(claims: Dict[str, Any], details: Dict[str, Any]) -> str:
         parts: List[str] = []
@@ -507,6 +612,8 @@ class SensitiveDataCachingAnalyzer(Analyzer):
         parsed_json = ctx.response.json_safe()
         if _contains_sensitive_keys(parsed_json, self._SENSITIVE_KEYS):
             exposure_signals.append("sensitive fields in body")
+        if _contains_sensitive_values(ctx.response.text[:256_000]):
+            exposure_signals.append("sensitive value patterns in body")
 
         if not exposure_signals:
             return findings
@@ -555,4 +662,18 @@ def _contains_sensitive_keys(value: Any, sensitive_keys: Set[str], depth: int = 
             if _contains_sensitive_keys(nested, sensitive_keys, depth + 1):
                 return True
     return False
+
+
+def _contains_sensitive_values(body_text: str) -> bool:
+    if not body_text:
+        return False
+    for pattern in _SENSITIVE_VALUE_PATTERNS:
+        if pattern.search(body_text):
+            return True
+    for match in _HIGH_ENTROPY_RE.finditer(body_text):
+        candidate = match.group(0)
+        if _looks_like_high_entropy_secret(candidate, body_text, match.start(), match.end()):
+            return True
+    return False
+
 
