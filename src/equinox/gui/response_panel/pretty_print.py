@@ -89,7 +89,7 @@ class PrettyPrintRunnable(QRunnable):
         except Exception as e:
             logger.exception("Pretty-print formatting failed: %s", e)
             # Fallback to raw text
-            return self._get_fallback_text()
+            return self._get_fallback_text(self.response)
 
     def _emit_result(self, formatted_text: str) -> None:
         """Emit result signal safely.
@@ -106,11 +106,20 @@ class PrettyPrintRunnable(QRunnable):
             logger.debug("Failed to emit pretty-print result: %s", e)
 
     @staticmethod
-    def _get_fallback_text() -> str:
+    def _get_fallback_text(response: Response) -> str:
         """Get fallback text when formatting fails.
 
         Returns:
-            Empty string (UI will show placeholder)
+            Raw decoded response text
         """
-        return ""
+        try:
+            if isinstance(getattr(response, "body", b""), (bytes, bytearray)):
+                text_value = getattr(response, "text", None)
+                if isinstance(text_value, str):
+                    return text_value
+                return bytes(response.body).decode("utf-8", errors="replace")
+            return str(getattr(response, "body", ""))
+        except Exception:
+            logger.debug("Pretty-print fallback text decode failed", exc_info=True)
+            return ""
 
