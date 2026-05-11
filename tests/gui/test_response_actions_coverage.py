@@ -1,7 +1,6 @@
-import json
 from unittest.mock import MagicMock, patch
 import pytest
-from PyQt6.QtWidgets import QApplication, QFileDialog, QMessageBox
+from PyQt6.QtWidgets import QApplication
 from equinox.gui.response_panel import ResponsePanel
 from equinox.core.request import Request, Response
 
@@ -79,8 +78,8 @@ def test_download_body(panel):
             mock_file = MagicMock()
             mock_open.return_value.__enter__.return_value = mock_file
             panel._download_body()
-            mock_open.assert_called()
-            mock_file.write.assert_called_with("save me")
+            mock_open.assert_called_with("test.txt", "wb")
+            mock_file.write.assert_called_with(b"save me")
 
 def test_copy_as_curl(panel):
     req = Request(method="GET", url="http://test.com", headers={"X-Test": "Value"})
