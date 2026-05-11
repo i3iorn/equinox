@@ -194,7 +194,7 @@ class RequestPipeline:
 
             self._audit.log_request(
                 request.method,
-                redact_url(request.url),
+                redact_url(request.url or ""),
                 status_code=response.status_code,
             )
             logger.debug(
@@ -209,7 +209,7 @@ class RequestPipeline:
             logger.debug(
                 "RequestPipeline.execute: caught %s — %s",
                 type(exc).__name__,
-                str(exc)[:200],
+                (redact_body(str(exc), max_length=200) or ""),
             )
             self._handle_error(request, exc)
             # _handle_error returned normally: an interceptor suppressed the error.
