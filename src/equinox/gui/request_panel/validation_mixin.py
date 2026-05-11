@@ -16,6 +16,8 @@ from equinox.core.exceptions import ValidationError
 
 logger = logging.getLogger(__name__)
 
+_MAX_SYNC_JSON_VALIDATE_BYTES = 5_000_000
+
 
 class _RequestValidationMixin:
     """Real-time validation for request input fields.
@@ -114,10 +116,17 @@ class _RequestValidationMixin:
         text = (url_text or "").strip()
         if not text:
             return None
-        if " " in text:
-            compact = "".join(text.split())
-            if compact != text:
-                return compact, "Remove whitespace from URL"
+        if url_text != text:
+            return text, "Trim leading/trailing whitespace"
+        if any(ch.isspace() for ch in text):
+            encoded = (
+                text.replace(" ", "%20")
+                .replace("\t", "%20")
+                .replace("\n", "%20")
+                .replace("\r", "%20")
+            )
+            if encoded != text:
+                return encoded, "Encode whitespace as %20"
         if not text.lower().startswith(("http://", "https://")):
             if text.startswith("//"):
                 return f"https:{text}", "Add https scheme"
@@ -147,34 +156,65 @@ class _RequestValidationMixin:
         """Validate JSON body if Content-Type is JSON."""
         body_text = self.body_text.toPlainText().strip()
 
-        # Empty is OK
-        if not body_text:
-            self._set_field_valid(self.body_text, None)
-            self._body_valid = True
-            return
-
-        # Check if body format is JSON (from body type picker)
         body_type = ""
         try:
             body_type = self.body_type_combo.currentText().lower()
         except Exception:
             body_type = ""
-        if "json" not in body_type and "graphql" not in body_type:
-            self._set_field_valid(self.body_text, None)  # Don't validate non-JSON
-            self._body_valid = True
-            return
 
-        # Check Content-Type header to see if this should be JSON
-        headers = self.headers_table.get_data() or {}
-        content_type = headers.get("Content-Type", "").lower()
-        is_json_content = "json" in content_type
+        is_json_mode = "json" in body_type
+        is_graphql_mode = "graphql" in body_type
 
-        if not is_json_content and "{{" not in body_text:
-            # Not JSON content-type and no template, so don't validate as JSON
+        # Non-JSON body modes are always considered valid here.
+        if not is_json_mode and not is_graphql_mode:
             self._set_field_valid(self.body_text, None)
             self._body_valid = True
             return
 
+        # GraphQL variables are JSON; validate the variables editor directly.
+        if is_graphql_mode:
+            gql_vars = ""
+            try:
+                gql_vars = self._gql_vars.toPlainText().strip()
+            except Exception:
+                gql_vars = ""
+            if not gql_vars:
+                self._set_field_valid(self.body_text, None)
+                self._body_valid = True
+                return
+            if len(gql_vars) > _MAX_SYNC_JSON_VALIDATE_BYTES:
+                self._set_field_valid(self.body_text, None)
+                self._body_valid = True
+                logger.warning(
+                    "request_panel.validation.graphql_vars_skip_large op=validate_body size=%d",
+                    len(gql_vars),
+                )
+                return
+            try:
+                json.loads(gql_vars)
+                self._set_field_valid(self.body_text, "valid")
+                self._body_valid = True
+                logger.debug("GraphQL variables JSON validation passed")
+            except json.JSONDecodeError as e:
+                msg = f"Invalid GraphQL variables JSON at line {e.lineno}, col {e.colno}: {e.msg}"
+                self._set_field_valid(self.body_text, "error", msg)
+                self._body_valid = False
+                logger.debug("GraphQL variables JSON validation failed: %s", msg)
+            return
+
+        # JSON body mode: validate regardless of Content-Type header.
+        if not body_text:
+            self._set_field_valid(self.body_text, None)
+            self._body_valid = True
+            return
+        if len(body_text) > _MAX_SYNC_JSON_VALIDATE_BYTES:
+            self._set_field_valid(self.body_text, None)
+            self._body_valid = True
+            logger.warning(
+                "request_panel.validation.json_skip_large op=validate_body size=%d",
+                len(body_text),
+            )
+            return
         try:
             json.loads(body_text)
             self._set_field_valid(self.body_text, "valid")
@@ -218,8 +258,8 @@ class _RequestValidationMixin:
         # If there are validation errors in headers or body, warn but allow send
         # (server errors are more informative than client lockout)
         if not self._headers_valid or not self._body_valid:
-            logger.warning(
-                "Send button would be disabled: headers_valid=%s, body_valid=%s",
+            logger.debug(
+                "request_panel.validation.send_gate headers_valid=%s body_valid=%s",
                 self._headers_valid, self._body_valid
             )
             # Actually, let's disable if body is invalid (syntactic error)

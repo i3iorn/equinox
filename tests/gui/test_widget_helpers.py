@@ -12,6 +12,8 @@ from equinox.gui.request_panel.builder import (
     inject_content_type,
     detect_body_type,
 )
+from equinox.gui.request_panel.mixins._default_headers import apply_default_headers
+from equinox.core.request import Request
 
 
 class TestDetectBodyType:
@@ -81,6 +83,7 @@ class TestAssembleBody:
         rows = [{"key": "file", "value": "test.txt"}, {"key": "", "value": "skip"}]
         body, mp = assemble_body("multipart/form-data", "", "", "", rows)
         assert body is None
+        assert mp is not None
         assert len(mp) == 1
         assert mp[0]["key"] == "file"
 
@@ -88,16 +91,14 @@ class TestAssembleBody:
         import json
         body, mp = assemble_body("GraphQL", "", "query { users { id } }", '{"limit": 10}', [])
         assert mp is None
+        assert body is not None
         parsed = json.loads(body)
         assert parsed["query"] == "query { users { id } }"
         assert parsed["variables"] == {"limit": 10}
 
     def test_graphql_invalid_vars(self):
-        import json
-        body, _ = assemble_body("GraphQL", "", "query { me }", "not-json", [])
-        parsed = json.loads(body)
-        assert "query" in parsed
-        assert "variables" not in parsed
+        with pytest.raises(ValueError, match="GraphQL variables must be valid JSON"):
+            assemble_body("GraphQL", "", "query { me }", "not-json", [])
 
     def test_empty_raw_returns_none(self):
         body, mp = assemble_body("raw (text)", "", "", "", [])
@@ -115,6 +116,12 @@ class TestInjectContentType:
         headers = {"Content-Type": "text/plain"}
         result = inject_content_type('{"a":1}', "raw (JSON)", headers)
         assert result["Content-Type"] == "text/plain"
+
+    def test_preserves_existing_content_type_case_insensitive(self):
+        headers = {"content-type": "text/plain"}
+        result = inject_content_type('{"a":1}', "raw (JSON)", headers)
+        assert result["content-type"] == "text/plain"
+        assert "Content-Type" not in result
 
     def test_no_body_no_injection(self):
         result = inject_content_type(None, "raw (JSON)", {})
@@ -145,6 +152,16 @@ class TestInjectContentType:
         result = inject_content_type('{"a":1}', "raw (JSON)", original)
         assert "Content-Type" not in original
         assert "Content-Type" in result
+
+
+class TestApplyDefaultHeaders:
+    """apply_default_headers — inject defaults without duplicate semantic headers."""
+
+    def test_keeps_existing_user_agent_any_case(self):
+        req = Request(method="GET", url="https://example.com", headers={"user-agent": "custom"})
+        apply_default_headers(req)
+        assert req.headers["user-agent"] == "custom"
+        assert req.headers.get("User-Agent") == "custom"
 
 
 # ── path_params helpers ───────────────────────────────────────────────────────

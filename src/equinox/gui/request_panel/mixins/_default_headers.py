@@ -51,8 +51,9 @@ def apply_default_headers(request: "Request") -> None:
         request: The outbound :class:`~equinox.core.request.Request` whose
             ``headers`` dict is mutated in-place.  The caller retains ownership.
     """
+    existing = {str(k).lower() for k in request.headers.keys()}
     for name, value_or_factory in _SYSTEM_DEFAULTS.items():
-        if name not in request.headers:
+        if name.lower() not in existing:
             request.headers[name] = (
                 value_or_factory() if callable(value_or_factory) else value_or_factory
             )

@@ -171,3 +171,22 @@ def test_send_request_blocks_dispatch_when_placeholders_still_unresolved(monkeyp
     assert "BASE_URL(source=collection, value_type=str, value_is_template=True)" in warned[0]
 
 
+def test_resolve_proxy_url_handles_invalid_port(monkeypatch) -> None:
+    class _FakeSettings:
+        def __init__(self, *_args, **_kwargs) -> None:
+            pass
+
+        def value(self, key):
+            if key == "proxy/host":
+                return "localhost"
+            if key == "proxy/port":
+                return "not-a-port"
+            return None
+
+    monkeypatch.setattr(send_mixin_mod, "_QSettings", None, raising=False)
+    import PyQt6.QtCore as qt_core
+    monkeypatch.setattr(qt_core, "QSettings", _FakeSettings)
+
+    assert _RequestSendMixin._resolve_proxy_url() is None
+
+

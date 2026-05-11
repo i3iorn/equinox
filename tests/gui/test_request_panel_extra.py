@@ -1,6 +1,6 @@
-import os
+from unittest.mock import Mock
 
-from PyQt6.QtWidgets import QApplication, QPushButton
+from PyQt6.QtWidgets import QApplication
 from PyQt6.QtCore import QCoreApplication
 
 import pytest
@@ -155,4 +155,71 @@ def test_setup_dirty_tracking_is_resilient_when_widgets_missing(tmp_db_path):
 
     # Re-run the wiring — should not raise even if some attributes are None
     panel._setup_dirty_tracking()
+
+
+def test_url_fix_suggestion_encodes_internal_whitespace(tmp_db_path):
+    ensure_qapp()
+    from equinox.storage import get_db
+    from equinox.gui.request_panel.panel import RequestPanel
+
+    panel = RequestPanel(get_db())
+    fixed = panel._suggest_url_fix("https://api.example.com/has space")
+    assert fixed is not None
+    assert fixed[0] == "https://api.example.com/has%20space"
+
+
+def test_json_body_validation_disables_send_for_invalid_json_even_without_content_type(tmp_db_path):
+    ensure_qapp()
+    from equinox.storage import get_db
+    from equinox.gui.request_panel.panel import RequestPanel
+
+    panel = RequestPanel(get_db())
+    panel.url_input.setText("https://api.example.com")
+    panel.body_type_combo.setCurrentText("raw (JSON)")
+    panel.body_text.setPlainText('{"x":')
+    panel.headers_table.reset()
+
+    panel._run_validation_checks()
+    assert panel.send_button.isEnabled() is False
+
+
+def test_save_updates_existing_request_when_collection_unchanged(tmp_db_path, monkeypatch):
+    ensure_qapp()
+    from equinox.storage import get_db
+    from equinox.gui.request_panel import panel as panel_mod
+    from equinox.gui.request_panel.panel import RequestPanel
+    from equinox.core.request import Request
+
+    panel = RequestPanel(get_db())
+    panel.url_input.setText("https://api.example.com/items")
+    panel.method_combo.setCurrentText("GET")
+    panel.current_request = Request(
+        method="GET",
+        url="https://api.example.com/items",
+        headers={},
+        name="Items",
+        collection_id=7,
+        id=123,
+        folder="",
+    )
+
+    class _FakeDialog:
+        def __init__(self, *_args, **_kwargs):
+            pass
+
+        def exec(self):
+            return panel_mod.QDialog.DialogCode.Accepted
+
+        def result_values(self):
+            return "Items", 7, "Default", ""
+
+    monkeypatch.setattr(panel_mod, "SaveRequestDialog", _FakeDialog)
+    manager_mock = Mock()
+    panel._collection_mgr = manager_mock
+
+    panel._save_request()
+
+    manager_mock.update_request.assert_called_once()
+    manager_mock.save_request.assert_not_called()
+
 

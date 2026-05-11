@@ -304,7 +304,15 @@ class _RequestSendMixin:
         from PyQt6.QtCore import QSettings as _QSettings
         settings = _QSettings("Equinox", "Equinox")
         host = (settings.value("proxy/host") or "").strip()
-        port = int(settings.value("proxy/port") or 0)
+        raw_port = settings.value("proxy/port")
+        try:
+            port = int(raw_port or 0)
+        except (TypeError, ValueError):
+            logger.warning(
+                "request_panel.send.proxy_port_invalid op=resolve_proxy_url raw_port=%r",
+                raw_port,
+            )
+            port = 0
         return f"http://{host}:{port}" if (host and port > 0) else None
 
     @staticmethod
@@ -423,6 +431,13 @@ class _RequestSendMixin:
                 )
                 return
 
+        except ValueError as exc:
+            logger.warning(
+                "request_panel.send.input_validation_failed op=send_request error=%s",
+                exc,
+            )
+            QMessageBox.warning(self, "Request Validation", str(exc))
+            return
         except Exception as exc:
             logger.warning("Variable interpolation failed: %s", exc)
             QMessageBox.warning(self, "Variable Error", f"{_MSG_VAR_FAILED}:\n{exc}")

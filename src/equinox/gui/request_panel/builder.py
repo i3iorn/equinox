@@ -48,8 +48,8 @@ _CT_DETECT_ORDER: Tuple[Tuple[str, str], ...] = (
     ("text",       "raw (text)"),
 )
 
-# Security: Maximum size for JSON parsing (prevent DoS)
-_MAX_JSON_SIZE = 100_000_000  # 100 MB
+# Security: Maximum size for body/JSON parsing (prevent DoS)
+_MAX_BODY_SIZE = 100_000_000  # 100 MB
 
 # FormURLEncoded validation: characters that indicate NOT form data
 _FORM_INVALID_CHARS = frozenset(" \t\n\r/\\")
@@ -105,9 +105,15 @@ def assemble_body(
     if not body_text:
         return None, None
 
-    # Security: Check size before returning
-    if len(body_text) > _MAX_JSON_SIZE:
-        logger.warning("Body text exceeds maximum size (%d bytes), truncating", _MAX_JSON_SIZE)
+    # Security: reject oversized body content before dispatch.
+    if len(body_text) > _MAX_BODY_SIZE:
+        logger.warning(
+            "request_panel.builder.assemble_body_rejected op=assemble_body body_type=%s size=%d max_size=%d",
+            body_type,
+            len(body_text),
+            _MAX_BODY_SIZE,
+        )
+        raise ValueError(f"Body exceeds maximum supported size ({_MAX_BODY_SIZE} bytes)")
 
     return body_text, None
 
@@ -128,7 +134,11 @@ def _assemble_graphql_body(query: str, variables_json: str) -> str:
         try:
             gql_body["variables"] = _json.loads(variables_json)
         except (ValueError, _json.JSONDecodeError) as e:
-            logger.warning("Failed to parse GraphQL variables as JSON: %s", e)
+            logger.warning(
+                "request_panel.builder.graphql_vars_invalid op=assemble_graphql_body error=%s",
+                e,
+            )
+            raise ValueError("GraphQL variables must be valid JSON")
 
     return _json.dumps(gql_body)
 
@@ -237,7 +247,7 @@ def _is_valid_json(text: str) -> bool:
         True if valid JSON, False otherwise
     """
     try:
-        if len(text) > _MAX_JSON_SIZE:
+        if len(text) > _MAX_BODY_SIZE:
             logger.debug("JSON text exceeds maximum size, skipping validation")
             return False
         _json.loads(text)

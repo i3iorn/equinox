@@ -8,6 +8,7 @@ Logging strategy:
 
 import json
 import logging
+import time
 from typing import Optional, Dict, NamedTuple, Tuple
 
 from PyQt6.QtWidgets import (
@@ -353,6 +354,7 @@ class RequestPanel(_RequestValidationMixin, _RequestSendMixin, _RequestAuthMixin
 
     def _refresh_url_completer(self) -> None:
         """Populate the completer model from recent history URLs."""
+        t0 = time.perf_counter()
         try:
             entries = HistoryManager(self.db).list_history(limit=HISTORY_COMPLETER_LIMIT)
             urls = [e["url"] for e in entries if e.get("url")]
@@ -361,7 +363,13 @@ class RequestPanel(_RequestValidationMixin, _RequestSendMixin, _RequestAuthMixin
             self._known_urls = set(unique_urls)
             self._url_values = unique_urls
             self._url_model.setStringList(self._url_values)
-            logger.debug("URL completer refreshed: %d URLs", len(self._url_values))
+            elapsed_ms = int((time.perf_counter() - t0) * 1000)
+            logger.debug(
+                "request_panel.url_completer_refreshed op=refresh_url_completer history_entries=%d url_count=%d elapsed_ms=%d",
+                len(entries),
+                len(self._url_values),
+                elapsed_ms,
+            )
         except Exception:
             logger.debug("Failed to refresh URL completer", exc_info=True)
 
@@ -1139,10 +1147,17 @@ class RequestPanel(_RequestValidationMixin, _RequestSendMixin, _RequestAuthMixin
         text = self.body_text.toPlainText()
         if not text.strip():
             return
+        t0 = time.perf_counter()
         try:
             formatted = json.dumps(json.loads(text), indent=2, ensure_ascii=False)
             self.body_text.setPlainText(formatted)
-            logger.debug("JSON formatted: %d → %d chars", len(text), len(formatted))
+            elapsed_ms = int((time.perf_counter() - t0) * 1000)
+            logger.info(
+                "request_panel.json_formatted op=format_json_body original_length=%d formatted_length=%d elapsed_ms=%d",
+                len(text),
+                len(formatted),
+                elapsed_ms,
+            )
         except json.JSONDecodeError as exc:
             logger.warning("JSON formatting failed: %s (line %d, col %d)", exc.msg, exc.lineno, exc.colno)
             self._status_message(f"Invalid JSON: {exc}")
@@ -1156,27 +1171,61 @@ class RequestPanel(_RequestValidationMixin, _RequestSendMixin, _RequestAuthMixin
 
         method = self.method_combo.currentText()
         current_folder = getattr(self.current_request, "folder", None) or ""
+        logger.debug(
+            "request_panel.save_dialog_open op=save_request method=%s url=%s",
+            method,
+            url,
+        )
 
         dlg = SaveRequestDialog(self.db, method, url, current_folder, parent=self)
+        logger.debug("request_panel.save_dialog_created op=save_request")
         if dlg.exec() != QDialog.DialogCode.Accepted:
             return
 
         name, col_id, col_name, folder = dlg.result_values()
+        logger.debug(
+            "request_panel.save_dialog_values op=save_request name=%s collection_id=%s folder=%s",
+            name,
+            col_id,
+            folder,
+        )
 
         try:
+            existing_req = self.current_request
+            existing_id = getattr(existing_req, "id", None)
+            existing_collection_id = getattr(existing_req, "collection_id", None)
             request = self._build_request_from_editor(
                 name=name,
+                collection_id=col_id,
                 folder=folder,
             )
-            req_id = self._collection_mgr.save_request(request, collection_id=col_id, name=name)
+            if existing_id and existing_collection_id == col_id:
+                # Update in place when staying within the same collection.
+                request.id = existing_id
+                self._collection_mgr.update_request(request)
+                req_id = existing_id
+                logger.info(
+                    "request_panel.request_updated op=save_request request_id=%d collection_id=%d method=%s url=%s",
+                    req_id,
+                    col_id,
+                    method,
+                    url,
+                )
+            else:
+                # Save-as behavior for first save or cross-collection target.
+                req_id = self._collection_mgr.save_request(request, collection_id=col_id, name=name)
+                request.id = req_id
+                logger.info(
+                    "request_panel.request_saved op=save_request request_id=%d collection_id=%d method=%s url=%s",
+                    req_id,
+                    col_id,
+                    method,
+                    url,
+                )
 
-            # Link the editor to the newly-saved DB row so autosave targets it.
-            request.id = req_id
-            request.collection_id = col_id
             self.current_request = request
             self._clear_dirty()
 
-            logger.info("Request saved: id=%d col=%d '%s' %s %s", req_id, col_id, name, method, url)
             self._status_message(f"Saved '{name}' to '{col_name}'")
 
             try:

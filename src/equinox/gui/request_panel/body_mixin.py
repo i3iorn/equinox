@@ -558,6 +558,10 @@ class RequestBodyMixin:
             selections = []
 
             if getattr(self, '_body_regex_cb', None) and self._body_regex_cb.isChecked():
+                if not term:
+                    if target is not None:
+                        target.setExtraSelections([])
+                    return
                 try:
                     for m in re.finditer(term, doc_text, self._re_flags):
                         if target is not None:
@@ -618,6 +622,8 @@ class RequestBodyMixin:
 
             # ── Regex ─────────────────────────────────────────────────
             if getattr(self, '_body_regex_cb', None) and self._body_regex_cb.isChecked():
+                if not term:
+                    return
                 if target is None:
                     return
                 cur_pos = target.textCursor().position()
@@ -732,6 +738,15 @@ class RequestBodyMixin:
         try:
             txt = json.dumps(current, ensure_ascii=False)
             off = text.find(txt)
+            if off < 0:
+                return []
+            second = text.find(txt, off + 1)
+            if second >= 0:
+                logger.debug(
+                    "JSONPath highlight skipped due to ambiguous value match path=%s",
+                    path,
+                )
+                return []
             if off >= 0:
                 return [(off, len(txt))]
         except Exception:

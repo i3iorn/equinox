@@ -19,3 +19,4 @@ def is_history_capture_enabled() -> bool:
     if val is None:
         return True
     return str(val).lower() in {"1", "true", "yes"}
+
