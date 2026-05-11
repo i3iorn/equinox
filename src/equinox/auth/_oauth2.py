@@ -223,6 +223,29 @@ class OAuth2Auth(AuthStrategy):
         Raises:
             AuthError: If token refresh fails, lock timeout occurs, or no token available.
         """
+        self.apply_with_context(request, headers, proxy=None, verify_ssl=None)
+
+    def apply_with_context(
+        self,
+        request: Any,
+        headers: Dict[str, str],
+        *,
+        proxy: Optional[str] = None,
+        verify_ssl: Optional[bool] = None,
+    ) -> None:
+        """Apply auth using optional runtime transport context.
+
+        Args:
+            request: Current request object.
+            headers: Headers dict to modify in-place.
+            proxy: Optional per-request proxy override for token refresh calls.
+            verify_ssl: Optional per-request TLS verification override.
+        """
+        effective_proxy = proxy if proxy is not None else self._proxy
+        effective_verify_ssl = (
+            bool(verify_ssl) if verify_ssl is not None else self._verify_ssl
+        )
+
         # Acquire lock with timeout to prevent indefinite deadlock
         acquired = self._refresh_lock.acquire(timeout=_LOCK_TIMEOUT)
         if not acquired:
@@ -234,7 +257,10 @@ class OAuth2Auth(AuthStrategy):
 
         try:
             if self._needs_refresh():
-                self._refresh_access_token()
+                self._refresh_access_token(
+                    proxy=effective_proxy,
+                    verify_ssl=effective_verify_ssl,
+                )
         finally:
             self._refresh_lock.release()
 
@@ -523,7 +549,12 @@ class OAuth2Auth(AuthStrategy):
 
     # ── Token refresh ─────────────────────────────────────────────────────────
 
-    def _refresh_access_token(self) -> None:
+    def _refresh_access_token(
+        self,
+        *,
+        proxy: Optional[str] = None,
+        verify_ssl: Optional[bool] = None,
+    ) -> None:
         """Fetch a new access token using the refresh-token or client-credentials flow.
 
         Raises:
@@ -533,7 +564,11 @@ class OAuth2Auth(AuthStrategy):
             raise AuthError("No token URL configured for token refresh")
 
         grant_data = self._build_grant_data()
-        response = self._post_token_request(grant_data)
+        response = self._post_token_request(
+            grant_data,
+            proxy=proxy,
+            verify_ssl=verify_ssl,
+        )
         self._capture_token_response(response)
         self._apply_token_response(response)
 
@@ -661,7 +696,13 @@ class OAuth2Auth(AuthStrategy):
         encoded = base64.b64encode(credentials.encode("utf-8")).decode("ascii")
         return f"Basic {encoded}"
 
-    def _execute_token_post(self, grant_data: Dict[str, Any]) -> httpx.Response:
+    def _execute_token_post(
+        self,
+        grant_data: Dict[str, Any],
+        *,
+        proxy: Optional[str] = None,
+        verify_ssl: Optional[bool] = None,
+    ) -> httpx.Response:
         """Perform a single HTTP POST to the token endpoint.
 
         Sends credentials either in the request body or as an Authorization header
@@ -685,14 +726,20 @@ class OAuth2Auth(AuthStrategy):
 
         with httpx.Client(
             timeout=self._make_token_timeout(),
-            proxy=self._proxy_for_httpx,
-            verify=self._verify_ssl,
+            proxy=proxy if proxy is not None else self._proxy_for_httpx,
+            verify=self._verify_ssl if verify_ssl is None else bool(verify_ssl),
         ) as client:
             response = client.post(self.token_url, data=body, headers=headers)
         response.raise_for_status()
         return response
 
-    def _post_token_request(self, grant_data: Dict[str, Any]) -> httpx.Response:
+    def _post_token_request(
+        self,
+        grant_data: Dict[str, Any],
+        *,
+        proxy: Optional[str] = None,
+        verify_ssl: Optional[bool] = None,
+    ) -> httpx.Response:
         """POST grant_data to the token endpoint with retry on transient network errors.
 
         4xx responses are not retried — they signal bad credentials.
@@ -717,10 +764,17 @@ class OAuth2Auth(AuthStrategy):
             attempts_made = attempt + 1
             logger.debug(
                 "Token request to %s (attempt %d/%d, proxy=%s)",
-                self.token_url, attempts_made, _MAX_TOKEN_RETRIES, self._proxy_label,
+                self.token_url,
+                attempts_made,
+                _MAX_TOKEN_RETRIES,
+                proxy or self._proxy_label,
             )
             try:
-                response = self._execute_token_post(grant_data)
+                response = self._execute_token_post(
+                    grant_data,
+                    proxy=proxy,
+                    verify_ssl=verify_ssl,
+                )
                 logger.debug(
                     "Token request succeeded on attempt %d/%d",
                     attempts_made, _MAX_TOKEN_RETRIES,
@@ -739,7 +793,10 @@ class OAuth2Auth(AuthStrategy):
                     logger.warning(
                         "Token request: connection refused on attempt %d — skipping retries"
                         " (proxy=%s, url=%s): %s",
-                        attempts_made, self._proxy_label, self.token_url, transient_exc,
+                        attempts_made,
+                        proxy or self._proxy_label,
+                        self.token_url,
+                        transient_exc,
                     )
                     break
                 is_final = attempt == _MAX_TOKEN_RETRIES - 1
@@ -748,13 +805,17 @@ class OAuth2Auth(AuthStrategy):
                     logger.warning(
                         "Token request failed on final attempt %d/%d (proxy=%s, url=%s): %s",
                         attempts_made, _MAX_TOKEN_RETRIES,
-                        self._proxy_label, self.token_url, transient_exc,
+                        proxy or self._proxy_label,
+                        self.token_url,
+                        transient_exc,
                     )
                 else:
                     logger.warning(
                         "Token request failed (attempt %d/%d), retrying in %ds (proxy=%s, url=%s): %s",
                         attempts_made, _MAX_TOKEN_RETRIES, wait_seconds,
-                        self._proxy_label, self.token_url, transient_exc,
+                        proxy or self._proxy_label,
+                        self.token_url,
+                        transient_exc,
                     )
                     time.sleep(wait_seconds)
 
