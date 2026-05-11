@@ -20,7 +20,7 @@ from PyQt6.QtWidgets import (
     QTextEdit, QVBoxLayout, QWidget,
 )
 
-from equinox.auth import AUTH_TYPE_LABELS
+from equinox.auth import AUTH_TYPES
 from equinox.gui.theme import Colors, get_mono_font
 from equinox.gui.widgets.secret_row import make_secret_row as _secret_row
 from equinox.gui.workers import OAuthTokenTester
@@ -143,7 +143,7 @@ class SavedCredentialsDialog(DirtyDialogMixin, QDialog):
         self.f_name = QLineEdit()
         self.f_name.setPlaceholderText("My Credential")
         self.f_type = QComboBox()
-        for key, name in AUTH_TYPE_LABELS.items():
+        for key, name in AUTH_TYPES.items():
             self.f_type.addItem(name, userData=key)
         self.f_description = QLineEdit()
         self.f_description.setPlaceholderText("Optional description")
@@ -349,7 +349,7 @@ class SavedCredentialsDialog(DirtyDialogMixin, QDialog):
             self.cred_list.clear()
             for c in self.mgr.list():
                 at    = c["auth_type"]
-                label = AUTH_TYPE_LABELS.get(at, at)
+                label = AUTH_TYPES.get(at, at)
                 tag   = " \u2605" if c["is_default"] else ""
                 item  = QListWidgetItem(f"[{label}] {c['name']}{tag}")
                 item.setData(Qt.ItemDataRole.UserRole, c["id"])
@@ -465,7 +465,7 @@ class SavedCredentialsDialog(DirtyDialogMixin, QDialog):
         self.form_header.setText(
             f"<b>{c['name']}</b>"
             f"  <small style='color:{Colors.FG_MUTED};'>"
-            f"[{AUTH_TYPE_LABELS.get(c['auth_type'], c['auth_type'])}]"
+            f"[{AUTH_TYPES.get(c['auth_type'], c['auth_type'])}]"
             f"</small>"
         )
         self.status_label.setText("")

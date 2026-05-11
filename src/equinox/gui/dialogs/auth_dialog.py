@@ -16,9 +16,7 @@ from equinox.core.time import utc_now
 from equinox.gui.theme import Colors, get_mono_font
 from equinox.gui.widgets import make_secret_row
 
-from equinox.auth import BasicAuth, OAuth2Auth, BearerAuth, APIKeyAuth
-from equinox.auth import AWSSigV4Auth
-from equinox.auth import BasicAuth, OAuth2Auth, BearerAuth, APIKeyAuth, AUTH_TYPE_LABELS, AWSSigV4Auth
+from equinox.auth import BasicAuth, OAuth2Auth, BearerAuth, APIKeyAuth, AUTH_TYPES, AWSSigV4Auth
 from equinox.core.exceptions import AuthError
 from equinox.storage import SavedCredentialsManager
 
@@ -467,7 +465,7 @@ class AuthDialog(QDialog):
         self.cred_picker.clear()
         self.cred_picker.addItem("— fill in manually —", userData=None)
         for c in creds:
-            type_label = AUTH_TYPE_LABELS.get(c["auth_type"], c["auth_type"])
+            type_label = AUTH_TYPES.get(c["auth_type"], c["auth_type"])
             label = ("★ " if c["is_default"] else "") + f"[{type_label}] {c['name']}"
             self.cred_picker.addItem(label, userData=c["id"])
             if c["id"] == current_data:

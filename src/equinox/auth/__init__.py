@@ -70,7 +70,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any, Dict, List, Type
 
-from equinox.auth._base import AuthStrategy
+from equinox.auth._base import AuthStrategy, AUTH_TYPES
 from equinox.auth._bearer import BearerAuth
 from equinox.auth._api_key import APIKeyAuth
 from equinox.auth._basic import BasicAuth
@@ -88,7 +88,7 @@ __all__ = [
     "auth_from_dict",
     "get_auth_type",
     "list_auth_types",
-    "AUTH_TYPE_LABELS"
+    "AUTH_TYPES",
     "get_auth_types",
     "get_auth_type_labels"
 ]

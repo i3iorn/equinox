@@ -33,7 +33,7 @@ logger = logging.getLogger(__name__)
 _MAX_CREDENTIAL_LENGTH = 16_384
 
 
-AUTH_TYPE_LABELS: Dict[str, str] = {
+AUTH_TYPES: Dict[str, str] = {
     "oauth2":    "OAuth 2.0",
     "api_key":   "API Key",
     "basic":     "Basic Auth",

@@ -9,6 +9,7 @@ Type lists and display labels are derived from the auth factory registry
 import logging
 from typing import Any, Dict, List, Optional
 
+from equinox.auth import AUTH_TYPES
 from equinox.storage.database import Database
 from equinox.core.exceptions import StorageError, ValidationError, SecurityError, DuplicateError
 from equinox.core.auth_cipher import encrypt_auth_data, decrypt_auth_data
