@@ -3,13 +3,36 @@ import logging
 import multiprocessing
 import queue
 import time
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
 from .models import ScriptResult
 from .sandbox import get_safe_builtins
 from .validation import _validate_ast
 
 logger = logging.getLogger(__name__)
+
+# Maximum virtual address space granted to each sandbox subprocess (Unix only).
+# This prevents runaway scripts from exhausting host memory.
+_SCRIPT_MEMORY_LIMIT_BYTES: int = 128 * 1024 * 1024  # 128 MB
+
+
+def _apply_resource_limits() -> None:
+    """Apply OS-level resource limits inside the sandbox subprocess (Unix only).
+
+    Silently no-ops on Windows and in restricted environments where the
+    ``resource`` module is unavailable or limits cannot be lowered.
+    """
+    try:
+        import resource  # Unix-only stdlib module
+        # Cap virtual address space — catches runaway allocations before they
+        # affect the host process or other concurrent scripts.
+        resource.setrlimit(
+            resource.RLIMIT_AS,
+            (_SCRIPT_MEMORY_LIMIT_BYTES, _SCRIPT_MEMORY_LIMIT_BYTES),
+        )
+    except (ImportError, AttributeError, ValueError, OSError):
+        pass  # Not available (Windows) or limits cannot be applied
+
 
 def _subprocess_exec_target(
     q: "multiprocessing.Queue[Any]",
@@ -19,6 +42,7 @@ def _subprocess_exec_target(
     filename: str,
 ) -> None:
     """Top-level subprocess target for sandboxed script execution."""
+    _apply_resource_limits()
     try:
         # get_safe_builtins is reconstructed here inside the child process.
         globs: Dict[str, Any] = {"__builtins__": get_safe_builtins()}
@@ -28,6 +52,35 @@ def _subprocess_exec_target(
         q.put(("ok", locs.get("env", {})))
     except Exception as exc:  # noqa: BLE001
         q.put(("error", str(exc)))
+
+def _terminate_process(p: Optional[multiprocessing.Process]) -> None:
+    """Terminate and join *p*, escalating to kill if it does not exit promptly.
+
+    Always no-ops when *p* is ``None`` or already dead so callers can call this
+    unconditionally from ``finally`` blocks.
+    """
+    if p is None:
+        return
+    try:
+        if p.is_alive():
+            p.terminate()
+        p.join(timeout=2.0)
+        if p.is_alive():
+            # Escalate to SIGKILL / TerminateProcess on Windows
+            p.kill()
+            p.join(timeout=1.0)
+    except Exception:  # noqa: BLE001
+        pass
+
+
+def _close_queue(q: multiprocessing.Queue) -> None:
+    """Close *q* and drain its feeder thread to prevent resource leaks."""
+    try:
+        q.close()
+        q.join_thread()
+    except Exception:  # noqa: BLE001
+        pass
+
 
 class ScriptRunner:
     """Execute sandboxed Python scripts."""
@@ -93,8 +146,10 @@ class ScriptRunner:
 
         start_time = time.time()
 
+        q: multiprocessing.Queue = multiprocessing.Queue()
+        p: Optional[multiprocessing.Process] = None
+
         try:
-            q = multiprocessing.Queue()
             p = multiprocessing.Process(
                 target=_subprocess_exec_target,
                 args=(q, script, extra_locals, session_vars, filename),
@@ -102,24 +157,23 @@ class ScriptRunner:
             )
             p.start()
         except Exception as e:
-            string = f"Failed to start script execution: {e}"
-            return ScriptResult(error=string, duration=time.time() - start_time)
+            _close_queue(q)
+            return ScriptResult(error=f"Failed to start script execution: {e}", duration=time.time() - start_time)
 
         try:
             status, data = q.get(timeout=cls.EXECUTION_TIMEOUT)
             if status == "error":
                 return ScriptResult(error=data, duration=time.time() - start_time)
-            
+
             env_changes = cls._collect_changed_env(data, session_vars)
             return ScriptResult(env_changes=env_changes, duration=time.time() - start_time)
         except queue.Empty:
-            p.terminate()
             return ScriptResult(error=f"Script timed out after {cls.EXECUTION_TIMEOUT}s", duration=time.time() - start_time)
         except ValueError as ve:
             return ScriptResult(error=str(ve), duration=time.time() - start_time)
         finally:
-            if p.is_alive():
-                p.terminate()
+            _terminate_process(p)
+            _close_queue(q)
 
     @classmethod
     def _collect_changed_env(cls, new_env: Any, session_vars: Dict[str, str]) -> Dict[str, str]:
