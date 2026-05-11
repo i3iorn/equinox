@@ -104,6 +104,22 @@ class NPlusOneDetectionAnalyzer(Analyzer):
     display_name = "N+1 Request Pattern Detection"
 
     _THRESHOLD = 4
+    _INTERLEAVED_WINDOW = 12
+
+    @classmethod
+    def _interleaved_counts(cls, keys: List[str]) -> Dict[str, int]:
+        max_counts: Dict[str, int] = {}
+        for start in range(len(keys)):
+            window = keys[start:start + cls._INTERLEAVED_WINDOW]
+            if len(window) < cls._THRESHOLD:
+                continue
+            local: Dict[str, int] = {}
+            for key in window:
+                local[key] = local.get(key, 0) + 1
+            for key, count in local.items():
+                if count >= cls._THRESHOLD and count > max_counts.get(key, 0):
+                    max_counts[key] = count
+        return max_counts
 
     def analyze(self, ctx: AnalysisContext) -> List[Finding]:
         findings: List[Finding] = []
@@ -112,6 +128,7 @@ class NPlusOneDetectionAnalyzer(Analyzer):
             return findings
 
         runs: List[Tuple[str, int]] = []
+        all_keys: List[str] = []
         current_pattern = ""
         current_count = 0
 
@@ -120,6 +137,7 @@ class NPlusOneDetectionAnalyzer(Analyzer):
             method = row.get("method", "GET")
             pattern = self._normalize(url)
             key = f"{method} {pattern}"
+            all_keys.append(key)
             if key == current_pattern:
                 current_count += 1
             else:
@@ -134,6 +152,12 @@ class NPlusOneDetectionAnalyzer(Analyzer):
         grouped: Dict[str, List[int]] = {}
         for pattern, count in runs:
             grouped.setdefault(pattern, []).append(count)
+
+        interleaved = self._interleaved_counts(all_keys)
+        for pattern, count in interleaved.items():
+            grouped.setdefault(pattern, [])
+            if not grouped[pattern]:
+                grouped[pattern].append(count)
 
         for pattern in sorted(grouped.keys()):
             counts = grouped[pattern]
