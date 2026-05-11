@@ -453,14 +453,25 @@ class _TransactionHelper:
         return _run_sqlite(self._conn.execute, query, params)
 
     def executemany(self, query: str, seq_of_params) -> sqlite3.Cursor:
-        """Execute a statement against each item in *seq_of_params*."""
+        """Execute a statement against each item in *seq_of_params*.
+
+        Applies the same query-length validation as :meth:`execute` and routes
+        errors through the shared :func:`_run_sqlite` mapper so callers always
+        receive ``StorageError`` / ``DuplicateError`` — never raw
+        ``sqlite3.Error`` — consistent with every other helper on this class.
+
+        Raises:
+            ValidationError: If *query* is invalid.
+            DuplicateError: On UNIQUE constraint violation.
+            StorageError: On any other SQLite failure.
+        """
         if not query or not isinstance(query, str):
             raise ValidationError("Query must be a non-empty string")
         if len(query) > _MAX_QUERY_LENGTH:
             raise ValidationError(
                 f"Query exceeds maximum length of {_MAX_QUERY_LENGTH}"
             )
-        return self._conn.executemany(query, seq_of_params)
+        return _run_sqlite(self._conn.executemany, query, seq_of_params)
 
     def fetchone(self, query: str, params: _SqlParams = ()) -> Optional[Dict[str, Any]]:
         """Execute a query and return a single row as a ``dict``, or ``None``."""
