@@ -10,7 +10,6 @@ from __future__ import annotations
 import json
 import logging
 import difflib
-import re
 from typing import Dict, Any, Optional
 from urllib.parse import urlencode, urlsplit
 
@@ -24,15 +23,29 @@ from equinox.gui.response_panel._formatting import (
     parse_cookies,
 )
 from equinox.gui.theme import Colors
+from equinox.security import redact_body, redact_headers, redact_url
 
 logger = logging.getLogger(__name__)
 
-_SENSITIVE_PATTERNS = [
-    re.compile(r"(?i)(authorization\s*:\s*)([^\r\n]+)"),
-    re.compile(r"(?i)(api[-_]?key\s*[:=]\s*)([^\s\"']+)"),
-    re.compile(r"(?i)(access[_-]?token\s*[:=]\s*[\"']?)([^\"'\s]+)"),
-    re.compile(r"(?i)\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b"),
-]
+_BINARY_CONTENT_TYPE_TOKENS = (
+    "application/octet-stream",
+    "application/pdf",
+    "image/",
+    "audio/",
+    "video/",
+    "font/",
+)
+
+_TEXT_CONTENT_TYPE_HINTS = (
+    "json",
+    "xml",
+    "html",
+    "text",
+    "javascript",
+    "x-www-form-urlencoded",
+    "yaml",
+    "csv",
+)
 
 
 class ResponseDisplayMixin:
@@ -56,6 +69,7 @@ class ResponseDisplayMixin:
         )
 
         self.status_label.setText(f"{code}  {response.reason}")
+        self.status_label.setStyleSheet(f"color: {color};")
         self.time_label.setText(f"{int(response.elapsed * 1000)} ms")
         self.size_label.setText(format_size(response.size))
 
@@ -128,12 +142,35 @@ class ResponseDisplayMixin:
     def _decode_response_body(response: Response) -> str:
         """Decode response bytes to text for raw readability mode."""
         try:
-            if isinstance(response.body, (bytes, bytearray)):
-                return bytes(response.body).decode("utf-8", errors="replace")
+            body = getattr(response, "body", b"")
+            content_type = str(getattr(response, "headers", {}).get("content-type", "")).lower()
+
+            if isinstance(body, (bytes, bytearray)):
+                raw = bytes(body)
+                if ResponseDisplayMixin._looks_binary_payload(raw, content_type):
+                    ctype = content_type or "unknown"
+                    return f"[Binary response omitted in text view: {len(raw)} bytes, content-type={ctype}]"
+
+                # Prefer the Response.text decoding path because it honors charset.
+                text_value = getattr(response, "text", None)
+                if isinstance(text_value, str):
+                    return text_value
+                return raw.decode("utf-8", errors="replace")
             return str(response.body)
         except Exception:
             logger.debug("Failed decoding response body", exc_info=True)
             return ""
+
+    @staticmethod
+    def _looks_binary_payload(body: bytes, content_type: str) -> bool:
+        """Best-effort check for binary payloads that should not be text-rendered."""
+        ct = (content_type or "").lower()
+        if any(token in ct for token in _BINARY_CONTENT_TYPE_TOKENS):
+            return True
+        if any(token in ct for token in _TEXT_CONTENT_TYPE_HINTS):
+            return False
+        # Null bytes in payload strongly indicate non-text content.
+        return b"\x00" in body
 
     def _render_body_by_mode(self, mode: str) -> None:
         """Render cached body text in the requested readability mode."""
@@ -163,27 +200,33 @@ class ResponseDisplayMixin:
         """Return redacted text when preview mode is enabled."""
         if not getattr(self, "_redaction_preview", False):
             return text
-        redacted = text
-        for pattern in _SENSITIVE_PATTERNS:
-            if pattern.groups >= 2:
-                redacted = pattern.sub(r"\1[REDACTED]", redacted)
-            else:
-                redacted = pattern.sub("[REDACTED]", redacted)
-        return redacted
+        try:
+            return redact_body(text) or ""
+        except Exception:
+            logger.debug("Redacting body preview failed", exc_info=True)
+            return text
 
     def _maybe_redact_headers(self, headers: Dict[str, str]) -> Dict[str, str]:
         """Return headers with sensitive values masked when redaction preview is enabled."""
         if not getattr(self, "_redaction_preview", False):
             return dict(headers)
+        try:
+            masked = redact_headers(dict(headers))
+            # Ensure non-sensitive values still pass body-level redaction for embedded tokens.
+            return {k: (v if v == "[REDACTED]" else self._maybe_redact_text(str(v))) for k, v in masked.items()}
+        except Exception:
+            logger.debug("Redacting headers preview failed", exc_info=True)
+            return dict(headers)
 
-        sensitive = {"authorization", "cookie", "set-cookie", "x-api-key", "proxy-authorization"}
-        masked: Dict[str, str] = {}
-        for key, value in headers.items():
-            if key.lower() in sensitive:
-                masked[key] = "[REDACTED]"
-            else:
-                masked[key] = self._maybe_redact_text(str(value))
-        return masked
+    def _maybe_redact_url(self, value: str) -> str:
+        """Redact sensitive URL components when preview mode is enabled."""
+        if not getattr(self, "_redaction_preview", False):
+            return value
+        try:
+            return redact_url(value) or value
+        except Exception:
+            logger.debug("Redacting URL preview failed", exc_info=True)
+            return value
 
     # ------------------------------------------------------------------
     # JSON Tree
@@ -325,12 +368,13 @@ class ResponseDisplayMixin:
         """Display method badge with color."""
         color = Colors.METHOD.get(method, Colors.FG)
         self.sent_method_label.setText(f" {method} ")
+        self.sent_method_label.setStyleSheet(f"color: {color};")
 
     def _display_sent_request_url(self, response: Response) -> None:
         """Display the URL that was sent (prefer expanded httpx URL)."""
         req = response.request
         display_url = self._build_display_url(response)
-        self.sent_url_label.setText(display_url)
+        self.sent_url_label.setText(self._maybe_redact_url(display_url))
 
     @staticmethod
     def _build_display_url(response: Response) -> str:
@@ -368,7 +412,7 @@ class ResponseDisplayMixin:
         meta = getattr(response, "connection_info", None) or {}
 
         lines = [
-            f"URL: {url}",
+            f"URL: {self._maybe_redact_url(url)}",
             f"Host: {parts.netloc or '(unknown)'}",
             f"Transport: {'HTTPS' if is_https else 'HTTP'}",
             f"Verify SSL: {bool(meta.get('verify_ssl', getattr(response.request, 'verify_ssl', True)))}",
