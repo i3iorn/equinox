@@ -1,4 +1,5 @@
 import httpx
+import pytest
 
 from equinox.core.client.cookie_handler import CookieHandler
 from equinox.core.client.dispatcher import HttpxDispatcher
@@ -76,4 +77,52 @@ def test_wrap_response_attaches_connection_info_and_sent_url():
     assert wrapped.connection_info.get("tls_version") == "TLSv1.3"
     assert wrapped.connection_info.get("cert_subject") == "api.example.com"
     assert wrapped.connection_info.get("server_addr") == "('203.0.113.10', 443)"
+
+
+def test_wrap_response_redacts_sensitive_sent_headers():
+    dispatcher = _make_dispatcher()
+    req = Request(method="GET", url="https://api.example.com/users")
+
+    raw_req = httpx.Request("GET", "https://api.example.com/users")
+    raw_resp = httpx.Response(
+        200,
+        headers={"content-type": "application/json"},
+        content=b"{}",
+        request=raw_req,
+    )
+
+    wrapped = dispatcher._wrap_response(
+        raw_resp,
+        req,
+        elapsed=0.01,
+        sent_headers={"Authorization": "Bearer secret", "accept": "application/json"},
+    )
+
+    assert wrapped.sent_headers["Authorization"] == "[REDACTED]"
+    assert wrapped.sent_headers["accept"] == "application/json"
+
+
+def test_ensure_client_keeps_verify_ssl_isolated(monkeypatch: pytest.MonkeyPatch):
+    calls = []
+
+    class _FakeClient:
+        def __init__(self, **kwargs):
+            calls.append(kwargs)
+
+        def close(self):
+            return None
+
+    monkeypatch.setattr("equinox.core.client.dispatcher.httpx.Client", _FakeClient)
+
+    dispatcher = _make_dispatcher()
+    c1 = dispatcher._ensure_client(True)
+    c2 = dispatcher._ensure_client(False)
+    c3 = dispatcher._ensure_client(True)
+
+    assert c1 is c3
+    assert c1 is not c2
+    assert len(calls) == 2
+    assert calls[0]["verify"] is not False
+    assert calls[1]["verify"] is False
+
 

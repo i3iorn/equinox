@@ -182,46 +182,49 @@ class TestAuthApplierApplyLogging:
 # ---------------------------------------------------------------------------
 
 class TestInvokeStrategyProxyInjection:
-    def test_proxy_injected_when_strategy_has_proxy_attr(self):
+    def test_apply_with_context_receives_proxy_and_verify_ssl(self):
+        applier = AuthApplier()
+        auth = MagicMock(spec=AuthStrategy)
+        auth.apply_with_context = MagicMock()
+        request = _make_request(verify_ssl=False)
+        applier._invoke_strategy(auth, request, {}, proxy="http://proxy:3128")
+        auth.apply_with_context.assert_called_once_with(
+            request,
+            {},
+            proxy="http://proxy:3128",
+            verify_ssl=False,
+        )
+
+    def test_legacy_apply_used_when_context_method_missing(self):
         applier = AuthApplier()
         auth = _make_auth()
-        auth._proxy = None  # signal that attribute exists
         request = _make_request()
         applier._invoke_strategy(auth, request, {}, proxy="http://proxy:3128")
-        assert auth._proxy == "http://proxy:3128"
+        auth.apply.assert_called_once_with(request, {})
 
-    def test_proxy_not_injected_when_strategy_lacks_proxy_attr(self):
-        applier = AuthApplier()
-        auth = _make_auth()
-        # No _proxy attribute on the mock
-        assert not hasattr(auth, "_proxy")
-        request = _make_request()
-        # Should not raise
-        applier._invoke_strategy(auth, request, {}, proxy="http://proxy:3128")
-
-    def test_proxy_none_skips_injection(self):
+    def test_does_not_mutate_strategy_proxy_attr(self):
         applier = AuthApplier()
         auth = _make_auth()
         auth._proxy = "old"
         request = _make_request()
-        applier._invoke_strategy(auth, request, {}, proxy=None)
-        # _proxy must remain unchanged
+        applier._invoke_strategy(auth, request, {}, proxy="http://proxy:3128")
         assert auth._proxy == "old"
 
-    def test_verify_ssl_injected_when_strategy_has_verify_attr(self):
+    def test_does_not_mutate_strategy_verify_ssl_attr(self):
         applier = AuthApplier()
         auth = _make_auth()
-        auth._verify_ssl = True  # signal that attribute exists
+        auth._verify_ssl = True
         request = _make_request(verify_ssl=False)
-        applier._invoke_strategy(auth, request, {}, proxy=None)
-        assert auth._verify_ssl is False
+        applier._invoke_strategy(auth, request, {}, proxy="http://proxy:3128")
+        assert auth._verify_ssl is True
 
-    def test_verify_ssl_not_injected_when_strategy_lacks_verify_attr(self):
+    def test_apply_with_context_error_maps_to_request_error(self):
         applier = AuthApplier()
-        auth = _make_auth()
-        request = _make_request(verify_ssl=False)
-        applier._invoke_strategy(auth, request, {}, proxy=None)
-        assert not hasattr(auth, "_verify_ssl")
+        auth = MagicMock(spec=AuthStrategy)
+        auth.apply_with_context = MagicMock(side_effect=RuntimeError("boom"))
+        request = _make_request()
+        with pytest.raises(RequestError):
+            applier._invoke_strategy(auth, request, {}, proxy="http://proxy:3128")
 
     def test_strategy_apply_called_with_request_and_headers(self):
         applier = AuthApplier()

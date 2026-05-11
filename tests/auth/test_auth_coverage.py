@@ -694,7 +694,8 @@ class TestOAuth2Coverage:
             verify_ssl=False,
         )
         auth._proxy = "http://proxy.local:8080"
-        auth._refresh_access_token()
+        with patch.dict("os.environ", {"EQUINOX_SSRF_ALLOW_ON_DNS_FAILURE": "1"}):
+            auth._refresh_access_token()
         # Verify proxy + verify_ssl were passed
         call_kwargs = mock_client_class.call_args[1]
         assert call_kwargs["proxy"] == "http://proxy.local:8080"

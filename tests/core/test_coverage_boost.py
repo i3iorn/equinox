@@ -347,7 +347,7 @@ class TestHTTPClientCoverage:
     def test_concurrent_limit(self):
         from equinox.core.client import HTTPClient
         client = HTTPClient(max_concurrent_requests=1)
-        client.check_rate_limit()
+        client.check_concurrent_limit()
         with pytest.raises(RequestError, match="Too many concurrent requests"):
             client.check_concurrent_limit()
 
