@@ -44,7 +44,7 @@ class CookieHandler:
 
         try:
             headers = dict(response.headers)
-            if headers.get("set-cookie"):
+            if any(k.lower() == "set-cookie" for k in headers):
                 logger.debug(
                     "CookieHandler: updating cookie jar from Set-Cookie (url=%s)", url
                 )
