@@ -629,13 +629,66 @@ class MigrationRunner:
         conn.execute(stmt)
 
     @staticmethod
+    def _strip_block_comments(sql: str) -> str:
+        r"""Remove ``/* … */`` block comments from *sql*.
+
+        Handles nested-style markers correctly by tracking whether we are
+        inside a single-quoted string literal (where comment markers must be
+        treated as literal text).
+
+        This pre-processing step means ``_split_sql`` never sees block-comment
+        content and future complex migrations with ``/* ... */`` annotations
+        work without changes to the splitter logic.
+        """
+        result: list = []
+        i = 0
+        n = len(sql)
+        in_string = False
+
+        while i < n:
+            # Track single-quoted string boundaries so we never strip
+            # markers that appear inside string literals.
+            if sql[i] == "'" and not in_string:
+                in_string = True
+                result.append(sql[i])
+                i += 1
+            elif sql[i] == "'" and in_string:
+                result.append(sql[i])
+                i += 1
+                # SQL escape: '' inside a string is a literal single-quote.
+                if i < n and sql[i] == "'":
+                    result.append(sql[i])
+                    i += 1
+                else:
+                    in_string = False
+            elif not in_string and sql[i : i + 2] == "/*":
+                # Consume everything until the matching */
+                end = sql.find("*/", i + 2)
+                if end == -1:
+                    # Unclosed block comment — include the remainder verbatim
+                    # so the error surfaces as a SQL syntax error downstream.
+                    result.append(sql[i:])
+                    break
+                # Replace comment with whitespace to preserve token boundaries.
+                result.append(" ")
+                i = end + 2
+            else:
+                result.append(sql[i])
+                i += 1
+
+        return "".join(result)
+
+    @staticmethod
     def _split_sql(sql: str) -> list:
         """Split a SQL script into individual non-empty statements.
 
         Respects single-quoted string literals so that semicolons inside
         strings (e.g. ``DEFAULT 'a;b'``) do not cause a spurious split.
         Strips leading ``-- comment`` lines from each statement.
+        ``/* block comments */`` are removed by :meth:`_strip_block_comments`
+        before the split pass so they never cause a spurious statement boundary.
         """
+        sql = MigrationRunner._strip_block_comments(sql)
         statements: list = []
         current: list = []
         in_string = False
