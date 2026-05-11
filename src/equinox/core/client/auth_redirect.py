@@ -8,6 +8,7 @@ import logging
 from typing import Dict, Generator
 
 import httpx
+from equinox.security import redact_url
 
 logger = logging.getLogger(__name__)
 
@@ -62,7 +63,7 @@ class _RedirectSafeAuth(httpx.Auth):
             "_RedirectSafeAuth: injected %d auth header(s) for %s %s",
             len(self._auth_headers),
             request.method,
-            request.url,
+            redact_url(str(request.url)),
         )
         yield request
 
