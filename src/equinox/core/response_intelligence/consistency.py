@@ -102,6 +102,11 @@ class ContentTypeMismatchAnalyzer(Analyzer):
 
     _MAX_JSON_VALIDATE_SIZE = 1_000_000
 
+    @staticmethod
+    def _looks_like_json_prefix(text: str) -> bool:
+        stripped = (text or "").lstrip()
+        return bool(stripped) and stripped[0] in "[{"
+
     def analyze(self, ctx: AnalysisContext) -> List[Finding]:
         findings: List[Finding] = []
         content_type = ctx.response.content_type or ""
@@ -113,6 +118,29 @@ class ContentTypeMismatchAnalyzer(Analyzer):
 
         if "json" in content_type:
             if len(body) > self._MAX_JSON_VALIDATE_SIZE:
+                if not self._looks_like_json_prefix(text):
+                    findings.append(Finding(
+                        category=self.category,
+                        severity=Severity.WARNING,
+                        title="Content-Type says JSON but body does not look like JSON",
+                        description=f"Content-Type: {content_type}",
+                        analyzer_id=self.analyzer_id,
+                        recommendation="Return JSON payloads starting with an object/array, or correct the Content-Type header.",
+                        details={"content_type": content_type, "body_size": len(body)},
+                    ))
+                    return findings
+                findings.append(Finding(
+                    category=self.category,
+                    severity=Severity.INFO,
+                    title="Large JSON payload skipped strict validation",
+                    description=(
+                        f"Body size {len(body)} bytes exceeds validation limit "
+                        f"{self._MAX_JSON_VALIDATE_SIZE} bytes."
+                    ),
+                    analyzer_id=self.analyzer_id,
+                    recommendation="Use streaming JSON validation for large payloads in CI/contract tests.",
+                    details={"body_size": len(body), "validation_limit": self._MAX_JSON_VALIDATE_SIZE},
+                ))
                 return findings
             parsed = ctx.response.json_safe()
             if parsed is None:
@@ -166,7 +194,22 @@ class DuplicateJsonKeysAnalyzer(Analyzer):
         if not ctx.response.is_json or not ctx.response.body:
             return findings
 
-        text = ctx.response.text[:self._MAX_SCAN]
+        if len(ctx.response.body) > self._MAX_SCAN:
+            findings.append(Finding(
+                category=self.category,
+                severity=Severity.INFO,
+                title="Duplicate-key scan skipped for large JSON body",
+                description=(
+                    f"Body size {len(ctx.response.body)} bytes exceeds scan limit "
+                    f"{self._MAX_SCAN} bytes."
+                ),
+                analyzer_id=self.analyzer_id,
+                recommendation="Run duplicate-key validation server-side or in CI for very large JSON responses.",
+                details={"body_size": len(ctx.response.body), "scan_limit": self._MAX_SCAN},
+            ))
+            return findings
+
+        text = ctx.response.text
         duplicate_keys: Set[str] = set()
 
         def detect_duplicates(pairs: list) -> dict:
