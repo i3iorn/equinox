@@ -299,12 +299,30 @@ class ResponseActionsMixin:
         if not path:
             return
 
-        text = self._get_body_text()
+        payload = self._response_bytes_for_download()
         try:
-            with open(path, "w", encoding="utf-8") as f:
-                f.write(text)
+            with open(path, "wb") as f:
+                f.write(payload)
+            logger.info(
+                "response_panel.download_body_saved path=%s size_bytes=%d",
+                path,
+                len(payload),
+            )
         except Exception as exc:
+            logger.warning("response_panel.download_body_failed path=%s error=%s", path, exc)
             QMessageBox.warning(self, "Save Failed", f"Could not save file:\n{exc}")
+
+    def _response_bytes_for_download(self) -> bytes:
+        """Return exact response bytes for file download, with safe text fallback."""
+        if self.current_response is None:
+            return b""
+        body = getattr(self.current_response, "body", b"")
+        if isinstance(body, (bytes, bytearray)):
+            return bytes(body)
+        if isinstance(body, str):
+            return body.encode("utf-8", errors="replace")
+        text = self._get_body_text()
+        return text.encode("utf-8", errors="replace")
 
     def _generate_code_snippet(self, fmt: str) -> str:
         """Generate client code for the request in the given *fmt*.
