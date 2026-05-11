@@ -80,6 +80,16 @@ class RateLimitDashboardAnalyzer(Analyzer):
     _REMAINING_KEYS = ("x-ratelimit-remaining", "x-rate-limit-remaining", "ratelimit-remaining")
     _RESET_KEYS = ("x-ratelimit-reset", "x-rate-limit-reset", "ratelimit-reset")
 
+    @staticmethod
+    def _seconds_until_reset(reset_value: int, now_seconds: int) -> int:
+        # Common formats: relative seconds, epoch seconds, epoch milliseconds.
+        if reset_value >= 1_000_000_000_000:
+            epoch_seconds = reset_value // 1000
+            return max(0, epoch_seconds - now_seconds)
+        if reset_value >= 1_000_000_000:
+            return max(0, reset_value - now_seconds)
+        return max(0, reset_value)
+
     def analyze(self, ctx: AnalysisContext) -> List[Finding]:
         findings: List[Finding] = []
         headers = ctx.response.headers
@@ -113,13 +123,9 @@ class RateLimitDashboardAnalyzer(Analyzer):
             details["reset_raw"] = reset_raw
             try:
                 reset_num = int(reset_raw)
-                if reset_num > 1_000_000_000:
-                    secs = reset_num - int(time.time())
-                    if secs > 0:
-                        details["resets_in_seconds"] = secs
-                        parts.append(f"Resets in {secs}s")
-                else:
-                    parts.append(f"Resets in {reset_num}s")
+                secs = self._seconds_until_reset(reset_num, int(time.time()))
+                details["resets_in_seconds"] = secs
+                parts.append(f"Resets in {secs}s")
             except ValueError:
                 parts.append(f"Reset: {reset_raw}")
 
