@@ -25,8 +25,8 @@ from __future__ import annotations
 
 import re
 import logging
-from typing import Any, Callable, Dict, List, NamedTuple, Optional
-from urllib.parse import urlparse, parse_qs
+from typing import Any, Callable, Dict, List, NamedTuple, Optional, Tuple
+from urllib.parse import urlparse, parse_qs, parse_qsl, urlencode
 
 from equinox.core.interpolation import VariableInterpolator
 
@@ -37,6 +37,10 @@ __all__ = [
     "normalized_parts",
     "normalize_url",
     "base_path",
+    "url_metadata",
+    "parse_query_pairs",
+    "append_query_params",
+    "join_url_path",
 ]
 
 
@@ -291,3 +295,96 @@ def base_path(normalized_url: str) -> str:
     components = _parse_url(normalized_url)
     segs = [s for s in components.path.split("/") if s]
     return f"/{segs[0]}" if segs else "/"
+
+
+def _split_host_port(netloc: str) -> Tuple[str, Optional[int]]:
+    """Best-effort netloc split into host and optional port."""
+    right = (netloc or "").rsplit("@", 1)[-1].strip()
+    if not right:
+        return "", None
+
+    if right.startswith("["):
+        end = right.find("]")
+        if end != -1:
+            host = right[1:end]
+            tail = right[end + 1 :]
+            if tail.startswith(":") and tail[1:].isdigit():
+                try:
+                    return host.lower(), int(tail[1:])
+                except Exception:
+                    return host.lower(), None
+            return host.lower(), None
+
+    if right.count(":") == 1:
+        host, port_text = right.split(":", 1)
+        if port_text.isdigit():
+            try:
+                return host.lower(), int(port_text)
+            except Exception:
+                return host.lower(), None
+
+    return right.lower(), None
+
+
+def url_metadata(url: str) -> Dict[str, Any]:
+    """Return parsed URL metadata for callers that need raw URL components."""
+    parsed = _parse_url(url or "")
+    fragment = ""
+    if "#" in (url or ""):
+        _, _, fragment = (url or "").partition("#")
+    host, port = _split_host_port(parsed.netloc)
+    return {
+        "scheme": parsed.scheme or "",
+        "netloc": parsed.netloc or "",
+        "path": parsed.path or "",
+        "query": parsed.query or "",
+        "fragment": fragment,
+        "hostname": host,
+        "port": port,
+    }
+
+
+def parse_query_pairs(query: str, keep_blank_values: bool = True) -> List[Tuple[str, str]]:
+    """Parse a URL query string to ordered key/value tuples."""
+    return parse_qsl(query or "", keep_blank_values=keep_blank_values)
+
+
+def append_query_params(url: str, params: Dict[str, Any], merge_existing: bool = True) -> str:
+    """Append or merge query parameters into *url*.
+
+    When *merge_existing* is True, existing query keys are overridden by *params*.
+    """
+    if not params:
+        return url
+
+    safe_params = {str(k): str(v) for k, v in params.items()}
+    before_frag, has_frag, fragment = (url or "").partition("#")
+    base, has_q, existing_query = before_frag.partition("?")
+
+    if merge_existing:
+        merged = dict(parse_qsl(existing_query, keep_blank_values=True))
+        merged.update(safe_params)
+        query = urlencode(merged, doseq=False)
+        rebuilt = f"{base}?{query}" if query else base
+    else:
+        extra = urlencode(safe_params, doseq=False)
+        if has_q and existing_query:
+            rebuilt = f"{base}?{existing_query}&{extra}"
+        elif has_q:
+            rebuilt = f"{base}?{extra}"
+        else:
+            rebuilt = f"{base}?{extra}"
+
+    return f"{rebuilt}#{fragment}" if has_frag else rebuilt
+
+
+def join_url_path(base_url: str, path: str) -> str:
+    """Join a base URL and relative path with predictable slash handling."""
+    base = (base_url or "").rstrip("/")
+    rel = (path or "").lstrip("/")
+    if not base:
+        return "/" + rel if rel else "/"
+    if not rel:
+        return base
+    return f"{base}/{rel}"
+
