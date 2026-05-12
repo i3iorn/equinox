@@ -74,7 +74,7 @@ from equinox.auth._base import AuthStrategy, AUTH_TYPES
 from equinox.auth._bearer import BearerAuth
 from equinox.auth._api_key import APIKeyAuth
 from equinox.auth._basic import BasicAuth
-from equinox.auth._oauth2 import OAuth2Auth
+from equinox.auth._oauth2 import OAuth2Auth, make_oauth2_basic_auth_header
 from equinox.auth._aws_sigv4 import AWSSigV4Auth
 from equinox.auth._factory import AUTH_REGISTRY, get_auth_types, get_auth_type_labels, auth_from_dict
 
@@ -85,6 +85,7 @@ __all__ = [
     "BasicAuth",
     "OAuth2Auth",
     "AWSSigV4Auth",
+    "make_oauth2_basic_auth_header",
     "auth_from_dict",
     "get_auth_type",
     "list_auth_types",
