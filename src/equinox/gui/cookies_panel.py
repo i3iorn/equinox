@@ -4,13 +4,15 @@ from __future__ import annotations
 import logging
 
 from PyQt6.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QLabel,
+    QApplication, QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QLabel, QMenu,
     QTableWidget, QTableWidgetItem, QMessageBox, QHeaderView,
     QDialog, QFormLayout, QLineEdit, QCheckBox, QDialogButtonBox,
 )
 from PyQt6.QtCore import Qt
 
-from equinox.gui.ui_common import confirm_yes_no, create_muted_label, create_panel_layout
+from .ui_common import confirm_yes_no, create_muted_label, create_panel_layout
+from equinox.core.exceptions import ValidationError
+from equinox.core.validation import Validator
 from equinox.storage.cookies import CookieJarManager
 from equinox.storage import Database
 
@@ -76,8 +78,8 @@ class _AddCookieDialog(QDialog):
     def values(self) -> dict[str, object]:
         """Return the form values as a plain dict."""
         return {
-            "name":   self.name_edit.text().strip(),
-            "value":  self.value_edit.text(),
+            "name":   Validator.validate_cookie_name(self.name_edit.text().strip()),
+            "value":  Validator.validate_cookie_value(self.value_edit.text()),
             "domain": self.domain_edit.text().strip(),
             "path":   self.path_edit.text().strip() or "/",
             "secure": self.secure_cb.isChecked(),
@@ -120,12 +122,16 @@ class CookiesPanel(QWidget):
         self.delete_btn.clicked.connect(self._delete_selected)
         self.clear_btn.clicked.connect(self._clear_all)
         self.refresh_btn.clicked.connect(self.refresh)
+        self.reveal_btn = QCheckBox("Reveal Values")
+        self.reveal_btn.setChecked(False)
+        self.reveal_btn.toggled.connect(self.refresh)
 
         self.delete_btn.setEnabled(False)
 
         toolbar.addWidget(self.add_btn)
         toolbar.addWidget(self.delete_btn)
         toolbar.addWidget(self.clear_btn)
+        toolbar.addWidget(self.reveal_btn)
         toolbar.addStretch()
         toolbar.addWidget(self.refresh_btn)
         layout.addLayout(toolbar)
@@ -138,6 +144,8 @@ class CookiesPanel(QWidget):
         self.table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
         self.table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
         self.table.itemSelectionChanged.connect(self._on_selection_changed)
+        self.table.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.table.customContextMenuRequested.connect(self._show_context_menu)
         layout.addWidget(self.table)
 
         self.count_label = create_muted_label()
@@ -169,7 +177,10 @@ class CookiesPanel(QWidget):
                 name_item.setData(Qt.ItemDataRole.UserRole, cookie["id"])
 
                 self.table.setItem(row, self._ID_COLUMN, name_item)
-                self.table.setItem(row, 1, QTableWidgetItem(cookie["value"]))
+                value = cookie["value"]
+                value_item = QTableWidgetItem(value if self.reveal_btn.isChecked() else "••••••••")
+                value_item.setToolTip(value)
+                self.table.setItem(row, 1, value_item)
                 self.table.setItem(row, 2, QTableWidgetItem(cookie.get("domain", "")))
                 self.table.setItem(row, 3, QTableWidgetItem(cookie.get("path", "/")))
                 self.table.setItem(row, 4, QTableWidgetItem(
@@ -182,6 +193,27 @@ class CookiesPanel(QWidget):
         count = len(cookies)
         self.count_label.setText(f"{count} cookie{'s' if count != 1 else ''}")
 
+    def _show_context_menu(self, position) -> None:
+        item = self.table.itemAt(position)
+        if item is None:
+            return
+        row = item.row()
+        menu = QMenu(self)
+        copy_name = menu.addAction("Copy Name")
+        copy_value = menu.addAction("Copy Value")
+        action = menu.exec(self.table.viewport().mapToGlobal(position))
+        clipboard = QApplication.clipboard()
+        if clipboard is None:
+            return
+        if action == copy_name:
+            name_item = self.table.item(row, 0)
+            if name_item is not None:
+                clipboard.setText(name_item.text())
+        elif action == copy_value:
+            value_item = self.table.item(row, 1)
+            if value_item is not None:
+                clipboard.setText(value_item.toolTip() or value_item.text())
+
     # ── Slots ─────────────────────────────────────────────────────────────────
 
     def _on_selection_changed(self) -> None:
@@ -191,7 +223,11 @@ class CookiesPanel(QWidget):
         dialog = _AddCookieDialog(self)
         if dialog.exec() != QDialog.DialogCode.Accepted:
             return
-        vals = dialog.values()
+        try:
+            vals = dialog.values()
+        except ValidationError as exc:
+            QMessageBox.warning(self, "Validation", str(exc))
+            return
         logger.debug("Adding cookie: name=%r domain=%r", vals["name"], vals["domain"])
         try:
             self._mgr.add_cookie(**vals)
