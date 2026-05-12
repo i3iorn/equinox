@@ -29,6 +29,7 @@ from equinox.core.client.cookie_handler import CookieHandler
 from equinox.core.client.dispatcher import HttpxDispatcher
 from equinox.core.client.pipeline import RequestPipeline
 from equinox.core.client.retry_policy import RetryPolicy
+from equinox.security import redact_url
 
 logger = logging.getLogger(__name__)
 
@@ -155,7 +156,7 @@ class HTTPClient:
 
     def __enter__(self) -> "HTTPClient":
         if self.proxy:
-            logger.debug("HTTPClient: opening with proxy %s", self.proxy)
+            logger.debug("HTTPClient: opening with proxy %s", redact_url(self.proxy))
             self.check_proxy_reachable()
         self._dispatcher.open()
         return self
@@ -308,6 +309,6 @@ class HTTPClient:
     def __repr__(self) -> str:
         return (
             f"HTTPClient(timeout={self.timeout}, verify_ssl={self.verify_ssl}, "
-            f"proxy={self.proxy!r}, active={self.active_requests}/"
+            f"proxy={redact_url(self.proxy)!r}, active={self.active_requests}/"
             f"{self.max_concurrent_requests})"
         )

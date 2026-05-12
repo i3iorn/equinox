@@ -13,7 +13,7 @@ methods used by the client:
 Having an explicit Protocol/ABC improves discoverability and enables
 static typing for `HTTPClient` consumers.
 """
-from typing import Protocol, Dict, Any
+from typing import Protocol, Dict, Any, List
 
 
 class CookieManager(Protocol):
@@ -29,6 +29,9 @@ class CookieManager(Protocol):
 
         The implementation should safely ignore missing Set-Cookie headers.
         """
+
+    def to_httpx_cookie_records(self) -> List[Dict[str, str]]:
+        """Return scoped cookie records with ``name/value/domain/path`` keys."""
 
 
 class InMemoryCookieManager:
@@ -55,4 +58,10 @@ class InMemoryCookieManager:
                 except Exception:
                     # Best-effort: ignore malformed Set-Cookie values
                     continue
+
+    def to_httpx_cookie_records(self) -> List[Dict[str, str]]:
+        return [
+            {"name": name, "value": value, "domain": "", "path": "/"}
+            for name, value in self._cookies.items()
+        ]
 

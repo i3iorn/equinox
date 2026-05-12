@@ -195,9 +195,14 @@ class CookieJarManager:
 
     def update_from_response(self, response_headers: Dict[str, str], url: str) -> None:
         """Parse ``Set-Cookie`` headers and upsert into the jar."""
-        set_cookies = [
-            v for k, v in response_headers.items() if k.lower() == "set-cookie"
-        ]
+        raw_values = [v for k, v in response_headers.items() if k.lower() == "set-cookie"]
+        set_cookies: List[str] = []
+        for raw in raw_values:
+            set_cookies.extend(self._split_combined_set_cookie_header(raw))
+        self.update_from_set_cookie_headers(set_cookies, url)
+
+    def update_from_set_cookie_headers(self, set_cookies: List[str], url: str) -> None:
+        """Parse a list of raw ``Set-Cookie`` header values and upsert into the jar."""
         if not set_cookies:
             return
 
@@ -217,6 +222,21 @@ class CookieJarManager:
         """Return a flat ``{name: value}`` dict for ``httpx.Client(cookies=...)``."""
         rows = self.db.fetchall("SELECT name, value FROM cookies")
         return {row["name"]: row["value"] for row in rows}
+
+    def to_httpx_cookie_records(self) -> List[Dict[str, str]]:
+        """Return scoped cookie records for safe domain/path-aware httpx syncing."""
+        rows = self.db.fetchall(
+            "SELECT name, value, domain, path FROM cookies ORDER BY id"
+        )
+        return [
+            {
+                "name": str(row["name"]),
+                "value": str(row["value"]),
+                "domain": str(row["domain"] or ""),
+                "path": str(row["path"] or "/"),
+            }
+            for row in rows
+        ]
 
     # ── Internal helpers ──────────────────────────────────────────────────────
 
@@ -288,3 +308,45 @@ class CookieJarManager:
             )
         except Exception as exc:
             logger.debug("Failed to store cookie '%s': %s", name[:80], exc)
+
+    @staticmethod
+    def _split_combined_set_cookie_header(raw: str) -> List[str]:
+        """Split a combined Set-Cookie line into individual cookie values.
+
+        Some adapters collapse repeated Set-Cookie headers into one comma-separated
+        string. We split on cookie-boundary commas while preserving commas inside
+        Expires=... attribute values.
+        """
+        if not raw:
+            return []
+        if "," not in raw:
+            return [raw.strip()]
+
+        parts: List[str] = []
+        current: List[str] = []
+        i = 0
+        in_expires = False
+
+        while i < len(raw):
+            ch = raw[i]
+            if raw[i : i + 8].lower() == "expires=":
+                in_expires = True
+            if ch == ";" and in_expires:
+                in_expires = False
+            if ch == "," and not in_expires:
+                nxt = raw[i + 1 :]
+                if "=" in nxt.split(";", 1)[0]:
+                    piece = "".join(current).strip()
+                    if piece:
+                        parts.append(piece)
+                    current = []
+                    i += 1
+                    continue
+            current.append(ch)
+            i += 1
+
+        tail = "".join(current).strip()
+        if tail:
+            parts.append(tail)
+        return parts
+

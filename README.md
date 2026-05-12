@@ -60,9 +60,8 @@ pre-commit install
 ## Quick Start
 
 ```bash
-equinox get https://api.example.com/users
-equinox post https://api.example.com/users --json '{"name":"John"}'
-equinox gui
+python -m equinox.gui.app
+equinox rotate-secrets --help
 ```
 
 ## Development Workflow

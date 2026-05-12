@@ -20,7 +20,7 @@ from equinox.core.exceptions import ValidationError
 from equinox.core.request import Request, Response
 from equinox.core.time import utc_now
 from equinox.core.validation import Validator
-from equinox.security import redact_headers
+from equinox.security import redact_headers, redact_url
 
 logger = logging.getLogger(__name__)
 
@@ -77,8 +77,8 @@ class HttpxDispatcher:
                 follow_redirects=self._follow_redirects,
                 verify=self._build_ssl_context() if client_key else False,
                 proxy=self._proxy,
-                cookies=self._cookie_handler.get_httpx_cookies(),
             )
+            self._apply_cookie_records_to_client(created)
             self._clients[client_key] = created
             return created
 
@@ -115,12 +115,35 @@ class HttpxDispatcher:
         if not clients:
             return
         try:
-            cookies = self._cookie_handler.get_httpx_cookies()
+            cookie_records = self._cookie_handler.get_httpx_cookie_records()
             for client in clients:
-                for name, value in cookies.items():
-                    client.cookies.set(name, value)
+                self._apply_cookie_records_to_client(client, cookie_records)
         except Exception as exc:
             logger.debug("HttpxDispatcher: failed to sync cookies to client: %s", exc)
+
+    def _apply_cookie_records_to_client(
+        self,
+        client: httpx.Client,
+        cookie_records: Optional[List[Dict[str, str]]] = None,
+    ) -> None:
+        """Replace client cookie jar from manager records (name/value/domain/path)."""
+        records = (
+            cookie_records
+            if cookie_records is not None
+            else self._cookie_handler.get_httpx_cookie_records()
+        )
+        client.cookies.clear()
+        for record in records:
+            name = (record.get("name") or "").strip()
+            if not name:
+                continue
+            value = record.get("value") or ""
+            domain = (record.get("domain") or "").strip()
+            path = (record.get("path") or "/").strip() or "/"
+            if domain:
+                client.cookies.set(name, value, domain=domain, path=path)
+            else:
+                client.cookies.set(name, value, path=path)
 
     # ── Multipart ─────────────────────────────────────────────────────────────
 
@@ -193,6 +216,7 @@ class HttpxDispatcher:
             sent_headers=redact_headers(sent_headers),
             sent_url=str(raw.request.url) if getattr(raw, "request", None) is not None else None,
             connection_info=self._extract_connection_info(raw, request),
+            set_cookie_headers=raw.headers.get_list("set-cookie"),
         )
 
     @staticmethod
@@ -412,5 +436,5 @@ class HttpxDispatcher:
             client_count = len(self._clients)
         return (
             f"HttpxDispatcher(state={state!r}, timeout={self._timeout}, "
-            f"verify_ssl={self._verify_ssl}, proxy={self._proxy!r}, clients={client_count})"
+            f"verify_ssl={self._verify_ssl}, proxy={redact_url(self._proxy)!r}, clients={client_count})"
         )

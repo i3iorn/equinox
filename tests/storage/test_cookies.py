@@ -142,6 +142,18 @@ class TestToHttpxCookies:
     def test_empty_jar_returns_empty_dict(self, mgr):
         assert mgr.to_httpx_cookies() == {}
 
+    def test_cookie_records_preserve_domain_and_path(self, mgr):
+        mgr.add_cookie("session", "s123", domain="api.example.com", path="/v1")
+        records = mgr.to_httpx_cookie_records()
+        assert records == [
+            {
+                "name": "session",
+                "value": "s123",
+                "domain": "api.example.com",
+                "path": "/v1",
+            }
+        ]
+
 
 # ── update_from_response ─────────────────────────────────────────────────────
 
@@ -189,6 +201,25 @@ class TestUpdateFromResponse:
         cookies = mgr.list_cookies()
         if cookies:
             assert cookies[0]["name"] == "flag"
+
+    def test_combined_set_cookie_header_splits_values(self, mgr):
+        headers = {"Set-Cookie": "a=1; Path=/, b=2; Path=/"}
+        mgr.update_from_response(headers, "https://example.com")
+        cookies = mgr.list_cookies()
+        names = {c["name"] for c in cookies}
+        assert names == {"a", "b"}
+
+    def test_combined_header_with_expires_keeps_cookie_boundaries(self, mgr):
+        headers = {
+            "Set-Cookie": (
+                "a=1; Expires=Thu, 01 Jan 2030 00:00:00 GMT; Path=/, "
+                "b=2; Path=/"
+            )
+        }
+        mgr.update_from_response(headers, "https://example.com")
+        cookies = mgr.list_cookies()
+        names = {c["name"] for c in cookies}
+        assert names == {"a", "b"}
 
 
 # ── Validation ────────────────────────────────────────────────────────────────

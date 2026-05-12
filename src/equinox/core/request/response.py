@@ -8,7 +8,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from email.message import Message
 from functools import cached_property
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 from equinox.core.time import utc_now
 from equinox.core.request.types import (
@@ -81,6 +81,8 @@ class Response:
     timings: Optional[Dict[str, float]] = None
     connection_info: Optional[Dict[str, Any]] = None
     retry_summary: Optional[str] = None  # Human-readable summary of retries (e.g. "retried 2× after 429")
+    # Preserves repeated Set-Cookie header values; dict(headers) collapses them.
+    set_cookie_headers: Optional[List[str]] = None
 
     def __post_init__(self) -> None:
         self.headers = HeaderDict(self.headers or {})

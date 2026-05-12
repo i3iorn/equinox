@@ -3,6 +3,7 @@ import pytest
 
 from equinox.core.client.cookie_handler import CookieHandler
 from equinox.core.client.dispatcher import HttpxDispatcher
+from equinox.core.client.http_client import HTTPClient
 from equinox.core.request import Request
 
 
@@ -102,12 +103,37 @@ def test_wrap_response_redacts_sensitive_sent_headers():
     assert wrapped.sent_headers["accept"] == "application/json"
 
 
+def test_wrap_response_preserves_repeated_set_cookie_headers():
+    dispatcher = _make_dispatcher()
+    req = Request(method="GET", url="https://api.example.com/users")
+
+    raw_req = httpx.Request("GET", "https://api.example.com/users")
+    headers = httpx.Headers(
+        [
+            (b"Set-Cookie", b"a=1; Path=/"),
+            (b"Set-Cookie", b"b=2; Path=/"),
+        ]
+    )
+    raw_resp = httpx.Response(200, headers=headers, content=b"{}", request=raw_req)
+
+    wrapped = dispatcher._wrap_response(raw_resp, req, elapsed=0.01, sent_headers={})
+    assert wrapped.set_cookie_headers == ["a=1; Path=/", "b=2; Path=/"]
+
+
 def test_ensure_client_keeps_verify_ssl_isolated(monkeypatch: pytest.MonkeyPatch):
     calls = []
 
     class _FakeClient:
         def __init__(self, **kwargs):
             calls.append(kwargs)
+            self.cookies = type(
+                "_C",
+                (),
+                {
+                    "clear": lambda self: None,
+                    "set": lambda self, *args, **kwargs: None,
+                },
+            )()
 
         def close(self):
             return None
@@ -124,5 +150,54 @@ def test_ensure_client_keeps_verify_ssl_isolated(monkeypatch: pytest.MonkeyPatch
     assert len(calls) == 2
     assert calls[0]["verify"] is not False
     assert calls[1]["verify"] is False
+
+
+def test_dispatcher_applies_cookie_scope_by_domain():
+    class _ScopedManager:
+        def to_httpx_cookies(self):
+            return {}
+
+        def to_httpx_cookie_records(self):
+            return [
+                {
+                    "name": "session",
+                    "value": "abc",
+                    "domain": "example.com",
+                    "path": "/",
+                }
+            ]
+
+    dispatcher = HttpxDispatcher(
+        timeout=10.0,
+        follow_redirects=True,
+        verify_ssl=True,
+        proxy=None,
+        cookie_handler=CookieHandler(_ScopedManager()),
+    )
+    client = dispatcher._ensure_client()
+
+    req_same = client.build_request("GET", "https://example.com/path")
+    req_other = client.build_request("GET", "https://other.com/path")
+
+    assert req_same.headers.get("cookie") == "session=abc"
+    assert req_other.headers.get("cookie") is None
+
+
+def test_proxy_credentials_redacted_in_repr():
+    proxy = "http://user:secret@example-proxy.local:8080"
+
+    dispatcher = HttpxDispatcher(
+        timeout=10.0,
+        follow_redirects=True,
+        verify_ssl=True,
+        proxy=proxy,
+        cookie_handler=CookieHandler(None),
+    )
+    client = HTTPClient(proxy=proxy)
+
+    assert "secret" not in repr(dispatcher)
+    assert "secret" not in repr(client)
+    assert "***:***" in repr(dispatcher)
+    assert "***:***" in repr(client)
 
 
