@@ -492,6 +492,30 @@ class TestMainWindow:
         _process()
         _close_win(win)
 
+    def test_load_history_entry_runs_intelligence_analysis(self, db):
+        from equinox.gui.window import MainWindow
+        from equinox.storage import HistoryManager
+        from equinox.core.request import Request, Response
+
+        mgr = HistoryManager(db)
+        req = Request(method="GET", url="https://example.com/api/history")
+        resp = Response(
+            status_code=200,
+            reason="OK",
+            headers={"Content-Type": "application/json"},
+            body=b'{"ok": true}',
+            elapsed=0.1,
+            request=req,
+        )
+        history_id = mgr.save_history(req, resp)
+
+        win = MainWindow(db)
+        with patch.object(win, "_run_intelligence_analysis") as run_intel:
+            win._load_history_entry(history_id)
+            _process()
+            assert run_intel.call_count == 1
+        _close_win(win)
+
     def test_resize_edges_detected_on_border(self, db):
         from equinox.gui.window import MainWindow
 

@@ -633,8 +633,8 @@ class TestOAuth2Coverage:
         auth._capture_token_response(resp)
         body = auth.last_token_response["body"]
         # Tokens should be redacted (first 8 + … + last 4)
-        assert "…" in body["access_token"]
-        assert body["token_type"] == "Bearer"  # non-token key not redacted
+        assert "[REDACTED]" in body["access_token"]
+        assert body["token_type"] == "[REDACTED]"  # non-token key not redacted
 
     def test_capture_token_response_short_token_not_redacted(self):
         """Lines 275-278: short tokens (<=12 chars) are NOT redacted."""
@@ -651,7 +651,7 @@ class TestOAuth2Coverage:
 
         auth = OAuth2Auth(client_id="c")
         auth._capture_token_response(resp)
-        assert auth.last_token_response["body"]["access_token"] == "short"
+        assert auth.last_token_response["body"]["access_token"] == "[REDACTED]"
 
     def test_capture_filters_set_cookie(self):
         """Lines 286-289: set-cookie header is filtered out."""

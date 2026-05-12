@@ -307,7 +307,9 @@ class TestOAuthClientsDialog:
         dlg.client_list.setCurrentRow(0)
         _process()
         dlg.f_name.setText("Updated Client")
-        dlg._save_client()
+        with patch("PyQt6.QtWidgets.QMessageBox.warning", side_effect=AssertionError("unexpected warning dialog")):
+            with patch("PyQt6.QtWidgets.QMessageBox.critical", side_effect=AssertionError("unexpected critical dialog")):
+                assert dlg._save_client() is True
         _process()
 
     def test_signals_exist(self, db):

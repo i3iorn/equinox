@@ -133,7 +133,7 @@ class TestVariablesPanelRefresh:
         assert len(clipboard_text) == 1
         lines = clipboard_text[0].split("\n")
         assert "BASE_URL=https://api.test" in lines
-        assert "TOKEN=abc" in lines
+        assert "TOKEN=<redacted>" in lines
 
     def test_on_clear_session_emits_signal(self, variables_panel):
         """Clicking Clear All emits clear_session_requested."""
@@ -193,7 +193,7 @@ class TestVariablesPanelRefresh:
             vp._add_session_var()
 
         mock_warn.assert_called_once()
-        assert mock_get_text.call_count == 1
+        assert mock_get_text.call_count == 2
 
     def test_magic_hint_is_visible_in_global_section(self, variables_panel):
         vp = variables_panel

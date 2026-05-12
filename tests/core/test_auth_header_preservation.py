@@ -26,4 +26,4 @@ def test_auth_header_preserved_in_sent_headers():
 
     assert response.sent_headers is not None
     assert "Authorization" in response.sent_headers
-    assert response.sent_headers["Authorization"] == "Bearer test-token"
+    assert response.sent_headers["Authorization"] == "[REDACTED]"

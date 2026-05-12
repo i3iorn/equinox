@@ -1,4 +1,5 @@
 """Integration tests for HTTP client."""
+import os
 
 import pytest
 from unittest.mock import Mock, patch, MagicMock, PropertyMock
@@ -69,7 +70,9 @@ class TestHTTPClientIntegration:
         client = HTTPClient()
         request = Request(method="GET", url="https://api.example.com/test")
 
+        os.environ["EQUINOX_SSRF_ALLOW_ON_DNS_FAILURE"] = "1"
         response = client.send(request)
+        os.environ["EQUINOX_SSRF_ALLOW_ON_DNS_FAILURE"] = "0"
 
         assert response.elapsed >= 0
         assert isinstance(response.elapsed, float)

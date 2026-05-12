@@ -201,6 +201,23 @@ class TestMigrationIntegrationWithDatabase:
         }
         assert expected.issubset(indexes), f"Missing indexes: {expected - indexes}"
 
+    def test_v23_recommender_indexes_created(self, db):
+        """Migration v23 adds history_index query-shape indexes for recommender."""
+        with db.get_connection() as conn:
+            indexes = {
+                row[1]
+                for row in conn.execute(
+                    "SELECT * FROM sqlite_master WHERE type='index'"
+                ).fetchall()
+                if row[1]
+            }
+
+        expected = {
+            "idx_history_index_method_norm_executed",
+            "idx_history_index_success_method_norm_executed",
+        }
+        assert expected.issubset(indexes), f"Missing indexes: {expected - indexes}"
+
 
 class TestDatabaseTransaction:
     """Tests for Database.transaction() context manager."""

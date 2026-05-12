@@ -335,6 +335,31 @@ class TestIntelligenceWorker:
         assert len(results) == 1
         assert isinstance(results[0], list)
 
+    def test_recommender_hints_disabled_by_settings(self, db):
+        from equinox.gui.intelligence_worker import IntelligenceWorker
+        from equinox.core.request import Request
+
+        req = Request(method="GET", url="https://example.com/api")
+        resp = MagicMock()
+        resp.status_code = 200
+        resp.reason = "OK"
+        resp.elapsed = 0.1
+        resp.size = 100
+        resp.headers = {}
+        resp.body = b"{}"
+        resp.sent_url = "https://example.com/api"
+        resp.is_json = True
+        resp.json = MagicMock(return_value={"ok": True})
+        resp.request = req
+
+        worker = IntelligenceWorker(
+            request=req,
+            response=resp,
+            db=db,
+            disabled_analyzers={"recommender"},
+        )
+        assert worker._run_recommender_hints() == []
+
 
 # ─────────────────────────────────────────────────────────────────────────────
 # WebSocketPanel

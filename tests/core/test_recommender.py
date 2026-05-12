@@ -28,9 +28,15 @@ def test_header_similarity_ignores_common_headers():
 class FakeDB:
     def __init__(self, rows):
         self._rows = rows
+        self.last_query = ""
+        self.last_params = ()
+        self.calls = 0
 
     def fetchall(self, query, params=()):
-        # ignore query/params in this fake — return prepared rows
+        self.calls += 1
+        self.last_query = query
+        self.last_params = params
+        # ignore filtering in this fake — return prepared rows
         return [dict(r) for r in self._rows]
 
 
@@ -100,5 +106,71 @@ def test_suggestions_to_findings_maps_to_hints_category():
     finding = findings[0]
     assert finding.analyzer_id == "recommender"
     assert finding.category.value == "Developer Hints"
+
+
+def test_get_candidates_uses_host_prefix_not_path_prefix():
+    cand = make_candidate()
+    db = FakeDB([cand])
+    rec = recommender.Recommender(db)
+
+    rec.find_best_matches(
+        {"method": "GET", "url": "https://api.example.com/users/42"},
+        min_score=0.0,
+        limit=5,
+    )
+
+    assert db.last_params, "Expected recommender to query DB candidates"
+    params = list(db.last_params)
+    assert len(params) >= 2
+    assert params[1] == "https://api.example.com/%"
+
+
+def test_find_best_matches_scores_request_body_similarity():
+    cand = make_candidate()
+    cand["request_body"] = '{"a": 1, "b": 2}'
+    db = FakeDB([cand])
+    rec = recommender.Recommender(db)
+
+    matches = rec.find_best_matches(
+        {
+            "method": "GET",
+            "url": "https://api.example.com/users/42",
+            "body": {"b": 2, "a": 1},
+        },
+        min_score=0.0,
+        limit=5,
+    )
+
+    assert matches
+    _, score = matches[0]
+    assert score["breakdown"]["body"] == pytest.approx(1.0)
+
+
+def test_generate_suggestions_uses_success_only_candidate_query():
+    cand = make_candidate(success=1)
+    db = FakeDB([cand])
+    rec = recommender.Recommender(db)
+
+    suggestions = rec.generate_suggestions(
+        {"method": "GET", "url": "https://api.example.com/users/42"},
+        top_n=5,
+    )
+
+    assert suggestions
+    assert "response_success = 1" in db.last_query
+
+
+def test_find_best_matches_skips_candidate_query_when_netloc_missing():
+    db = FakeDB([make_candidate()])
+    rec = recommender.Recommender(db)
+
+    matches = rec.find_best_matches(
+        {"method": "GET", "url": "/users/42"},
+        min_score=0.0,
+        limit=5,
+    )
+
+    assert matches == []
+    assert db.calls == 0
 
 

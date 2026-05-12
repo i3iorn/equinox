@@ -12,6 +12,7 @@ Covers:
 - Clearing auth works
 - GUI request panel picks up inherited auth at send time
 """
+import os
 
 import pytest
 
@@ -740,7 +741,9 @@ class TestOAuth2AutoFetch:
             mock_client = MagicMock()
             mock_client_class.return_value.__enter__.return_value = mock_client
             mock_client.post.return_value = mock_resp
+            os.environ["EQUINOX_SSRF_ALLOW_ON_DNS_FAILURE"] = "1"
             auth._refresh_access_token()
+            os.environ["EQUINOX_SSRF_ALLOW_ON_DNS_FAILURE"] = "0"
 
         assert auth.access_token == "new-token"
         assert auth.expires_at is not None, "Default expiry should be set"

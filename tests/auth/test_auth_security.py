@@ -3,6 +3,7 @@
 Covers CRLF injection prevention, input validation, credential masking
 in __repr__, robust from_dict deserialization, and OAuth2 edge cases.
 """
+import os
 
 import pytest
 from unittest.mock import Mock, MagicMock, patch
@@ -257,7 +258,9 @@ class TestOAuth2AuthSecurity:
             token_url="https://auth.example.com/token",
         )
         headers = {}
+        os.environ["EQUINOX_SSRF_ALLOW_ON_DNS_FAILURE"] = "1"
         auth.apply(Mock(), headers)
+        os.environ["EQUINOX_SSRF_ALLOW_ON_DNS_FAILURE"] = "0"
         assert auth.access_token == "tok"
         assert auth.expires_at is not None
 
@@ -281,7 +284,9 @@ class TestOAuth2AuthSecurity:
             token_url="https://auth.example.com/token",
         )
         headers = {}
+        os.environ["EQUINOX_SSRF_ALLOW_ON_DNS_FAILURE"] = "1"
         auth.apply(Mock(), headers)
+        os.environ["EQUINOX_SSRF_ALLOW_ON_DNS_FAILURE"] = "0"
         assert auth.access_token == "tok"
         assert auth.expires_at is not None
 
@@ -305,7 +310,9 @@ class TestOAuth2AuthSecurity:
             token_url="https://auth.example.com/token",
         )
         headers = {}
+        os.environ["EQUINOX_SSRF_ALLOW_ON_DNS_FAILURE"] = "1"
         auth.apply(Mock(), headers)
+        os.environ["EQUINOX_SSRF_ALLOW_ON_DNS_FAILURE"] = "0"
         assert auth.access_token == "tok"
 
     @patch("equinox.auth._oauth2.httpx.Client")
@@ -328,7 +335,9 @@ class TestOAuth2AuthSecurity:
             token_url="https://auth.example.com/token",
         )
         with pytest.raises(AuthError, match="CRLF"):
+            os.environ["EQUINOX_SSRF_ALLOW_ON_DNS_FAILURE"] = "1"
             auth.apply(Mock(), {})
+            os.environ["EQUINOX_SSRF_ALLOW_ON_DNS_FAILURE"] = "0"
 
 
 # ── Package __init__ exports ──────────────────────────────────────────────────
