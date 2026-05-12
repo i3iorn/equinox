@@ -63,6 +63,7 @@ class OAuthClientsDialog(DirtyDialogMixin, QDialog):
         self._current_id: Optional[int] = None
         self._dirty = False
         self._tester: Optional[OAuthTokenTester] = None  # keeps reference alive until done
+        self._last_test_response: Optional[dict] = None
 
         # DirtyDialogMixin requirements
         self._save_callback = self._save_client
@@ -183,16 +184,19 @@ class OAuthClientsDialog(DirtyDialogMixin, QDialog):
 
         act_row = QHBoxLayout()
         self.test_btn = QPushButton("🔌  Test Connection")
+        self.view_response_btn = QPushButton("View Response…")
+        self.view_response_btn.setEnabled(False)
         self.default_btn = QPushButton("★  Set as Default")
         self.save_btn = QPushButton("💾  Save")
 
-        for b in (self.test_btn, self.default_btn, self.save_btn):
+        for b in (self.test_btn, self.view_response_btn, self.default_btn, self.save_btn):
             b.setEnabled(False)
             act_row.addWidget(b)
         act_row.addStretch()
         rl.addLayout(act_row)
 
         self.test_btn.clicked.connect(self._test_client)
+        self.view_response_btn.clicked.connect(self._view_test_response)
         self.default_btn.clicked.connect(self._set_default)
         self.save_btn.clicked.connect(self._save_client)
 
@@ -273,7 +277,9 @@ class OAuthClientsDialog(DirtyDialogMixin, QDialog):
             return
 
         self._current_id = current.data(Qt.ItemDataRole.UserRole)
-        self._load_form(self._current_id)
+        current_id = self._current_id
+        if current_id is not None:
+            self._load_form(int(current_id))
         self._set_form_enabled(True)
         self.delete_btn.setEnabled(True)
         self._dirty = False
@@ -296,7 +302,9 @@ class OAuthClientsDialog(DirtyDialogMixin, QDialog):
                 return
 
         self._current_id = new_id
-        self._load_form(self._current_id)
+        current_id = self._current_id
+        if current_id is not None:
+            self._load_form(int(current_id))
         self._set_form_enabled(True)
         self.delete_btn.setEnabled(True)
         self._dirty = False
@@ -309,6 +317,8 @@ class OAuthClientsDialog(DirtyDialogMixin, QDialog):
         c = self.mgr.get_client(client_id)
         if not c:
             return
+        self._last_test_response = None
+        self.view_response_btn.setEnabled(False)
         self._block_form(True)
         self.f_name.setText(c["name"])
         self.f_description.setText(c.get("description", ""))
@@ -340,6 +350,7 @@ class OAuthClientsDialog(DirtyDialogMixin, QDialog):
         for b in (self.test_btn, self.default_btn, self.save_btn):
             b.setEnabled(has)
         self.delete_btn.setEnabled(has)
+        self.view_response_btn.setEnabled(has and self._last_test_response is not None)
         self.save_btn.setText("💾  Save *" if self._dirty else "💾  Save")
 
     def _mark_dirty(self) -> None:
@@ -478,6 +489,8 @@ class OAuthClientsDialog(DirtyDialogMixin, QDialog):
         self.test_btn.setEnabled(False)
         self.test_btn.setText("Testing…")
         self._set_status("Connecting…", ok=None)
+        self._last_test_response = None
+        self.view_response_btn.setEnabled(False)
 
         self._tester = OAuthTokenTester(
             token_url, client_id, secret, scope, grant_type, extra_params
@@ -485,10 +498,19 @@ class OAuthClientsDialog(DirtyDialogMixin, QDialog):
         self._tester.done.connect(self._on_test_done)
         self._tester.start()
 
-    def _on_test_done(self, success: bool, message: str) -> None:
+    def _on_test_done(self, success: bool, message: str, response: object) -> None:
         self.test_btn.setEnabled(True)
         self.test_btn.setText("🔌  Test Connection")
+        self._last_test_response = response if isinstance(response, dict) else None
+        self.view_response_btn.setEnabled(self._last_test_response is not None)
         self._set_status(message, ok=success)
+
+    def _view_test_response(self) -> None:
+        if not self._last_test_response:
+            return
+        from equinox.gui.dialogs.auth_dialog import _TokenResponseDialog
+        dlg = _TokenResponseDialog(self._last_test_response, self)
+        dlg.exec()
 
     def _set_status(self, msg: str, ok: Optional[bool]) -> None:
         self.status_label.setText(self._format_status(msg, ok))
