@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import logging
-import re
 
 from PyQt6.QtWidgets import (
     QApplication,
@@ -32,13 +31,15 @@ from PyQt6.QtWidgets import (
 from PyQt6.QtCore import Qt, pyqtSignal
 
 from equinox.core.interpolation import VariableInterpolator, collect_interpolation_variables_detailed
+from equinox.core.exceptions import ValidationError
+from equinox.core.validation import Validator
 from equinox.storage import (
     Database,
     EnvironmentManager,
     GlobalVariablesManager,
     VariableGroupManager,
 )
-from equinox.gui.ui_common import (
+from .ui_common import (
     configure_splitter_persistence,
     confirm_yes_no,
     create_muted_label,
@@ -50,8 +51,6 @@ __all__ = ["VariablesPanel", "VariableDialog"]
 
 logger = logging.getLogger(__name__)
 
-# Module-level constant — compiled once, reused on every tooltip refresh.
-_VALID_VAR_NAME = re.compile(r'^[a-zA-Z0-9_-]+$')
 _GLOBAL_TABLE_MAX_VISIBLE_ROWS = 3
 _GLOBAL_TABLE_MIN_VISIBLE_ROWS = 1
 _SESSION_TABLE_MAX_VISIBLE_ROWS = 4
@@ -395,13 +394,13 @@ class VariablesPanel(QWidget):
         if dialog.exec() != QDialog.DialogCode.Accepted:
             return
         key, value, description = dialog.get_values()
-        if not key:
-            QMessageBox.warning(self, "Error", "Variable key is required")
-            return
         try:
+            key = Validator.validate_variable_name(key)
             self._global_mgr.set_variable(key, value, description)
             self.refresh_global_vars()
             self.variables_changed.emit()
+        except ValidationError as exc:
+            QMessageBox.warning(self, "Validation", str(exc))
         except Exception as exc:
             logger.error("Failed to add global variable %r: %s", key, exc, exc_info=True)
             QMessageBox.critical(self, "Error", f"Failed to add global variable: {exc}")
@@ -417,15 +416,15 @@ class VariablesPanel(QWidget):
         if dialog.exec() != QDialog.DialogCode.Accepted:
             return
         new_key, new_value, new_description = dialog.get_values()
-        if not new_key:
-            QMessageBox.warning(self, "Error", "Variable key is required")
-            return
         try:
+            new_key = Validator.validate_variable_name(new_key)
             if new_key != key:
                 self._global_mgr.remove_variable(key)
             self._global_mgr.set_variable(new_key, new_value, new_description)
             self.refresh_global_vars()
             self.variables_changed.emit()
+        except ValidationError as exc:
+            QMessageBox.warning(self, "Validation", str(exc))
         except Exception as exc:
             logger.error("Failed to edit global variable %r: %s", key, exc, exc_info=True)
             QMessageBox.critical(self, "Error", f"Failed to edit global variable: {exc}")
@@ -438,6 +437,7 @@ class VariablesPanel(QWidget):
         if not confirm_yes_no(self, "Confirm Delete", f"Delete global variable '{key}'?"):
             return
         try:
+            key = Validator.validate_variable_name(key)
             self._global_mgr.remove_variable(key)
             self.refresh_global_vars()
             self.variables_changed.emit()
@@ -529,7 +529,7 @@ class VariablesPanel(QWidget):
         """
         try:
             rp = getattr(self.window(), "request_panel", None)
-            session_vars = getattr(rp, "_session_vars", {}) if rp is not None else {}
+            session_vars = rp.get_session_vars() if rp is not None else {}
             collection_id = getattr(getattr(rp, "current_request", None), "collection_id", None)
             interp_vars, _sources = collect_interpolation_variables_detailed(
                 self.db,
@@ -757,22 +757,20 @@ class VariablesPanel(QWidget):
         if not key:
             QMessageBox.warning(self, "Error", "Variable name is required")
             return
-        if not _VALID_VAR_NAME.match(key):
-            QMessageBox.warning(
-                self,
-                "Invalid Variable Name",
-                "Variable names may contain only letters, numbers, underscore, and hyphen.",
-            )
-            return
 
         value, ok = QInputDialog.getText(self, "Add Session Variable", "Value:")
         if not ok:
             return
 
         rp = getattr(self.window(), "request_panel", None)
-        if rp is not None and isinstance(getattr(rp, "_session_vars", None), dict):
-            rp._session_vars[key] = value
-            rp.session_vars_changed.emit(dict(rp._session_vars))
+        try:
+            key = Validator.validate_variable_name(key)
+        except ValidationError as exc:
+            QMessageBox.warning(self, "Invalid Variable Name", str(exc))
+            return
+
+        if rp is not None:
+            rp.set_session_var(key, value)
             return
 
         # Fallback for tests or unusual embedding: update panel-local view.
@@ -790,19 +788,33 @@ class VariablesPanel(QWidget):
         key = key_item.text()
         try:
             rp = getattr(self.window(), "request_panel", None)
-            if rp is not None and key in getattr(rp, "_session_vars", {}):
-                del rp._session_vars[key]
-                rp.session_vars_changed.emit(dict(rp._session_vars))
+            if rp is not None:
+                rp.delete_session_var(key)
         except Exception as exc:
             logger.debug("Failed to delete session var %r: %s", key, exc)
 
+    @staticmethod
+    def _is_secret_like(key: str) -> bool:
+        key_lower = key.lower()
+        return any(token in key_lower for token in ("token", "secret", "password", "passwd", "apikey", "api_key", "credential", "private"))
+
     def _copy_session_vars(self) -> None:
-        lines = [
-            f"{self._session_table.item(r, 0).text()}={self._session_table.item(r, 1).text()}"
-            for r in range(self._session_table.rowCount())
-            if self._session_table.item(r, 0) and self._session_table.item(r, 1)
-        ]
+        lines = []
+        has_secret = False
+        for r in range(self._session_table.rowCount()):
+            key_item = self._session_table.item(r, 0)
+            val_item = self._session_table.item(r, 1)
+            if not key_item or not val_item:
+                continue
+            key = key_item.text()
+            value = val_item.text()
+            if self._is_secret_like(key):
+                has_secret = True
+                value = "<redacted>"
+            lines.append(f"{key}={value}")
         if lines:
+            if has_secret:
+                logger.warning("Copying session variables with secret-like keys; values were redacted")
             clipboard = QApplication.clipboard()
             if clipboard:
                 clipboard.setText("\n".join(lines))
@@ -825,7 +837,11 @@ class VariablesPanel(QWidget):
                 clipboard.setText(ki.text())
         elif action == copy_val_action:
             vi = self._session_table.item(row, 1)
-            if vi and clipboard:
+            ki = self._session_table.item(row, 0)
+            if vi and clipboard and ki:
+                if self._is_secret_like(ki.text()):
+                    if not confirm_yes_no(self, "Copy Secret Value", f"Copy the secret value for '{ki.text()}' to the clipboard?"):
+                        return
                 clipboard.setText(vi.text())
         elif action == delete_action:
             self._session_table.setCurrentItem(self._session_table.item(row, 0))
