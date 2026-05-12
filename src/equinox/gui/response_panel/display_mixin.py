@@ -11,10 +11,10 @@ import json
 import logging
 import difflib
 from typing import Dict, Any, Optional
-from urllib.parse import urlencode, urlsplit
 
 from PyQt6.QtWidgets import QTableWidgetItem
 
+from equinox.core import urls
 from equinox.core.request import Response
 from equinox.gui.response_panel.pretty_print import CT_HIGHLIGHTERS
 from equinox.gui.response_panel._formatting import (
@@ -385,7 +385,7 @@ class ResponseDisplayMixin:
         req = response.request
         params = getattr(req, "params", None)
         if params:
-            return f"{req.url}?{urlencode(params)}"
+            return urls.append_query_params(req.url, params, merge_existing=False)
 
         return req.url
 
@@ -406,14 +406,14 @@ class ResponseDisplayMixin:
     def _display_connection_details(self, response: Response) -> None:
         """Populate connection tab with transport and TLS-related metadata."""
         url = getattr(response, "sent_url", None) or response.request.url
-        parts = urlsplit(url or "")
-        scheme = (parts.scheme or "").lower()
+        parts = urls.url_metadata(url or "")
+        scheme = str(parts.get("scheme") or "").lower()
         is_https = scheme == "https"
         meta = getattr(response, "connection_info", None) or {}
 
         lines = [
             f"URL: {self._maybe_redact_url(url)}",
-            f"Host: {parts.netloc or '(unknown)'}",
+            f"Host: {parts.get('netloc') or '(unknown)'}",
             f"Transport: {'HTTPS' if is_https else 'HTTP'}",
             f"Verify SSL: {bool(meta.get('verify_ssl', getattr(response.request, 'verify_ssl', True)))}",
             f"Follow redirects: {bool(meta.get('follow_redirects', getattr(response.request, 'follow_redirects', True)))}",
