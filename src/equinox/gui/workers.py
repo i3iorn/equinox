@@ -1,13 +1,14 @@
 """Background worker threads and dialogs for the Equinox GUI."""
 
 import csv
+import base64
 import inspect
 import json as _json
 import logging
 import threading
 import time
 from datetime import datetime as _dt
-from typing import Optional, Callable, Any
+from typing import Optional, Callable, Any, cast
 
 from PyQt6.QtWidgets import (
     QDialog,
@@ -24,14 +25,14 @@ from PyQt6.QtWidgets import (
 )
 from PyQt6.QtCore import QThread, pyqtSignal
 
-from equinox.auth._oauth2 import make_oauth2_basic_auth_header
 from equinox.core.client import HTTPClient
 from equinox.core.cookies import CookieManager
 from equinox.core.validation import Validator
 from equinox.security import redact_body
-from equinox.core.request import Request, Response
-from equinox.core.error_enrichment import RichError, enrich_exception
+from equinox.core.request import Request
+from equinox.core.error_enrichment import enrich_exception
 from equinox.gui.theme import get_mono_font
+from .ui_common import get_gui_settings, resolve_proxy_url
 
 logger = logging.getLogger(__name__)
 
@@ -71,15 +72,23 @@ def _build_client(
     )
 
 
+def _make_oauth2_basic_auth_header(client_id: str, secret: str) -> str:
+    """Build a Basic auth header for OAuth2 token requests."""
+    if not client_id or not secret:
+        raise ValueError("Client ID and secret are required for Basic auth")
+    raw = f"{client_id}:{secret}".encode("utf-8")
+    return f"Basic {base64.b64encode(raw).decode('ascii')}"
+
+
 class OAuthTokenTester(QThread):
     """Thread that tests OAuth2 token acquisition via a real POST request.
 
-    Emits ``done(success: bool, message: str)`` when finished.
+    Emits ``done(success: bool, message: str, response: object)`` when finished.
     Call ``cancel()`` before destroying the owner widget to prevent the signal
     from firing into a dead object.
     """
 
-    done = pyqtSignal(bool, str)
+    done = pyqtSignal(bool, str, object)
 
     def __init__(
         self,
@@ -101,6 +110,7 @@ class OAuthTokenTester(QThread):
         self.extra_params = extra_params
         self.token_auth = token_auth if token_auth in ("body", "basic") else "body"
         self._cancelled = False
+        self._last_response: object = None
 
     def cancel(self) -> None:
         """Mark this tester as cancelled so no signal fires after the owner closes."""
@@ -117,7 +127,7 @@ class OAuthTokenTester(QThread):
                 Validator.validate_resolved_url(self.token_url)
             except Exception as exc:
                 if not self._cancelled:
-                    self.done.emit(False, f"Invalid token URL: {exc}")
+                    self.done.emit(False, f"Invalid token URL: {exc}", None)
                 return
 
             data = {
@@ -129,12 +139,10 @@ class OAuthTokenTester(QThread):
                 # RFC 6749 §2.3.1 — credentials in HTTP Basic Authorization header.
                 # Reuse the shared utility from OAuth2Auth to avoid duplication.
                 try:
-                    headers["Authorization"] = make_oauth2_basic_auth_header(
-                        self.client_id, self.secret
-                    )
+                    headers["Authorization"] = _make_oauth2_basic_auth_header(self.client_id, self.secret)
                 except Exception as exc:
                     if not self._cancelled:
-                        self.done.emit(False, str(exc))
+                        self.done.emit(False, str(exc), None)
                     return
             else:
                 # Default: credentials in the POST body
@@ -148,6 +156,7 @@ class OAuthTokenTester(QThread):
             data.update(self.extra_params)
 
             resp = httpx.post(self.token_url, data=data, headers=headers, timeout=10.0)
+            self._last_response = self._snapshot_response(resp)
             if resp.status_code == 200:
                 payload = resp.json()
                 token_type = payload.get("token_type", "bearer")
@@ -159,7 +168,7 @@ class OAuthTokenTester(QThread):
                     + ("  (no access_token!)" if not has_access else "")
                 )
                 if not self._cancelled:
-                    self.done.emit(True, msg)
+                    self.done.emit(True, msg, self._last_response)
             else:
                 try:
                     body = resp.json()
@@ -171,10 +180,28 @@ class OAuthTokenTester(QThread):
                 except Exception:
                     err = resp.text[:200]
                 if not self._cancelled:
-                    self.done.emit(False, f"HTTP {resp.status_code}: {redact_body(str(err))}")
+                    self.done.emit(False, f"HTTP {resp.status_code}: {redact_body(str(err))}", self._last_response)
         except Exception as exc:
             if not self._cancelled:
-                self.done.emit(False, redact_body(str(exc)))
+                self.done.emit(False, redact_body(str(exc)), self._last_response)
+
+    @staticmethod
+    def _snapshot_response(resp) -> dict:
+        try:
+            headers = {k: v for k, v in resp.headers.items() if k.lower() not in {"set-cookie", "cookie"}}
+        except Exception:
+            headers = {}
+        try:
+            body = resp.json()
+        except Exception:
+            body = resp.text[:200] if getattr(resp, "text", None) else ""
+        return {
+            "status_code": getattr(resp, "status_code", 0),
+            "method": "POST",
+            "url": str(getattr(getattr(resp, "request", None), "url", "") or ""),
+            "headers": headers,
+            "body": body,
+        }
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -238,7 +265,7 @@ class BackgroundTaskWorker(QThread):
 
     finished = pyqtSignal(bool, object)
 
-    def __init__(self, operation: Callable[[], Any], parent=None):
+    def __init__(self, operation: Callable[..., Any], parent=None):
         super().__init__(parent)
         self._operation = operation
         self._cancelled = False
@@ -262,16 +289,17 @@ class BackgroundTaskWorker(QThread):
                 self.finished.emit(False, exc)
 
     def _invoke_operation(self) -> Any:
+        operation = cast(Any, self._operation)
         try:
-            signature = inspect.signature(self._operation)
+            signature = inspect.signature(operation)
         except (TypeError, ValueError):
-            return self._operation()
+            return operation()
 
         if "cancel_event" in signature.parameters:
-            return self._operation(cancel_event=self._cancel_event)
+            return getattr(operation, "__call__")(cancel_event=self._cancel_event)
         if "cancel_token" in signature.parameters:
-            return self._operation(cancel_token=self._cancel_event)
-        return self._operation()
+            return getattr(operation, "__call__")(cancel_token=self._cancel_event)
+        return operation()
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -439,7 +467,6 @@ class BenchmarkDialog(QDialog):
         }
 
     def _run(self) -> None:
-        from equinox.gui.ui_common import get_gui_settings, resolve_proxy_url
 
         n = self._count_spin.value()
         self._progress.setMaximum(n)
@@ -461,9 +488,10 @@ class BenchmarkDialog(QDialog):
             cookie_manager=self._cookie_manager,
             parent=self,
         )
-        self._worker.progress.connect(self._on_progress)
-        self._worker.finished.connect(self._on_finished)
-        self._worker.start()
+        worker: Any = self._worker
+        worker.progress.connect(self._on_progress)
+        worker.finished.connect(self._on_finished)
+        worker.start()
 
     def _cancel(self) -> None:
         if self._worker and self._worker.isRunning():
