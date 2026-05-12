@@ -5,8 +5,8 @@ from equinox.storage.utils import safe_json_loads
 import logging
 from pathlib import Path
 from typing import Optional
-from urllib.parse import urlparse, urlencode
 
+from equinox.core import urls
 from equinox.storage.collections import CollectionManager
 from equinox.core.request import Request
 from equinox.importers._utils import validate_import_file
@@ -163,10 +163,11 @@ class HARImporter:
 def _short_url(url: str, max_len: int = 60) -> str:
     """Return a display-friendly shortened URL for use as a request name."""
     try:
-        parsed = urlparse(url)
-        short = parsed.path or "/"
-        if parsed.query:
-            short = f"{short}?{parsed.query[:20]}…"
+        parsed = urls.url_metadata(url)
+        short = str(parsed.get("path") or "/")
+        query = str(parsed.get("query") or "")
+        if query:
+            short = f"{short}?{query[:20]}…"
         return short[:max_len]
     except Exception:
         return url[:max_len]
