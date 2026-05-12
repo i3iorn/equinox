@@ -1,3 +1,4 @@
+
 """Request builder panel.
 
 Logging strategy:
@@ -67,10 +68,11 @@ from equinox.gui.request_panel._constants import (
 )
 from equinox.gui.request_panel.body_mixin import RequestBodyMixin  # noqa: F401
 from equinox.gui.request_panel.validation_mixin import _RequestValidationMixin  # noqa: F401
+from equinox.core.validation import Validator
 from equinox.gui.request_panel.save_dialog import SaveRequestDialog
 from equinox.gui.request_panel.toolbar import TabToolbar
 from equinox.gui.syntax_highlighter.python_highlighter import PythonHighlighter
-from equinox.gui.ui_common import get_gui_settings
+from ..ui_common import get_gui_settings
 
 logger = logging.getLogger(__name__)
 _KEY_POLICY_PROFILE = "request/policy_profile"
@@ -103,12 +105,8 @@ _HEADER_PRESETS = [
 
 # HTML cheat-sheet shown in the collapsible Scripts tab section
 _SCRIPTS_CHEAT_TEXT = (
-    "<b>Context objects</b><br>"
-    "&nbsp;&nbsp;<code>env</code> — dict of active environment variables (read/write)<br>"
-    "&nbsp;&nbsp;<code>request</code> — dict: method, url, headers, body (pre-script only)<br>"
-    "&nbsp;&nbsp;<code>response</code> — dict: status_code, headers, body, json (post-script only)<br>"
-    "<br><b>Allowed modules</b><br>"
-    "&nbsp;&nbsp;json, re, base64, hashlib, hmac, datetime, time, math, uuid, urllib.parse"
+    "<h3>Pre/Post Scripts</h3>"
+    "<p>Use Python helpers to mutate the request/response context.</p>"
 )
 
 
@@ -267,11 +265,115 @@ class RequestPanel(_RequestValidationMixin, _RequestSendMixin, _RequestAuthMixin
             logger.error("Autosave failed for request id=%s", getattr(req, "id", None), exc_info=True)
             self._status_message("⚠ Autosave failed — click Save to preserve changes", STATUS_DURATION_LONG)
 
+    def save_current_request(self) -> bool:
+        """Public wrapper for the save dialog flow."""
+        return self._save_request()
+
+    def _save_request(self) -> bool:
+        """Save the current editor state to a collection (prompts for name / folder)."""
+        url = self.url_input.text().strip()
+        if not url:
+            QMessageBox.warning(self, "Missing URL", "Please enter a URL before saving.")
+            return False
+
+        method = self.method_combo.currentText()
+        current_folder = getattr(self.current_request, "folder", None) or ""
+        logger.debug(
+            "request_panel.save_dialog_open op=save_request method=%s url=%s",
+            method,
+            url,
+        )
+
+        dlg = SaveRequestDialog(self.db, method, url, current_folder, parent=self)
+        logger.debug("request_panel.save_dialog_created op=save_request")
+        if dlg.exec() != QDialog.DialogCode.Accepted:
+            return False
+
+        name, col_id, col_name, folder = dlg.result_values()
+        logger.debug(
+            "request_panel.save_dialog_values op=save_request name=%s collection_id=%s folder=%s",
+            name,
+            col_id,
+            folder,
+        )
+
+        try:
+            existing_req = self.current_request
+            existing_id = getattr(existing_req, "id", None)
+            existing_collection_id = getattr(existing_req, "collection_id", None)
+            request = self._build_request_from_editor(
+                name=name,
+                collection_id=col_id,
+                folder=folder,
+            )
+            if existing_id and existing_collection_id == col_id:
+                request.id = existing_id
+                self._collection_mgr.update_request(request)
+                req_id = existing_id
+                logger.info(
+                    "request_panel.request_updated op=save_request request_id=%d collection_id=%d method=%s url=%s",
+                    req_id,
+                    col_id,
+                    method,
+                    url,
+                )
+            else:
+                req_id = self._collection_mgr.save_request(request, collection_id=col_id, name=name)
+                request.id = req_id
+                logger.info(
+                    "request_panel.request_saved op=save_request request_id=%d collection_id=%d method=%s url=%s",
+                    req_id,
+                    col_id,
+                    method,
+                    url,
+                )
+
+            self.current_request = request
+            self._clear_dirty()
+            self._status_message(f"Saved '{name}' to '{col_name}'")
+
+            try:
+                win = self.window()
+                if hasattr(win, "collections_panel"):
+                    win.collections_panel.refresh()
+            except Exception:
+                logger.debug("Failed to refresh collections panel after save", exc_info=True)
+            return True
+        except Exception as exc:
+            logger.error("Failed to save request", exc_info=True)
+            QMessageBox.critical(self, "Save Failed", str(exc))
+            return False
+
+
     # ── Session variable accessors ─────────────────────────────────────
 
     def get_session_vars(self) -> Dict[str, str]:
         """Return a copy of the current session variables."""
         return dict(self._session_vars)
+    def get_interpolation_context(self) -> Dict[str, str]:
+        """Return the current interpolation snapshot for helper panels."""
+        context = self.get_session_vars()
+        try:
+            context.update(self.path_params_table.get_all_data())
+        except Exception:
+            logger.debug("Failed to read path parameters for interpolation context", exc_info=True)
+        return context
+
+    def set_session_var(self, key: str, value: str) -> None:
+        """Set a captured session variable and notify listeners."""
+        validated_key = Validator.validate_variable_name(key)
+        self._session_vars[validated_key] = value
+        self.session_vars_changed.emit(dict(self._session_vars))
+
+    def delete_session_var(self, key: str) -> bool:
+        """Delete a session variable by key; returns False if it was absent."""
+        validated_key = Validator.validate_variable_name(key)
+        if validated_key not in self._session_vars:
+            return False
+        del self._session_vars[validated_key]
+        self.session_vars_changed.emit(dict(self._session_vars))
+        return True
+
 
     def clear_session_vars(self) -> None:
         """Clear all session variables and notify listeners."""
@@ -1162,81 +1264,3 @@ class RequestPanel(_RequestValidationMixin, _RequestSendMixin, _RequestAuthMixin
         except json.JSONDecodeError as exc:
             logger.warning("JSON formatting failed: %s (line %d, col %d)", exc.msg, exc.lineno, exc.colno)
             self._status_message(f"Invalid JSON: {exc}")
-
-    def _save_request(self) -> None:
-        """Save the current editor state to a collection (prompts for name / folder)."""
-        url = self.url_input.text().strip()
-        if not url:
-            QMessageBox.warning(self, "Missing URL", "Please enter a URL before saving.")
-            return
-
-        method = self.method_combo.currentText()
-        current_folder = getattr(self.current_request, "folder", None) or ""
-        logger.debug(
-            "request_panel.save_dialog_open op=save_request method=%s url=%s",
-            method,
-            url,
-        )
-
-        dlg = SaveRequestDialog(self.db, method, url, current_folder, parent=self)
-        logger.debug("request_panel.save_dialog_created op=save_request")
-        if dlg.exec() != QDialog.DialogCode.Accepted:
-            return
-
-        name, col_id, col_name, folder = dlg.result_values()
-        logger.debug(
-            "request_panel.save_dialog_values op=save_request name=%s collection_id=%s folder=%s",
-            name,
-            col_id,
-            folder,
-        )
-
-        try:
-            existing_req = self.current_request
-            existing_id = getattr(existing_req, "id", None)
-            existing_collection_id = getattr(existing_req, "collection_id", None)
-            request = self._build_request_from_editor(
-                name=name,
-                collection_id=col_id,
-                folder=folder,
-            )
-            if existing_id and existing_collection_id == col_id:
-                # Update in place when staying within the same collection.
-                request.id = existing_id
-                self._collection_mgr.update_request(request)
-                req_id = existing_id
-                logger.info(
-                    "request_panel.request_updated op=save_request request_id=%d collection_id=%d method=%s url=%s",
-                    req_id,
-                    col_id,
-                    method,
-                    url,
-                )
-            else:
-                # Save-as behavior for first save or cross-collection target.
-                req_id = self._collection_mgr.save_request(request, collection_id=col_id, name=name)
-                request.id = req_id
-                logger.info(
-                    "request_panel.request_saved op=save_request request_id=%d collection_id=%d method=%s url=%s",
-                    req_id,
-                    col_id,
-                    method,
-                    url,
-                )
-
-            self.current_request = request
-            self._clear_dirty()
-
-            self._status_message(f"Saved '{name}' to '{col_name}'")
-
-            try:
-                win = self.window()
-                if hasattr(win, 'collections_panel'):
-                    win.collections_panel.refresh()
-            except Exception:
-                logger.debug("Failed to refresh collections panel after save", exc_info=True)
-
-        except Exception as exc:
-            logger.error("Failed to save request", exc_info=True)
-            QMessageBox.critical(self, "Save Failed", str(exc))
-
