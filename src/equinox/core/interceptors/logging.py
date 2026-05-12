@@ -1,4 +1,3 @@
-import json
 import logging
 from typing import Dict, Any, Optional
 
@@ -22,7 +21,7 @@ class StructuredLogger:
             **payload,
         }
 
-        self.logger.log(level, json.dumps(data, ensure_ascii=False), extra=data)
+        self.logger.log(level, event, extra=data)
 
 
 class RequestResponseLogger:
