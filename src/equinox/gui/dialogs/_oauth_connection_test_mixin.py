@@ -45,8 +45,15 @@ class OAuthConnectionTestMixin:
 
 
     def _set_status(self, msg: str, ok: Optional[bool]) -> None:
-        """Implemented by ``DirtyDialogMixin`` in concrete dialog classes."""
-        raise NotImplementedError
+        """Update status text using DirtyDialogMixin formatting when available."""
+        label = getattr(self, "status_label", None)
+        if label is None:
+            return
+        formatter = getattr(self, "_format_status", None)
+        if callable(formatter):
+            label.setText(formatter(msg, ok))
+        else:
+            label.setText(msg)
 
     def _start_oauth_test(
         self,
