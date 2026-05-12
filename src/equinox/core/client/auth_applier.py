@@ -152,10 +152,14 @@ class AuthApplier:
             type(exc).__name__,
             safe_msg,
         )
+        details = {"strategy": type(strategy).__name__}
+        extra_details = getattr(exc, "details", None)
+        if isinstance(extra_details, dict):
+            details.update(extra_details)
         if proxy and _is_proxy_connection_refused(safe_msg):
             return RequestError(
                 f"Authentication failed — proxy ({proxy}) is not reachable. "
                 "Please check your proxy settings under Preferences.",
-                details={"proxy": proxy, "strategy": type(strategy).__name__},
+                details={**details, "proxy": proxy},
             )
-        return RequestError(f"Authentication failed: {safe_msg}")
+        return RequestError(f"Authentication failed: {safe_msg}", details=details)
