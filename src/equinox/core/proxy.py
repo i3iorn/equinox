@@ -9,10 +9,10 @@ import logging
 import errno
 import select as _select
 import socket
-from urllib.parse import urlparse
 from typing import Optional
 
 from equinox.core.exceptions import RequestError
+from equinox.core import urls
 
 logger = logging.getLogger(__name__)
 
@@ -22,14 +22,20 @@ def check_proxy_reachable(proxy_url: str) -> None:
 
     This function mirrors the previous behaviour in ``HTTPClient._check_proxy_reachable``.
     """
-    parsed = urlparse(proxy_url)
-    host = parsed.hostname
-    port = parsed.port or 8080
+    parsed = urls.url_metadata(proxy_url)
+    host = parsed.get("hostname")
+    port = int(parsed.get("port") or 8080)
     if not host:
         logger.debug("Proxy check skipped: no hostname in proxy URL")
         return
 
-    logger.debug("Proxy details: scheme=%s hostname=%s port=%d netloc=%s", parsed.scheme, host, port, parsed.netloc)
+    logger.debug(
+        "Proxy details: scheme=%s hostname=%s port=%d netloc=%s",
+        parsed.get("scheme", ""),
+        host,
+        port,
+        parsed.get("netloc", ""),
+    )
 
     is_loopback = host in ("127.0.0.1", "::1", "localhost")
     connect_timeout = 3.5 if is_loopback else 1.5
