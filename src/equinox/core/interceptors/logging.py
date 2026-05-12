@@ -64,10 +64,11 @@ class RequestResponseLogger:
         error: Optional[Exception] = None,
         level: int = logging.ERROR,
     ) -> None:
+        err = error or Exception("Unknown request error")
         if isinstance(request_or_payload, dict):
             payload = request_or_payload
         else:
-            payload = error_payload(request_or_payload, error)
+            payload = error_payload(request_or_payload, err)
 
         self._logger.log(level, "request_failed", payload)
 
@@ -99,6 +100,9 @@ class LoggingErrorInterceptor(ErrorInterceptor):
         self.logger = logger or RequestResponseLogger()
 
     def intercept(self, context: InterceptorContext) -> InterceptorResult[Exception]:
-        payload = error_payload(context.request, context.error)
+        payload = error_payload(
+            context.request,
+            context.error or Exception("Unknown interceptor error"),
+        )
         self.logger.log_error(payload)
         return InterceptorResult.continue_()
