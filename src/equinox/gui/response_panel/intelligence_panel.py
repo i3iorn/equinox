@@ -25,9 +25,10 @@ from PyQt6.QtGui import QGuiApplication
 
 from equinox.core.response_intelligence import Category, Finding, Severity
 from equinox.gui.theme import Colors, get_mono_font
-from equinox.gui.ui_common import get_gui_settings
 
 __all__ = ["IntelligencePanel"]
+
+from equinox.gui.ui_common import get_gui_settings
 
 logger = logging.getLogger(__name__)
 
