@@ -13,7 +13,7 @@ from typing import Dict, Any
 
 from equinox.core.interpolation import VariableInterpolator, collect_interpolation_variables
 from equinox.core.time import utc_now
-from equinox.gui.theme import Colors, get_mono_font
+from equinox.gui.theme import get_mono_font
 from equinox.gui.widgets import make_secret_row
 
 from equinox.auth import BasicAuth, OAuth2Auth, BearerAuth, APIKeyAuth, AUTH_TYPES, AWSSigV4Auth
@@ -407,13 +407,14 @@ class AuthDialog(QDialog):
             client_secret = self.oauth2_client_secret.text().strip() or None
             scope = self.oauth2_scope.text().strip() or None
 
+        token_auth = str(self.oauth2_token_auth.currentData() or "body")
         auth = OAuth2Auth(
             token_url=token_url,
             client_id=client_id,
             client_secret=client_secret,
             scope=scope,
             verify_ssl=self.oauth2_verify_ssl_check.isChecked(),
-            token_auth=self.oauth2_token_auth.currentData() or "body",
+            token_auth=token_auth,
         )
         self.oauth2_fetch_btn.setEnabled(False)
         self.oauth2_view_response_btn.setEnabled(False)
@@ -674,6 +675,7 @@ class AuthDialog(QDialog):
                 QMessageBox.warning(self, "Missing Fields",
                                     "Token URL and Client ID are required.")
                 return _MISSING
+            token_auth = str(self.oauth2_token_auth.currentData() or "body")
             auth = OAuth2Auth(
                 token_url=token_url,
                 client_id=client_id,
@@ -682,7 +684,7 @@ class AuthDialog(QDialog):
                 access_token=_sanitize_field(self.oauth2_access_token.text().strip()) or None,
                 refresh_token=_sanitize_field(self.oauth2_refresh_token.text().strip()) or None,
                 verify_ssl=self.oauth2_verify_ssl_check.isChecked(),
-                token_auth=self.oauth2_token_auth.currentData() or "body",
+                token_auth=token_auth,
             )
             # Carry forward expires_at from a successful "Fetch Token…"
             # so the token isn't treated as eternal.
@@ -701,9 +703,10 @@ class AuthDialog(QDialog):
             if not key_name or not key_value:
                 QMessageBox.warning(self, "Missing Fields", "Enter both key name and value.")
                 return _MISSING
+            location = "header" if self.api_key_location.currentIndex() == 0 else "query"
             return APIKeyAuth(
                 key=key_name, value=key_value,
-                location=self.api_key_location.currentText(),
+                location=location,
             )
 
         if tab == self._TAB_AWS:
