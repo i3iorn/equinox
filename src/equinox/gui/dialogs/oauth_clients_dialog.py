@@ -16,13 +16,13 @@ from PyQt6.QtGui import QColor
 from PyQt6.QtWidgets import (
     QComboBox, QDialog, QDialogButtonBox, QFormLayout, QFrame,
     QHBoxLayout, QInputDialog, QLabel, QLineEdit, QListWidget,
-    QListWidgetItem, QMessageBox, QPushButton, QSplitter, QTextEdit,
+    QMessageBox, QPushButton, QSplitter, QTextEdit,
     QVBoxLayout, QWidget,
 )
 
 from equinox.gui.theme import Colors, get_mono_font
 from equinox.gui.widgets import make_secret_row
-from equinox.gui.dialogs._dirty_dialog_mixin import DirtyDialogMixin
+from equinox.gui.dialogs._list_form_dialog_mixin import ListFormDialogMixin
 from equinox.gui.dialogs._oauth_connection_test_mixin import OAuthConnectionTestMixin
 from equinox.gui.dialogs._oauth_form_utils import (
     parse_json_object_field,
@@ -39,7 +39,7 @@ _FORM_HEADER_IDLE = (
 )
 
 
-class OAuthClientsDialog(OAuthConnectionTestMixin, DirtyDialogMixin, QDialog):
+class OAuthClientsDialog(OAuthConnectionTestMixin, ListFormDialogMixin, QDialog):
     """Full-featured OAuth2 client credential manager.
 
     Layout
@@ -72,7 +72,7 @@ class OAuthClientsDialog(OAuthConnectionTestMixin, DirtyDialogMixin, QDialog):
         self.setWindowTitle("OAuth2 Client Manager")
         self.setMinimumSize(860, 560)
         self._build_ui()
-        # Set _list_widget after UI construction
+        # Set _list_widget after UI construction (required by ListFormDialogMixin)
         self._list_widget = self.client_list
         self._refresh_list()
 
@@ -103,7 +103,7 @@ class OAuthClientsDialog(OAuthConnectionTestMixin, DirtyDialogMixin, QDialog):
 
         self.client_list = QListWidget()
         self.client_list.setAlternatingRowColors(True)
-        self.client_list.currentItemChanged.connect(self._on_client_selected)
+        self.client_list.currentItemChanged.connect(self._on_item_selected)
         ll.addWidget(self.client_list, 1)
 
         list_btns = QHBoxLayout()
@@ -227,92 +227,32 @@ class OAuthClientsDialog(OAuthConnectionTestMixin, DirtyDialogMixin, QDialog):
 
         return right
 
-    # ── List management ───────────────────────────────────────────────
+    # ── List management (ListFormDialogMixin template methods) ────────
 
-    def _refresh_list(self, select_id: Optional[int] = None) -> None:
-        self.client_list.setUpdatesEnabled(False)
-        self.client_list.blockSignals(True)
-        try:
-            self.client_list.clear()
-            for c in self.mgr.list_clients():
-                tag = " ★" if c["is_default"] else ""
-                label = f"{c['name']}{tag}  [{c['grant_type']}]"
-                item = QListWidgetItem(label)
-                item.setData(Qt.ItemDataRole.UserRole, c["id"])
-                if c["is_default"]:
-                    item.setForeground(QColor(Colors.GREEN))
-                    font = item.font()
-                    font.setBold(True)
-                    item.setFont(font)
-                self.client_list.addItem(item)
-                if c["id"] == select_id:
-                    self.client_list.setCurrentItem(item)
-        finally:
-            self.client_list.blockSignals(False)
-            self.client_list.setUpdatesEnabled(True)
+    def _build_list_items(self):
+        """Yield (item_id, label, kwargs) for each client."""
+        from equinox.gui.theme import Colors
+        from PyQt6.QtGui import QColor, QFont
+        for c in self.mgr.list_clients():
+            tag = " ★" if c["is_default"] else ""
+            label = f"{c['name']}{tag}  [{c['grant_type']}]"
+            kwargs = {}
+            if c["is_default"]:
+                kwargs["fg_color"] = Colors.GREEN
+                font = QFont()
+                font.setBold(True)
+                kwargs["font"] = font
+            yield c["id"], label, kwargs
 
-        if select_id is None and self.client_list.count():
-            # Triggers currentItemChanged → _on_client_selected
-            self.client_list.setCurrentRow(0)
-        else:
-            # Item was selected while signals were blocked, so the
-            # _on_client_selected slot never ran.  Drive the selection
-            # logic manually using what is actually selected in the list.
-            self._apply_selection()
+    def _on_list_item_selected(self, client_id: int) -> None:
+        """Load the client form."""
+        self._load_form(client_id)
 
     # ── Selection logic ───────────────────────────────────────────────
+    # _apply_selection() inherited from ListFormDialogMixin
+    # _on_item_selected(current, _prev) inherited from ListFormDialogMixin
 
-    def _apply_selection(self) -> None:
-        """Read the currently-selected list item and load it into the form.
 
-        Unlike ``_on_client_selected`` (the signal slot) this method does
-        NOT prompt about unsaved changes — it is only called after a
-        programmatic list rebuild where the dirty state has already been
-        resolved by the caller (create / delete / save / set-default).
-        """
-        current = self.client_list.currentItem()
-        if current is None:
-            self._current_id = None
-            self._set_form_enabled(False)
-            self.delete_btn.setEnabled(False)
-            return
-
-        self._current_id = current.data(Qt.ItemDataRole.UserRole)
-        current_id = self._current_id
-        if current_id is not None:
-            self._load_form(int(current_id))
-        self._set_form_enabled(True)
-        self.delete_btn.setEnabled(True)
-        self._dirty = False
-        self._sync_buttons()
-
-    def _on_client_selected(self, current: QListWidgetItem, _prev) -> None:
-        """Handle interactive selection changes from the list widget."""
-        if current is None:
-            self._current_id = None
-            self._set_form_enabled(False)
-            self.delete_btn.setEnabled(False)
-            return
-
-        new_id = current.data(Qt.ItemDataRole.UserRole)
-        if new_id == self._current_id:
-            return   # same item re-selected — no-op
-
-        if self._dirty and self._current_id is not None:
-            if not self._prompt_unsaved(self._current_id):
-                return
-
-        self._current_id = new_id
-        current_id = self._current_id
-        if current_id is not None:
-            self._load_form(int(current_id))
-        self._set_form_enabled(True)
-        self.delete_btn.setEnabled(True)
-        self._dirty = False
-        self._sync_buttons()
-
-    def _reselect(self, client_id: int) -> None:
-        self._reselect_item(client_id)
 
     def _load_form(self, client_id: int) -> None:
         c = self.mgr.get_client(client_id)
@@ -354,9 +294,6 @@ class OAuthClientsDialog(OAuthConnectionTestMixin, DirtyDialogMixin, QDialog):
         self.view_response_btn.setEnabled(has and self._last_test_response is not None)
         self.save_btn.setText("💾  Save *" if self._dirty else "💾  Save")
 
-    def _mark_dirty(self) -> None:
-        self._dirty = True
-        self._sync_buttons()
 
     # ── CRUD ──────────────────────────────────────────────────────────
 
