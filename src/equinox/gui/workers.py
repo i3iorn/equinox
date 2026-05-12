@@ -1,6 +1,7 @@
 """Background worker threads and dialogs for the Equinox GUI."""
 
 import csv
+import inspect
 import json as _json
 import logging
 import threading
@@ -23,7 +24,7 @@ from PyQt6.QtWidgets import (
 )
 from PyQt6.QtCore import QThread, pyqtSignal
 
-from equinox.auth import make_oauth2_basic_auth_header
+from equinox.auth._oauth2 import make_oauth2_basic_auth_header
 from equinox.core.client import HTTPClient
 from equinox.core.cookies import CookieManager
 from equinox.core.validation import Validator
@@ -241,21 +242,36 @@ class BackgroundTaskWorker(QThread):
         super().__init__(parent)
         self._operation = operation
         self._cancelled = False
+        self._cancel_event = threading.Event()
 
     def cancel(self) -> None:
         """Mark this task as cancelled; result will be ignored."""
         self._cancelled = True
+        self._cancel_event.set()
+        self.requestInterruption()
 
     def run(self) -> None:
         if self._cancelled:
             return
         try:
-            result = self._operation()
+            result = self._invoke_operation()
             if not self._cancelled:
                 self.finished.emit(True, result)
         except Exception as exc:
             if not self._cancelled:
                 self.finished.emit(False, exc)
+
+    def _invoke_operation(self) -> Any:
+        try:
+            signature = inspect.signature(self._operation)
+        except (TypeError, ValueError):
+            return self._operation()
+
+        if "cancel_event" in signature.parameters:
+            return self._operation(cancel_event=self._cancel_event)
+        if "cancel_token" in signature.parameters:
+            return self._operation(cancel_token=self._cancel_event)
+        return self._operation()
 
 
 # ─────────────────────────────────────────────────────────────────────────────
