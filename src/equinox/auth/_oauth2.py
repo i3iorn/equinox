@@ -67,6 +67,24 @@ _ANON_KEY_ID_LENGTH: int = 12
 # Module-level helpers
 # ──────────────────────────────────────────────────────────────────────────────
 
+def make_oauth2_basic_auth_header(client_id: str, client_secret: str) -> str:
+    """Return an RFC 6749 §2.3.1 HTTP Basic Authorization header value.
+
+    Encodes ``client_id:client_secret`` in Base64 and returns the full header
+    value string (``"Basic <encoded>"``).
+
+    Raises:
+        AuthError: If *client_id* or *client_secret* is empty.
+    """
+    if not client_id or not client_secret:
+        raise AuthError(
+            "Client ID and secret are required for Basic auth token endpoint"
+        )
+    credentials = f"{client_id}:{client_secret}"
+    encoded = base64.b64encode(credentials.encode("utf-8")).decode("ascii")
+    return f"Basic {encoded}"
+
+
 def _is_connection_refused(exc: Exception) -> bool:
     """Return True for ConnectErrors that indicate nothing is listening.
 
@@ -676,25 +694,12 @@ class OAuth2Auth(AuthStrategy):
         )
 
     def _make_basic_auth_header(self) -> str:
-        """Return the Base64-encoded Basic auth header value.
-
-        Used for D&B Direct+, GitHub, and other OAuth2 providers that require
-        HTTP Basic Authentication (RFC 6749 §2.3.1) instead of body-encoded
-        credentials.
-
-        Returns:
-            The Basic auth header value: "Basic {base64(client_id:client_secret)}"
+        """Return the Basic auth header value, delegating to module-level helper.
 
         Raises:
             AuthError: If client_id or client_secret is missing.
         """
-        if not self.client_id or not self.client_secret:
-            raise AuthError(
-                "Client ID and secret are required for Basic auth token endpoint"
-            )
-        credentials = f"{self.client_id}:{self.client_secret}"
-        encoded = base64.b64encode(credentials.encode("utf-8")).decode("ascii")
-        return f"Basic {encoded}"
+        return make_oauth2_basic_auth_header(self.client_id, self.client_secret)
 
     def _execute_token_post(
         self,
@@ -781,10 +786,20 @@ class OAuth2Auth(AuthStrategy):
                 )
                 return response
             except httpx.HTTPStatusError as status_exc:
-                error_msg = f"Token endpoint returned HTTP {status_exc.response.status_code}"
+                status_code = "unknown"
+                if status_exc.response is not None:
+                    self._capture_token_response(status_exc.response)
+                    status_code = status_exc.response.status_code
+                error_msg = f"Token endpoint returned HTTP {status_code}"
                 logger.error("%s for %s", error_msg, self.token_url)
                 self._audit.log_auth_failure("oauth2", error_msg)
-                raise AuthError(error_msg, details={"token_url": self.token_url})
+                raise AuthError(
+                    error_msg,
+                    details={
+                        "token_url": self.token_url,
+                        "token_response": self._last_token_response,
+                    },
+                )
             except (httpx.TransportError, httpx.TimeoutException) as transient_exc:
                 last_exc = transient_exc
                 # ECONNREFUSED / WinError 10061 — nothing is listening on that
