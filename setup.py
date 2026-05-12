@@ -5,7 +5,7 @@ with open("README.md", "r", encoding="utf-8") as fh:
 
 setup(
     name="equinox",
-    version="0.3.3",
+    version="0.3.4",
     author="Equinox Team",
     description="A local-first API testing tool with CLI and GUI",
     long_description=long_description,
