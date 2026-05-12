@@ -748,6 +748,57 @@ class VariablesPanel(QWidget):
                 result[key_item.text()] = val_item.text()
         return result
 
+    def _resolve_request_panel(self):
+        """Return the nearest RequestPanel host exposing ``request_panel`` if available."""
+        host = self.window()
+        rp = getattr(host, "request_panel", None)
+        if rp is not None:
+            return rp
+
+        host = self.parent()
+        while host is not None:
+            rp = getattr(host, "request_panel", None)
+            if rp is not None:
+                return rp
+            host = host.parent()
+        return None
+
+    def _publish_session_var(self, rp, key: str, value: str) -> bool:
+        """Write a session variable into a request-panel-like object."""
+        session_vars = getattr(rp, "_session_vars", None)
+        if isinstance(session_vars, dict):
+            session_vars[key] = value
+            changed = getattr(rp, "session_vars_changed", None)
+            emit = getattr(changed, "emit", None)
+            if callable(emit):
+                emit(dict(session_vars))
+            return True
+
+        setter = getattr(rp, "set_session_var", None)
+        if callable(setter):
+            setter(key, value)
+            return True
+
+        return False
+
+    def _delete_published_session_var(self, rp, key: str) -> bool:
+        """Remove a session variable from a request-panel-like object."""
+        session_vars = getattr(rp, "_session_vars", None)
+        if isinstance(session_vars, dict):
+            session_vars.pop(key, None)
+            changed = getattr(rp, "session_vars_changed", None)
+            emit = getattr(changed, "emit", None)
+            if callable(emit):
+                emit(dict(session_vars))
+            return True
+
+        deleter = getattr(rp, "delete_session_var", None)
+        if callable(deleter):
+            deleter(key)
+            return True
+
+        return False
+
     def _add_session_var(self) -> None:
         """Prompt for a custom session variable and publish it to RequestPanel."""
         key, ok = QInputDialog.getText(self, "Add Session Variable", "Variable name:")
@@ -762,15 +813,14 @@ class VariablesPanel(QWidget):
         if not ok:
             return
 
-        rp = getattr(self.window(), "request_panel", None)
+        rp = self._resolve_request_panel()
         try:
             key = Validator.validate_variable_name(key)
         except ValidationError as exc:
             QMessageBox.warning(self, "Invalid Variable Name", str(exc))
             return
 
-        if rp is not None:
-            rp.set_session_var(key, value)
+        if rp is not None and self._publish_session_var(rp, key, value):
             return
 
         # Fallback for tests or unusual embedding: update panel-local view.
@@ -787,9 +837,9 @@ class VariablesPanel(QWidget):
             return
         key = key_item.text()
         try:
-            rp = getattr(self.window(), "request_panel", None)
+            rp = self._resolve_request_panel()
             if rp is not None:
-                rp.delete_session_var(key)
+                self._delete_published_session_var(rp, key)
         except Exception as exc:
             logger.debug("Failed to delete session var %r: %s", key, exc)
 
