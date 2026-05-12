@@ -35,6 +35,7 @@ _BLOCKED = frozenset(
         "__spec__",
         "__build_class__",
         "getattr",
+        "setattr",   # must be blocked alongside delattr — AST check only catches direct calls
         "hasattr",
         "delattr",
         "type",
