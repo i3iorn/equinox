@@ -23,8 +23,10 @@ from PyQt6.QtWidgets import (
 )
 from PyQt6.QtCore import QThread, pyqtSignal
 
+from equinox.auth import make_oauth2_basic_auth_header
 from equinox.core.client import HTTPClient
 from equinox.core.cookies import CookieManager
+from equinox.core.validation import Validator
 from equinox.security import redact_body
 from equinox.core.request import Request, Response
 from equinox.core.error_enrichment import RichError, enrich_exception
@@ -105,8 +107,17 @@ class OAuthTokenTester(QThread):
 
     def run(self) -> None:
         try:
-            import base64
             import httpx
+
+            # Validate the token URL before making the request — this enforces
+            # SSRF protection and schema checks through the same path as the
+            # main HTTP client.
+            try:
+                Validator.validate_resolved_url(self.token_url)
+            except Exception as exc:
+                if not self._cancelled:
+                    self.done.emit(False, f"Invalid token URL: {exc}")
+                return
 
             data = {
                 "grant_type": self.grant_type,
@@ -114,10 +125,16 @@ class OAuthTokenTester(QThread):
             headers: dict = {}
 
             if self.token_auth == "basic":
-                # RFC 6749 §2.3.1 — credentials in HTTP Basic Authorization header
-                credentials = f"{self.client_id}:{self.secret}"
-                encoded = base64.b64encode(credentials.encode("utf-8")).decode("ascii")
-                headers["Authorization"] = f"Basic {encoded}"
+                # RFC 6749 §2.3.1 — credentials in HTTP Basic Authorization header.
+                # Reuse the shared utility from OAuth2Auth to avoid duplication.
+                try:
+                    headers["Authorization"] = make_oauth2_basic_auth_header(
+                        self.client_id, self.secret
+                    )
+                except Exception as exc:
+                    if not self._cancelled:
+                        self.done.emit(False, str(exc))
+                    return
             else:
                 # Default: credentials in the POST body
                 data["client_id"] = self.client_id
@@ -384,7 +401,12 @@ class BenchmarkDialog(QDialog):
 
         All ``*_ms`` values are rounded to 3 decimal places.
         ``times_ms`` preserves the original iteration order for per-row CSV export.
+
+        Raises:
+            ValueError: If *times* is empty (no successful measurements).
         """
+        if not times:
+            raise ValueError("_compute_stats requires at least one successful timing entry")
         times_s = sorted(times)
         n_ok = len(times_s)
         avg = sum(times_s) / n_ok
