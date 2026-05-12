@@ -790,7 +790,7 @@ class OAuth2Auth(AuthStrategy):
                 if status_exc.response is not None:
                     self._capture_token_response(status_exc.response)
                     status_code = status_exc.response.status_code
-                error_msg = f"Token endpoint returned HTTP {status_code}"
+                error_msg = f"Token endpoint returned HTTP {status_code}: '{status_exc.response.text}'"
                 logger.error("%s for %s", error_msg, self.token_url)
                 self._audit.log_auth_failure("oauth2", error_msg)
                 raise AuthError(
