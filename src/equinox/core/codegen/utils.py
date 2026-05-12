@@ -1,3 +1,6 @@
+from equinox.core import urls
+
+
 def _auth_type_name(auth) -> str:
     return type(auth).__name__ if auth else ""
 
@@ -19,12 +22,7 @@ def _escape_go_string(s: str) -> str:
     )
 
 def _build_url_with_params(url: str, params: dict) -> str:
-    from urllib.parse import urlencode
-    if not params:
-        return url
-    qs = urlencode(params)
-    sep = "&" if "?" in url else "?"
-    return f"{url}{sep}{qs}"
+    return urls.append_query_params(url, params, merge_existing=False)
 
 _escape_ruby_single = _escape_single_quoted
 _escape_php_single = _escape_single_quoted
