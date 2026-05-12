@@ -16,14 +16,14 @@ from PyQt6.QtGui import QColor
 from PyQt6.QtWidgets import (
     QComboBox, QDialog, QDialogButtonBox, QFormLayout, QFrame,
     QHBoxLayout, QInputDialog, QLabel, QLineEdit, QListWidget,
-    QListWidgetItem, QMessageBox, QPushButton, QSplitter, QStackedWidget,
+    QMessageBox, QPushButton, QSplitter, QStackedWidget,
     QTextEdit, QVBoxLayout, QWidget,
 )
 
 from equinox.auth import AUTH_TYPES
 from equinox.gui.theme import Colors, get_mono_font
 from equinox.gui.widgets.secret_row import make_secret_row as _secret_row
-from equinox.gui.dialogs._dirty_dialog_mixin import DirtyDialogMixin
+from equinox.gui.dialogs._list_form_dialog_mixin import ListFormDialogMixin
 from equinox.gui.dialogs._oauth_connection_test_mixin import OAuthConnectionTestMixin
 from equinox.gui.dialogs._oauth_form_utils import (
     parse_json_object_field,
@@ -51,7 +51,7 @@ _TYPE_COLOUR = {
 }
 
 
-class SavedCredentialsDialog(OAuthConnectionTestMixin, DirtyDialogMixin, QDialog):
+class SavedCredentialsDialog(OAuthConnectionTestMixin, ListFormDialogMixin, QDialog):
     """Manager for named, reusable auth credentials of any type.
 
     Left panel  – scrollable list of all saved credentials grouped by type.
@@ -345,85 +345,27 @@ class SavedCredentialsDialog(OAuthConnectionTestMixin, DirtyDialogMixin, QDialog
             self._current_id is not None and auth_type == "oauth2"
         )
 
-    # ── List management ───────────────────────────────────────────────
+    # ── List management (ListFormDialogMixin template methods) ────────
 
-    def _refresh_list(self, select_id: Optional[int] = None) -> None:
-        self.cred_list.setUpdatesEnabled(False)
-        self.cred_list.blockSignals(True)
-        try:
-            self.cred_list.clear()
-            for c in self.mgr.list():
-                at    = c["auth_type"]
-                label = AUTH_TYPES.get(at, at)
-                tag   = " \u2605" if c["is_default"] else ""
-                item  = QListWidgetItem(f"[{label}] {c['name']}{tag}")
-                item.setData(Qt.ItemDataRole.UserRole, c["id"])
-                item.setForeground(QColor(_TYPE_COLOUR.get(at, Colors.FG)))
-                if c["is_default"]:
-                    font = item.font()
-                    font.setBold(True)
-                    item.setFont(font)
-                self.cred_list.addItem(item)
-                if c["id"] == select_id:
-                    self.cred_list.setCurrentItem(item)
-        finally:
-            self.cred_list.blockSignals(False)
-            self.cred_list.setUpdatesEnabled(True)
+    def _build_list_items(self):
+        """Yield (item_id, label, kwargs) for each credential."""
+        from equinox.gui.theme import Colors
+        from PyQt6.QtGui import QFont
+        for c in self.mgr.list():
+            at = c["auth_type"]
+            label = AUTH_TYPES.get(at, at)
+            tag = " \u2605" if c["is_default"] else ""
+            item_label = f"[{label}] {c['name']}{tag}"
+            kwargs = {"fg_color": _TYPE_COLOUR.get(at, Colors.FG)}
+            if c["is_default"]:
+                font = QFont()
+                font.setBold(True)
+                kwargs["font"] = font
+            yield c["id"], item_label, kwargs
 
-        if select_id is None and self.cred_list.count():
-            # Fires currentItemChanged → _on_item_selected
-            self.cred_list.setCurrentRow(0)
-        else:
-            # Item was selected while signals were blocked — drive
-            # selection logic manually so the form gets loaded/enabled.
-            self._apply_selection()
-
-    def _apply_selection(self) -> None:
-        """Read the currently-selected list item and load it into the form.
-
-        Does NOT prompt about unsaved changes — only called after
-        programmatic list rebuilds where dirty state has been resolved.
-        """
-        current = self.cred_list.currentItem()
-        if current is None:
-            self._current_id = None
-            self._set_form_enabled(False)
-            self.dup_btn.setEnabled(False)
-            self.delete_btn.setEnabled(False)
-            return
-
-        self._current_id = current.data(Qt.ItemDataRole.UserRole)
-        current_id = self._current_id
-        if current_id is not None:
-            self._load_form(int(current_id))
-        self._set_form_enabled(True)
-        self._dirty = False
-        self._sync_buttons()
-
-    def _on_item_selected(self, current: QListWidgetItem, _prev) -> None:
-        if current is None:
-            self._current_id = None
-            self._set_form_enabled(False)
-            return
-
-        new_id = current.data(Qt.ItemDataRole.UserRole)
-        if new_id == self._current_id:
-            return  # same item re-selected — no-op
-
-        if self._dirty and self._current_id is not None:
-            if not self._prompt_unsaved(self._current_id):
-                return
-
-        self._current_id = new_id
-        current_id = self._current_id
-        if current_id is not None:
-            self._load_form(int(current_id))
-        self._set_form_enabled(True)
-        self._dirty = False
-        self._sync_buttons()
-
-    def _reselect(self, cred_id: int) -> None:
-        self._reselect_item(cred_id)
+    def _on_list_item_selected(self, cred_id: int) -> None:
+        """Load the credential form."""
+        self._load_form(cred_id)
 
     def _load_form(self, cred_id: int) -> None:
         c = self.mgr.get(cred_id)
@@ -525,10 +467,6 @@ class SavedCredentialsDialog(OAuthConnectionTestMixin, DirtyDialogMixin, QDialog
             "\U0001f4be  Save *" if self._dirty else "\U0001f4be  Save"
         )
 
-    def _mark_dirty(self) -> None:
-        if not self._dirty:
-            self._dirty = True
-            self._sync_buttons()
 
     # ── CRUD ──────────────────────────────────────────────────────────
 
