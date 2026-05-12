@@ -699,7 +699,9 @@ class OAuth2Auth(AuthStrategy):
         Raises:
             AuthError: If client_id or client_secret is missing.
         """
-        return make_oauth2_basic_auth_header(self.client_id, self.client_secret)
+        client_id = self.client_id or ""
+        client_secret = self.client_secret or ""
+        return make_oauth2_basic_auth_header(client_id, client_secret)
 
     def _execute_token_post(
         self,
@@ -790,7 +792,10 @@ class OAuth2Auth(AuthStrategy):
                 if status_exc.response is not None:
                     self._capture_token_response(status_exc.response)
                     status_code = status_exc.response.status_code
-                error_msg = f"Token endpoint returned HTTP {status_code}: '{status_exc.response.text}'"
+                response_text = ""
+                if status_exc.response is not None:
+                    response_text = status_exc.response.text
+                error_msg = f"Token endpoint returned HTTP {status_code}: '{response_text}'"
                 logger.error("%s for %s", error_msg, self.token_url)
                 self._audit.log_auth_failure("oauth2", error_msg)
                 raise AuthError(
