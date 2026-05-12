@@ -6,7 +6,6 @@ import logging
 import shlex
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Union
-from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
 
 from equinox.core import urls
 from equinox.core.exceptions import ValidationError
@@ -58,8 +57,8 @@ def _is_template_url(url: str) -> bool:
 
 def _is_absolute_url(url: str) -> bool:
     """Return ``True`` when *url* has both a scheme and a netloc."""
-    parsed = urlparse(url)
-    return bool(parsed.scheme and parsed.netloc)
+    meta = urls.url_metadata(url)
+    return bool(meta.get("scheme") and meta.get("netloc"))
 
 
 def _merge_query_params(url: str, params: Dict[str, str]) -> str:
@@ -72,17 +71,7 @@ def _merge_query_params(url: str, params: Dict[str, str]) -> str:
     Returns:
         URL with merged and properly percent-encoded query string.
     """
-    parsed = urlparse(url)
-    merged = dict(parse_qsl(parsed.query, keep_blank_values=True))
-    merged.update({str(k): str(v) for k, v in params.items()})
-    return urlunparse((
-        parsed.scheme,
-        parsed.netloc,
-        parsed.path,
-        parsed.params,
-        urlencode(merged, doseq=False),
-        parsed.fragment,
-    ))
+    return urls.append_query_params(url, params, merge_existing=True)
 
 
 # ── Request dataclass ─────────────────────────────────────────────────────────
@@ -222,9 +211,7 @@ class Request:
         # URL still contains unresolved template vars or is relative —
         # append params with safe percent-encoding.
         if _is_template_url(url) or not _is_absolute_url(url):
-            qs = urlencode(self.params)
-            sep = "&" if "?" in url else "?"
-            return f"{url}{sep}{qs}"
+            return urls.append_query_params(url, self.params, merge_existing=False)
         return _merge_query_params(url, self.params)
 
     # ── cURL export ───────────────────────────────────────────────────────────
