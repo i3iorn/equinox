@@ -679,6 +679,10 @@ class MainWindow(QMainWindow):
             response = self._build_response_from_history(entry, request, history_id)
             if response is not None:
                 self.response_panel.display_response(response)
+                self._run_intelligence_analysis(response)
+            else:
+                self.response_panel.intelligence_panel.clear()
+                self.response_panel.set_intelligence_badge(0)
         except Exception:
             # Catch-all: the UI must stay responsive even on corrupted DB rows.
             logger.error(
