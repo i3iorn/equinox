@@ -9,8 +9,8 @@ import logging
 import re
 from pathlib import Path
 from typing import Any, Dict, Optional, Sequence
-from urllib.parse import urlparse
 
+from equinox.core import urls
 from equinox.core.exceptions import ValidationError
 from equinox.storage.utils import safe_json_loads
 
@@ -106,14 +106,14 @@ def parse_url_parts(url: str) -> Dict[str, str]:
         Dict with the URL's components.
     """
     try:
-        p = urlparse(url)
+        p = urls.url_metadata(url)
         return {
-            "scheme":   p.scheme or "https",
-            "hostname": p.hostname or "",
-            "port":     str(p.port) if p.port else "",
-            "path":     p.path or "/",
-            "query":    p.query or "",
-            "netloc":   p.netloc or "",
+            "scheme":   str(p.get("scheme") or "https"),
+            "hostname": str(p.get("hostname") or ""),
+            "port":     str(p.get("port") or ""),
+            "path":     str(p.get("path") or "/"),
+            "query":    str(p.get("query") or ""),
+            "netloc":   str(p.get("netloc") or ""),
         }
     except Exception as exc:
         logger.warning("Failed to parse URL %s: %s", url, exc)
