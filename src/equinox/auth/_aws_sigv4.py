@@ -15,9 +15,10 @@ import hmac
 import logging
 from datetime import datetime, timezone
 from typing import Any, Callable, Dict, Optional, Tuple
-from urllib.parse import quote, urlparse, parse_qsl
+from urllib.parse import quote
 
 from equinox.auth._base import AuthStrategy, _validate_credential, _interpolate_field, AuthError
+from equinox.core import urls
 
 logger = logging.getLogger(__name__)
 
@@ -84,13 +85,14 @@ class AWSSigV4Auth(AuthStrategy):
         body = getattr(request, "body", None) or ""
         body_bytes = body.encode("utf-8") if isinstance(body, str) else body
 
-        parsed = urlparse(url)
-        canonical_uri = self._canonical_uri(parsed.path)
-        canonical_qs = self._canonical_query_string(parsed.query)
+        parsed = urls.url_metadata(url)
+        canonical_uri = self._canonical_uri(str(parsed.get("path") or ""))
+        canonical_qs = self._canonical_query_string(str(parsed.get("query") or ""))
 
-        host = parsed.hostname or ""
-        if parsed.port and parsed.port not in (80, 443):
-            host = f"{host}:{parsed.port}"
+        host = str(parsed.get("hostname") or "")
+        port = parsed.get("port")
+        if isinstance(port, int) and port not in (80, 443):
+            host = f"{host}:{port}"
         headers["host"] = host  # lowercase — required by SigV4
 
         signed_headers, canonical_headers = self._canonical_headers(headers)
@@ -214,7 +216,7 @@ class AWSSigV4Auth(AuthStrategy):
     def _canonical_query_string(query: str) -> str:
         if not query:
             return ""
-        pairs = parse_qsl(query, keep_blank_values=True)
+        pairs = urls.parse_query_pairs(query, keep_blank_values=True)
         encoded = sorted(
             (quote(k, safe=""), quote(v, safe="")) for k, v in pairs
         )
