@@ -9,6 +9,8 @@ body) weighted to produce a single score in [0, 1].
 """
 
 import logging
+import hashlib
+import json
 import re
 from typing import Any, Dict, List, Optional, Set, Tuple, cast
 
@@ -67,6 +69,17 @@ _CANDIDATES_SQL = """
       LEFT JOIN history h ON h.id = hi.history_id
      WHERE hi.method = ?
        AND hi.normalized_url LIKE ?
+     ORDER BY hi.executed_at DESC
+     LIMIT ?
+"""
+
+_CANDIDATES_SUCCESS_SQL = """
+    SELECT hi.*, h.request_headers, h.request_body
+      FROM history_index hi
+      LEFT JOIN history h ON h.id = hi.history_id
+     WHERE hi.method = ?
+       AND hi.normalized_url LIKE ?
+       AND hi.response_success = 1
      ORDER BY hi.executed_at DESC
      LIMIT ?
 """
@@ -153,9 +166,41 @@ def _body_similarity(new: Dict[str, Any], cand: Dict[str, Any]) -> float:
         new:  Enriched new-request dict (may contain ``body_hash``).
         cand: History candidate dict (may contain ``body_hash``).
     """
-    new_hash = new.get("body_hash")
-    cand_hash = cand.get("body_hash")
+    new_hash = new.get("request_body_hash")
+    cand_hash = cand.get("request_body_hash")
     return 1.0 if (new_hash and cand_hash and new_hash == cand_hash) else 0.0
+
+
+def _stable_body_bytes(value: Any) -> bytes:
+    """Return a stable byte representation for request-body similarity hashing."""
+    if value is None:
+        return b""
+    if isinstance(value, (bytes, bytearray)):
+        return bytes(value)
+    if isinstance(value, (dict, list)):
+        return json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
+
+    if isinstance(value, str):
+        text = value.strip()
+        if not text:
+            return b""
+        try:
+            parsed = json.loads(text)
+            if isinstance(parsed, (dict, list)):
+                return json.dumps(parsed, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
+        except Exception:
+            pass
+        return text.encode("utf-8", errors="replace")
+
+    return str(value).encode("utf-8", errors="replace")
+
+
+def _request_body_hash(value: Any) -> Optional[str]:
+    """Hash request-body content for deterministic similarity comparison."""
+    payload = _stable_body_bytes(value)
+    if not payload:
+        return None
+    return hashlib.sha256(payload).hexdigest()
 
 
 def _compute_similarity(new: Dict[str, Any], cand: Dict[str, Any]) -> Dict[str, Any]:
@@ -213,20 +258,12 @@ def _parse_candidate_row(row: Any) -> Optional[Dict[str, Any]]:
 
         req_headers = safe_json_loads(r.get("request_headers") or "{}")
         r["request_headers"] = req_headers if isinstance(req_headers, dict) else {}
+        r["request_body_hash"] = _request_body_hash(r.get("request_body"))
 
         return cast(Dict[str, Any], r)
     except Exception:
         logger.debug("recommender_parse_candidate_failed", exc_info=True)
         return None
-
-
-def _is_successful(candidate: Dict[str, Any]) -> bool:
-    """Return True when the candidate history entry has a successful response.
-
-    Args:
-        candidate: Parsed history candidate dict.
-    """
-    return int(candidate.get("response_success", 0)) == 1
 
 
 def _most_frequent_value(freq_map: Dict[str, float]) -> str:
@@ -368,22 +405,39 @@ class Recommender:
 
     # ── Private helpers ───────────────────────────────────────────────────────
 
-    def _get_candidates(self, enriched_request: Dict[str, Any]) -> List[Dict[str, Any]]:
+    def _get_candidates(
+        self,
+        enriched_request: Dict[str, Any],
+        successful_only: bool = False,
+    ) -> List[Dict[str, Any]]:
         """Fetch and parse history rows that share the method and URL prefix.
 
         Args:
             enriched_request: New-request dict already populated with
                               ``normalized_url`` by :meth:`find_best_matches`.
         """
-        norm_url = enriched_request.get("normalized_url", "")
-        prefix = urls.base_path(norm_url)
+        scheme = str(enriched_request.get("scheme") or "")
+        netloc = str(enriched_request.get("netloc") or "")
+        # Host is required for safe, bounded candidate lookup.
+        if not netloc:
+            logger.debug(
+                "recommender_candidates_skipped_missing_netloc",
+                extra={
+                    "operation": "recommender_candidates",
+                    "method": enriched_request.get("method", ""),
+                    "successful_only": bool(successful_only),
+                },
+            )
+            return []
+        url_prefix = f"{scheme + '://' if scheme else ''}{netloc}/%"
+        query = _CANDIDATES_SUCCESS_SQL if successful_only else _CANDIDATES_SQL
 
         try:
             rows = self.db.fetchall(
-                _CANDIDATES_SQL,
+                query,
                 (
                     enriched_request.get("method", "").upper(),
-                    prefix + "%",
+                    url_prefix,
                     self.max_candidates,
                 ),
             )
@@ -393,8 +447,9 @@ class Recommender:
                 extra={
                     "operation": "recommender_candidates",
                     "method": enriched_request.get("method", ""),
-                    "prefix": prefix,
+                    "url_prefix": url_prefix,
                     "limit": self.max_candidates,
+                    "successful_only": bool(successful_only),
                 },
                 exc_info=True,
             )
@@ -414,6 +469,7 @@ class Recommender:
         new_request: Dict[str, Any],
         min_score: float = _DEFAULT_MIN_SCORE,
         limit: int = _DEFAULT_RESULT_LIMIT,
+        successful_only: bool = False,
     ) -> List[Tuple[Dict[str, Any], Dict[str, Any]]]:
         """Return the *limit* best history matches for *new_request*.
 
@@ -425,6 +481,7 @@ class Recommender:
             new_request: Dict with at least ``"method"`` and ``"url"`` keys.
             min_score:   Minimum total similarity to include in results.
             limit:       Maximum number of results to return.
+            successful_only: Restrict candidates to successful history rows.
 
         Returns:
             List of ``(candidate_dict, score_dict)`` tuples, best first.
@@ -445,10 +502,13 @@ class Recommender:
             "normalized_url": norm.get("normalized_url"),
             "path_segments":  norm.get("path_segments"),
             "query_params":   norm.get("query_params"),
+            "scheme": norm.get("scheme"),
+            "netloc": norm.get("netloc"),
+            "request_body_hash": _request_body_hash(new_request.get("body")),
         }
 
         scored: List[Tuple[Dict[str, Any], Dict[str, Any]]] = []
-        for cand in self._get_candidates(enriched):
+        for cand in self._get_candidates(enriched, successful_only=successful_only):
             score = _compute_similarity(enriched, cand)
             if score["total"] >= min_score:
                 scored.append((cand, score))
@@ -483,13 +543,12 @@ class Recommender:
             new_request,
             min_score=_SUGGESTION_MIN_SCORE,
             limit=_SUGGESTION_FETCH_LIMIT,
+            successful_only=True,
         )
         if not matches:
             return []
 
-        successful = [(cand, score) for cand, score in matches if _is_successful(cand)]
-        if not successful:
-            return []
+        successful = matches
 
         total = len(successful)
         total_weight = sum(
