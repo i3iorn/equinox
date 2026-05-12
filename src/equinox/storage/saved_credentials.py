@@ -236,6 +236,11 @@ class SavedCredentialsManager:
         )
         return new_id
 
+    def suggest_copy_name(self, base_name: str) -> str:
+        """Return the next available copy-style name for *base_name*."""
+        validated_name = require_str(base_name, "base_name", MAX_NAME_LENGTH)
+        return self._unique_copy_name(validated_name)
+
     def _unique_copy_name(self, base_name: str) -> str:
         """Return a unique 'base_name (Copy)' / 'base_name (Copy 2)' label.
 

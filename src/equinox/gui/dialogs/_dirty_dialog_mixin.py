@@ -18,7 +18,7 @@ from __future__ import annotations
 from typing import Callable, Optional
 
 from PyQt6.QtCore import Qt
-from PyQt6.QtWidgets import QDialog, QListWidget, QLabel, QMessageBox
+from PyQt6.QtWidgets import QListWidget, QLabel, QMessageBox
 
 from equinox.gui.theme import Colors
 
@@ -42,6 +42,7 @@ class DirtyDialogMixin:
     _dirty: bool
     _list_widget: QListWidget
     _save_callback: Callable[[], bool]
+    status_label: QLabel
 
     # ── Close guard ────────────────────────────────────────────────────
 
@@ -113,4 +114,8 @@ class DirtyDialogMixin:
         else:
             colour = Colors.FG_MUTED
         return f"<span style='color:{colour};'>{msg}</span>"
+
+    def _set_status(self, msg: str, ok: Optional[bool]) -> None:
+        """Set a coloured status message on ``status_label``."""
+        self.status_label.setText(self._format_status(msg, ok))
 

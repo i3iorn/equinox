@@ -22,11 +22,10 @@ from PyQt6.QtWidgets import (
 
 from equinox.gui.theme import Colors, get_mono_font
 from equinox.gui.widgets import make_secret_row
-from equinox.gui.workers import OAuthTokenTester
 from equinox.gui.dialogs._dirty_dialog_mixin import DirtyDialogMixin
+from equinox.gui.dialogs._oauth_connection_test_mixin import OAuthConnectionTestMixin
 from equinox.gui.dialogs._oauth_form_utils import (
     parse_json_object_field,
-    parse_json_object_field_lenient,
 )
 from equinox.storage import Database, OAuthClientManager
 from equinox.storage.oauth_clients import GRANT_TYPES
@@ -40,7 +39,7 @@ _FORM_HEADER_IDLE = (
 )
 
 
-class OAuthClientsDialog(DirtyDialogMixin, QDialog):
+class OAuthClientsDialog(OAuthConnectionTestMixin, DirtyDialogMixin, QDialog):
     """Full-featured OAuth2 client credential manager.
 
     Layout
@@ -62,8 +61,10 @@ class OAuthClientsDialog(DirtyDialogMixin, QDialog):
         self.mgr = OAuthClientManager(db)
         self._current_id: Optional[int] = None
         self._dirty = False
-        self._tester: Optional[OAuthTokenTester] = None  # keeps reference alive until done
+        self._tester: Optional[object] = None  # kept alive until worker completion
         self._last_test_response: Optional[dict] = None
+        self._test_btn_idle_text = "🔌  Test Connection"
+        self._test_btn_busy_text = "Testing…"
 
         # DirtyDialogMixin requirements
         self._save_callback = self._save_client
@@ -477,43 +478,17 @@ class OAuthClientsDialog(DirtyDialogMixin, QDialog):
         grant_type = self.f_grant_type.currentText()
         extra_raw = self.f_extra.toPlainText().strip()
 
-        if not token_url or not client_id:
-            QMessageBox.warning(
-                self, "Missing Fields",
-                "Token URL and Client ID are required to test the connection.",
-            )
-            return
-
-        extra_params = parse_json_object_field_lenient(extra_raw)
-
-        self.test_btn.setEnabled(False)
-        self.test_btn.setText("Testing…")
-        self._set_status("Connecting…", ok=None)
-        self._last_test_response = None
-        self.view_response_btn.setEnabled(False)
-
-        self._tester = OAuthTokenTester(
-            token_url, client_id, secret, scope, grant_type, extra_params
+        self._start_oauth_test(
+            token_url=token_url,
+            client_id=client_id,
+            secret=secret,
+            scope=scope,
+            grant_type=grant_type,
+            extra_raw=extra_raw,
         )
-        self._tester.done.connect(self._on_test_done)
-        self._tester.start()
-
-    def _on_test_done(self, success: bool, message: str, response: object) -> None:
-        self.test_btn.setEnabled(True)
-        self.test_btn.setText("🔌  Test Connection")
-        self._last_test_response = response if isinstance(response, dict) else None
-        self.view_response_btn.setEnabled(self._last_test_response is not None)
-        self._set_status(message, ok=success)
 
     def _view_test_response(self) -> None:
-        if not self._last_test_response:
-            return
-        from equinox.gui.dialogs.auth_dialog import _TokenResponseDialog
-        dlg = _TokenResponseDialog(self._last_test_response, self)
-        dlg.exec()
-
-    def _set_status(self, msg: str, ok: Optional[bool]) -> None:
-        self.status_label.setText(self._format_status(msg, ok))
+        self._view_oauth_test_response()
 
     # ── Close guard ───────────────────────────────────────────────────
     # _on_close is inherited from DirtyDialogMixin
