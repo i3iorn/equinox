@@ -182,28 +182,30 @@ class ScriptRunner:
     def _collect_changed_env(cls, new_env: Any, session_vars: Dict[str, str]) -> Dict[str, str]:
         if not isinstance(new_env, dict):
             return {}
-        
+
         changed: Dict[str, str] = {}
         total_bytes = 0
-        
+
         for k, v in new_env.items():
-            if isinstance(k, int):
-                raise ValueError("Environment keys must be strings")
-            
-            sk, sv = str(k), str(v)
+            if not isinstance(k, str):
+                raise ValueError(
+                    f"Environment keys must be strings, got {type(k).__name__}: {k!r}"
+                )
+
+            sv = str(v)
             if k not in session_vars or session_vars[k] != sv:
                 if len(changed) >= cls.MAX_OUTPUT_VARS:
                     raise ValueError(f"Too many environment variables (max {cls.MAX_OUTPUT_VARS})")
-                
-                if len(sk) > cls.MAX_ENV_KEY_LENGTH:
+
+                if len(k) > cls.MAX_ENV_KEY_LENGTH:
                     raise ValueError(f"Environment key too long (max {cls.MAX_ENV_KEY_LENGTH})")
                 if len(sv) > cls.MAX_ENV_VALUE_LENGTH:
                     raise ValueError(f"Environment value too long (max {cls.MAX_ENV_VALUE_LENGTH})")
-                
-                entry_size = len(sk.encode("utf-8")) + len(sv.encode("utf-8"))
+
+                entry_size = len(k.encode("utf-8")) + len(sv.encode("utf-8"))
                 if total_bytes + entry_size > cls.MAX_OUTPUT_TOTAL_BYTES:
                     raise ValueError(f"Total environment size too large (max {cls.MAX_OUTPUT_TOTAL_BYTES} bytes)")
-                
-                changed[sk] = sv
+
+                changed[k] = sv
                 total_bytes += entry_size
         return changed
