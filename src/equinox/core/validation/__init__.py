@@ -85,6 +85,47 @@ class Validator:
         return _HeaderValidator.validate_value(value)
 
     @classmethod
+    def validate_variable_name(cls, name: str) -> str:
+        """Validate an interpolation/session variable name.
+
+        Equinox uses ``{{name}}`` placeholders in many GUI contexts, so this
+        keeps the accepted naming rules centralized instead of duplicating a
+        panel-local regex in multiple widgets.
+        """
+        _Guards.require_nonempty_str(name, "Variable name")
+        name = name.strip()
+        if not re.fullmatch(r"[A-Za-z0-9_-]+", name):
+            from equinox.core.exceptions import ValidationError
+            raise ValidationError(
+                "Variable names may contain only letters, numbers, underscore, and hyphen."
+            )
+        if len(name) > _Limits.MAX_VARIABLE_NAME_LENGTH:
+            from equinox.core.exceptions import ValidationError
+            raise ValidationError("Variable name too long")
+        return name
+
+    @classmethod
+    def validate_cookie_name(cls, name: str) -> str:
+        """Validate a cookie name before persisting or copying it."""
+        _Guards.require_nonempty_str(name, "Cookie name")
+        name = name.strip()
+        if not _Patterns.HEADER_NAME.match(name):
+            from equinox.core.exceptions import ValidationError
+            raise ValidationError("Cookie name contains invalid characters")
+        return name
+
+    @classmethod
+    def validate_cookie_value(cls, value: str) -> str:
+        """Validate a cookie value for display and storage."""
+        if not isinstance(value, str):
+            from equinox.core.exceptions import ValidationError
+            raise ValidationError("Cookie value must be a string")
+        if len(value) > _Limits.MAX_HEADER_LENGTH:
+            from equinox.core.exceptions import ValidationError
+            raise ValidationError("Cookie value too long")
+        return _HeaderValidator.validate_value(value)
+
+    @classmethod
     def validate_headers(
         cls, headers: Dict[str, str], *, strict: bool = True
     ) -> Dict[str, str]:
