@@ -318,7 +318,7 @@ class EnvironmentDialog(ListFormDialogMixin, QDialog):
         try:
             env_id = self.env_manager.create_environment(name.strip(), {})
             self.environment_changed.emit()
-            self._refresh_environments(select_id=env_id)
+            self._refresh_list(select_id=env_id)
         except Exception as exc:
             QMessageBox.critical(self, "Error", f"Failed to create environment: {exc}")
 
@@ -336,7 +336,7 @@ class EnvironmentDialog(ListFormDialogMixin, QDialog):
         try:
             self.env_manager.update_environment(env_id, name=new_name.strip())
             self.environment_changed.emit()
-            self._refresh_environments(select_id=env_id)
+            self._refresh_list(select_id=env_id)
         except Exception as exc:
             QMessageBox.critical(self, "Error", f"Failed to rename: {exc}")
 
@@ -348,7 +348,7 @@ class EnvironmentDialog(ListFormDialogMixin, QDialog):
         try:
             self.env_manager.set_active_environment(env_id)
             self.environment_changed.emit()
-            self._refresh_environments(select_id=env_id)
+            self._refresh_list(select_id=env_id)
             self._load_variables(env_id)   # refresh active tag in header
         except Exception as exc:
             QMessageBox.critical(self, "Error", f"Failed to activate: {exc}")
@@ -371,7 +371,7 @@ class EnvironmentDialog(ListFormDialogMixin, QDialog):
             self._current_env_id = None
             self._dirty = False
             self.environment_changed.emit()
-            self._refresh_environments()
+            self._refresh_list()
         except Exception as exc:
             QMessageBox.critical(self, "Error", f"Failed to delete: {exc}")
 
