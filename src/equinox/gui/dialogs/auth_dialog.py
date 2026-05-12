@@ -41,7 +41,8 @@ _MISSING = object()
 class _TokenFetchWorker(QThread):
     """Background worker that fetches an OAuth2 token without blocking the UI."""
 
-    finished = pyqtSignal(object)  # emits OAuth2Auth on success, str on error
+    # Emits a dict payload: {ok, auth, error, response}
+    finished = pyqtSignal(object)
 
     def __init__(self, auth, parent=None):
         super().__init__(parent)
@@ -50,9 +51,22 @@ class _TokenFetchWorker(QThread):
     def run(self):
         try:
             self._auth.apply(object(), {})
-            self.finished.emit(self._auth)
+            self.finished.emit({
+                "ok": True,
+                "auth": self._auth,
+                "error": None,
+                "response": self._auth.last_token_response,
+            })
         except Exception as exc:
-            self.finished.emit(str(exc))
+            response = self._auth.last_token_response
+            if response is None and isinstance(exc, AuthError):
+                response = exc.details.get("token_response")
+            self.finished.emit({
+                "ok": False,
+                "auth": self._auth,
+                "error": str(exc),
+                "response": response,
+            })
 
 
 class _TokenResponseDialog(QDialog):
@@ -290,6 +304,7 @@ class AuthDialog(QDialog):
         self.oauth2_view_response_btn.setToolTip("Inspect the token endpoint response (tokens redacted)")
         self.oauth2_view_response_btn.clicked.connect(self._view_token_response)
         self._last_fetched_auth = None  # stores OAuth2Auth after successful fetch
+        self._last_token_response = None
         fetch_row = QHBoxLayout()
         fetch_row.addWidget(self.oauth2_fetch_btn)
         fetch_row.addWidget(self.oauth2_view_response_btn)
@@ -401,6 +416,8 @@ class AuthDialog(QDialog):
             token_auth=self.oauth2_token_auth.currentData() or "body",
         )
         self.oauth2_fetch_btn.setEnabled(False)
+        self.oauth2_view_response_btn.setEnabled(False)
+        self._last_token_response = None
         self.oauth2_fetch_status.setText("Fetching…")
 
         # Store as instance attribute to prevent garbage-collection mid-run
@@ -411,15 +428,26 @@ class AuthDialog(QDialog):
     def _on_token_fetched(self, result: object) -> None:
         """Handle the result of :class:`_TokenFetchWorker`."""
         self.oauth2_fetch_btn.setEnabled(True)
-        if isinstance(result, str):
-            # Error message
+        if not isinstance(result, dict):
             self.oauth2_fetch_status.setText(f"Error: {result}")
-        else:
-            auth: OAuth2Auth = result
+            return
+
+        auth = result.get("auth")
+        if isinstance(auth, OAuth2Auth):
             self._last_fetched_auth = auth
-            self.oauth2_view_response_btn.setEnabled(
-                auth.last_token_response is not None
-            )
+            self._last_token_response = result.get("response") or auth.last_token_response
+        else:
+            self._last_fetched_auth = None
+            self._last_token_response = result.get("response")
+
+        self.oauth2_view_response_btn.setEnabled(self._last_token_response is not None)
+
+        if not result.get("ok"):
+            self.oauth2_fetch_status.setText(f"Error: {result.get('error', 'Unknown error')}")
+            return
+
+        if self._last_fetched_auth is not None:
+            auth = self._last_fetched_auth
             # Back-fill the access/refresh token fields so the user can inspect them
             self.oauth2_access_token.setText(auth.access_token or "")
             if auth.refresh_token:
@@ -444,11 +472,11 @@ class AuthDialog(QDialog):
 
     def _view_token_response(self) -> None:
         """Open a dialog showing the redacted token endpoint response."""
-        auth = self._last_fetched_auth
-        if auth is None or auth.last_token_response is None:
+        response = self._last_token_response
+        if response is None:
             return
 
-        dlg = _TokenResponseDialog(auth.last_token_response, self)
+        dlg = _TokenResponseDialog(response, self)
         dlg.exec()
 
     # ── Saved credential picker ────────────────────────────────────────
