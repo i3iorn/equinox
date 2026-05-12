@@ -560,7 +560,6 @@ class _RequestSendMixin:
         worker = self._worker
         if worker is not None:
             worker.cancel()
-            worker.quit()
             worker.wait(WORKER_WAIT_MS)
             self._worker = None
         self._set_sending_state(False)
