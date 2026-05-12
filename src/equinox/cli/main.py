@@ -6,10 +6,8 @@ environments that do not have PyQt dependencies.
 """
 from __future__ import annotations
 
-import os
 from typing import Optional
 import click
-from getpass import getpass
 
 from equinox.security.secrets_password import rotate_all_secrets
 
@@ -22,7 +20,14 @@ def main():
 
 @main.command()
 @click.option("--db-path", "db_path", envvar="EQUINOX_DB_PATH", help="Path to the Equinox SQLite DB.")
-@click.option("--new-password", "new_password", help="New master password to use for encryption (hidden).")
+@click.option(
+    "--new-password",
+    "new_password",
+    help="New master password to use for encryption.",
+    prompt="Enter new master password for rotation",
+    hide_input=True,
+    confirmation_prompt=True,
+)
 def rotate_secrets(db_path: str, new_password: Optional[str]) -> None:
     """Rotate plaintext secrets to be encrypted with a master password.
 
@@ -33,10 +38,8 @@ def rotate_secrets(db_path: str, new_password: Optional[str]) -> None:
         click.echo("Error: --db-path is required (or EQUINOX_DB_PATH must be set).", err=True)
         raise SystemExit(2)
     if not new_password:
-        new_password = getpass("Enter new master password for rotation: ")
-        if not new_password:
-            click.echo("No password provided; aborting.", err=True)
-            raise SystemExit(1)
+        click.echo("No password provided; aborting.", err=True)
+        raise SystemExit(1)
     rotate_all_secrets(db_path, new_password=new_password)
     click.echo("Secret rotation completed.")
 
