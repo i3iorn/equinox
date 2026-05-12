@@ -827,3 +827,25 @@ class TestAuthDialogClientPicker:
         assert dialog.oauth2_token_url.text() == "https://auth.example.com/token"
         assert dialog.oauth2_client_id.text() == "cid"
 
+    def test_oauth2_error_with_response_enables_view_button(self, qapp, db):
+        """Error payloads with a response snapshot should keep View Response enabled."""
+        from equinox.gui.dialogs.auth_dialog import AuthDialog
+
+        dialog = AuthDialog(None, None, db=db)
+        response = {
+            "status_code": 401,
+            "method": "POST",
+            "url": "https://auth.example.com/token",
+            "headers": {"content-type": "application/json"},
+            "body": {"error": "invalid_client"},
+        }
+
+        dialog._on_token_fetched({
+            "ok": False,
+            "auth": None,
+            "error": "Token endpoint returned HTTP 401",
+            "response": response,
+        })
+
+        assert dialog.oauth2_view_response_btn.isEnabled() is True
+

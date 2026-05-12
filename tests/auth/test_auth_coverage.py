@@ -369,10 +369,15 @@ class TestOAuth2Coverage:
         mock_client = MagicMock()
         mock_client_class.return_value.__enter__.return_value = mock_client
 
-        resp = Mock()
-        resp.status_code = 400
+        request = httpx.Request("POST", "https://auth.example.com/token")
+        resp = httpx.Response(
+            status_code=400,
+            request=request,
+            headers={"content-type": "application/json", "set-cookie": "secret=1"},
+            json={"error": "invalid_client", "access_token": "1234567890secret"},
+        )
         mock_client.post.side_effect = httpx.HTTPStatusError(
-            "Bad Request", request=Mock(), response=resp,
+            "Bad Request", request=request, response=resp,
         )
 
         auth = OAuth2Auth(
@@ -380,10 +385,15 @@ class TestOAuth2Coverage:
             client_secret="s",
             token_url="https://auth.example.com/token",
         )
-        with pytest.raises(AuthError, match="HTTP 400"):
+        with pytest.raises(AuthError, match="HTTP 400") as exc_info:
             os.environ["EQUINOX_SSRF_ALLOW_ON_DNS_FAILURE"] = "1"
             auth._refresh_access_token()
             os.environ["EQUINOX_SSRF_ALLOW_ON_DNS_FAILURE"] = "0"
+        assert auth.last_token_response is not None
+        assert auth.last_token_response["status_code"] == 400
+        assert "set-cookie" not in auth.last_token_response["headers"]
+        assert auth.last_token_response["body"]["access_token"] != "1234567890secret"
+        assert exc_info.value.details.get("token_response") is not None
 
     @patch("equinox.auth._oauth2.time.sleep")
     @patch("equinox.auth._oauth2.httpx.Client")
