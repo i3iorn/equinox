@@ -9,9 +9,9 @@ from __future__ import annotations
 
 import logging
 from typing import Any, Dict, List, Optional
-from urllib.parse import urlparse
 
 from equinox.core.exceptions import StorageError, ValidationError
+from equinox.core import urls
 from equinox.storage.utils import require_positive_int
 from equinox.storage.database import Database
 
@@ -207,8 +207,7 @@ class CookieJarManager:
             return
 
         try:
-            parsed = urlparse(url)
-            default_domain = parsed.netloc.split(":")[0]
+            default_domain = str(urls.url_metadata(url).get("hostname") or "")
         except Exception:
             default_domain = ""
 
