@@ -15,6 +15,7 @@ from PyQt6.QtWidgets import (
     QVBoxLayout, QWidget,
 )
 
+from equinox.core.validation import Validator
 from equinox.gui.theme import Colors
 
 __all__ = ["WebSocketPanel"]
@@ -41,6 +42,7 @@ class _WSThread(QThread):
         self._url:  str                    = url
         self._loop: asyncio.AbstractEventLoop | None = None
         self._ws                           = None  # websockets.WebSocketClientProtocol
+        self._connect_task: asyncio.Task | None = None
 
     # ── QThread entry point ───────────────────────────────────────────────────
 
@@ -50,8 +52,12 @@ class _WSThread(QThread):
         self._loop = asyncio.new_event_loop()
         asyncio.set_event_loop(self._loop)
         try:
-            self._loop.run_until_complete(self._connect())
+            self._connect_task = self._loop.create_task(self._connect())
+            self._loop.run_until_complete(self._connect_task)
+        except asyncio.CancelledError:
+            logger.debug("WebSocket thread cancelled for %s", self._url)
         finally:
+            self._connect_task = None
             self._loop.close()
 
     async def _connect(self) -> None:
@@ -96,11 +102,18 @@ class _WSThread(QThread):
         """Request a clean close of the WebSocket from any thread."""
         if self._loop is None or self._loop.is_closed():
             return
+        if self._connect_task is not None and not self._connect_task.done():
+            self._loop.call_soon_threadsafe(self._connect_task.cancel)
         if self._ws is not None:
-            asyncio.run_coroutine_threadsafe(self._ws.close(), self._loop)
-        else:
-            # Connection attempt is still in-progress — interrupt the loop.
-            self._loop.call_soon_threadsafe(self._loop.stop)
+            asyncio.run_coroutine_threadsafe(self._close_ws(), self._loop)
+
+    async def _close_ws(self) -> None:
+        if self._ws is None:
+            return
+        try:
+            await self._ws.close()
+        except Exception as exc:
+            logger.debug("WebSocket close failed: %s", exc)
 
 
 # ── Panel ─────────────────────────────────────────────────────────────────────
@@ -188,8 +201,10 @@ class WebSocketPanel(QWidget):
         url = self.url_input.text().strip()
         if not url:
             return
-        if not url.startswith(("ws://", "wss://")):
-            self.status_label.setText("URL must start with ws:// or wss://")
+        try:
+            Validator.validate_url(url)
+        except Exception as exc:
+            self.status_label.setText(str(exc))
             return
 
         self._thread = _WSThread(url)
