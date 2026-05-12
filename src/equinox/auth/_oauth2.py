@@ -14,7 +14,7 @@ import httpx
 from equinox.auth._base import AuthStrategy, _validate_credential, _interpolate_field, AuthError
 from equinox.security.secure_storage import SecureStorage
 from equinox.core.audit import get_audit_logger, AuditEventType, AuditLevel
-from equinox.security import mask_secret
+from equinox.security import mask_secret, sanitize_details, redact_url
 from equinox.core.time import utc_now
 from equinox.core.validation import Validator
 
@@ -598,12 +598,13 @@ class OAuth2Auth(AuthStrategy):
         representation; returns an empty dict when both fail.
         """
         try:
-            return {k: _redact_token_value(k, v) for k, v in response.json().items()}
+            redacted = {k: _redact_token_value(k, v) for k, v in response.json().items()}
+            return sanitize_details(redacted)
         except Exception:
             pass
         try:
             raw = response.text
-            return {"_raw": raw[:_TOKEN_RESPONSE_RAW_MAX] if raw else ""}
+            return sanitize_details({"_raw": raw[:_TOKEN_RESPONSE_RAW_MAX] if raw else ""})
         except Exception:
             return {}
 
@@ -618,9 +619,10 @@ class OAuth2Auth(AuthStrategy):
             resp_headers = {}
 
         try:
-            url = str(response.request.url) if response.request else self.token_url
+            raw_url = str(response.request.url) if response.request else self.token_url
+            url = redact_url(raw_url) if raw_url else ""
         except Exception:
-            url = self.token_url or ""
+            url = redact_url(self.token_url) if self.token_url else ""
 
         try:
             status = response.status_code
@@ -789,20 +791,35 @@ class OAuth2Auth(AuthStrategy):
                 return response
             except httpx.HTTPStatusError as status_exc:
                 status_code = "unknown"
+                token_response: Optional[Dict[str, Any]] = None
                 if status_exc.response is not None:
                     self._capture_token_response(status_exc.response)
                     status_code = status_exc.response.status_code
-                response_text = ""
+                    token_response = self._last_token_response
+                response_preview = ""
                 if status_exc.response is not None:
-                    response_text = status_exc.response.text
-                error_msg = f"Token endpoint returned HTTP {status_code}: '{response_text}'"
+                    safe_snapshot = self._snapshot_response_body(status_exc.response)
+                    response_preview = json.dumps(safe_snapshot, ensure_ascii=True, default=str)
+                    if len(response_preview) > 400:
+                        response_preview = response_preview[:400] + "..."
+                    if token_response is None:
+                        token_response = {
+                            "status_code": status_code,
+                            "headers": {},
+                            "body": safe_snapshot,
+                            "url": redact_url(self.token_url) if self.token_url else "",
+                            "method": "POST",
+                        }
+                error_msg = f"Token endpoint returned HTTP {status_code}"
+                if response_preview:
+                    error_msg += f" (response={response_preview})"
                 logger.error("%s for %s", error_msg, self.token_url)
                 self._audit.log_auth_failure("oauth2", error_msg)
                 raise AuthError(
                     error_msg,
                     details={
                         "token_url": self.token_url,
-                        "token_response": self._last_token_response,
+                        "token_response": token_response,
                     },
                 )
             except (httpx.TransportError, httpx.TimeoutException) as transient_exc:
