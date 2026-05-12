@@ -77,13 +77,16 @@ def _validate_placeholders(query: str, params: _SqlParams) -> None:
     Raises:
         ValidationError: On style mixing, count mismatch, or missing/extra keys.
     """
-    has_positional = "?" in query
-    has_named      = bool(_NAMED_PARAM_RE.search(query))
+    has_positional = any(c == "?" for _, c in _outside_string(query))
+    has_named_names = _extract_named_placeholders(query)
+    has_named = bool(has_named_names)
 
     if has_positional and has_named:
         raise ValidationError("Cannot mix positional and named placeholders")
 
     if has_positional:
+        if isinstance(params, Mapping):
+            raise ValidationError("Positional placeholders require tuple/list parameters")
         count = sum(1 for _, c in _outside_string(query) if c == "?")
         if count != len(params):
             raise ValidationError(
@@ -92,7 +95,7 @@ def _validate_placeholders(query: str, params: _SqlParams) -> None:
     elif has_named:
         if not isinstance(params, Mapping):
             raise ValidationError("Named placeholders require a mapping (dict-like)")
-        names   = _extract_named_placeholders(query)
+        names = has_named_names
         missing = [n for n in names if n not in params]
         extra   = [p for p in params if p not in names]
         if missing:
