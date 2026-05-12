@@ -8,8 +8,8 @@ from __future__ import annotations
 import json
 import logging
 from typing import Any, Dict, Optional
-from urllib.parse import urljoin
 
+from equinox.core import urls
 from equinox.core.secret_managers.base import (
     SecretManager,
     SecretManagerError,
@@ -62,17 +62,24 @@ class VaultManager(SecretManager):
                 "requests is required for Vault. Install with: pip install requests"
             )
 
-        try:
-            validated_url = Validator.validate_resolved_url(str(url).strip())
-        except Exception as exc:
-            raise SecretManagerError(f"Invalid Vault URL: {exc}")
+        raw_url = str(url).strip()
 
         # Deny insecure transport by default for secret backends.
         allow_insecure_http = bool(kwargs.get("allow_insecure_http", False))
-        if validated_url.lower().startswith("http://") and not allow_insecure_http:
+        if raw_url.lower().startswith("http://") and not allow_insecure_http:
             raise SecretManagerError(
                 "Vault URL must use https:// (set allow_insecure_http=True only for local testing)"
             )
+
+        try:
+            # In explicit insecure-http mode, avoid DNS-dependent SSRF checks so
+            # local/offline test environments remain deterministic.
+            if allow_insecure_http and raw_url.lower().startswith("http://"):
+                validated_url = Validator.validate_url(raw_url)
+            else:
+                validated_url = Validator.validate_resolved_url(raw_url)
+        except Exception as exc:
+            raise SecretManagerError(f"Invalid Vault URL: {exc}")
 
         self.url = validated_url.rstrip("/")
         self.token = token
@@ -121,7 +128,7 @@ class VaultManager(SecretManager):
             raise SecretManagerError("requests is required")
 
         try:
-            url = urljoin(f"{self.url}/", f"v1/{secret_name}")
+            url = urls.join_url_path(str(self.url), f"v1/{secret_name}")
             response = requests.get(url, headers=self.headers, timeout=10)
 
             if response.status_code == 404:
@@ -178,7 +185,7 @@ class VaultManager(SecretManager):
             raise SecretManagerError("Vault not configured")
 
         try:
-            url = urljoin(f"{self.url}/", f"v1/{secret_name}")
+            url = urls.join_url_path(str(self.url), f"v1/{secret_name}")
             response = requests.get(url, headers=self.headers, timeout=10)
 
             if response.status_code == 404:
