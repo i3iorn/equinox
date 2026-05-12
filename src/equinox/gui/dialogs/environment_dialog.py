@@ -16,11 +16,11 @@ from typing import Optional
 
 from equinox.core.dotenv import parse_dotenv as _parse_dotenv
 from equinox.gui.theme import Colors
-from equinox.gui.dialogs._dirty_dialog_mixin import DirtyDialogMixin
+from equinox.gui.dialogs._list_form_dialog_mixin import ListFormDialogMixin
 from equinox.storage import Database, EnvironmentManager
 
 
-class EnvironmentDialog(DirtyDialogMixin, QDialog):
+class EnvironmentDialog(ListFormDialogMixin, QDialog):
     """Manage environments and their variables.
 
     Variables can be added, edited inline, and removed.  Changes are written
@@ -36,6 +36,7 @@ class EnvironmentDialog(DirtyDialogMixin, QDialog):
         self.db = db
         self.env_manager = EnvironmentManager(db)
         self._current_env_id: Optional[int] = None
+        self._current_id: Optional[int] = None  # Alias for mixin
         self._dirty = False          # unsaved variable edits
 
         # DirtyDialogMixin requirements
@@ -44,9 +45,9 @@ class EnvironmentDialog(DirtyDialogMixin, QDialog):
         self.setWindowTitle("Manage Environments")
         self.setMinimumSize(780, 520)
         self._init_ui()
-        # Set _list_widget after UI construction
+        # Set _list_widget after UI construction (required by ListFormDialogMixin)
         self._list_widget = self.env_list
-        self._refresh_environments()
+        self._refresh_list()
 
     # ── UI ────────────────────────────────────────────────────────────
 
@@ -64,7 +65,7 @@ class EnvironmentDialog(DirtyDialogMixin, QDialog):
         llay.addWidget(QLabel("<b>Environments</b>"))
 
         self.env_list = QListWidget()
-        self.env_list.itemSelectionChanged.connect(self._on_env_selected)
+        self.env_list.currentItemChanged.connect(self._on_item_selected)
         self.env_list.itemDoubleClicked.connect(self._rename_environment)
         llay.addWidget(self.env_list, 1)
 
@@ -142,72 +143,52 @@ class EnvironmentDialog(DirtyDialogMixin, QDialog):
         btns.rejected.connect(self._on_close)
         root.addWidget(btns)
 
-    # ── Environment list actions ──────────────────────────────────────
+    # ── Environment list actions (ListFormDialogMixin template methods) ──
 
-    def _refresh_environments(self, select_id: Optional[int] = None) -> None:
-        self.env_list.blockSignals(True)
-        self.env_list.clear()
+    def _build_list_items(self):
+        """Yield (item_id, label, kwargs) for each environment."""
+        from PyQt6.QtGui import QFont
         envs = self.env_manager.list_environments()
-
-        bold_font = QFont()
-        bold_font.setBold(True)
-
         for env in envs:
-            name   = env["name"]
+            name = env["name"]
             active = bool(env.get("is_active"))
-            item   = QListWidgetItem(("✓  " if active else "     ") + name)
-            item.setData(Qt.ItemDataRole.UserRole, env["id"])
+            label = ("✓  " if active else "     ") + name
+            kwargs = {}
             if active:
-                item.setForeground(QColor(Colors.GREEN))
-                item.setFont(bold_font)
-            self.env_list.addItem(item)
-            if env["id"] == select_id:
-                self.env_list.setCurrentItem(item)
+                from equinox.gui.theme import Colors
+                kwargs["fg_color"] = Colors.GREEN
+                font = QFont()
+                font.setBold(True)
+                kwargs["font"] = font
+            yield env["id"], label, kwargs
 
-        self.env_list.blockSignals(False)
-        if select_id is None and self.env_list.count():
-            self.env_list.setCurrentRow(0)
-        else:
-            self._on_env_selected()
+    def _on_list_item_selected(self, env_id: int) -> None:
+        """Load the variables for the environment."""
+        self._current_env_id = env_id
+        self._load_variables(env_id)
 
-    def _on_env_selected(self) -> None:
-        items   = self.env_list.selectedItems()
-        has_sel = bool(items)
+    # ── Selection logic ───────────────────────────────────────────────
+    # _apply_selection() inherited from ListFormDialogMixin
+    # _on_item_selected(current, _prev) inherited from ListFormDialogMixin
+
+    def _set_form_enabled(self, enabled: bool) -> None:
+        """Enable/disable the variable table and action buttons."""
+        self.var_table.setEnabled(enabled)
+        # Buttons will be synced by _sync_buttons
+
+    def _sync_buttons(self) -> None:
+        """Update button states based on current selection."""
+        has = self._current_id is not None
         for btn in (
             self.rename_btn, self.activate_btn, self.delete_btn,
             self.add_var_btn, self.remove_var_btn,
             self.import_dotenv_btn, self.save_vars_btn,
         ):
-            btn.setEnabled(has_sel)
-        self.var_table.setEnabled(has_sel)
-
-        if not has_sel:
-            self._current_env_id = None
+            btn.setEnabled(has)
+        if not has:
             self.var_table.setRowCount(0)
-            return
 
-        env_id = items[0].data(Qt.ItemDataRole.UserRole)
-        if env_id == self._current_env_id and not self._dirty:
-            return   # nothing changed
-
-        if self._dirty:
-            ans = QMessageBox.question(
-                self, "Unsaved Changes",
-                "You have unsaved variable changes. Save them before switching?",
-                QMessageBox.StandardButton.Save |
-                QMessageBox.StandardButton.Discard |
-                QMessageBox.StandardButton.Cancel,
-            )
-            if ans == QMessageBox.StandardButton.Cancel:
-                # Re-select the previously active environment
-                self._reselect_item(self._current_env_id)
-                return
-            if ans == QMessageBox.StandardButton.Save:
-                self._save_variables()
-
-        self._current_env_id = env_id
-        self._dirty = False
-        self._load_variables(env_id)
+    # ── Variable loading ───────────────────────────────────────────────
 
     def _load_variables(self, env_id: int) -> None:
         env = self.env_manager.get_environment(env_id)
