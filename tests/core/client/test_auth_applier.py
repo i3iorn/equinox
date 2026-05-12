@@ -295,6 +295,19 @@ class TestMapAuthError:
         err = AuthApplier._map_auth_error(exc, strategy, proxy="http://p:1")
         assert err.details["proxy"] == "http://p:1"
 
+    def test_error_details_preserve_auth_response_snapshot(self):
+        strategy = self._dummy_strategy()
+        type(strategy).__name__ = "FakeAuth"
+
+        class _Exc(RuntimeError):
+            details = {
+                "token_url": "https://auth.example.com/token",
+                "token_response": {"status_code": 401, "body": {"error": "invalid_client"}},
+            }
+
+        err = AuthApplier._map_auth_error(_Exc("bad"), strategy, proxy=None)
+        assert err.details["token_response"]["status_code"] == 401
+
     def test_logs_error(self, caplog):
         strategy = self._dummy_strategy()
         exc = RuntimeError("cred fail")
