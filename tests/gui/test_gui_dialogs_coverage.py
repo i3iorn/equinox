@@ -193,7 +193,7 @@ class TestEnvironmentDialog:
         env_mgr.create_environment("Production", {})
         env_mgr.create_environment("Staging", {})
         dlg = EnvironmentDialog(db)
-        dlg._refresh_environments()
+        dlg._refresh_list()
         _process()
         assert dlg.env_list.count() >= 2
 

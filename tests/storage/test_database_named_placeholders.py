@@ -11,3 +11,17 @@ def test_named_placeholder_binding(tmp_path):
         assert row is not None
         assert row.get("a") == 42
 
+
+def test_named_placeholder_ignores_colons_inside_string_literals(tmp_path):
+    db_path = tmp_path / "equinox_np_literals.db"
+    with Database(str(db_path)) as db:
+        row = db.fetchone(
+            "SELECT ':not_a_param' AS literal, :actual AS actual",
+            {"actual": "ok"},
+        )
+
+        assert row is not None
+        assert row.get("literal") == ":not_a_param"
+        assert row.get("actual") == "ok"
+
+
