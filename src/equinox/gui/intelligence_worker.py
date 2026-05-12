@@ -46,6 +46,7 @@ class IntelligenceWorker(QThread):
     """
 
     finished = pyqtSignal(list)  # list[Finding]
+    _RECOMMENDER_ANALYZER_ID = "recommender"
 
     # ── Construction ──────────────────────────────────────────────────────────
 
@@ -127,6 +128,10 @@ class IntelligenceWorker(QThread):
 
         This executes inside the worker thread to keep GUI interactions non-blocking.
         """
+        if self._RECOMMENDER_ANALYZER_ID in self._disabled:
+            logger.debug("Intelligence worker: recommender disabled by settings")
+            return []
+
         try:
             req_payload = {
                 "method": self._request.method,
