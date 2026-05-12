@@ -181,10 +181,9 @@ class MainWindow(QMainWindow):
         # window's child objects.
         if self._intelligence_worker is not None:
             try:
-                self._intelligence_worker.quit()
+                self._intelligence_worker.requestInterruption()
                 if not self._intelligence_worker.wait(500):
-                    logger.debug("Intelligence worker did not finish in time; terminating")
-                    self._intelligence_worker.terminate()
+                    logger.debug("Intelligence worker did not finish in time; waiting longer")
                     self._intelligence_worker.wait(200)
             except Exception:
                 logger.debug("Error stopping intelligence worker on close", exc_info=True)
@@ -505,7 +504,7 @@ class MainWindow(QMainWindow):
                 except RuntimeError:
                     pass  # signal was already disconnected
                 try:
-                    self._intelligence_worker.quit()
+                    self._intelligence_worker.requestInterruption()
                     self._intelligence_worker.wait(300)
                 except Exception:
                     logger.debug("Could not stop previous intelligence worker", exc_info=True)
@@ -1010,7 +1009,7 @@ class MainWindow(QMainWindow):
         return [
             {"id": "new_request", "label": "New Request", "shortcut": "Ctrl+N", "callback": self._new_request},
             {"id": "send_request", "label": "Send Request", "shortcut": "Ctrl+Enter", "callback": self.request_panel.send},
-            {"id": "save_request", "label": "Save Request", "shortcut": "Ctrl+S", "callback": self.request_panel._save_request},
+            {"id": "save_request", "label": "Save Request", "shortcut": "Ctrl+S", "callback": self.request_panel.save_current_request},
             {"id": "focus_url", "label": "Focus URL", "shortcut": "Ctrl+L", "callback": self.request_panel._focus_url_input},
             {"id": "import_postman", "label": "Import Postman", "callback": self._import_postman},
             {"id": "import_openapi", "label": "Import OpenAPI", "callback": self._import_openapi},
@@ -1189,10 +1188,14 @@ class MainWindow(QMainWindow):
     def _start_import(self, importer_class, file_path: Path, success_msg: str) -> None:
         """Run selected importer in background with retry on error."""
 
-        def _operation() -> bool:
+        def _operation(cancel_event=None) -> bool:
+            if cancel_event is not None and cancel_event.is_set():
+                raise RuntimeError("Import cancelled")
             mgr = CollectionManager(self.db)
             importer = importer_class(mgr)
             importer.import_file(file_path)
+            if cancel_event is not None and cancel_event.is_set():
+                raise RuntimeError("Import cancelled")
             return True
 
         self._run_background_task(
@@ -1369,7 +1372,9 @@ class MainWindow(QMainWindow):
         """Run collection export in the background with retry support."""
         from equinox.exporters import PostmanExporter, OpenAPIExporter, InsomniaExporter
 
-        def _operation() -> str:
+        def _operation(cancel_event=None) -> str:
+            if cancel_event is not None and cancel_event.is_set():
+                raise RuntimeError("Export cancelled")
             if format_type == "postman":
                 data = PostmanExporter.export_collection(self.db, collection_id)
                 PostmanExporter.export_to_file(data, file_path)
@@ -1381,6 +1386,8 @@ class MainWindow(QMainWindow):
                 InsomniaExporter.export_to_file(data, file_path)
             else:
                 raise ValueError(f"Unsupported export format: {format_type}")
+            if cancel_event is not None and cancel_event.is_set():
+                raise RuntimeError("Export cancelled")
             return str(file_path)
 
         self._run_background_task(
