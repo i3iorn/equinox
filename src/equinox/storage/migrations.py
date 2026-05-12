@@ -432,6 +432,16 @@ CREATE TABLE IF NOT EXISTS global_variables (
 );
 """,
     ),
+    Migration(
+        version=23,
+        description="Add recommender performance indexes for history_index candidate queries",
+        sql="""
+CREATE INDEX IF NOT EXISTS idx_history_index_method_norm_executed
+    ON history_index(method, normalized_url, executed_at DESC);
+CREATE INDEX IF NOT EXISTS idx_history_index_success_method_norm_executed
+    ON history_index(response_success, method, normalized_url, executed_at DESC);
+""",
+    ),
 ]
 
 # ─────────────────────────────────────────────────────────────────────────────
