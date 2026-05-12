@@ -13,7 +13,6 @@ from PyQt6.QtWidgets import (
 )
 
 from equinox.gui.theme import (
-    Colors,
     DEFAULT_FONT_SIZE, MIN_FONT_SIZE, MAX_FONT_SIZE,
     THEME_LABELS, THEME_MODES, THEME_SYSTEM,
     get_font_size, get_theme_mode, set_font_size, set_theme_mode,
@@ -29,6 +28,7 @@ _PREVIEW_TEXT = (
 )
 
 _ANALYZER_SCROLL_MAX_H = 200
+_RECOMMENDER_ANALYZER_ID = "recommender"
 
 
 class PreferencesDialog(QDialog):
@@ -160,6 +160,7 @@ class PreferencesDialog(QDialog):
         scroll_widget.setUpdatesEnabled(False)
         try:
             from equinox.core.response_intelligence import AnalysisEngine
+            analyzer_ids = set()
             current_cat = ""
             for info in AnalysisEngine().get_all_analyzer_info():
                 cat = info["category"]
@@ -172,6 +173,16 @@ class PreferencesDialog(QDialog):
                 cb.setProperty("analyzer_id", info["id"])
                 scroll_layout.addWidget(cb)
                 self._analyzer_checks.append(cb)
+                analyzer_ids.add(str(info.get("id") or ""))
+
+            if _RECOMMENDER_ANALYZER_ID not in analyzer_ids:
+                hints_label = QLabel("── Developer Hints ──")
+                scroll_layout.addWidget(hints_label)
+                rec_cb = QCheckBox("Request Recommender")
+                rec_cb.setChecked(_RECOMMENDER_ANALYZER_ID not in self._disabled_set)
+                rec_cb.setProperty("analyzer_id", _RECOMMENDER_ANALYZER_ID)
+                scroll_layout.addWidget(rec_cb)
+                self._analyzer_checks.append(rec_cb)
         except Exception:
             scroll_layout.addWidget(QLabel("(Could not load analyzers)"))
         finally:
