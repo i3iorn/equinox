@@ -1,3 +1,4 @@
+import json
 import logging
 from typing import Dict, Any, Optional
 
@@ -17,11 +18,13 @@ class StructuredLogger:
     def log(self, level: int, event: str, payload: Dict[str, Any]) -> None:
         data = {
             "event": event,
+            "level": logging.getLevelName(level),
             "timestamp": utc_now().isoformat(),
             **payload,
         }
 
-        self.logger.log(level, event, extra=data)
+        message = json.dumps(data, ensure_ascii=False, default=str)
+        self.logger.log(level, message, extra=data)
 
 
 class RequestResponseLogger:
