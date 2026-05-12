@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import logging
-from urllib.parse import urlparse
 
 from equinox.core import urls
 from equinox.core.exceptions import ValidationError
@@ -79,7 +78,7 @@ class _UrlValidator:
             _logger.warning("URL validation failed: missing hostname")
             raise ValidationError("URL must contain a hostname")
 
-        parsed_host = urlparse(expanded).hostname
+        parsed_host = urls.url_metadata(expanded).get("hostname")
         if parsed_host:
             _SsrfGuard.check(parsed_host)
 
