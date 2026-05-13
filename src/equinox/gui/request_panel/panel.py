@@ -18,7 +18,6 @@ from PyQt6.QtWidgets import (
     QHBoxLayout,
     QComboBox,
     QLineEdit,
-    QInputDialog,
     QPushButton,
     QTabWidget,
     QPlainTextEdit,
@@ -26,19 +25,14 @@ from PyQt6.QtWidgets import (
     QHeaderView,
     QLabel,
     QGroupBox,
-    QMessageBox,
-    QDialog,
     QCompleter,
     QSplitter,
-    QFileDialog,
     QCheckBox,
     QDoubleSpinBox,
     QFormLayout,
     QToolButton,
-    QApplication,
 )
 from PyQt6.QtCore import pyqtSignal, Qt, QTimer, QStringListModel
-from PyQt6.QtGui import QKeySequence, QShortcut
 
 from equinox.gui.request_panel.body_text_proxy import BodyTextProxy
 from equinox.gui.theme import get_mono_font
@@ -46,7 +40,7 @@ from equinox.gui.widgets import UrlLineEdit, CheckableKeyValueTable, JsonBodyEdi
 from equinox.core.request import Request
 from equinox.core.error_enrichment import RichError, enrich_exception  # noqa: F401 (used in mixin layer)
 from equinox.storage import Database, HistoryManager, CollectionManager
-from equinox.gui.workers import RequestWorker, BenchmarkDialog, DEFAULT_TIMEOUT  # noqa: F401 (RequestWorker used as type annotation)
+from equinox.gui.workers import RequestWorker, DEFAULT_TIMEOUT  # noqa: F401 (RequestWorker used as type annotation)
 from equinox.core.cookies import CookieManager
 from equinox.gui.request_panel.mixins import (  # noqa: F401
     _RequestSendMixin,
@@ -64,12 +58,12 @@ from equinox.gui.request_panel._constants import (
     IMPORT_BTN_WIDTH,
     METHOD_COMBO_WIDTH,
     SEND_BTN_WIDTH,
-    STATUS_DURATION_LONG,
 )
 from equinox.gui.request_panel.body_mixin import RequestBodyMixin  # noqa: F401
+from equinox.gui.request_panel.commands_mixin import RequestCommandsMixin
+from equinox.gui.request_panel.save_flow_mixin import RequestSaveFlowMixin
 from equinox.gui.request_panel.validation_mixin import _RequestValidationMixin  # noqa: F401
 from equinox.core.validation import Validator
-from equinox.gui.request_panel.save_dialog import SaveRequestDialog
 from equinox.gui.request_panel.toolbar import TabToolbar
 from equinox.gui.syntax_highlighter.python_highlighter import PythonHighlighter
 from equinox.gui.request_panel.autosave_mixin import RequestAutosaveMixin
@@ -125,6 +119,8 @@ class _KvTabResult(NamedTuple):
 
 class RequestPanel(
     RequestAutosaveMixin,
+    RequestSaveFlowMixin,
+    RequestCommandsMixin,
     _RequestValidationMixin,
     _RequestSendMixin,
     _RequestAuthMixin,
@@ -174,101 +170,11 @@ class RequestPanel(
         self._setup_dirty_tracking()
         self._setup_url_completer()
         self._init_validation()  # Initialize real-time validation
-
-        # Ctrl+Enter sends from anywhere in the panel (#8)
-        send_shortcut = QShortcut(QKeySequence("Ctrl+Return"), self)
-        send_shortcut.activated.connect(self._send_request)
-
-        # Ctrl+S saves to collection from anywhere in the panel
-        save_shortcut = QShortcut(QKeySequence("Ctrl+S"), self)
-        save_shortcut.activated.connect(self._save_request)
-
-        # Ctrl+L focuses and selects the URL field for fast keyboard editing.
-        focus_url_shortcut = QShortcut(QKeySequence("Ctrl+L"), self)
-        focus_url_shortcut.activated.connect(self._focus_url_input)
-
-        # Ctrl+Shift+F formats JSON body (#6)
-        fmt_shortcut = QShortcut(QKeySequence("Ctrl+Shift+F"), self)
-        fmt_shortcut.activated.connect(self._format_json_body)
+        self._setup_shortcuts()
 
         logger.info("RequestPanel initialized successfully")
 
     # Dirty-state and autosave behavior moved to RequestAutosaveMixin.
-
-    def _save_request(self) -> bool:
-        """Save the current editor state to a collection (prompts for name / folder)."""
-        url = self.url_input.text().strip()
-        if not url:
-            QMessageBox.warning(self, "Missing URL", "Please enter a URL before saving.")
-            return False
-
-        method = self.method_combo.currentText()
-        current_folder = getattr(self.current_request, "folder", None) or ""
-        logger.debug(
-            "request_panel.save_dialog_open op=save_request method=%s url=%s",
-            method,
-            url,
-        )
-
-        dlg = SaveRequestDialog(self.db, method, url, current_folder, parent=self)
-        logger.debug("request_panel.save_dialog_created op=save_request")
-        if dlg.exec() != QDialog.DialogCode.Accepted:
-            return False
-
-        name, col_id, col_name, folder = dlg.result_values()
-        logger.debug(
-            "request_panel.save_dialog_values op=save_request name=%s collection_id=%s folder=%s",
-            name,
-            col_id,
-            folder,
-        )
-
-        try:
-            existing_req = self.current_request
-            existing_id = getattr(existing_req, "id", None)
-            existing_collection_id = getattr(existing_req, "collection_id", None)
-            request = self._build_request_from_editor(
-                name=name,
-                collection_id=col_id,
-                folder=folder,
-            )
-            if existing_id and existing_collection_id == col_id:
-                request.id = existing_id
-                self._collection_mgr.update_request(request)
-                req_id = existing_id
-                logger.info(
-                    "request_panel.request_updated op=save_request request_id=%d collection_id=%d method=%s url=%s",
-                    req_id,
-                    col_id,
-                    method,
-                    url,
-                )
-            else:
-                req_id = self._collection_mgr.save_request(request, collection_id=col_id, name=name)
-                request.id = req_id
-                logger.info(
-                    "request_panel.request_saved op=save_request request_id=%d collection_id=%d method=%s url=%s",
-                    req_id,
-                    col_id,
-                    method,
-                    url,
-                )
-
-            self.current_request = request
-            self._clear_dirty()
-            self._status_message(f"Saved '{name}' to '{col_name}'")
-
-            try:
-                win = self.window()
-                if hasattr(win, "collections_panel"):
-                    win.collections_panel.refresh()
-            except Exception:
-                logger.debug("Failed to refresh collections panel after save", exc_info=True)
-            return True
-        except Exception as exc:
-            logger.error("Failed to save request", exc_info=True)
-            QMessageBox.critical(self, "Save Failed", str(exc))
-            return False
 
 
     # ── Session variable accessors ─────────────────────────────────────
@@ -415,10 +321,6 @@ class RequestPanel(
             self._known_urls.discard(dropped)
         self._url_model.setStringList(self._url_values)
 
-    def _focus_url_input(self) -> None:
-        """Focus URL input and select its full text (browser-like behavior)."""
-        self.url_input.setFocus(Qt.FocusReason.ShortcutFocusReason)
-        self.url_input.selectAll()
 
     # ── UI construction ───────────────────────────────────────────────
 
@@ -976,172 +878,6 @@ class RequestPanel(
         """Return currently selected request-policy profile."""
         return str(getattr(self, "_policy_profile", _POLICY_BALANCED))
 
-    def _browse_file_to_input(self, title: str, filters: str, target: QLineEdit) -> None:
-        """Open a file-picker dialog and write the chosen path into *target* QLineEdit."""
-        path, _ = QFileDialog.getOpenFileName(self, title, "", filters)
-        if path:
-            target.setText(path)
-            logger.debug("File selected via '%s'", title)
-
-    def _browse_cert(self) -> None:
-        self._browse_file_to_input(
-            "Select Certificate File",
-            "Certificate files (*.pem *.crt *.cer);;All files (*)",
-            self.cert_path_input,
-        )
-
-    def _browse_cert_key(self) -> None:
-        self._browse_file_to_input(
-            "Select Private Key File",
-            "Key files (*.pem *.key);;All files (*)",
-            self.cert_key_input,
-        )
-
-    # ── cURL import ───────────────────────────────────────────────────
-
-    def _import_from_curl(self) -> None:
-        """Open a dialog to paste a cURL command and populate the editor."""
-        from equinox.core.curl_parser import parse_curl
-
-        logger.debug("cURL import dialog opened")
-
-        # Pre-fill with clipboard contents if it looks like a curl command
-        clipboard_text = QApplication.clipboard().text().strip()
-        prefill = clipboard_text if clipboard_text.lower().startswith("curl ") else ""
-
-        text, ok = QInputDialog.getMultiLineText(
-            self, "Import from cURL", "Paste a cURL command:", prefill
-        )
-        if not ok or not text.strip():
-            logger.debug("cURL import cancelled by user")
-            return
-
-        try:
-            parsed = parse_curl(text.strip())
-        except Exception as exc:
-            logger.warning("Failed to parse cURL command (len=%d): %s", len(text), exc)
-            QMessageBox.warning(self, "Parse Error", f"Could not parse cURL command:\n{exc}")
-            return
-
-        # Populate the editor
-        method = parsed.get("method", "GET")
-        url = parsed.get("url", "")
-        headers = parsed.get("headers") or {}
-        body = parsed.get("body")
-
-        idx = self.method_combo.findText(method)
-        if idx >= 0:
-            self.method_combo.setCurrentIndex(idx)
-        self.url_input.setText(url)
-        self.headers_table.set_data(headers)
-        if body is not None:
-            body_text = body if isinstance(body, str) else str(body)
-            self.body_text.setPlainText(body_text)
-            self.body_type_combo.setCurrentText(self._detect_body_type(body_text, headers))
-        else:
-            self.body_text.clear()
-            self.body_type_combo.setCurrentIndex(0)
-        if not parsed.get("verify_ssl", True):
-            self.verify_ssl_check.setChecked(False)
-
-        self._mark_dirty()
-        self._status_message("Request imported from cURL command")
-        logger.info("cURL import: %s %s (%d headers)", method, url, len(headers))
-
-    # ── Benchmark ─────────────────────────────────────────────────────
-
-    def _open_benchmark(self) -> None:
-        """Open the benchmark dialog for the currently configured request."""
-        url = self.url_input.text().strip()
-        if not url:
-            QMessageBox.warning(self, "No Request", "Enter a URL before running a benchmark.")
-            return
-
-        method = self.method_combo.currentText()
-        headers = self.headers_table.get_data()
-        body_type = self.body_type_combo.currentText()
-        body = (
-            self.body_text.toPlainText().strip() or None
-            if body_type not in ("none", "multipart/form-data", "GraphQL")
-            else None
-        )
-        req = Request(
-            method=method, url=url, headers=headers, body=body,
-            timeout=self.timeout_spin.value(),
-            verify_ssl=self.verify_ssl_check.isChecked(),
-            follow_redirects=self.follow_redirects_check.isChecked(),
-        )
-        logger.debug("Opening benchmark: %s %s", method, url)
-        try:
-            BenchmarkDialog(req, self, cookie_manager=self._cookie_manager).exec()
-        except Exception:
-            logger.error("Failed to open benchmark dialog", exc_info=True)
-
-    # ── Headers / params bulk actions and presets ─────────────────────
-
-    @staticmethod
-    def _set_all_checkable(table, enabled: bool) -> None:
-        """Enable or disable every row in a checkable key-value table."""
-        state = Qt.CheckState.Checked if enabled else Qt.CheckState.Unchecked
-        for row in range(table.rowCount()):
-            chk_item = table.item(row, 0)
-            if chk_item is not None:
-                chk_item.setCheckState(state)
-
-    def _insert_header_preset(self, key: str, value: str) -> None:
-        """Append a header preset row, or navigate to the existing row if the key is present."""
-        for row in range(self.headers_table.rowCount()):
-            key_item = self.headers_table.item(row, 1)
-            if key_item and key_item.text().strip().lower() == key.lower():
-                # Key already present — select its value cell so the user can edit it.
-                self.headers_table.setCurrentCell(row, 2)
-                return
-        self.headers_table.add_row(key, value)
-        self._mark_dirty()
-        self._update_tab_labels()
-
-    def _add_row_and_focus(self, table: CheckableKeyValueTable) -> None:
-        """Append an empty row to *table*, select its key cell, and mark dirty."""
-        table.add_row("", "", enabled=True)
-        # -2 skips the trailing empty sentinel row that CheckableKeyValueTable
-        # always maintains; after add_row() there is always ≥1 real data row.
-        last = table.rowCount() - 2  # last real (non-sentinel) row index
-        if last >= 0:
-            table.setCurrentCell(last, 1)  # column 1 = Key
-            item = table.item(last, 1)
-            if item:
-                table.editItem(item)
-        self._mark_dirty()
-        self._update_tab_labels()
-
-    def _remove_table_rows(self, table) -> None:
-        rows_to_remove = sorted({idx.row() for idx in table.selectedIndexes()}, reverse=True)
-        for r in rows_to_remove:
-            table.removeRow(r)
-        self._mark_dirty()
-        self._update_tab_labels()
-
-    # ── Per-table convenience wrappers (used by toolbar slots and tests) ──
-
-    def _headers_add_row(self) -> None:
-        self._add_row_and_focus(self.headers_table)
-
-    def _headers_remove_row(self) -> None:
-        self._remove_table_rows(self.headers_table)
-
-    def _params_add_row(self) -> None:
-        self._add_row_and_focus(self.params_table)
-
-    def _params_remove_row(self) -> None:
-        self._remove_table_rows(self.params_table)
-
-    def _params_set_all(self, enabled: bool) -> None:
-        """Enable or disable every row in the params table."""
-        self._set_all_checkable(self.params_table, enabled)
-
-    def _headers_set_all(self, enabled: bool) -> None:
-        """Enable or disable every row in the headers table."""
-        self._set_all_checkable(self.headers_table, enabled)
 
     # ── URL ghost-params preview ──────────────────────────────────────
 

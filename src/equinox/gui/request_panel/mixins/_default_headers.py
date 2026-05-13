@@ -16,7 +16,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Callable, Dict, Union
 from uuid import uuid4
 
-from equinox.gui.app import _get_app_version
+from equinox.versioning import get_app_version
 
 if TYPE_CHECKING:
     from equinox.core.request import Request
@@ -29,7 +29,7 @@ _SYSTEM_DEFAULTS: Dict[str, Union[str, Callable[[], str]]] = {
     # Unique identifier for each outbound request – useful for distributed
     # tracing and server-side correlation logs.
     "X-Request-ID": lambda: str(uuid4()),
-    "User-Agent": "Equinox API testing v" + _get_app_version(),
+    "User-Agent": "Equinox API testing v" + get_app_version(),
     "Accept-Language": "en-US,en;q=0.5",
     "Accept-Encoding": "gzip, deflate",
 }

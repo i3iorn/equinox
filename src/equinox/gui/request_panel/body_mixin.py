@@ -30,12 +30,14 @@ from PyQt6.QtWidgets import (
     QHeaderView,
     QFileDialog,
     QTextEdit,
+    QMessageBox,
 )
 from PyQt6.QtGui import QTextCursor, QTextCharFormat, QColor, QTextDocument
 
 from equinox.gui.theme import get_mono_font
 from equinox.core.request import Request
 from equinox.core.assertions import evaluate_assertion as _evaluate_assertion
+from equinox.gui.file_ops import validate_selected_path
 from equinox.gui.workers import DEFAULT_TIMEOUT
 
 logger = logging.getLogger(__name__)
@@ -959,13 +961,18 @@ class RequestBodyMixin:
                 return
             path, _ = QFileDialog.getOpenFileName(self, "Select file to upload", "", "All files (*)")
             if path:
+                try:
+                    selected = validate_selected_path(path, must_exist=True)
+                except ValueError as exc:
+                    QMessageBox.warning(self, "Invalid File", str(exc))
+                    return
                 # Ensure there is an item at col 2
                 item = tbl.item(sel, 2)
                 if item is None:
-                    item = QTableWidgetItem(path)
+                    item = QTableWidgetItem(str(selected))
                     tbl.setItem(sel, 2, item)
                 else:
-                    item.setText(path)
+                    item.setText(str(selected))
         except RuntimeError:
             raise
         except Exception:
