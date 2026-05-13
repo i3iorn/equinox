@@ -6,7 +6,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from equinox import __version__ as VERSION
+from equinox.gui.app import _get_app_version
 from equinox.security import redact_headers
 from equinox.core.request import Request, Response
 from equinox.core.time import to_iso_z
@@ -124,7 +124,7 @@ class HARExporter:
         return {
             "log": {
                 "version": "1.2",
-                "creator": {"name": "Equinox", "version": VERSION},
+                "creator": {"name": "Equinox", "version": _get_app_version()},
                 "entries": entries,
             }
         }
