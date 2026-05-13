@@ -5,9 +5,12 @@ import base64
 import inspect
 import json as _json
 import logging
+import os
 import threading
 import time
 from datetime import datetime as _dt
+from pathlib import Path
+from tempfile import NamedTemporaryFile
 from typing import Optional, Callable, Any, cast
 
 from PyQt6.QtWidgets import (
@@ -70,6 +73,48 @@ def _build_client(
         proxy=proxy,
         cancel_event=cancel_event,
     )
+
+
+def _validate_export_path(raw_path: str) -> Optional[Path]:
+    """Return a safe export path, or ``None`` when the input is invalid."""
+    path = (raw_path or "").strip()
+    if not path or "\x00" in path:
+        return None
+    try:
+        target = Path(path).expanduser()
+    except (TypeError, ValueError):
+        return None
+    if not target.parent.exists() or not target.parent.is_dir():
+        return None
+    return target
+
+
+def _atomic_write_text(path: Path, content: str) -> None:
+    """Write UTF-8 text atomically to reduce partial-write corruption risk."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp_path: Optional[Path] = None
+    try:
+        with NamedTemporaryFile(
+            mode="w",
+            encoding="utf-8",
+            newline="",
+            delete=False,
+            dir=str(path.parent),
+            prefix=f".{path.name}.",
+            suffix=".tmp",
+        ) as tmp:
+            tmp.write(content)
+            tmp.flush()
+            os.fsync(tmp.fileno())
+            tmp_path = Path(tmp.name)
+        os.replace(str(tmp_path), str(path))
+    except Exception:
+        if tmp_path is not None and tmp_path.exists():
+            try:
+                tmp_path.unlink()
+            except OSError:
+                pass
+        raise
 
 
 def _make_oauth2_basic_auth_header(client_id: str, secret: str) -> str:
@@ -600,15 +645,22 @@ class BenchmarkDialog(QDialog):
         if not path:
             return
 
+        target = _validate_export_path(path)
+        if target is None:
+            QMessageBox.warning(self, "Export Failed", "Invalid export path selected.")
+            return
+
         try:
-            if selected_filter.startswith("CSV") or path.lower().endswith(".csv"):
-                with open(path, "w", newline="", encoding="utf-8") as f:
-                    writer = csv.writer(f)
-                    writer.writerow(["iteration", "elapsed_ms"])
-                    for idx, ms in enumerate(s["times_ms"], 1):
-                        writer.writerow([idx, ms])
+            if selected_filter.startswith("CSV") or str(target).lower().endswith(".csv"):
+                from io import StringIO
+
+                buf = StringIO()
+                writer = csv.writer(buf)
+                writer.writerow(["iteration", "elapsed_ms"])
+                for idx, ms in enumerate(s["times_ms"], 1):
+                    writer.writerow([idx, ms])
+                _atomic_write_text(target, buf.getvalue())
             else:
-                with open(path, "w", encoding="utf-8") as f:
-                    _json.dump(summary, f, indent=2)
+                _atomic_write_text(target, _json.dumps(summary, indent=2))
         except Exception as exc:
             QMessageBox.warning(self, "Export Failed", f"Could not write file: {exc}")

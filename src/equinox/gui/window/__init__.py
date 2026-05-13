@@ -8,17 +8,15 @@ import logging
 from PyQt6.QtCore import QPoint, Qt, QTimer
 from PyQt6.QtWidgets import QApplication, QHBoxLayout, QMainWindow, QSplitter, QTabWidget, QVBoxLayout, QWidget
 from equinox.core.request import Request, Response
-from ._window_environment import _EnvironmentMixin
-from ._window_frameless import _FramelessMixin
-from ._window_history import _HistoryMixin
-from ._window_import_export import _ImportExportMixin
-from ._window_layout import _LayoutMixin
-from ._window_menu import _KEY_INTEL_DISABLED, _MenuMixin
-from ._window_panels import _PanelsMixin
-from equinox.gui.logging_utils import log_gui_event
-from equinox.gui.request_panel import RequestPanel
-from equinox.gui.response_panel import ResponsePanel
-from equinox.gui.ui_common import get_gui_settings
+from ._environment import _EnvironmentMixin
+from ._frameless import _FramelessMixin
+from ._history import _HistoryMixin
+from ._import_export import _ImportExportMixin
+from ._layout import _LayoutMixin
+from ._menu import _KEY_INTEL_DISABLED, _MenuMixin
+from ._panels import _PanelsMixin
+from ..logging_utils import log_gui_event
+from ..ui_common import get_gui_settings
 from equinox.storage import Database
 from equinox.storage.cookies import CookieJarManager
 
@@ -85,6 +83,10 @@ class MainWindow(
         QTimer.singleShot(0, self._maybe_run_setup_wizard)
 
     def _init_ui(self) -> None:
+        # Import panels lazily here to avoid import-time cycles with gui.app.
+        from ..request_panel import RequestPanel
+        from ..response_panel import ResponsePanel
+
         central_widget = QWidget()
         self.setCentralWidget(central_widget)
         main_layout = QHBoxLayout(central_widget)
