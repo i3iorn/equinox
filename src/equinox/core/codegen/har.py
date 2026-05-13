@@ -1,6 +1,6 @@
 import json
 from equinox.core.request import Response
-from equinox.gui.app import _get_app_version
+from equinox.versioning import get_app_version
 
 
 class HARGenerator:
@@ -9,7 +9,7 @@ class HARGenerator:
 
         har = {
             "log": {
-                "version": _get_app_version(),
+                "version": get_app_version(),
                 "creator": {"name": "Equinox", "version": "2.0"},
                 "entries": [
                     {
