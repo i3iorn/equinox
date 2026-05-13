@@ -12,17 +12,17 @@ Equinox is a secure, local-first API testing tool with both CLI and PyQt6 GUI wo
 
 ## Architecture Snapshot
 
-Current source layout is package-first:
+Source is organized by cohesive packages:
 
 ```text
 src/equinox/
   core/
 	audit/
+	client/
 	codegen/
 	interceptors/
 	scripts/
 	validation/
-	client/
   gui/
 	dialogs/
 	request_panel/
@@ -30,6 +30,7 @@ src/equinox/
 	syntax_highlighter/
 	theme/
   storage/
+	collections/
 	history/
 ```
 
@@ -66,13 +67,17 @@ equinox rotate-secrets --help
 
 ## Development Workflow
 
-Run this local quality gate before opening a PR:
+Run this local quality gate before opening a PR (matches `pyproject.toml`):
 
 ```bash
 pre-commit run --all-files
 ruff check .
+black --check .
+flake8
 mypy src tests
-pytest -q
+pytest
+bandit -r src/equinox
+safety check
 ```
 
 ## Examples
