@@ -6,13 +6,39 @@ for privacy and data-retention purposes.
 
 from __future__ import annotations
 
-# Centralized flag access - keep simple while enabling future extension
 from equinox.core.config import flags
+import threading
 from typing import Optional
 
 _CAPTURE_BODIES_DEFAULT = True
 
-_capture_bodies: Optional[bool] = None
+class _HistoryCaptureState:
+    """Thread-safe holder for runtime history-capture overrides."""
+
+    def __init__(self) -> None:
+        self._lock = threading.Lock()
+        self._capture_bodies: Optional[bool] = None
+
+    def get(self) -> bool:
+        with self._lock:
+            if self._capture_bodies is not None:
+                return bool(self._capture_bodies)
+            env_value = flags.is_history_capture_enabled()
+            self._capture_bodies = (
+                _CAPTURE_BODIES_DEFAULT if env_value is None else bool(env_value)
+            )
+            return bool(self._capture_bodies)
+
+    def set(self, value: bool) -> None:
+        with self._lock:
+            self._capture_bodies = bool(value)
+
+    def reset(self) -> None:
+        with self._lock:
+            self._capture_bodies = None
+
+
+_STATE = _HistoryCaptureState()
 
 
 def should_capture_bodies() -> bool:
@@ -22,16 +48,14 @@ def should_capture_bodies() -> bool:
     set to a truthy value (1/true/yes), bodies are captured; if set to a
     falsey value (0/no), bodies are omitted from history.
     """
-    global _capture_bodies
-    if _capture_bodies is not None:
-        return bool(_capture_bodies)
-    # Use centralized flag reader for consistency
-    _capture_bodies = flags.is_history_capture_enabled()  # type: ignore
-    if _capture_bodies is None:
-        _capture_bodies = _CAPTURE_BODIES_DEFAULT
-    return bool(_capture_bodies)
+    return _STATE.get()
 
 
 def set_capture_bodies(value: bool) -> None:
-    global _capture_bodies
-    _capture_bodies = bool(value)
+    _STATE.set(value)
+
+
+def reset_capture_bodies() -> None:
+    """Reset runtime override so next read uses environment/default value."""
+    _STATE.reset()
+
