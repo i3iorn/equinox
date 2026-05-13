@@ -15,6 +15,7 @@ import logging
 import logging.handlers
 import os
 import sys
+import threading
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
@@ -54,18 +55,40 @@ _ENV_CONSOLE_LOG_LEVEL: str = "EQUINOX_CONSOLE_LOG_LEVEL"
 _NOISY_LOGGERS: tuple = ("httpx", "httpcore", "urllib3", "charset_normalizer")
 
 # ──────────────────────────────────────────────────────────────────────────────
-# Global application correlation ID
+# Application correlation ID state
 # ──────────────────────────────────────────────────────────────────────────────
 
-_app_corr_id: Optional[str] = None
+
+class _AppCorrelationIdProvider:
+    """Thread-safe provider for the process-level application correlation ID."""
+
+    def __init__(self) -> None:
+        self._value: Optional[str] = None
+        self._lock = threading.Lock()
+
+    def get(self) -> str:
+        with self._lock:
+            if self._value is None:
+                self._value = uuid.uuid4().hex[:_CORR_ID_HEX_LENGTH]
+            return self._value
+
+    def reset(self) -> str:
+        with self._lock:
+            self._value = uuid.uuid4().hex[:_CORR_ID_HEX_LENGTH]
+            return self._value
+
+
+_APP_CORR_PROVIDER = _AppCorrelationIdProvider()
 
 
 def get_app_corr_id() -> str:
     """Return the application correlation ID, generating one if needed."""
-    global _app_corr_id
-    if _app_corr_id is None:
-        _app_corr_id = uuid.uuid4().hex[:_CORR_ID_HEX_LENGTH]
-    return _app_corr_id
+    return _APP_CORR_PROVIDER.get()
+
+
+def reset_app_corr_id() -> str:
+    """Regenerate and return a new application-level correlation ID."""
+    return _APP_CORR_PROVIDER.reset()
 
 
 def generate_request_id() -> str:
@@ -351,8 +374,7 @@ def configure_logging(
     Returns:
         Path to the active log file.
     """
-    global _app_corr_id
-    _app_corr_id = uuid.uuid4().hex[:_CORR_ID_HEX_LENGTH]
+    reset_app_corr_id()
 
     level = _resolve_level(_ENV_FILE_LOG_LEVEL, level)
     console_level = _resolve_level(_ENV_CONSOLE_LOG_LEVEL, console_level)
@@ -368,7 +390,7 @@ def configure_logging(
 
     logging.getLogger(__name__).info(
         "Logging initialised — app_corr_id=%s writing to %s",
-        _app_corr_id, log_file,
+        get_app_corr_id(), log_file,
     )
 
     return log_file
