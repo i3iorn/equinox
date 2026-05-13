@@ -1,7 +1,5 @@
 """Environment management dialog — full variable CRUD."""
 
-from pathlib import Path
-
 from PyQt6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QSplitter,
     QListWidget, QListWidgetItem, QPushButton,
@@ -15,9 +13,12 @@ from PyQt6.QtGui import QColor, QFont
 from typing import Optional
 
 from equinox.core.dotenv import parse_dotenv as _parse_dotenv
+from equinox.gui.file_ops import safe_read_text_file, validate_selected_path
 from equinox.gui.theme import Colors
 from equinox.gui.dialogs._list_form_dialog_mixin import ListFormDialogMixin
 from equinox.storage import Database, EnvironmentManager
+
+_MAX_DOTENV_IMPORT_BYTES = 2 * 1024 * 1024
 
 
 class EnvironmentDialog(ListFormDialogMixin, QDialog):
@@ -386,7 +387,17 @@ class EnvironmentDialog(ListFormDialogMixin, QDialog):
         if not path:
             return
         try:
-            new_vars = _parse_dotenv(Path(path).read_text(encoding="utf-8", errors="replace"))
+            source = validate_selected_path(path, must_exist=True)
+            content = safe_read_text_file(
+                source,
+                max_bytes=_MAX_DOTENV_IMPORT_BYTES,
+                encoding="utf-8",
+                errors="replace",
+            )
+            new_vars = _parse_dotenv(content)
+        except ValueError as exc:
+            QMessageBox.warning(self, "Import Error", str(exc))
+            return
         except Exception as exc:
             QMessageBox.critical(self, "Import Error", f"Could not read file:\n{exc}")
             return
