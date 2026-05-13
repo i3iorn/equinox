@@ -12,7 +12,6 @@ import logging
 import sys
 import traceback
 import types
-from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
 from typing import NoReturn, Any, Optional
 
@@ -27,6 +26,7 @@ from equinox.gui.theme import apply_theme
 from equinox.gui.widgets import CopyableMessageBox
 from equinox.gui.window import MainWindow
 from equinox.storage import get_db
+from equinox.versioning import get_app_version
 
 __all__ = ["main"]
 
@@ -55,15 +55,8 @@ _ERR_STARTUP: str = "Equinox could not start:\n\n%s"
 
 
 def _get_app_version() -> str:
-    """Return the installed package version, or ``'dev'`` if not installed.
-
-    Returns:
-        Version string (e.g. "1.0.0") or "dev" if not installed
-    """
-    try:
-        return version("equinox")
-    except PackageNotFoundError:
-        return "dev"
+    """Backward-compatible wrapper for legacy imports."""
+    return get_app_version()
 
 
 # ──────────────────────────────────────────────────────────────────────────────
