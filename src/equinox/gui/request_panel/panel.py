@@ -64,6 +64,7 @@ from equinox.gui.request_panel.commands_mixin import RequestCommandsMixin
 from equinox.gui.request_panel.save_flow_mixin import RequestSaveFlowMixin
 from equinox.gui.request_panel.validation_mixin import _RequestValidationMixin  # noqa: F401
 from equinox.core.validation import Validator
+from equinox.gui.request_panel.save_dialog import SaveRequestDialog  # noqa: F401
 from equinox.gui.request_panel.toolbar import TabToolbar
 from equinox.gui.syntax_highlighter.python_highlighter import PythonHighlighter
 from equinox.gui.request_panel.autosave_mixin import RequestAutosaveMixin
