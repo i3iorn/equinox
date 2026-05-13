@@ -8,7 +8,7 @@ from __future__ import annotations
 import logging
 import threading
 import time
-from typing import Optional
+from typing import Any, Dict, Optional
 
 from equinox.auth import AuthStrategy
 from equinox.core.audit import get_audit_logger
@@ -186,7 +186,23 @@ class HTTPClient:
         if request.params:
             Validator.validate_query_params(request.params)
         if request.body:
-            Validator.validate_request_body(request.body, request.headers.get("Content-Type"))
+            Validator.validate_request_body(request.body, self._resolve_content_type(request.headers))
+
+    @staticmethod
+    def _resolve_content_type(headers: Optional[Dict[str, Any]]) -> Optional[str]:
+        """Return Content-Type value from headers using case-insensitive lookup."""
+        if not headers or not hasattr(headers, "items"):
+            return None
+
+        direct = headers.get("Content-Type") if hasattr(headers, "get") else None
+        if isinstance(direct, str) and direct.strip():
+            return direct
+
+        for name, value in headers.items():
+            if isinstance(name, str) and name.lower() == "content-type":
+                text = str(value).strip() if value is not None else ""
+                return text or None
+        return None
 
     def _execute_single_attempt(
         self,
