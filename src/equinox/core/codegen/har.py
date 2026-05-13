@@ -1,6 +1,7 @@
 import json
-from equinox import __version__ as VERSION
 from equinox.core.request import Response
+from equinox.gui.app import _get_app_version
+
 
 class HARGenerator:
     def generate(self, response: Response) -> str:
@@ -8,7 +9,7 @@ class HARGenerator:
 
         har = {
             "log": {
-                "version": VERSION,
+                "version": _get_app_version(),
                 "creator": {"name": "Equinox", "version": "2.0"},
                 "entries": [
                     {
