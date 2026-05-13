@@ -1,13 +1,11 @@
 """Extended tests for core HTTP client functionality."""
 
 import pytest
-from unittest.mock import Mock, patch, AsyncMock
-from datetime import datetime, timezone
-import httpx
+from typing import List
 
 from equinox.core.client import HTTPClient
 from equinox.core.request import Request, Response
-from equinox.core.interceptors._base import RequestInterceptor, ResponseInterceptor
+from equinox.core.request.types import MultipartField
 from equinox.core.exceptions import ValidationError
 
 
@@ -136,6 +134,22 @@ class TestHTTPClientValidation:
         with pytest.raises(ValidationError):
             Validator.validate_url(long_url)
 
+    def test_validate_request_accepts_lowercase_content_type_header(self):
+        client = HTTPClient()
+        req = Request(
+            method="POST",
+            url="https://example.com/api",
+            headers={"content-type": "application/json"},
+            body='{"k":"v"}',
+        )
+
+        # Should not raise due to case-insensitive Content-Type lookup.
+        client._validate_request(req)
+
+    def test_validate_request_tolerates_non_mapping_headers_when_body_present(self):
+        client = HTTPClient()
+        assert client._resolve_content_type(None) is None
+
 
 class TestHTTPClientInterceptors:
     """Test interceptor chain."""
@@ -243,9 +257,9 @@ class TestHTTPClientBody:
     
     def test_multipart_body(self):
         """Test multipart form data."""
-        multipart_data = [
-            {"key": "field1", "type": "text", "value": "value1"},
-            {"key": "file", "type": "file", "value": "/path/to/file.txt"}
+        multipart_data: List[MultipartField] = [
+            MultipartField(key="field1", type="text", value="value1"),
+            MultipartField(key="file", type="file", value="/path/to/file.txt"),
         ]
         req = Request(
             method="POST",

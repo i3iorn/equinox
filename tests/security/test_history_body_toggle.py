@@ -1,7 +1,7 @@
 
 import pytest
 
-from equinox.core.history_config import set_capture_bodies
+from equinox.core import history_config
 from equinox.storage.history._serializer import _HistorySerializer
 from equinox.core.request.request import Request
 
@@ -9,14 +9,14 @@ from equinox.core.request.request import Request
 @pytest.fixture(autouse=True)
 def _reset_history_capture_toggle():
     """Keep process-global history capture mode isolated per test."""
-    set_capture_bodies(True)
+    history_config.set_capture_bodies(True)
     yield
-    set_capture_bodies(True)
+    history_config.reset_capture_bodies()
 
 
 def test_history_body_capture_toggle_off(monkeypatch):
     # Turn off body capture via config
-    set_capture_bodies(False)
+    history_config.set_capture_bodies(False)
 
     req = Request(
         method="POST",
@@ -32,3 +32,14 @@ def test_history_body_capture_toggle_off(monkeypatch):
     # Also verify that prepare_response respects the toggle
     resp_row = s.prepare_response(None)
     assert resp_row["body"] is None
+
+
+def test_history_capture_reset_reloads_from_env(monkeypatch):
+    history_config.set_capture_bodies(False)
+    assert history_config.should_capture_bodies() is False
+
+    monkeypatch.setenv("EQUINOX_HISTORY_CAPTURE_BODIES", "true")
+    history_config.reset_capture_bodies()
+
+    assert history_config.should_capture_bodies() is True
+
