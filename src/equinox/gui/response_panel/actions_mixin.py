@@ -19,6 +19,7 @@ from PyQt6.QtWidgets import (
 from PyQt6.QtCore import Qt
 
 from equinox.core.codegen import GENERATORS, generate_code
+from equinox.gui.file_ops import atomic_write_bytes, validate_selected_path
 from equinox.gui.response_panel.pretty_print import PrettyPrintRunnable
 from equinox.gui.response_panel._formatting import pretty_print_body
 from equinox.gui.theme import get_mono_font
@@ -301,13 +302,16 @@ class ResponseActionsMixin:
 
         payload = self._response_bytes_for_download()
         try:
-            with open(path, "wb") as f:
-                f.write(payload)
+            target = validate_selected_path(path, must_exist=False)
+            atomic_write_bytes(target, payload)
             logger.info(
                 "response_panel.download_body_saved path=%s size_bytes=%d",
-                path,
+                str(target),
                 len(payload),
             )
+        except ValueError as exc:
+            logger.warning("response_panel.download_body_invalid_path path=%s error=%s", path, exc)
+            QMessageBox.warning(self, "Save Failed", str(exc))
         except Exception as exc:
             logger.warning("response_panel.download_body_failed path=%s error=%s", path, exc)
             QMessageBox.warning(self, "Save Failed", f"Could not save file:\n{exc}")
