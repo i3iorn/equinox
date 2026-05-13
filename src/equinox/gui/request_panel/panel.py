@@ -72,6 +72,7 @@ from equinox.core.validation import Validator
 from equinox.gui.request_panel.save_dialog import SaveRequestDialog
 from equinox.gui.request_panel.toolbar import TabToolbar
 from equinox.gui.syntax_highlighter.python_highlighter import PythonHighlighter
+from equinox.gui.request_panel.autosave_mixin import RequestAutosaveMixin
 from ..ui_common import get_gui_settings
 
 logger = logging.getLogger(__name__)
@@ -122,7 +123,14 @@ class _KvTabResult(NamedTuple):
 # Request panel
 # ─────────────────────────────────────────────────────────────────────────────
 
-class RequestPanel(_RequestValidationMixin, _RequestSendMixin, _RequestAuthMixin, RequestBodyMixin, QWidget):
+class RequestPanel(
+    RequestAutosaveMixin,
+    _RequestValidationMixin,
+    _RequestSendMixin,
+    _RequestAuthMixin,
+    RequestBodyMixin,
+    QWidget,
+):
     """Panel for building and sending HTTP requests."""
 
     response_received = pyqtSignal(object)
@@ -140,13 +148,6 @@ class RequestPanel(_RequestValidationMixin, _RequestSendMixin, _RequestAuthMixin
         except Exception:
             logger.debug("Could not access logging panel", exc_info=True)
             return None
-
-    def _status_message(self, text: str, timeout_ms: int = 5000) -> None:
-        """Show a message in the main window status bar (best-effort)."""
-        try:
-            self.window().statusBar().showMessage(text, timeout_ms)
-        except Exception:
-            logger.debug("Could not show status message: %s", text)
 
     def __init__(self, db: Database, parent=None, cookie_manager: Optional[CookieManager]=None):
         super().__init__(parent)
@@ -192,82 +193,7 @@ class RequestPanel(_RequestValidationMixin, _RequestSendMixin, _RequestAuthMixin
 
         logger.info("RequestPanel initialized successfully")
 
-    # ── Dirty-flag tracking (#3) ──────────────────────────────────────
-
-    def is_dirty(self) -> bool:
-        return self._dirty
-
-    def _mark_dirty(self) -> None:
-        self._dirty = True
-
-    # ── Autosave ──────────────────────────────────────────────────────
-
-    def _build_request_from_editor(self, **overrides) -> Request:
-        """Construct a :class:`Request` from the current editor widget state.
-
-        Common extraction point used by autosave, save-to-collection, and
-        the send path so field reading is defined in exactly one place.
-
-        Args:
-            **overrides: Keyword arguments passed through to the ``Request``
-                constructor, overriding the values read from widgets.  Typical
-                overrides include ``name``, ``collection_id``, ``folder``,
-                ``id``, ``auth``, and ``multipart_data``.
-
-        Returns:
-            A fully populated :class:`Request` instance.
-        """
-        fields = dict(
-            method=self.method_combo.currentText(),
-            url=self.url_input.text().strip(),
-            headers=self.headers_table.get_data(),
-            params=self.params_table.get_enabled_data(),
-            params_list=self.params_table.get_all_rows(),
-            body=self.body_text.toPlainText().strip() or None,
-            auth=self._auth,
-            timeout=self.timeout_spin.value(),
-            verify_ssl=self.verify_ssl_check.isChecked(),
-            follow_redirects=self.follow_redirects_check.isChecked(),
-            captures=self._get_captures(),
-            assertions=self._get_assertions(),
-            pre_script=self.pre_script_editor.toPlainText(),
-            post_script=self.post_script_editor.toPlainText(),
-            cert_path=self.cert_path_input.text().strip() or None,
-            cert_key_path=self.cert_key_input.text().strip() or None,
-            description=self.notes_editor.toPlainText().strip() or None,
-            path_params=self.path_params_table.get_all_data(),
-        )
-        fields.update(overrides)
-        return Request(**fields)
-
-    def autosave_current(self) -> None:
-        """Persist the current editor state back to the DB if dirty.
-
-        Only acts when the loaded request originated from a collection (has an
-        ``id``).  Silently does nothing for ad-hoc / history requests.
-        """
-        if not self._dirty:
-            return
-        req = self.current_request
-        if not req or not getattr(req, "id", None):
-            return
-        try:
-            updated = self._build_request_from_editor(
-                name=req.name,
-                collection_id=req.collection_id,
-                folder=req.folder,
-                id=req.id,
-            )
-            self._collection_mgr.update_request(updated)
-            self._clear_dirty()
-            logger.debug("Autosaved request id=%s %s %s", req.id, updated.method, updated.url)
-        except Exception:
-            logger.error("Autosave failed for request id=%s", getattr(req, "id", None), exc_info=True)
-            self._status_message("⚠ Autosave failed — click Save to preserve changes", STATUS_DURATION_LONG)
-
-    def save_current_request(self) -> bool:
-        """Public wrapper for the save dialog flow."""
-        return self._save_request()
+    # Dirty-state and autosave behavior moved to RequestAutosaveMixin.
 
     def _save_request(self) -> bool:
         """Save the current editor state to a collection (prompts for name / folder)."""
