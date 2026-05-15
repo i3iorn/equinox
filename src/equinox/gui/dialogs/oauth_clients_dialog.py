@@ -12,9 +12,8 @@ import logging
 from typing import Optional
 
 from PyQt6.QtCore import Qt, pyqtSignal
-from PyQt6.QtGui import QColor
 from PyQt6.QtWidgets import (
-    QComboBox, QDialog, QDialogButtonBox, QFormLayout, QFrame,
+    QCheckBox, QComboBox, QDialog, QDialogButtonBox, QFormLayout, QFrame,
     QHBoxLayout, QInputDialog, QLabel, QLineEdit, QListWidget,
     QMessageBox, QPushButton, QSplitter, QTextEdit,
     QVBoxLayout, QWidget,
@@ -154,6 +153,13 @@ class OAuthClientsDialog(OAuthConnectionTestMixin, ListFormDialogMixin, QDialog)
         self.f_grant_type = QComboBox()
         self.f_grant_type.addItems(list(GRANT_TYPES))
 
+        self.f_token_auth = QComboBox()
+        self.f_token_auth.addItem("Body (RFC 6749 default)", userData="body")
+        self.f_token_auth.addItem("HTTP Basic Auth (D&B Direct+, GitHub…)", userData="basic")
+
+        self.f_verify_ssl = QCheckBox("Verify token endpoint SSL certificates")
+        self.f_verify_ssl.setChecked(True)
+
         self.f_extra = QTextEdit()
         self.f_extra.setPlaceholderText('{ "audience": "https://api.example.com" }')
         self.f_extra.setMaximumHeight(80)
@@ -166,6 +172,8 @@ class OAuthClientsDialog(OAuthConnectionTestMixin, ListFormDialogMixin, QDialog)
         form.addRow("Client Secret:", make_secret_row(self.f_client_secret))
         form.addRow("Scope:", self.f_scope)
         form.addRow("Grant Type:", self.f_grant_type)
+        form.addRow("Client Auth:", self.f_token_auth)
+        form.addRow("", self.f_verify_ssl)
         form.addRow("Extra Params:", self.f_extra)
 
         info = QLabel(
@@ -215,7 +223,7 @@ class OAuthClientsDialog(OAuthConnectionTestMixin, ListFormDialogMixin, QDialog)
         # All editable widgets + action buttons — used by _set_form_enabled.
         self._all_form_widgets = (
             *self._line_fields,
-            self.f_grant_type, self.f_extra,
+            self.f_grant_type, self.f_token_auth, self.f_verify_ssl, self.f_extra,
             self.test_btn, self.default_btn, self.save_btn,
         )
 
@@ -223,6 +231,8 @@ class OAuthClientsDialog(OAuthConnectionTestMixin, ListFormDialogMixin, QDialog)
         for w in self._line_fields:
             w.textChanged.connect(self._mark_dirty)
         self.f_grant_type.currentIndexChanged.connect(self._mark_dirty)
+        self.f_token_auth.currentIndexChanged.connect(self._mark_dirty)
+        self.f_verify_ssl.stateChanged.connect(self._mark_dirty)
         self.f_extra.textChanged.connect(self._mark_dirty)
 
         return right
@@ -232,7 +242,7 @@ class OAuthClientsDialog(OAuthConnectionTestMixin, ListFormDialogMixin, QDialog)
     def _build_list_items(self):
         """Yield (item_id, label, kwargs) for each client."""
         from equinox.gui.theme import Colors
-        from PyQt6.QtGui import QColor, QFont
+        from PyQt6.QtGui import QFont
         for c in self.mgr.list_clients():
             tag = " ★" if c["is_default"] else ""
             label = f"{c['name']}{tag}  [{c['grant_type']}]"
@@ -269,6 +279,9 @@ class OAuthClientsDialog(OAuthConnectionTestMixin, ListFormDialogMixin, QDialog)
         self.f_scope.setText(c.get("scope", ""))
         idx = self.f_grant_type.findText(c.get("grant_type", "client_credentials"))
         self.f_grant_type.setCurrentIndex(max(idx, 0))
+        ta_idx = self.f_token_auth.findData(c.get("token_auth", "body") or "body")
+        self.f_token_auth.setCurrentIndex(max(ta_idx, 0))
+        self.f_verify_ssl.setChecked(bool(c.get("verify_ssl", True)))
         extra = c.get("extra_params", {})
         self.f_extra.setPlainText(json.dumps(extra, indent=2) if extra else "")
         self._block_form(False)
@@ -276,7 +289,7 @@ class OAuthClientsDialog(OAuthConnectionTestMixin, ListFormDialogMixin, QDialog)
         self.status_label.setText("")
 
     def _block_form(self, block: bool) -> None:
-        for w in (*self._line_fields, self.f_extra, self.f_grant_type):
+        for w in (*self._line_fields, self.f_extra, self.f_grant_type, self.f_token_auth, self.f_verify_ssl):
             w.blockSignals(block)
 
     def _set_form_enabled(self, enabled: bool) -> None:
@@ -375,6 +388,8 @@ class OAuthClientsDialog(OAuthConnectionTestMixin, ListFormDialogMixin, QDialog)
                 client_secret=secret,
                 scope=scope,
                 grant_type=grant_type,
+                token_auth=str(self.f_token_auth.currentData() or "body"),
+                verify_ssl=self.f_verify_ssl.isChecked(),
                 extra_params=extra_params,
             )
             self._dirty = False
@@ -413,6 +428,7 @@ class OAuthClientsDialog(OAuthConnectionTestMixin, ListFormDialogMixin, QDialog)
         secret = self.f_client_secret.text()
         scope = self.f_scope.text().strip()
         grant_type = self.f_grant_type.currentText()
+        token_auth = str(self.f_token_auth.currentData() or "body")
         extra_raw = self.f_extra.toPlainText().strip()
 
         self._start_oauth_test(
@@ -422,6 +438,7 @@ class OAuthClientsDialog(OAuthConnectionTestMixin, ListFormDialogMixin, QDialog)
             scope=scope,
             grant_type=grant_type,
             extra_raw=extra_raw,
+            token_auth=token_auth,
         )
 
     def _view_test_response(self) -> None:

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from typing import Any, Dict, List, Optional
+from typing import TYPE_CHECKING, Any, Dict, List, Literal, Optional, cast
 
 from equinox.core.auth_cipher import decrypt_auth_data, encrypt_auth_data
 from equinox.core.exceptions import DuplicateError, StorageError, ValidationError
@@ -11,6 +11,9 @@ from equinox.storage.database import Database
 from equinox.storage.utils import require_str as _require_str, safe_json_dumps, safe_json_loads
 
 logger = logging.getLogger(__name__)
+
+if TYPE_CHECKING:
+    from equinox.auth._oauth2 import OAuth2Auth
 
 # Allowed grant types
 GRANT_TYPES = ("client_credentials", "refresh_token", "password", "authorization_code")
@@ -32,6 +35,8 @@ class OAuthClientManager:
     client_secret – OAuth2 client_secret (plain; protected by file-system permissions)
     scope         – space-separated scopes (optional)
     grant_type    – client_credentials | refresh_token | password | authorization_code
+    token_auth    – body | basic
+    verify_ssl    – 0/1, whether to verify TLS certs for the token endpoint
     extra_params  – JSON dict of additional token-endpoint params (optional)
     description   – free-text note
     is_default    – 0/1, at most one row is 1
@@ -59,6 +64,8 @@ class OAuthClientManager:
         client_secret: str,
         scope: str = "",
         grant_type: str = "client_credentials",
+        token_auth: str = "body",
+        verify_ssl: bool = True,
         extra_params: Optional[Dict[str, str]] = None,
         description: str = "",
     ) -> int:
@@ -78,6 +85,7 @@ class OAuthClientManager:
         scope = _require_str(scope, "scope", self.MAX_SCOPE_LEN, required=False)
         description = _require_str(description, "description", self.MAX_DESC_LEN, required=False)
         self._validate_grant_type(grant_type)
+        self._validate_token_auth(token_auth)
 
         extra_json = safe_json_dumps(extra_params or {})
 
@@ -86,11 +94,11 @@ class OAuthClientManager:
                 """
                 INSERT INTO oauth_clients
                   (name, token_url, client_id, client_secret, scope,
-                   grant_type, extra_params, description)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                   grant_type, token_auth, verify_ssl, extra_params, description)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (name, token_url, client_id, encrypted_secret, scope,
-                 grant_type, extra_json, description),
+                 grant_type, token_auth, 1 if verify_ssl else 0, extra_json, description),
             )
             logger.info("Created OAuth2 client '%s' (id=%d)", name, row_id)
             return row_id
@@ -142,6 +150,8 @@ class OAuthClientManager:
         client_secret: Optional[str] = None,
         scope: Optional[str] = None,
         grant_type: Optional[str] = None,
+        token_auth: Optional[str] = None,
+        verify_ssl: Optional[bool] = None,
         extra_params: Optional[Dict[str, str]] = None,
         description: Optional[str] = None,
     ) -> None:
@@ -172,6 +182,13 @@ class OAuthClientManager:
             self._validate_grant_type(grant_type)
             updates.append("grant_type = ?")
             params.append(grant_type)
+        if token_auth is not None:
+            self._validate_token_auth(token_auth)
+            updates.append("token_auth = ?")
+            params.append(token_auth)
+        if verify_ssl is not None:
+            updates.append("verify_ssl = ?")
+            params.append(1 if verify_ssl else 0)
         if extra_params is not None:
             updates.append("extra_params = ?")
             params.append(safe_json_dumps(extra_params))
@@ -234,7 +251,20 @@ class OAuthClientManager:
         if grant_type not in GRANT_TYPES:
             raise ValidationError(f"grant_type must be one of: {', '.join(GRANT_TYPES)}")
 
-    def to_oauth2_auth(self, client: Dict[str, Any]) -> "OAuth2Auth":
+    @staticmethod
+    def _validate_token_auth(token_auth: str) -> None:
+        """Raise ``ValidationError`` if *token_auth* is not a supported mode."""
+        if token_auth not in ("body", "basic"):
+            raise ValidationError("token_auth must be one of: body, basic")
+
+    @staticmethod
+    def _normalize_token_auth(token_auth: Any) -> Literal["body", "basic"]:
+        """Return a supported token-auth mode, defaulting to body."""
+        if isinstance(token_auth, str) and token_auth.lower() == "basic":
+            return "basic"
+        return "body"
+
+    def to_oauth2_auth(self, client: Dict[str, Any]) -> OAuth2Auth:
         """Build a live :class:`~equinox.auth.oauth2.OAuth2Auth` from a client row."""
         from equinox.auth._oauth2 import OAuth2Auth
         return OAuth2Auth(
@@ -242,18 +272,30 @@ class OAuthClientManager:
             client_id=client["client_id"],
             client_secret=client["client_secret"],
             scope=client.get("scope") or None,
+            verify_ssl=bool(client.get("verify_ssl", 1)),
+            token_auth=self._normalize_token_auth(client.get("token_auth")),
             extra_params=client.get("extra_params"),
         )
 
     def _decode_and_maybe_migrate(self, row) -> Dict[str, Any]:
-        d = dict(row)
-        raw_secret = d.get("client_secret")
-        d["client_secret"] = self._decrypt_client_secret(raw_secret)
-        d["extra_params"] = safe_json_loads(d.get("extra_params") or "{}", row_id=d.get("id"))
-        d["is_default"] = bool(d.get("is_default", 0))
+        base: Dict[str, Any] = {str(key): row[key] for key in row.keys()}
+        raw_secret = base.get("client_secret")
+        decrypted_secret = self._decrypt_client_secret(raw_secret)
+        extra_params = safe_json_loads(base.get("extra_params") or "{}", row_id=base.get("id"))
+        token_auth = self._normalize_token_auth(base.get("token_auth"))
+        verify_ssl = bool(base.get("verify_ssl", 1))
+        is_default = bool(base.get("is_default", 0))
+        result: Dict[str, Any] = {
+            **base,
+            "client_secret": decrypted_secret,
+            "extra_params": extra_params,
+            "token_auth": token_auth,
+            "verify_ssl": verify_ssl,
+            "is_default": is_default,
+        }
         if self._is_legacy_plaintext_secret(raw_secret):
-            self._migrate_legacy_client_secret(d["id"], d["client_secret"])
-        return d
+            self._migrate_legacy_client_secret(result["id"], decrypted_secret)
+        return result
 
     @classmethod
     def _encrypt_client_secret(cls, secret: str) -> str:

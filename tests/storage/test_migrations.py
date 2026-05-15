@@ -2,7 +2,6 @@
 
 import sqlite3
 import pytest
-from pathlib import Path
 
 from equinox.storage import Database, MigrationRunner, MIGRATIONS
 from equinox.storage.migrations import Migration
@@ -27,7 +26,7 @@ class TestMigrationRunner:
         conn = sqlite3.connect(str(db_path))
         conn.close()
 
-        db = Database.__new__(Database)
+        db = object.__new__(Database)
         db.db_path = db_path.resolve()
         db.db_path.parent.mkdir(parents=True, exist_ok=True)
         import threading
@@ -217,6 +216,17 @@ class TestMigrationIntegrationWithDatabase:
             "idx_history_index_success_method_norm_executed",
         }
         assert expected.issubset(indexes), f"Missing indexes: {expected - indexes}"
+
+    def test_v24_oauth_client_columns_added(self, db):
+        """Migration v24 adds OAuth2 token auth mode and TLS verification settings."""
+        with db.get_connection() as conn:
+            cols = {
+                row[1]
+                for row in conn.execute("PRAGMA table_info(oauth_clients)").fetchall()
+            }
+
+        assert "token_auth" in cols
+        assert "verify_ssl" in cols
 
 
 class TestDatabaseTransaction:

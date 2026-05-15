@@ -1,6 +1,7 @@
 ﻿"""Tests for OAuthClientManager and SavedCredentialsManager."""
 import sqlite3
 import pytest
+from typing import cast
 from equinox.storage.database import Database
 from equinox.storage.oauth_clients import OAuthClientManager
 from equinox.storage.saved_credentials import SavedCredentialsManager
@@ -15,7 +16,8 @@ class TestOAuthClientManager:
         cid = mgr.create_client(
             name='My Client', token_url='https://auth.example.com/token',
             client_id='cid123', client_secret='sec456', scope='read write',
-            grant_type='client_credentials', description='Test client',
+            grant_type='client_credentials', token_auth='basic', verify_ssl=False,
+            description='Test client',
         )
         assert cid >= 1
         client = mgr.get_client(cid)
@@ -23,6 +25,8 @@ class TestOAuthClientManager:
         assert client['name'] == 'My Client'
         assert client['client_id'] == 'cid123'
         assert client['grant_type'] == 'client_credentials'
+        assert client['token_auth'] == 'basic'
+        assert client['verify_ssl'] is False
     def test_list_clients(self, db):
         mgr = OAuthClientManager(db)
         mgr.create_client(name='A', token_url='', client_id='', client_secret='')
@@ -87,6 +91,7 @@ class TestOAuthClientManager:
         mgr.update_client(cid, token_url='https://new.com',
                           client_id_val='new_id', client_secret='new_sec',
                           scope='read write', grant_type='password',
+                          token_auth='basic', verify_ssl=False,
                           description='Updated desc')
         client = mgr.get_client(cid)
         assert client['token_url'] == 'https://new.com'
@@ -94,6 +99,8 @@ class TestOAuthClientManager:
         assert client['client_secret'] == 'new_sec'
         assert client['scope'] == 'read write'
         assert client['grant_type'] == 'password'
+        assert client['token_auth'] == 'basic'
+        assert client['verify_ssl'] is False
         assert client['description'] == 'Updated desc'
 
     def test_update_extra_params(self, db):
@@ -138,12 +145,28 @@ class TestOAuthClientManager:
         cid = mgr.create_client(name='Auth', token_url='https://auth.com/token',
                                 client_id='cid', client_secret='csec', scope='openid')
         client = mgr.get_client(cid)
-        auth_obj = mgr.to_oauth2_auth(client)
+        assert client is not None
+        auth_obj = mgr.to_oauth2_auth(cast(dict, client))
         from equinox.auth._oauth2 import OAuth2Auth
         assert isinstance(auth_obj, OAuth2Auth)
         assert auth_obj.token_url == 'https://auth.com/token'
         assert auth_obj.client_id == 'cid'
         assert auth_obj.client_secret == 'csec'
+        assert auth_obj.token_auth == 'body'
+        assert auth_obj.verify_ssl is True
+
+    def test_token_auth_and_verify_ssl_propagate_to_oauth2_auth(self, db):
+        mgr = OAuthClientManager(db)
+        cid = mgr.create_client(
+            name='AuthMode', token_url='https://auth.com/token',
+            client_id='cid', client_secret='csec',
+            token_auth='basic', verify_ssl=False,
+        )
+        client = mgr.get_client(cid)
+        assert client is not None
+        auth_obj = mgr.to_oauth2_auth(cast(dict, client))
+        assert auth_obj.token_auth == 'basic'
+        assert auth_obj.verify_ssl is False
 
     def test_name_required(self, db):
         mgr = OAuthClientManager(db)
@@ -166,6 +189,7 @@ class TestOAuthClientManager:
         mgr = OAuthClientManager(db)
         cid = mgr.create_client(name='NoExtra', token_url='', client_id='', client_secret='')
         client = mgr.get_client(cid)
+        assert client is not None
         assert client['extra_params'] == {}
 
     def test_client_secret_is_encrypted_at_rest(self, db):
@@ -176,21 +200,17 @@ class TestOAuthClientManager:
         assert row['client_secret'].startswith('enc:')
 
     def test_legacy_plaintext_secret_is_migrated_on_read(self, db):
-        with sqlite3.connect(str(db.db_path)) as conn:
-            cur = conn.cursor()
-            cur.execute(
-                "INSERT INTO oauth_clients (name, token_url, client_id, client_secret, scope, grant_type, extra_params, description) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-                ('LegacyPlain', '', '', 'plain-legacy', '', 'client_credentials', '{}', ''),
-            )
-            conn.commit()
-            cid = cur.lastrowid
-
         mgr = OAuthClientManager(db)
-        client = mgr.get_client(cid)
+        legacy_id: int = mgr.create_client(name='LegacyPlain', token_url='', client_id='', client_secret='temp-secret')
+        with sqlite3.connect(str(db.db_path)) as conn:
+            conn.execute("UPDATE oauth_clients SET client_secret = ? WHERE id = ?", ('plain-legacy', legacy_id))
+            conn.commit()
+
+        client = mgr.get_client(legacy_id)
         assert client is not None
         assert client['client_secret'] == 'plain-legacy'
 
-        row = db.fetchone("SELECT client_secret FROM oauth_clients WHERE id = ?", (cid,))
+        row = db.fetchone("SELECT client_secret FROM oauth_clients WHERE id = ?", (legacy_id,))
         assert row is not None
         assert row['client_secret'].startswith('enc:')
 

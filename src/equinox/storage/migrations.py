@@ -442,6 +442,14 @@ CREATE INDEX IF NOT EXISTS idx_history_index_success_method_norm_executed
     ON history_index(response_success, method, normalized_url, executed_at DESC);
 """,
     ),
+    Migration(
+        version=24,
+        description="Add OAuth2 token auth mode and TLS verification to oauth_clients",
+        sql="""
+ALTER TABLE oauth_clients ADD COLUMN token_auth TEXT DEFAULT 'body';
+ALTER TABLE oauth_clients ADD COLUMN verify_ssl INTEGER DEFAULT 1;
+""",
+    ),
 ]
 
 # ─────────────────────────────────────────────────────────────────────────────
