@@ -1,8 +1,8 @@
 """Lightweight CLI for secret rotation and quick ops.
 
-This module provides a minimal CLI surface for managing secret rotation
-without launching the GUI. It is intentionally small and safe to import in
-environments that do not have PyQt dependencies.
+This module provides a minimal CLI surface for managing secret rotation,
+GUI launching, and other operations without requiring all dependencies upfront.
+It is intentionally designed so that PyQt is not required for CLI-only operations.
 """
 from __future__ import annotations
 
@@ -16,6 +16,17 @@ from equinox.security.secrets_password import rotate_all_secrets
 def main():
     """Equinox command-line helpers."""
     pass
+
+
+@main.command()
+def gui() -> None:
+    """Launch the Equinox GUI application.
+
+    Starts the interactive PyQt6 GUI for managing API requests, collections,
+    and environments. PyQt6 is imported only when this command is invoked.
+    """
+    from equinox.gui.app import main as gui_main
+    gui_main()
 
 
 @main.command()
@@ -44,5 +55,6 @@ def rotate_secrets(db_path: str, new_password: Optional[str]) -> None:
     click.echo("Secret rotation completed.")
 
 
-def main_entry():
+def main_entry() -> None:
+    """Entry point for the CLI application."""
     main()
