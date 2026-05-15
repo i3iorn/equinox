@@ -10,10 +10,9 @@ Covers every uncovered line in:
              450-454, 458, 492-493)
 """
 
+import base64
 import json
-import logging
 import os
-import time
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict
 from unittest.mock import MagicMock, Mock, patch, PropertyMock
@@ -89,8 +88,8 @@ class _ConcreteAuth(AuthStrategy):
         return result  # type: ignore[return-value]
 
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> "AuthStrategy":
-        result = AuthStrategy.from_dict(data)
+    def from_dict(cls, data: Dict[str, Any], **kwargs: Any) -> "AuthStrategy":
+        result = AuthStrategy.from_dict(data, **kwargs)
         return result  # type: ignore[return-value]
 
 
@@ -360,6 +359,44 @@ class TestOAuth2Coverage:
         )
         with pytest.raises(AuthError, match="Invalid token URL"):
             auth._post_token_request({"grant_type": "client_credentials"})
+
+    @patch("equinox.auth._oauth2.httpx.Client")
+    def test_execute_token_post_basic_mode_uses_basic_header(self, mock_client_class):
+        """Basic token auth must move credentials from the body into Authorization."""
+        mock_client = MagicMock()
+        mock_client_class.return_value.__enter__.return_value = mock_client
+
+        resp = Mock()
+        resp.status_code = 200
+        resp.json.return_value = {"access_token": "abc123", "expires_in": 3600}
+        resp.raise_for_status = Mock()
+        resp.headers = {}
+        resp.request = Mock()
+        resp.request.url = "https://auth.example.com/token"
+        mock_client.post.return_value = resp
+
+        auth = OAuth2Auth(
+            client_id="client-id",
+            client_secret="client-secret",
+            token_url="https://auth.example.com/token",
+            token_auth="basic",
+        )
+
+        response = auth._execute_token_post(
+            {
+                "grant_type": "client_credentials",
+                "client_id": "client-id",
+                "client_secret": "client-secret",
+                "scope": "read write",
+            }
+        )
+
+        assert response is resp
+        assert mock_client.post.call_count == 1
+        kwargs = mock_client.post.call_args.kwargs
+        assert kwargs["data"] == {"grant_type": "client_credentials", "scope": "read write"}
+        expected_header = "Basic " + base64.b64encode(b"client-id:client-secret").decode("ascii")
+        assert kwargs["headers"] == {"Authorization": expected_header}
 
     # ── Lines 396-437: transport errors, retries, connection refused ──────
 
