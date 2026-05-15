@@ -184,16 +184,51 @@ def test_json_body_validation_disables_send_for_invalid_json_even_without_conten
 
 
 def test_save_updates_existing_request_when_collection_unchanged(tmp_db_path, monkeypatch):
-    ensure_qapp()
-    from equinox.storage import get_db
-    from equinox.gui.request_panel import panel as panel_mod
-    from equinox.gui.request_panel.panel import RequestPanel
-    from equinox.core.request import Request
+    """Test that saving an existing request in the same collection calls update_request.
 
-    panel = RequestPanel(get_db())
-    panel.url_input.setText("https://api.example.com/items")
-    panel.method_combo.setCurrentText("GET")
-    panel.current_request = Request(
+    This test verifies that when a user saves an existing request without changing
+    its collection, update_request() is called instead of save_request().
+    """
+    ensure_qapp()
+    from equinox.gui.request_panel.save_flow_mixin import RequestSaveFlowMixin
+    from equinox.core.request import Request
+    from PyQt6.QtWidgets import QDialog
+
+    # Create a minimal mock panel with only the save-flow behavior
+    class _MockPanel(RequestSaveFlowMixin):
+        def __init__(self):
+            self.db = None
+            self.current_request = None
+            self._collection_mgr = Mock()
+            self.url_input = Mock()
+            self.method_combo = Mock()
+
+        def window(self):
+            """Mock window to prevent access to collections_panel."""
+            return Mock()
+
+        def _build_request_from_editor(self, **overrides):
+            """Mock request builder."""
+            return Request(
+                method="GET",
+                url="https://api.example.com/items",
+                headers={},
+                **overrides
+            )
+
+        def _mark_dirty(self):
+            pass
+
+        def _clear_dirty(self):
+            pass
+
+        def _status_message(self, msg, timeout_ms=5000):
+            pass
+
+    mock_panel = _MockPanel()
+    mock_panel.url_input.text.return_value = "https://api.example.com/items"
+    mock_panel.method_combo.currentText.return_value = "GET"
+    mock_panel.current_request = Request(
         method="GET",
         url="https://api.example.com/items",
         headers={},
@@ -203,23 +238,108 @@ def test_save_updates_existing_request_when_collection_unchanged(tmp_db_path, mo
         folder="",
     )
 
+    # Mock the SaveRequestDialog
     class _FakeDialog:
-        def __init__(self, *_args, **_kwargs):
+        def __init__(self, *args, **kwargs):
+            """Accept any arguments (db, method, url, folder, parent)."""
             pass
 
         def exec(self):
-            return panel_mod.QDialog.DialogCode.Accepted
+            return QDialog.DialogCode.Accepted
 
         def result_values(self):
             return "Items", 7, "Default", ""
 
-    monkeypatch.setattr(panel_mod, "SaveRequestDialog", _FakeDialog)
-    manager_mock = Mock()
-    panel._collection_mgr = manager_mock
+    monkeypatch.setattr(
+        "equinox.gui.request_panel.save_flow_mixin.SaveRequestDialog",
+        _FakeDialog,
+    )
 
-    panel._save_request()
+    # Call the save flow
+    result = mock_panel._save_request()
 
-    manager_mock.update_request.assert_called_once()
-    manager_mock.save_request.assert_not_called()
+    # Verify update_request was called (not save_request)
+    assert result is True
+    mock_panel._collection_mgr.update_request.assert_called_once()
+    mock_panel._collection_mgr.save_request.assert_not_called()
 
 
+def test_save_calls_save_request_when_collection_changes(tmp_db_path, monkeypatch):
+    """Test that saving an existing request with a different collection calls save_request.
+
+    If the user moves a request to a different collection during save, it should be
+    treated as a new save operation (with a new ID).
+    """
+    ensure_qapp()
+    from equinox.gui.request_panel.save_flow_mixin import RequestSaveFlowMixin
+    from equinox.core.request import Request
+    from PyQt6.QtWidgets import QDialog
+
+    class _MockPanel(RequestSaveFlowMixin):
+        def __init__(self):
+            self.db = None
+            self.current_request = None
+            self._collection_mgr = Mock()
+            self.url_input = Mock()
+            self.method_combo = Mock()
+
+        def window(self):
+            return Mock()
+
+        def _build_request_from_editor(self, **overrides):
+            return Request(
+                method="POST",
+                url="https://api.example.com/users",
+                headers={},
+                **overrides
+            )
+
+        def _mark_dirty(self):
+            pass
+
+        def _clear_dirty(self):
+            pass
+
+        def _status_message(self, msg, timeout_ms=5000):
+            pass
+
+    mock_panel = _MockPanel()
+    mock_panel.url_input.text.return_value = "https://api.example.com/users"
+    mock_panel.method_combo.currentText.return_value = "POST"
+
+    # Request originally in collection 7
+    mock_panel.current_request = Request(
+        method="POST",
+        url="https://api.example.com/users",
+        headers={},
+        name="Create User",
+        collection_id=7,
+        id=456,
+        folder="",
+    )
+
+    class _FakeDialog:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        def exec(self):
+            return QDialog.DialogCode.Accepted
+
+        def result_values(self):
+            # Return different collection (99 instead of 7)
+            return "Create User", 99, "Other", ""
+
+    monkeypatch.setattr(
+        "equinox.gui.request_panel.save_flow_mixin.SaveRequestDialog",
+        _FakeDialog,
+    )
+
+    # Mock save_request to return a new ID
+    mock_panel._collection_mgr.save_request.return_value = 789
+
+    result = mock_panel._save_request()
+
+    # Verify save_request was called (not update_request)
+    assert result is True
+    mock_panel._collection_mgr.save_request.assert_called_once()
+    mock_panel._collection_mgr.update_request.assert_not_called()

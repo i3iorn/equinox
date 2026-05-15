@@ -210,7 +210,7 @@ class TestMainWindow:
     def test_show_about(self, db):
         from equinox.gui.window import MainWindow
         win = MainWindow(db)
-        with patch("equinox.gui.window.QMessageBox.about"):
+        with patch("equinox.gui.window._menu.QMessageBox.about"):
             win._show_about()
         _close_win(win)
 
@@ -300,10 +300,16 @@ class TestMainWindow:
 
     def test_open_log_file_no_log(self, db):
         from equinox.gui.window import MainWindow
+        from equinox.gui.log_file_actions import LogOpenResult, LogOpenStatus
+
         win = MainWindow(db)
-        with patch("equinox.gui.window.QMessageBox.information"):
-            with patch("equinox.gui.log_file_actions.get_log_file", return_value=None):
+        with patch("equinox.gui.window._menu.show_log_file_open_result") as show_result:
+            with patch(
+                "equinox.gui.window._menu.try_open_current_log_file",
+                return_value=LogOpenResult(status=LogOpenStatus.MISSING),
+            ):
                 win._open_log_file()
+                show_result.assert_called_once()
         _close_win(win)
 
     def test_set_theme(self, db):
@@ -557,7 +563,8 @@ class TestMainWindow:
         _close_win(win)
 
     def test_effective_resize_border_scales_with_dpi(self, db):
-        from equinox.gui.window import MainWindow, _RESIZE_BORDER_PX
+        from equinox.gui.window import MainWindow
+        from equinox.gui.window._frameless import _RESIZE_BORDER_PX
 
         win = MainWindow(db)
         with patch.object(win, "devicePixelRatioF", return_value=2.0):

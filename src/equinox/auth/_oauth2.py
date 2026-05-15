@@ -6,6 +6,7 @@ import os
 import time
 import logging
 import uuid
+import random
 from datetime import datetime, timedelta, timezone
 from threading import Lock
 from typing import Any, Callable, Dict, Literal, Optional
@@ -16,7 +17,7 @@ from equinox.auth._base import AuthStrategy, _validate_credential, _interpolate_
 from equinox.security.secure_storage import SecureStorage
 from equinox.core.audit import get_audit_logger, AuditEventType, AuditLevel
 from equinox.security import mask_secret, sanitize_details, redact_url
-from equinox.core.time import utc_now
+from equinox.core.util.time import utc_now
 from equinox.core.validation import Validator
 
 logger = logging.getLogger(__name__)
@@ -62,6 +63,8 @@ _CONNECTION_REFUSED_MARKERS: tuple = ("10061", "connection refused", "econnrefus
 
 # Hex-suffix length appended to anonymous (no client_id) storage keys.
 _ANON_KEY_ID_LENGTH: int = 12
+
+_GRACE_PERIOD_SECONDS = 30      # Use cached token up to 30s past expiry
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -433,6 +436,33 @@ class OAuth2Auth(AuthStrategy):
         seconds_until_expiry = (expiry - utc_now()).total_seconds()
         return seconds_until_expiry <= self.REFRESH_BUFFER_SECONDS
 
+    def _is_token_within_grace_period(self) -> bool:
+        """Check if cached token is still usable (within grace window).
+
+        Returns True if:
+        - Token has no expiry info (assume valid until rejected by server)
+        - Token hasn't expired past the grace window (within _GRACE_PERIOD_SECONDS)
+
+        This allows graceful degradation when token endpoint is unreachable:
+        use cached token instead of failing immediately.
+        """
+        if not self.access_token:
+            return False
+
+        if not self.expires_at:
+            return True  # No expiry; assume valid
+
+        # Normalise to naive UTC
+        expiry = self.expires_at
+        if expiry.tzinfo is not None:
+            expiry = expiry.astimezone(timezone.utc).replace(tzinfo=None)
+
+        now = utc_now()
+        seconds_past_expiry = (now - expiry).total_seconds()
+
+        # Token is within grace period if it hasn't expired past the grace window
+        return seconds_past_expiry < _GRACE_PERIOD_SECONDS
+
     def get_token_info(self) -> Dict[str, Any]:
         """Return a safe summary of the current token state."""
         token_preview = mask_secret(self.access_token) if self.access_token else "None"
@@ -576,6 +606,9 @@ class OAuth2Auth(AuthStrategy):
     ) -> None:
         """Fetch a new access token using the refresh-token or client-credentials flow.
 
+        Gracefully falls back to cached token if endpoint is unreachable and token
+        is still within the grace period (within 30 seconds of expiry).
+
         Raises:
             AuthError: If no token URL is configured or the endpoint rejects the request.
         """
@@ -583,13 +616,32 @@ class OAuth2Auth(AuthStrategy):
             raise AuthError("No token URL configured for token refresh")
 
         grant_data = self._build_grant_data()
-        response = self._post_token_request(
-            grant_data,
-            proxy=proxy,
-            verify_ssl=verify_ssl,
-        )
-        self._capture_token_response(response)
-        self._apply_token_response(response)
+        try:
+            response = self._post_token_request(
+                grant_data,
+                proxy=proxy,
+                verify_ssl=verify_ssl,
+            )
+            self._capture_token_response(response)
+            self._apply_token_response(response)
+        except AuthError as refresh_error:
+            # Graceful degradation: if token endpoint is unreachable but cached token
+            # is still within grace period, use it instead of failing immediately
+            if self._is_token_within_grace_period():
+                logger.warning(
+                    "Token endpoint unreachable (error: %s), but cached token still valid; "
+                    "proceeding with existing token (grace period: %ds)",
+                    str(refresh_error),
+                    _GRACE_PERIOD_SECONDS
+                )
+                self._audit.log_event(
+                    AuditEventType.AUTH_TOKEN_REFRESH,
+                    level=AuditLevel.INFO,
+                    message="Using cached OAuth2 token within grace period due to endpoint failure"
+                )
+                return
+            # Token is expired or missing; let the error propagate
+            raise
 
     @staticmethod
     def _snapshot_response_body(response: httpx.Response) -> Dict[str, Any]:

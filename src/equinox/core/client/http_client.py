@@ -12,14 +12,14 @@ from typing import Any, Dict, Optional
 
 from equinox.auth import AuthStrategy
 from equinox.core.audit import get_audit_logger
-from equinox.core import error_mapper
+from equinox.core.format import error_mapper
 from equinox.core import urls
-from equinox.core.cookies import CookieManager
+from equinox.core.http.cookies import CookieManager
 from equinox.core.exceptions import RequestError, ValidationError
 from equinox.core.interceptors.chain import InterceptorChain
 from equinox.core.interceptors.logging import RequestResponseLogger
 from equinox.core.log_setup import generate_request_id
-from equinox.core.rate_limiter import RateLimiter
+from equinox.core.http.rate_limiter import RateLimiter
 from equinox.core.request import Request, Response
 from equinox.core.validation import Validator
 
@@ -242,7 +242,7 @@ class HTTPClient:
     # ── Public API ────────────────────────────────────────────────────────────
 
     def check_proxy_reachable(self) -> None:
-        from equinox.core.proxy import check_proxy_reachable
+        from equinox.core.http.proxy import check_proxy_reachable
         if not self.proxy:
             raise ValidationError("Proxy URL is not configured")
         check_proxy_reachable(self.proxy)
@@ -279,7 +279,7 @@ class HTTPClient:
         Raises:
             RateLimitError: If the rate limit is exceeded.
         """
-        logger.debug("HTTPClient: checking rate limit (max=%d/min)", self.max_rate_per_minute)
+        logger.debug("HTTPClient: checking rate limit (max=%d/min", self.max_rate_per_minute)
         self._rate_limiter.try_acquire()
         self._active_requests = self._concurrency.active
         return self._active_requests

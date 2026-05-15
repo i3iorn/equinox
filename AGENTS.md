@@ -8,7 +8,12 @@ This guide helps AI agents understand Equinox architecture and development pract
 
 ### Component Structure
 
-- **`core/`**: HTTP client (package), request/response models (package), validation (package), audit (package), interceptors (package), assertions, captures, scripts (package), codegen (package), curl parser, proxy checker, error enrichment, response intelligence (package), secret managers (package), feature flags (`config/flags.py`)
+- **`core/`**: HTTP client (package), request/response models (package), validation (package), audit (package), interceptors (package), assertions, captures, scripts (package), codegen (package), URL handling (package), error enrichment (package), response intelligence (package), secret managers (package), feature flags (`config/flags.py`)
+  - **`core/util/`** — Utility constants and time helpers (`utc_now`, `to_iso_z`, size limit constants)
+  - **`core/format/`** — Error enrichment and mapping (`enrich_exception`, `RichError`, `build_error_handlers`)
+  - **`core/http/`** — HTTP protocol helpers (`CookieManager`, `RateLimiter`, `check_proxy_reachable`)
+  - **`core/io/`** — I/O and parsing utilities (`parse_curl`, `parse_dotenv`, multipart handling)
+  - **`core/urls/`** — URL handling package (`normalizer.py`, `parsing.py`, `utils.py`)
 - **`gui/`**: PyQt6 panels — request builder (package), response viewer (package), collections (package), history, variables, logs, intelligence, websocket; shared widgets, dialogs (package), syntax highlighter (package)
 - **`storage/`**: SQLite layer — **versioned migrations** (`migrations.py`), collection/env/history (package) managers, variable groups, cookies, saved credentials, response intelligence
 - **`auth/`**: Auth strategies — OAuth2 (auto-refresh + encrypted token storage), Bearer, API Key, Basic, AWS SigV4; factory module
@@ -151,15 +156,15 @@ Unresolvable tokens are **left as-is** (never silently dropped).
 
 The shared implementation is `core/interpolation.py` → `VariableInterpolator` and `collect_interpolation_variables`. Both the GUI and CLI delegate to this module.
 
-### URL handling (`core/urls.py`)
+### URL handling (`core/urls/` package)
 
-`core/urls.py` provides:
-- `expand_placeholders(url, variables)` — substitutes `{{VAR}}` tokens before URL parsing.
-- `normalized_parts(url, variables)` — full decomposition: normalized URL, path segments (IDs/UUIDs replaced with `{id}`), sorted query params.
-- `normalize_url(url, variables)` — convenience wrapper returning just the canonical string.
-- `base_path(normalized_url)` — first path segment for prefix filtering.
+`core/urls/` is a package split across three focused modules:
 
-Uses `urlps` when available; falls back to `urllib.parse`. The parser is selected once at module load via `_parse_url`.
+- **`parsing.py`** — Low-level URL parsing: `URLComponents`, `url_metadata()`, `parse_query_pairs()`. Selects `urlps` when available; falls back to `urllib.parse` via `_parse_url` selected at module load.
+- **`normalizer.py`** — URL normalization: `expand_placeholders(url, variables)`, `normalized_parts(url, variables)`, `normalize_url(url, variables)`, `base_path(normalized_url)`.
+- **`utils.py`** — Convenience helpers: `append_query_params()`, `join_url_path()`.
+
+The package `__init__.py` re-exports all public functions so existing imports (`from equinox.core.urls import normalize_url`) continue to work unchanged. Use `from equinox.core.urls import …` as the canonical import path.
 
 ### Interceptors
 
@@ -204,7 +209,7 @@ Environment-toggled behavior is centralized in `core/config/flags.py`:
 
 ### cURL import
 
-`core/curl_parser.py`: `parse_curl(curl_cmd)` parses a cURL command string into a dict suitable for building a `Request`.
+`core/io/curl_parser.py`: `parse_curl(curl_cmd)` parses a cURL command string into a dict suitable for building a `Request`. Import via `from equinox.core.io import parse_curl` (preferred) or the legacy path `from equinox.core.curl_parser import parse_curl` (still resolves).
 
 ### Autosave and request persistence
 
@@ -349,14 +354,17 @@ The intelligence panel (`gui/intelligence_panel.py`) and its background worker (
 | `core/interceptors/` | `InterceptorChain`, logging interceptors |
 | `core/log_setup.py` | JSON structured logging to `~/.equinox/logs/equinox.log` |
 | `core/config/flags.py` | Environment-based feature toggles (`EQUINOX_USE_OS_KEYRING`, `EQUINOX_HISTORY_CAPTURE_BODIES`) |
+| `core/util/` | Utility sub-package: `time.py` (`utc_now`, `to_iso_z`), `constants.py` (size-limit constants) |
+| `core/format/` | Error sub-package: `error_enrichment.py` (`enrich_exception`, `RichError`), `error_mapper.py` (`build_error_handlers`) |
+| `core/http/` | HTTP helpers sub-package: `cookies.py` (`CookieManager`), `rate_limiter.py` (`RateLimiter`), `proxy.py` (`check_proxy_reachable`) |
+| `core/io/` | I/O sub-package: `curl_parser.py` (`parse_curl`), `dotenv.py` (`parse_dotenv`), `multipart.py` |
+| `core/urls/` | URL package: `parsing.py` (low-level parse), `normalizer.py` (`expand_placeholders`, `normalize_url`, `normalized_parts`, `base_path`), `utils.py` helpers |
 | `core/secret_managers/` | Secret manager backends + registry (`get_secret_manager`, `register_manager`) |
 | `core/auth_cipher.py` | Column-level Fernet encryption for `auth_data` / `config` columns |
 | `core/assertions.py` | `evaluate_assertion(rule, response)` — post-response test rules |
 | `core/captures.py` | `CaptureEngine` — extract response values into session variables |
 | `core/scripts/` | Sandboxed Python script runner (pre/post request scripts) |
 | `core/codegen/` | `generate_*` functions — Request → client code in multiple languages |
-| `core/curl_parser.py` | `parse_curl()` — cURL command → Request dict |
-| `core/urls.py` | `expand_placeholders`, `normalized_parts`, `normalize_url`, `base_path` |
 | `core/interpolation.py` | `VariableInterpolator`, `collect_interpolation_variables` |
 | `core/client/http_client.py` | `HTTPClient` — main façade; delegates to pipeline components |
 | `core/client/pipeline.py` | `RequestPipeline` — interceptor chain + audit wrapper |

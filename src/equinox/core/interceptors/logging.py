@@ -5,10 +5,10 @@ from typing import Dict, Any, Optional
 from equinox.core.request import Response, Request
 from equinox.core.interceptors._base import RequestInterceptor, ResponseInterceptor, \
     ErrorInterceptor, InterceptorContext, InterceptorResult
-from equinox.core.logging_payload import request_payload, response_payload, \
+from equinox.core.format.logging_payload import request_payload, response_payload, \
     error_payload
 
-from equinox.core.time import utc_now
+from equinox.core.util.time import utc_now
 
 
 class StructuredLogger:

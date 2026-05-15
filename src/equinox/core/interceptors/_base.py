@@ -4,7 +4,7 @@ from enum import Enum
 from typing import TypeVar, Generic, Optional, Dict, Any
 
 from equinox.core.request import Request, Response
-from equinox.core.time import utc_now
+from equinox.core.util.time import utc_now
 
 T = TypeVar("T")
 

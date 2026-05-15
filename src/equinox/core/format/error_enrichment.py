@@ -151,3 +151,4 @@ def _enrich_equinox_error(exc: Exception, raw: str, exc_type: str) -> Optional[s
         return raw or f"Request failed ({exc_type})"
     return None
 
+

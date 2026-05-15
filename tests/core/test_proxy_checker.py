@@ -3,7 +3,7 @@ import types
 
 import pytest
 
-from equinox.core import proxy
+from equinox.core.http import proxy
 from equinox.core.exceptions import RequestError
 
 
@@ -35,8 +35,8 @@ def test_check_proxy_reachable_refused(monkeypatch):
         # indicate writable
         return ([], [object()], [])
 
-    monkeypatch.setattr("equinox.core.proxy.socket.socket", fake_socket)
-    monkeypatch.setattr("equinox.core.proxy._select.select", fake_select)
+    monkeypatch.setattr("equinox.core.http.proxy.socket.socket", fake_socket)
+    monkeypatch.setattr("equinox.core.http.proxy._select.select", fake_select)
 
     with pytest.raises(RequestError):
         proxy.check_proxy_reachable("http://localhost:9999")

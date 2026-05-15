@@ -169,3 +169,4 @@ class RateLimiter:
             )
         except Exception as exc:
             logger.debug("Failed to log rate-limit audit event: %s", exc)
+

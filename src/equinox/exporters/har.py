@@ -9,7 +9,7 @@ from typing import Any, Dict, List, Optional
 from equinox.versioning import get_app_version
 from equinox.security import redact_headers
 from equinox.core.request import Request, Response
-from equinox.core.time import to_iso_z
+from equinox.core.util.time import to_iso_z
 from equinox.importers._utils import write_json_file
 from equinox.storage.utils import coerce_body_to_str
 

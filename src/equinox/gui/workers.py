@@ -29,11 +29,11 @@ from PyQt6.QtWidgets import (
 from PyQt6.QtCore import QThread, pyqtSignal
 
 from equinox.core.client import HTTPClient
-from equinox.core.cookies import CookieManager
+from equinox.core.http.cookies import CookieManager
 from equinox.core.validation import Validator
 from equinox.security import redact_body
 from equinox.core.request import Request
-from equinox.core.error_enrichment import enrich_exception
+from equinox.core.format.error_enrichment import enrich_exception
 from equinox.gui.theme import get_mono_font
 from .ui_common import get_gui_settings, resolve_proxy_url
 

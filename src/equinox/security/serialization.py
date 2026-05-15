@@ -10,7 +10,7 @@ from __future__ import annotations
 from typing import Any, Dict, Optional
 
 from equinox.security.redactor import redact_headers, redact_url
-from equinox.core.constants import MAX_HEADERS_SIZE, MAX_BODY_SIZE
+from equinox.core.util.constants import MAX_HEADERS_SIZE, MAX_BODY_SIZE
 from equinox.storage.utils import safe_json_dumps
 
 

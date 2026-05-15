@@ -4,7 +4,7 @@ import base64
 
 import pytest
 
-from equinox.core.curl_parser import parse_curl
+from equinox.core.io.curl_parser import parse_curl
 
 
 class TestParseCurlBasic:

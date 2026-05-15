@@ -5,7 +5,7 @@ import logging
 from datetime import datetime, timezone
 from typing import Any, Dict, List
 
-from equinox.core.time import to_iso_z
+from equinox.core.util.time import to_iso_z
 from equinox.storage.database import Database
 from equinox.exporters._prepared import _BaseCollectionExporter, _PreparedRequest
 

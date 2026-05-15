@@ -4,7 +4,7 @@ from equinox.exporters import (
     CurlExporter, PostmanExporter, OpenAPIExporter, InsomniaExporter, HARExporter,
 )
 from equinox.importers._utils import json_to_dict, write_json_file, parse_url_parts
-from equinox.core.time import to_iso_z
+from equinox.core.util.time import to_iso_z
 from equinox.core.request import Request, Response
 from equinox.core.exceptions import ValidationError
 from equinox.storage.database import Database

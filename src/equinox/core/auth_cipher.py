@@ -85,30 +85,76 @@ def encrypt_auth_data(plaintext_json: str) -> str:
     return _ENC_PREFIX + token.decode("ascii")
 
 
-def decrypt_auth_data(stored: str) -> str:
+def decrypt_auth_data(stored: str, field_name: str = "auth_data") -> str:
     """Decrypt an ``auth_data`` / ``config`` column value.
 
-    If *stored* starts with ``enc:`` the remainder is decrypted via Fernet.
-    Otherwise the value is returned as-is (legacy plaintext — graceful
-    migration).
+    Supports both encrypted (prefixed with ``enc:``) and legacy plaintext
+    values (graceful migration).
+
+    Args:
+        stored: Encrypted or plaintext column value
+        field_name: Name of the field for error context (e.g., 'oauth_secret')
+
+    Returns:
+        Decrypted plaintext value
+
+    Raises:
+        SecurityError: On decryption failure with detailed context
     """
     if not stored:
         return stored
     if stored.startswith(_ENC_PREFIX):
         f = _get_fernet()
+        ciphertext = stored[len(_ENC_PREFIX):]
+
         try:
-            plaintext = f.decrypt(stored[len(_ENC_PREFIX):].encode("ascii"))
-            return plaintext.decode("utf-8")
+            plaintext_bytes = f.decrypt(ciphertext.encode("ascii"))
+            return plaintext_bytes.decode("utf-8")
         except InvalidToken as exc:
-            # Surface decryption failures loudly — returning a silent empty
-            # blob hides key-rotation problems and corrupt data.  Callers
-            # should handle SecurityError explicitly.
-            logger.exception(
-                "Failed to decrypt auth data — key mismatch or corrupt data.")
+            # Token is corrupted or key mismatch
+            logger.error(
+                "Failed to decrypt %s: ciphertext is invalid or corrupted",
+                field_name,
+                extra={
+                    "field": field_name,
+                    "ciphertext_length": len(ciphertext),
+                    "error": type(exc).__name__,
+                }
+            )
             raise SecurityError(
-                "Failed to decrypt stored auth data: key mismatch or corrupt data"
+                f"Failed to decrypt {field_name}: token is invalid or corrupted. "
+                f"This may indicate a key mismatch or corrupted data.",
+                details={
+                    "field": field_name,
+                    "ciphertext_length": len(stored),
+                    "error_type": type(exc).__name__,
+                },
+                hint_key="auth_failed"
             ) from exc
-    # Legacy plaintext
+        except UnicodeDecodeError as exc:
+            logger.error(
+                "Failed to decode decrypted %s as UTF-8",
+                field_name,
+                extra={"field": field_name, "error": str(exc)}
+            )
+            raise SecurityError(
+                f"Decrypted {field_name} is not valid UTF-8. Data may be corrupted.",
+                details={"field": field_name, "error": str(exc)},
+            ) from exc
+        except Exception as exc:
+            logger.error(
+                "Unexpected error decrypting %s: %s",
+                field_name, str(exc),
+                extra={"field": field_name, "error": str(exc)},
+                exc_info=True
+            )
+            raise SecurityError(
+                f"Unexpected error decrypting {field_name}",
+                details={"field": field_name, "error": str(exc)},
+            ) from exc
+
+    # Legacy plaintext — transparent fallback
+    logger.debug("Returning plaintext (legacy) for %s", field_name)
     return stored
 
 

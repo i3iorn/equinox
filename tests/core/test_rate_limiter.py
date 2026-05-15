@@ -1,7 +1,7 @@
 import time
 import threading
 
-from equinox.core.rate_limiter import RateLimiter
+from equinox.core.http.rate_limiter import RateLimiter
 from equinox.core.exceptions import RateLimitError
 
 

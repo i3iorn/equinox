@@ -26,7 +26,7 @@ from PyQt6.QtWidgets import QMessageBox
 
 from equinox.auth import OAuth2Auth
 from equinox.core.captures import CaptureEngine
-from equinox.core.error_enrichment import RichError, enrich_exception
+from equinox.core.format.error_enrichment import RichError, enrich_exception
 from equinox.core.interpolation import (
     VariableInterpolator,
     collect_interpolation_variables_detailed,

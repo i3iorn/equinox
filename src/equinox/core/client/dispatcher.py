@@ -18,7 +18,7 @@ from equinox.core.client.auth_redirect import _RedirectSafeAuth
 from equinox.core.client.cookie_handler import CookieHandler
 from equinox.core.exceptions import ValidationError
 from equinox.core.request import Request, Response
-from equinox.core.time import utc_now
+from equinox.core.util.time import utc_now
 from equinox.core.validation import Validator
 from equinox.security import redact_headers, redact_url
 

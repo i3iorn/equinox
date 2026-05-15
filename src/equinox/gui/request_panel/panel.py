@@ -38,10 +38,10 @@ from equinox.gui.request_panel.body_text_proxy import BodyTextProxy
 from equinox.gui.theme import get_mono_font
 from equinox.gui.widgets import UrlLineEdit, CheckableKeyValueTable, JsonBodyEditor, PathParamsTable
 from equinox.core.request import Request
-from equinox.core.error_enrichment import RichError, enrich_exception  # noqa: F401 (used in mixin layer)
+from equinox.core.format.error_enrichment import RichError, enrich_exception  # noqa: F401 (used in mixin layer)
 from equinox.storage import Database, HistoryManager, CollectionManager
 from equinox.gui.workers import RequestWorker, DEFAULT_TIMEOUT  # noqa: F401 (RequestWorker used as type annotation)
-from equinox.core.cookies import CookieManager
+from equinox.core.http.cookies import CookieManager
 from equinox.gui.request_panel.mixins import (  # noqa: F401
     _RequestSendMixin,
     _RequestAuthMixin,

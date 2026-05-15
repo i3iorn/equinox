@@ -4,7 +4,7 @@ from __future__ import annotations
 import logging
 from typing import Any, Dict, List, Optional
 
-from equinox.core.cookies import CookieManager
+from equinox.core.http.cookies import CookieManager
 from equinox.core.request import Response
 
 logger = logging.getLogger(__name__)
@@ -13,7 +13,7 @@ __all__ = ["CookieHandler"]
 
 
 class CookieHandler:
-    """Bridge between a :class:`~equinox.core.cookies.CookieManager` and the
+    """Bridge between a :class:`~equinox.core.http.cookies.CookieManager` and the
     HTTP client pipeline.
 
     Wraps the optional cookie manager so the rest of the pipeline can call

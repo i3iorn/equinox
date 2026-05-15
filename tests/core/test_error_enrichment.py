@@ -4,7 +4,7 @@ import httpx
 import pytest
 from unittest.mock import Mock
 
-from equinox.core.error_enrichment import (
+from equinox.core.format.error_enrichment import (
     RichError,
     enrich_exception,
     _enrich_httpx_error,
