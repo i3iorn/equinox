@@ -10,7 +10,7 @@ from email.message import Message
 from functools import cached_property
 from typing import Any, Dict, List, Optional
 
-from equinox.core.time import utc_now
+from equinox.core.util.time import utc_now
 from equinox.core.request.types import (
     CHARSET_PARAMETER,
     CONTENT_TYPE_HEADER,

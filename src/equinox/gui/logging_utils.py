@@ -7,7 +7,7 @@ import logging
 from datetime import datetime
 from typing import Any, Dict, Optional
 
-from equinox.core.time import utc_now
+from equinox.core.util.time import utc_now
 
 logger = logging.getLogger("equinox.gui")
 

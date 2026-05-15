@@ -5,7 +5,7 @@ from typing import Optional, Dict, Any
 
 from equinox.core.audit._type import AuditEventType
 from equinox.core.audit._level import AuditLevel
-from equinox.core.time import utc_now
+from equinox.core.util.time import utc_now
 from equinox.security import sanitize_details, redact_body, redact_url
 
 logger = logging.getLogger(__name__)

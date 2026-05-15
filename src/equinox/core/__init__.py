@@ -6,7 +6,10 @@ from equinox.core.exceptions import EquinoxError, RequestError, AuthError, Reque
 from equinox.security import crypto
 
 __all__ = [
+    # Main exports
     "HTTPClient", "Request", "Response",
     "EquinoxError", "RequestError", "AuthError", "RequestTimeoutError",
     "crypto",
 ]
+
+

@@ -34,3 +34,4 @@ def to_iso_z(dt: Optional[datetime] = None) -> str:
     elif dt.tzinfo is None:
         dt = dt.replace(tzinfo=timezone.utc)
     return dt.strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
+

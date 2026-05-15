@@ -12,7 +12,7 @@ from PyQt6.QtCore import QThread, pyqtSignal
 from typing import Dict, Any
 
 from equinox.core.interpolation import VariableInterpolator, collect_interpolation_variables
-from equinox.core.time import utc_now
+from equinox.core.util.time import utc_now
 from equinox.gui.theme import get_mono_font
 from equinox.gui.widgets import make_secret_row
 

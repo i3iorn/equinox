@@ -12,7 +12,7 @@ from PyQt6.QtGui import QColor, QFont
 
 from typing import Optional
 
-from equinox.core.dotenv import parse_dotenv as _parse_dotenv
+from equinox.core.io.dotenv import parse_dotenv as _parse_dotenv
 from equinox.gui.file_ops import safe_read_text_file, validate_selected_path
 from equinox.gui.theme import Colors
 from equinox.gui.dialogs._list_form_dialog_mixin import ListFormDialogMixin

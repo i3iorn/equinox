@@ -19,9 +19,9 @@ import pytest
 
 # ── Module imports ────────────────────────────────────────────────────────────
 
-from equinox.core.cookies import InMemoryCookieManager
-from equinox.core.time import utc_now
-from equinox.core.error_mapper import _is_ssl_error, _is_proxy_error, build_error_handlers
+from equinox.core.http.cookies import InMemoryCookieManager
+from equinox.core.util.time import utc_now
+from equinox.core.format.error_mapper import _is_ssl_error, _is_proxy_error, build_error_handlers
 from equinox.core.urls import (
     expand_placeholders,
     normalized_parts,
@@ -29,10 +29,10 @@ from equinox.core.urls import (
     base_path,
     _normalize_segment,
 )
-from equinox.core.proxy import check_proxy_reachable
+from equinox.core.http.proxy import check_proxy_reachable
 from equinox.security.crypto import get_or_create_raw_key, make_fernet, default_key_path
-from equinox.core.multipart import build_multipart_files
-from equinox.core.rate_limiter import RateLimiter
+from equinox.core.io.multipart import build_multipart_files
+from equinox.core.http.rate_limiter import RateLimiter
 from equinox.core.log_setup import (
     JsonFormatter,
     ConsoleFormatter,
@@ -230,7 +230,7 @@ class TestErrorMapper:
         req = SimpleNamespace(url="https://example.com/api")
         # _is_proxy_error needs traceback with http_proxy — hard to fabricate.
         # Instead, patch _is_proxy_error to return True.
-        with patch("equinox.core.error_mapper._is_proxy_error", return_value=True):
+        with patch("equinox.core.format.error_mapper._is_proxy_error", return_value=True):
             result = connect_handler(exc, req)
         assert isinstance(result["error"], RequestError)
         assert "proxy" in result["log_message"].lower()
@@ -368,7 +368,7 @@ class TestProxy:
         """URL with no hostname returns without error."""
         check_proxy_reachable("http://:8080")  # no hostname
 
-    @patch("equinox.core.proxy.socket.socket")
+    @patch("equinox.core.http.proxy.socket.socket")
     def test_immediate_connect_success(self, mock_socket_cls):
         """Socket connects immediately (no BlockingIOError)."""
         mock_sock = MagicMock()
@@ -377,7 +377,7 @@ class TestProxy:
         check_proxy_reachable("http://localhost:8080")
         mock_sock.close.assert_called_once()
 
-    @patch("equinox.core.proxy.socket.socket")
+    @patch("equinox.core.http.proxy.socket.socket")
     def test_os_error_connection_refused(self, mock_socket_cls):
         """OSError with ECONNREFUSED raises RequestError."""
         mock_sock = MagicMock()
@@ -386,7 +386,7 @@ class TestProxy:
         with pytest.raises(RequestError, match="proxy"):
             check_proxy_reachable("http://localhost:8080")
 
-    @patch("equinox.core.proxy.socket.socket")
+    @patch("equinox.core.http.proxy.socket.socket")
     def test_os_error_non_refused_defers(self, mock_socket_cls):
         """OSError with non-refused errno does NOT raise (defers to httpx)."""
         mock_sock = MagicMock()
@@ -395,8 +395,8 @@ class TestProxy:
         # Should not raise
         check_proxy_reachable("http://proxy.example.com:3128")
 
-    @patch("equinox.core.proxy._select.select")
-    @patch("equinox.core.proxy.socket.socket")
+    @patch("equinox.core.http.proxy._select.select")
+    @patch("equinox.core.http.proxy.socket.socket")
     def test_blocking_io_with_refused_error(self, mock_socket_cls, mock_select):
         """BlockingIOError path with SO_ERROR = ECONNREFUSED."""
         mock_sock = MagicMock()
@@ -407,8 +407,8 @@ class TestProxy:
         with pytest.raises(RequestError, match="proxy"):
             check_proxy_reachable("http://localhost:8080")
 
-    @patch("equinox.core.proxy._select.select")
-    @patch("equinox.core.proxy.socket.socket")
+    @patch("equinox.core.http.proxy._select.select")
+    @patch("equinox.core.http.proxy.socket.socket")
     def test_blocking_io_with_no_error(self, mock_socket_cls, mock_select):
         """BlockingIOError path with SO_ERROR = 0 (success)."""
         mock_sock = MagicMock()
@@ -550,14 +550,12 @@ class TestRateLimiterAuditFailure:
 class TestLogSetupCoverage:
     def test_get_app_corr_id_lazy_init(self):
         import equinox.core.log_setup as ls
-        old = ls._app_corr_id
         try:
-            ls._app_corr_id = None
             cid = get_app_corr_id()
             assert len(cid) == 12
             assert cid == get_app_corr_id()  # idempotent
         finally:
-            ls._app_corr_id = old
+            pass
 
     def test_json_formatter_non_main_process(self):
         fmt = JsonFormatter()

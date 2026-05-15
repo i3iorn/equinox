@@ -46,3 +46,4 @@ def parse_dotenv(text: str) -> dict:
             result[key] = value
     logger.debug("parse_dotenv: loaded %d variable(s)", len(result))
     return result
+

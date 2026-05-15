@@ -53,3 +53,4 @@ def error_payload(request: Request, error: Exception) -> Dict[str, Any]:
         "error_type": type(error).__name__,
         "error_message": redact_body(str(error), max_len=500),
     }
+

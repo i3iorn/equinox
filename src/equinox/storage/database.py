@@ -207,7 +207,7 @@ class Database:
         # across connections, so configure them once on a temporary connection
         # before opening the long-lived one.
         self._configure_persistent_pragmas()
-        self._conn = self._new_connection()
+        self._conn = self._initialize_connection_with_retry()
         self._run_migrations()
 
     # ── Connection management ─────────────────────────────────────────────────
@@ -227,6 +227,74 @@ class Database:
         conn.row_factory = sqlite3.Row
         conn.execute("PRAGMA foreign_keys = ON")
         return conn
+
+    def _initialize_connection_with_retry(self) -> sqlite3.Connection:
+        """Establish database connection with transient lock retry.
+
+        When the database is locked by another connection (e.g., WAL checkpoint),
+        retry with exponential backoff instead of failing immediately.
+
+        See Also:
+            https://sqlite.org/lang_vacuum.html#how_vacuum_works
+        """
+        max_retries = 3
+        for attempt in range(max_retries):
+            try:
+                conn = self._new_connection()
+                logger.info(
+                    "Database connection established at %s (attempt %d/%d)",
+                    self.db_path,
+                    attempt + 1,
+                    max_retries
+                )
+                return conn
+            except sqlite3.OperationalError as exc:
+                error_msg = str(exc).lower()
+                is_locked = "locked" in error_msg or "busy" in error_msg
+
+                if is_locked and attempt < max_retries - 1:
+                    # Transient lock; retry with backoff
+                    wait = (2 ** attempt) * 0.1  # 0.1, 0.2, 0.4 seconds
+                    logger.warning(
+                        "Database locked (attempt %d/%d), retrying in %.1fs",
+                        attempt + 1,
+                        max_retries,
+                        wait
+                    )
+                    import time
+                    time.sleep(wait)
+                else:
+                    # Final attempt or non-lock error
+                    logger.error(
+                        "Cannot open database at %s: %s",
+                        self.db_path,
+                        str(exc),
+                        extra={
+                            "path": str(self.db_path),
+                            "is_locked": is_locked,
+                            "attempts": attempt + 1,
+                        }
+                    )
+                    raise StorageError(
+                        f"Cannot open database: {str(exc)}",
+                        details={
+                            "path": str(self.db_path),
+                            "error": str(exc),
+                            "is_locked": is_locked,
+                        },
+                        hint_key="connection"
+                    ) from exc
+            except Exception as exc:
+                logger.error(
+                    "Unexpected error opening database at %s: %s",
+                    self.db_path,
+                    str(exc),
+                    exc_info=True
+                )
+                raise StorageError(
+                    f"Cannot open database: {str(exc)}",
+                    details={"path": str(self.db_path), "error": str(exc)}
+                ) from exc
 
     def _configure_persistent_pragmas(self) -> None:
         """Set database-level PRAGMAs that persist across connections.

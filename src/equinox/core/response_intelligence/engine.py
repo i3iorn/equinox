@@ -21,7 +21,14 @@ logger = logging.getLogger(__name__)
 _SEVERITY_ORDER = {Severity.CRITICAL: 0, Severity.WARNING: 1, Severity.INFO: 2}
 
 _ANALYZER_MODULES: tuple = (
-    "equinox.core.response_intelligence.security",
+    # Security analyzers (split from monolithic security.py into focused modules)
+    "equinox.core.response_intelligence.analyzers.headers",
+    "equinox.core.response_intelligence.analyzers.cookies",
+    "equinox.core.response_intelligence.analyzers.cors",
+    "equinox.core.response_intelligence.analyzers.jwt",
+    "equinox.core.response_intelligence.analyzers.pii_secret_leak",
+    "equinox.core.response_intelligence.analyzers.sensitive_data",
+    # Other analyzer categories
     "equinox.core.response_intelligence.performance",
     "equinox.core.response_intelligence.consistency",
     "equinox.core.response_intelligence.server",

@@ -30,7 +30,7 @@ from PyQt6.QtWidgets import (
 
 from equinox.auth import OAuth2Auth
 from equinox.security import mask_secret
-from equinox.core.time import utc_now
+from equinox.core.util.time import utc_now
 from equinox.gui.theme import Colors
 
 from equinox.gui.request_panel._constants import (

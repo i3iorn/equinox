@@ -72,14 +72,20 @@ def test_download_body(panel):
     panel.current_response = resp
     panel.body_text.setPlainText("save me")
     
-    # Try patching builtins.open directly since it's used in the mixin
-    with patch("equinox.gui.response_panel.actions_mixin.QFileDialog.getSaveFileName", return_value=("test.txt", "Text (*.txt)")):
-        with patch("builtins.open", MagicMock()) as mock_open:
-            mock_file = MagicMock()
-            mock_open.return_value.__enter__.return_value = mock_file
-            panel._download_body()
-            mock_open.assert_called_with("test.txt", "wb")
-            mock_file.write.assert_called_with(b"save me")
+    with patch(
+        "equinox.gui.response_panel.actions_mixin.QFileDialog.getSaveFileName",
+        return_value=("test.txt", "Text (*.txt)"),
+    ):
+        with patch(
+            "equinox.gui.response_panel.actions_mixin.validate_selected_path",
+            return_value="test.txt",
+        ) as mock_validate:
+            with patch(
+                "equinox.gui.response_panel.actions_mixin.atomic_write_bytes"
+            ) as mock_write:
+                panel._download_body()
+                mock_validate.assert_called_with("test.txt", must_exist=False)
+                mock_write.assert_called_with("test.txt", b"save me")
 
 def test_copy_as_curl(panel):
     req = Request(method="GET", url="http://test.com", headers={"X-Test": "Value"})

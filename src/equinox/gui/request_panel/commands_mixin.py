@@ -61,7 +61,7 @@ class RequestCommandsMixin:
 
     def _import_from_curl(self) -> None:
         """Open a dialog to paste a cURL command and populate the editor."""
-        from equinox.core.curl_parser import parse_curl
+        from equinox.core.io.curl_parser import parse_curl
 
         logger.debug("cURL import dialog opened")
         clipboard_text = QApplication.clipboard().text().strip()

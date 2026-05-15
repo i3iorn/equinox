@@ -29,7 +29,7 @@ from equinox.core.exceptions import (
     ValidationError,
 )
 from equinox.core.exceptions import TimeoutError as TimeoutAlias
-from equinox.core.logging_payload import _safe_body_preview
+from equinox.core.format.logging_payload import _safe_body_preview
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # 1. ScriptRunner — sandbox depth
@@ -1315,7 +1315,7 @@ class TestRequestComprehensive:
 # 7. Dotenv — inline comments, unicode, CRLF, tabs
 # ═══════════════════════════════════════════════════════════════════════════════
 
-from equinox.core.dotenv import parse_dotenv
+from equinox.core.io.dotenv import parse_dotenv
 
 
 class TestDotenvComprehensive:

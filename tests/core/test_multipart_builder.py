@@ -1,7 +1,7 @@
 import tempfile
 from pathlib import Path
 
-from equinox.core.multipart import build_multipart_files
+from equinox.core.io.multipart import build_multipart_files
 
 
 def test_build_multipart_files_with_text_and_file(tmp_path: Path):

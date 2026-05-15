@@ -2,7 +2,7 @@
 
 import pytest
 
-from equinox.core.dotenv import parse_dotenv, MAX_DOTENV_SIZE
+from equinox.core.io.dotenv import parse_dotenv, MAX_DOTENV_SIZE
 
 
 class TestParseDotenv:

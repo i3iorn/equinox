@@ -3,7 +3,7 @@ import httpx
 
 from types import SimpleNamespace
 
-from equinox.core import error_mapper
+from equinox.core.format import error_mapper
 from equinox.core.exceptions import CertificateError, RequestError
 
 
@@ -46,4 +46,3 @@ def test_connect_error_maps_to_generic_request_when_no_ssl():
         assert False, "ConnectError handler not found"
 
     assert isinstance(result["error"], RequestError)
-
