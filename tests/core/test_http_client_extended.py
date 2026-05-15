@@ -1,12 +1,15 @@
 """Extended tests for core HTTP client functionality."""
 
+import threading
+from typing import Any, cast
+
 import pytest
 from typing import List
 
 from equinox.core.client import HTTPClient
 from equinox.core.request import Request, Response
 from equinox.core.request.types import MultipartField
-from equinox.core.exceptions import ValidationError
+from equinox.core.exceptions import RequestError, ValidationError
 
 
 class TestHTTPClientBasic:
@@ -149,6 +152,71 @@ class TestHTTPClientValidation:
     def test_validate_request_tolerates_non_mapping_headers_when_body_present(self):
         client = HTTPClient()
         assert client._resolve_content_type(None) is None
+
+    def test_resolve_content_type_prefers_direct_lookup_then_items(self):
+        client = HTTPClient()
+
+        class _HeaderMapping(dict):
+            pass
+
+        direct = client._resolve_content_type({"Content-Type": "application/json"})
+        fallback = client._resolve_content_type(cast(dict[str, Any], _HeaderMapping({"content-type": "text/plain"})))
+
+        assert direct == "application/json"
+        assert fallback == "text/plain"
+
+    def test_validate_request_uses_path_params_and_body_content_type(self, monkeypatch):
+        client = HTTPClient()
+        request = Request(
+            method="POST",
+            url="https://example.com/{{id}}",
+            path_params={"id": "123"},
+            headers={"Content-Type": "application/json"},
+            params={"limit": "10"},
+            body='{"ok": true}',
+        )
+
+        calls = []
+
+        monkeypatch.setattr("equinox.core.validation.Validator.validate_resolved_url", lambda value: calls.append(("url", value)))
+        monkeypatch.setattr("equinox.core.validation.Validator.validate_method", lambda value: calls.append(("method", value)))
+        monkeypatch.setattr("equinox.core.validation.Validator.validate_headers", lambda value, strict=False: calls.append(("headers", strict, dict(value))))
+        monkeypatch.setattr("equinox.core.validation.Validator.validate_query_params", lambda value: calls.append(("params", dict(value))))
+        monkeypatch.setattr("equinox.core.validation.Validator.validate_request_body", lambda body, content_type: calls.append(("body", body, content_type)))
+
+        client._validate_request(request)
+
+        assert calls[0][0] == "url"
+        assert any(item[0] == "body" and item[2] == "application/json" for item in calls)
+
+    def test_check_proxy_reachable_without_proxy_raises(self):
+        client = HTTPClient(proxy=None)
+
+        with pytest.raises(ValidationError):
+            client.check_proxy_reachable()
+
+    def test_interruptible_sleep_respects_cancel_event(self):
+        cancel_event = threading.Event()
+        cancel_event.set()
+        client = HTTPClient(cancel_event=cancel_event)
+
+        with pytest.raises(RequestError):
+            client._interruptible_sleep(0.01)
+
+    def test_concurrency_slot_management_updates_active_requests(self):
+        client = HTTPClient(max_concurrent_requests=1)
+
+        client.check_concurrent_limit()
+        assert client.active_requests == 1
+
+        client._release_concurrent_slot()
+        assert client.active_requests == 0
+
+    def test_check_rate_limit_tracks_active_requests(self, monkeypatch):
+        client = HTTPClient(max_rate_per_minute=1)
+        monkeypatch.setattr(client._rate_limiter, "try_acquire", lambda: None)
+
+        assert client.check_rate_limit() == 0
 
 
 class TestHTTPClientInterceptors:

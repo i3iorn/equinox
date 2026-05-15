@@ -1,7 +1,6 @@
 """Tests for core/error_enrichment.py — rich error conversion."""
 
 import httpx
-import pytest
 from unittest.mock import Mock
 
 from equinox.core.format.error_enrichment import (
@@ -28,6 +27,17 @@ class TestEnrichException:
         assert isinstance(result, RichError)
         assert result.exc_type == "ValueError"
         assert "boom" in result.message
+
+    def test_extracts_hinted_message(self):
+        class HintError(RuntimeError):
+            HINTS = {"retry_later": "Try again after the service recovers."}
+
+            def __init__(self) -> None:
+                super().__init__("boom")
+                self.hint_key = "retry_later"
+
+        result = enrich_exception(HintError())
+        assert result.hint == "💡 Try again after the service recovers."
 
     def test_empty_message_produces_unexpected(self):
         result = enrich_exception(RuntimeError(""))
@@ -60,6 +70,23 @@ class TestEnrichHttpxError:
         exc = httpx.ConnectError("something broke")
         msg = _enrich_httpx_error(exc, str(exc), "ConnectError")
         assert "Could not connect" in msg
+
+    def test_proxy_connect_error(self):
+        namespace = {"httpx": httpx}
+        compiled = compile(
+            "def boom():\n    raise httpx.ConnectError('proxy failed')\nboom()\n",
+            r"C:\\temp\\http_proxy.py",
+            "exec",
+        )
+
+        try:
+            exec(compiled, namespace)
+        except httpx.ConnectError as exc:
+            msg = _enrich_httpx_error(exc, str(exc), "ConnectError")
+        else:  # pragma: no cover - defensive
+            raise AssertionError("ConnectError was not raised")
+
+        assert "proxy server" in msg.lower()
 
     def test_too_many_redirects(self):
         exc = httpx.TooManyRedirects("too many")

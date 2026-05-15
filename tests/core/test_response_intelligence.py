@@ -21,6 +21,11 @@ from equinox.core.response_intelligence.security import (
     JWTDecodeAnalyzer,
     SensitiveDataCachingAnalyzer,
 )
+from equinox.core.response_intelligence.analyzers.pii_secret_leak import (
+    _contains_sensitive_keys,
+    _contains_sensitive_values,
+    _SENSITIVE_VALUE_PATTERNS,
+)
 from equinox.core.response_intelligence.performance import (
     CompressionAnalyzer,
     TimingBreakdownAnalyzer,
@@ -249,6 +254,23 @@ class TestPIILeak:
         findings = PIILeakDetectionAnalyzer().analyze(ctx)
         assert len(findings) == 0
 
+    def test_high_entropy_secret_detected(self):
+        body = json.dumps({"note": "token AbCdefGHIjklMNOpQR123456789+/="}).encode()
+        ctx = _make_ctx(body=body)
+        findings = PIILeakDetectionAnalyzer().analyze(ctx)
+        assert len(findings) == 1
+        assert any(d["type"] == "High entropy secret-like token" for d in findings[0].details["detected"])
+
+    def test_sensitive_key_helpers(self):
+        nested = {"level1": [{"meta": {"client_secret": "abc"}}]}
+        assert _contains_sensitive_keys(nested, {"client_secret", "password"}) is True
+        assert _contains_sensitive_keys({"safe": [{"nested": 1}]}, {"client_secret", "password"}) is False
+
+    def test_sensitive_value_helper_matches_patterns(self):
+        token = "Bearer eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJ1c2VyIn0.signature"
+        assert _contains_sensitive_values(token, _SENSITIVE_VALUE_PATTERNS) is True
+        assert _contains_sensitive_values("plain text", _SENSITIVE_VALUE_PATTERNS) is False
+
 
 class TestCORS:
     def test_wildcard_cors(self):
@@ -334,6 +356,35 @@ class TestJWTDecode:
         assert "sub" not in details["claims"]
         assert "email" not in details["claims"]
         assert details["claims"].get("iss") == "auth.example.com"
+
+    def test_jwt_in_authorization_header(self):
+        jwt = self._make_jwt({"sub": "user1", "iss": "auth.example.com"}, exp=int(time.time()) + 600)
+        ctx = _make_ctx(headers={"authorization": f"Bearer {jwt}"}, body=b"")
+        findings = JWTDecodeAnalyzer().analyze(ctx)
+        assert len(findings) == 1
+        assert findings[0].details["source"] == "header"
+
+    def test_long_lived_and_missing_exp_branches(self):
+        long_lived = self._make_jwt({"sub": "user1"}, exp=int(time.time()) + (60 * 60 * 24 * 31))
+        missing_exp = self._make_jwt({"sub": "user2"})
+
+        long_ctx = _make_ctx(body=json.dumps({"access_token": long_lived}).encode())
+        missing_ctx = _make_ctx(body=json.dumps({"access_token": missing_exp}).encode())
+
+        long_findings = JWTDecodeAnalyzer().analyze(long_ctx)
+        missing_findings = JWTDecodeAnalyzer().analyze(missing_ctx)
+
+        assert long_findings[0].details.get("long_lived") is True
+        assert missing_findings[0].details.get("missing_exp") is True
+
+    def test_sanitize_claims_keeps_safe_list_values(self):
+        sanitized = JWTDecodeAnalyzer._sanitize_claims(
+            {"aud": [1, "two", {"three": 3}], "scope": ["read", "write"], "email": "x@example.com"}
+        )
+
+        assert sanitized["aud"] == ["1", "two", "{'three': 3}"]
+        assert sanitized["scope"] == ["read", "write"]
+        assert "email" not in sanitized
 
 
 class TestSensitiveDataCaching:
