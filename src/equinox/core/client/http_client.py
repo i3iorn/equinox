@@ -210,6 +210,14 @@ class HTTPClient:
         auth: Optional[AuthStrategy],
     ) -> Response:
         """Perform one HTTP round-trip: apply auth, dispatch, sync cookies."""
+        logger.debug(
+            "HTTPClient._execute_single_attempt: applying auth and dispatching",
+            extra={
+                "request_method": request.method,
+                "request_url": redact_url(request.url),
+                "auth_type": type(auth).__name__ if auth else "none",
+            },
+        )
         headers = dict(request.headers) if request.headers else {}
         auth_headers = self._auth_applier.apply(
             request=request,
@@ -223,6 +231,13 @@ class HTTPClient:
             auth_headers=auth_headers,
         )
         self._dispatcher.flush_cookies(response, request.url)
+        logger.debug(
+            "HTTPClient._execute_single_attempt: completed",
+            extra={
+                "status_code": response.status_code,
+                "elapsed_seconds": response.elapsed,
+            },
+        )
         return response
 
     def _dispatch_with_retries(
@@ -230,12 +245,29 @@ class HTTPClient:
         request: Request,
         auth: Optional[AuthStrategy],
     ) -> Response:
+        logger.debug(
+            "HTTPClient._dispatch_with_retries: starting retry policy",
+            extra={
+                "request_method": request.method,
+                "request_url": redact_url(request.url),
+                "max_retries": self.MAX_RETRIES,
+                "max_http_retries": self.MAX_HTTP_RETRIES,
+            },
+        )
         response = self._retry_policy.execute_with_http_overload(
             lambda: self._execute_single_attempt(request, auth)
         )
 
         retry_summary = self._retry_policy.get_retry_summary()
         if retry_summary:
+            logger.info(
+                "HTTPClient._dispatch_with_retries: completed with retries",
+                extra={
+                    "retry_attempts": retry_summary.get("attempts", 0),
+                    "retry_reasons": retry_summary.get("reasons", []),
+                    "status_code": response.status_code,
+                },
+            )
             response.retry_summary = retry_summary
         return response
 
@@ -300,12 +332,22 @@ class HTTPClient:
             RequestError:    For all other transport or auth failures.
         """
         req_id = generate_request_id()
+        effective_auth = auth or request.auth
         logger.info(
             "HTTPClient.send(): method=%s url=%s auth=%s",
             request.method,
             Validator.sanitize_for_display(request.url, 80),
-            type(auth).__name__ if auth else "None",
-            extra={"request_id": req_id, "method": request.method},
+            type(effective_auth).__name__ if effective_auth else "None",
+            extra={
+                "request_id": req_id,
+                "method": request.method,
+                "url": redact_url(request.url),
+                "auth_type": type(effective_auth).__name__ if effective_auth else "none",
+                "verify_ssl": request.verify_ssl if hasattr(request, "verify_ssl") else True,
+                "proxy": self.proxy or "none",
+                "active_requests": self._concurrency.active,
+                "max_concurrent": self.max_concurrent_requests,
+            },
         )
 
         self._validate_request(request)

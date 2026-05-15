@@ -616,6 +616,16 @@ class OAuth2Auth(AuthStrategy):
             raise AuthError("No token URL configured for token refresh")
 
         grant_data = self._build_grant_data()
+        logger.debug(
+            "Initiating OAuth2 token refresh",
+            extra={
+                "token_url": redact_url(self.token_url),
+                "grant_type": grant_data.get("grant_type"),
+                "client_id": self.client_id or "anonymous",
+                "proxy": proxy or "default",
+                "verify_ssl": verify_ssl if verify_ssl is not None else "default",
+            },
+        )
         try:
             response = self._post_token_request(
                 grant_data,
@@ -624,6 +634,13 @@ class OAuth2Auth(AuthStrategy):
             )
             self._capture_token_response(response)
             self._apply_token_response(response)
+            logger.info(
+                "OAuth2 token successfully refreshed",
+                extra={
+                    "token_url": redact_url(self.token_url),
+                    "expires_at": self.expires_at.isoformat() if self.expires_at else None,
+                },
+            )
         except AuthError as refresh_error:
             # Graceful degradation: if token endpoint is unreachable but cached token
             # is still within grace period, use it instead of failing immediately
@@ -632,7 +649,13 @@ class OAuth2Auth(AuthStrategy):
                     "Token endpoint unreachable (error: %s), but cached token still valid; "
                     "proceeding with existing token (grace period: %ds)",
                     str(refresh_error),
-                    _GRACE_PERIOD_SECONDS
+                    _GRACE_PERIOD_SECONDS,
+                    extra={
+                        "token_url": redact_url(self.token_url),
+                        "error_type": type(refresh_error).__name__,
+                        "grace_period_seconds": _GRACE_PERIOD_SECONDS,
+                        "cached_token_expiry": self.expires_at.isoformat() if self.expires_at else None,
+                    },
                 )
                 self._audit.log_event(
                     AuditEventType.AUTH_TOKEN_REFRESH,
@@ -641,6 +664,14 @@ class OAuth2Auth(AuthStrategy):
                 )
                 return
             # Token is expired or missing; let the error propagate
+            logger.error(
+                "OAuth2 token refresh failed and no valid cached token available",
+                extra={
+                    "token_url": redact_url(self.token_url),
+                    "error": str(refresh_error),
+                    "error_details": getattr(refresh_error, "details", {}),
+                },
+            )
             raise
 
     @staticmethod
@@ -825,11 +856,18 @@ class OAuth2Auth(AuthStrategy):
         for attempt in range(_MAX_TOKEN_RETRIES):
             attempts_made = attempt + 1
             logger.debug(
-                "Token request to %s (attempt %d/%d, proxy=%s)",
-                self.token_url,
+                "Token request to %s (attempt %d/%d, proxy=%s, verify_ssl=%s)",
+                redact_url(self.token_url),
                 attempts_made,
                 _MAX_TOKEN_RETRIES,
                 proxy or self._proxy_label,
+                verify_ssl if verify_ssl is not None else "default",
+                extra={
+                    "attempt": attempts_made,
+                    "max_attempts": _MAX_TOKEN_RETRIES,
+                    "token_url": redact_url(self.token_url),
+                    "grant_type": grant_data.get("grant_type"),
+                },
             )
             try:
                 response = self._execute_token_post(
@@ -837,9 +875,14 @@ class OAuth2Auth(AuthStrategy):
                     proxy=proxy,
                     verify_ssl=verify_ssl,
                 )
-                logger.debug(
+                logger.info(
                     "Token request succeeded on attempt %d/%d",
                     attempts_made, _MAX_TOKEN_RETRIES,
+                    extra={
+                        "attempt": attempts_made,
+                        "status_code": response.status_code,
+                        "token_url": redact_url(self.token_url),
+                    },
                 )
                 return response
             except httpx.HTTPStatusError as status_exc:
@@ -866,7 +909,20 @@ class OAuth2Auth(AuthStrategy):
                 error_msg = f"Token endpoint returned HTTP {status_code}"
                 if response_preview:
                     error_msg += f" (response={response_preview})"
-                logger.error("%s for %s", error_msg, self.token_url)
+                logger.error(
+                    "%s for %s on attempt %d/%d",
+                    error_msg,
+                    redact_url(self.token_url),
+                    attempts_made,
+                    _MAX_TOKEN_RETRIES,
+                    extra={
+                        "attempt": attempts_made,
+                        "status_code": status_code,
+                        "token_url": redact_url(self.token_url),
+                        "response": safe_snapshot if status_exc.response else {},
+                        "grant_type": grant_data.get("grant_type"),
+                    },
+                )
                 self._audit.log_auth_failure("oauth2", error_msg)
                 raise AuthError(
                     error_msg,
@@ -885,8 +941,15 @@ class OAuth2Auth(AuthStrategy):
                         " (proxy=%s, url=%s): %s",
                         attempts_made,
                         proxy or self._proxy_label,
-                        self.token_url,
+                        redact_url(self.token_url),
                         transient_exc,
+                        extra={
+                            "attempt": attempts_made,
+                            "token_url": redact_url(self.token_url),
+                            "error": str(transient_exc),
+                            "error_type": type(transient_exc).__name__,
+                            "connection_refused": True,
+                        },
                     )
                     break
                 is_final = attempt == _MAX_TOKEN_RETRIES - 1
@@ -896,16 +959,32 @@ class OAuth2Auth(AuthStrategy):
                         "Token request failed on final attempt %d/%d (proxy=%s, url=%s): %s",
                         attempts_made, _MAX_TOKEN_RETRIES,
                         proxy or self._proxy_label,
-                        self.token_url,
+                        redact_url(self.token_url),
                         transient_exc,
+                        extra={
+                            "attempt": attempts_made,
+                            "max_attempts": _MAX_TOKEN_RETRIES,
+                            "token_url": redact_url(self.token_url),
+                            "error": str(transient_exc),
+                            "error_type": type(transient_exc).__name__,
+                            "is_final": True,
+                        },
                     )
                 else:
-                    logger.warning(
+                    logger.debug(
                         "Token request failed (attempt %d/%d), retrying in %ds (proxy=%s, url=%s): %s",
                         attempts_made, _MAX_TOKEN_RETRIES, wait_seconds,
                         proxy or self._proxy_label,
-                        self.token_url,
+                        redact_url(self.token_url),
                         transient_exc,
+                        extra={
+                            "attempt": attempts_made,
+                            "max_attempts": _MAX_TOKEN_RETRIES,
+                            "token_url": redact_url(self.token_url),
+                            "error": str(transient_exc),
+                            "error_type": type(transient_exc).__name__,
+                            "retry_wait_seconds": wait_seconds,
+                        },
                     )
                     time.sleep(wait_seconds)
 
@@ -928,12 +1007,31 @@ class OAuth2Auth(AuthStrategy):
                 f"Status: {response.status_code}, "
                 f"Content-Type: {response.headers.get('content-type', 'unknown')}"
             )
-            logger.error("%s — Parse error: %s", error_msg, parse_exc)
+            logger.error(
+                "%s — Parse error: %s",
+                error_msg,
+                parse_exc,
+                extra={
+                    "token_url": redact_url(self.token_url),
+                    "status_code": response.status_code,
+                    "content_type": response.headers.get("content-type"),
+                    "parse_error": str(parse_exc),
+                    "response_length": len(response.text) if response.text else 0,
+                },
+            )
             self._audit.log_auth_failure("oauth2", error_msg)
             raise AuthError(error_msg)
 
         raw_access = token_data.get("access_token")
         if not raw_access:
+            logger.error(
+                "Token endpoint response missing access_token field",
+                extra={
+                    "token_url": redact_url(self.token_url),
+                    "status_code": response.status_code,
+                    "response_keys": list(token_data.keys()),
+                },
+            )
             raise AuthError("Token endpoint did not return access_token")
 
         # Validate tokens from the (untrusted) token endpoint immediately
@@ -942,7 +1040,15 @@ class OAuth2Auth(AuthStrategy):
 
         expires_in_seconds = self._parse_expires_in(token_data.get("expires_in"))
         self.expires_at = utc_now() + timedelta(seconds=expires_in_seconds)
-        logger.debug("OAuth2 token will expire in %d seconds", expires_in_seconds)
+        logger.debug(
+            "OAuth2 token will expire in %d seconds",
+            expires_in_seconds,
+            extra={
+                "token_url": redact_url(self.token_url),
+                "expires_in_seconds": expires_in_seconds,
+                "expires_at": self.expires_at.isoformat(),
+            },
+        )
 
         if "refresh_token" in token_data:
             try:

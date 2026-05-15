@@ -116,7 +116,18 @@ class RequestPipeline:
         if audit_tag:
             self._audit.log_request(request.method, request.url, error=audit_tag)
         if log_message:
-            logger.warning("Request error: %s", log_message)
+            logger.warning(
+                "Request error: %s",
+                log_message,
+                extra={
+                    "error_type": type(error).__name__,
+                    "error_message": str(error),
+                    "request_method": request.method,
+                    "request_url": redact_url(request.url),
+                    "error_details": getattr(error, "details", None),
+                    "audit_tag": audit_tag,
+                },
+            )
 
         processed = self._interceptors.process_error(request, error)
         if processed is not None:
@@ -133,13 +144,32 @@ class RequestPipeline:
         """
         # Domain errors already carry structured context — forward directly.
         if isinstance(error, EquinoxError):
+            logger.debug(
+                "Handling domain error: %s",
+                type(error).__name__,
+                extra={
+                    "error_type": type(error).__name__,
+                    "error_message": str(error),
+                    "request_url": redact_url(request.url),
+                    "request_method": request.method,
+                    "error_details": getattr(error, "details", None),
+                },
+            )
             self._emit_error(request, error, type(error).__name__, str(error))
             return  # Reached only when an interceptor suppressed the error.
 
         # Walk the registered handlers in priority order.
         for exc_type, handler_fn in self._error_handlers:
             if isinstance(error, exc_type):
-                logger.debug("Error matched handler for %s", exc_type.__name__)
+                logger.debug(
+                    "Error matched handler for %s",
+                    exc_type.__name__,
+                    extra={
+                        "error_type": type(error).__name__,
+                        "handler_type": exc_type.__name__,
+                        "request_url": redact_url(request.url),
+                    },
+                )
                 result: "_HandlerResult" = handler_fn(error, request)
                 self._emit_error(
                     request,
@@ -152,6 +182,16 @@ class RequestPipeline:
         # No handler matched — wrap in a generic RequestError.
         safe_msg = redact_body(str(error), max_length=500) or ""
         exc_name = type(error).__name__
+        logger.warning(
+            "No error handler matched: wrapping %s as RequestError",
+            exc_name,
+            extra={
+                "error_type": exc_name,
+                "error_message": safe_msg,
+                "request_url": redact_url(request.url),
+                "error_details": getattr(error, "details", None),
+            },
+        )
         fallback = RequestError(
             f"Request failed: {exc_name}: {safe_msg}",
             details={"error": exc_name},
@@ -182,7 +222,13 @@ class RequestPipeline:
             :class:`~equinox.core.exceptions.RequestError`: On any transport or
                 processing failure not suppressed by an error interceptor.
         """
-        logger.debug("RequestPipeline.execute: starting")
+        logger.debug(
+            "RequestPipeline.execute: starting",
+            extra={
+                "request_method": request.method,
+                "request_url": redact_url(request.url),
+            },
+        )
         try:
             logger.debug("RequestPipeline.execute: running pre-request interceptors")
             request = self._interceptors.process_request(request)
@@ -202,6 +248,12 @@ class RequestPipeline:
                 request.method,
                 response.status_code,
                 response.elapsed,
+                extra={
+                    "request_method": request.method,
+                    "status_code": response.status_code,
+                    "elapsed_seconds": response.elapsed,
+                    "request_url": redact_url(request.url),
+                },
             )
             return response
 
@@ -210,6 +262,12 @@ class RequestPipeline:
                 "RequestPipeline.execute: caught %s — %s",
                 type(exc).__name__,
                 (redact_body(str(exc), max_length=200) or ""),
+                extra={
+                    "error_type": type(exc).__name__,
+                    "error_message": redact_body(str(exc), max_length=200),
+                    "request_url": redact_url(request.url),
+                    "request_method": request.method,
+                },
             )
             self._handle_error(request, exc)
             # _handle_error returned normally: an interceptor suppressed the error.
