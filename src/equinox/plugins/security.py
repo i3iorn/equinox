@@ -80,14 +80,23 @@ class PluginManifest:
         Raises:
             ValidationError: If manifest is invalid
         """
-        # Convert permission strings to Permission enum
+        if not isinstance(data, dict):
+            raise SecurityError("Plugin manifest must be a JSON object")
+
+        # Convert permission strings to Permission enum (deny unknown values)
         permissions = set()
-        for perm_str in data.get("permissions", []):
+        raw_permissions = data.get("permissions", [])
+        if not isinstance(raw_permissions, list):
+            raise SecurityError("Plugin manifest field 'permissions' must be a list")
+
+        for perm_str in raw_permissions:
+            if not isinstance(perm_str, str):
+                raise SecurityError("Plugin manifest permissions must be strings")
             try:
                 perm = Permission(perm_str)
                 permissions.add(perm)
             except ValueError:
-                logger.warning("Unknown permission: %s", perm_str)
+                raise SecurityError(f"Unknown plugin permission: {perm_str}")
 
         return cls(
             name=data["name"],

@@ -10,6 +10,7 @@ from typing import List, Dict, Any, Optional
 
 from equinox.plugins.base import Plugin, PluginContext
 from equinox.plugins.security import (
+    Permission,
     PluginManifest,
     PluginSandbox,
     SecurePluginContext,
@@ -23,6 +24,17 @@ from equinox.core.request import Request, Response
 logger = logging.getLogger(__name__)
 _audit = get_audit_logger()
 _STRICT_CHECKSUM_ENV = "EQUINOX_REQUIRE_PLUGIN_CHECKSUMS"
+_ALLOWLIST_FILE_ENV = "EQUINOX_PLUGIN_ALLOWLIST_FILE"
+_DENY_BY_DEFAULT_ENV = "EQUINOX_PLUGIN_DENY_BY_DEFAULT"
+_ALLOW_DANGEROUS_PERMS_ENV = "EQUINOX_ALLOW_DANGEROUS_PLUGIN_PERMS"
+
+_DANGEROUS_PERMISSIONS = frozenset({
+    Permission.SYSTEM_EXECUTE,
+    Permission.SYSTEM_ENV,
+    Permission.FILE_DELETE,
+    Permission.STORAGE_DELETE,
+    Permission.CREDENTIAL_WRITE,
+})
 
 
 def _env_flag_enabled(name: str) -> bool:
@@ -47,8 +59,72 @@ class PluginManager:
         self.plugin_dir = Path(plugin_dir)
         self.context = context
         self.require_checksums = _env_flag_enabled(_STRICT_CHECKSUM_ENV)
+        self.deny_by_default = _env_flag_enabled(_DENY_BY_DEFAULT_ENV)
+        self.allow_dangerous_permissions = _env_flag_enabled(_ALLOW_DANGEROUS_PERMS_ENV)
+        self.allowlist = self._load_allowlist()
         self.plugins: List[Plugin] = []
         self._load_plugins()
+
+    def _load_allowlist(self) -> Dict[str, Any]:
+        """Load plugin allowlist from JSON file path in env, or return empty policy."""
+        allowlist_path = os.environ.get(_ALLOWLIST_FILE_ENV, "").strip()
+        if not allowlist_path:
+            return {}
+
+        path = Path(allowlist_path)
+        if not path.exists() or not path.is_file():
+            raise PluginError(f"Plugin allowlist file not found: {path}")
+
+        try:
+            with path.open("r", encoding="utf-8") as fh:
+                data = json.load(fh)
+        except Exception as exc:
+            raise PluginError(f"Failed to parse plugin allowlist file '{path}': {exc}") from exc
+
+        if not isinstance(data, dict):
+            raise PluginError("Plugin allowlist must be a JSON object")
+        return data
+
+    def _assert_plugin_allowed(self, manifest: PluginManifest) -> None:
+        """Enforce deny-by-default allowlist policy when enabled."""
+        if not self.deny_by_default:
+            return
+
+        approved = self.allowlist.get("plugins") if isinstance(self.allowlist, dict) else None
+        if not isinstance(approved, list):
+            raise PluginError(
+                f"Deny-by-default is enabled but allowlist is missing 'plugins' list ({_ALLOWLIST_FILE_ENV})"
+            )
+
+        for entry in approved:
+            if not isinstance(entry, dict):
+                continue
+            if entry.get("name") != manifest.name:
+                continue
+            version = entry.get("version")
+            checksum = entry.get("checksum")
+            if version and version != manifest.version:
+                continue
+            if checksum and checksum != manifest.checksum:
+                continue
+            return
+
+        raise PluginError(
+            f"Plugin '{manifest.name}' is not allowlisted while deny-by-default mode is enabled"
+        )
+
+    def _assert_permissions_allowed(self, manifest: PluginManifest) -> None:
+        """Block dangerous plugin permissions unless explicitly enabled by policy."""
+        if self.allow_dangerous_permissions:
+            return
+        blocked = sorted(
+            perm.value for perm in manifest.permissions if perm in _DANGEROUS_PERMISSIONS
+        )
+        if blocked:
+            raise PluginError(
+                "Plugin requests dangerous permissions without opt-in policy: "
+                + ", ".join(blocked)
+            )
 
     def _load_plugins(self):
         """Load all plugins from plugin directory."""
@@ -83,6 +159,8 @@ class PluginManager:
 
             plugin_manifest = PluginManifest.from_dict(manifest_data)
             logger.debug("Plugin manifest parsed: name=%s version=%s", plugin_manifest.name, plugin_manifest.version)
+            self._assert_plugin_allowed(plugin_manifest)
+            self._assert_permissions_allowed(plugin_manifest)
             
             sandbox = PluginSandbox(plugin_manifest)
 
