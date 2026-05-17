@@ -115,6 +115,26 @@ class ResponseActionsMixin:
         if self.current_response is None:
             return
 
+        if self.current_response.size > self._MAX_RENDER_BODY_SIZE:
+            preview_limit = int(getattr(self, "_LARGE_BODY_PREVIEW_BYTES", 256 * 1024))
+            payload = getattr(self.current_response, "body", b"")
+            if isinstance(payload, (bytes, bytearray)):
+                preview = bytes(payload[:preview_limit]).decode("utf-8", errors="replace")
+            else:
+                preview = str(payload)[:preview_limit]
+
+            omitted = max(0, self.current_response.size - preview_limit)
+            note = (
+                f"[Preview only: displayed first {preview_limit} bytes of "
+                f"{self.current_response.size} bytes; omitted {omitted} bytes.]\n\n"
+            )
+            self._raw_body_text = note + preview
+            self._pretty_body_text = self._raw_body_text
+            self._body_warning.setVisible(False)
+            self._loading_label.setVisible(False)
+            self._render_body_by_mode(getattr(self, "_readability_mode", "pretty"))
+            return
+
         self._body_warning.setVisible(False)
         self._loading_label.setVisible(True)
 

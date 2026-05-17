@@ -112,16 +112,30 @@ class ResponseDisplayMixin:
         )
         if response.size > self._LARGE_BODY_THRESHOLD:
             self._body_warning.setVisible(True)
-            self._body_warn_label.setText(
-                f"Response body is {format_size(response.size)} — rendering may be slow."
-            )
-            self.body_text.setPlaceholderText("Click 'Load Full' to display the body.")
+            if response.size > self._MAX_RENDER_BODY_SIZE:
+                self._body_warn_label.setText(
+                    f"Response body is {format_size(response.size)} — full render disabled above {format_size(self._MAX_RENDER_BODY_SIZE)}."
+                )
+                self._body_load_btn.setEnabled(False)
+                self._body_load_btn.setToolTip("Use Download to inspect very large payloads safely")
+                self.body_text.setPlaceholderText(
+                    "Payload too large to render fully. Click 'Load Full' to preview only the first chunk."
+                )
+            else:
+                self._body_warn_label.setText(
+                    f"Response body is {format_size(response.size)} — rendering may be slow."
+                )
+                self._body_load_btn.setEnabled(True)
+                self._body_load_btn.setToolTip("")
+                self.body_text.setPlaceholderText("Click 'Load Full' to display the body.")
             self.body_text.clear()
             self._raw_body_text = ""
             self._pretty_body_text = ""
             logger.debug("_display_body: large body — deferred rendering")
         else:
             self._body_warning.setVisible(False)
+            self._body_load_btn.setEnabled(True)
+            self._body_load_btn.setToolTip("")
             self._raw_body_text = self._decode_response_body(response)
             self._pretty_body_text = pretty_print_body(response)
             self._render_body_by_mode(getattr(self, "_readability_mode", "pretty"))

@@ -31,6 +31,8 @@ __all__ = ["ResponsePanel"]
 
 # UI Configuration constants
 _LARGE_BODY_THRESHOLD = 2_097_152  # 2 MB
+_MAX_RENDER_BODY_SIZE = 10 * 1024 * 1024  # 10 MB hard cap for in-editor rendering
+_LARGE_BODY_PREVIEW_BYTES = 256 * 1024  # 256 KB preview when body exceeds hard cap
 _LAYOUT_MARGINS = (6, 4, 6, 4)
 _LAYOUT_SPACING = 4
 
@@ -84,6 +86,8 @@ class ResponsePanel(
 
         # Configuration
         self._LARGE_BODY_THRESHOLD = _LARGE_BODY_THRESHOLD
+        self._MAX_RENDER_BODY_SIZE = _MAX_RENDER_BODY_SIZE
+        self._LARGE_BODY_PREVIEW_BYTES = _LARGE_BODY_PREVIEW_BYTES
 
         # Thread pool for async operations (e.g., response intelligence)
         self._thread_pool = QThreadPool.globalInstance()
