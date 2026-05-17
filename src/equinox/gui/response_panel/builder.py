@@ -275,12 +275,12 @@ class ResponseBuilderMixin:
 
         self._body_warn_label = QLabel()
 
-        load_btn = _make_button("Load Full", _BTN_WIDTH_MEDIUM)
-        load_btn.clicked.connect(self._load_large_body)
+        self._body_load_btn = _make_button("Load Full", _BTN_WIDTH_MEDIUM)
+        self._body_load_btn.clicked.connect(self._load_large_body)
 
         warn_row.addWidget(self._body_warn_label)
         warn_row.addStretch()
-        warn_row.addWidget(load_btn)
+        warn_row.addWidget(self._body_load_btn)
         self._body_warning.setVisible(False)
         vbox.addWidget(self._body_warning)
 
