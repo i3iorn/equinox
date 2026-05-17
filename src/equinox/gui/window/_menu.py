@@ -270,7 +270,7 @@ class _MenuMixin:
 
     def _command_palette_items(self) -> list:
         """Return command palette entries with stable IDs and callbacks."""
-        return [
+        commands = [
             {"id": "new_request",    "label": "New Request",    "shortcut": "Ctrl+N",     "callback": self._new_request},
             {"id": "send_request",   "label": "Send Request",   "shortcut": "Ctrl+Enter", "callback": self.request_panel.send},
             {"id": "save_request",   "label": "Save Request",   "shortcut": "Ctrl+S",     "callback": self.request_panel.save_current_request},
@@ -286,6 +286,23 @@ class _MenuMixin:
             {"id": "preferences",    "label": "Open Preferences",  "shortcut": "Ctrl+,",  "callback": self._open_preferences},
             {"id": "setup_wizard",   "label": "Run Setup Wizard",                          "callback": self._run_setup_wizard},
         ]
+        tracker = getattr(self, "_ui_usage_tracker", None)
+        if tracker is None:
+            return commands
+
+        ranked: list = []
+        for idx, cmd in enumerate(commands):
+            cmd_id = str(cmd.get("id") or "")
+            score = 0
+            if cmd_id:
+                score = tracker.get_count(
+                    category="command",
+                    context="command_palette",
+                    element_id=f"command.{cmd_id}",
+                )
+            ranked.append((score, idx, cmd))
+        ranked.sort(key=lambda item: (-item[0], item[1]))
+        return [item[2] for item in ranked]
 
     def _open_command_palette(self) -> None:
         """Open searchable command palette and execute selected command."""
@@ -310,6 +327,13 @@ class _MenuMixin:
         try:
             if callable(callback):
                 callback()
+                tracker = getattr(self, "_ui_usage_tracker", None)
+                if tracker is not None:
+                    tracker.record(
+                        f"command.{selected_id}",
+                        category="command",
+                        context="command_palette",
+                    )
         except Exception:
             logger.error("Command palette command failed: %s", selected_id, exc_info=True)
             QMessageBox.warning(self, "Command Failed", f"Could not execute command: {selected_id}")

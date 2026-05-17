@@ -52,6 +52,7 @@ class UIUsageTracker(QObject):
     def bind_widget_tree(self, root: QObject) -> None:
         """Bind known button and tab widgets under *root* for usage tracking."""
         self._bind_buttons(root)
+        self._bind_actions_from_root(root)
         for obj in root.findChildren(QObject):
             if not isinstance(obj, QTabWidget):
                 continue
@@ -105,6 +106,14 @@ class UIUsageTracker(QObject):
         if metadata:
             row["last_meta"] = self._safe_metadata(metadata)
         self._dirty = True
+
+    def get_count(self, *, category: str, context: str, element_id: str) -> int:
+        """Return current usage count for a single tracked element key."""
+        key = f"{category}|{context}|{self._normalize_element_id(element_id)}"
+        row = self._counts.get(key)
+        if row is None:
+            return 0
+        return max(0, int(row.get("count", 0)))
 
     def top_items(self, *, limit: int = _TOP_ITEMS_DEFAULT) -> List[Dict[str, Any]]:
         """Return most-used tracked elements."""
@@ -192,14 +201,21 @@ class UIUsageTracker(QObject):
             self._bound_buttons.add(marker)
 
     def _bind_action_recursive(self, action: QAction) -> None:
-        self._bind_action(action)
+        self._bind_action(action, context="menu_bar")
         submenu = action.menu()
         if submenu is None:
             return
         for child_action in submenu.actions():
             self._bind_action_recursive(child_action)
 
-    def _bind_action(self, action: QAction) -> None:
+    def _bind_actions_from_root(self, root: QObject) -> None:
+        """Bind QAction instances attached under a widget tree."""
+        for obj in root.findChildren(QObject):
+            if not isinstance(obj, QAction):
+                continue
+            self._bind_action(obj, context="panel_action")
+
+    def _bind_action(self, action: QAction, *, context: str) -> None:
         marker = id(action)
         if marker in self._bound_actions:
             return
@@ -210,8 +226,8 @@ class UIUsageTracker(QObject):
         action.triggered.connect(
             lambda _checked=False, elem=track_id: self.record(
                 elem,
-                category="menu_action",
-                context="menu_bar",
+                category="action",
+                context=context,
             )
         )
         self._bound_actions.add(marker)
@@ -278,6 +294,10 @@ class UIUsageTracker(QObject):
         return ""
 
     def _action_track_id(self, action: QAction) -> str:
+        custom = action.property("usage_track_id")
+        if isinstance(custom, str) and custom.strip():
+            return self._normalize_element_id(custom)
+
         object_name = action.objectName()
         if object_name:
             return self._normalize_element_id(f"action.{object_name}")

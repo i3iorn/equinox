@@ -51,3 +51,48 @@ def test_request_panel_secondary_actions_moved_to_more_menu(tmp_path, monkeypatc
     _process()
 
 
+def test_request_panel_secondary_tools_rank_by_usage(tmp_path, monkeypatch):
+    from equinox.gui.window import MainWindow
+    from equinox.storage import get_db
+
+    monkeypatch.setenv("EQUINOX_DB_PATH", str(tmp_path / "ui_toolbar_sort.db"))
+    db = get_db()
+    win = MainWindow(db)
+    tracker = win._ui_usage_tracker
+
+    for _ in range(4):
+        tracker.record("request.benchmark", category="action", context="panel_action")
+    tracker.record("request.import_curl", category="action", context="panel_action")
+
+    win.request_panel._rebuild_secondary_tools_menu()
+    more_btn = win.request_panel.findChild(QToolButton, "requestMoreToolsBtn")
+    action_texts = [a.text() for a in more_btn.menu().actions() if not a.isSeparator()]
+
+    assert action_texts[0] == "Benchmark…"
+    assert action_texts[1] == "Import from cURL…"
+    assert action_texts[-1] == "Clear Session Vars"
+
+    win.close()
+    _process()
+
+
+def test_command_palette_items_rank_by_usage(tmp_path, monkeypatch):
+    from equinox.gui.window import MainWindow
+    from equinox.storage import get_db
+
+    monkeypatch.setenv("EQUINOX_DB_PATH", str(tmp_path / "ui_command_sort.db"))
+    db = get_db()
+    win = MainWindow(db)
+    tracker = win._ui_usage_tracker
+
+    for _ in range(3):
+        tracker.record("command.preferences", category="command", context="command_palette")
+    tracker.record("command.send_request", category="command", context="command_palette")
+
+    commands = win._command_palette_items()
+    assert commands[0]["id"] == "preferences"
+
+    win.close()
+    _process()
+
+

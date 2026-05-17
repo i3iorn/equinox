@@ -34,6 +34,7 @@ from PyQt6.QtWidgets import (
     QToolButton,
 )
 from PyQt6.QtCore import pyqtSignal, Qt, QTimer, QStringListModel
+from PyQt6.QtGui import QAction
 
 from equinox.gui.request_panel.body_text_proxy import BodyTextProxy
 from equinox.gui.theme import get_mono_font
@@ -452,15 +453,29 @@ class RequestPanel(
         more_btn.setProperty("usage_track_id", "request.more_tools")
 
         more_menu = QMenu(more_btn)
-        import_action = more_menu.addAction("Import from cURL…", self._import_from_curl)
+        import_action = QAction("Import from cURL…", self)
         import_action.setObjectName("request_import_curl")
+        import_action.setProperty("usage_track_id", "request.import_curl")
+        import_action.triggered.connect(self._import_from_curl)
 
-        benchmark_action = more_menu.addAction("Benchmark…", self._open_benchmark)
+        benchmark_action = QAction("Benchmark…", self)
         benchmark_action.setObjectName("request_benchmark")
+        benchmark_action.setProperty("usage_track_id", "request.benchmark")
+        benchmark_action.triggered.connect(self._open_benchmark)
 
-        more_menu.addSeparator()
-        clear_session_action = more_menu.addAction("Clear Session Vars", self.clear_session_vars)
+        clear_session_action = QAction("Clear Session Vars", self)
         clear_session_action.setObjectName("request_clear_session_vars")
+        clear_session_action.setProperty("usage_track_id", "request.clear_session_vars")
+        clear_session_action.triggered.connect(self.clear_session_vars)
+
+        self._secondary_tool_actions = [
+            (import_action, False),
+            (benchmark_action, False),
+            (clear_session_action, True),
+        ]
+        self._secondary_tools_menu = more_menu
+        self._rebuild_secondary_tools_menu()
+        more_menu.aboutToShow.connect(self._rebuild_secondary_tools_menu)
 
         more_btn.setMenu(more_menu)
 
@@ -478,6 +493,50 @@ class RequestPanel(
         )
 
         return row
+
+    def _usage_count_for_action(self, action: QAction) -> int:
+        tracker = getattr(self.window(), "_ui_usage_tracker", None)
+        if tracker is None:
+            return 0
+        element_id = action.property("usage_track_id")
+        if not isinstance(element_id, str) or not element_id.strip():
+            return 0
+        try:
+            return tracker.get_count(
+                category="action",
+                context="panel_action",
+                element_id=element_id,
+            )
+        except Exception:
+            logger.debug("Failed to read usage count for action '%s'", element_id, exc_info=True)
+            return 0
+
+    def _rebuild_secondary_tools_menu(self) -> None:
+        """Reorder secondary tools by usage while keeping destructive actions last."""
+        if not hasattr(self, "_secondary_tools_menu"):
+            return
+        menu = self._secondary_tools_menu
+        menu.clear()
+        actions = list(getattr(self, "_secondary_tool_actions", []))
+        if not actions:
+            return
+
+        ranked: list = []
+        destructive: list = []
+        for idx, (action, is_destructive) in enumerate(actions):
+            if is_destructive:
+                destructive.append((idx, action))
+                continue
+            ranked.append((self._usage_count_for_action(action), idx, action))
+
+        ranked.sort(key=lambda item: (-item[0], item[1]))
+        for _, _, action in ranked:
+            menu.addAction(action)
+
+        if destructive:
+            menu.addSeparator()
+            for _, action in sorted(destructive, key=lambda item: item[0]):
+                menu.addAction(action)
 
     def _build_preflight_banner(self) -> QWidget:
         banner = QWidget()
