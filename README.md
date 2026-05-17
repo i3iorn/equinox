@@ -80,6 +80,33 @@ bandit -r src/equinox
 safety check
 ```
 
+## Performance Benchmark Harness
+
+Use the built-in history-search benchmark to catch regressions in search/index behavior.
+
+```bash
+python scripts/benchmark_history_search.py --entries 5000 --runs 20
+```
+
+The benchmark prints JSON metrics (`min_ms`, `avg_ms`, `p95_ms`, `max_ms`) suitable for CI trend tracking.
+
+## Safe Change Checklist
+
+Before requesting review, confirm all items below:
+
+- [ ] Validation boundary preserved: all untrusted input paths go through the `Validator` facade.
+- [ ] Plugin permissions are least-privilege and explicit (no implicit capability expansion).
+- [ ] Deny-by-default plugin policy still holds for newly introduced plugin behavior.
+- [ ] Security-relevant actions emit audit logs with useful context and correlation IDs.
+- [ ] Database schema updates are implemented only through `storage/migrations.py`.
+- [ ] Migration upgrades from previous versions are covered by tests.
+- [ ] History capture and search limits remain bounded (no unbounded body or regex work).
+- [ ] Security regression tests are updated (validation, redaction, permissions, migrations).
+
+## Architecture Decisions
+
+- `docs/adr/ADR-0001-security-boundaries-and-extension-safety.md`
+
 ## Examples
 
 See `examples/` for sample collections, environments, plugins, and scripts.
