@@ -78,6 +78,7 @@ class TestRequestWorker:
         worker = RequestWorker(req)
         worker.cancel()
         assert worker._cancelled
+        assert worker.isInterruptionRequested()
 
     def test_with_cookie_manager(self):
         from equinox.gui.workers import RequestWorker

@@ -183,3 +183,133 @@ class PluginClass(Plugin):
     assert manager.plugins == []
 
 
+def test_plugin_manager_deny_by_default_requires_allowlist(tmp_path: Path, monkeypatch) -> None:
+    _write_plugin(
+        tmp_path,
+        "deny_default_plugin",
+        """
+from equinox.plugins.base import Plugin
+
+class PluginClass(Plugin):
+    @property
+    def name(self):
+        return "deny-default"
+
+    @property
+    def version(self):
+        return "1.0"
+""".strip(),
+    )
+
+    monkeypatch.setenv("EQUINOX_PLUGIN_DENY_BY_DEFAULT", "1")
+    manager = PluginManager(str(tmp_path), _manager_context())
+    assert manager.plugins == []
+
+
+def test_plugin_manager_deny_by_default_allows_allowlisted_plugin(tmp_path: Path, monkeypatch) -> None:
+    plugin_dir = _write_plugin(
+        tmp_path,
+        "allowlisted_plugin",
+        """
+from equinox.plugins.base import Plugin
+
+class PluginClass(Plugin):
+    @property
+    def name(self):
+        return "allowlisted"
+
+    @property
+    def version(self):
+        return "1.0"
+""".strip(),
+    )
+
+    manifest = json.loads((plugin_dir / "manifest.json").read_text(encoding="utf-8"))
+    allowlist = {
+        "plugins": [
+            {
+                "name": manifest["name"],
+                "version": manifest["version"],
+                "checksum": manifest["checksum"],
+            }
+        ]
+    }
+    allowlist_path = tmp_path / "allowlist.json"
+    allowlist_path.write_text(json.dumps(allowlist), encoding="utf-8")
+
+    monkeypatch.setenv("EQUINOX_PLUGIN_DENY_BY_DEFAULT", "1")
+    monkeypatch.setenv("EQUINOX_PLUGIN_ALLOWLIST_FILE", str(allowlist_path))
+    manager = PluginManager(str(tmp_path), _manager_context())
+    assert len(manager.plugins) == 1
+
+
+def test_plugin_manager_rejects_dangerous_permissions_without_opt_in(tmp_path: Path) -> None:
+    _write_plugin(
+        tmp_path,
+        "dangerous_permission_plugin",
+        """
+from equinox.plugins.base import Plugin
+
+class PluginClass(Plugin):
+    @property
+    def name(self):
+        return "dangerous"
+
+    @property
+    def version(self):
+        return "1.0"
+""".strip(),
+        manifest_overrides={"permissions": ["system.execute"]},
+    )
+
+    manager = PluginManager(str(tmp_path), _manager_context())
+    assert manager.plugins == []
+
+
+def test_plugin_manager_allows_dangerous_permissions_with_explicit_opt_in(tmp_path: Path, monkeypatch) -> None:
+    _write_plugin(
+        tmp_path,
+        "dangerous_permission_optin_plugin",
+        """
+from equinox.plugins.base import Plugin
+
+class PluginClass(Plugin):
+    @property
+    def name(self):
+        return "dangerous-optin"
+
+    @property
+    def version(self):
+        return "1.0"
+""".strip(),
+        manifest_overrides={"permissions": ["system.execute"]},
+    )
+
+    monkeypatch.setenv("EQUINOX_ALLOW_DANGEROUS_PLUGIN_PERMS", "1")
+    manager = PluginManager(str(tmp_path), _manager_context())
+    assert len(manager.plugins) == 1
+
+
+def test_plugin_manifest_unknown_permission_is_denied(tmp_path: Path) -> None:
+    _write_plugin(
+        tmp_path,
+        "unknown_permission_plugin",
+        """
+from equinox.plugins.base import Plugin
+
+class PluginClass(Plugin):
+    @property
+    def name(self):
+        return "unknown-perm"
+
+    @property
+    def version(self):
+        return "1.0"
+""".strip(),
+        manifest_overrides={"permissions": ["network.impossible"]},
+    )
+
+    manager = PluginManager(str(tmp_path), _manager_context())
+    assert manager.plugins == []
+
+

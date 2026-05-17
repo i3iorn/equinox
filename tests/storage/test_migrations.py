@@ -246,6 +246,58 @@ class TestMigrationIntegrationWithDatabase:
         assert "request_correlation_id" in cols
         assert "idx_history_request_correlation_id" in indexes
 
+    def test_upgrade_from_v24_preserves_history_rows(self, tmp_path):
+        """A database at v24 upgrades to v25 without data loss."""
+        db_path = tmp_path / "upgrade_v24.db"
+        db = object.__new__(Database)
+        db.db_path = db_path.resolve()
+        db.db_path.parent.mkdir(parents=True, exist_ok=True)
+        import threading
+        db._lock = threading.Lock()
+        db._conn = sqlite3.connect(str(db.db_path))
+        db._conn.row_factory = sqlite3.Row
+
+        runner = MigrationRunner(db)
+        conn = sqlite3.connect(str(db.db_path), isolation_level=None)
+        try:
+            runner._ensure_version_table(conn)
+            for migration in [m for m in MIGRATIONS if m.version <= 24]:
+                runner._apply(conn, migration)
+            conn.execute(
+                "INSERT INTO history (method, url, status_code, reason, request_headers, request_body, response_headers, response_body, elapsed, error)"
+                " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (
+                    "GET",
+                    "https://example.com/v1/ping",
+                    200,
+                    "OK",
+                    "{}",
+                    None,
+                    "{}",
+                    "pong",
+                    0.01,
+                    None,
+                ),
+            )
+        finally:
+            conn.close()
+
+        try:
+            assert runner.version == 24
+            runner.run()
+            assert runner.version == MIGRATIONS[-1].version
+
+            with db.get_connection() as verify_conn:
+                row = verify_conn.execute(
+                    "SELECT method, url, status_code, request_correlation_id FROM history"
+                ).fetchone()
+                assert row is not None
+                assert row["method"] == "GET"
+                assert row["status_code"] == 200
+                assert row["request_correlation_id"] is None
+        finally:
+            db.close()
+
 
 class TestDatabaseTransaction:
     """Tests for Database.transaction() context manager."""

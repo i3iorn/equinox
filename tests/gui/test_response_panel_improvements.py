@@ -83,6 +83,31 @@ def test_render_pipeline_warns_when_subsection_fails(monkeypatch) -> None:
     assert "failed to render" in panel._render_warning_label.text().lower()
 
 
+def test_large_body_over_hard_cap_disables_full_render_button() -> None:
+    panel = ResponsePanel()
+    panel._MAX_RENDER_BODY_SIZE = 128
+    resp = _mk_response(b"x" * 256, "application/json")
+
+    panel.display_response(resp)
+
+    assert panel._body_warning.isVisible()
+    assert panel._body_load_btn.isEnabled() is False
+
+
+def test_load_large_body_over_hard_cap_uses_preview_only() -> None:
+    panel = ResponsePanel()
+    panel._MAX_RENDER_BODY_SIZE = 128
+    panel._LARGE_BODY_PREVIEW_BYTES = 32
+    resp = _mk_response(b"a" * 256, "application/json")
+    panel.current_response = resp
+
+    panel._load_large_body()
+
+    text = panel.body_text.toPlainText()
+    assert "Preview only" in text
+    assert "omitted" in text
+
+
 def test_searchbar_dispatches_async_for_large_document(monkeypatch) -> None:
     editor = QTextEdit()
     editor.setPlainText("A" * 30_000)
