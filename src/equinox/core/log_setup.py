@@ -17,6 +17,7 @@ import os
 import sys
 import threading
 import uuid
+from contextvars import ContextVar, Token
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional, Dict, Any
@@ -70,15 +71,18 @@ class _AppCorrelationIdProvider:
         with self._lock:
             if self._value is None:
                 self._value = uuid.uuid4().hex[:_CORR_ID_HEX_LENGTH]
+            assert self._value is not None
             return self._value
 
     def reset(self) -> str:
         with self._lock:
             self._value = uuid.uuid4().hex[:_CORR_ID_HEX_LENGTH]
+            assert self._value is not None
             return self._value
 
 
 _APP_CORR_PROVIDER = _AppCorrelationIdProvider()
+_REQUEST_ID_CTX: ContextVar[Optional[str]] = ContextVar("equinox_request_id", default=None)
 
 
 def get_app_corr_id() -> str:
@@ -94,6 +98,26 @@ def reset_app_corr_id() -> str:
 def generate_request_id() -> str:
     """Generate a short unique ID for correlating log entries within a single request."""
     return uuid.uuid4().hex[:_CORR_ID_HEX_LENGTH]
+
+
+def set_current_request_id(request_id: str) -> Token:
+    """Bind *request_id* to the current execution context and return a reset token."""
+    if not isinstance(request_id, str) or not request_id.strip():
+        raise ValueError("request_id must be a non-empty string")
+    return _REQUEST_ID_CTX.set(request_id.strip())
+
+
+def get_current_request_id() -> Optional[str]:
+    """Return the request correlation ID bound to the current context, if any."""
+    return _REQUEST_ID_CTX.get()
+
+
+def clear_current_request_id(token: Optional[Token] = None) -> None:
+    """Clear the context-bound request ID, optionally resetting to *token* state."""
+    if token is not None:
+        _REQUEST_ID_CTX.reset(token)
+        return
+    _REQUEST_ID_CTX.set(None)
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -203,7 +227,7 @@ class JsonFormatter(logging.Formatter):
         }
 
         # Per-request correlation id
-        req_id = getattr(record, "request_id", None)
+        req_id = getattr(record, "request_id", None) or get_current_request_id()
         if req_id:
             doc["request_id"] = req_id
 
@@ -258,7 +282,7 @@ class ConsoleFormatter(logging.Formatter):
         name = record.name.rsplit(".", 1)[-1]
         msg = record.getMessage()
 
-        req_id = getattr(record, "request_id", None)
+        req_id = getattr(record, "request_id", None) or get_current_request_id()
         rid_tag = f" [{req_id}]" if req_id else ""
 
         if self.supports_colour:

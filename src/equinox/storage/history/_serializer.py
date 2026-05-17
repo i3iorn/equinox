@@ -6,6 +6,7 @@ from typing import Any, Dict, Optional
 
 from equinox.core.request import Request, Response
 from equinox.core.exceptions import SecurityError, ValidationError
+from equinox.core.log_setup import get_current_request_id
 from equinox.security import redact_headers, redact_url
 from equinox.core.history_config import should_capture_bodies
 from equinox.security.serialization import serialize_headers, serialize_body
@@ -46,6 +47,7 @@ class _HistorySerializer:
             "url":          self._prepare_url(request.url),
             "headers_json": self._prepare_headers(request.headers or {}),
             "body":         self._prepare_body(body_val),
+            "request_correlation_id": self._prepare_request_correlation_id(request),
         }
 
     def prepare_response(self, response: Optional[Response]) -> Dict[str, Any]:
@@ -114,7 +116,7 @@ class _HistorySerializer:
             safe_preview = redact_url(url)[:100]
             logger.warning("URL too long, truncating: %s...", safe_preview)
             url = url[:self.MAX_URL_LENGTH]
-        sanitized = redact_url(url)
+        sanitized = redact_url(url) or ""
         if sanitized != url:
             logger.info("Sensitive data detected and redacted from URL in history")
         return sanitized
@@ -141,4 +143,12 @@ class _HistorySerializer:
             )
             return text[:_MAX_BODY] + "... [TRUNCATED]"
         return text
+
+    @staticmethod
+    def _prepare_request_correlation_id(request: Request) -> Optional[str]:
+        request_id = request.correlation_id or get_current_request_id()
+        if request_id is None:
+            return None
+        request_id = request_id.strip()
+        return request_id or None
 

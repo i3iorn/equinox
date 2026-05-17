@@ -106,6 +106,7 @@ class Request:
     collection_id: Optional[int] = None
     folder: Optional[str] = None
     id: Optional[int] = None
+    correlation_id: Optional[str] = None
 
     # ── Advanced features ─────────────────────────────────────────────────────
     captures: List[CaptureRule] = field(default_factory=list)
@@ -126,7 +127,7 @@ class Request:
         if self.method not in VALID_METHODS:
             raise ValidationError(f"Invalid HTTP method: {self.method!r}")
         self.headers = HeaderDict(self.headers or {})
-        safe_url = _short(redact_url(self.url))
+        safe_url = _short(redact_url(self.url) or "")
         logger.debug(
             "Request initialised: %s %s id=%s collection=%s",
             self.method, safe_url, self.id, self.collection_id,

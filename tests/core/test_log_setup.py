@@ -70,3 +70,16 @@ def test_reset_app_corr_id_regenerates_value():
     assert first != second
     assert log_setup.get_app_corr_id() == second
 
+
+def test_json_formatter_uses_context_request_id():
+    fmt = log_setup.JsonFormatter()
+    token = log_setup.set_current_request_id("ctx123456789")
+    try:
+        record = logging.LogRecord("test", logging.INFO, "", 0, "hello", (), None)
+        output = fmt.format(record)
+    finally:
+        log_setup.clear_current_request_id(token)
+    doc = json.loads(output)
+    assert doc["request_id"] == "ctx123456789"
+
+

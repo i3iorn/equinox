@@ -450,6 +450,15 @@ ALTER TABLE oauth_clients ADD COLUMN token_auth TEXT DEFAULT 'body';
 ALTER TABLE oauth_clients ADD COLUMN verify_ssl INTEGER DEFAULT 1;
 """,
     ),
+    Migration(
+        version=25,
+        description="Add request correlation ID to history entries",
+        sql="""
+ALTER TABLE history ADD COLUMN request_correlation_id TEXT;
+CREATE INDEX IF NOT EXISTS idx_history_request_correlation_id
+    ON history(request_correlation_id);
+""",
+    ),
 ]
 
 # ─────────────────────────────────────────────────────────────────────────────

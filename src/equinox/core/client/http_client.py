@@ -18,7 +18,11 @@ from equinox.core.http.cookies import CookieManager
 from equinox.core.exceptions import RequestError, ValidationError
 from equinox.core.interceptors.chain import InterceptorChain
 from equinox.core.interceptors.logging import RequestResponseLogger
-from equinox.core.log_setup import generate_request_id
+from equinox.core.log_setup import (
+    generate_request_id,
+    set_current_request_id,
+    clear_current_request_id,
+)
 from equinox.core.http.rate_limiter import RateLimiter
 from equinox.core.request import Request, Response
 from equinox.core.validation import Validator
@@ -332,6 +336,8 @@ class HTTPClient:
             RequestError:    For all other transport or auth failures.
         """
         req_id = generate_request_id()
+        request.correlation_id = req_id
+        corr_token = set_current_request_id(req_id)
         effective_auth = auth or request.auth
         logger.info(
             "HTTPClient.send(): method=%s url=%s auth=%s",
@@ -360,6 +366,7 @@ class HTTPClient:
                     dispatch=lambda req: self._dispatch_with_retries(req, auth),
                 )
         finally:
+            clear_current_request_id(corr_token)
             self._active_requests = self._concurrency.active
 
     # ── Dunder helpers ────────────────────────────────────────────────────────

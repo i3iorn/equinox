@@ -30,6 +30,7 @@ class _AuditLogger(Protocol):
         *,
         status_code: Optional[int] = None,
         error: Optional[str] = None,
+        request_id: Optional[str] = None,
     ) -> None: ...
 
 
@@ -114,7 +115,12 @@ class RequestPipeline:
         a sentinel ``RequestError``.
         """
         if audit_tag:
-            self._audit.log_request(request.method, request.url, error=audit_tag)
+            self._audit.log_request(
+                request.method,
+                request.url,
+                error=audit_tag,
+                request_id=request.correlation_id,
+            )
         if log_message:
             logger.warning(
                 "Request error: %s",
@@ -124,6 +130,7 @@ class RequestPipeline:
                     "error_message": str(error),
                     "request_method": request.method,
                     "request_url": redact_url(request.url),
+                    "request_id": request.correlation_id,
                     "error_details": getattr(error, "details", None),
                     "audit_tag": audit_tag,
                 },
@@ -152,6 +159,7 @@ class RequestPipeline:
                     "error_message": str(error),
                     "request_url": redact_url(request.url),
                     "request_method": request.method,
+                    "request_id": request.correlation_id,
                     "error_details": getattr(error, "details", None),
                 },
             )
@@ -168,6 +176,7 @@ class RequestPipeline:
                         "error_type": type(error).__name__,
                         "handler_type": exc_type.__name__,
                         "request_url": redact_url(request.url),
+                        "request_id": request.correlation_id,
                     },
                 )
                 result: "_HandlerResult" = handler_fn(error, request)
@@ -189,6 +198,7 @@ class RequestPipeline:
                 "error_type": exc_name,
                 "error_message": safe_msg,
                 "request_url": redact_url(request.url),
+                "request_id": request.correlation_id,
                 "error_details": getattr(error, "details", None),
             },
         )
@@ -227,6 +237,7 @@ class RequestPipeline:
             extra={
                 "request_method": request.method,
                 "request_url": redact_url(request.url),
+                "request_id": request.correlation_id,
             },
         )
         try:
@@ -242,6 +253,7 @@ class RequestPipeline:
                 request.method,
                 (redact_url(request.url or "") or ""),
                 status_code=response.status_code,
+                request_id=request.correlation_id,
             )
             logger.debug(
                 "RequestPipeline.execute: completed method=%s status=%d elapsed=%.2fs",
@@ -253,6 +265,7 @@ class RequestPipeline:
                     "status_code": response.status_code,
                     "elapsed_seconds": response.elapsed,
                     "request_url": redact_url(request.url),
+                    "request_id": request.correlation_id,
                 },
             )
             return response
@@ -267,6 +280,7 @@ class RequestPipeline:
                     "error_message": redact_body(str(exc), max_length=200),
                     "request_url": redact_url(request.url),
                     "request_method": request.method,
+                    "request_id": request.correlation_id,
                 },
             )
             self._handle_error(request, exc)

@@ -116,6 +116,13 @@ class TestSaveHistoryEdgeCases:
         row = mgr.get_history(hid)
         assert "[TRUNCATED]" in row["request_body"]
 
+    def test_request_correlation_id_persisted(self, mgr):
+        req = _req()
+        req.correlation_id = "reqabc123456"
+        hid = mgr.save_history(req)
+        row = mgr.get_history(hid)
+        assert row["request_correlation_id"] == "reqabc123456"
+
 
 # ── get_history validation ────────────────────────────────────────────────────
 

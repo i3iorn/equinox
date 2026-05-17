@@ -228,6 +228,24 @@ class TestMigrationIntegrationWithDatabase:
         assert "token_auth" in cols
         assert "verify_ssl" in cols
 
+    def test_v25_history_request_correlation_column_and_index_added(self, db):
+        """Migration v25 adds per-request correlation IDs to history rows."""
+        with db.get_connection() as conn:
+            cols = {
+                row[1]
+                for row in conn.execute("PRAGMA table_info(history)").fetchall()
+            }
+            indexes = {
+                row[1]
+                for row in conn.execute(
+                    "SELECT * FROM sqlite_master WHERE type='index'"
+                ).fetchall()
+                if row[1]
+            }
+
+        assert "request_correlation_id" in cols
+        assert "idx_history_request_correlation_id" in indexes
+
 
 class TestDatabaseTransaction:
     """Tests for Database.transaction() context manager."""

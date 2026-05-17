@@ -71,8 +71,9 @@ class HistoryManager:
                 """
                 INSERT INTO history
                 (request_id, method, url, status_code, reason, request_headers,
-                 request_body, response_headers, response_body, elapsed, error)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                 request_body, response_headers, response_body, elapsed, error,
+                 request_correlation_id)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     getattr(request, "id", None),
@@ -82,6 +83,7 @@ class HistoryManager:
                     resp["headers_json"], resp["body"],
                     resp["elapsed"],
                     error_str,
+                    req["request_correlation_id"],
                 ),
             )
         except (ValidationError, SecurityError, StorageError):

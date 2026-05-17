@@ -5,6 +5,7 @@ from typing import Optional, Dict, Any
 
 from equinox.core.audit._type import AuditEventType
 from equinox.core.audit._level import AuditLevel
+from equinox.core.log_setup import get_app_corr_id, get_current_request_id
 from equinox.core.util.time import utc_now
 from equinox.security import sanitize_details, redact_body, redact_url
 
@@ -44,6 +45,7 @@ class AuditLogger:
         message: str = "",
         details: Optional[Dict[str, Any]] = None,
         user: Optional[str] = None,
+        request_id: Optional[str] = None,
     ) -> None:
         """Log an audit event.
 
@@ -57,6 +59,8 @@ class AuditLogger:
         # Create audit record
         record = {
             "timestamp": utc_now().isoformat() + "Z",
+            "app_corr_id": get_app_corr_id(),
+            "request_id": request_id or get_current_request_id(),
             "event_type": event_type.value,
             "level": level.value,
             "message": message,
@@ -129,6 +133,7 @@ class AuditLogger:
         status_code: Optional[int] = None,
         error: Optional[str] = None,
         user: Optional[str] = None,
+        request_id: Optional[str] = None,
     ):
         """Log HTTP request."""
         safe_url = redact_url(url)
@@ -140,6 +145,7 @@ class AuditLogger:
                 f"{method} {safe_url} failed: {safe_error}",
                 {"method": method, "url": safe_url, "error": safe_error},
                 user=user,
+                request_id=request_id,
             )
         else:
             self.log_event(
@@ -148,6 +154,7 @@ class AuditLogger:
                 f"{method} {safe_url} - {status_code}",
                 {"method": method, "url": safe_url, "status_code": status_code},
                 user=user,
+                request_id=request_id,
             )
 
     def log_plugin_event(
