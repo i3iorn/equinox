@@ -104,9 +104,9 @@ PatternSpec = Tuple[str, Pattern[str], Severity, Optional[callable]]
 _PII_PATTERNS: List[PatternSpec] = [
     ("Email address", re.compile(r"\b[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}\b"), Severity.WARNING, None),
     ("Phone number", re.compile(r"\b(?:\+?\d{1,3}[\s.-]?)?(?:\(?\d{2,4}\)?[\s.-]?)?\d{3,4}[\s.-]?\d{4}\b"), Severity.INFO, None),
-    ("Swedish/Finnish SSN", re.compile(r"\b(?:20|19)?\d{2}(?:1[0-2]|0[0-9])(?:3[01]|\d{2})[-+A]?\d{3}[0-9A-Y]\b"), Severity.CRITICAL, _luhn_valid),
-    ("Norwegian SSN", re.compile(r"\b\d{6}[- ]?\d{5}\b"), Severity.CRITICAL, None),
-    ("Danish CPR", re.compile(r"\b(?:0[1-9]|[12][0-9]|3[01])(?:0[1-9]|1[0-2])\d{2}-?\d{4}\b"), Severity.CRITICAL, None),
+    ("Swedish/Finnish SSN", re.compile(r"\b(?:20|19)?\d{2}(?:1[0-2]|0[0-9])(?:3[01]|\d{2})[-+A]?\d{3}[0-9A-Y]\b"), Severity.WARNING, _luhn_valid),
+    ("Norwegian SSN", re.compile(r"\b\d{6}[- ]?\d{5}\b"), Severity.WARNING, None),
+    ("Danish CPR", re.compile(r"\b(?:0[1-9]|[12][0-9]|3[01])(?:0[1-9]|1[0-2])\d{2}-?\d{4}\b"), Severity.WARNING, None),
     ("US SSN", re.compile(r"\b\d{3}-\d{2}-\d{4}\b"), Severity.CRITICAL, None),
     ("Credit card", re.compile(r"\b(?:\d[ -]*?){13,19}\b"), Severity.CRITICAL, _luhn_valid),
     ("AWS access key", re.compile(r"\b(?:AKIA|ASIA|AIDA|AROA)[0-9A-Z]{16}\b"), Severity.WARNING, None),
