@@ -284,9 +284,18 @@ class RequestWorker(QThread):
     def cancel(self) -> None:
         self._cancelled = True
         self._cancel_event.set()
+        self.requestInterruption()
+
+    def _emit_if_active(self, result: object) -> None:
+        """Emit result only when the worker is still active and not cancelled."""
+        if self._cancelled or self.isInterruptionRequested():
+            return
+        self.finished.emit(result)
 
     def run(self) -> None:
         try:
+            if self._cancelled or self.isInterruptionRequested():
+                return
             if self._proxy:
                 logger.info(
                     "Using proxy: %s (if unexpected, clear proxy settings in Preferences)",
@@ -298,11 +307,9 @@ class RequestWorker(QThread):
                 self.request, self._cookie_manager, self._proxy, self._cancel_event
             )
             response = client.send(self.request)
-            if not self._cancelled:
-                self.finished.emit(response)
+            self._emit_if_active(response)
         except Exception as exc:
-            if not self._cancelled:
-                self.finished.emit(enrich_exception(exc))
+            self._emit_if_active(enrich_exception(exc))
 
 
 class BackgroundTaskWorker(QThread):
@@ -323,14 +330,14 @@ class BackgroundTaskWorker(QThread):
         self.requestInterruption()
 
     def run(self) -> None:
-        if self._cancelled:
+        if self._cancelled or self.isInterruptionRequested():
             return
         try:
             result = self._invoke_operation()
-            if not self._cancelled:
+            if not self._cancelled and not self.isInterruptionRequested():
                 self.finished.emit(True, result)
         except Exception as exc:
-            if not self._cancelled:
+            if not self._cancelled and not self.isInterruptionRequested():
                 self.finished.emit(False, exc)
 
     def _invoke_operation(self) -> Any:
