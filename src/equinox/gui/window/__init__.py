@@ -5,6 +5,8 @@ This module keeps high-level orchestration only.
 from __future__ import annotations
 import json
 import logging
+from typing import Any
+from PyQt6 import sip
 from PyQt6.QtCore import QPoint, Qt, QTimer
 from PyQt6.QtWidgets import QApplication, QHBoxLayout, QMainWindow, QSplitter, QTabWidget, QVBoxLayout, QWidget
 from equinox.core.request import Request, Response
@@ -38,6 +40,16 @@ _SPLITTER_HANDLE_W = 5
 _STATUS_TIMEOUT_MS = 10_000
 _TAB_HISTORY = 1
 _TAB_COOKIES = 4
+
+
+def _is_deleted_qobject(obj: Any) -> bool:
+    """Return True when *obj* is a wrapped Qt object whose C++ instance is gone."""
+    if obj is None:
+        return True
+    try:
+        return bool(sip.isdeleted(obj))
+    except Exception:
+        return False
 
 
 class MainWindow(
@@ -156,13 +168,15 @@ class MainWindow(
     def closeEvent(self, event) -> None:  # type: ignore[override]
         self.request_panel.autosave_current()
         if self._intelligence_worker is not None:
-            try:
-                self._intelligence_worker.requestInterruption()
-                if not self._intelligence_worker.wait(500):
-                    self._intelligence_worker.wait(200)
-            except Exception:
-                logger.debug("Error stopping intelligence worker on close", exc_info=True)
+            worker = self._intelligence_worker
             self._intelligence_worker = None
+            if not _is_deleted_qobject(worker):
+                try:
+                    worker.requestInterruption()
+                    if not worker.wait(500):
+                        worker.wait(200)
+                except Exception:
+                    logger.debug("Error stopping intelligence worker on close", exc_info=True)
         self._layout_save_timer.stop()
         self._save_layout()
         if self._app_event_filter_installed:
@@ -206,16 +220,27 @@ class MainWindow(
     def _reset_intelligence_worker(self) -> None:
         if self._intelligence_worker is None:
             return
+
+        worker = self._intelligence_worker
+        self._intelligence_worker = None
+
+        if _is_deleted_qobject(worker):
+            logger.debug("Previous intelligence worker already deleted")
+            return
+
         try:
-            self._intelligence_worker.finished.disconnect()
+            worker.finished.disconnect()
         except RuntimeError:
             pass
+        except Exception:
+            logger.debug("Could not disconnect previous intelligence worker", exc_info=True)
+
         try:
-            self._intelligence_worker.requestInterruption()
-            self._intelligence_worker.wait(300)
+            worker.requestInterruption()
+            if worker.isRunning():
+                worker.wait(300)
         except Exception:
             logger.info("Could not stop previous intelligence worker", exc_info=True)
-        self._intelligence_worker = None
 
     def _disabled_analyzers(self) -> set:
         disabled_raw = self._settings.value(_KEY_INTEL_DISABLED, "[]")
@@ -247,6 +272,7 @@ class MainWindow(
                 lambda findings: self.response_panel.set_intelligence_badge(len(findings))
             )
             worker.finished.connect(worker.deleteLater)
+            worker.destroyed.connect(lambda *_args: setattr(self, "_intelligence_worker", None))
             self.response_panel.intelligence_panel.set_analyzing()
             worker.start()
             self._intelligence_worker = worker

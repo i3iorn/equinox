@@ -632,3 +632,58 @@ class TestIntelligenceWorker:
 
         assert any(f.analyzer_id == "recommender" for f in findings)
 
+    def test_reset_intelligence_worker_skips_deleted_qobject(self, db, monkeypatch):
+        from equinox.gui.window import MainWindow
+
+        class _DeletedWorker:
+            def __init__(self):
+                self.finished = MagicMock()
+
+            def requestInterruption(self):
+                raise AssertionError("requestInterruption must not be called for deleted workers")
+
+            def wait(self, _timeout):
+                raise AssertionError("wait must not be called for deleted workers")
+
+        win = MainWindow(db)
+        win._intelligence_worker = _DeletedWorker()
+        monkeypatch.setattr("equinox.gui.window._is_deleted_qobject", lambda _obj: True)
+
+        win._reset_intelligence_worker()
+
+        assert win._intelligence_worker is None
+        _close_win(win)
+
+    def test_reset_intelligence_worker_handles_runtimeerror_from_stale_worker(self, db, monkeypatch):
+        from equinox.gui.window import MainWindow
+
+        class _SignalStub:
+            @staticmethod
+            def disconnect():
+                raise RuntimeError("wrapped C/C++ object of type IntelligenceWorker has been deleted")
+
+        class _StaleWorker:
+            def __init__(self):
+                self.finished = _SignalStub()
+
+            @staticmethod
+            def requestInterruption():
+                raise RuntimeError("wrapped C/C++ object of type IntelligenceWorker has been deleted")
+
+            @staticmethod
+            def isRunning():
+                return False
+
+            @staticmethod
+            def wait(_timeout):
+                return True
+
+        win = MainWindow(db)
+        win._intelligence_worker = _StaleWorker()
+        monkeypatch.setattr("equinox.gui.window._is_deleted_qobject", lambda _obj: False)
+
+        # Regression: stale wrapped Qt objects should not crash reset flow.
+        win._reset_intelligence_worker()
+
+        assert win._intelligence_worker is None
+        _close_win(win)
