@@ -214,7 +214,7 @@ class MainWindow(
             self._intelligence_worker.requestInterruption()
             self._intelligence_worker.wait(300)
         except Exception:
-            logger.debug("Could not stop previous intelligence worker", exc_info=True)
+            logger.info("Could not stop previous intelligence worker", exc_info=True)
         self._intelligence_worker = None
 
     def _disabled_analyzers(self) -> set:
