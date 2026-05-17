@@ -602,14 +602,25 @@ class VariablesPanel(QWidget):
         item = self.groups_list.itemAt(position)
         if not item:
             return
+        assert item is not None
         menu = QMenu()
-        rename_action = menu.addAction("Rename")
-        delete_action = menu.addAction("Delete")
-        action = menu.exec(self.groups_list.viewport().mapToGlobal(position))
-        if action == rename_action:
-            self._rename_group(item)
-        elif action == delete_action:
-            self.delete_group()
+        action_specs = [
+            ("rename", "Rename", lambda: self._rename_group(item), False),
+            ("delete", "Delete", self.delete_group, True),
+        ]
+        ordered = self._ordered_context_actions("variables_group", action_specs)
+        added_destructive_separator = False
+        for action_id, label, callback, is_destructive in ordered:
+            if is_destructive and not added_destructive_separator:
+                menu.addSeparator()
+                added_destructive_separator = True
+            menu.addAction(
+                label,
+                lambda aid=action_id, cb=callback: self._run_context_action(
+                    "variables_group", aid, cb
+                ),
+            )
+        menu.exec(self.groups_list.viewport().mapToGlobal(position))
 
     def _rename_group(self, item: QListWidgetItem) -> None:
         group_id = item.data(Qt.ItemDataRole.UserRole)
@@ -875,27 +886,105 @@ class VariablesPanel(QWidget):
             return
         row = item.row()
         menu = QMenu()
-        copy_key_action = menu.addAction("Copy Variable Name")
-        copy_val_action = menu.addAction("Copy Value")
-        menu.addSeparator()
-        delete_action = menu.addAction("Delete")
-        action = menu.exec(self._session_table.viewport().mapToGlobal(position))
+        action_specs = [
+            (
+                "copy_name",
+                "Copy Variable Name",
+                lambda: self._copy_session_key_at_row(row),
+                False,
+            ),
+            (
+                "copy_value",
+                "Copy Value",
+                lambda: self._copy_session_value_at_row(row),
+                False,
+            ),
+            (
+                "delete",
+                "Delete",
+                lambda: self._delete_session_var_at_row(row),
+                True,
+            ),
+        ]
+        ordered = self._ordered_context_actions("variables_session", action_specs)
+        added_destructive_separator = False
+        for action_id, label, callback, is_destructive in ordered:
+            if is_destructive and not added_destructive_separator:
+                menu.addSeparator()
+                added_destructive_separator = True
+            menu.addAction(
+                label,
+                lambda aid=action_id, cb=callback: self._run_context_action(
+                    "variables_session", aid, cb
+                ),
+            )
+        menu.exec(self._session_table.viewport().mapToGlobal(position))
+
+    def _copy_session_key_at_row(self, row: int) -> None:
         clipboard = QApplication.clipboard()
-        if action == copy_key_action:
-            ki = self._session_table.item(row, 0)
-            if ki and clipboard:
-                clipboard.setText(ki.text())
-        elif action == copy_val_action:
-            vi = self._session_table.item(row, 1)
-            ki = self._session_table.item(row, 0)
-            if vi and clipboard and ki:
-                if self._is_secret_like(ki.text()):
-                    if not confirm_yes_no(self, "Copy Secret Value", f"Copy the secret value for '{ki.text()}' to the clipboard?"):
-                        return
-                clipboard.setText(vi.text())
-        elif action == delete_action:
-            self._session_table.setCurrentItem(self._session_table.item(row, 0))
-            self._delete_session_var()
+        ki = self._session_table.item(row, 0)
+        if ki and clipboard:
+            clipboard.setText(ki.text())
+
+    def _copy_session_value_at_row(self, row: int) -> None:
+        clipboard = QApplication.clipboard()
+        vi = self._session_table.item(row, 1)
+        ki = self._session_table.item(row, 0)
+        if not (vi and clipboard and ki):
+            return
+        if self._is_secret_like(ki.text()):
+            if not confirm_yes_no(self, "Copy Secret Value", f"Copy the secret value for '{ki.text()}' to the clipboard?"):
+                return
+        clipboard.setText(vi.text())
+
+    def _delete_session_var_at_row(self, row: int) -> None:
+        self._session_table.setCurrentItem(self._session_table.item(row, 0))
+        self._delete_session_var()
+
+    def _context_action_usage_count(self, context: str, action_id: str) -> int:
+        tracker = getattr(self.window(), "_ui_usage_tracker", None)
+        if tracker is None:
+            return 0
+        try:
+            return tracker.get_count(
+                category="context_menu",
+                context=context,
+                element_id=f"action.{action_id}",
+            )
+        except Exception:
+            logger.debug("Failed to get context action usage for %s/%s", context, action_id, exc_info=True)
+            return 0
+
+    def _record_context_action_usage(self, context: str, action_id: str) -> None:
+        tracker = getattr(self.window(), "_ui_usage_tracker", None)
+        if tracker is None:
+            return
+        try:
+            tracker.record(
+                f"action.{action_id}",
+                category="context_menu",
+                context=context,
+            )
+        except Exception:
+            logger.debug("Failed to record context action usage for %s/%s", context, action_id, exc_info=True)
+
+    def _run_context_action(self, context: str, action_id: str, callback) -> None:
+        self._record_context_action_usage(context, action_id)
+        callback()
+
+    def _ordered_context_actions(self, context: str, action_specs: list[tuple]) -> list[tuple]:
+        """Sort non-destructive actions by usage while keeping destructive actions last."""
+        safe = []
+        destructive = []
+        for idx, spec in enumerate(action_specs):
+            action_id, label, callback, is_destructive = spec
+            if is_destructive:
+                destructive.append((idx, spec))
+                continue
+            count = self._context_action_usage_count(context, action_id)
+            safe.append((-count, idx, spec))
+        safe.sort(key=lambda row: (row[0], row[1]))
+        return [row[2] for row in safe] + [row[1] for row in destructive]
 
     # ── Tab badge ─────────────────────────────────────────────────────────────
 

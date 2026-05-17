@@ -578,150 +578,191 @@ class CollectionsPanel(_CollectionsActionsMixin, QWidget):
 
         if data["type"] == "collection":
             col_id = data.get("id")
-
-            new_req_action = QAction("New Request…", self)
-            new_req_action.triggered.connect(lambda: self._new_request_in_collection(col_id))
-            menu.addAction(new_req_action)
-
-            add_folder_action = QAction("Add Folder…", self)
-            add_folder_action.triggered.connect(lambda: self._create_folder_in_collection(col_id))
-            menu.addAction(add_folder_action)
-
+            if not isinstance(col_id, int):
+                logger.debug("CollectionsPanel: invalid collection id for context menu: %r", col_id)
+                return
+            create_specs = [
+                ("new_request", "New Request…", lambda: self._new_request_in_collection(col_id), False),
+                ("add_folder", "Add Folder…", lambda: self._create_folder_in_collection(col_id), False),
+            ]
+            self._add_ranked_context_actions(menu, "collections_collection", create_specs)
             menu.addSeparator()
 
-            # Only enable spec viewing for saved collections with a positive integer id
+            manage_specs = []
             if isinstance(col_id, int) and col_id > 0:
-                show_spec_action = QAction("Show API Spec…", self)
-                # Use the clicked item to resolve the collection id at trigger time
-                show_spec_action.triggered.connect(lambda _=None, it=item: self._show_api_spec_for_collection(self._col_id_for_item(it)))
-                menu.addAction(show_spec_action)
+                manage_specs.append(
+                    (
+                        "show_api_spec",
+                        "Show API Spec…",
+                        lambda cid=col_id: self._show_api_spec_for_collection(cid),
+                        False,
+                    )
+                )
             else:
                 logger.debug("CollectionsPanel: skipping Show API Spec action for invalid collection id: %r", col_id)
-
-            rename_action = QAction("Rename…", self)
-            rename_action.triggered.connect(lambda: self._rename_collection(col_id, item))
-            menu.addAction(rename_action)
-
-            variables_action = QAction("Manage Variables…", self)
-            variables_action.triggered.connect(lambda: self._manage_variables(col_id))
-            menu.addAction(variables_action)
-
-            set_auth_action = QAction("Set Auth…", self)
-            set_auth_action.triggered.connect(lambda: self._set_collection_auth(col_id))
-            menu.addAction(set_auth_action)
-
-            clear_auth_action = QAction("Clear Auth", self)
-            clear_auth_action.triggered.connect(lambda: self._clear_collection_auth(col_id))
-            menu.addAction(clear_auth_action)
-
+            manage_specs.extend(
+                [
+                    ("rename", "Rename…", lambda: self._rename_collection(col_id, item), False),
+                    ("manage_variables", "Manage Variables…", lambda: self._manage_variables(col_id), False),
+                    ("set_auth", "Set Auth…", lambda: self._set_collection_auth(col_id), False),
+                    ("clear_auth", "Clear Auth", lambda: self._clear_collection_auth(col_id), False),
+                ]
+            )
+            self._add_ranked_context_actions(menu, "collections_collection", manage_specs)
             menu.addSeparator()
 
             sort_menu = menu.addMenu("Sort Requests")
-            sort_az = QAction("Sort A → Z", self)
-            sort_az.triggered.connect(lambda: self._sort_group(col_id, None, "alpha"))
-            sort_menu.addAction(sort_az)
-            sort_method = QAction("Sort by Method", self)
-            sort_method.triggered.connect(lambda: self._sort_group(col_id, None, "method"))
-            sort_menu.addAction(sort_method)
-
+            if sort_menu is not None:
+                sort_specs = [
+                    ("sort_alpha", "Sort A → Z", lambda: self._sort_group(col_id, None, "alpha"), False),
+                    ("sort_method", "Sort by Method", lambda: self._sort_group(col_id, None, "method"), False),
+                ]
+                self._add_ranked_context_actions(sort_menu, "collections_collection_sort", sort_specs)
             menu.addSeparator()
 
-            delete_action = QAction("Delete Collection", self)
-            delete_action.triggered.connect(lambda: self._delete_collection(col_id))
-            menu.addAction(delete_action)
+            delete_specs = [
+                ("delete_collection", "Delete Collection", lambda: self._delete_collection(col_id), True),
+            ]
+            self._add_ranked_context_actions(menu, "collections_collection", delete_specs)
 
         elif data["type"] == "folder":
             col_id = self._col_id_for_item(item)
             folder_path = data["path"]
-
-            new_req_action = QAction("New Request Here…", self)
-            new_req_action.triggered.connect(
-                lambda: self._new_request_in_folder(col_id, folder_path)
-            )
-            menu.addAction(new_req_action)
-
-            subfolder_action = QAction("Add Subfolder…", self)
-            subfolder_action.triggered.connect(
-                lambda: self._create_subfolder(col_id, folder_path)
-            )
-            menu.addAction(subfolder_action)
-
+            if not isinstance(col_id, int):
+                logger.debug("CollectionsPanel: invalid folder collection id for context menu: %r", col_id)
+                return
+            create_specs = [
+                ("new_request_here", "New Request Here…", lambda: self._new_request_in_folder(col_id, folder_path), False),
+                ("add_subfolder", "Add Subfolder…", lambda: self._create_subfolder(col_id, folder_path), False),
+            ]
+            self._add_ranked_context_actions(menu, "collections_folder", create_specs)
             menu.addSeparator()
 
             sort_menu = menu.addMenu("Sort Requests")
-            sort_az = QAction("Sort A → Z", self)
-            sort_az.triggered.connect(lambda c=col_id, f=folder_path: self._sort_group(c, f, "alpha"))
-            sort_menu.addAction(sort_az)
-            sort_method = QAction("Sort by Method", self)
-            sort_method.triggered.connect(lambda c=col_id, f=folder_path: self._sort_group(c, f, "method"))
-            sort_menu.addAction(sort_method)
+            if sort_menu is not None:
+                sort_specs = [
+                    (
+                        "sort_alpha",
+                        "Sort A → Z",
+                        lambda c=col_id, f=folder_path: self._sort_group(c, f, "alpha"),
+                        False,
+                    ),
+                    (
+                        "sort_method",
+                        "Sort by Method",
+                        lambda c=col_id, f=folder_path: self._sort_group(c, f, "method"),
+                        False,
+                    ),
+                ]
+                self._add_ranked_context_actions(sort_menu, "collections_folder_sort", sort_specs)
 
-            set_auth_action = QAction("Set Auth…", self)
-            set_auth_action.triggered.connect(
-                lambda c=col_id, f=folder_path: self._set_folder_auth(c, f)
-            )
-            menu.addAction(set_auth_action)
-
-            clear_auth_action = QAction("Clear Auth", self)
-            clear_auth_action.triggered.connect(
-                lambda c=col_id, f=folder_path: self._clear_folder_auth(c, f)
-            )
-            menu.addAction(clear_auth_action)
-
+            manage_specs = [
+                ("set_auth", "Set Auth…", lambda c=col_id, f=folder_path: self._set_folder_auth(c, f), False),
+                ("clear_auth", "Clear Auth", lambda c=col_id, f=folder_path: self._clear_folder_auth(c, f), False),
+                ("rename_folder", "Rename Folder…", lambda: self._rename_folder(col_id, folder_path, item), False),
+            ]
+            self._add_ranked_context_actions(menu, "collections_folder", manage_specs)
             menu.addSeparator()
 
-            rename_folder_action = QAction("Rename Folder…", self)
-            rename_folder_action.triggered.connect(
-                lambda: self._rename_folder(col_id, folder_path, item)
-            )
-            menu.addAction(rename_folder_action)
-
-            menu.addSeparator()
-
-            delete_folder_action = QAction("Delete Folder…", self)
-            delete_folder_action.triggered.connect(
-                lambda: self._delete_folder(col_id, folder_path)
-            )
-            menu.addAction(delete_folder_action)
+            delete_specs = [
+                ("delete_folder", "Delete Folder…", lambda: self._delete_folder(col_id, folder_path), True),
+            ]
+            self._add_ranked_context_actions(menu, "collections_folder", delete_specs)
 
         elif data["type"] == "request":
-            open_action = QAction("Open in Editor", self)
-            open_action.triggered.connect(lambda: self._load_request(data["id"]))
-            menu.addAction(open_action)
-
-            run_action = QAction("▶  Run Now", self)
-            run_action.triggered.connect(lambda: self._run_request(data["id"]))
-            menu.addAction(run_action)
-
+            run_specs = [
+                ("open_in_editor", "Open in Editor", lambda: self._load_request(data["id"]), False),
+                ("run_now", "▶  Run Now", lambda: self._run_request(data["id"]), False),
+            ]
+            self._add_ranked_context_actions(menu, "collections_request", run_specs)
             menu.addSeparator()
 
             req_id = data.get("id")
+            manage_specs = []
             if isinstance(req_id, int) and req_id > 0:
-                show_spec_action = QAction("Show API Spec…", self)
-                show_spec_action.triggered.connect(lambda r=req_id: self._show_api_spec_for_request(r))
-                menu.addAction(show_spec_action)
+                manage_specs.append(
+                    (
+                        "show_api_spec",
+                        "Show API Spec…",
+                        lambda r=req_id: self._show_api_spec_for_request(r),
+                        False,
+                    )
+                )
             else:
                 logger.debug("CollectionsPanel: skipping Show API Spec action for invalid request id: %r", req_id)
-
-            rename_action = QAction("Rename…", self)
-            rename_action.triggered.connect(lambda: self._rename_request(data["id"], item))
-            menu.addAction(rename_action)
-
-            duplicate_action = QAction("Duplicate", self)
-            duplicate_action.triggered.connect(lambda: self._duplicate_request(data["id"]))
-            menu.addAction(duplicate_action)
-
-            move_action = QAction("Move to Folder…", self)
-            move_action.triggered.connect(lambda: self._move_to_folder(data["id"]))
-            menu.addAction(move_action)
-
+            manage_specs.extend(
+                [
+                    ("rename", "Rename…", lambda: self._rename_request(data["id"], item), False),
+                    ("duplicate", "Duplicate", lambda: self._duplicate_request(data["id"]), False),
+                    ("move_to_folder", "Move to Folder…", lambda: self._move_to_folder(data["id"]), False),
+                ]
+            )
+            self._add_ranked_context_actions(menu, "collections_request", manage_specs)
             menu.addSeparator()
 
-            delete_action = QAction("Delete Request", self)
-            delete_action.triggered.connect(lambda: self._delete_request(data["id"]))
-            menu.addAction(delete_action)
+            delete_specs = [
+                ("delete_request", "Delete Request", lambda: self._delete_request(data["id"]), True),
+            ]
+            self._add_ranked_context_actions(menu, "collections_request", delete_specs)
 
         menu.exec(self.tree.viewport().mapToGlobal(position))
+
+    def _context_action_usage_count(self, context: str, action_id: str) -> int:
+        tracker = getattr(self.window(), "_ui_usage_tracker", None)
+        if tracker is None:
+            return 0
+        try:
+            return tracker.get_count(
+                category="context_menu",
+                context=context,
+                element_id=f"action.{action_id}",
+            )
+        except Exception:
+            logger.debug("Failed to get context action usage for %s/%s", context, action_id, exc_info=True)
+            return 0
+
+    def _record_context_action_usage(self, context: str, action_id: str) -> None:
+        tracker = getattr(self.window(), "_ui_usage_tracker", None)
+        if tracker is None:
+            return
+        try:
+            tracker.record(
+                f"action.{action_id}",
+                category="context_menu",
+                context=context,
+            )
+        except Exception:
+            logger.debug("Failed to record context action usage for %s/%s", context, action_id, exc_info=True)
+
+    def _run_context_action(self, context: str, action_id: str, callback) -> None:
+        self._record_context_action_usage(context, action_id)
+        callback()
+
+    def _ordered_context_actions(self, context: str, action_specs: list[tuple]) -> list[tuple]:
+        """Sort non-destructive actions by usage while keeping destructive actions last."""
+        safe = []
+        destructive = []
+        for idx, spec in enumerate(action_specs):
+            action_id, label, callback, is_destructive = spec
+            if is_destructive:
+                destructive.append((idx, spec))
+                continue
+            count = self._context_action_usage_count(context, action_id)
+            safe.append((-count, idx, spec))
+        safe.sort(key=lambda row: (row[0], row[1]))
+        return [row[2] for row in safe] + [row[1] for row in destructive]
+
+    def _add_ranked_context_actions(self, menu: QMenu, context: str, action_specs: list[tuple]) -> None:
+        added_destructive_separator = False
+        for action_id, label, callback, is_destructive in self._ordered_context_actions(context, action_specs):
+            if is_destructive and not added_destructive_separator:
+                menu.addSeparator()
+                added_destructive_separator = True
+            action = QAction(label, self)
+            action.triggered.connect(
+                lambda _checked=False, aid=action_id, cb=callback: self._run_context_action(context, aid, cb)
+            )
+            menu.addAction(action)
 
     # ── API spec helpers ─────────────────────────────────────────────
     def _show_spec_dialog(self, title: str, variants: dict) -> None:

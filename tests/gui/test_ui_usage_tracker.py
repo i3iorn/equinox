@@ -151,3 +151,91 @@ def test_header_presets_rank_by_usage_within_group(tmp_path, monkeypatch):
     _process()
 
 
+def test_history_context_actions_rank_by_usage_and_keep_delete_last(tmp_path, monkeypatch):
+    from equinox.gui.history_panel import HistoryPanel
+    from equinox.gui.window import MainWindow
+    from equinox.storage import get_db
+
+    monkeypatch.setenv("EQUINOX_DB_PATH", str(tmp_path / "ui_history_ctx.db"))
+    db = get_db()
+    win = MainWindow(db)
+    panel = HistoryPanel(db, win)
+    tracker = win._ui_usage_tracker
+
+    for _ in range(4):
+        tracker.record("action.replay", category="context_menu", context="history_item")
+
+    specs = [
+        ("open_in_editor", "Open in Editor", lambda: None, False),
+        ("edit_replay", "Edit && Replay…", lambda: None, False),
+        ("replay", "▶  Replay", lambda: None, False),
+        ("delete", "Delete", lambda: None, True),
+    ]
+    ordered = panel._ordered_context_actions("history_item", specs)
+
+    assert ordered[0][0] == "replay"
+    assert ordered[-1][0] == "delete"
+
+    panel.deleteLater()
+    win.close()
+    _process()
+
+
+def test_variables_session_context_actions_rank_by_usage_and_keep_delete_last(tmp_path, monkeypatch):
+    from equinox.gui.variables_panel import VariablesPanel
+    from equinox.gui.window import MainWindow
+    from equinox.storage import get_db
+
+    monkeypatch.setenv("EQUINOX_DB_PATH", str(tmp_path / "ui_vars_ctx.db"))
+    db = get_db()
+    win = MainWindow(db)
+    panel = VariablesPanel(db, win)
+    tracker = win._ui_usage_tracker
+
+    for _ in range(3):
+        tracker.record("action.copy_value", category="context_menu", context="variables_session")
+
+    specs = [
+        ("copy_name", "Copy Variable Name", lambda: None, False),
+        ("copy_value", "Copy Value", lambda: None, False),
+        ("delete", "Delete", lambda: None, True),
+    ]
+    ordered = panel._ordered_context_actions("variables_session", specs)
+
+    assert ordered[0][0] == "copy_value"
+    assert ordered[-1][0] == "delete"
+
+    panel.deleteLater()
+    win.close()
+    _process()
+
+
+def test_collections_request_context_actions_rank_by_usage_and_keep_delete_last(tmp_path, monkeypatch):
+    from equinox.gui.collection_panel import CollectionsPanel
+    from equinox.gui.window import MainWindow
+    from equinox.storage import get_db
+
+    monkeypatch.setenv("EQUINOX_DB_PATH", str(tmp_path / "ui_collections_ctx.db"))
+    db = get_db()
+    win = MainWindow(db)
+    panel = CollectionsPanel(db, win)
+    tracker = win._ui_usage_tracker
+
+    for _ in range(5):
+        tracker.record("action.run_now", category="context_menu", context="collections_request")
+
+    specs = [
+        ("open_in_editor", "Open in Editor", lambda: None, False),
+        ("run_now", "▶  Run Now", lambda: None, False),
+        ("delete_request", "Delete Request", lambda: None, True),
+    ]
+    ordered = panel._ordered_context_actions("collections_request", specs)
+
+    assert ordered[0][0] == "run_now"
+    assert ordered[-1][0] == "delete_request"
+
+    panel.deleteLater()
+    win.close()
+    _process()
+
+

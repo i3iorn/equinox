@@ -461,21 +461,93 @@ class HistoryPanel(QWidget):
         if history_id is None:
             return  # separator row
         menu = QMenu()
-        open_action        = QAction("Open in Editor", self)
-        edit_replay_action = QAction("Edit && Replay…", self)
-        edit_replay_action.setToolTip("Load into editor for modification before sending")
-        replay_action      = QAction("▶  Replay", self)
-        delete_action      = QAction("Delete", self)
-        open_action.triggered.connect(lambda: self.history_selected.emit(history_id))
-        edit_replay_action.triggered.connect(lambda: self.history_selected.emit(history_id))
-        replay_action.triggered.connect(lambda: self.history_replay.emit(history_id))
-        delete_action.triggered.connect(lambda: self._delete_one(history_id))
-        menu.addAction(open_action)
-        menu.addAction(edit_replay_action)
-        menu.addAction(replay_action)
-        menu.addSeparator()
-        menu.addAction(delete_action)
+        action_specs = [
+            (
+                "open_in_editor",
+                "Open in Editor",
+                lambda: self.history_selected.emit(history_id),
+                False,
+            ),
+            (
+                "edit_replay",
+                "Edit && Replay…",
+                lambda: self.history_selected.emit(history_id),
+                False,
+            ),
+            (
+                "replay",
+                "▶  Replay",
+                lambda: self.history_replay.emit(history_id),
+                False,
+            ),
+            (
+                "delete",
+                "Delete",
+                lambda: self._delete_one(history_id),
+                True,
+            ),
+        ]
+        ordered = self._ordered_context_actions("history_item", action_specs)
+        added_destructive_separator = False
+        for action_id, label, callback, is_destructive in ordered:
+            if is_destructive and not added_destructive_separator:
+                menu.addSeparator()
+                added_destructive_separator = True
+            action = QAction(label, self)
+            if action_id == "edit_replay":
+                action.setToolTip("Load into editor for modification before sending")
+            action.triggered.connect(
+                lambda _checked=False, aid=action_id, cb=callback: self._run_context_action(
+                    "history_item", aid, cb
+                )
+            )
+            menu.addAction(action)
         menu.exec(self.list_widget.viewport().mapToGlobal(position))
+
+    def _context_action_usage_count(self, context: str, action_id: str) -> int:
+        tracker = getattr(self.window(), "_ui_usage_tracker", None)
+        if tracker is None:
+            return 0
+        try:
+            return tracker.get_count(
+                category="context_menu",
+                context=context,
+                element_id=f"action.{action_id}",
+            )
+        except Exception:
+            logger.debug("Failed to get context action usage for %s/%s", context, action_id, exc_info=True)
+            return 0
+
+    def _record_context_action_usage(self, context: str, action_id: str) -> None:
+        tracker = getattr(self.window(), "_ui_usage_tracker", None)
+        if tracker is None:
+            return
+        try:
+            tracker.record(
+                f"action.{action_id}",
+                category="context_menu",
+                context=context,
+            )
+        except Exception:
+            logger.debug("Failed to record context action usage for %s/%s", context, action_id, exc_info=True)
+
+    def _run_context_action(self, context: str, action_id: str, callback: Callable[[], None]) -> None:
+        self._record_context_action_usage(context, action_id)
+        callback()
+
+    def _ordered_context_actions(self, context: str, action_specs: list[tuple]) -> list[tuple]:
+        """Sort non-destructive actions by usage while keeping destructive actions last."""
+        safe = []
+        destructive = []
+        for idx, spec in enumerate(action_specs):
+            action_id, label, callback, is_destructive = spec
+            if is_destructive:
+                destructive.append((idx, spec))
+                continue
+            count = self._context_action_usage_count(context, action_id)
+            safe.append((-count, idx, spec))
+        safe.sort(key=lambda row: (row[0], row[1]))
+        return [row[2] for row in safe] + [row[1] for row in destructive]
 
     def _delete_one(self, history_id: int) -> None:
         """Delete a single history entry (via context menu)."""
