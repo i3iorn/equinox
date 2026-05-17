@@ -7,8 +7,8 @@ import os
 from PyQt6.QtCore import QTimer
 from PyQt6.QtGui import QAction, QKeySequence
 from PyQt6.QtWidgets import (
-    QApplication, QDialog, QDialogButtonBox, QHeaderView,
-    QInputDialog, QLabel, QMessageBox, QTableWidget, QTableWidgetItem,
+    QDialog, QDialogButtonBox, QHeaderView,
+    QLabel, QMessageBox, QPlainTextEdit, QTableWidget, QTableWidgetItem,
     QVBoxLayout,
 )
 
@@ -164,6 +164,15 @@ class _MenuMixin:
         setup_act = QAction("Run Setup Wizard…", self)
         setup_act.triggered.connect(self._run_setup_wizard)
         help_menu.addAction(setup_act)
+        help_menu.addSeparator()
+        usage_act = QAction("UI Usage Snapshot…", self)
+        usage_act.setObjectName("help_ui_usage_snapshot")
+        usage_act.triggered.connect(self._show_ui_usage_snapshot)
+        help_menu.addAction(usage_act)
+        reset_usage_act = QAction("Reset UI Usage Data", self)
+        reset_usage_act.setObjectName("help_ui_usage_reset")
+        reset_usage_act.triggered.connect(self._reset_ui_usage_data)
+        help_menu.addAction(reset_usage_act)
 
         self._add_window_controls_to_menu_bar(menubar)
         menubar.installEventFilter(self)
@@ -349,4 +358,42 @@ class _MenuMixin:
             try_open_current_log_file(),
             "No log file found yet — send a request first.",
         )
+
+    def _show_ui_usage_snapshot(self) -> None:
+        tracker = getattr(self, "_ui_usage_tracker", None)
+        if tracker is None:
+            QMessageBox.information(self, "UI Usage", "Usage tracking is not available yet.")
+            return
+
+        dialog = QDialog(self)
+        dialog.setWindowTitle("UI Usage Snapshot")
+        dialog.setMinimumSize(680, 420)
+        layout = QVBoxLayout(dialog)
+        layout.addWidget(QLabel("Local usage counts from your current Equinox profile."))
+
+        text = QPlainTextEdit(dialog)
+        text.setReadOnly(True)
+        text.setPlainText(tracker.snapshot_text())
+        layout.addWidget(text, 1)
+
+        buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Close)
+        buttons.rejected.connect(dialog.reject)
+        layout.addWidget(buttons)
+        dialog.exec()
+
+    def _reset_ui_usage_data(self) -> None:
+        tracker = getattr(self, "_ui_usage_tracker", None)
+        if tracker is None:
+            return
+        answer = QMessageBox.question(
+            self,
+            "Reset UI Usage Data",
+            "Clear all tracked UI usage counters for this profile?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        if answer != QMessageBox.StandardButton.Yes:
+            return
+        tracker.reset()
+        self.status_bar.showMessage("UI usage data reset", 3000)
 

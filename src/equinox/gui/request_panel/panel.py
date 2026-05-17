@@ -30,6 +30,7 @@ from PyQt6.QtWidgets import (
     QCheckBox,
     QDoubleSpinBox,
     QFormLayout,
+    QMenu,
     QToolButton,
 )
 from PyQt6.QtCore import pyqtSignal, Qt, QTimer, QStringListModel
@@ -48,14 +49,11 @@ from equinox.gui.request_panel.mixins import (  # noqa: F401
     _save_history_safe,
 )
 from equinox.gui.request_panel._constants import (
-    BENCHMARK_BTN_WIDTH,
     BROWSE_BTN_WIDTH,
     CANCEL_BTN_WIDTH,
-    CLEAR_SV_BTN_WIDTH,
     COMPLETER_MAX_VISIBLE,
     FMT_JSON_BTN_WIDTH,
     HISTORY_COMPLETER_LIMIT,
-    IMPORT_BTN_WIDTH,
     METHOD_COMBO_WIDTH,
     SEND_BTN_WIDTH,
 )
@@ -346,6 +344,7 @@ class RequestPanel(
         self.url_input.textChanged.connect(self._on_url_changed_for_path_params)
 
         self.tabs = QTabWidget()
+        self.tabs.setObjectName("requestTabs")
         self.tabs.addTab(self._build_headers_tab(), "Headers")
         self.tabs.addTab(self._build_params_tab(), "Params")
         self.tabs.addTab(self._build_body_tab(), "Body")
@@ -369,6 +368,8 @@ class RequestPanel(
         row = QHBoxLayout()
         row.setSpacing(4)
         self.method_combo = QComboBox()
+        self.method_combo.setObjectName("requestMethodCombo")
+        self.method_combo.setProperty("usage_track_id", "request.method_combo")
         self.method_combo.addItems(["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"])
         self.method_combo.setFixedWidth(METHOD_COMBO_WIDTH)
         self.url_input = UrlLineEdit()
@@ -384,12 +385,14 @@ class RequestPanel(
         self._url_fix_suggestion = None
         self.send_button = QPushButton("Send")
         self.send_button.setObjectName("sendBtn")
+        self.send_button.setProperty("usage_track_id", "request.send")
         self.send_button.setMinimumWidth(SEND_BTN_WIDTH)
         self.send_button.setToolTip("Send request (Ctrl+Enter)")
         self.send_button.clicked.connect(self._send_request)
         self.send_button.setDefault(True)
         self.cancel_button = QPushButton("Cancel")
         self.cancel_button.setObjectName("cancelBtn")
+        self.cancel_button.setProperty("usage_track_id", "request.cancel")
         self.cancel_button.setMinimumWidth(CANCEL_BTN_WIDTH)
         self.cancel_button.setToolTip("Cancel the in-flight request")
         self.cancel_button.clicked.connect(self._cancel_request)
@@ -435,32 +438,37 @@ class RequestPanel(
         row.setSpacing(6)
 
         save_btn = QPushButton("Save")
+        save_btn.setObjectName("requestSaveBtn")
+        save_btn.setProperty("usage_track_id", "request.save")
         save_btn.setMinimumWidth(SEND_BTN_WIDTH)
         save_btn.setToolTip("Save to a collection (prompts for name / folder)")
         save_btn.clicked.connect(self._save_request)
 
-        import_btn = QPushButton("Import from cURL")
-        import_btn.setMinimumWidth(IMPORT_BTN_WIDTH)
-        import_btn.setToolTip("Paste a cURL command to populate the request editor")
-        import_btn.clicked.connect(self._import_from_curl)
+        more_btn = QToolButton()
+        more_btn.setText("More ▾")
+        more_btn.setToolTip("Secondary request tools")
+        more_btn.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
+        more_btn.setObjectName("requestMoreToolsBtn")
+        more_btn.setProperty("usage_track_id", "request.more_tools")
 
-        bench_btn = QPushButton("Benchmark")
-        bench_btn.setMinimumWidth(BENCHMARK_BTN_WIDTH)
-        bench_btn.setToolTip("Run repeated requests and view latency statistics")
-        bench_btn.clicked.connect(self._open_benchmark)
+        more_menu = QMenu(more_btn)
+        import_action = more_menu.addAction("Import from cURL…", self._import_from_curl)
+        import_action.setObjectName("request_import_curl")
 
-        clear_sv_btn = QPushButton("Clear Session Vars")
-        clear_sv_btn.setMinimumWidth(CLEAR_SV_BTN_WIDTH)
-        clear_sv_btn.setToolTip("Clear all captured session variables")
-        clear_sv_btn.clicked.connect(self.clear_session_vars)
+        benchmark_action = more_menu.addAction("Benchmark…", self._open_benchmark)
+        benchmark_action.setObjectName("request_benchmark")
+
+        more_menu.addSeparator()
+        clear_session_action = more_menu.addAction("Clear Session Vars", self.clear_session_vars)
+        clear_session_action.setObjectName("request_clear_session_vars")
+
+        more_btn.setMenu(more_menu)
 
         self._session_vars_label = QLabel("Session vars: 0")
         self._session_vars_label.setObjectName("mutedLabel")
 
         row.addWidget(save_btn)
-        row.addWidget(import_btn)
-        row.addWidget(bench_btn)
-        row.addWidget(clear_sv_btn)
+        row.addWidget(more_btn)
         row.addStretch()
         row.addWidget(self._session_vars_label)
 

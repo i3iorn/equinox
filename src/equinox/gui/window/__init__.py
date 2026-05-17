@@ -18,6 +18,7 @@ from ._layout import _LayoutMixin
 from ._menu import _KEY_INTEL_DISABLED, _MenuMixin
 from ._panels import _PanelsMixin
 from ..logging_utils import log_gui_event
+from ..ui_usage_tracker import UIUsageTracker
 from ..ui_common import get_gui_settings
 from equinox.storage import Database
 from equinox.storage.cookies import CookieJarManager
@@ -91,8 +92,24 @@ class MainWindow(
         log_gui_event("window_initialized", {"title": self.windowTitle()})
         self._create_menu_bar()
         self._create_status_bar()
+        self._init_usage_tracking()
         self._restore_layout()
         QTimer.singleShot(0, self._maybe_run_setup_wizard)
+
+    def _init_usage_tracking(self) -> None:
+        """Attach lightweight usage tracking to menus, tabs, and tracked buttons."""
+        self._ui_usage_tracker = UIUsageTracker(parent=self)
+        self._ui_usage_tracker.bind_widget_tree(self)
+        self._ui_usage_tracker.bind_tab_widget(self._left_tabs, context="left_tabs")
+        self._ui_usage_tracker.bind_tab_widget(self.request_panel.tabs, context="request_tabs")
+        menu_bar = self.menuBar()
+        if menu_bar is not None:
+            self._ui_usage_tracker.bind_menu_bar(menu_bar)
+        self._ui_usage_tracker.record(
+            "window.main_opened",
+            category="lifecycle",
+            context="main_window",
+        )
 
     def _init_ui(self) -> None:
         # Import panels lazily here to avoid import-time cycles with gui.app.
@@ -113,6 +130,7 @@ class MainWindow(
         self.websocket_panel = None
         self._tabs_initialized: set = set()
         self._left_tabs = QTabWidget()
+        self._left_tabs.setObjectName("leftSidebarTabs")
         self._left_tabs.setTabPosition(QTabWidget.TabPosition.South)
         for label in ("Collections", "History", "Variables", "Logs", "Cookies", "WebSocket"):
             self._left_tabs.addTab(QWidget(), label)
@@ -184,6 +202,13 @@ class MainWindow(
             if app is not None:
                 app.removeEventFilter(self)
             self._app_event_filter_installed = False
+        if hasattr(self, "_ui_usage_tracker"):
+            self._ui_usage_tracker.record(
+                "window.main_closed",
+                category="lifecycle",
+                context="main_window",
+            )
+            self._ui_usage_tracker.flush()
         super().closeEvent(event)
 
     def _load_request_guarded(self, request: Request) -> None:
