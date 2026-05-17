@@ -5,7 +5,8 @@ Provides a consistent left-aligned label and standard control buttons
 file-browse button. Emits PyQt signals which the parent `RequestPanel`
 can connect to so table updates are handled centrally.
 """
-from typing import Iterable, Optional, Sequence
+import re
+from typing import Optional, Sequence
 
 from PyQt6.QtWidgets import (
     QWidget,
@@ -48,6 +49,7 @@ class TabToolbar(QWidget):
         label: Optional[str] = None,
         *,
         presets: Optional[Sequence[Optional[tuple[str, str, str]]]] = None,
+        preset_context: Optional[str] = None,
         include_file_btn: bool = False,
         parent=None,
     ) -> None:
@@ -64,6 +66,7 @@ class TabToolbar(QWidget):
         """
         super().__init__(parent)
         self._presets = presets or []
+        self._preset_context = self._normalize_context(preset_context or "toolbar_presets")
         self._validate_presets(self._presets)
 
         layout = self._create_layout()
@@ -172,19 +175,89 @@ class TabToolbar(QWidget):
         btn.setToolTip(_PRESETS_BUTTON_TOOLTIP)
 
         menu = QMenu(btn)
-        for preset in self._presets:
-            if preset is None:
-                menu.addSeparator()
-            else:
-                display, key, value = preset
-                action = menu.addAction(display)
-                # Capture values in lambda to avoid late binding issues
-                action.triggered.connect(
-                    lambda checked=False, k=key, v=value: self.preset_selected.emit(k, v)
-                )
+        self._presets_menu = menu
+        self._rebuild_presets_menu()
+        menu.aboutToShow.connect(self._rebuild_presets_menu)
 
         btn.setMenu(menu)
         layout.addWidget(btn)
+
+    @staticmethod
+    def _normalize_context(value: str) -> str:
+        slug = re.sub(r"[^a-z0-9]+", "_", (value or "").strip().lower())
+        return slug.strip("_") or "toolbar_presets"
+
+    @staticmethod
+    def _preset_usage_key(key: str, value: str) -> str:
+        raw = f"{key}:{value}".strip().lower()
+        slug = re.sub(r"[^a-z0-9]+", "_", raw)
+        return f"preset.{slug.strip('_') or 'unnamed'}"
+
+    def _preset_usage_count(self, key: str, value: str) -> int:
+        tracker = getattr(self.window(), "_ui_usage_tracker", None)
+        if tracker is None:
+            return 0
+        try:
+            return tracker.get_count(
+                category="preset",
+                context=self._preset_context,
+                element_id=self._preset_usage_key(key, value),
+            )
+        except Exception:
+            return 0
+
+    def _record_preset_usage(self, key: str, value: str) -> None:
+        tracker = getattr(self.window(), "_ui_usage_tracker", None)
+        if tracker is None:
+            return
+        try:
+            tracker.record(
+                self._preset_usage_key(key, value),
+                category="preset",
+                context=self._preset_context,
+            )
+        except Exception:
+            pass
+
+    def _on_preset_triggered(self, key: str, value: str) -> None:
+        self._record_preset_usage(key, value)
+        self.preset_selected.emit(key, value)
+
+    def _rebuild_presets_menu(self) -> None:
+        """Sort presets by usage within each separator group for predictability."""
+        if not hasattr(self, "_presets_menu"):
+            return
+        menu = self._presets_menu
+        menu.clear()
+
+        groups: list = [[]]
+        for idx, preset in enumerate(self._presets):
+            if preset is None:
+                if groups[-1]:
+                    groups.append([])
+                continue
+            display, key, value = preset
+            groups[-1].append((idx, display, key, value))
+
+        groups = [g for g in groups if g]
+        for group_idx, group in enumerate(groups):
+            ranked = []
+            for original_idx, display, key, value in group:
+                ranked.append((
+                    -self._preset_usage_count(key, value),
+                    original_idx,
+                    display,
+                    key,
+                    value,
+                ))
+            ranked.sort(key=lambda item: (item[0], item[1]))
+            for _, _, display, key, value in ranked:
+                menu.addAction(
+                    display,
+                    lambda k=key, v=value: self._on_preset_triggered(k, v),
+                )
+            if group_idx < len(groups) - 1:
+                menu.addSeparator()
 
     def _add_file_button(self, layout: QHBoxLayout) -> None:
         """Create and add a file browse button.

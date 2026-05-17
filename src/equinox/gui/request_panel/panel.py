@@ -575,7 +575,15 @@ class RequestPanel(
         layout = QVBoxLayout(w)
         layout.setContentsMargins(0, 2, 0, 0)
         layout.setSpacing(2)
-        toolbar = TabToolbar("", presets=presets, parent=self)
+        if presets:
+            toolbar = TabToolbar(
+                "",
+                presets=presets,
+                preset_context=f"request_{title}",
+                parent=self,
+            )
+        else:
+            toolbar = TabToolbar("", presets=presets, parent=self)
         table = CheckableKeyValueTable(enable_key_completer=enable_key_completer)
         toolbar.add_clicked.connect(lambda: self._add_row_and_focus(table))
         toolbar.remove_clicked.connect(lambda: self._remove_table_rows(table))
@@ -590,6 +598,7 @@ class RequestPanel(
             "Headers", presets=_HEADER_PRESETS, enable_key_completer=True
         )
         self.headers_table = result.table
+        self._headers_toolbar = result.toolbar
         result.toolbar.preset_selected.connect(self._insert_header_preset)
         return result.widget
 

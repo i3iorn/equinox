@@ -96,3 +96,58 @@ def test_command_palette_items_rank_by_usage(tmp_path, monkeypatch):
     _process()
 
 
+def test_environment_menu_ranks_by_usage_with_active_pinned(tmp_path, monkeypatch):
+    from equinox.gui.window import MainWindow
+    from equinox.storage import EnvironmentManager, get_db
+
+    monkeypatch.setenv("EQUINOX_DB_PATH", str(tmp_path / "ui_env_sort.db"))
+    db = get_db()
+    env_mgr = EnvironmentManager(db)
+    beta_id = env_mgr.create_environment("Beta", {})
+    alpha_id = env_mgr.create_environment("Alpha", {})
+    gamma_id = env_mgr.create_environment("Gamma", {})
+    env_mgr.set_active_environment(gamma_id)
+
+    win = MainWindow(db)
+    tracker = win._ui_usage_tracker
+    for _ in range(5):
+        tracker.record(f"env.{alpha_id}", category="environment", context="quick_switch")
+
+    win._show_env_menu()
+    labels = [a.text() for a in win._env_menu.actions() if (not a.isSeparator() and "Manage" not in a.text())]
+
+    assert labels[0] == "Gamma"
+    assert labels[1] == "Alpha"
+    assert labels[2] == "Beta"
+
+    win.close()
+    _process()
+
+
+def test_header_presets_rank_by_usage_within_group(tmp_path, monkeypatch):
+    from equinox.gui.window import MainWindow
+    from equinox.storage import get_db
+
+    monkeypatch.setenv("EQUINOX_DB_PATH", str(tmp_path / "ui_header_presets.db"))
+    db = get_db()
+    win = MainWindow(db)
+    tracker = win._ui_usage_tracker
+
+    # Boost XML preset usage so it appears first in the Content-Type group.
+    for _ in range(3):
+        tracker.record(
+            "preset.content_type_application_xml",
+            category="preset",
+            context="request_headers",
+        )
+
+    toolbar = win.request_panel._headers_toolbar
+    toolbar._rebuild_presets_menu()
+    preset_labels = [a.text() for a in toolbar._presets_menu.actions() if not a.isSeparator()]
+
+    assert preset_labels[0] == "Content-Type: application/xml"
+
+    win.close()
+    _process()
+
+
