@@ -9,7 +9,7 @@ from PyQt6.QtWidgets import (
     QMessageBox, QFrame, QTextEdit, QCheckBox,
 )
 from PyQt6.QtCore import QThread, pyqtSignal
-from typing import Dict, Any
+from typing import Dict, Any, Literal, cast
 
 from equinox.core.interpolation import VariableInterpolator, collect_interpolation_variables
 from equinox.core.util.time import utc_now
@@ -305,6 +305,7 @@ class AuthDialog(QDialog):
         self.oauth2_view_response_btn.clicked.connect(self._view_token_response)
         self._last_fetched_auth = None  # stores OAuth2Auth after successful fetch
         self._last_token_response = None
+        self._fetch_requested_token_auth = "body"
         fetch_row = QHBoxLayout()
         fetch_row.addWidget(self.oauth2_fetch_btn)
         fetch_row.addWidget(self.oauth2_view_response_btn)
@@ -381,6 +382,7 @@ class AuthDialog(QDialog):
 
     # ── OAuth2 token fetch ─────────────────────────────────────────────
 
+
     def _fetch_oauth2_token(self) -> None:
         """Fetch an OAuth2 token in a background thread and update the form."""
         token_url = self.oauth2_token_url.text().strip()
@@ -407,7 +409,10 @@ class AuthDialog(QDialog):
             client_secret = self.oauth2_client_secret.text().strip() or None
             scope = self.oauth2_scope.text().strip() or None
 
-        token_auth = str(self.oauth2_token_auth.currentData() or "body")
+        token_auth: Literal["body", "basic"] = (
+            "basic" if str(self.oauth2_token_auth.currentData() or "body") == "basic" else "body"
+        )
+        self._fetch_requested_token_auth = token_auth
         auth = OAuth2Auth(
             token_url=token_url,
             client_id=client_id,
@@ -467,9 +472,22 @@ class AuthDialog(QDialog):
                 except Exception:
                     pass
             preview = info.get("access_token", "")
-            self.oauth2_fetch_status.setText(
-                f"Token acquired{expiry}  [{preview}]"
-            )
+            message = f"Token acquired{expiry}  [{preview}]"
+
+            selected_mode = str(self._fetch_requested_token_auth or "body")
+            effective_mode = str(getattr(auth, "token_auth", selected_mode) or selected_mode)
+            if effective_mode != selected_mode:
+                mode_idx = self.oauth2_token_auth.findData(effective_mode)
+                if mode_idx >= 0:
+                    self.oauth2_token_auth.setCurrentIndex(mode_idx)
+                mode_label = "HTTP Basic" if effective_mode == "basic" else "Body"
+                message = (
+                    f"{message}\n"
+                    f"Hint: token endpoint accepted {mode_label} client auth. "
+                    "Client Auth was updated for this form; click Save to persist it."
+                )
+
+            self.oauth2_fetch_status.setText(message)
 
     def _view_token_response(self) -> None:
         """Open a dialog showing the redacted token endpoint response."""
@@ -675,7 +693,9 @@ class AuthDialog(QDialog):
                 QMessageBox.warning(self, "Missing Fields",
                                     "Token URL and Client ID are required.")
                 return _MISSING
-            token_auth = str(self.oauth2_token_auth.currentData() or "body")
+            token_auth: Literal["body", "basic"] = (
+                "basic" if str(self.oauth2_token_auth.currentData() or "body") == "basic" else "body"
+            )
             auth = OAuth2Auth(
                 token_url=token_url,
                 client_id=client_id,
@@ -703,10 +723,12 @@ class AuthDialog(QDialog):
             if not key_name or not key_value:
                 QMessageBox.warning(self, "Missing Fields", "Enter both key name and value.")
                 return _MISSING
-            location = "header" if self.api_key_location.currentIndex() == 0 else "query"
+            location: Literal["header", "query"] = (
+                "header" if self.api_key_location.currentIndex() == 0 else "query"
+            )
             return APIKeyAuth(
                 key=key_name, value=key_value,
-                location=location,
+                location=cast(Literal["header", "query"], location),
             )
 
         if tab == self._TAB_AWS:

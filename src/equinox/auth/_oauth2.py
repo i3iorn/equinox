@@ -826,6 +826,78 @@ class OAuth2Auth(AuthStrategy):
         response.raise_for_status()
         return response
 
+    @staticmethod
+    def _token_error_code(response: Optional[httpx.Response]) -> str:
+        """Return OAuth2 token error code from response JSON, or an empty string."""
+        if response is None:
+            return ""
+        try:
+            payload = response.json()
+        except Exception:
+            return ""
+        if not isinstance(payload, dict):
+            return ""
+        err = payload.get("error")
+        return str(err).strip().lower() if err is not None else ""
+
+    def _try_alternate_client_auth_mode(
+        self,
+        grant_data: Dict[str, Any],
+        status_exc: httpx.HTTPStatusError,
+        *,
+        proxy: Optional[str] = None,
+        verify_ssl: Optional[bool] = None,
+    ) -> Optional[httpx.Response]:
+        """Retry once with alternate client-auth mode for invalid_client responses."""
+        response = getattr(status_exc, "response", None)
+        status_code = response.status_code if response is not None else None
+        oauth_error = self._token_error_code(response)
+
+        if status_code not in (400, 401) or oauth_error != "invalid_client":
+            return None
+
+        current_mode = self.token_auth
+        alternate_mode = "basic" if current_mode == "body" else "body"
+
+        if alternate_mode == "basic" and not (self.client_id and self.client_secret):
+            return None
+
+        logger.warning(
+            "Token endpoint returned invalid_client with token_auth=%s; retrying once with token_auth=%s",
+            current_mode,
+            alternate_mode,
+            extra={
+                "token_url": redact_url(self.token_url),
+                "status_code": status_code,
+                "oauth_error": oauth_error,
+                "token_auth": current_mode,
+                "retry_token_auth": alternate_mode,
+            },
+        )
+
+        self.token_auth = alternate_mode
+        try:
+            response = self._execute_token_post(
+                grant_data,
+                proxy=proxy,
+                verify_ssl=verify_ssl,
+            )
+            logger.info(
+                "Token request succeeded after client-auth fallback using token_auth=%s",
+                alternate_mode,
+                extra={
+                    "token_url": redact_url(self.token_url),
+                    "status_code": response.status_code,
+                    "token_auth": alternate_mode,
+                    "fallback_from": current_mode,
+                },
+            )
+            return response
+        except Exception:
+            # Revert to original mode when fallback also fails.
+            self.token_auth = current_mode
+            raise
+
     def _post_token_request(
         self,
         grant_data: Dict[str, Any],
@@ -886,6 +958,17 @@ class OAuth2Auth(AuthStrategy):
                 )
                 return response
             except httpx.HTTPStatusError as status_exc:
+                # Some providers require client auth in Basic while others require body.
+                # Retry once with alternate mode for explicit invalid_client failures.
+                fallback_response = self._try_alternate_client_auth_mode(
+                    grant_data,
+                    status_exc,
+                    proxy=proxy,
+                    verify_ssl=verify_ssl,
+                )
+                if fallback_response is not None:
+                    return fallback_response
+
                 status_code = "unknown"
                 token_response: Optional[Dict[str, Any]] = None
                 if status_exc.response is not None:
@@ -893,6 +976,7 @@ class OAuth2Auth(AuthStrategy):
                     status_code = status_exc.response.status_code
                     token_response = self._last_token_response
                 response_preview = ""
+                safe_snapshot: Dict[str, Any] = {}
                 if status_exc.response is not None:
                     safe_snapshot = self._snapshot_response_body(status_exc.response)
                     response_preview = json.dumps(safe_snapshot, ensure_ascii=True, default=str)
