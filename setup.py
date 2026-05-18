@@ -47,6 +47,7 @@ setup(
             "bandit>=1.7.0",
             "safety>=2.3.0",
             "pre-commit>=3.0.0",
+            "isort>=5.13.0,<6.0.0",
         ],
     },
     entry_points={

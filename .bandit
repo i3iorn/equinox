@@ -1,22 +1,74 @@
-# Bandit configuration for security scanning
+# Bandit security scanning configuration
+# This tool helps identify security issues in Python code.
+# See: https://bandit.readthedocs.io/
 
 [bandit]
-# Exclude test files
+# Exclude test and build directories
 exclude_dirs = [
     '/tests/',
     '/.venv/',
     '/venv/',
     '/build/',
-    '/dist/'
+    '/dist/',
+    '/.git/',
 ]
 
-# Test IDs to skip (add specific test IDs if needed)
+# Security test IDs to skip (with documented rationale)
+# When adding a skip, provide inline explanation in source code marked with:
+#     # nosec B<ID> - reason: <explanation>
+# Examples:
+#   - B303 (use of pickle): Skipped only in auth token serialization where we control the input
+#   - B404 (subprocess import): Skipped in CLI only; no untrusted input to subprocess calls
 skips = []
 
-# Security level filter
-# LOW, MEDIUM, HIGH
+# Severity filter for blocking gate: MEDIUM and above fail CI
+# LOW severity issues are logged separately (advisory) but don't block PRs
 level = MEDIUM
 
-# Confidence level filter
-# LOW, MEDIUM, HIGH
+# Confidence threshold: only report issues with MEDIUM+ confidence
 confidence = MEDIUM
+
+# Test IDs configuration (for reference)
+# B201: flask_debug_true
+# B301: pickle
+# B302: marshal
+# B303: md5
+# B304: des
+# B305: cipher
+# B306: mktemp
+# B307: eval
+# B308: mark_safe
+# B309: httpsconnection
+# B310: urllib_urlopen
+# B311: random
+# B312: telnetlib
+# B313: xml_bad_etree
+# B314: xml_bad_expat
+# B315: xml_bad_sax
+# B316: xml_bad_pulldom
+# B317: xml_bad_etree_iterparse
+# B318: xml_bad_etree_parse
+# B319: xml_bad_etree_fromstring
+# B320: xml_etree_parse
+# B321: ftplib
+# B322: unverified_context
+# B323: unverified_ssl
+# B324: hashlib
+# B325: tempnam
+# B601: paramiko_calls
+# B602: subprocess_popen_with_shell_equals_true
+# B603: subprocess_without_shell_equals_true
+# B604: any_other_function_with_shell_equals_true
+# B605: start_process_with_a_shell
+# B606: start_process_with_no_shell
+# B607: partial_paramiko_calls
+# B608: hardcoded_sql_expressions
+# B609: wildcard_use_disabled
+# B610: django_sql_injection_disabled
+# B611: flask_sql_injection_disabled
+# B701: jinja2_autoescape_false
+# B702: mako_templates
+# B703: django_mark_safe
+# B801: flask_debug_true_disabled
+# See https://bandit.readthedocs.io/en/latest/plugins/index.html for full reference
+

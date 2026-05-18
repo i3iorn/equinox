@@ -42,15 +42,21 @@ jobs:
           ruff check .
       - name: Type checks (Mypy)
         run: |
-          mypy src/equinox || true
-      - name: Security checks (Bandit)
+          mypy src/equinox tests
+      - name: Security checks (Bandit) — blocking
         run: |
           python -m pip install -q bandit
-          bandit -r src/equinox -l --format json -q -o bandit.json || true
-      - name: Safety checks
+          bandit -r src/equinox -ll --format json -o bandit-blocking.json
+      - name: Security advisories (Bandit low-severity) — informational
+        continue-on-error: true
+        run: |
+          python -m pip install -q bandit
+          bandit -r src/equinox -l --format json -o bandit-advisory.json
+      - name: Safety checks — advisories only
+        continue-on-error: true
         run: |
           python -m pip install -q safety
-          safety check -i tests -r requirements-dev.txt || true
+          safety check --json || true
       - name: Run tests
         run: |
           pytest -q --durations=10 --cov=equinox --cov-report=xml --cov-report=html --cov-fail-under=80

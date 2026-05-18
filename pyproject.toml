@@ -46,6 +46,7 @@ dev = [
     "bandit>=1.7.0",
     "safety>=2.3.0",
     "pre-commit>=3.0.0",
+    "isort>=5.13.0,<6.0.0",
 ]
 
 [tool.black]
@@ -71,6 +72,12 @@ ignore = [
 [tool.ruff.isort]
 section-order = ["future", "external", "stdlib", "firstparty", "localfolder"]
 known-first-party = ["equinox"]
+
+[tool.isort]
+profile = "black"
+line_length = 100
+multi_line_mode = 3  # vertical hanging indent
+include_trailing_comma = true
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
