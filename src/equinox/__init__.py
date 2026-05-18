@@ -2,7 +2,7 @@
 Equinox - A local-first API testing tool
 """
 
-__version__ = "0.4.2"
+__version__ = "0.4.3"
 __author__ = "Björn Schrammel"
 
 from equinox.core.client import HTTPClient
