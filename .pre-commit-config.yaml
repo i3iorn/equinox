@@ -4,7 +4,7 @@ repos:
       - id: dependency-manifest-consistency
         name: dependency-manifest-consistency
         entry: python scripts/check_dependency_consistency.py
-        language: system
+        language: python
         pass_filenames: false
         files: ^(pyproject\.toml|setup\.py|requirements\.txt)$
 

@@ -18,13 +18,13 @@ Integration:
               entry: python scripts/verify_ci_toolchain.py
               language: python
               stages: [commit]
-              files: '(\.github/workflows|pyproject\.toml|setup\.py)'
+              files: '(\\.github/workflows|pyproject\\.toml|setup\\.py)'
 """
 
 import re
 import sys
 from pathlib import Path
-from typing import Dict, Set, Tuple
+from typing import Dict, Set
 
 
 def extract_ci_tools() -> Set[str]:
@@ -70,7 +70,7 @@ def extract_declared_deps() -> Dict[str, Set[str]]:
         pyproject_content = Path("pyproject.toml").read_text()
         # Find [project.optional-dependencies] dev section
         match = re.search(
-            r'\[project\.optional-dependencies\].*?dev\s*=\s*\[(.*?)\]',
+            r'\[project\.optional-dependencies].*?dev\s*=\s*\[(.*?)]',
             pyproject_content,
             re.DOTALL,
         )
@@ -85,7 +85,7 @@ def extract_declared_deps() -> Dict[str, Set[str]]:
         setup_content = Path("setup.py").read_text()
         # Find extras_require["dev"] section
         match = re.search(
-            r'extras_require\s*=\s*\{.*?"dev":\s*\[(.*?)\]',
+            r'extras_require\s*=\s*\{.*?"dev":\s*\[(.*?)]',
             setup_content,
             re.DOTALL,
         )
