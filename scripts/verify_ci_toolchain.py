@@ -158,7 +158,9 @@ def main() -> int:
 
     # Step 4: Check for consistency between pyproject.toml and setup.py
     print("\n🔍 Checking pyproject.toml vs setup.py consistency...")
-    if deps["pyproject.toml"] and deps["setup.py"]:
+    if not deps["setup.py"]:
+        print("✅ setup.py is acting as a compatibility shim (no duplicated dependency declarations).")
+    elif deps["pyproject.toml"] and deps["setup.py"]:
         if deps["pyproject.toml"] != deps["setup.py"]:
             pyproject_only = deps["pyproject.toml"] - deps["setup.py"]
             setup_only = deps["setup.py"] - deps["pyproject.toml"]
@@ -179,7 +181,8 @@ def main() -> int:
             return 1
 
     print("\n✅ All tools are properly declared in dependencies!")
-    print("✅ pyproject.toml and setup.py are in sync!")
+    if deps["setup.py"]:
+        print("✅ pyproject.toml and setup.py are in sync!")
     return 0
 
 
