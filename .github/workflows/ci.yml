@@ -20,7 +20,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/.cache/pip
-          key: ${{ runner.os }}-pip-${{ hashFiles('**/setup.py') }}
+          key: ${{ runner.os }}-pip-${{ hashFiles('**/pyproject.toml', '**/setup.py') }}
           restore-keys: |
             ${{ runner.os }}-pip-
       - name: Install dependencies
@@ -37,7 +37,6 @@ jobs:
           isort --check .
       - name: Lint with Ruff
         run: |
-          python -m pip install -q ruff
           ruff --version
           ruff check .
       - name: Type checks (Mypy)
@@ -45,17 +44,14 @@ jobs:
           mypy src/equinox tests
       - name: Security checks (Bandit) — blocking
         run: |
-          python -m pip install -q bandit
           bandit -r src/equinox -ll --format json -o bandit-blocking.json
       - name: Security advisories (Bandit low-severity) — informational
         continue-on-error: true
         run: |
-          python -m pip install -q bandit
           bandit -r src/equinox -l --format json -o bandit-advisory.json
       - name: Safety checks — advisories only
         continue-on-error: true
         run: |
-          python -m pip install -q safety
           safety check --json || true
       - name: Run tests
         run: |
