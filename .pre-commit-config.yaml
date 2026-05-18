@@ -6,7 +6,13 @@ repos:
         entry: python scripts/check_dependency_consistency.py
         language: python
         pass_filenames: false
-        files: ^(pyproject\.toml|setup\.py|requirements\.txt)$
+        files: ^(pyproject\.toml|setup\.py|requirements\.txt|requirements-lock\.txt)$
+      - id: requirements-lock-current
+        name: requirements-lock-current
+        entry: python scripts/manage_requirements_lock.py --check
+        language: python
+        pass_filenames: false
+        files: ^(pyproject\.toml|requirements\.txt|requirements-lock\.txt)$
 
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v4.6.0

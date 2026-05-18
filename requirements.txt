@@ -1,6 +1,9 @@
-# Dependency source of truth: pyproject.toml
-# This file is a convenience entrypoint for environments that prefer:
-#   pip install -r requirements.txt
-# It intentionally delegates to pyproject extras to avoid manifest drift.
+# Generated workflow:
+#   1) Update dependencies in pyproject.toml
+#   2) Regenerate requirements-lock.txt
+#        py -3 scripts/manage_requirements_lock.py --write
+#   3) Install with:
+#        pip install -r requirements.txt
 
--e .[dev]
+-r requirements-lock.txt
+-e .

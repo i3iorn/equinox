@@ -20,16 +20,19 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/.cache/pip
-          key: ${{ runner.os }}-pip-${{ hashFiles('**/pyproject.toml') }}
+          key: ${{ runner.os }}-pip-${{ hashFiles('**/pyproject.toml', '**/requirements-lock.txt', '**/requirements.txt') }}
           restore-keys: |
             ${{ runner.os }}-pip-
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install -e ".[dev]"
+          pip install -r requirements.txt
       - name: Verify dependency manifest consistency
         run: |
           python scripts/check_dependency_consistency.py
+      - name: Verify requirements lockfile is current
+        run: |
+          python scripts/manage_requirements_lock.py --check
       - name: Lint with Black
         run: |
           black --version

@@ -4,7 +4,8 @@
 Rules:
 1) pyproject.toml is the only authoritative dependency manifest.
 2) setup.py must remain a thin compatibility shim (no install_requires/extras_require).
-3) requirements.txt must delegate to pyproject extras via '-e .[dev]'.
+3) requirements.txt must delegate to the generated lockfile and editable local install.
+4) requirements-lock.txt must exist.
 """
 
 import re
@@ -54,17 +55,26 @@ def check_setup_py(setup_text: str) -> List[str]:
 def check_requirements_txt(requirements_text: str) -> List[str]:
     errors = []
     non_comment = _non_comment_lines(requirements_text)
-    expected = "-e .[dev]"
+    expected = ["-r requirements-lock.txt", "-e ."]
 
     if not non_comment:
-        errors.append("requirements.txt must contain '-e .[dev]'.")
+        errors.append("requirements.txt must delegate to requirements-lock.txt and '-e .'.")
         return errors
 
-    if len(non_comment) != 1 or non_comment[0] != expected:
+    if non_comment != expected:
         errors.append(
-            "requirements.txt must contain only one non-comment entry: '-e .[dev]'."
+            "requirements.txt must contain exactly two non-comment entries: '-r requirements-lock.txt' and '-e .'."
         )
 
+    return errors
+
+
+def check_requirements_lock(lock_text: str) -> List[str]:
+    errors = []
+    if not lock_text.strip():
+        errors.append("requirements-lock.txt must not be empty.")
+    if "#" not in lock_text:
+        errors.append("requirements-lock.txt should look like a generated lockfile with header comments.")
     return errors
 
 
@@ -87,11 +97,13 @@ def main() -> int:
     pyproject = _read(root / "pyproject.toml")
     setup_py = _read(root / "setup.py")
     requirements = _read(root / "requirements.txt")
+    requirements_lock = _read(root / "requirements-lock.txt")
 
     errors = []
     errors.extend(check_pyproject(pyproject))
     errors.extend(check_setup_py(setup_py))
     errors.extend(check_requirements_txt(requirements))
+    errors.extend(check_requirements_lock(requirements_lock))
 
     if errors:
         print("Dependency manifest consistency check FAILED:")
@@ -102,7 +114,8 @@ def main() -> int:
     print("Dependency manifest consistency check PASSED.")
     print("- pyproject.toml is authoritative")
     print("- setup.py is a compatibility shim")
-    print("- requirements.txt delegates to pyproject extras")
+    print("- requirements.txt delegates to requirements-lock.txt and editable install")
+    print("- requirements-lock.txt exists")
     return 0
 
 

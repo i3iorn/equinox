@@ -1,0 +1,112 @@
+#!/usr/bin/env python
+"""Generate or verify the pip-tools lockfile from pyproject.toml.
+
+Usage:
+    py -3 scripts/manage_requirements_lock.py --write
+    py -3 scripts/manage_requirements_lock.py --check
+"""
+
+import argparse
+import difflib
+import subprocess
+import sys
+import tempfile
+from pathlib import Path
+from typing import List
+
+
+ROOT = Path(__file__).resolve().parents[1]
+LOCK_PATH = ROOT / "requirements-lock.txt"
+PYPROJECT_PATH = ROOT / "pyproject.toml"
+
+
+def _compile_lock(output_path: Path) -> subprocess.CompletedProcess[str]:
+    command: List[str] = [
+        sys.executable,
+        "-m",
+        "piptools",
+        "compile",
+        str(PYPROJECT_PATH),
+        "--extra",
+        "dev",
+        "--output-file",
+        str(output_path),
+        "--quiet",
+    ]
+    return subprocess.run(
+        command,
+        cwd=str(ROOT),
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+
+def _read_text(path: Path) -> str:
+    return path.read_text(encoding="utf-8") if path.exists() else ""
+
+
+def _print_failure(header: str, details: str) -> int:
+    print(header)
+    if details.strip():
+        print(details.strip())
+    return 1
+
+
+def write_lockfile() -> int:
+    result = _compile_lock(LOCK_PATH)
+    if result.returncode != 0:
+        return _print_failure("requirements-lock generation failed:", result.stderr or result.stdout)
+
+    print(f"Generated {LOCK_PATH.name} from {PYPROJECT_PATH.name}.")
+    return 0
+
+
+def check_lockfile() -> int:
+    with tempfile.TemporaryDirectory(prefix="equinox-lock-") as temp_dir:
+        candidate_path = Path(temp_dir) / "requirements-lock.txt"
+        result = _compile_lock(candidate_path)
+        if result.returncode != 0:
+            return _print_failure(
+                "requirements-lock validation failed during generation:",
+                result.stderr or result.stdout,
+            )
+
+        existing = _read_text(LOCK_PATH)
+        generated = _read_text(candidate_path)
+        if existing == generated:
+            print("requirements-lock.txt is up to date.")
+            return 0
+
+        diff = "".join(
+            difflib.unified_diff(
+                existing.splitlines(keepends=True),
+                generated.splitlines(keepends=True),
+                fromfile="requirements-lock.txt",
+                tofile="generated requirements-lock.txt",
+            )
+        )
+        print("requirements-lock.txt is out of date. Regenerate it with:")
+        print("  py -3 scripts/manage_requirements_lock.py --write")
+        print(diff.strip())
+        return 1
+
+
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="Generate or verify requirements-lock.txt")
+    group = parser.add_mutually_exclusive_group(required=True)
+    group.add_argument("--write", action="store_true", help="Regenerate requirements-lock.txt")
+    group.add_argument("--check", action="store_true", help="Verify requirements-lock.txt is current")
+    return parser.parse_args()
+
+
+def main() -> int:
+    args = parse_args()
+    if args.write:
+        return write_lockfile()
+    return check_lockfile()
+
+
+if __name__ == "__main__":
+    sys.exit(main())
+
