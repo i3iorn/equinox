@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import logging
-from typing import Dict, Optional
 
 from equinox.core.request import Request
 from equinox.gui.request_panel._constants import STATUS_DURATION_LONG
@@ -13,11 +12,21 @@ logger = logging.getLogger(__name__)
 class RequestAutosaveMixin:
     """Encapsulates request editor serialization and autosave behavior."""
 
+    def _sync_dirty_state_ui(self) -> None:
+        """Refresh any optional dirty-state UI affordances."""
+        try:
+            sync = getattr(self, "_sync_editor_state_ui", None)
+            if callable(sync):
+                sync()
+        except Exception:
+            logger.debug("Failed to refresh dirty-state UI", exc_info=True)
+
     def is_dirty(self) -> bool:
         return self._dirty
 
     def _mark_dirty(self) -> None:
         self._dirty = True
+        self._sync_dirty_state_ui()
 
     def _status_message(self, text: str, timeout_ms: int = 5000) -> None:
         """Show a message in the main window status bar (best-effort)."""

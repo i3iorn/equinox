@@ -36,6 +36,9 @@ _KEYBOARD_SHORTCUTS: list = [
     ("Ctrl+Shift+F", "Format JSON body"),
     ("Ctrl+K",       "Command Palette"),
     ("Ctrl+F",       "Find in response body"),
+    ("Ctrl+PgUp",    "Previous request tab"),
+    ("Ctrl+PgDn",    "Next request tab"),
+    ("Alt+1…Alt+6",  "Switch left sidebar tabs"),
     ("F2",           "Rename selected collection item"),
     ("Delete",       "Delete selected collection item"),
 ]

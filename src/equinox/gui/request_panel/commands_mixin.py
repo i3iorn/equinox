@@ -31,10 +31,24 @@ class RequestCommandsMixin:
         fmt_shortcut = QShortcut(QKeySequence("Ctrl+Shift+F"), self)
         fmt_shortcut.activated.connect(self._format_json_body)
 
+        next_tab_shortcut = QShortcut(QKeySequence("Ctrl+PgDown"), self)
+        next_tab_shortcut.activated.connect(lambda: self._cycle_request_tab(1))
+
+        prev_tab_shortcut = QShortcut(QKeySequence("Ctrl+PgUp"), self)
+        prev_tab_shortcut.activated.connect(lambda: self._cycle_request_tab(-1))
+
     def _focus_url_input(self) -> None:
         """Focus URL input and select its full text (browser-like behavior)."""
         self.url_input.setFocus(Qt.FocusReason.ShortcutFocusReason)
         self.url_input.selectAll()
+
+    def _cycle_request_tab(self, step: int) -> None:
+        """Move focus to the previous/next request tab."""
+        tabs = getattr(self, "tabs", None)
+        if tabs is None or tabs.count() <= 1:
+            return
+        current = tabs.currentIndex()
+        tabs.setCurrentIndex((current + step) % tabs.count())
 
     def _browse_file_to_input(self, title: str, filters: str, target) -> None:
         """Open a file-picker dialog and write the chosen path into target line edit."""

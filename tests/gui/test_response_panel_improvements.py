@@ -85,12 +85,13 @@ def test_render_pipeline_warns_when_subsection_fails(monkeypatch) -> None:
 
 def test_large_body_over_hard_cap_disables_full_render_button() -> None:
     panel = ResponsePanel()
+    panel._LARGE_BODY_THRESHOLD = 64
     panel._MAX_RENDER_BODY_SIZE = 128
     resp = _mk_response(b"x" * 256, "application/json")
 
     panel.display_response(resp)
 
-    assert panel._body_warning.isVisible()
+    assert panel._body_warning.isHidden() is False
     assert panel._body_load_btn.isEnabled() is False
 
 
@@ -148,6 +149,55 @@ def test_status_and_method_labels_apply_color_styles() -> None:
 
     assert "color:" in panel.status_label.styleSheet()
     assert "color:" in panel.sent_method_label.styleSheet()
+
+
+def test_response_panel_shows_content_type_summary() -> None:
+    panel = ResponsePanel()
+    resp = _mk_response(b'{"ok": true}', "application/json; charset=utf-8")
+
+    panel.display_response(resp)
+
+    content_type_label = getattr(panel, "content_type_label")
+    assert content_type_label.text() == "application/json"
+    assert "charset=utf-8" in content_type_label.toolTip()
+
+
+def test_response_panel_header_filter_count_is_explicit() -> None:
+    panel = ResponsePanel()
+    resp = Response(
+        status_code=200,
+        reason="OK",
+        headers={"content-type": "application/json", "x-request-id": "abc123"},
+        body=b'{"ok": true}',
+        elapsed=0.1,
+        request=Request(method="GET", url="https://example.com/api"),
+    )
+
+    panel.display_response(resp)
+    assert panel._hdrs_count_label.text() == "2 headers"
+
+    panel._on_hdrs_filter_changed("missing-header")
+    assert panel._hdrs_count_label.text() == "0 of 2 shown"
+
+
+def test_response_panel_restores_last_active_tab() -> None:
+    from equinox.gui.ui_common import get_gui_settings
+
+    settings = get_gui_settings()
+    settings.remove("response/active_tab")
+    settings.sync()
+
+    first = ResponsePanel()
+    target_idx = next(
+        idx for idx in range(first.tabs.count()) if first.tabs.tabText(idx).startswith("Headers")
+    )
+    first.tabs.setCurrentIndex(target_idx)
+
+    second = ResponsePanel()
+    assert second.tabs.tabText(second.tabs.currentIndex()).startswith("Headers")
+
+    settings.remove("response/active_tab")
+    settings.sync()
 
 
 def test_audit_tail_reader_is_bounded(tmp_path) -> None:

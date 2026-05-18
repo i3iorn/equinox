@@ -1,6 +1,3 @@
-import os
-import tempfile
-
 from PyQt6.QtWidgets import QApplication
 from PyQt6.QtCore import QCoreApplication
 
@@ -70,4 +67,60 @@ def test_body_edit_marks_dirty(tmp_db_path):
     panel.body_text.setPlainText("{\n  \"a\": 1\n}")
     process_events()
     assert panel.is_dirty() is True
+
+
+def test_request_panel_shows_draft_state_feedback(tmp_db_path):
+    """Dirty/saved state should be visible without opening any dialogs."""
+    ensure_qapp()
+    from equinox.storage import get_db
+    from equinox.core.request import Request
+    from equinox.gui.request_panel.panel import RequestPanel
+
+    db = get_db()
+    panel = RequestPanel(db)
+
+    assert getattr(panel, "save_button").text() == "Save"
+    assert getattr(panel, "_editor_state_label").text() == "Scratch request"
+
+    panel.body_text.setPlainText('{"draft": true}')
+    process_events()
+
+    assert panel.is_dirty() is True
+    assert getattr(panel, "save_button").text() == "Save Changes"
+    assert getattr(panel, "_editor_state_label").text() == "Unsaved changes"
+
+    saved = Request(method="GET", url="https://example.com")
+    saved.id = 42
+    panel.current_request = saved
+    panel._clear_dirty()
+
+    assert getattr(panel, "save_button").text() == "Save"
+    assert getattr(panel, "_editor_state_label").text() == "Saved to collection"
+
+
+def test_request_panel_restores_last_active_tab(tmp_db_path):
+    """The request editor should reopen on the last tab the user selected."""
+    ensure_qapp()
+    from equinox.storage import get_db
+    from equinox.gui.request_panel.panel import RequestPanel
+    from equinox.gui.ui_common import get_gui_settings
+
+    settings = get_gui_settings()
+    settings.remove("request/active_tab")
+    settings.sync()
+
+    db = get_db()
+    first = RequestPanel(db)
+    target_idx = next(
+        idx for idx in range(first.tabs.count()) if first.tabs.tabText(idx).startswith("Notes")
+    )
+    first.tabs.setCurrentIndex(target_idx)
+    process_events()
+
+    second = RequestPanel(db)
+    assert second.tabs.tabText(second.tabs.currentIndex()).startswith("Notes")
+
+    settings.remove("request/active_tab")
+    settings.sync()
+
 

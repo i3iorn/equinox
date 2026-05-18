@@ -8,6 +8,7 @@ import logging
 from typing import Any
 from PyQt6 import sip
 from PyQt6.QtCore import QPoint, Qt, QTimer
+from PyQt6.QtGui import QKeySequence, QShortcut
 from PyQt6.QtWidgets import QApplication, QHBoxLayout, QMainWindow, QSplitter, QTabWidget, QVBoxLayout, QWidget
 from equinox.core.request import Request, Response
 from ._environment import _EnvironmentMixin
@@ -41,6 +42,7 @@ _SPLITTER_HANDLE_W = 5
 _STATUS_TIMEOUT_MS = 10_000
 _TAB_HISTORY = 1
 _TAB_COOKIES = 4
+_LEFT_TAB_LABELS = ("Collections", "History", "Variables", "Logs", "Cookies", "WebSocket")
 
 
 def _is_deleted_qobject(obj: Any) -> bool:
@@ -93,6 +95,7 @@ class MainWindow(
         self._create_menu_bar()
         self._create_status_bar()
         self._init_usage_tracking()
+        self._install_navigation_shortcuts()
         self._restore_layout()
         QTimer.singleShot(0, self._maybe_run_setup_wizard)
 
@@ -132,7 +135,7 @@ class MainWindow(
         self._left_tabs = QTabWidget()
         self._left_tabs.setObjectName("leftSidebarTabs")
         self._left_tabs.setTabPosition(QTabWidget.TabPosition.South)
-        for label in ("Collections", "History", "Variables", "Logs", "Cookies", "WebSocket"):
+        for label in _LEFT_TAB_LABELS:
             self._left_tabs.addTab(QWidget(), label)
         self._left_tabs.setMinimumWidth(_MIN_LEFT_W)
         self._left_tabs.currentChanged.connect(self._ensure_tab_initialized)
@@ -175,6 +178,27 @@ class MainWindow(
         )
         self._main_splitter.splitterMoved.connect(self._on_splitter_moved)
         self._req_resp_splitter.splitterMoved.connect(self._on_splitter_moved)
+
+    def _install_navigation_shortcuts(self) -> None:
+        """Register keyboard shortcuts for the left sidebar tabs."""
+        self._left_tab_shortcuts = []
+        for index, label in enumerate(_LEFT_TAB_LABELS, start=1):
+            shortcut = QShortcut(QKeySequence(f"Alt+{index}"), self)
+            shortcut.activated.connect(lambda idx=index - 1: self._activate_left_tab(idx))
+            self._left_tab_shortcuts.append(shortcut)
+
+    def _activate_left_tab(self, index: int) -> None:
+        """Focus a sidebar tab from a keyboard shortcut."""
+        if not 0 <= index < self._left_tabs.count():
+            return
+        self._left_tabs.setCurrentIndex(index)
+        self._ensure_tab_initialized(index)
+        self._left_tabs.setFocus(Qt.FocusReason.ShortcutFocusReason)
+        try:
+            label = self._left_tabs.tabText(index)
+            self.status_bar.showMessage(f"Opened {label}", 2500)
+        except Exception:
+            logger.debug("Failed to show left-tab navigation status", exc_info=True)
 
     def _on_splitter_moved(self, pos: int, index: int) -> None:
         sender = self.sender()

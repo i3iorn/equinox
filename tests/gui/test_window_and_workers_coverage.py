@@ -292,6 +292,17 @@ class TestMainWindow:
             win._show_shortcuts_dialog()
         _close_win(win)
 
+    def test_activate_left_tab_initializes_requested_panel(self, db):
+        from equinox.gui.window import MainWindow
+
+        win = MainWindow(db)
+        getattr(win, "_activate_left_tab")(2)
+        _process()
+
+        assert win._left_tabs.currentIndex() == 2
+        assert win.variables_panel is not None
+        _close_win(win)
+
     def test_sync_theme_checks(self, db):
         from equinox.gui.window import MainWindow
         win = MainWindow(db)

@@ -104,6 +104,8 @@ class ResponseBuilderMixin:
 
         self.time_label = _make_muted_label()
         self.size_label = _make_muted_label()
+        self.content_type_label = _make_muted_label()
+        self.content_type_label.setToolTip("Content type of the current response")
 
         copy_btn = _make_button("Copy Body", _BTN_WIDTH_MEDIUM, "Copy response body to clipboard")
         copy_btn.clicked.connect(self._copy_body)
@@ -137,6 +139,8 @@ class ResponseBuilderMixin:
         row.addWidget(self.time_label)
         row.addWidget(QLabel(_BODY_WARNING_SEPARATOR))
         row.addWidget(self.size_label)
+        row.addWidget(QLabel(_BODY_WARNING_SEPARATOR))
+        row.addWidget(self.content_type_label)
         row.addWidget(self._wrap_btn)
         row.addWidget(self._redact_btn)
         row.addWidget(self._readability_btn)
@@ -258,8 +262,26 @@ class ResponseBuilderMixin:
         self._build_sent_request_tab()
         self._build_connection_tab()
         self._build_intelligence_tab()
+        self._configure_tab_tooltips()
 
         layout.addWidget(self.tabs, 1)
+
+    def _configure_tab_tooltips(self) -> None:
+        """Attach concise tooltips to response tabs."""
+        tab_tooltips = {
+            "Body": "Formatted response body text",
+            "Headers": "Response headers with quick filtering",
+            "Cookies": "Cookies parsed from Set-Cookie headers",
+            "JSON": "Lazy-loaded JSON tree view",
+            "Sent Request": "The request exactly as it was sent",
+            "Connection": "Network, TLS, and transport details",
+            "Intelligence": "Automatic security and performance insights",
+        }
+        for index in range(self.tabs.count()):
+            label = self.tabs.tabText(index)
+            tooltip = tab_tooltips.get(label)
+            if tooltip:
+                self.tabs.setTabToolTip(index, tooltip)
 
     # ------------------------------------------------------------------
     # Body Tab

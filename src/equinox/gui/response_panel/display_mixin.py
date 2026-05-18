@@ -59,6 +59,8 @@ class ResponseDisplayMixin:
         """Update status bar with response code, elapsed time, and size."""
         code = response.status_code
         color = self._get_status_color(code)
+        content_type = str(response.headers.get("content-type", "")).strip()
+        content_type_summary = content_type.split(";", 1)[0] if content_type else "Unknown type"
 
         # Log widget references to ensure they exist
         logger.debug(
@@ -72,6 +74,8 @@ class ResponseDisplayMixin:
         self.status_label.setStyleSheet(f"color: {color};")
         self.time_label.setText(f"{int(response.elapsed * 1000)} ms")
         self.size_label.setText(format_size(response.size))
+        self.content_type_label.setText(content_type_summary)
+        self.content_type_label.setToolTip(content_type or "Content type not provided by the server")
 
         # Verify values were actually set
         logger.debug(
@@ -288,14 +292,32 @@ class ResponseDisplayMixin:
         )
 
         self.resp_headers_table.load(self._maybe_redact_headers(dict(response.headers)))
-        count = len(response.headers)
-        self._hdrs_count_label.setText(str(count))
-        logger.debug("_display_headers: %d headers loaded, tabs visible=%s", count, self.tabs.isVisible())
+        self._total_header_count = len(response.headers)
+        self._update_headers_count_label()
+        logger.debug(
+            "_display_headers: %d headers loaded, tabs visible=%s",
+            self._total_header_count,
+            self.tabs.isVisible(),
+        )
 
     def _on_hdrs_filter_changed(self, text: str) -> None:
         """Filter headers table by substring match on name/value."""
         self.resp_headers_table.filter(text)
-        self._hdrs_count_label.setText(str(self.resp_headers_table.rowCount()))
+        self._update_headers_count_label(self.resp_headers_table.rowCount())
+
+    def _update_headers_count_label(self, visible_count: Optional[int] = None) -> None:
+        """Show both filtered and total header counts when a filter is active."""
+        total_count = int(getattr(self, "_total_header_count", 0) or 0)
+        shown_count = self.resp_headers_table.rowCount() if visible_count is None else int(visible_count)
+
+        if total_count <= 0:
+            self._hdrs_count_label.setText("No headers")
+            return
+        if shown_count >= total_count:
+            suffix = "header" if total_count == 1 else "headers"
+            self._hdrs_count_label.setText(f"{total_count} {suffix}")
+            return
+        self._hdrs_count_label.setText(f"{shown_count} of {total_count} shown")
 
     # ------------------------------------------------------------------
     # Timings

@@ -462,6 +462,23 @@ class RequestBodyMixin:
 
         self._update_tab_labels()
 
+    def _set_tab_text_by_base_label(self, base_label: str, text: str) -> None:
+        """Update the first tab whose label matches *base_label* ignoring badges."""
+        for i in range(self.tabs.count()):
+            if self.tabs.tabText(i).startswith(base_label):
+                self.tabs.setTabText(i, text)
+                return
+
+    @staticmethod
+    def _non_empty_table_rows(table: QTableWidget, key_column: int = 0) -> int:
+        """Count rows whose key column contains meaningful user data."""
+        count = 0
+        for row in range(table.rowCount()):
+            item = table.item(row, key_column)
+            if item and item.text().strip():
+                count += 1
+        return count
+
     def _update_tab_labels(self, *_args) -> None:
         """Update tab labels to show data counts as badges."""
         try:
@@ -470,16 +487,31 @@ class RequestBodyMixin:
             qp = len(self.params_table.get_all_rows())
             pp = self.path_params_table.rowCount()
             total_p = qp + pp
-            self.tabs.setTabText(0, f"Headers ({h})" if h else "Headers")
-            self.tabs.setTabText(1, f"Params ({total_p})" if total_p else "Params")
+            self._set_tab_text_by_base_label("Headers", f"Headers ({h})" if h else "Headers")
+            self._set_tab_text_by_base_label("Params", f"Params ({total_p})" if total_p else "Params")
             bt = self.body_type_combo.currentText()
             if bt == "multipart/form-data":
                 mp = len(self._get_multipart_data())
-                self.tabs.setTabText(2, f"Body ({mp})" if mp else "Body")
+                self._set_tab_text_by_base_label("Body", f"Body ({mp})" if mp else "Body")
             elif bt != "none" and self.body_text.toPlainText().strip():
-                self.tabs.setTabText(2, "Body ●")
+                self._set_tab_text_by_base_label("Body", "Body ●")
             else:
-                self.tabs.setTabText(2, "Body")
+                self._set_tab_text_by_base_label("Body", "Body")
+
+            captures = self._non_empty_table_rows(self.captures_table)
+            self._set_tab_text_by_base_label(
+                _LABEL_CAPTURES,
+                f"{_LABEL_CAPTURES} ({captures})" if captures else _LABEL_CAPTURES,
+            )
+
+            has_scripts = bool(
+                self.pre_script_editor.toPlainText().strip()
+                or self.post_script_editor.toPlainText().strip()
+            )
+            self._set_tab_text_by_base_label("Scripts", "Scripts ●" if has_scripts else "Scripts")
+
+            has_notes = bool(self.notes_editor.toPlainText().strip())
+            self._set_tab_text_by_base_label("Notes", "Notes ●" if has_notes else "Notes")
         except Exception:
             logger.debug("Failed to update tab labels", exc_info=True)
 

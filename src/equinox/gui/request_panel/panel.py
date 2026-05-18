@@ -67,10 +67,11 @@ from equinox.gui.request_panel.save_dialog import SaveRequestDialog  # noqa: F40
 from equinox.gui.request_panel.toolbar import TabToolbar
 from equinox.gui.syntax_highlighter.python_highlighter import PythonHighlighter
 from equinox.gui.request_panel.autosave_mixin import RequestAutosaveMixin
-from ..ui_common import get_gui_settings
+from ..ui_common import configure_tab_persistence, get_gui_settings
 
 logger = logging.getLogger(__name__)
 _KEY_POLICY_PROFILE = "request/policy_profile"
+_KEY_ACTIVE_TAB = "request/active_tab"
 _POLICY_STRICT = "Strict"
 _POLICY_BALANCED = "Balanced"
 _POLICY_PERMISSIVE = "Permissive"
@@ -214,6 +215,32 @@ class RequestPanel(
 
     def _clear_dirty(self) -> None:
         self._dirty = False
+        self._sync_editor_state_ui()
+
+    def _sync_editor_state_ui(self) -> None:
+        """Reflect scratch/saved/dirty state in the request footer."""
+        save_button = getattr(self, "save_button", None)
+        state_label = getattr(self, "_editor_state_label", None)
+        has_saved_target = bool(getattr(self.current_request, "id", None))
+
+        if self._dirty:
+            if save_button is not None:
+                save_button.setText("Save Changes")
+                save_button.setToolTip("Save the current request changes to a collection")
+            if state_label is not None:
+                state_label.setText("Unsaved changes")
+            return
+
+        if save_button is not None:
+            save_button.setText("Save")
+            save_button.setToolTip("Save to a collection (prompts for name / folder)")
+
+        if state_label is None:
+            return
+        if has_saved_target:
+            state_label.setText("Saved to collection")
+        else:
+            state_label.setText("Scratch request")
 
     def send(self) -> None:
         """Public wrapper for sending the current request.
@@ -355,6 +382,13 @@ class RequestPanel(
         self.tabs.addTab(self._create_scripts_tab(), "Scripts")
         self.tabs.addTab(self._create_settings_tab(), "Settings")
         self.tabs.addTab(self._build_notes_tab(), "Notes")
+        self._configure_tab_metadata()
+        configure_tab_persistence(
+            self.tabs,
+            settings_key=_KEY_ACTIVE_TAB,
+            default_tab="Headers",
+            settings=self._settings,
+        )
         layout.addWidget(self.tabs, 1)
 
         bottom_container = QWidget()
@@ -362,6 +396,26 @@ class RequestPanel(
         bottom_layout.setContentsMargins(6, 0, 6, 6)
         bottom_layout.addLayout(self._build_bottom_bar())
         layout.addWidget(bottom_container)
+        self._sync_editor_state_ui()
+
+    def _configure_tab_metadata(self) -> None:
+        """Attach stable tooltips to request tabs for faster discovery."""
+        tab_tooltips = {
+            "Headers": "Request headers sent with the call",
+            "Params": "Query-string and path parameters",
+            "Body": "Request payload, multipart form data, or GraphQL body",
+            "Auth": "Per-request authentication configuration",
+            "Captures": "Extract response values into session variables",
+            "Assertions": "Verify status, headers, body, and timing rules",
+            "Scripts": "Pre-request and post-response Python scripts",
+            "Settings": "Timeouts, TLS, redirects, and client certificate options",
+            "Notes": "Request documentation, examples, and working notes",
+        }
+        for index in range(self.tabs.count()):
+            label = self.tabs.tabText(index)
+            tooltip = tab_tooltips.get(label)
+            if tooltip:
+                self.tabs.setTabToolTip(index, tooltip)
 
     # ── UI sub-builders (called once from _init_ui) ────────────────────
 
@@ -438,12 +492,12 @@ class RequestPanel(
         row.setContentsMargins(0, 0, 0, 0)
         row.setSpacing(6)
 
-        save_btn = QPushButton("Save")
-        save_btn.setObjectName("requestSaveBtn")
-        save_btn.setProperty("usage_track_id", "request.save")
-        save_btn.setMinimumWidth(SEND_BTN_WIDTH)
-        save_btn.setToolTip("Save to a collection (prompts for name / folder)")
-        save_btn.clicked.connect(self._save_request)
+        self.save_button = QPushButton("Save")
+        self.save_button.setObjectName("requestSaveBtn")
+        self.save_button.setProperty("usage_track_id", "request.save")
+        self.save_button.setMinimumWidth(SEND_BTN_WIDTH)
+        self.save_button.setToolTip("Save to a collection (prompts for name / folder)")
+        self.save_button.clicked.connect(self._save_request)
 
         more_btn = QToolButton()
         more_btn.setText("More ▾")
@@ -481,10 +535,13 @@ class RequestPanel(
 
         self._session_vars_label = QLabel("Session vars: 0")
         self._session_vars_label.setObjectName("mutedLabel")
+        self._editor_state_label = QLabel("Scratch request")
+        self._editor_state_label.setObjectName("mutedLabel")
 
-        row.addWidget(save_btn)
+        row.addWidget(self.save_button)
         row.addWidget(more_btn)
         row.addStretch()
+        row.addWidget(self._editor_state_label)
         row.addWidget(self._session_vars_label)
 
         # Update session-vars count whenever the signal is emitted

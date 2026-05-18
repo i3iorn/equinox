@@ -23,7 +23,7 @@ from equinox.core.request import Response
 from equinox.gui.response_panel.builder import ResponseBuilderMixin
 from equinox.gui.response_panel.display_mixin import ResponseDisplayMixin
 from equinox.gui.response_panel.actions_mixin import ResponseActionsMixin
-from equinox.gui.ui_common import get_gui_settings
+from equinox.gui import ui_common
 
 logger = logging.getLogger(__name__)
 
@@ -47,6 +47,7 @@ _READ_MODE_DIFF = "diff"
 _READABILITY_MODES = (_READ_MODE_PRETTY, _READ_MODE_RAW, _READ_MODE_SPLIT, _READ_MODE_DIFF)
 _KEY_READABILITY_PREFS = "response/readability_by_content_type"
 _KEY_REDACTION_PREVIEW = "response/redaction_preview"
+_KEY_ACTIVE_TAB = "response/active_tab"
 
 
 class ResponsePanel(
@@ -91,7 +92,7 @@ class ResponsePanel(
 
         # Thread pool for async operations (e.g., response intelligence)
         self._thread_pool = QThreadPool.globalInstance()
-        self._settings = get_gui_settings()
+        self._settings = ui_common.get_gui_settings()
 
         # View state
         self._body_highlighter: Optional[Any] = None
@@ -100,6 +101,7 @@ class ResponsePanel(
         self._redaction_preview = bool(self._settings.value(_KEY_REDACTION_PREVIEW, False, type=bool))
         self._raw_body_text = ""
         self._pretty_body_text = ""
+        self._total_header_count = 0
         self._readability_by_type = self._load_readability_preferences()
         self._suppress_tab_sync = False
 
@@ -124,6 +126,12 @@ class ResponsePanel(
         self._render_warning_label.setVisible(False)
         layout.addWidget(self._render_warning_label)
         self._build_tabs(layout)
+        ui_common.configure_tab_persistence(  # type: ignore[attr-defined]
+            self.tabs,
+            settings_key=_KEY_ACTIVE_TAB,
+            default_tab="Body",
+            settings=self._settings,
+        )
         self.tabs.currentChanged.connect(self._on_tab_changed)
         self._redact_btn.setChecked(self._redaction_preview)
 
