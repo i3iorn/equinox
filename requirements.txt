@@ -1,29 +1,6 @@
-# Core dependencies
-httpx>=0.24.0
-click>=8.0.0
-PyQt6>=6.5.0
-pygments>=2.15.0
-jsonschema>=4.0.0
-jsonpath-ng>=1.6.0
-pyyaml>=6.0.0
-python-dotenv>=1.0.0
-urlps>=0.3.5
+# Dependency source of truth: pyproject.toml
+# This file is a convenience entrypoint for environments that prefer:
+#   pip install -r requirements.txt
+# It intentionally delegates to pyproject extras to avoid manifest drift.
 
-# Security
-cryptography>=41.0.0
-certifi>=2023.0.0
-
-# Development dependencies
-# Install with: pip install -e ".[dev]"
-pytest>=7.0.0
-pytest-asyncio>=0.21.0
-pytest-cov>=4.0.0
-pytest-mock>=3.12.0
-black>=23.0.0
-flake8>=6.0.0
-mypy>=1.0.0
-bandit>=1.7.0
-safety>=2.3.0
-pre-commit>=3.0.0
-
-pyqt6-sip
+-e .[dev]

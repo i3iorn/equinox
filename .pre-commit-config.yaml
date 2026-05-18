@@ -1,4 +1,13 @@
 repos:
+  - repo: local
+    hooks:
+      - id: dependency-manifest-consistency
+        name: dependency-manifest-consistency
+        entry: python scripts/check_dependency_consistency.py
+        language: system
+        pass_filenames: false
+        files: ^(pyproject\.toml|setup\.py|requirements\.txt)$
+
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v4.6.0
     hooks:
