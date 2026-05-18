@@ -14,7 +14,7 @@ This guide helps AI agents understand Equinox architecture and development pract
   - **`core/http/`** — HTTP protocol helpers (`CookieManager`, `RateLimiter`, `check_proxy_reachable`)
   - **`core/io/`** — I/O and parsing utilities (`parse_curl`, `parse_dotenv`, multipart handling)
   - **`core/urls/`** — URL handling package (`normalizer.py`, `parsing.py`, `utils.py`)
-- **`gui/`**: PyQt6 panels — request builder (package), response viewer (package), collections (package), history, variables, logs, intelligence, websocket; shared widgets, dialogs (package), syntax highlighter (package)
+- **`gui/`**: PyQt6 panels — request builder (package), response viewer (package), collections (package), history, variables, logs, intelligence, websocket; shared widgets, dialogs (package), syntax highlighter (package), keyboard shortcuts, UI usage tracking
 - **`storage/`**: SQLite layer — **versioned migrations** (`migrations.py`), collection/env/history (package) managers, variable groups, cookies, saved credentials, response intelligence
 - **`auth/`**: Auth strategies — OAuth2 (auto-refresh + encrypted token storage), Bearer, API Key, Basic, AWS SigV4; factory module
 - **`importers/`**: OpenAPI (multi-server, server-variable expansion), Postman (`{{baseUrl}}` resolution), HAR, Insomnia
@@ -71,7 +71,7 @@ The runner is triggered automatically on `Database.__init__` — no manual invoc
 
 ### Current schema version
 
-The schema is at **version 22** (migration 22 adds the `global_variables` table). See `migrations.py` for the full list.
+The schema is at **version 24** (migration 24 adds the `ui_usage` table for UI usage tracking). See `migrations.py` for the full list.
 
 ## Database — Key Implementation Notes
 
@@ -193,6 +193,7 @@ Use `security/__init__.py` as the public security facade for cross-module import
 Environment-toggled behavior is centralized in `core/config/flags.py`:
 - `EQUINOX_USE_OS_KEYRING` → `is_os_keystore_enabled()`
 - `EQUINOX_HISTORY_CAPTURE_BODIES` → `is_history_capture_enabled()`
+- `EQUINOX_TRACK_UI_USAGE` → `is_ui_usage_tracking_enabled()` (v0.4.3+)
 
 ### Assertions and captures
 
@@ -322,12 +323,81 @@ The intelligence panel (`gui/intelligence_panel.py`) and its background worker (
 
 `intelligence/recommender.py` → `Recommender` queries the history DB for structurally similar past requests and generates confidence-ranked header and query-param suggestions. Similarity is scored across five dimensions: method (0.3), path (0.4), query (0.1), headers (0.1), body (0.1).
 
+### UI Usage Tracking System (v0.4.3+)
+
+`storage/ui_usage_tracker.py` provides transparent local-only UI interaction analytics:
+
+- **`UIUsageTracker`**: Main service class that tracks user interactions (command palette, menu items, tab navigation, environment switching)
+- **Data Collected**: Action name, timestamp, frequency count, last used timestamp (stored in SQLite `ui_usage` table)
+- **Privacy**: Data stored locally only; no external transmission
+- **Control**: Disabled via `EQUINOX_TRACK_UI_USAGE=0` environment variable
+- **Ranking Algorithm**: Combines frequency + recency + priority (active state takes precedence)
+
+**Usage Pattern:**
+```python
+from equinox.storage.ui_usage_tracker import UIUsageTracker
+
+tracker = UIUsageTracker(db)
+tracker.track_action("command_send_request", metadata={"collection": "demo"})
+ranked_items = tracker.get_ranked_items("command_palette", limit=10)
+```
+
+The tracking system powers:
+- **Command Palette Ranking**: Most-used commands appear first in search results
+- **Context Menu Ranking**: Frequently-selected items appear at top
+- **Environment Menu Ranking**: Active environment always at top, recently-used below
+- **Destructive Action Separation**: Delete/clear actions separated at bottom with visual separator
+
+**Associated GUI Components:**
+- `gui/dialogs/usage_stats_dialog.py`: User-accessible interface to view and manage usage statistics
+- `gui/command_palette.py`: Auto-ranks suggestions by usage
+- `gui/dialogs/context_menu.py`: Ranks actions by frequency
+- `gui/dialogs/environment_menu.py`: Ranks environments by usage and active state
+
+### Keyboard Shortcuts and Navigation (v0.4.3+)
+
+`gui/window.py` and `gui/sidebar.py` implement keyboard-driven navigation:
+
+- **Shortcuts**: `Ctrl+1` through `Ctrl+8` navigate between sidebar tabs
+- **Implementation**: Qt `QShortcut` objects registered at main window level
+- **Conflict Prevention**: Shortcuts only activate when focus is on neutral UI (tab bar, status bar, not text editors)
+- **Tab Mapping**: 
+  - `Ctrl+1`: Request Builder
+  - `Ctrl+2`: Response Viewer
+  - `Ctrl+3`: Collections
+  - `Ctrl+4`: Variables
+  - `Ctrl+5`: History
+  - `Ctrl+6`: Logs
+  - `Ctrl+7`: Intelligence
+  - `Ctrl+8`: WebSocket
+
+### Worker Thread Management (v0.4.2+)
+
+**Intelligence Worker Improvements:**
+- `gui/intelligence_worker.py` now includes defensive parent widget checks
+- Workers validate parent object existence before accessing it
+- Prevents crashes when intelligence panel is closed during analysis
+- Cancellation events logged at INFO level for better observability
+
+**Worker Cancellation Pattern:**
+```python
+def run(self) -> None:
+    try:
+        if not self.parent or not self.parent.isVisible():
+            logger.info("Parent widget no longer valid, cancelling")
+            return
+        # ... perform work ...
+    except Exception as exc:
+        logger.error("Worker error", extra={"error": str(exc)})
+```
+
 ## Key Files
 
 | File | Purpose |
 |------|---------|
-| `storage/migrations.py` | Versioned schema — **only place to change the DB schema** (currently at v22) |
+| `storage/migrations.py` | Versioned schema — **only place to change the DB schema** (currently at v24) |
 | `storage/schema.sql` | Reference schema (documentation only — not used at runtime) |
+| `storage/ui_usage_tracker.py` | `UIUsageTracker` — local UI analytics and action ranking (v0.4.3+) |
 | `storage/collections/manager.py` | `CollectionManager` — `save_request`, `update_request`, `update_request_auth`, CRUD |
 | `storage/collections/auth.py` | `_serialize_auth` / `_deserialize_auth` — Fernet encryption boundary |
 | `storage/collections/folders.py` | `CollectionFoldersMixin` — folder CRUD |
@@ -347,10 +417,13 @@ The intelligence panel (`gui/intelligence_panel.py`) and its background worker (
 | `exporters/` | Standalone exporters package: `postman.py`, `openapi.py`, `insomnia.py`, `har.py`, `curl.py` |
 | `gui/dialogs/saved_credentials_dialog.py` | Reference for the blocked-signals list+form dialog pattern |
 | `gui/dialogs/_dirty_dialog_mixin.py` | `DirtyDialogMixin` — shared dirty-state infrastructure for list+form dialogs |
+| `gui/dialogs/context_menu.py` | Ranked context menu with usage-based sorting and destructive action separation (v0.4.3+) |
+| `gui/dialogs/usage_stats_dialog.py` | UI usage statistics viewer and management interface (v0.4.3+) |
 | `gui/request_panel/` | Package: `panel.py` (RequestPanel), `mixins.py` (send/auth), `body_mixin.py`, `builder.py`, `save_dialog.py`, `toolbar.py` |
 | `gui/response_panel/` | Package: `panel.py`, `builder.py`, `display_mixin.py`, `actions_mixin.py`, `search_bar.py`, etc. |
 | `gui/syntax_highlighter/` | Package: `base.py`, `json_highlighter.py`, `python_highlighter.py`, `xml_highlighter.py`, `yaml_highlighter.py` |
-| `gui/window.py` | Signal wiring hub — connects all panels and menu actions |
+| `gui/intelligence_worker.py` | Background intelligence analysis with defensive parent widget checks (v0.4.2+) |
+| `gui/window.py` | Signal wiring hub — connects all panels, menu actions, and keyboard shortcuts |
 | `core/interceptors/` | `InterceptorChain`, logging interceptors |
 | `core/log_setup.py` | JSON structured logging to `~/.equinox/logs/equinox.log` |
 | `core/config/flags.py` | Environment-based feature toggles (`EQUINOX_USE_OS_KEYRING`, `EQUINOX_HISTORY_CAPTURE_BODIES`) |
@@ -372,15 +445,22 @@ The intelligence panel (`gui/intelligence_panel.py`) and its background worker (
 | `core/client/retry_policy.py` | `RetryPolicy` — timeout + HTTP overload retries |
 | `core/client/concurrency_guard.py` | `ConcurrencyGuard` — max-concurrent-requests slot |
 | `core/validation/__init__.py` | `Validator` façade — always start here for new input types |
-| `auth/oauth2.py` | `OAuth2Auth` with auto-refresh; tokens encrypted at DB layer |
+| `auth/oauth2.py` | `OAuth2Auth` with auto-refresh and HTTP Basic auth fallback (v0.4.2+); tokens encrypted at DB layer |
 | `auth/aws_sigv4.py` | `AWSSigV4Auth` — pure-Python AWS Signature V4 signing |
 | `auth/factory.py` | Auth instance factory |
 | `security/__init__.py` | Public security facade for redaction + crypto helpers + `SecureStorage` |
 | `cli/main.py` | Click operational entrypoint (`rotate-secrets`) |
 | `intelligence/recommender.py` | `Recommender` — confidence-ranked header/param suggestions |
+| `scripts/benchmark_history_search.py` | Performance benchmark harness for history search (v0.4.2+) |
 | `tests/storage/test_migrations.py` | Reference for how to test new migrations |
+| `tests/gui/test_keyboard_shortcuts.py` | Keyboard shortcut registration and handling tests (v0.4.3+) |
+| `tests/gui/test_context_menu_ranking.py` | Context menu ranking and destructive action tests (v0.4.3+) |
+| `tests/storage/test_ui_usage_tracker.py` | UI usage tracking and ranking algorithm tests (v0.4.3+) |
+| `tests/storage/test_history_search_performance.py` | Performance regression tests for history search (v0.4.2+) |
+| `tests/gui/test_worker_cancellation.py` | Worker thread cancellation and cleanup tests (v0.4.2+) |
 | `tests/importers/` | Reference for importer tests |
 | `tests/core/test_security_comprehensive.py` | Reference for security tests |
+| `tests/core/test_validation_properties.py` | Property-based validation tests using Hypothesis (v0.4.2+) |
 | `tests/security/` | Secret rotation, redaction, keystore integration, and master-password prompt tests |
 | `tests/flags/test_flags.py` | Environment flag behavior tests |
 | `tests/storage/test_request_persistence.py` | Reference for autosave & path_params round-trip tests |
