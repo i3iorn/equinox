@@ -38,7 +38,8 @@ def test_http_status_error_message_redacts_sensitive_values(mock_client_class, m
     with pytest.raises(AuthError) as exc_info:
         auth._refresh_access_token()
 
-    assert mock_client.post.call_count == 1
+    # invalid_client triggers one fallback attempt with alternate token_auth mode.
+    assert mock_client.post.call_count == 2
 
     err_text = str(exc_info.value)
     assert "supersecret" not in err_text

@@ -61,6 +61,13 @@ _RETRY_BACKOFF_BASE: int = 2
 # Markers that identify non-retryable "nothing is listening" errors.
 _CONNECTION_REFUSED_MARKERS: tuple = ("10061", "connection refused", "econnrefused")
 
+# OAuth2 token errors that indicate refresh_token grant cannot be used and the
+# client should retry with client_credentials when available.
+_REFRESH_GRANT_FALLBACK_ERRORS: frozenset = frozenset({
+    "invalid_grant",
+    "unsupported_grant_type",
+})
+
 # Hex-suffix length appended to anonymous (no client_id) storage keys.
 _ANON_KEY_ID_LENGTH: int = 12
 
@@ -789,6 +796,25 @@ class OAuth2Auth(AuthStrategy):
         client_secret = self.client_secret or ""
         return make_oauth2_basic_auth_header(client_id, client_secret)
 
+    @staticmethod
+    def _credential_diagnostics(value: Optional[str]) -> Dict[str, Any]:
+        """Return non-sensitive diagnostics about a credential string."""
+        if value is None:
+            return {
+                "is_present": False,
+                "length": 0,
+                "trimmed_length": 0,
+                "has_outer_whitespace": False,
+            }
+
+        trimmed = value.strip()
+        return {
+            "is_present": True,
+            "length": len(value),
+            "trimmed_length": len(trimmed),
+            "has_outer_whitespace": value != trimmed,
+        }
+
     def _execute_token_post(
         self,
         grant_data: Dict[str, Any],
@@ -816,6 +842,38 @@ class OAuth2Auth(AuthStrategy):
             # Remove client credentials from body when using Basic auth
             body.pop("client_id", None)
             body.pop("client_secret", None)
+
+        client_id_diag = self._credential_diagnostics(self.client_id)
+        client_secret_diag = self._credential_diagnostics(self.client_secret)
+        logger.debug(
+            "OAuth2 token request diagnostics",
+            extra={
+                "token_url": redact_url(self.token_url),
+                "token_auth": self.token_auth,
+                "grant_type": body.get("grant_type"),
+                "has_authorization_header": "Authorization" in headers,
+                "body_has_client_id": "client_id" in body,
+                "body_has_client_secret": "client_secret" in body,
+                "client_id_present": client_id_diag["is_present"],
+                "client_id_length": client_id_diag["length"],
+                "client_id_trimmed_length": client_id_diag["trimmed_length"],
+                "client_id_has_outer_whitespace": client_id_diag["has_outer_whitespace"],
+                "client_secret_present": client_secret_diag["is_present"],
+                "client_secret_length": client_secret_diag["length"],
+                "client_secret_trimmed_length": client_secret_diag["trimmed_length"],
+                "client_secret_has_outer_whitespace": client_secret_diag["has_outer_whitespace"],
+            },
+        )
+        if client_id_diag["has_outer_whitespace"] or client_secret_diag["has_outer_whitespace"]:
+            logger.warning(
+                "OAuth2 credentials contain leading/trailing whitespace; token endpoint may reject invalid_client",
+                extra={
+                    "token_url": redact_url(self.token_url),
+                    "token_auth": self.token_auth,
+                    "client_id_has_outer_whitespace": client_id_diag["has_outer_whitespace"],
+                    "client_secret_has_outer_whitespace": client_secret_diag["has_outer_whitespace"],
+                },
+            )
 
         with httpx.Client(
             timeout=self._make_token_timeout(),
@@ -848,7 +906,11 @@ class OAuth2Auth(AuthStrategy):
         proxy: Optional[str] = None,
         verify_ssl: Optional[bool] = None,
     ) -> Optional[httpx.Response]:
-        """Retry once with alternate client-auth mode for invalid_client responses."""
+        """Retry once with alternate client-auth mode for invalid_client responses.
+
+        Returns ``None`` when fallback is not applicable or when the fallback
+        attempt also fails with an HTTP status error.
+        """
         response = getattr(status_exc, "response", None)
         status_code = response.status_code if response is not None else None
         oauth_error = self._token_error_code(response)
@@ -893,10 +955,78 @@ class OAuth2Auth(AuthStrategy):
                 },
             )
             return response
+        except httpx.HTTPStatusError as fallback_exc:
+            # Keep original mode if fallback failed and let caller continue
+            # standard AuthError mapping with the captured HTTP response.
+            self.token_auth = current_mode
+            fallback_response = getattr(fallback_exc, "response", None)
+            logger.warning(
+                "Token endpoint fallback with token_auth=%s also failed (status=%s)",
+                alternate_mode,
+                fallback_response.status_code if fallback_response is not None else "unknown",
+                extra={
+                    "token_url": redact_url(self.token_url),
+                    "fallback_status_code": (
+                        fallback_response.status_code if fallback_response is not None else None
+                    ),
+                    "token_auth": alternate_mode,
+                    "fallback_from": current_mode,
+                },
+            )
+            return None
         except Exception:
             # Revert to original mode when fallback also fails.
             self.token_auth = current_mode
             raise
+
+    def _try_client_credentials_fallback(
+        self,
+        grant_data: Dict[str, Any],
+        status_exc: httpx.HTTPStatusError,
+        *,
+        proxy: Optional[str] = None,
+        verify_ssl: Optional[bool] = None,
+    ) -> Optional[httpx.Response]:
+        """Retry once with client_credentials when refresh_token grant is rejected.
+
+        Some providers (including D&B Direct+) support client_credentials only.
+        If we have both client credentials and the refresh grant fails with a
+        known OAuth2 error, retry with client_credentials.
+        """
+        if grant_data.get("grant_type") != "refresh_token":
+            return None
+        if not (self.client_id and self.client_secret):
+            return None
+
+        response = getattr(status_exc, "response", None)
+        status_code = response.status_code if response is not None else None
+        oauth_error = self._token_error_code(response)
+
+        if status_code not in (400, 401) or oauth_error not in _REFRESH_GRANT_FALLBACK_ERRORS:
+            return None
+
+        fallback_grant = self._client_credentials_grant_data()
+        if self.scope:
+            fallback_grant["scope"] = self.scope
+        if self.extra_params:
+            fallback_grant.update(self.extra_params)
+
+        logger.warning(
+            "Token endpoint rejected refresh_token grant (%s); retrying with client_credentials",
+            oauth_error,
+            extra={
+                "token_url": redact_url(self.token_url),
+                "status_code": status_code,
+                "oauth_error": oauth_error,
+                "original_grant_type": grant_data.get("grant_type"),
+                "retry_grant_type": "client_credentials",
+            },
+        )
+        return self._execute_token_post(
+            fallback_grant,
+            proxy=proxy,
+            verify_ssl=verify_ssl,
+        )
 
     def _post_token_request(
         self,
@@ -968,6 +1098,23 @@ class OAuth2Auth(AuthStrategy):
                 )
                 if fallback_response is not None:
                     return fallback_response
+
+                grant_fallback_response = self._try_client_credentials_fallback(
+                    grant_data,
+                    status_exc,
+                    proxy=proxy,
+                    verify_ssl=verify_ssl,
+                )
+                if grant_fallback_response is not None:
+                    logger.info(
+                        "Token request succeeded after refresh_token -> client_credentials fallback",
+                        extra={
+                            "status_code": grant_fallback_response.status_code,
+                            "token_url": redact_url(self.token_url),
+                            "token_auth": self.token_auth,
+                        },
+                    )
+                    return grant_fallback_response
 
                 status_code = "unknown"
                 token_response: Optional[Dict[str, Any]] = None
