@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from typing import TYPE_CHECKING, Any
 
 from equinox.core.request import Request
 from equinox.gui.request_panel._constants import STATUS_DURATION_LONG
@@ -13,6 +14,17 @@ logger = logging.getLogger(__name__)
 
 class RequestAutosaveMixin:
     """Encapsulates request editor serialization and autosave behavior."""
+
+    _dirty: bool
+    _auth: Any
+    current_request: Any
+    _request_persistence: Any
+
+    if TYPE_CHECKING:
+        def window(self) -> Any: ...
+        def _build_request_editor_snapshot(self) -> Any: ...
+        def _clear_dirty(self) -> None: ...
+        def _save_request(self) -> bool: ...
 
     def _sync_dirty_state_ui(self) -> None:
         """Refresh any optional dirty-state UI affordances."""
@@ -37,7 +49,7 @@ class RequestAutosaveMixin:
         except Exception:
             logger.debug("Could not show status message: %s", text)
 
-    def _build_request_from_editor(self, **overrides) -> Request:
+    def _build_request_from_editor(self, **overrides: Any) -> Request:
         """Construct a Request from the current editor widget state."""
         snapshot = self._build_request_editor_snapshot()
         body, multipart_data = assemble_body(

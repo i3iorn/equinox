@@ -16,7 +16,7 @@ from __future__ import annotations
 import json
 import logging
 import re
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, cast
 
 from PyQt6.QtGui import QColor, QTextCharFormat, QTextCursor, QTextDocument
 from PyQt6.QtWidgets import (
@@ -121,6 +121,10 @@ class RequestBodyMixin:
     _auth: Any
     _inherited_auth: Any
     _inherited_auth_source: Any
+    _body_search_input: Any
+    _body_case_cb: Any
+    _body_jsonpath_cb: Any
+    _body_regex_cb: Any
     current_request: Optional[Request]
 
     def _resolve_inherited_auth(self) -> None: ...
@@ -128,6 +132,9 @@ class RequestBodyMixin:
     def _clear_dirty(self) -> None: ...
     def _update_url_suffix(self) -> None: ...
     def _cancel_request(self) -> None: ...
+
+    def _as_qwidget(self) -> QWidget:
+        return self  # type: ignore[return-value]
 
     # ── Internal helpers ──────────────────────────────────────────────
 
@@ -455,9 +462,6 @@ class RequestBodyMixin:
         """
         self.captures_table.setRowCount(0)
         for cap in captures or []:
-            if not isinstance(cap, dict):
-                continue
-
             r = self.captures_table.rowCount()
             self.captures_table.insertRow(r)
 
@@ -587,7 +591,7 @@ class RequestBodyMixin:
 
     @staticmethod
     def _make_extra_selection(
-        target, start: int, end: int, fmt: QTextCharFormat
+        target: Any, start: int, end: int, fmt: QTextCharFormat
     ) -> QTextEdit.ExtraSelection | None:
         """Build a :class:`QTextEdit.ExtraSelection` spanning [*start*, *end*)."""
         # Guard against out-of-range positions which can occur when the
@@ -774,7 +778,7 @@ class RequestBodyMixin:
             return []
 
         # Parse path like a.b[0].c into steps
-        steps = []
+        steps: list[Any] = []
         i = 0
         while i < len(path):
             if path[i] == ".":
@@ -852,7 +856,7 @@ class RequestBodyMixin:
 
         self._try_ui(self.url_input.setText, request.url)
 
-        def _set_method():
+        def _set_method() -> None:
             idx = self.method_combo.findText(request.method)
             if idx >= 0:
                 self.method_combo.setCurrentIndex(idx)
@@ -868,7 +872,7 @@ class RequestBodyMixin:
         mp_data = getattr(request, "multipart_data", None)
         if mp_data:
 
-            def _load_mp():
+            def _load_mp() -> None:
                 self._set_multipart_data(mp_data)
                 self.body_type_combo.setCurrentText("multipart/form-data")
                 self.body_text.clear()
@@ -876,7 +880,7 @@ class RequestBodyMixin:
             self._try_ui(_load_mp)
         elif request.body:
 
-            def _load_body():
+            def _load_body() -> None:
                 self.body_text.setPlainText(request.body)
                 self._multipart_table.setRowCount(0)
                 detected = self._detect_body_type(request.body, request.headers)
@@ -885,7 +889,7 @@ class RequestBodyMixin:
             self._try_ui(_load_body)
         else:
 
-            def _clear_body():
+            def _clear_body() -> None:
                 self.body_text.clear()
                 self._multipart_table.setRowCount(0)
                 self.body_type_combo.setCurrentText("none")
@@ -896,19 +900,19 @@ class RequestBodyMixin:
         self._try_ui(self._set_captures, getattr(request, "captures", None) or [])
         self._try_ui(self._set_assertions, getattr(request, "assertions", None) or [])
 
-        def _load_scripts():
+        def _load_scripts() -> None:
             self.pre_script_editor.setPlainText(getattr(request, "pre_script", "") or "")
             self.post_script_editor.setPlainText(getattr(request, "post_script", "") or "")
 
         self._try_ui(_load_scripts)
 
-        def _load_certs():
+        def _load_certs() -> None:
             self.cert_path_input.setText(getattr(request, "cert_path", "") or "")
             self.cert_key_input.setText(getattr(request, "cert_key_path", "") or "")
 
         self._try_ui(_load_certs)
 
-        def _load_settings():
+        def _load_settings() -> None:
             self.timeout_spin.setValue(
                 getattr(request, "timeout", DEFAULT_TIMEOUT) or DEFAULT_TIMEOUT
             )
@@ -917,7 +921,7 @@ class RequestBodyMixin:
 
         self._try_ui(_load_settings)
 
-        def _clear_script_results():
+        def _clear_script_results() -> None:
             self.pre_script_result.setText("")
             self.post_script_result.setText("")
 
@@ -925,7 +929,7 @@ class RequestBodyMixin:
 
         self._try_ui(self.notes_editor.setPlainText, getattr(request, "description", "") or "")
 
-        def _load_path_params():
+        def _load_path_params() -> None:
             self.path_params_table.set_data(getattr(request, "path_params", None) or {})
             self.path_params_table.update_from_url(request.url)
             self._path_params_widget.setVisible(self.path_params_table.rowCount() > 0)
@@ -933,7 +937,7 @@ class RequestBodyMixin:
         self._try_ui(_load_path_params)
 
         # Final housekeeping
-        def _housekeeping():
+        def _housekeeping() -> None:
             self._clear_dirty()
             self._update_tab_labels()
             self._update_url_suffix()
@@ -949,7 +953,7 @@ class RequestBodyMixin:
         """
         from equinox.gui.request_panel.builder import detect_body_type
 
-        return detect_body_type(body, headers)
+        return cast(str, detect_body_type(body, headers))
 
     def clear(self) -> None:
         """Reset all request fields to their defaults.
@@ -963,7 +967,7 @@ class RequestBodyMixin:
         except RuntimeError:
             pass
 
-        def _reset_widgets():
+        def _reset_widgets() -> None:
             self.url_input.clear()
             self.method_combo.setCurrentIndex(0)
             self.headers_table.reset()
@@ -1001,7 +1005,7 @@ class RequestBodyMixin:
         # _session_vars intentionally kept — persists for request chaining
         self.current_request = None
 
-        def _housekeeping():
+        def _housekeeping() -> None:
             self._clear_dirty()
             self._update_tab_labels()
             self._update_url_suffix()
@@ -1053,13 +1057,13 @@ class RequestBodyMixin:
                 # nothing selected
                 return
             path, _ = QFileDialog.getOpenFileName(
-                self, "Select file to upload", "", "All files (*)"
+                self._as_qwidget(), "Select file to upload", "", "All files (*)"
             )
             if path:
                 try:
                     selected = validate_selected_path(path, must_exist=True)
                 except ValueError as exc:
-                    QMessageBox.warning(self, "Invalid File", str(exc))
+                    QMessageBox.warning(self._as_qwidget(), "Invalid File", str(exc))
                     return
                 # Ensure there is an item at col 2
                 item = tbl.item(sel, 2)

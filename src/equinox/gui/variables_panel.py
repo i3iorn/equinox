@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from typing import Any, cast
 
 from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtWidgets import (
@@ -556,7 +557,7 @@ class VariablesPanel(QWidget):
                 path_table = getattr(rp, "path_params_table", None)
                 if path_table is not None:
                     interp_vars.update(path_table.get_all_data())
-            return interp_vars
+            return cast(dict[str, str], interp_vars)
         except Exception as exc:
             logger.debug("Tooltip: failed to build interpolation context: %s", exc)
             return {}
@@ -616,7 +617,7 @@ class VariablesPanel(QWidget):
             logger.error("Failed to delete group %s: %s", self.current_group_id, exc, exc_info=True)
             QMessageBox.critical(self, "Error", f"Failed to delete group: {exc}")
 
-    def _show_group_context_menu(self, position) -> None:
+    def _show_group_context_menu(self, position: Any) -> None:
         item = self.groups_list.itemAt(position)
         if not item:
             return
@@ -726,7 +727,7 @@ class VariablesPanel(QWidget):
 
     # ── Session Variables ─────────────────────────────────────────────────────
 
-    def refresh_session_vars(self, session_vars: dict) -> None:
+    def refresh_session_vars(self, session_vars: dict[str, str]) -> None:
         """Repopulate the session variables table.
 
         Called by ``RequestPanel.session_vars_changed`` signal.
@@ -779,7 +780,7 @@ class VariablesPanel(QWidget):
                 result[key_item.text()] = val_item.text()
         return result
 
-    def _resolve_request_panel(self):
+    def _resolve_request_panel(self) -> Any:
         """Return the nearest RequestPanel host exposing ``request_panel`` if available."""
         host = self.window()
         rp = getattr(host, "request_panel", None)
@@ -794,7 +795,7 @@ class VariablesPanel(QWidget):
             host = host.parent()
         return None
 
-    def _publish_session_var(self, rp, key: str, value: str) -> bool:
+    def _publish_session_var(self, rp: Any, key: str, value: str) -> bool:
         """Write a session variable into a request-panel-like object."""
         session_vars = getattr(rp, "_session_vars", None)
         if isinstance(session_vars, dict):
@@ -812,7 +813,7 @@ class VariablesPanel(QWidget):
 
         return False
 
-    def _delete_published_session_var(self, rp, key: str) -> bool:
+    def _delete_published_session_var(self, rp: Any, key: str) -> bool:
         """Remove a session variable from a request-panel-like object."""
         session_vars = getattr(rp, "_session_vars", None)
         if isinstance(session_vars, dict):
@@ -914,7 +915,7 @@ class VariablesPanel(QWidget):
             if clipboard:
                 clipboard.setText("\n".join(lines))
 
-    def _show_session_context_menu(self, position) -> None:
+    def _show_session_context_menu(self, position: Any) -> None:
         item = self._session_table.itemAt(position)
         if not item:
             return
@@ -984,10 +985,12 @@ class VariablesPanel(QWidget):
         if tracker is None:
             return 0
         try:
-            return tracker.get_count(
+            return int(
+                tracker.get_count(
                 category="context_menu",
                 context=context,
                 element_id=f"action.{action_id}",
+                )
             )
         except Exception:
             logger.debug(
@@ -1010,11 +1013,15 @@ class VariablesPanel(QWidget):
                 "Failed to record context action usage for %s/%s", context, action_id, exc_info=True
             )
 
-    def _run_context_action(self, context: str, action_id: str, callback) -> None:
+    def _run_context_action(self, context: str, action_id: str, callback: Any) -> None:
         self._record_context_action_usage(context, action_id)
         callback()
 
-    def _ordered_context_actions(self, context: str, action_specs: list[tuple]) -> list[tuple]:
+    def _ordered_context_actions(
+        self,
+        context: str,
+        action_specs: list[tuple[str, str, Any, bool]],
+    ) -> list[tuple[str, str, Any, bool]]:
         """Sort non-destructive actions by usage while keeping destructive actions last."""
         safe = []
         destructive = []

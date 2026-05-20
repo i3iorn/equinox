@@ -3,9 +3,10 @@
 import logging
 import os
 import re
+from typing import Any, Optional, cast
 
 from PyQt6.QtCore import Qt
-from PyQt6.QtGui import QColor, QFontMetricsF, QPainter
+from PyQt6.QtGui import QColor, QFocusEvent, QFontMetricsF, QMouseEvent, QPaintEvent, QPainter
 from PyQt6.QtWidgets import QLineEdit, QToolTip
 
 from equinox.core.interpolation import VariableInterpolator
@@ -58,7 +59,7 @@ class _VariableResolver:
         self._merge_path_params(variables)
 
         try:
-            return VariableInterpolator.interpolate(token, variables)
+            return cast(str, VariableInterpolator.interpolate(token, variables))
         except Exception as e:
             logger.debug("VariableInterpolator.interpolate failed: %s", e)
             return token
@@ -120,7 +121,7 @@ class _VariableResolver:
         except Exception as e:
             logger.debug("Failed to load path parameters: %s", e)
 
-    def _get_db(self):
+    def _get_db(self) -> Any:
         """Return the main window's database, or None if unavailable."""
         try:
             win = self._url_edit.window()
@@ -128,7 +129,7 @@ class _VariableResolver:
         except Exception:
             return None
 
-    def _get_request_panel(self):
+    def _get_request_panel(self) -> Any:
         """Return the main window's request panel, or None if unavailable."""
         try:
             win = self._url_edit.window()
@@ -153,13 +154,13 @@ class UrlLineEdit(QLineEdit):
     the clean URL string without visual clutter.
     """
 
-    def __init__(self, parent=None) -> None:
+    def __init__(self, parent: Optional[Any] = None) -> None:
         super().__init__(parent)
         self._param_suffix: str = ""
         # Enable mouse move events even when no button is pressed so we can
         # show tooltips for variable placeholders under the cursor.
         self.setMouseTracking(True)
-        self._last_hovered_var: str | None = None
+        self._last_hovered_var: Optional[str] = None
         self._var_resolver = _VariableResolver(self)
 
     def set_param_suffix(self, suffix: str) -> None:
@@ -168,21 +169,21 @@ class UrlLineEdit(QLineEdit):
             self._param_suffix = suffix
             self.update()
 
-    def focusInEvent(self, event) -> None:  # noqa: N802
+    def focusInEvent(self, event: Optional[QFocusEvent]) -> None:  # noqa: N802
         super().focusInEvent(event)
         self.update()  # hide ghost while editing
 
-    def focusOutEvent(self, event) -> None:  # noqa: N802
+    def focusOutEvent(self, event: Optional[QFocusEvent]) -> None:  # noqa: N802
         super().focusOutEvent(event)
         self.update()  # show ghost again
 
-    def leaveEvent(self, event) -> None:  # noqa: N802
+    def leaveEvent(self, event: Any) -> None:  # noqa: N802
         """Reset hover state so the tooltip reappears on re-entry."""
         self._last_hovered_var = None
         QToolTip.hideText()
         super().leaveEvent(event)
 
-    def paintEvent(self, event) -> None:  # noqa: N802
+    def paintEvent(self, event: Optional[QPaintEvent]) -> None:  # noqa: N802
         super().paintEvent(event)
         if self.hasFocus() or not self._param_suffix:
             return
@@ -218,9 +219,11 @@ class UrlLineEdit(QLineEdit):
 
     # ── Variable tooltip ──────────────────────────────────────────────
 
-    def mouseMoveEvent(self, event) -> None:  # noqa: N802
+    def mouseMoveEvent(self, event: Optional[QMouseEvent]) -> None:  # noqa: N802
         """Show a tooltip for the ``{{variable}}`` under the mouse cursor."""
         try:
+            if event is None:
+                return
             pos = event.pos()
             idx = self.cursorPositionAt(pos)
             text = self.text()

@@ -118,7 +118,10 @@ class RequestPersistenceFacade:
             or not auth_obj.access_token
         ):
             return False
-        self._collection_manager.update_request_auth(request.id, auth_obj)
+        request_id = getattr(request, "id", None)
+        if not isinstance(request_id, int):
+            return False
+        self._collection_manager.update_request_auth(request_id, auth_obj)
         return True
 
     def resolve_effective_auth(self, request: Request) -> Tuple[Any, Optional[str]]:
@@ -156,5 +159,8 @@ class RequestPersistenceFacade:
             or not auth_obj.access_token
         ):
             return False
-        self.persist_auth_to_source(request.collection_id, source, auth_obj)
+        collection_id = getattr(request, "collection_id", None)
+        if not isinstance(collection_id, int):
+            return False
+        self.persist_auth_to_source(collection_id, source, auth_obj)
         return True

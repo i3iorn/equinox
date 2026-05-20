@@ -1,13 +1,23 @@
 """User-command and shortcut mixin for RequestPanel."""
 
+# mypy: disable-error-code=arg-type
+
 from __future__ import annotations
 
 import logging
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-from PyQt6.QtCore import Qt
+from PyQt6.QtCore import QObject, Qt
 from PyQt6.QtGui import QKeySequence, QShortcut
-from PyQt6.QtWidgets import QApplication, QCheckBox, QComboBox, QInputDialog, QLineEdit, QMessageBox
+from PyQt6.QtWidgets import (
+    QApplication,
+    QCheckBox,
+    QComboBox,
+    QInputDialog,
+    QLineEdit,
+    QMessageBox,
+    QWidget,
+)
 
 from equinox.core.request import Request
 from equinox.gui.workers import BenchmarkDialog
@@ -32,32 +42,39 @@ class RequestCommandsMixin:
     tabs: Any
     _cookie_manager: Any
 
-    def _send_request(self) -> None: ...
-    def _save_request(self) -> None: ...
-    def _format_json_body(self) -> None: ...
-    def _detect_body_type(self, body_text: str, headers: dict[str, str]) -> str: ...
-    def _mark_dirty(self) -> None: ...
-    def _status_message(self, message: str) -> None: ...
-    def _update_tab_labels(self, *_args: Any) -> None: ...
+    if TYPE_CHECKING:
+        def _send_request(self) -> None: ...
+        def _save_request(self) -> None: ...
+        def _format_json_body(self) -> None: ...
+        def _detect_body_type(self, body_text: str, headers: dict[str, str]) -> str: ...
+        def _mark_dirty(self) -> None: ...
+        def _status_message(self, message: str) -> None: ...
+        def _update_tab_labels(self, *_args: Any) -> None: ...
+
+    def _as_qobject(self) -> QObject:
+        return self  # type: ignore[return-value]
+
+    def _as_qwidget(self) -> QWidget:
+        return self  # type: ignore[return-value]
 
     def _setup_shortcuts(self) -> None:
         """Register panel-wide keyboard shortcuts."""
-        send_shortcut = QShortcut(QKeySequence("Ctrl+Return"), self)
+        send_shortcut = QShortcut(QKeySequence("Ctrl+Return"), self._as_qobject())
         send_shortcut.activated.connect(self._send_request)
 
-        save_shortcut = QShortcut(QKeySequence("Ctrl+S"), self)
+        save_shortcut = QShortcut(QKeySequence("Ctrl+S"), self._as_qobject())
         save_shortcut.activated.connect(self._save_request)
 
-        focus_url_shortcut = QShortcut(QKeySequence("Ctrl+L"), self)
+        focus_url_shortcut = QShortcut(QKeySequence("Ctrl+L"), self._as_qobject())
         focus_url_shortcut.activated.connect(self._focus_url_input)
 
-        fmt_shortcut = QShortcut(QKeySequence("Ctrl+Shift+F"), self)
+        fmt_shortcut = QShortcut(QKeySequence("Ctrl+Shift+F"), self._as_qobject())
         fmt_shortcut.activated.connect(self._format_json_body)
 
-        next_tab_shortcut = QShortcut(QKeySequence("Ctrl+PgDown"), self)
+        next_tab_shortcut = QShortcut(QKeySequence("Ctrl+PgDown"), self._as_qobject())
         next_tab_shortcut.activated.connect(lambda: self._cycle_request_tab(1))
 
-        prev_tab_shortcut = QShortcut(QKeySequence("Ctrl+PgUp"), self)
+        prev_tab_shortcut = QShortcut(QKeySequence("Ctrl+PgUp"), self._as_qobject())
         prev_tab_shortcut.activated.connect(lambda: self._cycle_request_tab(-1))
 
     def _focus_url_input(self) -> None:
@@ -77,7 +94,7 @@ class RequestCommandsMixin:
         """Open a file-picker dialog and write the chosen path into target line edit."""
         from PyQt6.QtWidgets import QFileDialog
 
-        path, _ = QFileDialog.getOpenFileName(self, title, "", filters)
+        path, _ = QFileDialog.getOpenFileName(self._as_qwidget(), title, "", filters)
         if path:
             target.setText(path)
             logger.debug("File selected via '%s'", title)
@@ -101,11 +118,12 @@ class RequestCommandsMixin:
         from equinox.core.io.curl_parser import parse_curl
 
         logger.debug("cURL import dialog opened")
-        clipboard_text = QApplication.clipboard().text().strip()
+        clipboard = QApplication.clipboard()
+        clipboard_text = clipboard.text().strip() if clipboard is not None else ""
         prefill = clipboard_text if clipboard_text.lower().startswith("curl ") else ""
 
         text, ok = QInputDialog.getMultiLineText(
-            self,
+            self._as_qwidget(),
             "Import from cURL" "Paste a cURL command:",
             prefill,
         )
@@ -117,7 +135,7 @@ class RequestCommandsMixin:
             parsed = parse_curl(text.strip())
         except Exception as exc:
             logger.warning("Failed to parse cURL command (len=%d): %s", len(text), exc)
-            QMessageBox.warning(self, "Parse Error", f"Could not parse cURL command:\n{exc}")
+            QMessageBox.warning(self._as_qwidget(), "Parse Error", f"Could not parse cURL command:\n{exc}")
             return
 
         method = parsed.get("method", "GET")
@@ -150,7 +168,9 @@ class RequestCommandsMixin:
         """Open the benchmark dialog for the currently configured request."""
         url = self.url_input.text().strip()
         if not url:
-            QMessageBox.warning(self, "No Request", "Enter a URL before running a benchmark.")
+            QMessageBox.warning(
+                self._as_qwidget(), "No Request", "Enter a URL before running a benchmark."
+            )
             return
 
         method = self.method_combo.currentText()

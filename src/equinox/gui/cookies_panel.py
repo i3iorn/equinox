@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from typing import Any
 
 from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import (
@@ -153,7 +154,9 @@ class CookiesPanel(QWidget):
 
         self.table = QTableWidget(0, len(self._COLUMNS))
         self.table.setHorizontalHeaderLabels(self._COLUMNS)
-        self.table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
+        header = self.table.horizontalHeader()
+        if header is not None:
+            header.setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
         self.table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
         self.table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
         self.table.itemSelectionChanged.connect(self._on_selection_changed)
@@ -206,7 +209,7 @@ class CookiesPanel(QWidget):
         count = len(cookies)
         self.count_label.setText(f"{count} cookie{'s' if count != 1 else ''}")
 
-    def _show_context_menu(self, position) -> None:
+    def _show_context_menu(self, position: Any) -> None:
         item = self.table.itemAt(position)
         if item is None:
             return
@@ -214,7 +217,10 @@ class CookiesPanel(QWidget):
         menu = QMenu(self)
         copy_name = menu.addAction("Copy Name")
         copy_value = menu.addAction("Copy Value")
-        action = menu.exec(self.table.viewport().mapToGlobal(position))
+        viewport = self.table.viewport()
+        if viewport is None:
+            return
+        action = menu.exec(viewport.mapToGlobal(position))
         clipboard = QApplication.clipboard()
         if clipboard is None:
             return
@@ -243,7 +249,13 @@ class CookiesPanel(QWidget):
             return
         logger.debug("Adding cookie: name=%r domain=%r", vals["name"], vals["domain"])
         try:
-            self._mgr.add_cookie(**vals)
+            self._mgr.add_cookie(
+                name=str(vals["name"]),
+                value=str(vals["value"]),
+                domain=str(vals["domain"]),
+                path=str(vals["path"]),
+                secure=bool(vals["secure"]),
+            )
         except Exception as exc:
             logger.error("Failed to add cookie %r: %s", vals["name"], exc, exc_info=True)
             QMessageBox.warning(self, "Error", str(exc))
@@ -254,7 +266,10 @@ class CookiesPanel(QWidget):
         # selectionModel().selectedRows() returns one index per selected row —
         # the correct API for a SelectRows table (selectedIndexes() returns one
         # index per *cell*, which requires an extra deduplication step).
-        selected = self.table.selectionModel().selectedRows()
+        selection_model = self.table.selectionModel()
+        if selection_model is None:
+            return
+        selected = selection_model.selectedRows()
         if not selected:
             return
 

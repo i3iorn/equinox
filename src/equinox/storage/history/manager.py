@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from typing import Any
+from typing import Any, Optional, Tuple, cast
 
 from equinox.core.exceptions import SecurityError, StorageError, ValidationError
 from equinox.core.request import Request, Response
@@ -50,8 +50,8 @@ class HistoryManager:
     def save_history(
         self,
         request: Request,
-        response: Response | None = None,
-        error: str | None = None,
+        response: Optional[Response] = None,
+        error: Optional[str] = None,
     ) -> int:
         """Save request/response to history and return the new history ID.
 
@@ -60,7 +60,7 @@ class HistoryManager:
             SecurityError: If size limits are exceeded.
             StorageError: If the DB write fails.
         """
-        safe_url = redact_url(request.url)[:60] if request.url else ""
+        safe_url = (redact_url(request.url) or "")[:60] if request.url else ""
         logger.debug("save_history() called for %s %s", request.method, safe_url)
         self._prune_oldest_entry_if_limit_reached()
 
@@ -107,7 +107,7 @@ class HistoryManager:
             resp["elapsed"] or 0,
         )
         self._indexer.index(history_id, req["method"], req["url"], resp["status_code"], response)
-        return history_id
+        return int(history_id)
 
     def delete_history(self, history_id: int) -> None:
         """Delete a history entry by ID.
@@ -197,7 +197,7 @@ class HistoryManager:
                 "SELECT * FROM history WHERE request_id = ? "
                 "ORDER BY executed_at DESC LIMIT ? OFFSET ?"
             )
-            params = (request_id, limit, offset)
+            params: Tuple[Any, ...] = (request_id, limit, offset)
         else:
             sql = "SELECT * FROM history ORDER BY executed_at DESC LIMIT ? OFFSET ?"
             params = (limit, offset)
@@ -250,7 +250,9 @@ class HistoryManager:
         Raises:
             ValidationError: On invalid limit/offset, bad regex, or bad JSONPath.
         """
-        return self._searcher.search(
+        return cast(
+            list[dict[str, Any]],
+            self._searcher.search(
             query=query,
             method=method,
             status_class=status_class,
@@ -266,6 +268,7 @@ class HistoryManager:
             executed_before=executed_before,
             limit=limit,
             offset=offset,
+            ),
         )
 
     def get_stats(self) -> dict[str, Any]:

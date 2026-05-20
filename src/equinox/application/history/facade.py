@@ -8,8 +8,9 @@ entry-to-model mapping logic.
 from __future__ import annotations
 
 import logging
+from collections.abc import Mapping
 from datetime import datetime
-from typing import Any
+from typing import Any, Optional, cast
 
 from equinox.core.request import Request, Response
 from equinox.storage import Database, HistoryManager
@@ -30,13 +31,13 @@ class HistoryFacade:
     # ── History manager wrappers ───────────────────────────────────────
 
     def get_history(self, history_id: int) -> dict[str, Any] | None:
-        return self._history_manager.get_history(history_id)
+        return cast(Optional[dict[str, Any]], self._history_manager.get_history(history_id))
 
     def search_history(self, **filters: Any) -> list[dict[str, Any]]:
         return list(self._history_manager.search_history(**filters))
 
     def get_stats(self) -> dict[str, Any]:
-        return self._history_manager.get_stats()
+        return cast(dict[str, Any], self._history_manager.get_stats())
 
     def delete_history(self, history_id: int) -> None:
         self._history_manager.delete_history(history_id)
@@ -50,11 +51,16 @@ class HistoryFacade:
     def _coerce_to_dict(value: object, field_name: str) -> dict[str, Any]:
         if isinstance(value, dict):
             return dict(value)
-        try:
-            return dict(value)  # type: ignore[arg-type]
-        except Exception:
-            logger.debug("Could not coerce %s to dict, defaulting to {}", field_name, exc_info=True)
-            return {}
+        if isinstance(value, Mapping):
+            try:
+                return {str(k): v for k, v in value.items()}
+            except Exception:
+                logger.debug(
+                    "Could not coerce %s mapping-like value to dict", field_name, exc_info=True
+                )
+                return {}
+        logger.debug("Could not coerce %s to dict, defaulting to {}", field_name)
+        return {}
 
     @staticmethod
     def _coerce_body_to_bytes(raw: object) -> bytes:
@@ -87,10 +93,11 @@ class HistoryFacade:
 
         body = entry.get("request_body")
         if isinstance(body, bytes):
+            raw_body = body
             try:
-                body = body.decode("utf-8")
+                body = raw_body.decode("utf-8")
             except Exception:
-                body = body.decode("utf-8", errors="replace")
+                body = raw_body.decode("utf-8", errors="replace")
         elif body is not None and not isinstance(body, str):
             body = str(body)
 

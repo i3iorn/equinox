@@ -1,5 +1,7 @@
 """Environment management dialog — full variable CRUD."""
 
+from typing import Any, Iterator, Optional
+
 from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtGui import QFont
 from PyQt6.QtWidgets import (
@@ -41,12 +43,12 @@ class EnvironmentDialog(ListFormDialogMixin, QDialog):
 
     environment_changed = pyqtSignal()  # emitted after any structural change
 
-    def __init__(self, db: Database, parent=None):
+    def __init__(self, db: Database, parent: Optional[QWidget] = None) -> None:
         super().__init__(parent)
         self.db = db
         self.env_manager = EnvironmentManager(db)
-        self._current_env_id: int | None = None
-        self._current_id: int | None = None  # Alias for mixin
+        self._current_env_id: Optional[int] = None
+        self._current_id: Optional[int] = None  # Alias for mixin
         self._dirty = False  # unsaved variable edits
 
         # DirtyDialogMixin requirements
@@ -113,12 +115,16 @@ class EnvironmentDialog(ListFormDialogMixin, QDialog):
         self.var_table.setColumnCount(3)
         self.var_table.setHorizontalHeaderLabels(["Variable", "Value", "Secret"])
         hdr = self.var_table.horizontalHeader()
-        hdr.setSectionResizeMode(0, QHeaderView.ResizeMode.Interactive)
-        hdr.setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
-        hdr.setSectionResizeMode(2, QHeaderView.ResizeMode.Fixed)
+        if hdr is not None:
+            hdr.setSectionResizeMode(0, QHeaderView.ResizeMode.Interactive)
+            hdr.setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
+            hdr.setSectionResizeMode(2, QHeaderView.ResizeMode.Fixed)
         self.var_table.setColumnWidth(2, 58)
-        hdr.setDefaultSectionSize(180)
-        self.var_table.verticalHeader().setVisible(False)
+        if hdr is not None:
+            hdr.setDefaultSectionSize(180)
+        v_hdr = self.var_table.verticalHeader()
+        if v_hdr is not None:
+            v_hdr.setVisible(False)
         self.var_table.setAlternatingRowColors(True)
         self.var_table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         self.var_table.setEnabled(False)
@@ -160,7 +166,7 @@ class EnvironmentDialog(ListFormDialogMixin, QDialog):
 
     # ── Environment list actions (ListFormDialogMixin template methods) ──
 
-    def _build_list_items(self):
+    def _build_list_items(self) -> Iterator[tuple[int, str, dict[str, Any]]]:
         """Yield (item_id, label, kwargs) for each environment."""
         envs = self.env_manager.list_environments()
         for env in envs:
@@ -236,7 +242,7 @@ class EnvironmentDialog(ListFormDialogMixin, QDialog):
         self._dirty = False
         self._update_save_btn()
 
-    def _on_var_changed(self, _item) -> None:
+    def _on_var_changed(self, _item: QTableWidgetItem) -> None:
         self._dirty = True
         self._update_save_btn()
 
@@ -317,7 +323,10 @@ class EnvironmentDialog(ListFormDialogMixin, QDialog):
             self._load_variables(self._current_env_id)  # refresh count in header
             self.environment_changed.emit()
             try:
-                self.window().statusBar().showMessage("Variables saved", 3000)
+                win = self.window()
+                status = win.statusBar() if win is not None else None
+                if status is not None:
+                    status.showMessage("Variables saved", 3000)
             except Exception:
                 pass
             return True
@@ -338,7 +347,7 @@ class EnvironmentDialog(ListFormDialogMixin, QDialog):
         except Exception as exc:
             QMessageBox.critical(self, "Error", f"Failed to create environment: {exc}")
 
-    def _rename_environment(self, _item=None) -> None:
+    def _rename_environment(self, _item: Any = None) -> None:
         items = self.env_list.selectedItems()
         if not items:
             return

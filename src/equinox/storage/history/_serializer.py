@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from typing import Any
+from typing import Any, Optional, cast
 
 from equinox.core.exceptions import SecurityError, ValidationError
 from equinox.core.history_config import should_capture_bodies
@@ -53,7 +53,7 @@ class _HistorySerializer:
             "request_correlation_id": self._prepare_request_correlation_id(request),
         }
 
-    def prepare_response(self, response: Response) -> dict[str, Any | None]:
+    def prepare_response(self, response: Optional[Response]) -> dict[str, Any | None]:
         """Serialize the response side of a history row.
 
         Returns:
@@ -140,7 +140,7 @@ class _HistorySerializer:
     def _prepare_headers(self, headers: dict[str, Any]) -> str:
         if not isinstance(headers, dict):
             raise ValidationError("Request headers must be a dictionary")
-        return serialize_headers(headers)
+        return cast(str, serialize_headers(headers))
 
     def _prepare_body(self, body: Any) -> str | None:
         if body is None:

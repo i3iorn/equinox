@@ -6,7 +6,7 @@ Provides extensions to the saved credentials dialog to use secrets from managers
 from __future__ import annotations
 
 import logging
-from typing import Any
+from typing import Any, Optional
 
 from PyQt6.QtWidgets import (
     QComboBox,
@@ -30,7 +30,7 @@ class SecretSourceConfigWidget(QGroupBox):
     from an external secret manager instead of storing them locally.
     """
 
-    def __init__(self, parent=None):
+    def __init__(self, parent: Optional[QDialog] = None) -> None:
         """Initialize the widget.
 
         Args:
@@ -179,6 +179,8 @@ class SecretSourceIntegration:
         # Find the main layout and add the widget
         if hasattr(dialog, "layout") and dialog.layout():
             layout = dialog.layout()
+            if layout is None:
+                return widget
             # Add before buttons if possible
             widget_count = layout.count()
             if widget_count > 0:
