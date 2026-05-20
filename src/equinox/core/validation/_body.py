@@ -1,11 +1,13 @@
 """Request body validation."""
+
 from __future__ import annotations
 
 import json
 import logging
-from typing import Any, Optional
+from typing import Any
 
 from equinox.core.exceptions import ValidationError
+
 from ._base import _Limits, _Patterns
 
 __all__ = ["_BodyValidator"]
@@ -17,7 +19,7 @@ class _BodyValidator:
     """Request body validation."""
 
     @classmethod
-    def validate(cls, body: Any, content_type: Optional[str] = None) -> Any:
+    def validate(cls, body: Any, content_type: str | None = None) -> Any:
         if body is None:
             return None
 
@@ -48,8 +50,7 @@ class _BodyValidator:
         size = len(body_str.encode("utf-8"))
         if size > _Limits.MAX_BODY_SIZE:
             raise ValidationError(
-                f"Request body too large: {size:,} bytes "
-                f"(max: {_Limits.MAX_BODY_SIZE:,} bytes)"
+                f"Request body too large: {size:,} bytes " f"(max: {_Limits.MAX_BODY_SIZE:,} bytes)"
             )
 
     @staticmethod
@@ -68,8 +69,5 @@ class _BodyValidator:
     def _warn_if_sql_injection(body: str) -> None:
         for rx in _Patterns.SQL_INJECTION:
             if rx.search(body):
-                _logger.warning(
-                    "Potential SQL injection pattern detected in request body"
-                )
-                break   # one warning per body is enough
-
+                _logger.warning("Potential SQL injection pattern detected in request body")
+                break  # one warning per body is enough

@@ -6,8 +6,9 @@ Logs all HTTP requests and responses to a file.
 
 import logging
 from pathlib import Path
-from equinox.plugins import Plugin
+
 from equinox.core.request import Request, Response
+from equinox.plugins import Plugin
 
 
 class PluginClass(Plugin):
@@ -35,7 +36,7 @@ class PluginClass(Plugin):
             filename=str(log_file),
             level=logging.INFO,
             format="%(asctime)s - %(levelname)s - %(message)s",
-            datefmt="%Y-%m-%d %H:%M:%S"
+            datefmt="%Y-%m-%d %H:%M:%S",
         )
 
         self.logger = logging.getLogger("equinox.logger")
@@ -70,6 +71,4 @@ class PluginClass(Plugin):
 
     def on_error(self, request: Request, error: Exception):
         """Log request errors"""
-        self.logger.error(
-            f"✗ {request.method} {request.url} | Error: {str(error)}"
-        )
+        self.logger.error(f"✗ {request.method} {request.url} | Error: {str(error)}")

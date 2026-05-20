@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import re
-from typing import Iterable, List
+from collections.abc import Iterable
 
 from equinox.gui.syntax_highlighter.base import RegexHighlighterBase, RegexRule, _make_format
 from equinox.gui.theme import Colors
@@ -14,7 +14,7 @@ class YamlHighlighter(RegexHighlighterBase):
     """
 
     def _build_rules(self) -> Iterable[RegexRule]:
-        rules: List[RegexRule] = []
+        rules: list[RegexRule] = []
 
         # Comment
         comment_fmt = _make_format(foreground=Colors.FG_MUTED, italic=True)
@@ -81,8 +81,7 @@ class YamlHighlighter(RegexHighlighterBase):
         rules.append(
             RegexRule(
                 pattern=re.compile(
-                    r"\b(?:true|false|yes|no|null|~|"
-                    r"True|False|Yes|No|Null|NULL|TRUE|FALSE)\b"
+                    r"\b(?:true|false|yes|no|null|~|" r"True|False|Yes|No|Null|NULL|TRUE|FALSE)\b"
                 ),
                 fmt=kw_fmt,
             )

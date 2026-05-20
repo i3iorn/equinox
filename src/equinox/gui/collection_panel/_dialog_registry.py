@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from typing import List
-
 from PyQt6.QtWidgets import QDialog
 
 
@@ -11,7 +9,7 @@ class DialogRegistry:
     """Track open dialogs to prevent early garbage collection."""
 
     def __init__(self) -> None:
-        self._dialogs: List[QDialog] = []
+        self._dialogs: list[QDialog] = []
 
     def register(self, dialog: QDialog) -> None:
         self._dialogs.append(dialog)
@@ -21,4 +19,3 @@ class DialogRegistry:
     def _discard(self, dialog: QDialog) -> None:
         if dialog in self._dialogs:
             self._dialogs.remove(dialog)
-

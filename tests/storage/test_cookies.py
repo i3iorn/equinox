@@ -2,9 +2,9 @@
 
 import pytest
 
-from equinox.storage.database import Database
-from equinox.storage.cookies import CookieJarManager
 from equinox.core.exceptions import StorageError, ValidationError
+from equinox.storage.cookies import CookieJarManager
+from equinox.storage.database import Database
 
 
 @pytest.fixture
@@ -18,6 +18,7 @@ def mgr(db):
 
 
 # ── CRUD ─────────────────────────────────────────────────────────────────────
+
 
 class TestCookieCRUD:
     def test_add_and_list(self, mgr):
@@ -89,6 +90,7 @@ class TestCookieCRUD:
 
 # ── update_cookie ────────────────────────────────────────────────────────────
 
+
 class TestUpdateCookie:
     def test_update_value(self, mgr):
         cid = mgr.add_cookie("k", "old", domain="d.com")
@@ -130,6 +132,7 @@ class TestUpdateCookie:
 
 # ── to_httpx_cookies ─────────────────────────────────────────────────────────
 
+
 class TestToHttpxCookies:
     def test_returns_name_value_dict(self, mgr):
         mgr.add_cookie("session", "s123", domain="api.com")
@@ -156,6 +159,7 @@ class TestToHttpxCookies:
 
 
 # ── update_from_response ─────────────────────────────────────────────────────
+
 
 class TestUpdateFromResponse:
     def test_simple_set_cookie(self, mgr):
@@ -211,10 +215,7 @@ class TestUpdateFromResponse:
 
     def test_combined_header_with_expires_keeps_cookie_boundaries(self, mgr):
         headers = {
-            "Set-Cookie": (
-                "a=1; Expires=Thu, 01 Jan 2030 00:00:00 GMT; Path=/, "
-                "b=2; Path=/"
-            )
+            "Set-Cookie": ("a=1; Expires=Thu, 01 Jan 2030 00:00:00 GMT; Path=/, " "b=2; Path=/")
         }
         mgr.update_from_response(headers, "https://example.com")
         cookies = mgr.list_cookies()
@@ -223,6 +224,7 @@ class TestUpdateFromResponse:
 
 
 # ── Validation ────────────────────────────────────────────────────────────────
+
 
 class TestCookieValidation:
     def test_empty_name_raises(self, mgr):

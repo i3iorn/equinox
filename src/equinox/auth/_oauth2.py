@@ -2,23 +2,21 @@
 
 import base64
 import json
-import os
-import time
 import logging
+import time
 import uuid
-import random
 from datetime import datetime, timedelta, timezone
 from threading import Lock
-from typing import Any, Callable, Dict, Literal, Optional
+from typing import Any, Callable, Literal
 
 import httpx
 
-from equinox.auth._base import AuthStrategy, _validate_credential, _interpolate_field, AuthError
-from equinox.security.secure_storage import SecureStorage
-from equinox.core.audit import get_audit_logger, AuditEventType, AuditLevel
-from equinox.security import mask_secret, sanitize_details, redact_url
+from equinox.auth._base import AuthError, AuthStrategy, _interpolate_field, _validate_credential
+from equinox.core.audit import AuditEventType, AuditLevel, get_audit_logger
 from equinox.core.util.time import utc_now
 from equinox.core.validation import Validator
+from equinox.security import mask_secret, redact_url, sanitize_details
+from equinox.security.secure_storage import SecureStorage
 
 logger = logging.getLogger(__name__)
 
@@ -63,20 +61,23 @@ _CONNECTION_REFUSED_MARKERS: tuple = ("10061", "connection refused", "econnrefus
 
 # OAuth2 token errors that indicate refresh_token grant cannot be used and the
 # client should retry with client_credentials when available.
-_REFRESH_GRANT_FALLBACK_ERRORS: frozenset = frozenset({
-    "invalid_grant",
-    "unsupported_grant_type",
-})
+_REFRESH_GRANT_FALLBACK_ERRORS: frozenset = frozenset(
+    {
+        "invalid_grant",
+        "unsupported_grant_type",
+    }
+)
 
 # Hex-suffix length appended to anonymous (no client_id) storage keys.
 _ANON_KEY_ID_LENGTH: int = 12
 
-_GRACE_PERIOD_SECONDS = 30      # Use cached token up to 30s past expiry
+_GRACE_PERIOD_SECONDS = 30  # Use cached token up to 30s past expiry
 
 
 # ──────────────────────────────────────────────────────────────────────────────
 # Module-level helpers
 # ──────────────────────────────────────────────────────────────────────────────
+
 
 def make_oauth2_basic_auth_header(client_id: str, client_secret: str) -> str:
     """Return an RFC 6749 §2.3.1 HTTP Basic Authorization header value.
@@ -88,9 +89,7 @@ def make_oauth2_basic_auth_header(client_id: str, client_secret: str) -> str:
         AuthError: If *client_id* or *client_secret* is empty.
     """
     if not client_id or not client_secret:
-        raise AuthError(
-            "Client ID and secret are required for Basic auth token endpoint"
-        )
+        raise AuthError("Client ID and secret are required for Basic auth token endpoint")
     credentials = f"{client_id}:{client_secret}"
     encoded = base64.b64encode(credentials.encode("utf-8")).decode("ascii")
     return f"Basic {encoded}"
@@ -148,18 +147,18 @@ class OAuth2Auth(AuthStrategy):
 
     def __init__(
         self,
-        access_token: Optional[str] = None,
-        token_url: Optional[str] = None,
-        client_id: Optional[str] = None,
-        client_secret: Optional[str] = None,
-        scope: Optional[str] = None,
-        refresh_token: Optional[str] = None,
-        secure_storage: Optional[SecureStorage] = None,
-        storage_key: Optional[str] = None,
+        access_token: str | None = None,
+        token_url: str | None = None,
+        client_id: str | None = None,
+        client_secret: str | None = None,
+        scope: str | None = None,
+        refresh_token: str | None = None,
+        secure_storage: SecureStorage | None = None,
+        storage_key: str | None = None,
         token_timeout: float = 10.0,
         verify_ssl: bool = True,
         token_auth: Literal["body", "basic"] = "body",
-        extra_params: Optional[Dict[str, Any]] = None,
+        extra_params: dict[str, Any] | None = None,
     ):
         """Initialize OAuth2 auth with optional secure storage.
 
@@ -184,7 +183,7 @@ class OAuth2Auth(AuthStrategy):
         self.scope = scope
         self.refresh_token = refresh_token
         self.extra_params = extra_params or {}
-        self.expires_at: Optional[datetime] = None
+        self.expires_at: datetime | None = None
 
         # Validate token_auth parameter
         if token_auth not in ("body", "basic"):
@@ -195,7 +194,8 @@ class OAuth2Auth(AuthStrategy):
         if not isinstance(token_timeout, (int, float)) or token_timeout <= 0:
             logger.warning(
                 "Invalid token_timeout %r, using default %s seconds",
-                token_timeout, self.DEFAULT_TOKEN_TIMEOUT
+                token_timeout,
+                self.DEFAULT_TOKEN_TIMEOUT,
             )
             token_timeout = self.DEFAULT_TOKEN_TIMEOUT
 
@@ -205,8 +205,7 @@ class OAuth2Auth(AuthStrategy):
 
         if original_timeout != self.token_timeout:
             logger.debug(
-                "Clamped token_timeout from %s to %s seconds",
-                original_timeout, self.token_timeout
+                "Clamped token_timeout from %s to %s seconds", original_timeout, self.token_timeout
             )
 
         self.secure_storage = secure_storage
@@ -229,17 +228,17 @@ class OAuth2Auth(AuthStrategy):
 
         # Proxy to use for token endpoint requests — set by HTTPClient._apply_auth
         # so token fetches route through the same proxy as the main request.
-        self._proxy: Optional[str] = None
+        self._proxy: str | None = None
 
         # Last token-endpoint exchange (redacted) — surfaced in the GUI
-        self._last_token_response: Optional[Dict[str, Any]] = None
+        self._last_token_response: dict[str, Any] | None = None
 
         if self.secure_storage and self.storage_key:
             self._load_from_storage()
 
     # ── AuthStrategy interface ────────────────────────────────────────────────
 
-    def apply(self, request: Any, headers: Dict[str, str]) -> None:
+    def apply(self, request: Any, headers: dict[str, str]) -> None:
         """Add Authorization header with OAuth2 bearer token.
 
         Refreshes the token first when it is missing, expired, or expiring soon.
@@ -257,10 +256,10 @@ class OAuth2Auth(AuthStrategy):
     def apply_with_context(
         self,
         request: Any,
-        headers: Dict[str, str],
+        headers: dict[str, str],
         *,
-        proxy: Optional[str] = None,
-        verify_ssl: Optional[bool] = None,
+        proxy: str | None = None,
+        verify_ssl: bool | None = None,
     ) -> None:
         """Apply auth using optional runtime transport context.
 
@@ -271,9 +270,7 @@ class OAuth2Auth(AuthStrategy):
             verify_ssl: Optional per-request TLS verification override.
         """
         effective_proxy = proxy if proxy is not None else self._proxy
-        effective_verify_ssl = (
-            bool(verify_ssl) if verify_ssl is not None else self._verify_ssl
-        )
+        effective_verify_ssl = bool(verify_ssl) if verify_ssl is not None else self._verify_ssl
 
         # Acquire lock with timeout to prevent indefinite deadlock
         acquired = self._refresh_lock.acquire(timeout=_LOCK_TIMEOUT)
@@ -302,7 +299,7 @@ class OAuth2Auth(AuthStrategy):
 
         headers["Authorization"] = f"Bearer {self.access_token}"
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """Serialize to dictionary for storage.
 
         Includes ``client_secret`` so the object can be fully reconstructed
@@ -327,7 +324,7 @@ class OAuth2Auth(AuthStrategy):
         }
 
     @classmethod
-    def from_dict(cls, data: Dict[str, Any], **kwargs: Any) -> "OAuth2Auth":
+    def from_dict(cls, data: dict[str, Any], **kwargs: Any) -> "OAuth2Auth":
         """Create from dictionary."""
         secure_storage = kwargs.get("secure_storage")
         instance = cls(
@@ -372,12 +369,9 @@ class OAuth2Auth(AuthStrategy):
         return new_auth
 
     def get_display_summary(self) -> str:
-        return (
-            f"Token URL: {self.token_url or '—'}\n"
-            f"Client ID: {self.client_id or '—'}"
-        )
+        return f"Token URL: {self.token_url or '—'}\n" f"Client ID: {self.client_id or '—'}"
 
-    def get_preflight_warning(self) -> Optional[str]:
+    def get_preflight_warning(self) -> str | None:
         if not self.token_url:
             return "OAuth2 token URL is not configured"
         return None
@@ -392,7 +386,7 @@ class OAuth2Auth(AuthStrategy):
     # ── Token state helpers ───────────────────────────────────────────────────
 
     @property
-    def last_token_response(self) -> Optional[Dict[str, Any]]:
+    def last_token_response(self) -> dict[str, Any] | None:
         """The most recent (redacted) token endpoint exchange, or ``None``."""
         return self._last_token_response
 
@@ -417,7 +411,7 @@ class OAuth2Auth(AuthStrategy):
         return self._proxy or "none"
 
     @property
-    def _proxy_for_httpx(self) -> Optional[str]:
+    def _proxy_for_httpx(self) -> str | None:
         """Proxy URL passed to httpx, or ``None`` when no proxy is configured."""
         return self._proxy or None
 
@@ -470,7 +464,7 @@ class OAuth2Auth(AuthStrategy):
         # Token is within grace period if it hasn't expired past the grace window
         return seconds_past_expiry < _GRACE_PERIOD_SECONDS
 
-    def get_token_info(self) -> Dict[str, Any]:
+    def get_token_info(self) -> dict[str, Any]:
         """Return a safe summary of the current token state."""
         token_preview = mask_secret(self.access_token) if self.access_token else "None"
         return {
@@ -514,8 +508,7 @@ class OAuth2Auth(AuthStrategy):
                     data = json.loads(stored)
                 except (json.JSONDecodeError, ValueError) as parse_exc:
                     logger.warning(
-                        "Failed to parse stored OAuth2 tokens (corrupted data): %s",
-                        parse_exc
+                        "Failed to parse stored OAuth2 tokens (corrupted data): %s", parse_exc
                     )
                     return
 
@@ -528,7 +521,7 @@ class OAuth2Auth(AuthStrategy):
                 )
             else:
                 logger.debug("No stored OAuth2 tokens found for key=%s", self.storage_key)
-        except (OSError, IOError) as io_exc:
+        except OSError as io_exc:
             logger.warning("Failed to access secure storage (I/O error): %s", io_exc)
             self._storage_available = False
         except Exception as storage_exc:
@@ -559,19 +552,19 @@ class OAuth2Auth(AuthStrategy):
                 "OAuth2 tokens saved to storage (expires_at=%s)",
                 self._expires_at_iso() or "None",
             )
-        except (OSError, IOError) as io_exc:
+        except OSError as io_exc:
             logger.warning("Failed to write to secure storage (I/O error): %s", io_exc)
             self._storage_available = False
         except Exception as storage_exc:
             logger.error("Unexpected error saving OAuth2 tokens: %s", storage_exc, exc_info=True)
             self._storage_available = False
 
-    def _expires_at_iso(self) -> Optional[str]:
+    def _expires_at_iso(self) -> str | None:
         """Return ``expires_at`` as an ISO-8601 string, or ``None`` if unset."""
         return self.expires_at.isoformat() if self.expires_at else None
 
     @staticmethod
-    def _parse_expires_at(expires_at_str: Optional[str]) -> Optional[datetime]:
+    def _parse_expires_at(expires_at_str: str | None) -> datetime | None:
         """Parse an ISO-8601 expiry string into a naive UTC datetime."""
         if not expires_at_str:
             return None
@@ -599,7 +592,8 @@ class OAuth2Auth(AuthStrategy):
         except (ValueError, TypeError):
             logger.warning(
                 "Invalid expires_in value %r, using default %ds",
-                raw_expires, _DEFAULT_TOKEN_EXPIRY_SECONDS,
+                raw_expires,
+                _DEFAULT_TOKEN_EXPIRY_SECONDS,
             )
         return _DEFAULT_TOKEN_EXPIRY_SECONDS
 
@@ -608,8 +602,8 @@ class OAuth2Auth(AuthStrategy):
     def _refresh_access_token(
         self,
         *,
-        proxy: Optional[str] = None,
-        verify_ssl: Optional[bool] = None,
+        proxy: str | None = None,
+        verify_ssl: bool | None = None,
     ) -> None:
         """Fetch a new access token using the refresh-token or client-credentials flow.
 
@@ -661,13 +655,15 @@ class OAuth2Auth(AuthStrategy):
                         "token_url": redact_url(self.token_url),
                         "error_type": type(refresh_error).__name__,
                         "grace_period_seconds": _GRACE_PERIOD_SECONDS,
-                        "cached_token_expiry": self.expires_at.isoformat() if self.expires_at else None,
+                        "cached_token_expiry": self.expires_at.isoformat()
+                        if self.expires_at
+                        else None,
                     },
                 )
                 self._audit.log_event(
                     AuditEventType.AUTH_TOKEN_REFRESH,
                     level=AuditLevel.INFO,
-                    message="Using cached OAuth2 token within grace period due to endpoint failure"
+                    message="Using cached OAuth2 token within grace period due to endpoint failure",
                 )
                 return
             # Token is expired or missing; let the error propagate
@@ -682,7 +678,7 @@ class OAuth2Auth(AuthStrategy):
             raise
 
     @staticmethod
-    def _snapshot_response_body(response: httpx.Response) -> Dict[str, Any]:
+    def _snapshot_response_body(response: httpx.Response) -> dict[str, Any]:
         """Return a redacted snapshot of the token response body.
 
         Tries to parse as JSON first; falls back to a truncated raw text
@@ -703,7 +699,8 @@ class OAuth2Auth(AuthStrategy):
         """Store a redacted snapshot of the token endpoint response for inspection."""
         try:
             resp_headers = {
-                k: v for k, v in response.headers.items()
+                k: v
+                for k, v in response.headers.items()
                 if k.lower() not in _FILTERED_RESPONSE_HEADERS
             }
         except Exception:
@@ -728,9 +725,9 @@ class OAuth2Auth(AuthStrategy):
             "method": "POST",
         }
 
-    def _refresh_token_grant_data(self) -> Dict[str, Any]:
+    def _refresh_token_grant_data(self) -> dict[str, Any]:
         """Build grant data for the refresh-token flow (RFC 6749 §6)."""
-        data: Dict[str, Any] = {
+        data: dict[str, Any] = {
             "grant_type": "refresh_token",
             "refresh_token": self.refresh_token,
         }
@@ -740,7 +737,7 @@ class OAuth2Auth(AuthStrategy):
             data["client_secret"] = self.client_secret
         return data
 
-    def _client_credentials_grant_data(self) -> Dict[str, Any]:
+    def _client_credentials_grant_data(self) -> dict[str, Any]:
         """Build grant data for the client-credentials flow (RFC 6749 §4.4)."""
         return {
             "grant_type": "client_credentials",
@@ -748,7 +745,7 @@ class OAuth2Auth(AuthStrategy):
             "client_secret": self.client_secret,
         }
 
-    def _build_grant_data(self) -> Dict[str, Any]:
+    def _build_grant_data(self) -> dict[str, Any]:
         """Build the form-data payload for the token endpoint.
 
         Prefers refresh-token flow; falls back to client-credentials.
@@ -797,7 +794,7 @@ class OAuth2Auth(AuthStrategy):
         return make_oauth2_basic_auth_header(client_id, client_secret)
 
     @staticmethod
-    def _credential_diagnostics(value: Optional[str]) -> Dict[str, Any]:
+    def _credential_diagnostics(value: str | None) -> dict[str, Any]:
         """Return non-sensitive diagnostics about a credential string."""
         if value is None:
             return {
@@ -817,10 +814,10 @@ class OAuth2Auth(AuthStrategy):
 
     def _execute_token_post(
         self,
-        grant_data: Dict[str, Any],
+        grant_data: dict[str, Any],
         *,
-        proxy: Optional[str] = None,
-        verify_ssl: Optional[bool] = None,
+        proxy: str | None = None,
+        verify_ssl: bool | None = None,
     ) -> httpx.Response:
         """Perform a single HTTP POST to the token endpoint.
 
@@ -833,7 +830,7 @@ class OAuth2Auth(AuthStrategy):
         """
         assert self.token_url is not None  # guaranteed by _refresh_access_token guard
 
-        headers: Dict[str, str] = {}
+        headers: dict[str, str] = {}
         body = grant_data.copy()
 
         if self.token_auth == "basic":
@@ -871,7 +868,9 @@ class OAuth2Auth(AuthStrategy):
                     "token_url": redact_url(self.token_url),
                     "token_auth": self.token_auth,
                     "client_id_has_outer_whitespace": client_id_diag["has_outer_whitespace"],
-                    "client_secret_has_outer_whitespace": client_secret_diag["has_outer_whitespace"],
+                    "client_secret_has_outer_whitespace": client_secret_diag[
+                        "has_outer_whitespace"
+                    ],
                 },
             )
 
@@ -885,7 +884,7 @@ class OAuth2Auth(AuthStrategy):
         return response
 
     @staticmethod
-    def _token_error_code(response: Optional[httpx.Response]) -> str:
+    def _token_error_code(response: httpx.Response | None) -> str:
         """Return OAuth2 token error code from response JSON, or an empty string."""
         if response is None:
             return ""
@@ -900,12 +899,12 @@ class OAuth2Auth(AuthStrategy):
 
     def _try_alternate_client_auth_mode(
         self,
-        grant_data: Dict[str, Any],
+        grant_data: dict[str, Any],
         status_exc: httpx.HTTPStatusError,
         *,
-        proxy: Optional[str] = None,
-        verify_ssl: Optional[bool] = None,
-    ) -> Optional[httpx.Response]:
+        proxy: str | None = None,
+        verify_ssl: bool | None = None,
+    ) -> httpx.Response | None:
         """Retry once with alternate client-auth mode for invalid_client responses.
 
         Returns ``None`` when fallback is not applicable or when the fallback
@@ -981,12 +980,12 @@ class OAuth2Auth(AuthStrategy):
 
     def _try_client_credentials_fallback(
         self,
-        grant_data: Dict[str, Any],
+        grant_data: dict[str, Any],
         status_exc: httpx.HTTPStatusError,
         *,
-        proxy: Optional[str] = None,
-        verify_ssl: Optional[bool] = None,
-    ) -> Optional[httpx.Response]:
+        proxy: str | None = None,
+        verify_ssl: bool | None = None,
+    ) -> httpx.Response | None:
         """Retry once with client_credentials when refresh_token grant is rejected.
 
         Some providers (including D&B Direct+) support client_credentials only.
@@ -1030,10 +1029,10 @@ class OAuth2Auth(AuthStrategy):
 
     def _post_token_request(
         self,
-        grant_data: Dict[str, Any],
+        grant_data: dict[str, Any],
         *,
-        proxy: Optional[str] = None,
-        verify_ssl: Optional[bool] = None,
+        proxy: str | None = None,
+        verify_ssl: bool | None = None,
     ) -> httpx.Response:
         """POST grant_data to the token endpoint with retry on transient network errors.
 
@@ -1050,9 +1049,11 @@ class OAuth2Auth(AuthStrategy):
         try:
             Validator.validate_resolved_url(self.token_url)
         except Exception as exc:
-            raise AuthError(f"Invalid token URL: {exc}", details={"token_url": self.token_url})
+            raise AuthError(
+                f"Invalid token URL: {exc}", details={"token_url": self.token_url}
+            ) from exc
 
-        last_exc: Optional[Exception] = None
+        last_exc: Exception | None = None
         attempts_made = 0
 
         for attempt in range(_MAX_TOKEN_RETRIES):
@@ -1079,7 +1080,8 @@ class OAuth2Auth(AuthStrategy):
                 )
                 logger.info(
                     "Token request succeeded on attempt %d/%d",
-                    attempts_made, _MAX_TOKEN_RETRIES,
+                    attempts_made,
+                    _MAX_TOKEN_RETRIES,
                     extra={
                         "attempt": attempts_made,
                         "status_code": response.status_code,
@@ -1117,13 +1119,13 @@ class OAuth2Auth(AuthStrategy):
                     return grant_fallback_response
 
                 status_code = "unknown"
-                token_response: Optional[Dict[str, Any]] = None
+                token_response: dict[str, Any] | None = None
                 if status_exc.response is not None:
                     self._capture_token_response(status_exc.response)
                     status_code = status_exc.response.status_code
                     token_response = self._last_token_response
                 response_preview = ""
-                safe_snapshot: Dict[str, Any] = {}
+                safe_snapshot: dict[str, Any] = {}
                 if status_exc.response is not None:
                     safe_snapshot = self._snapshot_response_body(status_exc.response)
                     response_preview = json.dumps(safe_snapshot, ensure_ascii=True, default=str)
@@ -1161,7 +1163,7 @@ class OAuth2Auth(AuthStrategy):
                         "token_url": self.token_url,
                         "token_response": token_response,
                     },
-                )
+                ) from status_exc
             except (httpx.TransportError, httpx.TimeoutException) as transient_exc:
                 last_exc = transient_exc
                 # ECONNREFUSED / WinError 10061 — nothing is listening on that
@@ -1184,11 +1186,12 @@ class OAuth2Auth(AuthStrategy):
                     )
                     break
                 is_final = attempt == _MAX_TOKEN_RETRIES - 1
-                wait_seconds = _RETRY_BACKOFF_BASE ** attempt  # 1 s, 2 s, …
+                wait_seconds = _RETRY_BACKOFF_BASE**attempt  # 1 s, 2 s, …
                 if is_final:
                     logger.warning(
                         "Token request failed on final attempt %d/%d (proxy=%s, url=%s): %s",
-                        attempts_made, _MAX_TOKEN_RETRIES,
+                        attempts_made,
+                        _MAX_TOKEN_RETRIES,
                         proxy or self._proxy_label,
                         redact_url(self.token_url),
                         transient_exc,
@@ -1204,7 +1207,9 @@ class OAuth2Auth(AuthStrategy):
                 else:
                     logger.debug(
                         "Token request failed (attempt %d/%d), retrying in %ds (proxy=%s, url=%s): %s",
-                        attempts_made, _MAX_TOKEN_RETRIES, wait_seconds,
+                        attempts_made,
+                        _MAX_TOKEN_RETRIES,
+                        wait_seconds,
                         proxy or self._proxy_label,
                         redact_url(self.token_url),
                         transient_exc,
@@ -1251,7 +1256,7 @@ class OAuth2Auth(AuthStrategy):
                 },
             )
             self._audit.log_auth_failure("oauth2", error_msg)
-            raise AuthError(error_msg)
+            raise AuthError(error_msg) from parse_exc
 
         raw_access = token_data.get("access_token")
         if not raw_access:

@@ -417,4 +417,3 @@ pytest tests/my_test.py::specific_test -v
 ---
 
 **Thank you for contributing to Equinox!**
-

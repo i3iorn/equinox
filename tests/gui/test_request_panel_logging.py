@@ -7,10 +7,10 @@ Tests verify that:
 4. Performance metrics are captured
 """
 
-import pytest
 import logging
-from unittest.mock import Mock, MagicMock, patch
-from equinox.core.request import Request
+from unittest.mock import Mock
+
+import pytest
 
 
 class TestRequestPanelLogging:
@@ -29,12 +29,12 @@ class TestRequestPanelLogging:
     def test_autosave_logs_skipped_when_not_dirty(self, caplog):
         """Test that autosave logs skip reason when not dirty."""
         from equinox.gui.request_panel.panel import RequestPanel
-        
+
         with caplog.at_level(logging.DEBUG):
             panel = Mock(spec=RequestPanel)
             panel._dirty = False
             panel.current_request = None
-            
+
             # Simulate autosave check
             if not panel._dirty:
                 assert True  # Skipped as expected
@@ -93,12 +93,14 @@ class TestLoggingStructure:
     def test_logging_module_imported(self):
         """Test that logging module is imported."""
         from equinox.gui.request_panel import panel
-        assert hasattr(panel, 'logging')
-        assert hasattr(panel, 'logger')
+
+        assert hasattr(panel, "logging")
+        assert hasattr(panel, "logger")
 
     def test_logger_uses_module_name(self):
         """Test that logger is created with module name."""
         from equinox.gui.request_panel.panel import logger
+
         assert logger.name == "equinox.gui.request_panel.panel"
 
     def test_structured_logging_extras_pattern(self):
@@ -106,7 +108,7 @@ class TestLoggingStructure:
         # Example of what should appear in code:
         # logger.info("Operation", extra={"request_id": 42, "method": "GET"})
         # This test documents the expected pattern
-        expected_pattern = 'extra={'
+        expected_pattern = "extra={"
         assert True  # Pattern documented
 
 
@@ -156,4 +158,3 @@ class TestLoggingLevels:
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
-

@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import json as _json
 import logging
-from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional, Tuple, Union
+from typing import TYPE_CHECKING, Any, Callable, Union
 from uuid import uuid4
 
 from equinox.versioning import get_app_version
@@ -24,7 +24,7 @@ logger = logging.getLogger(__name__)
 
 # ── System default headers ────────────────────────────────────────────────────
 
-_SYSTEM_DEFAULTS: Dict[str, Union[str, Callable[[], str]]] = {
+_SYSTEM_DEFAULTS: dict[str, Union[str, Callable[[], str]]] = {
     "X-Request-ID": lambda: str(uuid4()),
     "User-Agent": "Equinox API testing v" + get_app_version(),
     "Accept-Language": "en-US,en;q=0.5",
@@ -32,7 +32,7 @@ _SYSTEM_DEFAULTS: Dict[str, Union[str, Callable[[], str]]] = {
 }
 
 
-def apply_default_headers(request: "Request") -> None:
+def apply_default_headers(request: Request) -> None:
     """Inject system-level default headers that the user has not set."""
     existing = {str(k).lower() for k in request.headers.keys()}
     for name, value_or_factory in _SYSTEM_DEFAULTS.items():
@@ -41,13 +41,14 @@ def apply_default_headers(request: "Request") -> None:
                 value_or_factory() if callable(value_or_factory) else value_or_factory
             )
 
+
 # ── Body-type → MIME content-type mapping ─────────────────────────────────────
 
-_CONTENT_TYPE_MAP: Dict[str, str] = {
-    "raw (JSON)":      "application/json",
-    "raw (XML)":       "application/xml",
+_CONTENT_TYPE_MAP: dict[str, str] = {
+    "raw (JSON)": "application/json",
+    "raw (XML)": "application/xml",
     "form-urlencoded": "application/x-www-form-urlencoded",
-    "GraphQL":         "application/json",
+    "GraphQL": "application/json",
 }
 
 # Security: maximum body size accepted (100 MB)
@@ -62,8 +63,8 @@ def assemble_body(
     body_text: str,
     gql_query: str,
     gql_vars: str,
-    multipart_rows: List[Dict[str, str]],
-) -> Tuple[Optional[str], Optional[List[Any]]]:
+    multipart_rows: list[dict[str, str]],
+) -> tuple[str | None, list[Any]] | None:
     """Assemble request body from editor state.
 
     Returns ``(body, multipart_data)``.  Exactly one of the two will be set
@@ -87,7 +88,9 @@ def assemble_body(
     if len(body_text) > _MAX_BODY_SIZE:
         logger.warning(
             "assemble_body: body rejected body_type=%s size=%d max=%d",
-            body_type, len(body_text), _MAX_BODY_SIZE,
+            body_type,
+            len(body_text),
+            _MAX_BODY_SIZE,
         )
         raise ValueError(f"Body exceeds maximum supported size ({_MAX_BODY_SIZE} bytes)")
 
@@ -96,21 +99,21 @@ def assemble_body(
 
 def _assemble_graphql_body(query: str, variables_json: str) -> str:
     """Build a GraphQL request body JSON string."""
-    gql_body: Dict[str, Any] = {"query": query}
+    gql_body: dict[str, Any] = {"query": query}
     if variables_json and variables_json.strip():
         try:
             gql_body["variables"] = _json.loads(variables_json)
         except (ValueError, _json.JSONDecodeError) as exc:
             logger.warning("graphql_vars_invalid: %s", exc)
-            raise ValueError("GraphQL variables must be valid JSON")
+            raise ValueError("GraphQL variables must be valid JSON") from exc
     return _json.dumps(gql_body)
 
 
 def inject_content_type(
-    body: Optional[str],
+    body: str | None,
     body_type: str,
-    headers: Dict[str, str],
-) -> Dict[str, str]:
+    headers: dict[str, str],
+) -> dict[str, str]:
     """Return a new headers dict with Content-Type added when appropriate.
 
     No-op when body is empty, Content-Type is already set, or body_type
@@ -124,4 +127,3 @@ def inject_content_type(
     if ct is None:
         return headers
     return {**headers, "Content-Type": ct}
-

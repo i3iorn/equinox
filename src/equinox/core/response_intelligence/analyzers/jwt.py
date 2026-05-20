@@ -5,7 +5,7 @@ import json
 import logging
 import re
 import time
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
 
 from equinox.core.response_intelligence.base import Analyzer
 from equinox.core.response_intelligence.models import (
@@ -32,12 +32,24 @@ class JWTDecodeAnalyzer(Analyzer):
     display_name = "JWT Decode & Expiry Check"
 
     _JWT_RE = re.compile(r"eyJ[A-Za-z0-9_-]{10,}\.eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]+")
-    _SAFE_CLAIM_KEYS = {"iss", "aud", "exp", "iat", "nbf", "jti", "scope", "scp", "token_use", "azp", "kid"}
+    _SAFE_CLAIM_KEYS = {
+        "iss",
+        "aud",
+        "exp",
+        "iat",
+        "nbf",
+        "jti",
+        "scope",
+        "scp",
+        "token_use",
+        "azp",
+        "kid",
+    }
 
-    def analyze(self, ctx: AnalysisContext) -> List[Finding]:
+    def analyze(self, ctx: AnalysisContext) -> list[Finding]:
         """Analyze response for JWT tokens and validate them."""
-        findings: List[Finding] = []
-        sources: List[Tuple[str, str]] = []
+        findings: list[Finding] = []
+        sources: list[tuple[str, str]] = []
 
         if ctx.response.body:
             sources.append(("body", ctx.response.text[:256_000]))
@@ -64,14 +76,16 @@ class JWTDecodeAnalyzer(Analyzer):
                 if claims is None:
                     continue
 
-                details: Dict[str, Any] = {"source": source_label, "claims": claims}
+                details: dict[str, Any] = {"source": source_label, "claims": claims}
                 severity = Severity.INFO
 
                 safe_claims = self._sanitize_claims(claims)
                 details["claims"] = safe_claims
                 details["claim_keys"] = sorted(list(claims.keys()))[:20]
 
-                algorithm = str(decoded_header.get("alg", "")).strip().lower() if decoded_header else ""
+                algorithm = (
+                    str(decoded_header.get("alg", "")).strip().lower() if decoded_header else ""
+                )
                 if algorithm == "none":
                     severity = Severity.CRITICAL
                     details["algorithm_none"] = True
@@ -100,21 +114,23 @@ class JWTDecodeAnalyzer(Analyzer):
                     if severity == Severity.INFO:
                         severity = Severity.WARNING
 
-                findings.append(Finding(
-                    category=self.category,
-                    severity=severity,
-                    title=f"JWT found in {source_label}",
-                    description=self._summarize(claims, details),
-                    analyzer_id=self.analyzer_id,
-                    recommendation="Avoid returning tokens in response bodies when possible and enforce short token expiry windows.",
-                    details=details,
-                ))
+                findings.append(
+                    Finding(
+                        category=self.category,
+                        severity=severity,
+                        title=f"JWT found in {source_label}",
+                        description=self._summarize(claims, details),
+                        analyzer_id=self.analyzer_id,
+                        recommendation="Avoid returning tokens in response bodies when possible and enforce short token expiry windows.",
+                        details=details,
+                    )
+                )
                 break
 
         return findings
 
     @staticmethod
-    def _decode_jwt(token: str) -> Tuple[Optional[Dict[str, Any]], Optional[Dict[str, Any]]]:
+    def _decode_jwt(token: str) -> tuple[dict[str, Any] | None, dict[str, Any] | None]:
         """Decode JWT header and payload without verification."""
         try:
             parts = token.split(".")
@@ -138,9 +154,9 @@ class JWTDecodeAnalyzer(Analyzer):
             return None, None
 
     @classmethod
-    def _sanitize_claims(cls, claims: Dict[str, Any]) -> Dict[str, Any]:
+    def _sanitize_claims(cls, claims: dict[str, Any]) -> dict[str, Any]:
         """Extract only safe claims to display."""
-        sanitized: Dict[str, Any] = {}
+        sanitized: dict[str, Any] = {}
         for key, value in claims.items():
             key_name = str(key)
             if key_name in cls._SAFE_CLAIM_KEYS:
@@ -153,9 +169,9 @@ class JWTDecodeAnalyzer(Analyzer):
         return sanitized
 
     @staticmethod
-    def _summarize(claims: Dict[str, Any], details: Dict[str, Any]) -> str:
+    def _summarize(claims: dict[str, Any], details: dict[str, Any]) -> str:
         """Build a human-readable summary of JWT details."""
-        parts: List[str] = []
+        parts: list[str] = []
         if claims.get("sub"):
             parts.append(f"Subject: {claims['sub']}")
         if claims.get("iss"):
@@ -176,4 +192,3 @@ class JWTDecodeAnalyzer(Analyzer):
             parts.append("Insecure alg=none")
 
         return " | ".join(parts) if parts else "JWT decoded successfully."
-

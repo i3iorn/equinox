@@ -68,15 +68,18 @@ See Also
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, Dict, List, Type
-
-from equinox.auth._base import AuthStrategy, AUTH_TYPES
-from equinox.auth._bearer import BearerAuth
 from equinox.auth._api_key import APIKeyAuth
-from equinox.auth._basic import BasicAuth
-from equinox.auth._oauth2 import OAuth2Auth, make_oauth2_basic_auth_header
 from equinox.auth._aws_sigv4 import AWSSigV4Auth
-from equinox.auth._factory import AUTH_REGISTRY, get_auth_types, get_auth_type_labels, auth_from_dict
+from equinox.auth._base import AUTH_TYPES, AuthStrategy
+from equinox.auth._basic import BasicAuth
+from equinox.auth._bearer import BearerAuth
+from equinox.auth._factory import (
+    AUTH_REGISTRY,
+    auth_from_dict,
+    get_auth_type_labels,
+    get_auth_types,
+)
+from equinox.auth._oauth2 import OAuth2Auth, make_oauth2_basic_auth_header
 
 __all__ = [
     "AuthStrategy",
@@ -91,11 +94,11 @@ __all__ = [
     "list_auth_types",
     "AUTH_TYPES",
     "get_auth_types",
-    "get_auth_type_labels"
+    "get_auth_type_labels",
 ]
 
 
-def get_auth_type(name: str) -> Type[AuthStrategy]:
+def get_auth_type(name: str) -> type[AuthStrategy]:
     """Get an auth strategy class by type name.
 
     Supports short names ("bearer") and class names ("BearerAuth").
@@ -109,7 +112,6 @@ def get_auth_type(name: str) -> Type[AuthStrategy]:
     Raises:
         ValueError: If type name is unknown
     """
-    from equinox.auth._factory import AUTH_REGISTRY
 
     if name in AUTH_REGISTRY:
         loader = AUTH_REGISTRY[name]
@@ -124,13 +126,12 @@ def get_auth_type(name: str) -> Type[AuthStrategy]:
     raise ValueError(f"Unknown auth type: {name!r}. Available: {available}")
 
 
-def list_auth_types() -> List[str]:
+def list_auth_types() -> list[str]:
     """List all available auth type identifiers.
 
     Returns:
         Sorted list of auth type names.
     """
-    from equinox.auth._factory import AUTH_REGISTRY
 
     return sorted(AUTH_REGISTRY.keys())
 
@@ -144,11 +145,9 @@ def _validate_all_exports() -> None:
 
     if missing:
         raise ImportError(
-            f"Module equinox.auth exports {missing!r} in __all__ "
-            f"but they are not defined."
+            f"Module equinox.auth exports {missing!r} in __all__ " f"but they are not defined."
         )
 
 
 _validate_all_exports()
 del _validate_all_exports
-

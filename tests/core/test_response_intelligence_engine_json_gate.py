@@ -146,5 +146,3 @@ def test_engine_emits_failure_finding_for_invalid_return_type():
     assert len(findings) == 1
     assert findings[0].analyzer_id == "hints.analysis_failure"
     assert findings[0].details["failed_analyzer"] == "test.bad_return"
-
-

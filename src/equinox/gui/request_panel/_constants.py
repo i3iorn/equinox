@@ -12,7 +12,6 @@ eliminating the need for parallel isinstance dispatch tables.
 from __future__ import annotations
 
 import re
-from typing import Tuple
 
 # ──────────────────────────────────────────────────────────────────────────────
 # Auth
@@ -23,10 +22,16 @@ from typing import Tuple
 FOLDER_AUTH_PREFIX = "folder:"
 
 # Keys excluded from auth config comparison (volatile token state)
-AUTH_VOLATILE_KEYS = frozenset({
-    "has_access_token", "has_refresh_token", "expires_at",
-    "access_token", "refresh_token", "token_timeout",
-})
+AUTH_VOLATILE_KEYS = frozenset(
+    {
+        "has_access_token",
+        "has_refresh_token",
+        "expires_at",
+        "access_token",
+        "refresh_token",
+        "token_timeout",
+    }
+)
 
 
 # Auth display layout margins
@@ -37,7 +42,7 @@ AUTH_TAB_MARGINS = (6, 8, 6, 8)
 # ──────────────────────────────────────────────────────────────────────────────
 
 # Pre-compiled URL scheme regex for preflight checks
-HTTP_SCHEME_RE = re.compile(r'^https?://', re.IGNORECASE)
+HTTP_SCHEME_RE = re.compile(r"^https?://", re.IGNORECASE)
 
 # Preflight warning separator
 PREFLIGHT_SEPARATOR = "  ·  "
@@ -89,4 +94,3 @@ SAVE_DIALOG_MIN_WIDTH = 420
 
 # URL preview length in auto-generated request name
 SAVE_DIALOG_URL_PREVIEW_LEN = 50
-

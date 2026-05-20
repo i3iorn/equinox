@@ -1,8 +1,9 @@
 """Cookie jar bridge between CookieManager and the httpx transport."""
+
 from __future__ import annotations
 
 import logging
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from equinox.core.http.cookies import CookieManager
 from equinox.core.request import Response
@@ -21,18 +22,18 @@ class CookieHandler:
     manager is configured.
     """
 
-    def __init__(self, manager: Optional[CookieManager]) -> None:
+    def __init__(self, manager: CookieManager | None) -> None:
         self._manager = manager
 
     # ── Public API ────────────────────────────────────────────────────────────
 
-    def get_httpx_cookies(self) -> Dict[str, Any]:
+    def get_httpx_cookies(self) -> dict[str, Any]:
         """Return a cookie dict suitable for passing to httpx, or ``{}``."""
         if self._manager is not None:
             return self._manager.to_httpx_cookies()
         return {}
 
-    def get_httpx_cookie_records(self) -> List[Dict[str, str]]:
+    def get_httpx_cookie_records(self) -> list[dict[str, str]]:
         """Return domain/path-aware cookie records for httpx cookie-jar syncing."""
         if self._manager is None:
             return []
@@ -46,7 +47,7 @@ class CookieHandler:
             for name, value in self._manager.to_httpx_cookies().items()
         ]
 
-    def update_from_response(self, response: Optional[Response], url: str) -> None:
+    def update_from_response(self, response: Response | None, url: str) -> None:
         """Persist any ``Set-Cookie`` headers from *response* into the jar.
 
         No-ops silently when no manager is configured or *response* is ``None``.
@@ -68,9 +69,7 @@ class CookieHandler:
 
             headers = dict(response.headers)
             if any(k.lower() == "set-cookie" for k in headers):
-                logger.debug(
-                    "CookieHandler: updating cookie jar from Set-Cookie (url=%s)", url
-                )
+                logger.debug("CookieHandler: updating cookie jar from Set-Cookie (url=%s)", url)
                 self._manager.update_from_response(headers, url)
         except Exception as exc:
             logger.debug("CookieHandler: cookie update failed for %s: %s", url, exc)

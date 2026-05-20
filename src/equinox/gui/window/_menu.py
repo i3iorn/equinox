@@ -1,4 +1,5 @@
 """Menu bar, command palette, and dialogs mixin for MainWindow."""
+
 from __future__ import annotations
 
 import logging
@@ -7,8 +8,14 @@ import os
 from PyQt6.QtCore import QTimer
 from PyQt6.QtGui import QAction, QKeySequence
 from PyQt6.QtWidgets import (
-    QDialog, QDialogButtonBox, QHeaderView,
-    QLabel, QMessageBox, QPlainTextEdit, QTableWidget, QTableWidgetItem,
+    QDialog,
+    QDialogButtonBox,
+    QHeaderView,
+    QLabel,
+    QMessageBox,
+    QPlainTextEdit,
+    QTableWidget,
+    QTableWidgetItem,
     QVBoxLayout,
 )
 
@@ -22,25 +29,25 @@ _KEY_SETUP_DONE = "onboarding/setup_wizard_completed"
 
 # Keyboard shortcut table
 _KEYBOARD_SHORTCUTS: list = [
-    ("Ctrl+N",       "New request (clear editor)"),
-    ("Ctrl+L",       "Focus URL field"),
-    ("Ctrl+Return",  "Send request"),
-    ("Ctrl+S",       "Save to Collection"),
-    ("Ctrl+,",       "Open Preferences"),
-    ("Ctrl+Q",       "Exit"),
-    ("F5",           "Refresh collections"),
-    ("F1",           "Keyboard Shortcuts (this dialog)"),
-    ("Ctrl++",       "Zoom in"),
-    ("Ctrl+-",       "Zoom out"),
-    ("Ctrl+0",       "Reset zoom"),
+    ("Ctrl+N", "New request (clear editor)"),
+    ("Ctrl+L", "Focus URL field"),
+    ("Ctrl+Return", "Send request"),
+    ("Ctrl+S", "Save to Collection"),
+    ("Ctrl+,", "Open Preferences"),
+    ("Ctrl+Q", "Exit"),
+    ("F5", "Refresh collections"),
+    ("F1", "Keyboard Shortcuts (this dialog)"),
+    ("Ctrl++", "Zoom in"),
+    ("Ctrl+-", "Zoom out"),
+    ("Ctrl+0", "Reset zoom"),
     ("Ctrl+Shift+F", "Format JSON body"),
-    ("Ctrl+K",       "Command Palette"),
-    ("Ctrl+F",       "Find in response body"),
-    ("Ctrl+PgUp",    "Previous request tab"),
-    ("Ctrl+PgDn",    "Next request tab"),
-    ("Alt+1…Alt+6",  "Switch left sidebar tabs"),
-    ("F2",           "Rename selected collection item"),
-    ("Delete",       "Delete selected collection item"),
+    ("Ctrl+K", "Command Palette"),
+    ("Ctrl+F", "Find in response body"),
+    ("Ctrl+PgUp", "Previous request tab"),
+    ("Ctrl+PgDn", "Next request tab"),
+    ("Alt+1…Alt+6", "Switch left sidebar tabs"),
+    ("F2", "Rename selected collection item"),
+    ("Delete", "Delete selected collection item"),
 ]
 
 
@@ -62,10 +69,10 @@ class _MenuMixin:
 
         import_menu = file_menu.addMenu("&Import")
         for label, slot in [
-            ("Postman Collection…",    self._import_postman),
-            ("OpenAPI/Swagger Spec…",  self._import_openapi),
-            ("HAR File…",              self._import_har),
-            ("Insomnia Collection…",   self._import_insomnia),
+            ("Postman Collection…", self._import_postman),
+            ("OpenAPI/Swagger Spec…", self._import_openapi),
+            ("HAR File…", self._import_har),
+            ("Insomnia Collection…", self._import_insomnia),
         ]:
             act = QAction(label, self)
             act.triggered.connect(slot)
@@ -80,8 +87,8 @@ class _MenuMixin:
         # View menu
         view_menu = menubar.addMenu("&View")
         for label, shortcut, slot in [
-            ("Zoom &In",    "Ctrl+=", self._zoom_in),
-            ("Zoom &Out",   "Ctrl+-", self._zoom_out),
+            ("Zoom &In", "Ctrl+=", self._zoom_in),
+            ("Zoom &Out", "Ctrl+-", self._zoom_out),
             ("&Reset Zoom", "Ctrl+0", self._zoom_reset),
         ]:
             act = QAction(label, self)
@@ -90,7 +97,8 @@ class _MenuMixin:
             view_menu.addAction(act)
         view_menu.addSeparator()
 
-        from equinox.gui.theme import THEME_MODES, THEME_LABELS, get_theme_mode
+        from equinox.gui.theme import THEME_LABELS, THEME_MODES, get_theme_mode
+
         theme_menu = view_menu.addMenu("&Theme")
         self._theme_actions: dict = {}
         for mode in THEME_MODES:
@@ -129,8 +137,8 @@ class _MenuMixin:
         col_menu.addSeparator()
         export_menu = col_menu.addMenu("&Export")
         for label, fmt in [
-            ("Postman Format…",  "postman"),
-            ("OpenAPI Format…",  "openapi"),
+            ("Postman Format…", "postman"),
+            ("OpenAPI Format…", "openapi"),
             ("Insomnia Format…", "insomnia"),
         ]:
             a = QAction(label, self)
@@ -198,9 +206,7 @@ class _MenuMixin:
 
         self._menu_title_label = QLabel(self.windowTitle(), title_container)
         self._menu_title_label.setObjectName("menuBarWindowTitle")
-        self._menu_title_label.setTextInteractionFlags(
-            Qt.TextInteractionFlag.NoTextInteraction
-        )
+        self._menu_title_label.setTextInteractionFlags(Qt.TextInteractionFlag.NoTextInteraction)
         self._menu_title_label.setCursor(Qt.CursorShape.ArrowCursor)
         title_layout.addWidget(self._menu_title_label)
 
@@ -237,6 +243,7 @@ class _MenuMixin:
 
     def _open_preferences(self) -> None:
         from equinox.gui.dialogs.preferences_dialog import PreferencesDialog
+
         PreferencesDialog(self).exec()
         self._sync_theme_checks()
 
@@ -274,20 +281,65 @@ class _MenuMixin:
     def _command_palette_items(self) -> list:
         """Return command palette entries with stable IDs and callbacks."""
         commands = [
-            {"id": "new_request",    "label": "New Request",    "shortcut": "Ctrl+N",     "callback": self._new_request},
-            {"id": "send_request",   "label": "Send Request",   "shortcut": "Ctrl+Enter", "callback": self.request_panel.send},
-            {"id": "save_request",   "label": "Save Request",   "shortcut": "Ctrl+S",     "callback": self.request_panel.save_current_request},
-            {"id": "focus_url",      "label": "Focus URL",      "shortcut": "Ctrl+L",     "callback": self.request_panel._focus_url_input},
-            {"id": "import_postman", "label": "Import Postman",                            "callback": self._import_postman},
-            {"id": "import_openapi", "label": "Import OpenAPI",                            "callback": self._import_openapi},
-            {"id": "import_har",     "label": "Import HAR",                                "callback": self._import_har},
-            {"id": "import_insomnia","label": "Import Insomnia",                           "callback": self._import_insomnia},
-            {"id": "export_postman", "label": "Export Collection as Postman",              "callback": lambda: self._export_collection("postman")},
-            {"id": "export_openapi", "label": "Export Collection as OpenAPI",              "callback": lambda: self._export_collection("openapi")},
-            {"id": "export_insomnia","label": "Export Collection as Insomnia",             "callback": lambda: self._export_collection("insomnia")},
-            {"id": "manage_env",     "label": "Manage Environments",                       "callback": self._manage_environments},
-            {"id": "preferences",    "label": "Open Preferences",  "shortcut": "Ctrl+,",  "callback": self._open_preferences},
-            {"id": "setup_wizard",   "label": "Run Setup Wizard",                          "callback": self._run_setup_wizard},
+            {
+                "id": "new_request",
+                "label": "New Request",
+                "shortcut": "Ctrl+N",
+                "callback": self._new_request,
+            },
+            {
+                "id": "send_request",
+                "label": "Send Request",
+                "shortcut": "Ctrl+Enter",
+                "callback": self.request_panel.send,
+            },
+            {
+                "id": "save_request",
+                "label": "Save Request",
+                "shortcut": "Ctrl+S",
+                "callback": self.request_panel.save_current_request,
+            },
+            {
+                "id": "focus_url",
+                "label": "Focus URL",
+                "shortcut": "Ctrl+L",
+                "callback": self.request_panel._focus_url_input,
+            },
+            {"id": "import_postman", "label": "Import Postman", "callback": self._import_postman},
+            {"id": "import_openapi", "label": "Import OpenAPI", "callback": self._import_openapi},
+            {"id": "import_har", "label": "Import HAR", "callback": self._import_har},
+            {
+                "id": "import_insomnia",
+                "label": "Import Insomnia",
+                "callback": self._import_insomnia,
+            },
+            {
+                "id": "export_postman",
+                "label": "Export Collection as Postman",
+                "callback": lambda: self._export_collection("postman"),
+            },
+            {
+                "id": "export_openapi",
+                "label": "Export Collection as OpenAPI",
+                "callback": lambda: self._export_collection("openapi"),
+            },
+            {
+                "id": "export_insomnia",
+                "label": "Export Collection as Insomnia",
+                "callback": lambda: self._export_collection("insomnia"),
+            },
+            {
+                "id": "manage_env",
+                "label": "Manage Environments",
+                "callback": self._manage_environments,
+            },
+            {
+                "id": "preferences",
+                "label": "Open Preferences",
+                "shortcut": "Ctrl+,",
+                "callback": self._open_preferences,
+            },
+            {"id": "setup_wizard", "label": "Run Setup Wizard", "callback": self._run_setup_wizard},
         ]
         tracker = getattr(self, "_ui_usage_tracker", None)
         if tracker is None:
@@ -350,9 +402,7 @@ class _MenuMixin:
 
         table = QTableWidget(len(_KEYBOARD_SHORTCUTS), 2)
         table.setHorizontalHeaderLabels(["Shortcut", "Action"])
-        table.horizontalHeader().setSectionResizeMode(
-            0, QHeaderView.ResizeMode.ResizeToContents
-        )
+        table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
         table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
         table.verticalHeader().setVisible(False)
         table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
@@ -371,8 +421,10 @@ class _MenuMixin:
 
     def _show_about(self) -> None:
         from equinox import __version__
+
         QMessageBox.about(
-            self, "About Equinox",
+            self,
+            "About Equinox",
             f"<h2>Equinox v{__version__}</h2>"
             "<p>A local-first API testing tool</p>"
             "<p>Built with Python and PyQt6</p>",
@@ -423,4 +475,3 @@ class _MenuMixin:
             return
         tracker.reset()
         self.status_bar.showMessage("UI usage data reset", 3000)
-

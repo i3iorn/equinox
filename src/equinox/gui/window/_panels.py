@@ -3,6 +3,7 @@
 Each left-tab panel is created on first selection and replaces its
 placeholder widget, keeping startup cost near zero.
 """
+
 from __future__ import annotations
 
 import logging
@@ -33,7 +34,8 @@ class _PanelsMixin:
         except Exception:
             logger.exception(
                 "Failed to initialize left panel index=%d (%s)",
-                index, self._left_tabs.tabText(index),
+                index,
+                self._left_tabs.tabText(index),
             )
             return
         self._tabs_initialized.add(index)
@@ -48,18 +50,18 @@ class _PanelsMixin:
 
     def _init_collections_panel(self):
         from equinox.gui.collection_panel import CollectionsPanel
+
         self.collections_panel = CollectionsPanel(self.db, self)
         rp = self.request_panel
         self.collections_panel.request_selected.connect(self._load_request_guarded)
         self.collections_panel.request_run.connect(self._run_request_directly)
-        self.collections_panel.collections_changed.connect(
-            lambda: self.collections_panel.refresh()
-        )
+        self.collections_panel.collections_changed.connect(lambda: self.collections_panel.refresh())
         self.collections_panel.collections_changed.connect(rp.refresh_inherited_auth)
         return self.collections_panel
 
     def _init_history_panel(self):
         from equinox.gui.history_panel import HistoryPanel
+
         self.history_panel = HistoryPanel(self.db, self, history_facade=self._history_facade)
         self.history_panel.history_selected.connect(self._load_history_entry)
         self.history_panel.history_replay.connect(self._replay_history_entry)
@@ -67,6 +69,7 @@ class _PanelsMixin:
 
     def _init_variables_panel(self):
         from equinox.gui.variables_panel import VariablesPanel
+
         self.variables_panel = VariablesPanel(self.db, self)
         rp = self.request_panel
         rp.session_vars_changed.connect(self.variables_panel.refresh_session_vars)
@@ -75,16 +78,19 @@ class _PanelsMixin:
 
     def _init_logging_panel(self):
         from equinox.gui.logging_panel import LoggingPanel
+
         self.logging_panel = LoggingPanel(self)
         return self.logging_panel
 
     def _init_cookies_panel(self):
         from equinox.gui.cookies_panel import CookiesPanel
+
         self.cookies_panel = CookiesPanel(self.db, self)
         return self.cookies_panel
 
     def _init_websocket_panel(self):
         from equinox.gui.websocket_panel import WebSocketPanel
+
         self.websocket_panel = WebSocketPanel(self)
         return self.websocket_panel
 
@@ -135,4 +141,3 @@ class _PanelsMixin:
             self._safe_refresh(panel)
             return
         self._pending_panel_refreshes.add(index)
-

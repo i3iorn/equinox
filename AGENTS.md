@@ -396,7 +396,7 @@ The tracking system powers:
 - **Shortcuts**: `Ctrl+1` through `Ctrl+8` navigate between sidebar tabs
 - **Implementation**: Qt `QShortcut` objects registered at main window level
 - **Conflict Prevention**: Shortcuts only activate when focus is on neutral UI (tab bar, status bar, not text editors)
-- **Tab Mapping**: 
+- **Tab Mapping**:
   - `Ctrl+1`: Request Builder
   - `Ctrl+2`: Response Viewer
   - `Ctrl+3`: Collections

@@ -2,25 +2,24 @@
 
 from __future__ import annotations
 
-import os
-import json
 import base64
-import logging
-import tempfile
 import ctypes
-import threading
 import gc
-
+import json
+import logging
+import os
+import tempfile
+import threading
 from pathlib import Path
-from typing import Optional, Dict, Any, List, TypedDict
+from typing import Any, TypedDict
 
 from cryptography.fernet import Fernet
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 from cryptography.hazmat.primitives.kdf.scrypt import Scrypt
 
-from equinox.core.exceptions import SecurityError, ValidationError
 from equinox.core.audit import get_audit_logger
+from equinox.core.exceptions import SecurityError, ValidationError
 from equinox.security import crypto
 
 logger = logging.getLogger(__name__)
@@ -30,15 +29,16 @@ logger = logging.getLogger(__name__)
 # Typed structures
 # ──────────────────────────────────────────────────────────────────────────────
 
+
 class CredentialEntry(TypedDict):
     value: str
-    metadata: Dict[str, Any]
+    metadata: dict[str, Any]
 
 
 class ExportPayloadV2(TypedDict):
     version: int
     kdf: str
-    kdf_params: Dict[str, Any]
+    kdf_params: dict[str, Any]
     salt: str
     data: str
 
@@ -77,6 +77,7 @@ _EXPORT_VERSION_V2 = 2
 # Helpers
 # ──────────────────────────────────────────────────────────────────────────────
 
+
 def _ensure_permissions(path: Path) -> None:
     """Set file permissions to owner-read/write only (0o600)."""
     try:
@@ -105,7 +106,7 @@ def _atomic_write(path: Path, data: bytes) -> None:
         raise
 
 
-def _wipe_bytes(b: Optional[bytes]) -> None:
+def _wipe_bytes(b: bytes | None) -> None:
     """Best-effort overwrite of *b* in memory.
 
     CPython may have copied the bytes elsewhere (interning, buffer copies)
@@ -126,7 +127,7 @@ def _wipe_bytes(b: Optional[bytes]) -> None:
         gc.collect()
 
 
-def _validate_key_value(key: str, value: Optional[str] = None) -> None:
+def _validate_key_value(key: str, value: str | None = None) -> None:
     """Validate a credential key and optional value for length and type."""
     if not key or not isinstance(key, str):
         raise ValidationError("Credential key must be a non-empty string")
@@ -162,20 +163,19 @@ def _encode_key_for_fernet(key: bytes) -> bytes:
 # Secure Storage
 # ──────────────────────────────────────────────────────────────────────────────
 
+
 class SecureStorage:
     """Secure credential storage with encryption."""
 
-    def __init__(self, storage_path: Optional[Path] = None):
-        self.storage_path = Path(
-            storage_path or Path.home() / ".equinox" / ".credentials"
-        )
+    def __init__(self, storage_path: Path | None = None):
+        self.storage_path = Path(storage_path or Path.home() / ".equinox" / ".credentials")
 
         self.storage_path.parent.mkdir(parents=True, exist_ok=True)
 
         if self.storage_path.exists():
             _ensure_permissions(self.storage_path)
 
-        self._cipher: Optional[Fernet] = None
+        self._cipher: Fernet | None = None
         self._audit = get_audit_logger()
         # Protects all read-modify-write operations so concurrent calls from
         # multiple threads do not silently clobber each other's changes.
@@ -210,7 +210,7 @@ class SecureStorage:
     # Storage I/O
     # ──────────────────────────────────────────────────────────────────────────
 
-    def _load(self) -> Dict[str, CredentialEntry]:
+    def _load(self) -> dict[str, CredentialEntry]:
         """Load and decrypt credentials from storage."""
         if not self.storage_path.exists():
             return {}
@@ -234,7 +234,7 @@ class SecureStorage:
             logger.exception("Failed to load storage")
             raise SecurityError("Failed to decrypt credentials") from exc
 
-    def _save(self, storage: Dict[str, CredentialEntry]) -> None:
+    def _save(self, storage: dict[str, CredentialEntry]) -> None:
         """Encrypt and save credentials to storage."""
         try:
             cipher = self._get_cipher()
@@ -257,7 +257,7 @@ class SecureStorage:
         self,
         key: str,
         value: str,
-        metadata: Optional[Dict[str, Any]] = None,
+        metadata: dict[str, Any] | None = None,
     ) -> None:
         """Store a credential."""
         _validate_key_value(key, value)
@@ -272,7 +272,7 @@ class SecureStorage:
 
         self._audit.log_credential_access("store", key)
 
-    def retrieve(self, key: str) -> Optional[str]:
+    def retrieve(self, key: str) -> str | None:
         """Retrieve a credential by key."""
         _validate_key_value(key)
 
@@ -300,7 +300,7 @@ class SecureStorage:
         self._audit.log_credential_access("delete", key)
         return True
 
-    def list_keys(self) -> List[str]:
+    def list_keys(self) -> list[str]:
         """List all stored credential keys."""
         with self._lock:
             return list(self._load().keys())
@@ -321,7 +321,7 @@ class SecureStorage:
 
         with self._lock:
             storage = self._load()
-        key: Optional[bytes] = None
+        key: bytes | None = None
 
         try:
             salt = os.urandom(_SCRYPT_SALT_LEN)
@@ -372,7 +372,7 @@ class SecureStorage:
         salt = base64.b64decode(payload.get("salt", ""))
         encrypted = base64.b64decode(payload.get("data", ""))
 
-        key: Optional[bytes] = None
+        key: bytes | None = None
 
         try:
             if version >= _EXPORT_VERSION_V2:

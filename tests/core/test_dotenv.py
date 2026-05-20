@@ -2,7 +2,7 @@
 
 import pytest
 
-from equinox.core.io.dotenv import parse_dotenv, MAX_DOTENV_SIZE
+from equinox.core.io.dotenv import MAX_DOTENV_SIZE, parse_dotenv
 
 
 class TestParseDotenv:
@@ -107,4 +107,3 @@ DEBUG=true
         assert len(text) <= MAX_DOTENV_SIZE
         result = parse_dotenv(text)
         assert "K" in result
-

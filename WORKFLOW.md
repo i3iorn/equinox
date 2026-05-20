@@ -293,4 +293,3 @@ Equinox is organized around **strict service boundaries** with thin GUI, busines
 4. Check `AGENTS.md` for deep-dive architecture questions
 
 **Happy contributing!**
-

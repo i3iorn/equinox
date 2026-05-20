@@ -36,7 +36,13 @@ def test_post_token_request_retries_with_basic_on_invalid_client(monkeypatch) ->
 
     monkeypatch.setattr(OAuth2Auth, "_execute_token_post", fake_execute)
 
-    response = auth._post_token_request({"grant_type": "client_credentials", "client_id": "client-id", "client_secret": "client-secret"})
+    response = auth._post_token_request(
+        {
+            "grant_type": "client_credentials",
+            "client_id": "client-id",
+            "client_secret": "client-secret",
+        }
+    )
 
     assert response.status_code == 200
     assert calls == ["body", "basic"]
@@ -103,7 +109,9 @@ def test_post_token_request_maps_failed_auth_mode_fallback_to_auth_error(monkeyp
     assert auth.token_auth == "body"
 
 
-def test_post_token_request_retries_client_credentials_when_refresh_grant_invalid(monkeypatch) -> None:
+def test_post_token_request_retries_client_credentials_when_refresh_grant_invalid(
+    monkeypatch,
+) -> None:
     auth = OAuth2Auth(
         token_url="https://plus.dnb.com/v3/token",
         client_id="client-id",
@@ -140,4 +148,3 @@ def test_post_token_request_retries_client_credentials_when_refresh_grant_invali
         ("basic", "refresh_token"),
         ("basic", "client_credentials"),
     ]
-

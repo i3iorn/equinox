@@ -7,20 +7,20 @@ saving requests and persisted on the collection for reference.
 
 import json
 import logging
-from typing import Dict, Any, List, Optional
 from pathlib import Path
+from typing import Any
 
-from equinox.core.request import Request
-from equinox.core.exceptions import ValidationError, SecurityError
-from equinox.core.validation import Validator
-from equinox.storage.collections import CollectionManager
 from equinox.core import urls
-from equinox.importers._utils import validate_import_file, normalize_path_variables
+from equinox.core.exceptions import SecurityError, ValidationError
+from equinox.core.request import Request
+from equinox.core.validation import Validator
+from equinox.importers._utils import normalize_path_variables, validate_import_file
+from equinox.storage.collections import CollectionManager
 
 logger = logging.getLogger(__name__)
 
 
-def _extract_collection_variables(collection_data: Dict[str, Any]) -> Dict[str, str]:
+def _extract_collection_variables(collection_data: dict[str, Any]) -> dict[str, str]:
     """Extract collection-level variables from a Postman collection.
 
     Postman stores variables in ``collection.variable`` as a list of
@@ -32,7 +32,7 @@ def _extract_collection_variables(collection_data: Dict[str, Any]) -> Dict[str, 
     Returns:
         Mapping of variable name → current value (string).
     """
-    variables: Dict[str, str] = {}
+    variables: dict[str, str] = {}
     for var in collection_data.get("variable", []):
         if not isinstance(var, dict):
             continue
@@ -43,7 +43,7 @@ def _extract_collection_variables(collection_data: Dict[str, Any]) -> Dict[str, 
     return variables
 
 
-def _resolve_postman_variable(value: str, variables: Dict[str, str]) -> str:
+def _resolve_postman_variable(value: str, variables: dict[str, str]) -> str:
     """Delegate Postman variable resolution to central VariableInterpolator via urls.expand_placeholders.
 
     Keeps behaviour: unresolvable placeholders are left unchanged. Uses the
@@ -86,7 +86,7 @@ class PostmanImporter:
 
         try:
             logger.debug("Reading JSON from %s", file_path)
-            with open(file_path, "r", encoding="utf-8") as f:
+            with open(file_path, encoding="utf-8") as f:
                 collection_data = json.load(f)
             logger.debug("Successfully parsed JSON from file")
         except json.JSONDecodeError as exc:
@@ -98,7 +98,7 @@ class PostmanImporter:
 
         return self.import_dict(collection_data)
 
-    def import_dict(self, collection_data: Dict[str, Any]) -> int:
+    def import_dict(self, collection_data: dict[str, Any]) -> int:
         """Import Postman collection from dictionary.
 
         Collection-level variables (e.g. ``{{baseUrl}}``) are resolved when
@@ -118,18 +118,26 @@ class PostmanImporter:
         collection_name = info.get("name", "Imported Collection")
         collection_description = info.get("description", "")
 
-        logger.info("Importing Postman collection: %s (format: %s)", 
-                   collection_name, info.get("schema", "unknown"))
+        logger.info(
+            "Importing Postman collection: %s (format: %s)",
+            collection_name,
+            info.get("schema", "unknown"),
+        )
 
         col_variables = _extract_collection_variables(collection_data)
         if col_variables:
-            logger.info("Found %d collection variable(s): %s",
-                        len(col_variables), list(col_variables.keys()))
+            logger.info(
+                "Found %d collection variable(s): %s",
+                len(col_variables),
+                list(col_variables.keys()),
+            )
 
         # Collect request objects first, then perform a single transactional
         # import to improve performance and ensure atomicity.
         items = collection_data.get("item", [])
-        requests: List[Request] = self._collect_items(items, folder_name="", col_variables=col_variables)
+        requests: list[Request] = self._collect_items(
+            items, folder_name="", col_variables=col_variables
+        )
 
         try:
             with self.collection_manager.db.transaction() as tx:
@@ -145,24 +153,42 @@ class PostmanImporter:
                     try:
                         tx.execute(
                             "INSERT OR IGNORE INTO collection_variables (collection_id, key, value, description) VALUES (?, ?, ?, ?)",
-                            (col_id, var_name, var_value, "Imported from Postman collection variable"),
+                            (
+                                col_id,
+                                var_name,
+                                var_value,
+                                "Imported from Postman collection variable",
+                            ),
                         )
                         logger.debug("Added collection variable: %s=%s", var_name, var_value)
                     except Exception:
-                        logger.debug("Failed to add collection variable %s", var_name, exc_info=True)
+                        logger.debug(
+                            "Failed to add collection variable %s", var_name, exc_info=True
+                        )
 
                 # Insert requests via the manager's centralised method
                 for request in requests:
                     self.collection_manager.insert_request_row(
-                        request, col_id, tx=tx,
+                        request,
+                        col_id,
+                        tx=tx,
                     )
         except Exception as exc:
-            logger.error("Failed to import Postman collection transactionally: %s", exc, exc_info=True)
+            logger.error(
+                "Failed to import Postman collection transactionally: %s", exc, exc_info=True
+            )
             # Fall back: create a collection via manager and insert requests individually
-            collection_id = self.collection_manager.create_collection(name=collection_name, description=collection_description)
+            collection_id = self.collection_manager.create_collection(
+                name=collection_name, description=collection_description
+            )
             for var_name, var_value in col_variables.items():
                 try:
-                    self.collection_manager.add_variable(collection_id, var_name, var_value, description="Imported from Postman collection variable")
+                    self.collection_manager.add_variable(
+                        collection_id,
+                        var_name,
+                        var_value,
+                        description="Imported from Postman collection variable",
+                    )
                 except Exception:
                     pass
             for request in requests:
@@ -183,7 +209,7 @@ class PostmanImporter:
             label="Postman collection file",
         )
 
-    def _validate_collection(self, collection_data: Dict[str, Any]) -> None:
+    def _validate_collection(self, collection_data: dict[str, Any]) -> None:
         """Validate collection structure.
 
         Args:
@@ -225,17 +251,14 @@ class PostmanImporter:
         items = collection_data.get("item", [])
         request_count = _count_requests_recursive(items)
         if request_count > self.MAX_REQUESTS:
-            raise ValidationError(
-                f"Too many requests: {request_count} (max: {self.MAX_REQUESTS})"
-            )
-
+            raise ValidationError(f"Too many requests: {request_count} (max: {self.MAX_REQUESTS})")
 
     def _collect_items(
         self,
-        items: List[Dict[str, Any]],
+        items: list[dict[str, Any]],
         folder_name: str = "",
-        col_variables: Optional[Dict[str, str]] = None,
-    ) -> List[Request]:
+        col_variables: dict[str, str] | None = None,
+    ) -> list[Request]:
         """Walk items and return a flat list of parsed :class:`Request` objects.
 
         This mirrors :meth:`_import_items` but does not persist — useful for
@@ -244,7 +267,7 @@ class PostmanImporter:
         if col_variables is None:
             col_variables = {}
 
-        requests: List[Request] = []
+        requests: list[Request] = []
 
         for item in items:
             if "request" in item:
@@ -262,9 +285,9 @@ class PostmanImporter:
 
     def _parse_request(
         self,
-        item: Dict[str, Any],
+        item: dict[str, Any],
         folder_name: str,
-        col_variables: Optional[Dict[str, str]] = None,
+        col_variables: dict[str, str] | None = None,
     ) -> Request:
         """Parse Postman request item.
 
@@ -289,10 +312,8 @@ class PostmanImporter:
         if isinstance(request_data, str):
             # Simple string format (v2.0)
             method = "GET"
-            url = normalize_path_variables(
-                _resolve_postman_variable(request_data, col_variables)
-            )
-            headers: Dict[str, str] = {}
+            url = normalize_path_variables(_resolve_postman_variable(request_data, col_variables))
+            headers: dict[str, str] = {}
             body = None
             params_list = []
         else:
@@ -301,9 +322,7 @@ class PostmanImporter:
             url_data = request_data.get("url", {})
             params_list: list = []
             if isinstance(url_data, str):
-                url = normalize_path_variables(
-                    _resolve_postman_variable(url_data, col_variables)
-                )
+                url = normalize_path_variables(_resolve_postman_variable(url_data, col_variables))
             elif isinstance(url_data, dict):
                 url, params_list = self._build_url(url_data, col_variables)
             else:
@@ -368,8 +387,8 @@ class PostmanImporter:
 
     def _build_url(
         self,
-        url_data: Dict[str, Any],
-        col_variables: Optional[Dict[str, str]] = None,
+        url_data: dict[str, Any],
+        col_variables: dict[str, str] | None = None,
     ) -> tuple:
         """Build (base_url, params_list) from a Postman URL object.
 
@@ -411,9 +430,7 @@ class PostmanImporter:
         path_parts = path if isinstance(path, list) else [str(path)]
         # Postman sometimes stores path segments as objects e.g. {type, value}
         path_str = "/" + "/".join(
-            _resolve_postman_variable(
-                p["value"] if isinstance(p, dict) else str(p), col_variables
-            )
+            _resolve_postman_variable(p["value"] if isinstance(p, dict) else str(p), col_variables)
             for p in path_parts
         )
 
@@ -431,7 +448,7 @@ class PostmanImporter:
 
         return base_url, params_list
 
-    def _parse_body(self, body_data: Dict[str, Any]) -> Optional[str]:
+    def _parse_body(self, body_data: dict[str, Any]) -> str | None:
         """Parse request body from Postman format.
 
         Args:
@@ -473,7 +490,7 @@ class PostmanImporter:
         return None
 
 
-def preview_collection(file_path: Path) -> Dict[str, Any]:
+def preview_collection(file_path: Path) -> dict[str, Any]:
     """Preview collection before importing.
 
     Args:
@@ -486,7 +503,7 @@ def preview_collection(file_path: Path) -> Dict[str, Any]:
         ValidationError: If collection is invalid
     """
     try:
-        with open(file_path, "r", encoding="utf-8") as f:
+        with open(file_path, encoding="utf-8") as f:
             collection_data = json.load(f)
     except json.JSONDecodeError as exc:
         raise ValidationError(f"Invalid JSON: {exc}")
@@ -500,11 +517,11 @@ def preview_collection(file_path: Path) -> Dict[str, Any]:
         "description": info.get("description", ""),
         "version": info.get("schema", "Unknown"),
         "request_count": request_count,
-        "size_bytes": file_path.stat().st_size
+        "size_bytes": file_path.stat().st_size,
     }
 
 
-def _count_requests_recursive(items: List[Dict[str, Any]]) -> int:
+def _count_requests_recursive(items: list[dict[str, Any]]) -> int:
     """Count requests recursively."""
     count = 0
 

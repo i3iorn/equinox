@@ -52,4 +52,3 @@ def test_vault_config_allows_plain_http_when_explicitly_enabled(mock_get: Mock) 
     assert mgr.is_available()
     assert mgr.url == "http://vault.example.com:8200"
     mock_get.assert_called_once()
-

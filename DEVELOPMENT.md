@@ -357,10 +357,10 @@ def test_something(my_fixture):
 # If tests involve database, check state:
 def test_something(tmp_db_path):
     db = Database(tmp_db_path)
-    
+
     # Do something
     ...
-    
+
     # Inspect
     rows = db.fetchall("SELECT * FROM requests")
     print(f"Requests: {rows}")  # Debug output with pytest -s
@@ -436,4 +436,3 @@ git remote prune origin                 # Clean up remote tracking
 ---
 
 **Happy coding!**
-

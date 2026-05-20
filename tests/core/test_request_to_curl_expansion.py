@@ -1,5 +1,3 @@
-import re
-
 from equinox.core.request import Request
 
 
@@ -28,4 +26,3 @@ def test_to_curl_handles_template_without_scheme_by_concat():
     # Should have performed simple concatenation for non-absolute/template URL
     assert "/api/123" in curl
     assert "page=2" in curl
-

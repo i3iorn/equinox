@@ -2,8 +2,10 @@
 
 import base64
 import logging
-from typing import Any, Dict, Optional
-from equinox.auth._base import AuthStrategy, _validate_credential, AuthError
+from typing import Any
+
+from equinox.auth._base import AuthStrategy, _validate_credential
+from equinox.core.exceptions import AuthError
 
 logger = logging.getLogger(__name__)
 
@@ -36,18 +38,18 @@ class BasicAuth(AuthStrategy):
 
     # ── AuthStrategy interface ────────────────────────────────────────────────
 
-    def apply(self, request: Any, headers: Dict[str, str]) -> None:
+    def apply(self, request: Any, headers: dict[str, str]) -> None:
         """Add Authorization header with basic auth credentials."""
         credentials = f"{self.username}:{self.password}"
         encoded = base64.b64encode(credentials.encode()).decode()
         headers["Authorization"] = f"Basic {encoded}"
         logger.debug("BasicAuth applied for user %r", self.username)
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return {"type": self.AUTH_TYPE, "username": self.username, "password": self.password}
 
     @classmethod
-    def from_dict(cls, data: Dict[str, Any], **kwargs: Any) -> "BasicAuth":
+    def from_dict(cls, data: dict[str, Any], **kwargs: Any) -> "BasicAuth":
         """Create from dictionary.
 
         Raises:
@@ -63,7 +65,7 @@ class BasicAuth(AuthStrategy):
     def get_display_summary(self) -> str:
         return f"Username: {self.username}"
 
-    def get_preflight_warning(self) -> Optional[str]:
+    def get_preflight_warning(self) -> str | None:
         if not self.username:
             return "Basic auth username is empty"
         return None

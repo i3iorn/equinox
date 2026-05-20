@@ -1,4 +1,3 @@
-import tempfile
 from pathlib import Path
 
 from equinox.core import crypto
@@ -23,4 +22,3 @@ def test_make_fernet_encrypts_and_decrypts(tmp_path: Path):
     token = f.encrypt(plaintext)
     out = f.decrypt(token)
     assert out == plaintext
-

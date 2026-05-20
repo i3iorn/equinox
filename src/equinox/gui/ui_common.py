@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from typing import Iterable, Optional
+from collections.abc import Iterable
 
 from PyQt6.QtCore import QSettings
 from PyQt6.QtWidgets import QLabel, QMessageBox, QSplitter, QTabWidget, QVBoxLayout, QWidget
@@ -30,9 +30,9 @@ def get_gui_settings() -> QSettings:
 
 def resolve_proxy_url(
     *,
-    settings: Optional[QSettings] = None,
-    logger: Optional[logging.Logger] = None,
-) -> Optional[str]:
+    settings: QSettings | None = None,
+    logger: logging.Logger | None = None,
+) -> str | None:
     """Resolve proxy URL from settings with safe parsing.
 
     Returns ``None`` if host/port are missing or invalid.
@@ -82,7 +82,7 @@ def configure_splitter_persistence(
     *,
     settings_key: str,
     default_sizes: Iterable[int],
-    settings: Optional[QSettings] = None,
+    settings: QSettings | None = None,
 ) -> None:
     """Restore splitter sizes and auto-persist future changes to QSettings."""
     source = settings or get_gui_settings()
@@ -112,8 +112,8 @@ def configure_tab_persistence(
     tab_widget: QTabWidget,
     *,
     settings_key: str,
-    default_tab: Optional[str] = None,
-    settings: Optional[QSettings] = None,
+    default_tab: str | None = None,
+    settings: QSettings | None = None,
 ) -> None:
     """Restore the selected tab by logical label and persist future changes."""
     source = settings or get_gui_settings()
@@ -132,5 +132,3 @@ def configure_tab_persistence(
 
     tab_widget.currentChanged.connect(_persist_tab)
     _persist_tab(tab_widget.currentIndex())
-
-

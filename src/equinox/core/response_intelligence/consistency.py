@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import logging
 import re
-from typing import Any, Dict, List, Set, Tuple
+from typing import Any
 
 from equinox.core.response_intelligence.base import Analyzer
 from equinox.core.response_intelligence.models import (
@@ -27,32 +27,39 @@ class StatusBodyMismatchAnalyzer(Analyzer):
     _ERROR_KEYS = {"error", "errors", "error_message", "errormessage", "fault", "exception"}
     _MAX_JSON_SCAN_BYTES = 512_000
 
-    def analyze(self, ctx: AnalysisContext) -> List[Finding]:
-        findings: List[Finding] = []
+    def analyze(self, ctx: AnalysisContext) -> list[Finding]:
+        findings: list[Finding] = []
         status_code = ctx.response.status_code
         body = ctx.response.body
 
         if status_code in self._NO_BODY_STATUS_CODES and body and len(body.strip()) > 0:
-            findings.append(Finding(
-                category=self.category,
-                severity=Severity.WARNING,
-                title=f"{status_code} response with non-empty body",
-                description=f"Status {status_code} should have no body, but response has {len(body)} bytes.",
-                analyzer_id=self.analyzer_id,
-                recommendation="Return an empty body for no-content responses, or use a status code that allows payload content.",
-                details={"status_code": status_code, "body_size": len(body)},
-            ))
+            findings.append(
+                Finding(
+                    category=self.category,
+                    severity=Severity.WARNING,
+                    title=f"{status_code} response with non-empty body",
+                    description=f"Status {status_code} should have no body, but response has {len(body)} bytes.",
+                    analyzer_id=self.analyzer_id,
+                    recommendation="Return an empty body for no-content responses, or use a status code that allows payload content.",
+                    details={"status_code": status_code, "body_size": len(body)},
+                )
+            )
 
         if status_code == 201 and (not body or len(body.strip()) == 0):
-            findings.append(Finding(
-                category=self.category,
-                severity=Severity.INFO,
-                title="201 Created with empty body",
-                description="A 201 response typically includes the created resource or a Location header.",
-                analyzer_id=self.analyzer_id,
-                recommendation="Return the created resource or include a Location header pointing to it.",
-                details={"status_code": status_code, "has_location": "location" in ctx.response.headers},
-            ))
+            findings.append(
+                Finding(
+                    category=self.category,
+                    severity=Severity.INFO,
+                    title="201 Created with empty body",
+                    description="A 201 response typically includes the created resource or a Location header.",
+                    analyzer_id=self.analyzer_id,
+                    recommendation="Return the created resource or include a Location header pointing to it.",
+                    details={
+                        "status_code": status_code,
+                        "has_location": "location" in ctx.response.headers,
+                    },
+                )
+            )
 
         if 200 <= status_code < 300 and ctx.response.is_json:
             try:
@@ -60,26 +67,31 @@ class StatusBodyMismatchAnalyzer(Analyzer):
                     payload = ctx.response.json()
                     error_paths = self._find_truthy_error_paths(payload)
                     if error_paths:
-                        findings.append(Finding(
-                            category=self.category,
-                            severity=Severity.WARNING,
-                            title=f"{status_code} success but body contains error fields",
-                            description=f"Found error-related keys: {', '.join(error_paths[:5])}.",
-                            analyzer_id=self.analyzer_id,
-                            recommendation="Align HTTP status codes with payload semantics and avoid error objects on successful responses.",
-                            details={"status_code": status_code, "error_paths": error_paths[:20]},
-                        ))
+                        findings.append(
+                            Finding(
+                                category=self.category,
+                                severity=Severity.WARNING,
+                                title=f"{status_code} success but body contains error fields",
+                                description=f"Found error-related keys: {', '.join(error_paths[:5])}.",
+                                analyzer_id=self.analyzer_id,
+                                recommendation="Align HTTP status codes with payload semantics and avoid error objects on successful responses.",
+                                details={
+                                    "status_code": status_code,
+                                    "error_paths": error_paths[:20],
+                                },
+                            )
+                        )
             except Exception:
                 logger.debug("StatusBodyMismatchAnalyzer: failed to parse JSON body", exc_info=True)
 
         return findings
 
     @classmethod
-    def _find_truthy_error_paths(cls, value: Any, path: str = "", depth: int = 0) -> List[str]:
+    def _find_truthy_error_paths(cls, value: Any, path: str = "", depth: int = 0) -> list[str]:
         if depth > 5:
             return []
 
-        found: List[str] = []
+        found: list[str] = []
         if isinstance(value, dict):
             for key, nested in value.items():
                 key_name = str(key)
@@ -107,8 +119,8 @@ class ContentTypeMismatchAnalyzer(Analyzer):
         stripped = (text or "").lstrip()
         return bool(stripped) and stripped[0] in "[{"
 
-    def analyze(self, ctx: AnalysisContext) -> List[Finding]:
-        findings: List[Finding] = []
+    def analyze(self, ctx: AnalysisContext) -> list[Finding]:
+        findings: list[Finding] = []
         content_type = ctx.response.content_type or ""
         body = ctx.response.body
         if not body or not content_type:
@@ -119,64 +131,77 @@ class ContentTypeMismatchAnalyzer(Analyzer):
         if "json" in content_type:
             if len(body) > self._MAX_JSON_VALIDATE_SIZE:
                 if not self._looks_like_json_prefix(text):
-                    findings.append(Finding(
-                        category=self.category,
-                        severity=Severity.WARNING,
-                        title="Content-Type says JSON but body does not look like JSON",
-                        description=f"Content-Type: {content_type}",
-                        analyzer_id=self.analyzer_id,
-                        recommendation="Return JSON payloads starting with an object/array, or correct the Content-Type header.",
-                        details={"content_type": content_type, "body_size": len(body)},
-                    ))
+                    findings.append(
+                        Finding(
+                            category=self.category,
+                            severity=Severity.WARNING,
+                            title="Content-Type says JSON but body does not look like JSON",
+                            description=f"Content-Type: {content_type}",
+                            analyzer_id=self.analyzer_id,
+                            recommendation="Return JSON payloads starting with an object/array, or correct the Content-Type header.",
+                            details={"content_type": content_type, "body_size": len(body)},
+                        )
+                    )
                     return findings
-                findings.append(Finding(
-                    category=self.category,
-                    severity=Severity.INFO,
-                    title="Large JSON payload skipped strict validation",
-                    description=(
-                        f"Body size {len(body)} bytes exceeds validation limit "
-                        f"{self._MAX_JSON_VALIDATE_SIZE} bytes."
-                    ),
-                    analyzer_id=self.analyzer_id,
-                    recommendation="Use streaming JSON validation for large payloads in CI/contract tests.",
-                    details={"body_size": len(body), "validation_limit": self._MAX_JSON_VALIDATE_SIZE},
-                ))
+                findings.append(
+                    Finding(
+                        category=self.category,
+                        severity=Severity.INFO,
+                        title="Large JSON payload skipped strict validation",
+                        description=(
+                            f"Body size {len(body)} bytes exceeds validation limit "
+                            f"{self._MAX_JSON_VALIDATE_SIZE} bytes."
+                        ),
+                        analyzer_id=self.analyzer_id,
+                        recommendation="Use streaming JSON validation for large payloads in CI/contract tests.",
+                        details={
+                            "body_size": len(body),
+                            "validation_limit": self._MAX_JSON_VALIDATE_SIZE,
+                        },
+                    )
+                )
                 return findings
             parsed = ctx.response.json_safe()
             if parsed is None:
-                findings.append(Finding(
-                    category=self.category,
-                    severity=Severity.WARNING,
-                    title="Content-Type says JSON but body is not valid JSON",
-                    description=f"Content-Type: {content_type}",
-                    analyzer_id=self.analyzer_id,
-                    recommendation="Return valid JSON for JSON content types or correct the Content-Type header.",
-                    details={"content_type": content_type},
-                ))
+                findings.append(
+                    Finding(
+                        category=self.category,
+                        severity=Severity.WARNING,
+                        title="Content-Type says JSON but body is not valid JSON",
+                        description=f"Content-Type: {content_type}",
+                        analyzer_id=self.analyzer_id,
+                        recommendation="Return valid JSON for JSON content types or correct the Content-Type header.",
+                        details={"content_type": content_type},
+                    )
+                )
         elif "xml" in content_type:
             stripped = text.lstrip()
             if stripped and not stripped.startswith("<"):
-                findings.append(Finding(
-                    category=self.category,
-                    severity=Severity.WARNING,
-                    title="Content-Type says XML but body does not start with '<'",
-                    description=f"Content-Type: {content_type}",
-                    analyzer_id=self.analyzer_id,
-                    recommendation="Ensure XML payloads are serialized correctly and set Content-Type accordingly.",
-                    details={"content_type": content_type},
-                ))
+                findings.append(
+                    Finding(
+                        category=self.category,
+                        severity=Severity.WARNING,
+                        title="Content-Type says XML but body does not start with '<'",
+                        description=f"Content-Type: {content_type}",
+                        analyzer_id=self.analyzer_id,
+                        recommendation="Ensure XML payloads are serialized correctly and set Content-Type accordingly.",
+                        details={"content_type": content_type},
+                    )
+                )
         elif "html" in content_type:
             stripped = text.lstrip().lower()
             if stripped and not (stripped.startswith("<") or stripped.startswith("<!doctype")):
-                findings.append(Finding(
-                    category=self.category,
-                    severity=Severity.INFO,
-                    title="Content-Type says HTML but body does not look like HTML",
-                    description=f"Content-Type: {content_type}",
-                    analyzer_id=self.analyzer_id,
-                    recommendation="Serve HTML with valid markup or switch to a more accurate Content-Type.",
-                    details={"content_type": content_type},
-                ))
+                findings.append(
+                    Finding(
+                        category=self.category,
+                        severity=Severity.INFO,
+                        title="Content-Type says HTML but body does not look like HTML",
+                        description=f"Content-Type: {content_type}",
+                        analyzer_id=self.analyzer_id,
+                        recommendation="Serve HTML with valid markup or switch to a more accurate Content-Type.",
+                        details={"content_type": content_type},
+                    )
+                )
 
         return findings
 
@@ -189,31 +214,33 @@ class DuplicateJsonKeysAnalyzer(Analyzer):
 
     _MAX_SCAN = 512_000
 
-    def analyze(self, ctx: AnalysisContext) -> List[Finding]:
-        findings: List[Finding] = []
+    def analyze(self, ctx: AnalysisContext) -> list[Finding]:
+        findings: list[Finding] = []
         if not ctx.response.is_json or not ctx.response.body:
             return findings
 
         if len(ctx.response.body) > self._MAX_SCAN:
-            findings.append(Finding(
-                category=self.category,
-                severity=Severity.INFO,
-                title="Duplicate-key scan skipped for large JSON body",
-                description=(
-                    f"Body size {len(ctx.response.body)} bytes exceeds scan limit "
-                    f"{self._MAX_SCAN} bytes."
-                ),
-                analyzer_id=self.analyzer_id,
-                recommendation="Run duplicate-key validation server-side or in CI for very large JSON responses.",
-                details={"body_size": len(ctx.response.body), "scan_limit": self._MAX_SCAN},
-            ))
+            findings.append(
+                Finding(
+                    category=self.category,
+                    severity=Severity.INFO,
+                    title="Duplicate-key scan skipped for large JSON body",
+                    description=(
+                        f"Body size {len(ctx.response.body)} bytes exceeds scan limit "
+                        f"{self._MAX_SCAN} bytes."
+                    ),
+                    analyzer_id=self.analyzer_id,
+                    recommendation="Run duplicate-key validation server-side or in CI for very large JSON responses.",
+                    details={"body_size": len(ctx.response.body), "scan_limit": self._MAX_SCAN},
+                )
+            )
             return findings
 
         text = ctx.response.text
-        duplicate_keys: Set[str] = set()
+        duplicate_keys: set[str] = set()
 
         def detect_duplicates(pairs: list) -> dict:
-            seen: Dict[str, int] = {}
+            seen: dict[str, int] = {}
             for key, _value in pairs:
                 seen[key] = seen.get(key, 0) + 1
             for key, count in seen.items():
@@ -229,15 +256,17 @@ class DuplicateJsonKeysAnalyzer(Analyzer):
 
         if duplicate_keys:
             keys_sorted = sorted(duplicate_keys)
-            findings.append(Finding(
-                category=self.category,
-                severity=Severity.WARNING,
-                title=f"{len(keys_sorted)} duplicate JSON key(s)",
-                description=f"Duplicate keys: {', '.join(keys_sorted[:10])}. Behavior varies across parsers.",
-                analyzer_id=self.analyzer_id,
-                recommendation="Remove duplicate keys in serializers to avoid parser-dependent behavior.",
-                details={"duplicate_keys": keys_sorted[:20]},
-            ))
+            findings.append(
+                Finding(
+                    category=self.category,
+                    severity=Severity.WARNING,
+                    title=f"{len(keys_sorted)} duplicate JSON key(s)",
+                    description=f"Duplicate keys: {', '.join(keys_sorted[:10])}. Behavior varies across parsers.",
+                    analyzer_id=self.analyzer_id,
+                    recommendation="Remove duplicate keys in serializers to avoid parser-dependent behavior.",
+                    details={"duplicate_keys": keys_sorted[:20]},
+                )
+            )
         return findings
 
 
@@ -248,8 +277,8 @@ class RedirectLocationAnalyzer(Analyzer):
 
     _REDIRECT_CODES = {301, 302, 303, 307, 308}
 
-    def analyze(self, ctx: AnalysisContext) -> List[Finding]:
-        findings: List[Finding] = []
+    def analyze(self, ctx: AnalysisContext) -> list[Finding]:
+        findings: list[Finding] = []
         status_code = ctx.response.status_code
         if status_code not in self._REDIRECT_CODES:
             return findings
@@ -258,23 +287,25 @@ class RedirectLocationAnalyzer(Analyzer):
         if location:
             return findings
 
-        findings.append(Finding(
-            category=self.category,
-            severity=Severity.WARNING,
-            title=f"{status_code} redirect without Location header",
-            description=f"Status {status_code} indicates a redirect but no Location header was returned.",
-            analyzer_id=self.analyzer_id,
-            recommendation="Include a valid Location header for redirect responses.",
-            details={"status_code": status_code},
-        ))
+        findings.append(
+            Finding(
+                category=self.category,
+                severity=Severity.WARNING,
+                title=f"{status_code} redirect without Location header",
+                description=f"Status {status_code} indicates a redirect but no Location header was returned.",
+                analyzer_id=self.analyzer_id,
+                recommendation="Include a valid Location header for redirect responses.",
+                details={"status_code": status_code},
+            )
+        )
         return findings
 
 
-_DATE_PATTERNS: List[Tuple[str, re.Pattern]] = [
+_DATE_PATTERNS: list[tuple[str, re.Pattern]] = [
     ("ISO 8601", re.compile(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}")),
     ("ISO date only", re.compile(r'"\d{4}-\d{2}-\d{2}"')),
-    ("Unix timestamp (s)", re.compile(r':\s*1[5-9]\d{8}(?:\.\d+)?\s*[,}\]]')),
-    ("Unix timestamp (ms)", re.compile(r':\s*1[5-9]\d{11}\s*[,}\]]')),
+    ("Unix timestamp (s)", re.compile(r":\s*1[5-9]\d{8}(?:\.\d+)?\s*[,}\]]")),
+    ("Unix timestamp (ms)", re.compile(r":\s*1[5-9]\d{11}\s*[,}\]]")),
     ("RFC 2822", re.compile(r"\b(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun),?\s+\d{1,2}\s+\w{3}\s+\d{4}")),
     ("US date (MM/DD/YYYY)", re.compile(r"\b\d{1,2}/\d{1,2}/\d{4}\b")),
 ]
@@ -287,27 +318,29 @@ class DateFormatInconsistencyAnalyzer(Analyzer):
 
     _MAX_SCAN = 256_000
 
-    def analyze(self, ctx: AnalysisContext) -> List[Finding]:
-        findings: List[Finding] = []
+    def analyze(self, ctx: AnalysisContext) -> list[Finding]:
+        findings: list[Finding] = []
         if not ctx.response.body:
             return findings
 
-        text = ctx.response.text[:self._MAX_SCAN]
-        formats_found: List[str] = []
+        text = ctx.response.text[: self._MAX_SCAN]
+        formats_found: list[str] = []
         for label, pattern in _DATE_PATTERNS:
             if pattern.search(text):
                 formats_found.append(label)
 
         if len(formats_found) >= 2:
-            findings.append(Finding(
-                category=self.category,
-                severity=Severity.INFO,
-                title="Mixed date formats detected",
-                description=f"Found: {', '.join(formats_found)}. Consider standardizing on a single format (e.g. ISO 8601).",
-                analyzer_id=self.analyzer_id,
-                recommendation="Use one date format across the API, ideally ISO 8601 with timezone.",
-                details={"formats": formats_found},
-            ))
+            findings.append(
+                Finding(
+                    category=self.category,
+                    severity=Severity.INFO,
+                    title="Mixed date formats detected",
+                    description=f"Found: {', '.join(formats_found)}. Consider standardizing on a single format (e.g. ISO 8601).",
+                    analyzer_id=self.analyzer_id,
+                    recommendation="Use one date format across the API, ideally ISO 8601 with timezone.",
+                    details={"formats": formats_found},
+                )
+            )
         return findings
 
 
@@ -319,8 +352,8 @@ class NullVsMissingAnalyzer(Analyzer):
 
     _CANDIDATE_LIST_KEYS = ("data", "results", "items", "records", "rows", "values")
 
-    def analyze(self, ctx: AnalysisContext) -> List[Finding]:
-        findings: List[Finding] = []
+    def analyze(self, ctx: AnalysisContext) -> list[Finding]:
+        findings: list[Finding] = []
         if not ctx.response.is_json:
             return findings
         try:
@@ -336,11 +369,11 @@ class NullVsMissingAnalyzer(Analyzer):
         if len(dict_items) < 2:
             return findings
 
-        all_keys: Set[str] = set()
+        all_keys: set[str] = set()
         for item in dict_items:
             all_keys |= set(item.keys())
 
-        inconsistent: List[str] = []
+        inconsistent: list[str] = []
         for key in sorted(all_keys):
             has_null = False
             is_missing = False
@@ -353,19 +386,21 @@ class NullVsMissingAnalyzer(Analyzer):
                 inconsistent.append(key)
 
         if inconsistent:
-            findings.append(Finding(
-                category=self.category,
-                severity=Severity.INFO,
-                title=f"{len(inconsistent)} field(s) use both null and absent",
-                description=f"Fields: {', '.join(inconsistent[:10])}. Consider using one convention (null or omit).",
-                analyzer_id=self.analyzer_id,
-                recommendation="Pick one convention (null or omitted) for optional fields and document it.",
-                details={"fields": inconsistent[:20]},
-            ))
+            findings.append(
+                Finding(
+                    category=self.category,
+                    severity=Severity.INFO,
+                    title=f"{len(inconsistent)} field(s) use both null and absent",
+                    description=f"Fields: {', '.join(inconsistent[:10])}. Consider using one convention (null or omit).",
+                    analyzer_id=self.analyzer_id,
+                    recommendation="Pick one convention (null or omitted) for optional fields and document it.",
+                    details={"fields": inconsistent[:20]},
+                )
+            )
 
         return findings
 
-    def _extract_candidate_items(self, payload: Any) -> List[Any]:
+    def _extract_candidate_items(self, payload: Any) -> list[Any]:
         if not isinstance(payload, dict):
             return []
         for key in self._CANDIDATE_LIST_KEYS:
@@ -384,8 +419,8 @@ class SchemaDriftAnalyzer(Analyzer):
     _MAX_DEPTH = 8
     _MAX_LIST_SAMPLE = 5
 
-    def analyze(self, ctx: AnalysisContext) -> List[Finding]:
-        findings: List[Finding] = []
+    def analyze(self, ctx: AnalysisContext) -> list[Finding]:
+        findings: list[Finding] = []
         if not ctx.response.is_json or ctx.stored_schema is None:
             return findings
 
@@ -399,7 +434,7 @@ class SchemaDriftAnalyzer(Analyzer):
 
         added = set(current.keys()) - set(stored.keys())
         removed = set(stored.keys()) - set(current.keys())
-        type_changed: List[str] = []
+        type_changed: list[str] = []
         for key in set(current.keys()) & set(stored.keys()):
             if current[key] != stored[key]:
                 type_changed.append(f"{key}: {stored[key]} -> {current[key]}")
@@ -407,7 +442,7 @@ class SchemaDriftAnalyzer(Analyzer):
         if not added and not removed and not type_changed:
             return findings
 
-        parts: List[str] = []
+        parts: list[str] = []
         if added:
             parts.append(f"Added: {', '.join(sorted(added)[:5])}")
         if removed:
@@ -416,24 +451,26 @@ class SchemaDriftAnalyzer(Analyzer):
             parts.append(f"Type changed: {', '.join(type_changed[:5])}")
 
         severity = Severity.WARNING if removed or type_changed else Severity.INFO
-        findings.append(Finding(
-            category=self.category,
-            severity=severity,
-            title="Response schema changed since last call",
-            description=" | ".join(parts),
-            analyzer_id=self.analyzer_id,
-            recommendation="Version the contract or update clients/tests before deploying schema changes.",
-            details={
-                "added": sorted(added)[:20],
-                "removed": sorted(removed)[:20],
-                "type_changed": type_changed[:20],
-            },
-        ))
+        findings.append(
+            Finding(
+                category=self.category,
+                severity=severity,
+                title="Response schema changed since last call",
+                description=" | ".join(parts),
+                analyzer_id=self.analyzer_id,
+                recommendation="Version the contract or update clients/tests before deploying schema changes.",
+                details={
+                    "added": sorted(added)[:20],
+                    "removed": sorted(removed)[:20],
+                    "type_changed": type_changed[:20],
+                },
+            )
+        )
         return findings
 
     @staticmethod
-    def build_schema_fingerprint(obj: Any, prefix: str = "", depth: int = 0) -> Dict[str, str]:
-        result: Dict[str, str] = {}
+    def build_schema_fingerprint(obj: Any, prefix: str = "", depth: int = 0) -> dict[str, str]:
+        result: dict[str, str] = {}
         if depth > SchemaDriftAnalyzer._MAX_DEPTH:
             return result
 
@@ -442,16 +479,21 @@ class SchemaDriftAnalyzer(Analyzer):
                 path = f"{prefix}.{key}" if prefix else str(key)
                 result[path] = type(value).__name__
                 if isinstance(value, (dict, list)):
-                    result.update(SchemaDriftAnalyzer.build_schema_fingerprint(value, path, depth + 1))
+                    result.update(
+                        SchemaDriftAnalyzer.build_schema_fingerprint(value, path, depth + 1)
+                    )
         elif isinstance(obj, list) and obj:
             list_path = f"{prefix}[]" if prefix else "[]"
-            sample = obj[:SchemaDriftAnalyzer._MAX_LIST_SAMPLE]
+            sample = obj[: SchemaDriftAnalyzer._MAX_LIST_SAMPLE]
             type_names = sorted({type(item).__name__ for item in sample})
             if type_names:
-                result[list_path] = type_names[0] if len(type_names) == 1 else "mixed[" + "|".join(type_names) + "]"
+                result[list_path] = (
+                    type_names[0] if len(type_names) == 1 else "mixed[" + "|".join(type_names) + "]"
+                )
             for item in sample:
                 if isinstance(item, (dict, list)):
-                    result.update(SchemaDriftAnalyzer.build_schema_fingerprint(item, list_path, depth + 1))
+                    result.update(
+                        SchemaDriftAnalyzer.build_schema_fingerprint(item, list_path, depth + 1)
+                    )
 
         return result
-

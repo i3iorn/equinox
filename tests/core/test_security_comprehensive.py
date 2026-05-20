@@ -1,14 +1,11 @@
 """Comprehensive security module tests - injection, encryption, and database security."""
 
 import pytest
-import json
-import sqlite3
-from pathlib import Path
-from unittest.mock import Mock, patch, MagicMock
+
+from equinox.core.exceptions import ValidationError
 from equinox.core.validation import Validator
 from equinox.security.secure_storage import SecureStorage
 from equinox.storage.database import Database
-from equinox.core.exceptions import ValidationError, SecurityError, StorageError
 
 
 class TestInjectionAttackPrevention:
@@ -143,7 +140,7 @@ class TestEncryptionSecurity:
 
         # Read the storage file directly
         storage_file = storage.storage_path
-        with open(storage_file, 'rb') as f:
+        with open(storage_file, "rb") as f:
             file_content = f.read()
 
         # Secret should not appear in plaintext
@@ -189,8 +186,8 @@ class TestEncryptionSecurity:
 
         # Check permissions (Unix-like systems only)
         import os
-        import sys
         import stat
+        import sys
 
         if sys.platform != "win32":
             try:
@@ -255,7 +252,6 @@ class TestDatabaseSecurity:
             db.execute(large_query)
 
 
-
 class TestValidationCompleteness:
     """Tests to ensure validation is enforced everywhere."""
 
@@ -302,4 +298,3 @@ class TestValidationCompleteness:
         # Invalid methods
         with pytest.raises(ValidationError):
             Validator.validate_method("INVALID")
-

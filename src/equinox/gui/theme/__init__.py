@@ -10,9 +10,8 @@ splitting implementation into focused modules:
 
 from __future__ import annotations
 
-from .manager import apply_theme, is_dark, _ss_cache
+from .manager import apply_theme, is_dark
 from .palettes import (
-    Colors,
     THEME_DARK,
     THEME_LABELS,
     THEME_LIGHT,
@@ -20,6 +19,7 @@ from .palettes import (
     THEME_MUTED_DARK,
     THEME_OCEANIC,
     THEME_SYSTEM,
+    Colors,
     validate_palettes,
 )
 from .settings import (
@@ -73,4 +73,3 @@ def set_theme_mode(mode: str) -> None:
 
 # Run palette validation at package import so errors surface early.
 validate_palettes()
-

@@ -10,15 +10,16 @@ logger = logging.getLogger(__name__)
 # Visual configuration — change here, takes effect everywhere
 # ---------------------------------------------------------------------------
 
-_EYE_ICON: str = "\U0001f441"   # 👁  Unicode eye glyph
-_ROW_SPACING: int = 2            # Gap between the line-edit and the toggle (px)
-_TOGGLE_WIDTH: int = 28          # Fixed width of the eye-button (px)
+_EYE_ICON: str = "\U0001f441"  # 👁  Unicode eye glyph
+_ROW_SPACING: int = 2  # Gap between the line-edit and the toggle (px)
+_TOGGLE_WIDTH: int = 28  # Fixed width of the eye-button (px)
 _TOGGLE_STYLE: str = "QToolButton { border: none; font-size: 14px; }"
 
 
 # ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
+
 
 def make_secret_row(line_edit: QLineEdit) -> QHBoxLayout:
     """Wrap a password QLineEdit with a show/hide eye-toggle button.
@@ -51,9 +52,7 @@ def make_secret_row(line_edit: QLineEdit) -> QHBoxLayout:
             # line_edit's underlying C++ object was already destroyed (unusual
             # teardown order).  Log at DEBUG so genuine bugs remain visible
             # while normal shutdown races are not treated as errors.
-            logger.debug(
-                "make_secret_row: QLineEdit already destroyed; toggle ignored"
-            )
+            logger.debug("make_secret_row: QLineEdit already destroyed; toggle ignored")
 
     toggle.toggled.connect(_on_toggle)
     row.addWidget(toggle)

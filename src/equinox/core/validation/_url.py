@@ -1,11 +1,13 @@
 """URL string and structural validation."""
+
 from __future__ import annotations
 
 import logging
 
 from equinox.core import urls
 from equinox.core.exceptions import ValidationError
-from ._base import _Limits, _Guards
+
+from ._base import _Guards, _Limits
 from ._ssrf import _SsrfGuard
 
 __all__ = ["_UrlValidator"]
@@ -34,9 +36,7 @@ class _UrlValidator:
                 "URL validation failed: exceeds max length",
                 extra={"length": len(url), "max_length": _Limits.MAX_URL_LENGTH},
             )
-            raise ValidationError(
-                f"URL exceeds maximum length of {_Limits.MAX_URL_LENGTH}"
-            )
+            raise ValidationError(f"URL exceeds maximum length of {_Limits.MAX_URL_LENGTH}")
 
         _Guards.check_xss_url(url, "URL")
 
@@ -87,4 +87,3 @@ class _UrlValidator:
             extra={"scheme": scheme, "host": parsed_host or "unknown"},
         )
         return url
-

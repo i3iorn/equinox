@@ -10,11 +10,12 @@ Verifies:
 """
 
 import json
+
 import pytest
 
-from equinox.storage.database import Database
-from equinox.storage.collections import CollectionManager
 from equinox.core.request import Request
+from equinox.storage.collections import CollectionManager
+from equinox.storage.database import Database
 
 
 @pytest.fixture
@@ -236,4 +237,3 @@ class TestAutosaveSimulation:
         assert reloaded.url == "https://api.example.com/v2"
         assert isinstance(reloaded.auth, BearerAuth)
         assert reloaded.auth.token == "secret-token"
-

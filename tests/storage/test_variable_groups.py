@@ -277,4 +277,3 @@ def test_remove_variable_validation_invalid_group_or_key(manager):
 def test_list_group_variables_requires_positive_int(manager):
     with pytest.raises(ValidationError):
         manager.list_group_variables(-1)
-

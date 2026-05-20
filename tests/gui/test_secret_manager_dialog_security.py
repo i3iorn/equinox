@@ -55,7 +55,9 @@ def test_vault_dialog_requires_confirmation_for_insecure_http_override(qtbot, mo
     assert dialog._confirm_insecure_vault_http("vault", dialog._get_config_dict(), "Save") is False
 
 
-def test_secret_manager_panel_redacts_sensitive_config_and_shows_http_warning(qtbot, tmp_path) -> None:
+def test_secret_manager_panel_redacts_sensitive_config_and_shows_http_warning(
+    qtbot, tmp_path
+) -> None:
     panel = SecretManagerSettingsPanel(config_path=tmp_path / "secret_managers.json")
     qtbot.addWidget(panel)
 
@@ -75,4 +77,3 @@ def test_secret_manager_panel_redacts_sensitive_config_and_shows_http_warning(qt
     assert "WARNING: insecure Vault HTTP override is enabled" in text
     assert "super-secret-token" not in text
     assert "[REDACTED]" in text
-

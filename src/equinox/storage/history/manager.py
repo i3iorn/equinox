@@ -1,17 +1,19 @@
 """HistoryManager — public orchestrator for request/response history."""
+
 from __future__ import annotations
 
 import logging
-from typing import Any, Dict, List, Optional
+from typing import Any
 
+from equinox.core.exceptions import SecurityError, StorageError, ValidationError
 from equinox.core.request import Request, Response
-from equinox.core.exceptions import StorageError, ValidationError, SecurityError
 from equinox.security import redact_url
 from equinox.storage.database import Database
 from equinox.storage.utils import require_positive_int as _require_positive_int
-from ._serializer import _HistorySerializer
+
 from ._indexer import _HistoryIndexer
 from ._searcher import _HistorySearcher
+from ._serializer import _HistorySerializer
 
 __all__ = ["HistoryManager"]
 
@@ -27,29 +29,29 @@ class HistoryManager:
     """
 
     MAX_HISTORY_ENTRIES = 100_000
-    DEFAULT_LIMIT       = 100
+    DEFAULT_LIMIT = 100
 
     # Backward-compatible aliases — canonical values live on the helpers.
-    MAX_BODY_SIZE            = _HistorySerializer.MAX_BODY_SIZE
-    MAX_HEADERS_SIZE         = _HistorySerializer.MAX_HEADERS_SIZE
-    MAX_URL_LENGTH           = _HistorySerializer.MAX_URL_LENGTH
+    MAX_BODY_SIZE = _HistorySerializer.MAX_BODY_SIZE
+    MAX_HEADERS_SIZE = _HistorySerializer.MAX_HEADERS_SIZE
+    MAX_URL_LENGTH = _HistorySerializer.MAX_URL_LENGTH
     MAX_ERROR_MESSAGE_LENGTH = _HistorySerializer.MAX_ERROR_MESSAGE_LENGTH
-    MAX_REGEX_LENGTH         = _HistorySearcher.MAX_REGEX_LENGTH
-    MAX_LIMIT                = _HistorySearcher.MAX_LIMIT
+    MAX_REGEX_LENGTH = _HistorySearcher.MAX_REGEX_LENGTH
+    MAX_LIMIT = _HistorySearcher.MAX_LIMIT
 
     def __init__(self, db: Database) -> None:
-        self.db          = db
+        self.db = db
         self._serializer = _HistorySerializer()
-        self._indexer    = _HistoryIndexer(db)
-        self._searcher   = _HistorySearcher(db, self._serializer)
+        self._indexer = _HistoryIndexer(db)
+        self._searcher = _HistorySearcher(db, self._serializer)
 
     # ── Public write API ──────────────────────────────────────────────────────
 
     def save_history(
         self,
         request: Request,
-        response: Optional[Response] = None,
-        error: Optional[str] = None,
+        response: Response | None = None,
+        error: str | None = None,
     ) -> int:
         """Save request/response to history and return the new history ID.
 
@@ -62,8 +64,8 @@ class HistoryManager:
         logger.debug("save_history() called for %s %s", request.method, safe_url)
         self._prune_oldest_entry_if_limit_reached()
 
-        req       = self._serializer.prepare_request(request)
-        resp      = self._serializer.prepare_response(response)
+        req = self._serializer.prepare_request(request)
+        resp = self._serializer.prepare_response(response)
         error_str = self._serializer.truncate_error(error)
 
         try:
@@ -77,10 +79,14 @@ class HistoryManager:
                 """,
                 (
                     getattr(request, "id", None),
-                    req["method"],        req["url"],
-                    resp["status_code"],  resp["reason"],
-                    req["headers_json"],  req["body"],
-                    resp["headers_json"], resp["body"],
+                    req["method"],
+                    req["url"],
+                    resp["status_code"],
+                    resp["reason"],
+                    req["headers_json"],
+                    req["body"],
+                    resp["headers_json"],
+                    resp["body"],
                     resp["elapsed"],
                     error_str,
                     req["request_correlation_id"],
@@ -94,12 +100,13 @@ class HistoryManager:
 
         logger.info(
             "Saved history entry id=%d: %s %s status=%s elapsed=%.2fs",
-            history_id, req["method"], req["url"],
-            resp["status_code"] or "error", resp["elapsed"] or 0,
+            history_id,
+            req["method"],
+            req["url"],
+            resp["status_code"] or "error",
+            resp["elapsed"] or 0,
         )
-        self._indexer.index(
-            history_id, req["method"], req["url"], resp["status_code"], response
-        )
+        self._indexer.index(history_id, req["method"], req["url"], resp["status_code"], response)
         return history_id
 
     def delete_history(self, history_id: int) -> None:
@@ -120,7 +127,7 @@ class HistoryManager:
         except Exception as exc:
             raise StorageError(f"Failed to delete history entry: {exc}")
 
-    def clear_history(self, days: Optional[int] = None) -> None:
+    def clear_history(self, days: int | None = None) -> None:
         """Clear history, optionally retaining entries newer than *days* days.
 
         Raises:
@@ -141,7 +148,8 @@ class HistoryManager:
                     )
                     logger.warning(
                         "Deleted %d history entries older than %d days",
-                        cursor.rowcount, days,
+                        cursor.rowcount,
+                        days,
                     )
                 else:
                     cursor = tx.execute("DELETE FROM history")
@@ -153,7 +161,7 @@ class HistoryManager:
 
     # ── Public read API ───────────────────────────────────────────────────────
 
-    def get_history(self, history_id: int) -> Optional[Dict[str, Any]]:
+    def get_history(self, history_id: int) -> dict[str, Any] | None:
         """Return a single history entry by ID, or *None* if not found.
 
         Raises:
@@ -169,8 +177,8 @@ class HistoryManager:
         self,
         limit: int = 100,
         offset: int = 0,
-        request_id: Optional[int] = None,
-    ) -> List[Dict[str, Any]]:
+        request_id: int | None = None,
+    ) -> list[dict[str, Any]]:
         """List history entries, newest first.
 
         Args:
@@ -185,38 +193,36 @@ class HistoryManager:
 
         if request_id is not None:
             _require_positive_int(request_id, "Request ID")
-            sql    = (
+            sql = (
                 "SELECT * FROM history WHERE request_id = ? "
                 "ORDER BY executed_at DESC LIMIT ? OFFSET ?"
             )
             params = (request_id, limit, offset)
         else:
-            sql    = "SELECT * FROM history ORDER BY executed_at DESC LIMIT ? OFFSET ?"
+            sql = "SELECT * FROM history ORDER BY executed_at DESC LIMIT ? OFFSET ?"
             params = (limit, offset)
 
         rows = self.db.fetchall(sql, params)
-        return [
-            self._serializer.decode_row(dict(row), row_id=row["id"]) for row in rows
-        ]
+        return [self._serializer.decode_row(dict(row), row_id=row["id"]) for row in rows]
 
     def search_history(
         self,
         query: str = "",
         method: str = "",
         status_class: str = "",
-        status_code: Optional[int] = None,
+        status_code: int | None = None,
         body_regex: str = "",
         jsonpath: str = "",
-        jsonpath_value: Optional[str] = None,
+        jsonpath_value: str | None = None,
         content_type: str = "",
         header: str = "",
-        min_elapsed: Optional[float] = None,
-        max_elapsed: Optional[float] = None,
-        executed_after: Optional[str] = None,
-        executed_before: Optional[str] = None,
+        min_elapsed: float | None = None,
+        max_elapsed: float | None = None,
+        executed_after: str | None = None,
+        executed_before: str | None = None,
         limit: int = 100,
         offset: int = 0,
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         """Filter history with SQL WHERE clauses and Python post-filters.
 
         **SQL-level filters** (fast, use indexes):
@@ -245,16 +251,24 @@ class HistoryManager:
             ValidationError: On invalid limit/offset, bad regex, or bad JSONPath.
         """
         return self._searcher.search(
-            query=query, method=method, status_class=status_class,
-            status_code=status_code, body_regex=body_regex,
-            jsonpath=jsonpath, jsonpath_value=jsonpath_value,
-            content_type=content_type, header=header,
-            min_elapsed=min_elapsed, max_elapsed=max_elapsed,
-            executed_after=executed_after, executed_before=executed_before,
-            limit=limit, offset=offset,
+            query=query,
+            method=method,
+            status_class=status_class,
+            status_code=status_code,
+            body_regex=body_regex,
+            jsonpath=jsonpath,
+            jsonpath_value=jsonpath_value,
+            content_type=content_type,
+            header=header,
+            min_elapsed=min_elapsed,
+            max_elapsed=max_elapsed,
+            executed_after=executed_after,
+            executed_before=executed_before,
+            limit=limit,
+            offset=offset,
         )
 
-    def get_stats(self) -> Dict[str, Any]:
+    def get_stats(self) -> dict[str, Any]:
         """Return aggregate history statistics in a single DB round-trip."""
         row = self.db.fetchone(
             "SELECT"
@@ -267,9 +281,9 @@ class HistoryManager:
         )
         row = row or {}
         return {
-            "total":      row.get("total") or 0,
+            "total": row.get("total") or 0,
             "successful": row.get("successful") or 0,
-            "failed":     row.get("failed") or 0,
+            "failed": row.get("failed") or 0,
         }
 
     # ── Private helpers ───────────────────────────────────────────────────────
@@ -281,11 +295,11 @@ class HistoryManager:
             prune_count = max(1, self.MAX_HISTORY_ENTRIES // 100)
             logger.warning(
                 "History limit reached (%d), removing %d oldest entries",
-                self.MAX_HISTORY_ENTRIES, prune_count,
+                self.MAX_HISTORY_ENTRIES,
+                prune_count,
             )
             self.db.execute(
                 "DELETE FROM history WHERE id IN"
                 " (SELECT id FROM history ORDER BY executed_at ASC LIMIT ?)",
                 (prune_count,),
             )
-

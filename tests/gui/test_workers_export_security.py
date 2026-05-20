@@ -6,8 +6,8 @@ from pathlib import Path
 
 import equinox.gui.workers as workers_mod
 
-_validate_export_path = getattr(workers_mod, "_validate_export_path")
-_atomic_write_text = getattr(workers_mod, "_atomic_write_text")
+_validate_export_path = workers_mod._validate_export_path
+_atomic_write_text = workers_mod._atomic_write_text
 
 
 def test_validate_export_path_rejects_null_byte() -> None:
@@ -32,5 +32,3 @@ def test_atomic_write_text_replaces_existing_content(tmp_path: Path) -> None:
     _atomic_write_text(target, "new-content")
 
     assert target.read_text(encoding="utf-8") == "new-content"
-
-

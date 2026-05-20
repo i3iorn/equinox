@@ -1,9 +1,10 @@
 """Security-focused integration tests."""
 
 import pytest
+
 from equinox.core.client import HTTPClient
-from equinox.core.request import Request
 from equinox.core.exceptions import ValidationError
+from equinox.core.request import Request
 from equinox.storage.database import Database
 
 
@@ -66,9 +67,7 @@ class TestInputValidation:
         malicious_value = "value\r\nX-Injected: evil"
 
         request = Request(
-            method="GET",
-            url="https://example.com",
-            headers={"X-Custom": malicious_value}
+            method="GET", url="https://example.com", headers={"X-Custom": malicious_value}
         )
 
         with pytest.raises(ValidationError, match="CRLF"):
@@ -88,16 +87,10 @@ class TestInputValidation:
             "injected": "value\r\nX-Evil: header",
         }
 
-        request = Request(
-            method="GET",
-            url="https://example.com",
-            params=crlf_params
-        )
+        request = Request(method="GET", url="https://example.com", params=crlf_params)
 
         with pytest.raises(ValidationError, match="CRLF"):
             client.send(request)
-
-
 
 
 class TestPathTraversal:
@@ -124,10 +117,11 @@ class TestDataSanitization:
 
     def test_sensitive_data_redaction(self):
         """Test that sensitive data is redacted in logs."""
-        from equinox.core.audit import AuditLogger
         import tempfile
 
-        with tempfile.NamedTemporaryFile(mode='w', delete=False) as f:
+        from equinox.core.audit import AuditLogger
+
+        with tempfile.NamedTemporaryFile(mode="w", delete=False) as f:
             log_path = f.name
 
         logger = AuditLogger(log_path=log_path)
@@ -143,11 +137,11 @@ class TestDataSanitization:
                 "password": "super-secret",
                 "token": "bearer-token-xyz",
                 "username": "john_doe",  # Not sensitive
-            }
+            },
         )
 
         # Read log file
-        with open(log_path, 'r') as f:
+        with open(log_path) as f:
             log_content = f.read()
 
         # Sensitive data should be redacted

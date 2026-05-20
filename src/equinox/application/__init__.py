@@ -7,4 +7,3 @@ below the GUI layer.
 from . import collections, history, requests
 
 __all__ = ["requests", "collections", "history"]
-

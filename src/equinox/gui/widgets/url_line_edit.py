@@ -3,7 +3,6 @@
 import logging
 import os
 import re
-from typing import Optional
 
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QColor, QFontMetricsF, QPainter
@@ -27,10 +26,11 @@ _RIGHT_MARGIN: int = 7
 # Encapsulated variable resolution
 # ---------------------------------------------------------------------------
 
+
 class _VariableResolver:
     """Encapsulates multi-source variable resolution with error tracking.
 
-    Resolves ``{{var}}`` tokens from active environment, collection settings,
+    Resolves ``{{var}}`` tokens from active environment, collection settings
     database state, OS environment, and session state in the documented order.
     Logs warnings for each step that fails, ensuring visibility during debugging.
     """
@@ -85,9 +85,7 @@ class _VariableResolver:
             req = getattr(rp, "current_request", None)
             col_id = getattr(req, "collection_id", None) if req else None
             if col_id is not None:
-                variables.update(
-                    CollectionManager(db).get_all_collection_variables(col_id)
-                )
+                variables.update(CollectionManager(db).get_all_collection_variables(col_id))
         except Exception as e:
             logger.debug("Failed to load collection variables: %s", e)
 
@@ -143,6 +141,7 @@ class _VariableResolver:
 # Widget
 # ---------------------------------------------------------------------------
 
+
 class UrlLineEdit(QLineEdit):
     """URL bar that renders active query parameters as a ghost suffix.
 
@@ -160,7 +159,7 @@ class UrlLineEdit(QLineEdit):
         # Enable mouse move events even when no button is pressed so we can
         # show tooltips for variable placeholders under the cursor.
         self.setMouseTracking(True)
-        self._last_hovered_var: Optional[str] = None
+        self._last_hovered_var: str | None = None
         self._var_resolver = _VariableResolver(self)
 
     def set_param_suffix(self, suffix: str) -> None:
@@ -253,4 +252,3 @@ class UrlLineEdit(QLineEdit):
             self._last_hovered_var = None
 
         super().mouseMoveEvent(event)
-

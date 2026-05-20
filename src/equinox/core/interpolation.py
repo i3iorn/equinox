@@ -21,21 +21,21 @@ Security:
     - Unresolvable placeholders left unchanged
 """
 
+import calendar
 import copy
-import re
 import logging
 import os
-import calendar
-from datetime import date, datetime
+import re
 from dataclasses import replace as dataclass_replace
-from typing import Dict, Any, Optional, TypeVar, List, Tuple
+from datetime import date, datetime
+from typing import Any, TypeVar
 
-from equinox.core.exceptions import ValidationError, SecurityError
+from equinox.core.exceptions import SecurityError, ValidationError
 
 logger = logging.getLogger(__name__)
 
 # Generic type variable for request objects
-T = TypeVar('T')
+T = TypeVar("T")
 
 # ──────────────────────────────────────────────────────────────────────────────
 # Module constants
@@ -46,7 +46,7 @@ _TEXT_ENCODING: str = "utf-8"
 
 # Pattern for valid variable names — shared by key validation and OS env filtering.
 # Matches names that can appear inside {{...}} placeholders.
-_VARIABLE_NAME_RE: re.Pattern = re.compile(r'^[a-zA-Z0-9_-]+$')
+_VARIABLE_NAME_RE: re.Pattern = re.compile(r"^[a-zA-Z0-9_-]+$")
 
 
 def _shift_months(base: date, delta_months: int) -> date:
@@ -58,7 +58,7 @@ def _shift_months(base: date, delta_months: int) -> date:
     return date(year, month, day)
 
 
-def _magic_variables(today: Optional[date] = None, now: Optional[datetime] = None) -> Dict[str, str]:
+def _magic_variables(today: date | None = None, now: datetime | None = None) -> dict[str, str]:
     """Return built-in dynamic variables for date/time convenience."""
     now_value = now or datetime.now()
     today_value = today or now_value.date()
@@ -72,7 +72,9 @@ def _magic_variables(today: Optional[date] = None, now: Optional[datetime] = Non
     }
 
 
-def _validate_interpolation_inputs(text: str, variables: Dict[str, str], max_input_bytes: int) -> None:
+def _validate_interpolation_inputs(
+    text: str, variables: dict[str, str], max_input_bytes: int
+) -> None:
     """Validate input types and enforce max input size."""
     if not isinstance(text, str):
         raise ValidationError("Text must be a string")
@@ -88,16 +90,17 @@ def _validate_interpolation_inputs(text: str, variables: Dict[str, str], max_inp
     if len(text_bytes) > max_input_bytes:
         logger.warning(
             "Input text exceeds maximum input size: %d bytes > %d bytes max",
-            len(text_bytes), max_input_bytes,
+            len(text_bytes),
+            max_input_bytes,
         )
         raise SecurityError(
             f"Input text too large ({len(text_bytes):,} bytes, max {max_input_bytes:,} bytes)"
         )
 
 
-def _sanitize_variables(variables: Dict[str, str]) -> Dict[str, str]:
+def _sanitize_variables(variables: dict[str, str]) -> dict[str, str]:
     """Keep only valid string variable names and values."""
-    sanitized_variables: Dict[str, str] = {}
+    sanitized_variables: dict[str, str] = {}
     for key, value in variables.items():
         if not isinstance(key, str):
             logger.debug("Skipping variable with non-string key: %r", key)
@@ -116,9 +119,9 @@ def _sanitize_variables(variables: Dict[str, str]) -> Dict[str, str]:
     return sanitized_variables
 
 
-def _build_casefold_lookup(sanitized_variables: Dict[str, str]) -> Tuple[Dict[str, str], set]:
+def _build_casefold_lookup(sanitized_variables: dict[str, str]) -> tuple[dict[str, str], set]:
     """Build casefold lookup and track ambiguous folded keys."""
-    casefold_map: Dict[str, str] = {}
+    casefold_map: dict[str, str] = {}
     ambiguous_casefolds = set()
     for key, value in sanitized_variables.items():
         folded = key.casefold()
@@ -142,7 +145,9 @@ def _check_expansion_limits(
         logger.warning(
             "Variable interpolation expansion too large: "
             "ratio=%.2f, output=%d bytes (limit=%d bytes)",
-            expansion_ratio, len(text), expansion_limit,
+            expansion_ratio,
+            len(text),
+            expansion_limit,
         )
         raise SecurityError(
             f"Variable interpolation caused excessive text expansion: "
@@ -153,7 +158,8 @@ def _check_expansion_limits(
     if len(text_encoded) > max_output_bytes:
         logger.warning(
             "Variable interpolation output exceeds maximum absolute size: %d bytes > %d bytes",
-            len(text_encoded), max_output_bytes,
+            len(text_encoded),
+            max_output_bytes,
         )
         raise SecurityError(
             f"Variable interpolation output exceeds maximum size "
@@ -162,8 +168,8 @@ def _check_expansion_limits(
 
 
 def _build_substitute_variable(
-    sanitized_variables: Dict[str, str],
-    casefold_map: Dict[str, str],
+    sanitized_variables: dict[str, str],
+    casefold_map: dict[str, str],
     ambiguous_casefolds: set,
 ):
     """Build replacement callable for regex substitution."""
@@ -200,7 +206,8 @@ def _interpolate_until_stable(
         if text == previous_text:
             logger.debug(
                 "Variable interpolation converged at iteration %d/%d",
-                iteration + 1, iteration_limit,
+                iteration + 1,
+                iteration_limit,
             )
             return text
 
@@ -222,15 +229,21 @@ def _copy_request_object(request: T) -> T:
         return copy.copy(request)
 
 
-def _interpolate_dict_values(values: Dict[Any, Any], variables: Dict[str, str], interpolator) -> Dict[str, str]:
+def _interpolate_dict_values(
+    values: dict[Any, Any], variables: dict[str, str], interpolator
+) -> dict[str, str]:
     """Interpolate all key/value pairs in a dict-like request field."""
     return {
-        interpolator.interpolate(str(key), variables): interpolator.interpolate(str(value), variables)
+        interpolator.interpolate(str(key), variables): interpolator.interpolate(
+            str(value), variables
+        )
         for key, value in values.items()
     }
 
 
-def _interpolate_request_string_field(request: T, field_name: str, variables: Dict[str, str], interpolator) -> None:
+def _interpolate_request_string_field(
+    request: T, field_name: str, variables: dict[str, str], interpolator
+) -> None:
     """Interpolate one string request field in-place when present."""
     if hasattr(request, field_name):
         current = getattr(request, field_name)
@@ -246,13 +259,14 @@ class VariableInterpolator:
     MAX_ITERATIONS = 10
     MAX_EXPANSION_RATIO = 200
     # Hard ceiling on raw input size (checked before any expansion work).
-    MAX_INPUT_BYTES = 1 * 1024 * 1024    # 1 MB
+    MAX_INPUT_BYTES = 1 * 1024 * 1024  # 1 MB
     # Hard ceiling on output size after variable substitution.
-    MAX_OUTPUT_BYTES = 2 * 1024 * 1024   # 2 MB
-
+    MAX_OUTPUT_BYTES = 2 * 1024 * 1024  # 2 MB
 
     @classmethod
-    def interpolate(cls, text: str, variables: Dict[str, str], max_iterations: Optional[int] = None) -> str:
+    def interpolate(
+        cls, text: str, variables: dict[str, str], max_iterations: int | None = None
+    ) -> str:
         """Interpolate {{var}} placeholders with bounded multi-pass expansion."""
         _validate_interpolation_inputs(text, variables, cls.MAX_INPUT_BYTES)
 
@@ -286,7 +300,7 @@ class VariableInterpolator:
         )
 
     @classmethod
-    def interpolate_request(cls, request: T, variables: Dict[str, str]) -> T:
+    def interpolate_request(cls, request: T, variables: dict[str, str]) -> T:
         """Interpolate variables in a copy of the Request object.
 
         Returns a new Request with {{variable}} placeholders expanded.
@@ -319,10 +333,10 @@ class VariableInterpolator:
         # Interpolate string fields that commonly contain placeholders
         _interpolate_request_string_field(request, "url", variables, cls)
 
-        if hasattr(request, 'headers') and isinstance(request.headers, dict):
+        if hasattr(request, "headers") and isinstance(request.headers, dict):
             request.headers = _interpolate_dict_values(request.headers, variables, cls)
 
-        if hasattr(request, 'params') and isinstance(request.params, dict):
+        if hasattr(request, "params") and isinstance(request.params, dict):
             request.params = _interpolate_dict_values(request.params, variables, cls)
 
         _interpolate_request_string_field(request, "body", variables, cls)
@@ -332,7 +346,7 @@ class VariableInterpolator:
         return request
 
     @classmethod
-    def find_variables(cls, text: str) -> List[str]:
+    def find_variables(cls, text: str) -> list[str]:
         """Find all unique variable names referenced in text.
 
         Searches for all {{variable}} patterns and extracts the variable names.
@@ -373,20 +387,22 @@ class VariableInterpolator:
         return bool(cls.VARIABLE_PATTERN.search(text))
 
 
-def _normalize_values(raw: Dict[str, Any], source: str) -> Dict[str, str]:
+def _normalize_values(raw: dict[str, Any], source: str) -> dict[str, str]:
     """Normalize variable dict values to strings while skipping invalid entries."""
-    normalized: Dict[str, str] = {}
+    normalized: dict[str, str] = {}
     for key, value in raw.items():
         if not isinstance(key, str):
             logger.debug(
                 "collect_interpolation_variables: skipping %s var with non-string key: %r",
-                source, key,
+                source,
+                key,
             )
             continue
         if value is None:
             logger.debug(
                 "collect_interpolation_variables: skipping %s var %r with None value",
-                source, key,
+                source,
+                key,
             )
             continue
         if isinstance(value, str):
@@ -396,20 +412,24 @@ def _normalize_values(raw: Dict[str, Any], source: str) -> Dict[str, str]:
             normalized[key] = str(value)
             logger.debug(
                 "collect_interpolation_variables: coerced %s var %r from %s to string",
-                source, key, type(value).__name__,
+                source,
+                key,
+                type(value).__name__,
             )
         except Exception as exc:
             logger.debug(
                 "collect_interpolation_variables: failed to coerce %s var %r (%s)",
-                source, key, exc,
+                source,
+                key,
+                exc,
             )
     return normalized
 
 
 def _merge_sourced_variables(
-    variables: Dict[str, str],
-    sources: Dict[str, str],
-    incoming: Dict[str, str],
+    variables: dict[str, str],
+    sources: dict[str, str],
+    incoming: dict[str, str],
     source_name: str,
 ) -> None:
     """Merge incoming values and tag each key with its source label."""
@@ -418,7 +438,7 @@ def _merge_sourced_variables(
         sources[str(key)] = source_name
 
 
-def _merge_os_variables(variables: Dict[str, str], sources: Dict[str, str]) -> None:
+def _merge_os_variables(variables: dict[str, str], sources: dict[str, str]) -> None:
     """Add OS env vars that are valid names and not already set."""
     os_vars = {
         key: value
@@ -438,11 +458,13 @@ def _merge_os_variables(variables: Dict[str, str], sources: Dict[str, str]) -> N
 
     logger.debug(
         "collect_interpolation_variables: %d OS env vars (%d inserted, %d skipped due to higher-priority vars)",
-        len(os_vars), os_inserted, os_skipped,
+        len(os_vars),
+        os_inserted,
+        os_skipped,
     )
 
 
-def _load_global_variables(db) -> Dict[str, str]:
+def _load_global_variables(db) -> dict[str, str]:
     """Load global interpolation variables from storage."""
     try:
         from equinox.storage.global_variables import GlobalVariablesManager
@@ -456,7 +478,7 @@ def _load_global_variables(db) -> Dict[str, str]:
         return {}
 
 
-def _load_environment_variables(db) -> Dict[str, str]:
+def _load_environment_variables(db) -> dict[str, str]:
     """Load active environment interpolation variables from storage."""
     try:
         from equinox.storage.environments import EnvironmentManager
@@ -472,7 +494,7 @@ def _load_environment_variables(db) -> Dict[str, str]:
     return {}
 
 
-def _load_collection_variables(db, collection_id: Optional[int]) -> Dict[str, str]:
+def _load_collection_variables(db, collection_id: int | None) -> dict[str, str]:
     """Load collection-scoped interpolation variables from storage."""
     if collection_id is None:
         return {}
@@ -485,26 +507,28 @@ def _load_collection_variables(db, collection_id: Optional[int]) -> Dict[str, st
         col_vars = _normalize_values(raw_col_vars, "collection")
         logger.debug(
             "collect_interpolation_variables: %d collection vars (coll=%d)",
-            len(col_vars), collection_id,
+            len(col_vars),
+            collection_id,
         )
         return col_vars
     except Exception as exc:
         logger.warning(
             "Failed to load collection variables for collection %d: %s",
-            collection_id, exc,
+            collection_id,
+            exc,
         )
         return {}
 
 
 def collect_interpolation_variables_detailed(
     db,
-    collection_id: Optional[int] = None,
-    session_vars: Optional[Dict[str, str]] = None,
-) -> Tuple[Dict[str, str], Dict[str, str]]:
+    collection_id: int | None = None,
+    session_vars: dict[str, str] | None = None,
+) -> tuple[dict[str, str], dict[str, str]]:
     """Collect interpolation variables and source labels by precedence order."""
 
-    variables: Dict[str, str] = {}
-    sources: Dict[str, str] = {}
+    variables: dict[str, str] = {}
+    sources: dict[str, str] = {}
 
     builtin = _magic_variables()
     _merge_sourced_variables(variables, sources, builtin, "magic")
@@ -540,9 +564,9 @@ def collect_interpolation_variables_detailed(
 
 def collect_interpolation_variables(
     db,
-    collection_id: Optional[int] = None,
-    session_vars: Optional[Dict[str, str]] = None,
-) -> Dict[str, str]:
+    collection_id: int | None = None,
+    session_vars: dict[str, str] | None = None,
+) -> dict[str, str]:
     """Compatibility wrapper returning only collected variables."""
     variables, _sources = collect_interpolation_variables_detailed(
         db,
@@ -550,4 +574,3 @@ def collect_interpolation_variables(
         session_vars=session_vars,
     )
     return variables
-

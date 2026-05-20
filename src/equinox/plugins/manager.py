@@ -4,14 +4,17 @@ Plugins execute in-process. Security checks here are policy guards (permissions,
 checksums, allowlists, and validation), not a hard isolation boundary.
 """
 
-import json
 import importlib.util
+import json
 import logging
 import os
 import sys
 from pathlib import Path
-from typing import List, Dict, Any, Optional
+from typing import Any
 
+from equinox.core.audit import get_audit_logger
+from equinox.core.exceptions import PluginError
+from equinox.core.request import Request, Response
 from equinox.plugins.base import Plugin, PluginContext
 from equinox.plugins.security import (
     Permission,
@@ -21,9 +24,6 @@ from equinox.plugins.security import (
     validate_plugin_dependency_graph,
     verify_checksum,
 )
-from equinox.core.audit import get_audit_logger
-from equinox.core.exceptions import PluginError
-from equinox.core.request import Request, Response
 
 logger = logging.getLogger(__name__)
 _audit = get_audit_logger()
@@ -32,13 +32,15 @@ _ALLOWLIST_FILE_ENV = "EQUINOX_PLUGIN_ALLOWLIST_FILE"
 _DENY_BY_DEFAULT_ENV = "EQUINOX_PLUGIN_DENY_BY_DEFAULT"
 _ALLOW_DANGEROUS_PERMS_ENV = "EQUINOX_ALLOW_DANGEROUS_PLUGIN_PERMS"
 
-_DANGEROUS_PERMISSIONS = frozenset({
-    Permission.SYSTEM_EXECUTE,
-    Permission.SYSTEM_ENV,
-    Permission.FILE_DELETE,
-    Permission.STORAGE_DELETE,
-    Permission.CREDENTIAL_WRITE,
-})
+_DANGEROUS_PERMISSIONS = frozenset(
+    {
+        Permission.SYSTEM_EXECUTE,
+        Permission.SYSTEM_ENV,
+        Permission.FILE_DELETE,
+        Permission.STORAGE_DELETE,
+        Permission.CREDENTIAL_WRITE,
+    }
+)
 
 
 def _env_flag_enabled(name: str) -> bool:
@@ -66,10 +68,10 @@ class PluginManager:
         self.deny_by_default = _env_flag_enabled(_DENY_BY_DEFAULT_ENV)
         self.allow_dangerous_permissions = _env_flag_enabled(_ALLOW_DANGEROUS_PERMS_ENV)
         self.allowlist = self._load_allowlist()
-        self.plugins: List[Plugin] = []
+        self.plugins: list[Plugin] = []
         self._load_plugins()
 
-    def _load_allowlist(self) -> Dict[str, Any]:
+    def _load_allowlist(self) -> dict[str, Any]:
         """Load plugin allowlist from JSON file path in env, or return empty policy."""
         allowlist_path = os.environ.get(_ALLOWLIST_FILE_ENV, "").strip()
         if not allowlist_path:
@@ -126,8 +128,7 @@ class PluginManager:
         )
         if blocked:
             raise PluginError(
-                "Plugin requests dangerous permissions without opt-in policy: "
-                + ", ".join(blocked)
+                "Plugin requests dangerous permissions without opt-in policy: " + ", ".join(blocked)
             )
 
     def _load_plugins(self):
@@ -181,14 +182,18 @@ class PluginManager:
 
         try:
             logger.debug("Loading plugin manifest from: %s", manifest_path)
-            with open(manifest_path, "r") as f:
+            with open(manifest_path) as f:
                 manifest_data = json.load(f)
 
             plugin_manifest = PluginManifest.from_dict(manifest_data)
-            logger.debug("Plugin manifest parsed: name=%s version=%s", plugin_manifest.name, plugin_manifest.version)
+            logger.debug(
+                "Plugin manifest parsed: name=%s version=%s",
+                plugin_manifest.name,
+                plugin_manifest.version,
+            )
             self._assert_plugin_allowed(plugin_manifest)
             self._assert_permissions_allowed(plugin_manifest)
-            
+
             sandbox = PluginSandbox(plugin_manifest)
 
             main_file = manifest_data.get("main", "plugin.py")
@@ -237,7 +242,7 @@ class PluginManager:
                 logger.error("Plugin does not define PluginClass: %s", plugin_manifest.name)
                 raise PluginError(f"Plugin must define 'PluginClass': {plugin_manifest.name}")
 
-            plugin_class = getattr(module, "PluginClass")
+            plugin_class = module.PluginClass
             secure_context = SecurePluginContext(
                 sandbox=sandbox,
                 storage=self.context.storage,
@@ -262,7 +267,7 @@ class PluginManager:
             logger.warning("Failed to load plugin %s: %s", plugin_path.name, exc, exc_info=True)
             _audit.log_plugin_event(plugin_path.name, "error", error=str(exc))
 
-    def get_plugin(self, name: str) -> Optional[Plugin]:
+    def get_plugin(self, name: str) -> Plugin | None:
         """Get plugin by name."""
         for plugin in self.plugins:
             if plugin.name == name:
@@ -327,7 +332,7 @@ class PluginManager:
             except Exception as exc:
                 self._log_plugin_hook_failure(plugin.name, "on_error", exc)
 
-    def list_plugins(self) -> List[Dict[str, Any]]:
+    def list_plugins(self) -> list[dict[str, Any]]:
         """List all loaded plugins."""
         return [
             {

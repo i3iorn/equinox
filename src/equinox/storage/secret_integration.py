@@ -58,19 +58,19 @@ Security Considerations
 - Failed secret retrieval results in clear error messages
 - Credentials can fall back to local stored values if external store unavailable
 """
+
 from __future__ import annotations
 
 import logging
-from typing import Any, Dict, Optional
+from typing import Any
 
-from equinox.core.exceptions import StorageError, SecurityError, AuthError
-from equinox.security import mask_secret, redact_body
+from equinox.core.exceptions import StorageError
 from equinox.core.secret_managers import (
-    get_secret_manager,
     SecretManager,
     SecretNotFoundError,
-    SecretManagerError,
+    get_secret_manager,
 )
+from equinox.security import mask_secret, redact_body
 
 logger = logging.getLogger(__name__)
 
@@ -89,7 +89,7 @@ class CredentialSecretResolver:
             cache_ttl: Cache time-to-live for secret manager results (seconds)
         """
         self.cache_ttl = cache_ttl
-        self._managers: Dict[str, SecretManager] = {}
+        self._managers: dict[str, SecretManager] = {}
 
     def get_manager(self, manager_type: str) -> SecretManager:
         """Get or create a secret manager instance.
@@ -113,9 +113,7 @@ class CredentialSecretResolver:
         except Exception as exc:
             raise StorageError(f"Failed to initialize secret manager '{manager_type}': {exc}")
 
-    def resolve_secret_value(
-        self, manager_type: str, config: Dict[str, Any]
-    ) -> str:
+    def resolve_secret_value(self, manager_type: str, config: dict[str, Any]) -> str:
         """Retrieve a secret value from an external manager.
 
         Args:
@@ -154,9 +152,7 @@ class CredentialSecretResolver:
                 if config.get("key"):
                     key = config["key"]
                     if key not in secret_dict:
-                        raise StorageError(
-                            f"Key '{key}' not found in secret '{secret_ref}'"
-                        )
+                        raise StorageError(f"Key '{key}' not found in secret '{secret_ref}'")
                     return str(secret_dict[key])
 
                 # If json_keys is specified, validate those keys exist
@@ -170,6 +166,7 @@ class CredentialSecretResolver:
 
                 # Return the entire dict as JSON string if multiple keys needed
                 import json
+
                 return json.dumps(secret_dict)
             else:
                 # Plain string secret
@@ -187,9 +184,7 @@ class CredentialSecretResolver:
             )
             raise StorageError(f"Failed to retrieve secret: {safe_error}")
 
-    def hydrate_credential(
-        self, credential_row: Dict[str, Any]
-    ) -> Dict[str, Any]:
+    def hydrate_credential(self, credential_row: dict[str, Any]) -> dict[str, Any]:
         """Merge external secret values into a credential row.
 
         If the credential has a secret_source_type and secret_source_config,
@@ -219,6 +214,7 @@ class CredentialSecretResolver:
             # Parse the secret value based on whether it's JSON or plain string
             if isinstance(source_config, dict) and source_config.get("json_keys"):
                 import json
+
                 secret_dict = json.loads(secret_value)
             else:
                 secret_dict = {"value": secret_value}
@@ -248,8 +244,8 @@ class CredentialSecretResolver:
 
 
 def load_credential_with_secrets(
-    credential_row: Dict[str, Any], resolver: Optional[CredentialSecretResolver] = None
-) -> Dict[str, Any]:
+    credential_row: dict[str, Any], resolver: CredentialSecretResolver | None = None
+) -> dict[str, Any]:
     """Load a credential and resolve any external secrets.
 
     Convenience function that creates a resolver and hydrates the credential
@@ -272,8 +268,8 @@ def load_credential_with_secrets(
 
 
 def create_auth_from_credential_with_secrets(
-    credential_row: Dict[str, Any],
-    resolver: Optional[CredentialSecretResolver] = None,
+    credential_row: dict[str, Any],
+    resolver: CredentialSecretResolver | None = None,
 ) -> Any:
     """Create an auth strategy from a credential, resolving external secrets.
 
@@ -303,7 +299,7 @@ def create_auth_from_credential_with_secrets(
 
 
 # Global resolver instance (lazy-initialized)
-_global_resolver: Optional[CredentialSecretResolver] = None
+_global_resolver: CredentialSecretResolver | None = None
 
 
 def get_global_resolver() -> CredentialSecretResolver:
@@ -326,4 +322,3 @@ def clear_global_cache() -> None:
     for manager in resolver._managers.values():
         manager.clear_cache()
     logger.debug("Cleared global secret manager caches")
-

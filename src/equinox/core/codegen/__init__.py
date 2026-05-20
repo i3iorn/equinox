@@ -1,13 +1,15 @@
 import logging
+
 from equinox.core.request import Request, Response
 from equinox.security import redact_url
-from .python import PythonRequestsGenerator, PythonHttpxGenerator
-from .javascript import JavaScriptFetchGenerator
-from .go import GoHttpGenerator
-from .ruby import RubyNetHttpGenerator
-from .php import PhpCurlGenerator
+
 from .curl import CurlGenerator
+from .go import GoHttpGenerator
 from .har import HARGenerator
+from .javascript import JavaScriptFetchGenerator
+from .php import PhpCurlGenerator
+from .python import PythonHttpxGenerator, PythonRequestsGenerator
+from .ruby import RubyNetHttpGenerator
 
 logger = logging.getLogger(__name__)
 
@@ -24,6 +26,7 @@ _GENERATORS = {
 
 GENERATORS = _GENERATORS
 
+
 def generate_code(fmt: str, request_or_response: Request | Response) -> str:
     """Generate client code for the given response/request."""
     gen_cls = _GENERATORS.get(fmt)
@@ -35,6 +38,7 @@ def generate_code(fmt: str, request_or_response: Request | Response) -> str:
     else:
         # Compatibility: wrap Request in a dummy Response
         from datetime import datetime
+
         response = Response(
             request=request_or_response,
             status_code=200,
@@ -56,5 +60,6 @@ def generate_code(fmt: str, request_or_response: Request | Response) -> str:
     if not gen_cls:
         return f"Error: Unsupported format '{fmt}'"
     return gen_cls().generate(response)
+
 
 __all__ = ["generate_code"]

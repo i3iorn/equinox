@@ -4,15 +4,25 @@ import json
 import logging
 from unittest.mock import MagicMock
 
-from equinox.core.interceptors._base import RequestInterceptor, ResponseInterceptor, \
-    ErrorInterceptor, InterceptorContext, InterceptorAction, InterceptorResult
+from equinox.core.interceptors._base import (
+    ErrorInterceptor,
+    InterceptorAction,
+    InterceptorContext,
+    InterceptorResult,
+    RequestInterceptor,
+    ResponseInterceptor,
+)
 from equinox.core.interceptors.chain import InterceptorChain
-from equinox.core.interceptors.logging import RequestResponseLogger, \
-    LoggingRequestInterceptor, LoggingResponseInterceptor, LoggingErrorInterceptor
+from equinox.core.interceptors.logging import (
+    LoggingErrorInterceptor,
+    LoggingRequestInterceptor,
+    LoggingResponseInterceptor,
+    RequestResponseLogger,
+)
 from equinox.core.request import Request, Response
 
-
 # ── Helpers ──────────────────────────────────────────────────────────────────
+
 
 def _req(method="GET", url="https://example.com/api"):
     return Request(method=method, url=url, headers={}, params={}, body=None)
@@ -30,8 +40,8 @@ def _resp(status=200, body=b"ok", headers=None):
 
 # ── InterceptorContext ────────────────────────────────────────────────────────
 
-class TestInterceptorContext:
 
+class TestInterceptorContext:
     def test_timestamp_set_on_init(self):
         req = _req()
         ctx = InterceptorContext(request=req)
@@ -51,8 +61,8 @@ class TestInterceptorContext:
 
 # ── Base interceptor defaults ─────────────────────────────────────────────────
 
-class TestBaseInterceptors:
 
+class TestBaseInterceptors:
     def test_request_interceptor_can_intercept_returns_true(self):
         req = _req()
         assert RequestInterceptor().can_intercept(req) is True
@@ -85,8 +95,8 @@ class TestBaseInterceptors:
 
 # ── InterceptorChain ──────────────────────────────────────────────────────────
 
-class TestInterceptorChain:
 
+class TestInterceptorChain:
     def test_add_request_interceptor(self):
         chain = InterceptorChain()
         chain.add_request_interceptor(RequestInterceptor())
@@ -134,6 +144,7 @@ class TestInterceptorChain:
         class NeverIntercepts(RequestInterceptor):
             def can_intercept(self, req):
                 return False
+
             def intercept(self, ctx):
                 raise AssertionError("should not be called")
 
@@ -162,6 +173,7 @@ class TestInterceptorChain:
         class NeverIntercepts(ResponseInterceptor):
             def can_intercept(self, resp):
                 return False
+
             def intercept(self, ctx):
                 raise AssertionError("should not be called")
 
@@ -216,6 +228,7 @@ class TestInterceptorChain:
         class NeverHandles(ErrorInterceptor):
             def can_intercept(self, error, request):
                 return False
+
             def intercept(self, ctx):
                 raise AssertionError("should not be called")
 
@@ -228,8 +241,8 @@ class TestInterceptorChain:
 
 # ── RequestResponseLogger ─────────────────────────────────────────────────────
 
-class TestRequestResponseLogger:
 
+class TestRequestResponseLogger:
     def test_log_request_basic(self, caplog):
         logger = RequestResponseLogger("test.rr")
         req = _req(url="https://api.example.com/users")
@@ -296,8 +309,8 @@ class TestRequestResponseLogger:
 
 # ── Built-in logging interceptors ─────────────────────────────────────────────
 
-class TestLoggingInterceptors:
 
+class TestLoggingInterceptors:
     def test_logging_request_interceptor_uses_default_logger(self):
         i = LoggingRequestInterceptor()
         assert i.logger is not None
@@ -337,7 +350,7 @@ class TestLoggingInterceptors:
         ctx = InterceptorContext(request=req, error=err)
         result = i.intercept(ctx)
         assert result.action == InterceptorAction.CONTINUE
-        #TODO: Assert that error was logged
+        # TODO: Assert that error was logged
 
     def test_logging_error_interceptor_with_custom_logger(self):
         custom = RequestResponseLogger("custom.err")

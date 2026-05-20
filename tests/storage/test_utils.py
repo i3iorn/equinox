@@ -157,4 +157,3 @@ def test_safe_json_loads_parse_error_logs_error_with_row_id(caplog) -> None:
         result = utils.safe_json_loads("{not json}", default=[], row_id=42)
     assert result == []
     assert "Failed to parse JSON for row 42" in caplog.text
-

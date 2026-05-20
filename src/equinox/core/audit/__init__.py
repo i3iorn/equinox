@@ -10,14 +10,13 @@ This module provides comprehensive audit logging for:
 """
 
 import threading
-from typing import Optional
 
 from equinox.core.audit._level import AuditLevel
 from equinox.core.audit._logger import AuditLogger
 from equinox.core.audit._type import AuditEventType
 
 # Global audit logger instance
-_audit_logger: Optional[AuditLogger] = None
+_audit_logger: AuditLogger | None = None
 _audit_logger_lock = threading.Lock()
 
 
@@ -29,5 +28,6 @@ def get_audit_logger() -> AuditLogger:
             if _audit_logger is None:
                 _audit_logger = AuditLogger()
     return _audit_logger
+
 
 __all__ = ["AuditEventType", "AuditLevel", "get_audit_logger"]

@@ -1,22 +1,25 @@
 """HAR (HTTP Archive) importer — creates a collection from a .har file."""
 
 import json
-from equinox.storage.utils import safe_json_loads
 import logging
 from pathlib import Path
-from typing import Optional
 
 from equinox.core import urls
-from equinox.storage.collections import CollectionManager
 from equinox.core.request import Request
 from equinox.importers._utils import validate_import_file
+from equinox.storage.collections import CollectionManager
 
 logger = logging.getLogger(__name__)
 
 # Content-types that indicate binary / non-text bodies to skip
 _BINARY_CONTENT_TYPES = {
-    "image/", "audio/", "video/", "application/octet-stream",
-    "application/zip", "application/gzip", "application/pdf",
+    "image/",
+    "audio/",
+    "video/",
+    "application/octet-stream",
+    "application/zip",
+    "application/gzip",
+    "application/pdf",
     "font/",
 }
 
@@ -84,9 +87,7 @@ class HARImporter:
 
         entries = log.get("entries") or []
         if len(entries) > self.MAX_ENTRIES:
-            raise ValueError(
-                f"Too many HAR entries: {len(entries)} (max {self.MAX_ENTRIES})"
-            )
+            raise ValueError(f"Too many HAR entries: {len(entries)} (max {self.MAX_ENTRIES})")
 
         imported = 0
         for idx, entry in enumerate(entries):
@@ -143,7 +144,7 @@ class HARImporter:
                 params[k] = v
 
         # Body
-        body: Optional[str] = None
+        body: str | None = None
         post_data = req_data.get("postData") or {}
         if post_data:
             text = post_data.get("text")

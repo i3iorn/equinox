@@ -11,4 +11,3 @@ internal module path.
 from .recommender import Recommender, suggestions_to_findings  # re-export for convenience
 
 __all__ = ["Recommender", "suggestions_to_findings"]
-

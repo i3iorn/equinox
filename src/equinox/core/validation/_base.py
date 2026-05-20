@@ -3,20 +3,30 @@
 Contains size/count thresholds (_Limits), pre-compiled regex patterns (_Patterns),
 and shared assertion helpers (_Guards).
 """
+
 from __future__ import annotations
 
 import re
-from typing import Any, Tuple
+from typing import Any
 
 from equinox.core.exceptions import ValidationError
 
 __all__ = ["VALID_HTTP_METHODS", "_Limits", "_Patterns", "_Guards"]
 
 #: Canonical set of allowed HTTP verbs.
-VALID_HTTP_METHODS: frozenset[str] = frozenset({
-    "GET", "POST", "PUT", "PATCH", "DELETE",
-    "HEAD", "OPTIONS", "TRACE", "CONNECT",
-})
+VALID_HTTP_METHODS: frozenset[str] = frozenset(
+    {
+        "GET",
+        "POST",
+        "PUT",
+        "PATCH",
+        "DELETE",
+        "HEAD",
+        "OPTIONS",
+        "TRACE",
+        "CONNECT",
+    }
+)
 
 
 class _Limits:
@@ -26,7 +36,7 @@ class _Limits:
     MAX_HEADER_NAME_LENGTH: int = 256
     MAX_HEADER_LENGTH: int = 8192
     MAX_HEADER_COUNT: int = 100
-    MAX_BODY_SIZE: int = 100 * 1024 * 1024   # 100 MB
+    MAX_BODY_SIZE: int = 100 * 1024 * 1024  # 100 MB
     MAX_PARAM_COUNT: int = 100
     MAX_PARAM_KEY_LENGTH: int = 256
     MAX_PARAM_VALUE_LENGTH: int = 4096
@@ -37,8 +47,9 @@ class _Limits:
 class _Patterns:
     """Namespace for pre-compiled security/format patterns."""
 
-    SQL_INJECTION: Tuple[re.Pattern[str], ...] = tuple(
-        re.compile(p, re.IGNORECASE) for p in (
+    SQL_INJECTION: tuple[re.Pattern[str], ...] = tuple(
+        re.compile(p, re.IGNORECASE)
+        for p in (
             r"(\bUNION\b.*\bSELECT\b)",
             r"(\bDROP\b.*\bTABLE\b)",
             r"(\bINSERT\b.*\bINTO\b)",
@@ -50,8 +61,9 @@ class _Patterns:
         )
     )
 
-    COMMAND_INJECTION: Tuple[re.Pattern[str], ...] = tuple(
-        re.compile(p) for p in (
+    COMMAND_INJECTION: tuple[re.Pattern[str], ...] = tuple(
+        re.compile(p)
+        for p in (
             r"[;&|`$]",
             r"\$\{[^}]*\}",
             r"\$\([^)]*\)",
@@ -60,8 +72,9 @@ class _Patterns:
     )
 
     # Full XSS — used for body / general content checks.
-    XSS_FULL: Tuple[re.Pattern[str], ...] = tuple(
-        re.compile(p, re.IGNORECASE) for p in (
+    XSS_FULL: tuple[re.Pattern[str], ...] = tuple(
+        re.compile(p, re.IGNORECASE)
+        for p in (
             r"<script[^>]*>.*?</script>",
             r"javascript:",
             r"on\w+\s*=",
@@ -73,14 +86,15 @@ class _Patterns:
 
     # Reduced XSS — URL / header checks.  HTML-element patterns are excluded
     # to avoid false positives on valid API endpoint paths.
-    XSS_URL: Tuple[re.Pattern[str], ...] = XSS_FULL[:3]
+    XSS_URL: tuple[re.Pattern[str], ...] = XSS_FULL[:3]
 
-    PATH_TRAVERSAL: Tuple[re.Pattern[str], ...] = tuple(
-        re.compile(p) for p in (
-            r"\.\.[/\\]",           # ../ or ..\ anywhere in path (cross-platform)
-            r"(^|[/\\])\.\.$",      # trailing .. as a path component
-            r"^\.\.?$",             # bare "." or ".." as the entire path
-            r"~/",                  # home-relative shorthand
+    PATH_TRAVERSAL: tuple[re.Pattern[str], ...] = tuple(
+        re.compile(p)
+        for p in (
+            r"\.\.[/\\]",  # ../ or ..\ anywhere in path (cross-platform)
+            r"(^|[/\\])\.\.$",  # trailing .. as a path component
+            r"^\.\.?$",  # bare "." or ".." as the entire path
+            r"~/",  # home-relative shorthand
         )
     )
 
@@ -102,15 +116,11 @@ class _Guards:
     def check_crlf(value: str, field_name: str) -> None:
         """Raise ``ValidationError`` if *value* contains CR or LF characters."""
         if "\r" in value or "\n" in value:
-            raise ValidationError(
-                f"{field_name} contains invalid characters (CRLF)"
-            )
+            raise ValidationError(f"{field_name} contains invalid characters (CRLF)")
 
     @staticmethod
     def check_xss_url(value: str, field_name: str) -> None:
         """Raise ``ValidationError`` if *value* matches a URL-context XSS pattern."""
         for rx in _Patterns.XSS_URL:
             if rx.search(value):
-                raise ValidationError(
-                    f"{field_name} contains potentially malicious content"
-                )
+                raise ValidationError(f"{field_name} contains potentially malicious content")

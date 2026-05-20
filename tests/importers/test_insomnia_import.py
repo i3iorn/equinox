@@ -1,9 +1,9 @@
 """Tests for importers/insomnia.py — Insomnia v4 collection importer."""
 
 import json
+from unittest.mock import Mock
+
 import pytest
-from pathlib import Path
-from unittest.mock import Mock, call
 
 from equinox.importers.insomnia import InsomniaImporter
 
@@ -246,9 +246,7 @@ class TestImportRequestDetails:
                     "method": "POST",
                     "url": "https://example.com",
                     "headers": [{"name": "Content-Type", "value": "multipart/form-data"}],
-                    "body": {
-                        "params": [{"name": "k", "value": "v"}]
-                    },
+                    "body": {"params": [{"name": "k", "value": "v"}]},
                 },
             ]
         }
@@ -417,20 +415,31 @@ class TestMultipleRequests:
             "resources": [
                 {"_type": "workspace", "_id": "wrk_1", "name": "API"},
                 {
-                    "_type": "request", "_id": "req_1", "parentId": "wrk_1",
-                    "name": "R1", "method": "GET", "url": "https://example.com/1",
+                    "_type": "request",
+                    "_id": "req_1",
+                    "parentId": "wrk_1",
+                    "name": "R1",
+                    "method": "GET",
+                    "url": "https://example.com/1",
                 },
                 {
-                    "_type": "request", "_id": "req_2", "parentId": "wrk_1",
-                    "name": "R2", "method": "POST", "url": "https://example.com/2",
+                    "_type": "request",
+                    "_id": "req_2",
+                    "parentId": "wrk_1",
+                    "name": "R2",
+                    "method": "POST",
+                    "url": "https://example.com/2",
                     "body": {"text": "data"},
                 },
                 {
-                    "_type": "request", "_id": "req_3", "parentId": "wrk_1",
-                    "name": "R3", "method": "DELETE", "url": "https://example.com/3",
+                    "_type": "request",
+                    "_id": "req_3",
+                    "parentId": "wrk_1",
+                    "name": "R3",
+                    "method": "DELETE",
+                    "url": "https://example.com/3",
                 },
             ]
         }
         importer._import_data(data)
         assert mock_manager.save_request.call_count == 3
-

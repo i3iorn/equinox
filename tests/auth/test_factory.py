@@ -1,14 +1,19 @@
 """100% coverage tests for equinox.auth._factory"""
 
 import logging
+from unittest.mock import patch
+
 import pytest
-from unittest.mock import MagicMock, patch
 
 from equinox.auth import (
-    AUTH_REGISTRY, auth_from_dict,  BearerAuth, BasicAuth,
-    APIKeyAuth, OAuth2Auth, AWSSigV4Auth
+    AUTH_REGISTRY,
+    APIKeyAuth,
+    AWSSigV4Auth,
+    BasicAuth,
+    BearerAuth,
+    OAuth2Auth,
+    auth_from_dict,
 )
-
 
 # ---------------------------------------------------------------------------
 # Sample data for each auth type
@@ -36,12 +41,21 @@ AWS_DATA = {
 # AUTH_REGISTRY completeness
 # ---------------------------------------------------------------------------
 
+
 class TestAuthRegistry:
     EXPECTED_KEYS = {
         # Short names
-        "bearer", "basic", "api_key", "oauth2", "aws_sigv4",
+        "bearer",
+        "basic",
+        "api_key",
+        "oauth2",
+        "aws_sigv4",
         # Class names
-        "BearerAuth", "BasicAuth", "APIKeyAuth", "OAuth2Auth", "AWSSigV4Auth",
+        "BearerAuth",
+        "BasicAuth",
+        "APIKeyAuth",
+        "OAuth2Auth",
+        "AWSSigV4Auth",
     }
 
     def test_all_expected_keys_present(self):
@@ -60,42 +74,49 @@ class TestAuthRegistry:
             ("aws_sigv4", "AWSSigV4Auth"),
         ]
         for short, class_name in pairs:
-            assert AUTH_REGISTRY[short]() is AUTH_REGISTRY[class_name](), (
-                f"{short!r} and {class_name!r} should resolve to the same class"
-            )
+            assert (
+                AUTH_REGISTRY[short]() is AUTH_REGISTRY[class_name]()
+            ), f"{short!r} and {class_name!r} should resolve to the same class"
 
 
 # ---------------------------------------------------------------------------
 # Lazy import helpers (_get_* functions)
 # ---------------------------------------------------------------------------
 
+
 class TestLazyImportHelpers:
     """Exercise each private loader directly to guarantee import coverage."""
 
     def test_get_bearer_returns_bearer_auth(self):
         from equinox.auth._factory import _get_bearer
+
         assert _get_bearer() is BearerAuth
 
     def test_get_basic_returns_basic_auth(self):
         from equinox.auth._factory import _get_basic
+
         assert _get_basic() is BasicAuth
 
     def test_get_api_key_returns_api_key_auth(self):
         from equinox.auth._factory import _get_api_key
+
         assert _get_api_key() is APIKeyAuth
 
     def test_get_oauth2_returns_oauth2_auth(self):
         from equinox.auth._factory import _get_oauth2
+
         assert _get_oauth2() is OAuth2Auth
 
     def test_get_aws_sigv4_returns_aws_sigv4_auth(self):
         from equinox.auth._factory import _get_aws_sigv4
+
         assert _get_aws_sigv4() is AWSSigV4Auth
 
 
 # ---------------------------------------------------------------------------
 # auth_from_dict — happy path (short type names)
 # ---------------------------------------------------------------------------
+
 
 class TestAuthFromDictShortNames:
     def test_bearer(self):
@@ -123,6 +144,7 @@ class TestAuthFromDictShortNames:
 # auth_from_dict — happy path (class-name aliases)
 # ---------------------------------------------------------------------------
 
+
 class TestAuthFromDictClassNames:
     def test_bearer_class_name(self):
         obj = auth_from_dict("BearerAuth", BEARER_DATA)
@@ -148,6 +170,7 @@ class TestAuthFromDictClassNames:
 # ---------------------------------------------------------------------------
 # auth_from_dict — round-trip fidelity
 # ---------------------------------------------------------------------------
+
 
 class TestAuthFromDictRoundTrip:
     def test_bearer_round_trip(self):
@@ -184,6 +207,7 @@ class TestAuthFromDictRoundTrip:
 # auth_from_dict — unknown type → ValueError + warning log
 # ---------------------------------------------------------------------------
 
+
 class TestAuthFromDictUnknownType:
     def test_raises_value_error(self):
         with pytest.raises(ValueError, match="Unknown auth type: bogus"):
@@ -204,6 +228,7 @@ class TestAuthFromDictUnknownType:
 # ---------------------------------------------------------------------------
 # auth_from_dict — from_dict raises → error log, returns None
 # ---------------------------------------------------------------------------
+
 
 class TestAuthFromDictFromDictFailure:
     def test_returns_none_when_from_dict_raises(self):
@@ -236,4 +261,3 @@ def _make_failing_class():
             raise RuntimeError("intentional failure")
 
     return FailingAuth
-

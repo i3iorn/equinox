@@ -30,4 +30,3 @@ def test_history_search_benchmark_rejects_invalid_arguments() -> None:
         run_history_search_benchmark(entries=0, runs=1)
     with pytest.raises(ValueError):
         run_history_search_benchmark(entries=1, runs=0)
-

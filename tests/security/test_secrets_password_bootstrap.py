@@ -36,4 +36,3 @@ def test_startup_rotation_failure_raises_in_strict_mode(monkeypatch):
 
     with pytest.raises(RuntimeError, match="strict mode"):
         secrets_password.ensure_master_password_initialized()
-

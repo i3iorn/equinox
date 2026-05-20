@@ -1,15 +1,15 @@
 """Tests for storage modules (collections, environments, history)."""
 
-import pytest
-from pathlib import Path
 from datetime import datetime
 
-from equinox.storage.database import Database
+import pytest
+
+from equinox.core.exceptions import StorageError
+from equinox.core.request import Request, Response
 from equinox.storage.collections import CollectionManager
+from equinox.storage.database import Database
 from equinox.storage.environments import EnvironmentManager
 from equinox.storage.history import HistoryManager
-from equinox.core.request import Request, Response
-from equinox.core.exceptions import StorageError
 
 
 class TestDatabase:
@@ -29,10 +29,7 @@ class TestDatabase:
 
     def test_execute_query(self, db):
         """Test executing a query."""
-        db.execute(
-            "CREATE TABLE IF NOT EXISTS test (id INTEGER PRIMARY KEY, name TEXT)",
-            ()
-        )
+        db.execute("CREATE TABLE IF NOT EXISTS test (id INTEGER PRIMARY KEY, name TEXT)", ())
         db.execute("INSERT INTO test (name) VALUES (?)", ("test_value",))
 
         result = db.fetchone("SELECT name FROM test WHERE id = ?", (1,))
@@ -40,10 +37,7 @@ class TestDatabase:
 
     def test_fetchall(self, db):
         """Test fetching multiple rows."""
-        db.execute(
-            "CREATE TABLE IF NOT EXISTS test (id INTEGER PRIMARY KEY, name TEXT)",
-            ()
-        )
+        db.execute("CREATE TABLE IF NOT EXISTS test (id INTEGER PRIMARY KEY, name TEXT)", ())
         db.execute("INSERT INTO test (name) VALUES (?)", ("value1",))
         db.execute("INSERT INTO test (name) VALUES (?)", ("value2",))
 
@@ -52,10 +46,7 @@ class TestDatabase:
 
     def test_insert_returns_id(self, db):
         """Test insert returns last row ID."""
-        db.execute(
-            "CREATE TABLE IF NOT EXISTS test (id INTEGER PRIMARY KEY, name TEXT)",
-            ()
-        )
+        db.execute("CREATE TABLE IF NOT EXISTS test (id INTEGER PRIMARY KEY, name TEXT)", ())
         row_id = db.insert("INSERT INTO test (name) VALUES (?)", ("test",))
         assert row_id == 1
 
@@ -66,10 +57,7 @@ class TestDatabase:
 
     def test_parameter_mismatch_raises_error(self, db):
         """Test that parameter mismatch raises error."""
-        db.execute(
-            "CREATE TABLE IF NOT EXISTS test (id INTEGER PRIMARY KEY, name TEXT)",
-            ()
-        )
+        db.execute("CREATE TABLE IF NOT EXISTS test (id INTEGER PRIMARY KEY, name TEXT)", ())
         with pytest.raises(Exception):
             db.execute("SELECT * FROM test WHERE id = ?", ())  # Missing parameter
 
@@ -113,7 +101,7 @@ class TestCollectionManager:
             method="GET",
             url="https://api.example.com/users",
             headers={"Accept": "application/json"},
-            name="List Users"
+            name="List Users",
         )
 
         req_id = manager.save_request(request, col_id)
@@ -123,11 +111,7 @@ class TestCollectionManager:
         """Test listing requests in collection."""
         col_id = manager.create_collection("Test", "Desc")
 
-        request = Request(
-            method="GET",
-            url="https://api.example.com/users",
-            name="List Users"
-        )
+        request = Request(method="GET", url="https://api.example.com/users", name="List Users")
         manager.save_request(request, col_id)
 
         requests = manager.list_requests(col_id)
@@ -142,7 +126,7 @@ class TestCollectionManager:
             method="POST",
             url="https://api.example.com/users",
             body='{"name": "John"}',
-            name="Create User"
+            name="Create User",
         )
         req_id = manager.save_request(request, col_id)
 
@@ -225,7 +209,7 @@ class TestEnvironmentManager:
         variables = {
             "BASE_URL": "https://api.example.com",
             "VERSION": "v1",
-            "API_KEY": "secret-key"
+            "API_KEY": "secret-key",
         }
         env_id = manager.create_environment("Test", variables)
         manager.set_active_environment(env_id)
@@ -260,10 +244,7 @@ class TestHistoryManager:
 
     def test_save_history_success(self, manager):
         """Test saving successful request history."""
-        request = Request(
-            method="GET",
-            url="https://api.example.com/users"
-        )
+        request = Request(method="GET", url="https://api.example.com/users")
 
         response = Response(
             status_code=200,
@@ -272,7 +253,7 @@ class TestHistoryManager:
             body=b'{"users": []}',
             elapsed=0.5,
             request=request,
-            timestamp=datetime.now()
+            timestamp=datetime.now(),
         )
 
         history_id = manager.save_history(request, response)
@@ -280,10 +261,7 @@ class TestHistoryManager:
 
     def test_save_history_failure(self, manager):
         """Test saving failed request history."""
-        request = Request(
-            method="POST",
-            url="https://api.example.com/users"
-        )
+        request = Request(method="POST", url="https://api.example.com/users")
 
         history_id = manager.save_history(request, None, error="Connection timeout")
         assert history_id > 0
@@ -298,7 +276,7 @@ class TestHistoryManager:
             body=b"",
             elapsed=0.1,
             request=request,
-            timestamp=datetime.now()
+            timestamp=datetime.now(),
         )
 
         manager.save_history(request, response)
@@ -317,7 +295,7 @@ class TestHistoryManager:
             body=b"",
             elapsed=0.1,
             request=request,
-            timestamp=datetime.now()
+            timestamp=datetime.now(),
         )
 
         for _ in range(5):
@@ -336,7 +314,7 @@ class TestHistoryManager:
             body=b'{"test": "data"}',
             elapsed=0.1,
             request=request,
-            timestamp=datetime.now()
+            timestamp=datetime.now(),
         )
 
         history_id = manager.save_history(request, response)
@@ -356,7 +334,7 @@ class TestHistoryManager:
             body=b"",
             elapsed=0.1,
             request=request,
-            timestamp=datetime.now()
+            timestamp=datetime.now(),
         )
 
         manager.save_history(request, response)

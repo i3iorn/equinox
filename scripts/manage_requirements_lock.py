@@ -8,12 +8,11 @@ Usage:
 
 import argparse
 import difflib
+import re
 import subprocess
 import sys
 import tempfile
 from pathlib import Path
-from typing import List
-
 
 ROOT = Path(__file__).resolve().parents[1]
 LOCK_PATH = ROOT / "requirements-lock.txt"
@@ -21,7 +20,7 @@ PYPROJECT_PATH = ROOT / "pyproject.toml"
 
 
 def _compile_lock(output_path: Path) -> subprocess.CompletedProcess[str]:
-    command: List[str] = [
+    command: list[str] = [
         sys.executable,
         "-m",
         "piptools",
@@ -46,6 +45,19 @@ def _read_text(path: Path) -> str:
     return path.read_text(encoding="utf-8") if path.exists() else ""
 
 
+def _normalize_lock_text(content: str) -> str:
+    """Normalize non-semantic path comments emitted by pip-compile.
+
+    ``pip-compile`` writes absolute paths for ``--output-file`` in the header,
+    which can differ between check-time temp generation and committed files.
+    """
+    return re.sub(
+        r"(--output-file=')([^']*requirements-lock\.txt)(')",
+        r"\1requirements-lock.txt\3",
+        content,
+    )
+
+
 def _print_failure(header: str, details: str) -> int:
     print(header)
     if details.strip():
@@ -56,7 +68,9 @@ def _print_failure(header: str, details: str) -> int:
 def write_lockfile() -> int:
     result = _compile_lock(LOCK_PATH)
     if result.returncode != 0:
-        return _print_failure("requirements-lock generation failed:", result.stderr or result.stdout)
+        return _print_failure(
+            "requirements-lock generation failed:", result.stderr or result.stdout
+        )
 
     print(f"Generated {LOCK_PATH.name} from {PYPROJECT_PATH.name}.")
     return 0
@@ -72,8 +86,8 @@ def check_lockfile() -> int:
                 result.stderr or result.stdout,
             )
 
-        existing = _read_text(LOCK_PATH)
-        generated = _read_text(candidate_path)
+        existing = _normalize_lock_text(_read_text(LOCK_PATH))
+        generated = _normalize_lock_text(_read_text(candidate_path))
         if existing == generated:
             print("requirements-lock.txt is up to date.")
             return 0
@@ -96,7 +110,9 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Generate or verify requirements-lock.txt")
     group = parser.add_mutually_exclusive_group(required=True)
     group.add_argument("--write", action="store_true", help="Regenerate requirements-lock.txt")
-    group.add_argument("--check", action="store_true", help="Verify requirements-lock.txt is current")
+    group.add_argument(
+        "--check", action="store_true", help="Verify requirements-lock.txt is current"
+    )
     return parser.parse_args()
 
 
@@ -109,4 +125,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     sys.exit(main())
-

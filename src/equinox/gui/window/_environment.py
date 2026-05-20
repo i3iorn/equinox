@@ -1,4 +1,5 @@
 """Environment switching and status bar mixin for MainWindow."""
+
 from __future__ import annotations
 
 import logging
@@ -44,6 +45,7 @@ class _EnvironmentMixin:
 
     def _create_status_bar(self) -> None:
         from PyQt6.QtWidgets import QStatusBar
+
         self.status_bar = QStatusBar()
         self.setStatusBar(self.status_bar)
 
@@ -87,9 +89,7 @@ class _EnvironmentMixin:
             manage = self._env_menu.addAction("Manage Environments…")
             manage.triggered.connect(self._manage_environments)
 
-        self._env_menu.popup(
-            self._env_btn.mapToGlobal(self._env_btn.rect().topLeft())
-        )
+        self._env_menu.popup(self._env_btn.mapToGlobal(self._env_btn.rect().topLeft()))
 
     def _switch_environment(self, env_id: int) -> None:
         """Activate the given environment and refresh the label."""
@@ -119,6 +119,7 @@ class _EnvironmentMixin:
 
     def _manage_environments(self) -> None:
         from equinox.gui.dialogs.environment_dialog import EnvironmentDialog
+
         EnvironmentDialog(self.db, self).exec()
         if self.variables_panel:
             self.variables_panel.refresh()
@@ -126,9 +127,10 @@ class _EnvironmentMixin:
 
     def _manage_oauth_clients(self) -> None:
         from equinox.gui.dialogs.saved_credentials_dialog import SavedCredentialsDialog
+
         SavedCredentialsDialog(self.db, self).exec()
 
     def _manage_secret_managers(self) -> None:
         from equinox.gui.dialogs.secret_manager_settings_dialog import SecretManagerSettingsDialog
-        SecretManagerSettingsDialog(parent=self).exec()
 
+        SecretManagerSettingsDialog(parent=self).exec()

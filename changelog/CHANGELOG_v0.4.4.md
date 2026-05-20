@@ -119,4 +119,3 @@ Equinox v0.4.4 focuses on the first half of the GUI service-boundary refactor. T
 - Refactored request panel flows to injected services/facades.
 - Added broad service-level test coverage for migrated request logic.
 - Fixed multiple migration regressions without changing intended runtime behavior.
-

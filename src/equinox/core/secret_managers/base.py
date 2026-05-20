@@ -9,7 +9,7 @@ from __future__ import annotations
 import logging
 from abc import ABC, abstractmethod
 from datetime import datetime
-from typing import Any, Dict, Optional
+from typing import Any
 
 from equinox.security import mask_secret
 
@@ -19,6 +19,7 @@ logger = logging.getLogger(__name__)
 def _safe_secret_ref(secret_name: str) -> str:
     """Return a display-safe secret identifier for logs/errors."""
     return mask_secret(secret_name, keep=4)
+
 
 # Maximum age for cached secrets (seconds)
 _DEFAULT_CACHE_TTL = 300
@@ -83,7 +84,7 @@ class SecretManager(ABC):
         """
         self.enable_cache = enable_cache
         self.cache_ttl = cache_ttl
-        self._cache: Dict[str, SecretCacheEntry] = {}
+        self._cache: dict[str, SecretCacheEntry] = {}
         self._configured = False
 
     @abstractmethod
@@ -120,7 +121,7 @@ class SecretManager(ABC):
         pass
 
     @abstractmethod
-    def get_secret_dict(self, secret_name: str) -> Dict[str, Any]:
+    def get_secret_dict(self, secret_name: str) -> dict[str, Any]:
         """Retrieve a secret as a dictionary (for structured secrets).
 
         Args:
@@ -144,7 +145,7 @@ class SecretManager(ABC):
         """
         pass
 
-    def clear_cache(self, secret_name: Optional[str] = None) -> None:
+    def clear_cache(self, secret_name: str | None = None) -> None:
         """Clear cached secret(s).
 
         Args:
@@ -157,7 +158,7 @@ class SecretManager(ABC):
             self._cache.clear()
             logger.debug("Cleared entire secret cache")
 
-    def _get_from_cache(self, secret_name: str) -> Optional[Any]:
+    def _get_from_cache(self, secret_name: str) -> Any | None:
         """Retrieve a secret from cache if available and not expired.
 
         Args:
@@ -208,4 +209,3 @@ class SecretManager(ABC):
             raise SecretManagerError(
                 f"Secret '{_safe_secret_ref(secret_name)}' exceeds maximum length ({_MAX_SECRET_LENGTH})"
             )
-

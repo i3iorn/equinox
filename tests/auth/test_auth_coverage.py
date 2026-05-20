@@ -15,17 +15,14 @@ import json
 import os
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict
-from unittest.mock import MagicMock, Mock, patch, PropertyMock
+from unittest.mock import MagicMock, Mock, PropertyMock, patch
 
 import httpx
 import pytest
 
-from equinox.auth import (
-    auth_from_dict, APIKeyAuth, AWSSigV4Auth, AuthStrategy
-)
+from equinox.auth import APIKeyAuth, AuthStrategy, AWSSigV4Auth, auth_from_dict
 from equinox.auth._oauth2 import OAuth2Auth
 from equinox.core.exceptions import AuthError
-
 
 # ── api_key.py — line 42: request without .params attribute ───────────────────
 
@@ -414,7 +411,9 @@ class TestOAuth2Coverage:
             json={"error": "invalid_client", "access_token": "1234567890secret"},
         )
         mock_client.post.side_effect = httpx.HTTPStatusError(
-            "Bad Request", request=request, response=resp,
+            "Bad Request",
+            request=request,
+            response=resp,
         )
 
         auth = OAuth2Auth(
@@ -455,9 +454,7 @@ class TestOAuth2Coverage:
         """Lines 407-419: ConnectError with 'connection refused' skips retries."""
         mock_client = MagicMock()
         mock_client_class.return_value.__enter__.return_value = mock_client
-        mock_client.post.side_effect = httpx.ConnectError(
-            "[Errno 10061] connection refused"
-        )
+        mock_client.post.side_effect = httpx.ConnectError("[Errno 10061] connection refused")
 
         auth = OAuth2Auth(
             client_id="c",
@@ -822,4 +819,3 @@ class TestAPIKeyReprCoverage:
         auth = APIKeyAuth("X-Key", "tiny", "header")
         r = repr(auth)
         assert "***" in r
-

@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from typing import Any, Optional, Tuple
+from typing import Any
 
 from equinox.auth import OAuth2Auth
 from equinox.core.request import Request
@@ -34,7 +34,7 @@ class RequestPersistenceFacade:
     def __init__(
         self,
         db: Database,
-        collection_manager: Optional[CollectionManager] = None,
+        collection_manager: CollectionManager | None = None,
     ) -> None:
         self._db = db
         self._collection_manager = collection_manager or CollectionManager(db)
@@ -82,8 +82,8 @@ class RequestPersistenceFacade:
         self,
         request: Request,
         *,
-        existing_request_id: Optional[int],
-        existing_collection_id: Optional[int],
+        existing_request_id: int | None,
+        existing_collection_id: int | None,
         target_collection_id: int,
         name: str,
     ) -> SaveRequestResult:
@@ -108,7 +108,7 @@ class RequestPersistenceFacade:
         """Persist auth changes for an existing request."""
         self._collection_manager.update_request_auth(request_id, auth_obj)
 
-    def persist_request_oauth2_token(self, request: Optional[Request], auth_obj: Any) -> bool:
+    def persist_request_oauth2_token(self, request: Request | None, auth_obj: Any) -> bool:
         """Persist refreshed own OAuth2 auth on a saved request row."""
         if (
             request is None
@@ -120,7 +120,7 @@ class RequestPersistenceFacade:
         self._collection_manager.update_request_auth(request.id, auth_obj)
         return True
 
-    def resolve_effective_auth(self, request: Request) -> Tuple[Optional[Any], Optional[str]]:
+    def resolve_effective_auth(self, request: Request) -> tuple[Any, str | None]:
         """Resolve request→folder→collection inherited auth."""
         return self._collection_manager.resolve_effective_auth(request)
 
@@ -130,7 +130,7 @@ class RequestPersistenceFacade:
             self._collection_manager.set_collection_auth(collection_id, auth)
             return
         if source.startswith(_FOLDER_AUTH_PREFIX):
-            folder_name = source[len(_FOLDER_AUTH_PREFIX):]
+            folder_name = source[len(_FOLDER_AUTH_PREFIX) :]
             self._collection_manager.set_folder_auth(collection_id, folder_name, auth)
             return
         logger.warning(
@@ -140,8 +140,8 @@ class RequestPersistenceFacade:
 
     def persist_inherited_oauth2_token(
         self,
-        request: Optional[Request],
-        source: Optional[str],
+        request: Request | None,
+        source: str | None,
         auth_obj: Any,
     ) -> bool:
         """Persist refreshed inherited OAuth2 auth to its owning source."""
@@ -155,4 +155,3 @@ class RequestPersistenceFacade:
             return False
         self.persist_auth_to_source(request.collection_id, source, auth_obj)
         return True
-

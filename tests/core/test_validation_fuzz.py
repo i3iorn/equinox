@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 import pytest
-from hypothesis import given, settings, strategies as st
+from hypothesis import given, settings
+from hypothesis import strategies as st
 
 from equinox.core.exceptions import SecurityError, ValidationError
 from equinox.core.io import parse_curl, parse_dotenv

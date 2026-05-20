@@ -13,18 +13,18 @@ from __future__ import annotations
 
 import json
 import logging
-from typing import Any, Optional
+from typing import Any
 
 from PyQt6.QtWidgets import (
-    QWidget,
-    QVBoxLayout,
+    QApplication,
     QHBoxLayout,
-    QPushButton,
-    QTreeWidget,
     QHeaderView,
     QLabel,
+    QPushButton,
+    QTreeWidget,
     QTreeWidgetItem,
-    QApplication,
+    QVBoxLayout,
+    QWidget,
 )
 
 logger = logging.getLogger(__name__)
@@ -66,7 +66,7 @@ class _JsonTreeBuilder:
         self.max_nodes = max_nodes
         self.max_depth = max_depth
         self.node_count = 0
-        self._root_item: Optional[QTreeWidgetItem] = None
+        self._root_item: QTreeWidgetItem | None = None
 
     def build(self, root_item: QTreeWidgetItem, obj: Any) -> None:
         """Build tree from JSON object.
@@ -197,10 +197,10 @@ class JsonTree(QWidget):
     as leaves. Provides controls for expanding/collapsing and copying JSON.
     """
 
-    def __init__(self, parent: Optional[QWidget] = None) -> None:
+    def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
-        self._last_obj: Optional[Any] = None
-        self._pending_obj: Optional[Any] = None
+        self._last_obj: Any | None = None
+        self._pending_obj: Any | None = None
         self._is_loaded = False
         self._builder = _JsonTreeBuilder(_MAX_NODES, _MAX_DEPTH)
 

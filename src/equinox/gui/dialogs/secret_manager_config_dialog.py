@@ -6,22 +6,22 @@ Provides PyQt6 UI components for configuring and managing secret managers.
 from __future__ import annotations
 
 import logging
-from typing import Any, Dict, Optional
+from typing import Any
 
 from PyQt6.QtCore import pyqtSignal
 from PyQt6.QtWidgets import (
+    QCheckBox,
+    QComboBox,
     QDialog,
-    QVBoxLayout,
+    QFormLayout,
+    QGroupBox,
     QHBoxLayout,
     QLabel,
     QLineEdit,
-    QPushButton,
-    QComboBox,
-    QFormLayout,
-    QGroupBox,
     QMessageBox,
+    QPushButton,
     QSpinBox,
-    QCheckBox,
+    QVBoxLayout,
 )
 
 from equinox.core.secret_managers import (
@@ -67,8 +67,8 @@ class SecretManagerConfigDialog(QDialog):
         self.setMinimumWidth(500)
         self.setMinimumHeight(300)
 
-        self._config_widgets: Dict[str, list] = {}
-        self._vault_warning_label: Optional[QLabel] = None
+        self._config_widgets: dict[str, list] = {}
+        self._vault_warning_label: QLabel | None = None
         self._init_ui()
 
     def _init_ui(self) -> None:
@@ -214,7 +214,9 @@ class SecretManagerConfigDialog(QDialog):
         url_widget = self._config_widgets.get("url", [None])[0]
         allow_widget = self._config_widgets.get("allow_insecure_http", [None])[0]
         url = url_widget.text().strip() if isinstance(url_widget, QLineEdit) else ""
-        allow_insecure = bool(allow_widget.isChecked()) if isinstance(allow_widget, QCheckBox) else False
+        allow_insecure = (
+            bool(allow_widget.isChecked()) if isinstance(allow_widget, QCheckBox) else False
+        )
 
         if url.lower().startswith("http://") and allow_insecure:
             label.setText(
@@ -243,7 +245,9 @@ class SecretManagerConfigDialog(QDialog):
         label.clear()
         label.setVisible(False)
 
-    def _confirm_insecure_vault_http(self, manager_type: str, config: Dict[str, Any], action: str) -> bool:
+    def _confirm_insecure_vault_http(
+        self, manager_type: str, config: dict[str, Any], action: str
+    ) -> bool:
         """Warn before testing or saving an insecure Vault HTTP configuration."""
         if manager_type not in self._VAULT_MANAGER_TYPES:
             return True
@@ -278,7 +282,7 @@ class SecretManagerConfigDialog(QDialog):
         )
         self.config_layout.addRow("", info_label)
 
-    def _get_config_dict(self) -> Dict[str, Any]:
+    def _get_config_dict(self) -> dict[str, Any]:
         """Build configuration dictionary from UI fields.
 
         Returns:
@@ -334,4 +338,3 @@ class SecretManagerConfigDialog(QDialog):
         logger.info("Saving secret manager configuration: %s", manager_type)
         self.config_saved.emit(manager_type, config)
         self.accept()
-

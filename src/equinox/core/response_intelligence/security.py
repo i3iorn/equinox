@@ -15,11 +15,11 @@ New code should import directly from the analyzers package:
 
 # Re-export all analyzers for backward compatibility
 from equinox.core.response_intelligence.analyzers import (
-    MissingSecurityHeadersAnalyzer,
     CookieFlagsAnalyzer,
-    PIILeakDetectionAnalyzer,
     CORSMisconfigAnalyzer,
     JWTDecodeAnalyzer,
+    MissingSecurityHeadersAnalyzer,
+    PIILeakDetectionAnalyzer,
     SensitiveDataCachingAnalyzer,
 )
 
@@ -31,5 +31,3 @@ __all__ = [
     "JWTDecodeAnalyzer",
     "SensitiveDataCachingAnalyzer",
 ]
-
-

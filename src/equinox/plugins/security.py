@@ -8,16 +8,16 @@ This module provides security features for plugins including:
 """
 
 import ast
-import time
 import hashlib
 import logging
-from enum import Enum
-from typing import Set, Optional, Dict, Any, List
-from pathlib import Path
+import time
 from dataclasses import dataclass, field
+from enum import Enum
+from pathlib import Path
+from typing import Any
 
-from equinox.core.exceptions import SecurityError
 from equinox.core.audit import get_audit_logger
+from equinox.core.exceptions import SecurityError
 
 logger = logging.getLogger(__name__)
 audit_logger = get_audit_logger()
@@ -27,31 +27,31 @@ class Permission(Enum):
     """Plugin permissions."""
 
     # Network permissions
-    NETWORK_HTTP = "network.http"           # Make HTTP requests
-    NETWORK_HTTPS = "network.https"         # Make HTTPS requests
-    NETWORK_WEBSOCKET = "network.websocket" # WebSocket connections
+    NETWORK_HTTP = "network.http"  # Make HTTP requests
+    NETWORK_HTTPS = "network.https"  # Make HTTPS requests
+    NETWORK_WEBSOCKET = "network.websocket"  # WebSocket connections
 
     # File system permissions
-    FILE_READ = "file.read"                 # Read files
-    FILE_WRITE = "file.write"               # Write files
-    FILE_DELETE = "file.delete"             # Delete files
+    FILE_READ = "file.read"  # Read files
+    FILE_WRITE = "file.write"  # Write files
+    FILE_DELETE = "file.delete"  # Delete files
 
     # Storage permissions
-    STORAGE_READ = "storage.read"           # Read from database
-    STORAGE_WRITE = "storage.write"         # Write to database
-    STORAGE_DELETE = "storage.delete"       # Delete from database
+    STORAGE_READ = "storage.read"  # Read from database
+    STORAGE_WRITE = "storage.write"  # Write to database
+    STORAGE_DELETE = "storage.delete"  # Delete from database
 
     # Credential permissions
-    CREDENTIAL_READ = "credential.read"     # Read credentials
-    CREDENTIAL_WRITE = "credential.write"   # Write credentials
+    CREDENTIAL_READ = "credential.read"  # Read credentials
+    CREDENTIAL_WRITE = "credential.write"  # Write credentials
 
     # System permissions
-    SYSTEM_EXECUTE = "system.execute"       # Execute system commands
-    SYSTEM_ENV = "system.env"               # Access environment variables
+    SYSTEM_EXECUTE = "system.execute"  # Execute system commands
+    SYSTEM_ENV = "system.env"  # Access environment variables
 
     # Request/Response permissions
-    REQUEST_MODIFY = "request.modify"       # Modify outgoing requests
-    RESPONSE_MODIFY = "response.modify"     # Modify incoming responses
+    REQUEST_MODIFY = "request.modify"  # Modify outgoing requests
+    RESPONSE_MODIFY = "response.modify"  # Modify incoming responses
 
 
 @dataclass
@@ -62,13 +62,13 @@ class PluginManifest:
     version: str
     author: str
     description: str = ""
-    permissions: Set[Permission] = field(default_factory=set)
+    permissions: set[Permission] = field(default_factory=set)
     homepage: str = ""
     license: str = ""
-    checksum: Optional[str] = None
+    checksum: str | None = None
 
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> "PluginManifest":
+    def from_dict(cls, data: dict[str, Any]) -> "PluginManifest":
         """Create manifest from dictionary.
 
         Args:
@@ -106,10 +106,10 @@ class PluginManifest:
             permissions=permissions,
             homepage=data.get("homepage", ""),
             license=data.get("license", ""),
-            checksum=data.get("checksum")
+            checksum=data.get("checksum"),
         )
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """Convert manifest to dictionary."""
         return {
             "name": self.name,
@@ -119,7 +119,7 @@ class PluginManifest:
             "permissions": [p.value for p in self.permissions],
             "homepage": self.homepage,
             "license": self.license,
-            "checksum": self.checksum
+            "checksum": self.checksum,
         }
 
 
@@ -127,11 +127,11 @@ class PluginManifest:
 class ResourceLimits:
     """Resource limits for plugin execution."""
 
-    max_memory_mb: int = 100                 # Maximum memory usage in MB
-    max_execution_time_ms: int = 5000        # Maximum execution time in ms
-    max_file_size_mb: int = 10               # Maximum file size to read/write
-    max_network_requests: int = 100          # Maximum network requests
-    max_storage_operations: int = 100        # Maximum database operations
+    max_memory_mb: int = 100  # Maximum memory usage in MB
+    max_execution_time_ms: int = 5000  # Maximum execution time in ms
+    max_file_size_mb: int = 10  # Maximum file size to read/write
+    max_network_requests: int = 100  # Maximum network requests
+    max_storage_operations: int = 100  # Maximum database operations
 
     def __post_init__(self):
         """Validate limits."""
@@ -149,11 +149,7 @@ class PluginSandbox:
     provide process-level isolation.
     """
 
-    def __init__(
-        self,
-        manifest: PluginManifest,
-        limits: Optional[ResourceLimits] = None
-    ):
+    def __init__(self, manifest: PluginManifest, limits: ResourceLimits | None = None):
         """Initialize plugin execution guard.
 
         Args:
@@ -166,14 +162,10 @@ class PluginSandbox:
         # Tracking
         self._network_requests = 0
         self._storage_operations = 0
-        self._start_time: Optional[float] = None
+        self._start_time: float | None = None
 
         # Audit
-        audit_logger.log_plugin_event(
-            manifest.name,
-            "loaded",
-            user="system"
-        )
+        audit_logger.log_plugin_event(manifest.name, "loaded", user="system")
 
     def check_permission(self, permission: Permission) -> None:
         """Check if plugin has permission.
@@ -190,11 +182,7 @@ class PluginSandbox:
 
             audit_logger.log_security_violation(
                 "plugin_permission",
-                {
-                    "plugin": self.manifest.name,
-                    "permission": permission.value,
-                    "action": "denied"
-                }
+                {"plugin": self.manifest.name, "permission": permission.value, "action": "denied"},
             )
 
             raise SecurityError(error)
@@ -256,9 +244,7 @@ class PluginSandbox:
         max_bytes = self.limits.max_file_size_mb * 1024 * 1024
 
         if size_bytes > max_bytes:
-            raise SecurityError(
-                f"File size {size_bytes} bytes exceeds limit: {max_bytes} bytes"
-            )
+            raise SecurityError(f"File size {size_bytes} bytes exceeds limit: {max_bytes} bytes")
 
     def start_execution(self) -> None:
         """Start tracking execution time."""
@@ -268,9 +254,7 @@ class PluginSandbox:
         """End tracking execution time."""
         if self._start_time:
             elapsed_ms = (time.time() - self._start_time) * 1000
-            logger.debug(
-                "Plugin '%s' execution time: %.2fms", self.manifest.name, elapsed_ms
-            )
+            logger.debug("Plugin '%s' execution time: %.2fms", self.manifest.name, elapsed_ms)
             self._start_time = None
 
     def reset_counters(self) -> None:
@@ -278,7 +262,7 @@ class PluginSandbox:
         self._network_requests = 0
         self._storage_operations = 0
 
-    def get_stats(self) -> Dict[str, Any]:
+    def get_stats(self) -> dict[str, Any]:
         """Get sandbox statistics.
 
         Returns:
@@ -291,8 +275,8 @@ class PluginSandbox:
             "limits": {
                 "max_network_requests": self.limits.max_network_requests,
                 "max_storage_operations": self.limits.max_storage_operations,
-                "max_execution_time_ms": self.limits.max_execution_time_ms
-            }
+                "max_execution_time_ms": self.limits.max_execution_time_ms,
+            },
         }
 
 
@@ -308,9 +292,9 @@ class SecurePluginContext:
     def __init__(
         self,
         sandbox: PluginSandbox,
-        storage: Optional[Any] = None,
-        http_client: Optional[Any] = None,
-        config: Optional[Dict[str, Any]] = None
+        storage: Any | None = None,
+        http_client: Any | None = None,
+        config: dict[str, Any] | None = None,
     ):
         """Initialize secure context.
 
@@ -338,7 +322,7 @@ class SecurePluginContext:
         return self._http_proxy
 
     @property
-    def config(self) -> Dict[str, Any]:
+    def config(self) -> dict[str, Any]:
         """Get plugin configuration (read-only)."""
         return self._config.copy()
 
@@ -364,7 +348,7 @@ class SecureStorageProxy:
         self._sandbox.check_storage_operation()
         return self._storage.fetchone(query, params)
 
-    def fetchall(self, query: str, params: tuple = ()) -> List[Any]:
+    def fetchall(self, query: str, params: tuple = ()) -> list[Any]:
         """Fetch all rows with permission check."""
         self._sandbox.check_permission(Permission.STORAGE_READ)
         self._sandbox.check_storage_operation()
@@ -445,33 +429,48 @@ def validate_plugin_file(plugin_path: Path) -> bool:
     except Exception as e:
         raise SecurityError(f"Failed to read plugin file: {e}")
 
-    _DANGEROUS_MODULES = frozenset({
-        "subprocess", "shutil", "ctypes", "multiprocessing",
-        "signal", "resource", "pty", "fcntl", "termios",
-        # Additional modules that can bypass in-process policy restrictions:
-        "importlib",    # dynamic import bypasses AST checks
-        "code",         # interactive interpreter
-        "codeop",       # compile helpers
-        "dis",          # bytecode disassembly / introspection
-        "inspect",      # frame/source introspection
-        "gc",           # garbage collector — gc.get_objects() leaks all live objects
-        "_thread",      # low-level thread API
-        "socket",       # raw network access outside HTTP proxy
-        "http",         # direct HTTP client/server
-        "xmlrpc",       # XML-RPC client/server
-        "pickle",       # arbitrary code execution via deserialization
-        "shelve",       # uses pickle internally
-        "marshal",      # bytecode (de)serialization
-        "builtins",     # full builtins access
-        "io",           # raw file I/O bypasses sandbox file checks
-        "webbrowser",   # can open arbitrary URLs / commands
-        "zipimport",    # import from zips — bypass AST validation
-        "runpy",        # run modules — bypass AST validation
-    })
+    _DANGEROUS_MODULES = frozenset(
+        {
+            "subprocess",
+            "shutil",
+            "ctypes",
+            "multiprocessing",
+            "signal",
+            "resource",
+            "pty",
+            "fcntl",
+            "termios",
+            # Additional modules that can bypass in-process policy restrictions:
+            "importlib",  # dynamic import bypasses AST checks
+            "code",  # interactive interpreter
+            "codeop",  # compile helpers
+            "dis",  # bytecode disassembly / introspection
+            "inspect",  # frame/source introspection
+            "gc",  # garbage collector — gc.get_objects() leaks all live objects
+            "_thread",  # low-level thread API
+            "socket",  # raw network access outside HTTP proxy
+            "http",  # direct HTTP client/server
+            "xmlrpc",  # XML-RPC client/server
+            "pickle",  # arbitrary code execution via deserialization
+            "shelve",  # uses pickle internally
+            "marshal",  # bytecode (de)serialization
+            "builtins",  # full builtins access
+            "io",  # raw file I/O bypasses sandbox file checks
+            "webbrowser",  # can open arbitrary URLs / commands
+            "zipimport",  # import from zips — bypass AST validation
+            "runpy",  # run modules — bypass AST validation
+        }
+    )
 
-    _DANGEROUS_FUNCTIONS = frozenset({
-        "eval", "exec", "compile", "__import__", "breakpoint",
-    })
+    _DANGEROUS_FUNCTIONS = frozenset(
+        {
+            "eval",
+            "exec",
+            "compile",
+            "__import__",
+            "breakpoint",
+        }
+    )
 
     import ast as _ast
 
@@ -480,7 +479,6 @@ def validate_plugin_file(plugin_path: Path) -> bool:
     for node in _ast.walk(tree):
         # Block dangerous imports
         if isinstance(node, (_ast.Import, _ast.ImportFrom)):
-            names = []
             if isinstance(node, _ast.ImportFrom) and node.module:
                 top = node.module.split(".")[0]
                 if top in _DANGEROUS_MODULES:
@@ -494,19 +492,24 @@ def validate_plugin_file(plugin_path: Path) -> bool:
         # Block os.system / os.popen etc.
         if isinstance(node, _ast.Attribute):
             if isinstance(node.value, _ast.Name) and node.value.id == "os":
-                if node.attr in ("system", "popen", "exec", "execv", "execve",
-                                 "spawn", "spawnl", "spawnle", "fork"):
-                    violations.append(
-                        f"Forbidden call: os.{node.attr} (line {node.lineno})"
-                    )
+                if node.attr in (
+                    "system",
+                    "popen",
+                    "exec",
+                    "execv",
+                    "execve",
+                    "spawn",
+                    "spawnl",
+                    "spawnle",
+                    "fork",
+                ):
+                    violations.append(f"Forbidden call: os.{node.attr} (line {node.lineno})")
 
         # Block bare eval/exec/compile calls
         if isinstance(node, _ast.Call):
             func = node.func
             if isinstance(func, _ast.Name) and func.id in _DANGEROUS_FUNCTIONS:
-                violations.append(
-                    f"Forbidden function: {func.id}() (line {node.lineno})"
-                )
+                violations.append(f"Forbidden function: {func.id}() (line {node.lineno})")
 
     if violations:
         detail = "; ".join(violations[:5])
@@ -528,17 +531,21 @@ def _is_within(root: Path, candidate: Path) -> bool:
         return False
 
 
-def _resolve_import_target(base: Path) -> List[Path]:
+def _resolve_import_target(base: Path) -> list[Path]:
     """Return potential .py targets for a module base path."""
     return [base.with_suffix(".py"), base / "__init__.py"]
 
 
-def _iter_package_python_files(package_dir: Path, plugin_root: Path) -> List[Path]:
+def _iter_package_python_files(package_dir: Path, plugin_root: Path) -> list[Path]:
     """Return Python files beneath *package_dir* constrained to *plugin_root*."""
-    if not package_dir.exists() or not package_dir.is_dir() or not _is_within(plugin_root, package_dir):
+    if (
+        not package_dir.exists()
+        or not package_dir.is_dir()
+        or not _is_within(plugin_root, package_dir)
+    ):
         return []
 
-    files: List[Path] = []
+    files: list[Path] = []
     for path in package_dir.rglob("*.py"):
         if "__pycache__" in path.parts:
             continue
@@ -547,9 +554,9 @@ def _iter_package_python_files(package_dir: Path, plugin_root: Path) -> List[Pat
     return files
 
 
-def _resolve_absolute_import_chain(module_name: str, plugin_root: Path) -> List[Path]:
+def _resolve_absolute_import_chain(module_name: str, plugin_root: Path) -> list[Path]:
     """Resolve package/module files touched by an absolute import chain."""
-    targets: List[Path] = []
+    targets: list[Path] = []
     parts = [part for part in module_name.split(".") if part]
     if not parts:
         return targets
@@ -568,9 +575,9 @@ def _resolve_absolute_import_chain(module_name: str, plugin_root: Path) -> List[
     return targets
 
 
-def _iter_local_import_targets(node: ast.AST, current_file: Path, plugin_root: Path) -> List[Path]:
+def _iter_local_import_targets(node: ast.AST, current_file: Path, plugin_root: Path) -> list[Path]:
     """Resolve local import candidates for *node* limited to *plugin_root*."""
-    targets: List[Path] = []
+    targets: list[Path] = []
 
     if isinstance(node, ast.Import):
         for alias in node.names:
@@ -609,7 +616,9 @@ def _iter_local_import_targets(node: ast.AST, current_file: Path, plugin_root: P
     return [p for p in targets if p.exists() and _is_within(plugin_root, p)]
 
 
-def validate_plugin_dependency_graph(entry_file: Path, plugin_root: Optional[Path] = None) -> Set[Path]:
+def validate_plugin_dependency_graph(
+    entry_file: Path, plugin_root: Path | None = None
+) -> set[Path]:
     """Validate *entry_file* and all locally imported plugin modules.
 
     Traverses local Python imports reachable from the plugin entry point and
@@ -618,8 +627,8 @@ def validate_plugin_dependency_graph(entry_file: Path, plugin_root: Optional[Pat
     from neighboring files.
     """
     root = (plugin_root or entry_file.parent).resolve()
-    to_visit: List[Path] = [entry_file.resolve()]
-    visited: Set[Path] = set()
+    to_visit: list[Path] = [entry_file.resolve()]
+    visited: set[Path] = set()
 
     while to_visit:
         current = to_visit.pop()

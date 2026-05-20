@@ -1,16 +1,19 @@
 """Serialization of Request/Response objects into database-storable primitives."""
+
 from __future__ import annotations
 
 import logging
-from typing import Any, Dict, Optional
+from typing import Any
 
-from equinox.core.request import Request, Response
 from equinox.core.exceptions import SecurityError, ValidationError
-from equinox.core.log_setup import get_current_request_id
-from equinox.security import redact_headers, redact_url
 from equinox.core.history_config import should_capture_bodies
-from equinox.security.serialization import serialize_headers, serialize_body
-from equinox.core.util.constants import MAX_HEADERS_SIZE, MAX_URL_LENGTH, MAX_BODY_SIZE as _MAX_BODY, MAX_ERROR_MESSAGE_LENGTH as _MAX_ERROR_MESSAGE_LENGTH
+from equinox.core.log_setup import get_current_request_id
+from equinox.core.request import Request, Response
+from equinox.core.util.constants import MAX_BODY_SIZE as _MAX_BODY
+from equinox.core.util.constants import MAX_ERROR_MESSAGE_LENGTH as _MAX_ERROR_MESSAGE_LENGTH
+from equinox.core.util.constants import MAX_HEADERS_SIZE, MAX_URL_LENGTH
+from equinox.security import redact_headers, redact_url
+from equinox.security.serialization import serialize_body, serialize_headers
 from equinox.storage.utils import coerce_body_to_str, safe_json_dumps, safe_json_loads
 
 __all__ = ["_HistorySerializer"]
@@ -25,14 +28,14 @@ class _HistorySerializer:
     what is stored in the history table.
     """
 
-    MAX_BODY_SIZE            = _MAX_BODY           # 10 MB
-    MAX_HEADERS_SIZE         = MAX_HEADERS_SIZE    # 100 KB
-    MAX_URL_LENGTH           = MAX_URL_LENGTH      # 2048
+    MAX_BODY_SIZE = _MAX_BODY  # 10 MB
+    MAX_HEADERS_SIZE = MAX_HEADERS_SIZE  # 100 KB
+    MAX_URL_LENGTH = MAX_URL_LENGTH  # 2048
     MAX_ERROR_MESSAGE_LENGTH = _MAX_ERROR_MESSAGE_LENGTH
 
     # ── Public interface ──────────────────────────────────────────────────────
 
-    def prepare_request(self, request: Request) -> Dict[str, Any]:
+    def prepare_request(self, request: Request) -> dict[str, Any]:
         """Validate and serialize the request side of a history row.
 
         Returns:
@@ -43,14 +46,14 @@ class _HistorySerializer:
         """
         body_val = request.body if should_capture_bodies() else None
         return {
-            "method":       self._validate_method(request.method),
-            "url":          self._prepare_url(request.url),
+            "method": self._validate_method(request.method),
+            "url": self._prepare_url(request.url),
             "headers_json": self._prepare_headers(request.headers or {}),
-            "body":         self._prepare_body(body_val),
+            "body": self._prepare_body(body_val),
             "request_correlation_id": self._prepare_request_correlation_id(request),
         }
 
-    def prepare_response(self, response: Optional[Response]) -> Dict[str, Any]:
+    def prepare_response(self, response: Response) -> dict[str, Any | None]:
         """Serialize the response side of a history row.
 
         Returns:
@@ -60,8 +63,11 @@ class _HistorySerializer:
         """
         if response is None:
             return {
-                "status_code": None, "reason": None, "elapsed": None,
-                "headers_json": None, "body": None,
+                "status_code": None,
+                "reason": None,
+                "elapsed": None,
+                "headers_json": None,
+                "body": None,
             }
 
         sanitized = redact_headers(dict(response.headers) if response.headers else {})
@@ -72,25 +78,29 @@ class _HistorySerializer:
             headers_json = safe_json_dumps(sanitized)[:MAX_HEADERS_SIZE] + "..."
 
         # Build redacted body using the centralized serializer (respect capture toggle)
-        body_val = serialize_body(coerce_body_to_str(response.body), max_len=self.MAX_BODY_SIZE, capture=should_capture_bodies())
+        body_val = serialize_body(
+            coerce_body_to_str(response.body),
+            max_len=self.MAX_BODY_SIZE,
+            capture=should_capture_bodies(),
+        )
         return {
-            "status_code":  response.status_code,
-            "reason":       response.reason,
-            "elapsed":      response.elapsed,
+            "status_code": response.status_code,
+            "reason": response.reason,
+            "elapsed": response.elapsed,
             "headers_json": headers_json,
-            "body":         body_val,
+            "body": body_val,
         }
 
-    def truncate_error(self, error: Optional[str]) -> Optional[str]:
+    def truncate_error(self, error: str | None) -> str | None:
         """Coerce and truncate an error message string."""
         if error is None:
             return None
         text = error if isinstance(error, str) else str(error)
         if len(text) > self.MAX_ERROR_MESSAGE_LENGTH:
-            return text[:self.MAX_ERROR_MESSAGE_LENGTH] + "... [TRUNCATED]"
+            return text[: self.MAX_ERROR_MESSAGE_LENGTH] + "... [TRUNCATED]"
         return text
 
-    def decode_row(self, row: Dict[str, Any], row_id: Optional[int] = None) -> Dict[str, Any]:
+    def decode_row(self, row: dict[str, Any], row_id: int | None = None) -> dict[str, Any]:
         """Return a copy of *row* with header columns decoded from JSON to dicts.
 
         *row* is never mutated.
@@ -115,7 +125,7 @@ class _HistorySerializer:
         if len(url) > MAX_URL_LENGTH:
             safe_preview = redact_url(url)[:100]
             logger.warning("URL too long, truncating: %s...", safe_preview)
-            url = url[:self.MAX_URL_LENGTH]
+            url = url[: self.MAX_URL_LENGTH]
         sanitized = redact_url(url) or ""
         if sanitized != url:
             logger.info("Sensitive data detected and redacted from URL in history")
@@ -127,28 +137,28 @@ class _HistorySerializer:
             raise ValidationError("Request method must be a string")
         return method
 
-    def _prepare_headers(self, headers: Dict[str, Any]) -> str:
+    def _prepare_headers(self, headers: dict[str, Any]) -> str:
         if not isinstance(headers, dict):
             raise ValidationError("Request headers must be a dictionary")
         return serialize_headers(headers)
 
-    def _prepare_body(self, body: Any) -> Optional[str]:
+    def _prepare_body(self, body: Any) -> str | None:
         if body is None:
             return None
         text = body if isinstance(body, str) else str(body)
         if len(text) > _MAX_BODY:
             logger.warning(
                 "Body too large, truncating from %d to %d bytes",
-                len(text), _MAX_BODY,
+                len(text),
+                _MAX_BODY,
             )
             return text[:_MAX_BODY] + "... [TRUNCATED]"
         return text
 
     @staticmethod
-    def _prepare_request_correlation_id(request: Request) -> Optional[str]:
+    def _prepare_request_correlation_id(request: Request) -> str | None:
         request_id = request.correlation_id or get_current_request_id()
         if request_id is None:
             return None
         request_id = request_id.strip()
         return request_id or None
-

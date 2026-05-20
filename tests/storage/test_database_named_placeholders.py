@@ -23,5 +23,3 @@ def test_named_placeholder_ignores_colons_inside_string_literals(tmp_path):
         assert row is not None
         assert row.get("literal") == ":not_a_param"
         assert row.get("actual") == "ok"
-
-

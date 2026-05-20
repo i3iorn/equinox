@@ -83,8 +83,7 @@ class RequestCommandsMixin:
 
         text, ok = QInputDialog.getMultiLineText(
             self,
-            "Import from cURL",
-            "Paste a cURL command:",
+            "Import from cURL" "Paste a cURL command:",
             prefill,
         )
         if not ok or not text.strip():
@@ -210,5 +209,3 @@ class RequestCommandsMixin:
 
     def _headers_set_all(self, enabled: bool) -> None:
         self._set_all_checkable(self.headers_table, enabled)
-
-

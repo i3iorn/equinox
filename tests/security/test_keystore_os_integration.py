@@ -1,9 +1,6 @@
+import os
 import sys
 import types
-
-import os
-
-import pytest
 
 
 def test_os_keyring_integration_monkeypatched(monkeypatch):

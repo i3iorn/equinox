@@ -2,15 +2,16 @@
 
 import logging
 import threading
+
 import pytest
 
 from equinox.core.client.concurrency_guard import ConcurrencyGuard
 from equinox.core.exceptions import RequestError
 
-
 # ---------------------------------------------------------------------------
 # __init__
 # ---------------------------------------------------------------------------
+
 
 class TestConcurrencyGuardInit:
     def test_valid_max_accepted(self):
@@ -60,6 +61,7 @@ class TestConcurrencyGuardInit:
 # active property
 # ---------------------------------------------------------------------------
 
+
 class TestActiveProperty:
     def test_initial_active_is_zero(self):
         guard = ConcurrencyGuard(3)
@@ -82,6 +84,7 @@ class TestActiveProperty:
 # ---------------------------------------------------------------------------
 # acquire()
 # ---------------------------------------------------------------------------
+
 
 class TestAcquire:
     def test_acquire_increments_active(self):
@@ -130,6 +133,7 @@ class TestAcquire:
 # release()
 # ---------------------------------------------------------------------------
 
+
 class TestRelease:
     def test_release_decrements_active(self):
         guard = ConcurrencyGuard(3)
@@ -162,6 +166,7 @@ class TestRelease:
 # ---------------------------------------------------------------------------
 # slot() context manager
 # ---------------------------------------------------------------------------
+
 
 class TestSlot:
     def test_slot_acquires_and_releases(self):
@@ -203,6 +208,7 @@ class TestSlot:
 # __repr__
 # ---------------------------------------------------------------------------
 
+
 class TestRepr:
     def test_repr_initial(self):
         guard = ConcurrencyGuard(4)
@@ -219,6 +225,7 @@ class TestRepr:
 # Thread-safety smoke test
 # ---------------------------------------------------------------------------
 
+
 class TestThreadSafety:
     def test_concurrent_acquires_respect_limit(self):
         max_concurrent = 5
@@ -232,7 +239,9 @@ class TestThreadSafety:
                 guard.acquire()
                 with lock:
                     peak.append(guard.active)
-                import time; time.sleep(0.01)
+                import time
+
+                time.sleep(0.01)
                 guard.release()
             except RequestError as e:
                 errors.append(e)
@@ -249,4 +258,3 @@ class TestThreadSafety:
         assert all(p <= max_concurrent for p in peak)
         # Guard back to zero after all threads finish
         assert guard.active == 0
-

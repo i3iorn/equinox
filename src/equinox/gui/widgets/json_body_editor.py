@@ -12,9 +12,9 @@ JSON body editor with:
 
 import json as _json
 import logging
-from typing import Iterator, Optional
+from collections.abc import Iterator
 
-from PyQt6.QtCore import Qt, QSize
+from PyQt6.QtCore import QSize, Qt
 from PyQt6.QtGui import (
     QColor,
     QKeyEvent,
@@ -62,6 +62,7 @@ _LINE_COMMENT: str = "//"
 # Line Number Area
 # ---------------------------------------------------------------------------
 
+
 class LineNumberArea(QWidget):
     """Gutter widget that renders per-line numbers beside a *JsonBodyEditor*."""
 
@@ -79,9 +80,7 @@ class LineNumberArea(QWidget):
         block = self._editor.firstVisibleBlock()
         block_number = block.blockNumber()
         top = (
-            self._editor.blockBoundingGeometry(block)
-            .translated(self._editor.contentOffset())
-            .top()
+            self._editor.blockBoundingGeometry(block).translated(self._editor.contentOffset()).top()
         )
         bottom = top + self._editor.blockBoundingRect(block).height()
 
@@ -111,6 +110,7 @@ class LineNumberArea(QWidget):
 # JsonBodyEditor
 # ---------------------------------------------------------------------------
 
+
 class JsonBodyEditor(QPlainTextEdit):
     """JSON-friendly plain-text editor.
 
@@ -129,7 +129,7 @@ class JsonBodyEditor(QPlainTextEdit):
 
     _INDENT_SIZE: int = 4
 
-    def __init__(self, parent: Optional[QWidget] = None) -> None:
+    def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
 
         # Line numbers
@@ -198,18 +198,14 @@ class JsonBodyEditor(QPlainTextEdit):
 
         # O(1) per character via characterAt() — avoids copying the whole doc.
         char = doc.characterAt(pos - 1)
-        match_pos: Optional[int] = None
+        match_pos: int | None = None
 
         if char in _BRACKET_PAIRS:
-            match_pos = self._find_matching_forward(
-                doc, pos - 1, char, _BRACKET_PAIRS[char]
-            )
+            match_pos = self._find_matching_forward(doc, pos - 1, char, _BRACKET_PAIRS[char])
         elif char in _CLOSE_BRACKETS:
             opener = next((k for k, v in _BRACKET_PAIRS.items() if v == char), None)
             if opener:
-                match_pos = self._find_matching_backward(
-                    doc, pos - 1, opener, char
-                )
+                match_pos = self._find_matching_backward(doc, pos - 1, opener, char)
 
         if match_pos is not None:
             fmt = QTextCharFormat()
@@ -224,7 +220,7 @@ class JsonBodyEditor(QPlainTextEdit):
 
     def _find_matching_forward(
         self, doc, start: int, open_char: str, close_char: str
-    ) -> Optional[int]:
+    ) -> int | None:
         """Return the position of the closing bracket matching *open_char* at *start*."""
         depth = 1
         limit = min(start + _MAX_BRACKET_SEARCH, doc.characterCount())
@@ -240,7 +236,7 @@ class JsonBodyEditor(QPlainTextEdit):
 
     def _find_matching_backward(
         self, doc, start: int, open_char: str, close_char: str
-    ) -> Optional[int]:
+    ) -> int | None:
         """Return the position of the opening bracket matching *close_char* at *start*."""
         depth = 1
         limit = max(start - _MAX_BRACKET_SEARCH, -1)
@@ -254,9 +250,7 @@ class JsonBodyEditor(QPlainTextEdit):
                     return i
         return None
 
-    def _make_selection(
-        self, pos: int, fmt: QTextCharFormat
-    ) -> Optional[QTextEdit.ExtraSelection]:
+    def _make_selection(self, pos: int, fmt: QTextCharFormat) -> QTextEdit.ExtraSelection | None:
         """Return a single-character ``ExtraSelection`` at *pos*, or ``None`` if out of range."""
         doc = self.document()
         # characterCount() includes Qt's implicit trailing newline, so valid
@@ -449,9 +443,7 @@ class JsonBodyEditor(QPlainTextEdit):
         """
         cursor = self.textCursor()
         blocks = list(self._iter_selected_blocks(cursor))
-        all_commented = all(
-            b.text().lstrip().startswith(_LINE_COMMENT) for b in blocks
-        )
+        all_commented = all(b.text().lstrip().startswith(_LINE_COMMENT) for b in blocks)
         cursor.beginEditBlock()
         try:
             for block in blocks:

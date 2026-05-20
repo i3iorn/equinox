@@ -17,50 +17,40 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-# ── Module imports ────────────────────────────────────────────────────────────
-
-from equinox.core.http.cookies import InMemoryCookieManager
-from equinox.core.util.time import utc_now
-from equinox.core.format.error_mapper import _is_ssl_error, _is_proxy_error, build_error_handlers
-from equinox.core.urls import (
-    expand_placeholders,
-    normalized_parts,
-    normalize_url,
-    base_path,
-    _normalize_segment,
-)
-from equinox.core.http.proxy import check_proxy_reachable
-from equinox.security.crypto import get_or_create_raw_key, make_fernet, default_key_path
-from equinox.core.io.multipart import build_multipart_files
-from equinox.core.http.rate_limiter import RateLimiter
-from equinox.core.log_setup import (
-    JsonFormatter,
-    ConsoleFormatter,
-    get_app_corr_id,
-    MAX_LOG_PAYLOAD_SIZE,
-)
+from equinox.core.audit import AuditEventType, AuditLogger, _logger
 from equinox.core.captures import Capture, CaptureEngine
-from equinox.core.codegen import (
-    generate_code,
-    PythonRequestsGenerator,
-    PythonHttpxGenerator,
-    JavaScriptFetchGenerator,
-    GoHttpGenerator,
-    RubyNetHttpGenerator,
-    PhpCurlGenerator,
-)
-from equinox.core.audit import AuditLogger, AuditEventType, _logger
-from equinox.core.interpolation import VariableInterpolator, collect_interpolation_variables
 from equinox.core.exceptions import (
-    RequestError,
-    RateLimitError,
-    ValidationError,
-    SecurityError,
     CertificateError,
+    RateLimitError,
+    RequestError,
     RequestTimeoutError,
+    SecurityError,
+    ValidationError,
+)
+from equinox.core.format.error_mapper import _is_proxy_error, _is_ssl_error, build_error_handlers
+
+# ── Module imports ────────────────────────────────────────────────────────────
+from equinox.core.http.cookies import InMemoryCookieManager
+from equinox.core.http.proxy import check_proxy_reachable
+from equinox.core.http.rate_limiter import RateLimiter
+from equinox.core.interpolation import VariableInterpolator, collect_interpolation_variables
+from equinox.core.io.multipart import build_multipart_files
+from equinox.core.log_setup import (
+    MAX_LOG_PAYLOAD_SIZE,
+    ConsoleFormatter,
+    JsonFormatter,
+    get_app_corr_id,
 )
 from equinox.core.request import Request
-
+from equinox.core.urls import (
+    _normalize_segment,
+    base_path,
+    expand_placeholders,
+    normalize_url,
+    normalized_parts,
+)
+from equinox.core.util.time import utc_now
+from equinox.security.crypto import default_key_path, get_or_create_raw_key, make_fernet
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # cookies.py — lines 41, 44, 48–57
@@ -199,6 +189,7 @@ class TestErrorMapper:
 
     def test_connect_handler_ssl_branch(self):
         import httpx
+
         client = SimpleNamespace(proxy=None, timeout=30, MAX_REDIRECTS=10)
         handlers = build_error_handlers(client)
         # Find ConnectError handler
@@ -217,6 +208,7 @@ class TestErrorMapper:
 
     def test_connect_handler_proxy_branch(self):
         import httpx
+
         client = SimpleNamespace(proxy="http://proxy.local:8080", timeout=30, MAX_REDIRECTS=10)
         handlers = build_error_handlers(client)
         connect_handler = None
@@ -237,6 +229,7 @@ class TestErrorMapper:
 
     def test_connect_handler_generic_branch(self):
         import httpx
+
         client = SimpleNamespace(proxy=None, timeout=30, MAX_REDIRECTS=10)
         handlers = build_error_handlers(client)
         connect_handler = None
@@ -253,6 +246,7 @@ class TestErrorMapper:
 
     def test_timeout_handlers(self):
         import httpx
+
         client = SimpleNamespace(proxy=None, timeout=30, MAX_REDIRECTS=10)
         handlers = build_error_handlers(client)
         req = SimpleNamespace(url="https://example.com/api")
@@ -267,6 +261,7 @@ class TestErrorMapper:
 
     def test_too_many_redirects_handler(self):
         import httpx
+
         client = SimpleNamespace(proxy=None, timeout=30, MAX_REDIRECTS=10)
         handlers = build_error_handlers(client)
         req = SimpleNamespace(url="https://example.com/api")
@@ -278,7 +273,6 @@ class TestErrorMapper:
                 assert "redirect" in result["log_message"].lower()
 
     def test_unicode_encode_error_handler(self):
-        import httpx
         client = SimpleNamespace(proxy=None, timeout=30, MAX_REDIRECTS=10)
         handlers = build_error_handlers(client)
         req = SimpleNamespace(url="https://example.com/api")
@@ -315,6 +309,7 @@ class TestUrls:
     def test_normalized_parts_stdlib_path(self):
         """When the urlps parser is replaced with the stdlib parser, output is correct."""
         from urllib.parse import urlparse
+
         from equinox.core.urls import _URLComponents
 
         def _stdlib(url: str) -> _URLComponents:
@@ -328,7 +323,9 @@ class TestUrls:
         assert result["query_params"]["page"] == "1"
 
     def test_normalized_parts_with_uuid_segment(self):
-        result = normalized_parts("https://api.example.com/users/550e8400-e29b-41d4-a716-446655440000/profile")
+        result = normalized_parts(
+            "https://api.example.com/users/550e8400-e29b-41d4-a716-446655440000/profile"
+        )
         assert "{id}" in result["path_segments"]
 
     def test_normalized_parts_with_hex_segment(self):
@@ -549,7 +546,6 @@ class TestRateLimiterAuditFailure:
 
 class TestLogSetupCoverage:
     def test_get_app_corr_id_lazy_init(self):
-        import equinox.core.log_setup as ls
         try:
             cid = get_app_corr_id()
             assert len(cid) == 12
@@ -625,6 +621,7 @@ class TestLogSetupCoverage:
             raise ValueError("test error")
         except ValueError:
             import sys
+
             record = logging.LogRecord("test", logging.ERROR, "", 0, "err", (), sys.exc_info())
         line = fmt.format(record)
         assert "test error" in line
@@ -901,6 +898,7 @@ class TestInterpolationCoverage:
 
     def test_interpolate_request_non_dataclass(self):
         """Non-dataclass object falls back to copy.copy."""
+
         class FakeRequest:
             def __init__(self):
                 self.url = "https://{{host}}/api"
@@ -990,4 +988,3 @@ class TestInterpolationCoverage:
         text = "{{x}}" * 200  # len(text) = 1000, expands to 2_000_000
         with pytest.raises(SecurityError, match="expansion"):
             VariableInterpolator.interpolate(text, variables)
-

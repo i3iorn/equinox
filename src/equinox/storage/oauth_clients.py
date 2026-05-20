@@ -3,12 +3,13 @@
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING, Any, Dict, List, Literal, Optional, cast
+from typing import TYPE_CHECKING, Any, Literal
 
 from equinox.core.auth_cipher import decrypt_auth_data, encrypt_auth_data
 from equinox.core.exceptions import DuplicateError, StorageError, ValidationError
 from equinox.storage.database import Database
-from equinox.storage.utils import require_str as _require_str, safe_json_dumps, safe_json_loads
+from equinox.storage.utils import require_str as _require_str
+from equinox.storage.utils import safe_json_dumps, safe_json_loads
 
 logger = logging.getLogger(__name__)
 
@@ -66,7 +67,7 @@ class OAuthClientManager:
         grant_type: str = "client_credentials",
         token_auth: str = "body",
         verify_ssl: bool = True,
-        extra_params: Optional[Dict[str, str]] = None,
+        extra_params: dict[str, str] | None = None,
         description: str = "",
     ) -> int:
         """Create a new OAuth2 client.
@@ -80,7 +81,9 @@ class OAuthClientManager:
         name = _require_str(name, "name", self.MAX_NAME_LEN)
         token_url = _require_str(token_url, "token_url", self.MAX_URL_LEN, required=False)
         client_id = _require_str(client_id, "client_id", self.MAX_ID_LEN, required=False)
-        client_secret = _require_str(client_secret, "client_secret", self.MAX_SECRET_LEN, required=False)
+        client_secret = _require_str(
+            client_secret, "client_secret", self.MAX_SECRET_LEN, required=False
+        )
         encrypted_secret = self._encrypt_client_secret(client_secret)
         scope = _require_str(scope, "scope", self.MAX_SCOPE_LEN, required=False)
         description = _require_str(description, "description", self.MAX_DESC_LEN, required=False)
@@ -97,8 +100,18 @@ class OAuthClientManager:
                    grant_type, token_auth, verify_ssl, extra_params, description)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
-                (name, token_url, client_id, encrypted_secret, scope,
-                 grant_type, token_auth, 1 if verify_ssl else 0, extra_json, description),
+                (
+                    name,
+                    token_url,
+                    client_id,
+                    encrypted_secret,
+                    scope,
+                    grant_type,
+                    token_auth,
+                    1 if verify_ssl else 0,
+                    extra_json,
+                    description,
+                ),
             )
             logger.info("Created OAuth2 client '%s' (id=%d)", name, row_id)
             return row_id
@@ -111,32 +124,24 @@ class OAuthClientManager:
 
     # ── Read ──────────────────────────────────────────────────────────
 
-    def get_client(self, client_id: int) -> Optional[Dict[str, Any]]:
+    def get_client(self, client_id: int) -> dict[str, Any] | None:
         """Return client row by DB id, or None."""
-        row = self.db.fetchone(
-            "SELECT * FROM oauth_clients WHERE id = ?", (client_id,)
-        )
+        row = self.db.fetchone("SELECT * FROM oauth_clients WHERE id = ?", (client_id,))
         return self._decode_and_maybe_migrate(row) if row else None
 
-    def get_client_by_name(self, name: str) -> Optional[Dict[str, Any]]:
+    def get_client_by_name(self, name: str) -> dict[str, Any] | None:
         """Return client row by name, or None."""
-        row = self.db.fetchone(
-            "SELECT * FROM oauth_clients WHERE name = ?", (name,)
-        )
+        row = self.db.fetchone("SELECT * FROM oauth_clients WHERE name = ?", (name,))
         return self._decode_and_maybe_migrate(row) if row else None
 
-    def get_default(self) -> Optional[Dict[str, Any]]:
+    def get_default(self) -> dict[str, Any] | None:
         """Return the default client, or None."""
-        row = self.db.fetchone(
-            "SELECT * FROM oauth_clients WHERE is_default = 1 LIMIT 1"
-        )
+        row = self.db.fetchone("SELECT * FROM oauth_clients WHERE is_default = 1 LIMIT 1")
         return self._decode_and_maybe_migrate(row) if row else None
 
-    def list_clients(self) -> List[Dict[str, Any]]:
+    def list_clients(self) -> list[dict[str, Any]]:
         """Return all clients sorted by name."""
-        rows = self.db.fetchall(
-            "SELECT * FROM oauth_clients ORDER BY name"
-        )
+        rows = self.db.fetchall("SELECT * FROM oauth_clients ORDER BY name")
         return [self._decode_and_maybe_migrate(r) for r in rows]
 
     # ── Update ────────────────────────────────────────────────────────
@@ -144,16 +149,16 @@ class OAuthClientManager:
     def update_client(
         self,
         client_id: int,
-        name: Optional[str] = None,
-        token_url: Optional[str] = None,
-        client_id_val: Optional[str] = None,
-        client_secret: Optional[str] = None,
-        scope: Optional[str] = None,
-        grant_type: Optional[str] = None,
-        token_auth: Optional[str] = None,
-        verify_ssl: Optional[bool] = None,
-        extra_params: Optional[Dict[str, str]] = None,
-        description: Optional[str] = None,
+        name: str | None = None,
+        token_url: str | None = None,
+        client_id_val: str | None = None,
+        client_secret: str | None = None,
+        scope: str | None = None,
+        grant_type: str | None = None,
+        token_auth: str | None = None,
+        verify_ssl: bool | None = None,
+        extra_params: dict[str, str] | None = None,
+        description: str | None = None,
     ) -> None:
         """Partially update a client.  Only supplied (non-None) fields are changed."""
         existing = self.get_client(client_id)
@@ -173,7 +178,9 @@ class OAuthClientManager:
             params.append(_require_str(client_id_val, "client_id", self.MAX_ID_LEN))
         if client_secret is not None:
             updates.append("client_secret = ?")
-            validated_secret = _require_str(client_secret, "client_secret", self.MAX_SECRET_LEN, required=False)
+            validated_secret = _require_str(
+                client_secret, "client_secret", self.MAX_SECRET_LEN, required=False
+            )
             params.append(self._encrypt_client_secret(validated_secret))
         if scope is not None:
             updates.append("scope = ?")
@@ -194,7 +201,9 @@ class OAuthClientManager:
             params.append(safe_json_dumps(extra_params))
         if description is not None:
             updates.append("description = ?")
-            params.append(_require_str(description, "description", self.MAX_DESC_LEN, required=False))
+            params.append(
+                _require_str(description, "description", self.MAX_DESC_LEN, required=False)
+            )
 
         if not updates:
             return
@@ -264,9 +273,10 @@ class OAuthClientManager:
             return "basic"
         return "body"
 
-    def to_oauth2_auth(self, client: Dict[str, Any]) -> OAuth2Auth:
+    def to_oauth2_auth(self, client: dict[str, Any]) -> OAuth2Auth:
         """Build a live :class:`~equinox.auth.oauth2.OAuth2Auth` from a client row."""
         from equinox.auth._oauth2 import OAuth2Auth
+
         return OAuth2Auth(
             token_url=client["token_url"],
             client_id=client["client_id"],
@@ -277,15 +287,15 @@ class OAuthClientManager:
             extra_params=client.get("extra_params"),
         )
 
-    def _decode_and_maybe_migrate(self, row) -> Dict[str, Any]:
-        base: Dict[str, Any] = {str(key): row[key] for key in row.keys()}
+    def _decode_and_maybe_migrate(self, row) -> dict[str, Any]:
+        base: dict[str, Any] = {str(key): row[key] for key in row.keys()}
         raw_secret = base.get("client_secret")
         decrypted_secret = self._decrypt_client_secret(raw_secret)
         extra_params = safe_json_loads(base.get("extra_params") or "{}", row_id=base.get("id"))
         token_auth = self._normalize_token_auth(base.get("token_auth"))
         verify_ssl = bool(base.get("verify_ssl", 1))
         is_default = bool(base.get("is_default", 0))
-        result: Dict[str, Any] = {
+        result: dict[str, Any] = {
             **base,
             "client_secret": decrypted_secret,
             "extra_params": extra_params,
@@ -306,13 +316,13 @@ class OAuthClientManager:
         return encrypt_auth_data(secret)
 
     @classmethod
-    def _decrypt_client_secret(cls, stored: Optional[str]) -> str:
+    def _decrypt_client_secret(cls, stored: str | None) -> str:
         if not stored:
             return ""
         return decrypt_auth_data(stored)
 
     @classmethod
-    def _is_legacy_plaintext_secret(cls, stored: Optional[str]) -> bool:
+    def _is_legacy_plaintext_secret(cls, stored: str | None) -> bool:
         return bool(stored and isinstance(stored, str) and not stored.startswith(cls._ENC_PREFIX))
 
     def _migrate_legacy_client_secret(self, client_id: int, plaintext_secret: str) -> None:
@@ -331,5 +341,3 @@ class OAuthClientManager:
                 client_id,
                 exc,
             )
-
-

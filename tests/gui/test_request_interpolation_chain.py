@@ -2,6 +2,7 @@
 
 from types import SimpleNamespace
 
+import equinox.gui.request_panel.mixins._send_mixin as send_mixin_mod
 from equinox.application.requests import (
     collect_unresolved_placeholders,
     interpolate_request_fields,
@@ -9,7 +10,6 @@ from equinox.application.requests import (
 )
 from equinox.application.requests.models import PreparationIssue, SendOrchestratorResult
 from equinox.gui.request_panel.mixins._send_mixin import _RequestSendMixin
-import equinox.gui.request_panel.mixins._send_mixin as send_mixin_mod
 
 
 def test_resolve_path_params_supports_chained_values() -> None:
@@ -181,8 +181,7 @@ def test_resolve_proxy_url_handles_invalid_port(monkeypatch) -> None:
 
     monkeypatch.setattr(send_mixin_mod, "_QSettings", None, raising=False)
     import PyQt6.QtCore as qt_core
+
     monkeypatch.setattr(qt_core, "QSettings", _FakeSettings)
 
     assert _RequestSendMixin._resolve_proxy_url() is None
-
-

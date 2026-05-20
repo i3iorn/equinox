@@ -4,24 +4,35 @@ from __future__ import annotations
 
 import logging
 import re
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from equinox.core.exceptions import DuplicateError, SecurityError, StorageError, ValidationError
 from equinox.core.interpolation import VariableInterpolator
 from equinox.storage.database import Database
 from equinox.storage.utils import (
-    MAX_NAME_LENGTH as _MAX_NAME,
     MAX_DESCRIPTION_LENGTH as _MAX_DESC,
+)
+from equinox.storage.utils import (
+    MAX_NAME_LENGTH as _MAX_NAME,
+)
+from equinox.storage.utils import (
     MAX_VARIABLE_KEY_LENGTH as _MAX_VAR_KEY,
+)
+from equinox.storage.utils import (
     MAX_VARIABLE_VALUE_LENGTH as _MAX_VAR_VAL,
-    require_positive_int, safe_json_dumps, safe_json_loads,
-    validate_variable_key, validate_variable_value,
+)
+from equinox.storage.utils import (
+    require_positive_int,
+    safe_json_dumps,
+    safe_json_loads,
+    validate_variable_key,
+    validate_variable_value,
 )
 
 logger = logging.getLogger(__name__)
 
 # Variable-name character-set pattern (alphanumeric, underscore, dash).
-_VAR_NAME_RE = re.compile(r'^[a-zA-Z0-9_-]+$')
+_VAR_NAME_RE = re.compile(r"^[a-zA-Z0-9_-]+$")
 
 
 class EnvironmentManager:
@@ -41,7 +52,7 @@ class EnvironmentManager:
     def __init__(self, db: Database) -> None:
         self.db = db
 
-    def _validate_variables(self, variables: dict) -> Dict[str, str]:
+    def _validate_variables(self, variables: dict) -> dict[str, str]:
         """Validate and return a sanitised copy of a variable dict.
 
         Raises:
@@ -53,7 +64,7 @@ class EnvironmentManager:
         if len(variables) > self.MAX_VARIABLE_COUNT:
             raise SecurityError(f"Too many variables (max {self.MAX_VARIABLE_COUNT})")
 
-        sanitized: Dict[str, str] = {}
+        sanitized: dict[str, str] = {}
         for key, value in variables.items():
             key = validate_variable_key(key, self.MAX_VARIABLE_KEY_LENGTH)
             if not _VAR_NAME_RE.match(key):
@@ -65,7 +76,7 @@ class EnvironmentManager:
             sanitized[key] = value
         return sanitized
 
-    def _validate_name(self, name: Optional[str], allow_empty: bool = False) -> str:
+    def _validate_name(self, name: str | None, allow_empty: bool = False) -> str:
         """Validate and normalize an environment name.
 
         Args:
@@ -89,15 +100,15 @@ class EnvironmentManager:
             )
         return name
 
-    def _validate_description(self, description: Optional[str]) -> str:
+    def _validate_description(self, description: str | None) -> str:
         """Validate and normalize environment description.
-        
+
         Args:
             description: Description to validate
-            
+
         Returns:
             Sanitized description
-            
+
         Raises:
             ValidationError: If description is invalid
         """
@@ -108,19 +119,21 @@ class EnvironmentManager:
             raise ValidationError("Environment description must be a string")
 
         if len(description) > self.MAX_DESCRIPTION_LENGTH:
-            raise ValidationError(f"Environment description too long (max {self.MAX_DESCRIPTION_LENGTH} characters)")
+            raise ValidationError(
+                f"Environment description too long (max {self.MAX_DESCRIPTION_LENGTH} characters)"
+            )
 
         return description.strip()
 
-    def _validate_secret_keys(self, secret_keys: Optional[List[str]]) -> List[str]:
+    def _validate_secret_keys(self, secret_keys: list[str]) -> list[str | None]:
         """Validate and normalize secret_keys list.
-        
+
         Args:
             secret_keys: List of secret key names
-            
+
         Returns:
             Validated list of secret key names
-            
+
         Raises:
             ValidationError: If any secret key is invalid
             SecurityError: If too many secret keys
@@ -134,18 +147,20 @@ class EnvironmentManager:
         if len(secret_keys) > self.MAX_SECRET_KEYS:
             raise SecurityError(f"Too many secret_keys (max {self.MAX_SECRET_KEYS})")
 
-        validated: List[str] = []
+        validated: list[str] = []
         for item in secret_keys:
             if not isinstance(item, str):
                 raise ValidationError("Each secret_keys entry must be a string")
             if len(item) > self.MAX_VARIABLE_KEY_LENGTH:
-                raise ValidationError(f"Secret key name too long (max {self.MAX_VARIABLE_KEY_LENGTH} characters)")
+                raise ValidationError(
+                    f"Secret key name too long (max {self.MAX_VARIABLE_KEY_LENGTH} characters)"
+                )
             validated.append(item.strip())
 
         return validated
 
     def create_environment(
-        self, name: str, variables: Dict[str, str], description: str = ""
+        self, name: str, variables: dict[str, str], description: str = ""
     ) -> int:
         """Create a new environment.
 
@@ -180,7 +195,9 @@ class EnvironmentManager:
             )
             logger.info(
                 "Created environment '%s' with ID %d and %d variables",
-                name, environment_id, len(sanitized_variables),
+                name,
+                environment_id,
+                len(sanitized_variables),
             )
             return environment_id
         except DuplicateError:
@@ -190,24 +207,26 @@ class EnvironmentManager:
         except Exception as exc:
             raise StorageError(f"Failed to create environment: {exc}") from exc
 
-    def _decode_row(self, row: Dict[str, Any]) -> Dict[str, Any]:
+    def _decode_row(self, row: dict[str, Any]) -> dict[str, Any]:
         """Decode JSON columns in an environment row in-place and return it.
-        
+
         Args:
             row: Database row dict with JSON-encoded columns
-            
+
         Returns:
             Same row dict with variables and secret_keys parsed as Python objects
         """
         row["variables"] = safe_json_loads(row.get("variables"), row_id=row.get("id"))
-        secret_keys = safe_json_loads(row.get("secret_keys") or "[]", default=[], row_id=row.get("id"))
+        secret_keys = safe_json_loads(
+            row.get("secret_keys") or "[]", default=[], row_id=row.get("id")
+        )
         if not isinstance(secret_keys, list):
             logger.error("Failed to parse secret_keys for environment %s", row.get("id"))
             secret_keys = []
         row["secret_keys"] = secret_keys
         return row
 
-    def get_environment(self, environment_id: int) -> Optional[Dict[str, Any]]:
+    def get_environment(self, environment_id: int) -> dict[str, Any] | None:
         """
         Get environment by ID
 
@@ -225,12 +244,12 @@ class EnvironmentManager:
         row = self.db.fetchone("SELECT * FROM environments WHERE id = ?", (environment_id,))
         return self._decode_row(dict(row)) if row else None
 
-    def get_active_environment(self) -> Optional[Dict[str, Any]]:
+    def get_active_environment(self) -> dict[str, Any] | None:
         """Get the currently active environment"""
         row = self.db.fetchone("SELECT * FROM environments WHERE is_active = 1")
         return self._decode_row(dict(row)) if row else None
 
-    def list_environments(self) -> List[Dict[str, Any]]:
+    def list_environments(self) -> list[dict[str, Any]]:
         """
         List all environments
 
@@ -243,10 +262,10 @@ class EnvironmentManager:
     def update_environment(
         self,
         environment_id: int,
-        name: Optional[str] = None,
-        variables: Optional[Dict[str, str]] = None,
-        description: Optional[str] = None,
-        secret_keys: Optional[List[str]] = None,
+        name: str | None = None,
+        variables: dict[str, str] | None = None,
+        description: str | None = None,
+        secret_keys: list[str] | None = None,
     ) -> None:
         """Update environment.
 
@@ -270,8 +289,8 @@ class EnvironmentManager:
         if not environment:
             raise StorageError(f"Environment with ID {environment_id} does not exist")
 
-        updates: List[str] = []
-        params: List[Any] = []
+        updates: list[str] = []
+        params: list[Any] = []
 
         # Build update clauses using validation helpers
         if name is not None:
@@ -309,7 +328,7 @@ class EnvironmentManager:
             params.append(environment_id)
             query = f"UPDATE environments SET {', '.join(updates)} WHERE id = ?"
             self.db.execute(query, tuple(params))
-            logger.info("Updated environment '%s' (ID: %d)", environment['name'], environment_id)
+            logger.info("Updated environment '%s' (ID: %d)", environment["name"], environment_id)
         except DuplicateError:
             raise DuplicateError("Environment name already exists")
         except (SecurityError, StorageError):
@@ -340,8 +359,7 @@ class EnvironmentManager:
             "UPDATE environments SET is_active = CASE WHEN id = ? THEN 1 ELSE 0 END",
             (environment_id,),
         )
-        logger.info("Activated environment '%s' (ID: %d)", environment['name'], environment_id)
-
+        logger.info("Activated environment '%s' (ID: %d)", environment["name"], environment_id)
 
     def delete_environment(self, environment_id: int) -> None:
         """Delete environment
@@ -362,8 +380,7 @@ class EnvironmentManager:
             raise StorageError(f"Environment with ID {environment_id} does not exist")
 
         self.db.execute("DELETE FROM environments WHERE id = ?", (environment_id,))
-        logger.warning("Deleted environment '%s' (ID: %d)", environment['name'], environment_id)
-
+        logger.warning("Deleted environment '%s' (ID: %d)", environment["name"], environment_id)
 
     def interpolate_variables(self, text: str, max_iterations: int = 10) -> str:
         """Replace {{variable}} placeholders with values from active environment.

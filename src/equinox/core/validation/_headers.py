@@ -1,11 +1,12 @@
 """HTTP header name and value validation."""
+
 from __future__ import annotations
 
 import logging
-from typing import Dict
 
 from equinox.core.exceptions import ValidationError
-from ._base import _Limits, _Patterns, _Guards
+
+from ._base import _Guards, _Limits, _Patterns
 
 __all__ = ["_HeaderValidator"]
 
@@ -17,10 +18,15 @@ class _HeaderValidator:
 
     # Headers managed by httpx — overriding them may cause issues, but an API
     # testing tool should allow it with a warning when ``strict=False``.
-    _MANAGED: frozenset[str] = frozenset({
-        "host", "connection", "content-length",
-        "transfer-encoding", "upgrade",
-    })
+    _MANAGED: frozenset[str] = frozenset(
+        {
+            "host",
+            "connection",
+            "content-length",
+            "transfer-encoding",
+            "upgrade",
+        }
+    )
 
     @classmethod
     def validate_name(cls, name: str, *, strict: bool = True) -> str:
@@ -68,20 +74,17 @@ class _HeaderValidator:
     @classmethod
     def validate_all(
         cls,
-        headers: Dict[str, str],
+        headers: dict[str, str],
         *,
         strict: bool = True,
-    ) -> Dict[str, str]:
+    ) -> dict[str, str]:
         if not isinstance(headers, dict):
             raise ValidationError("Headers must be a dictionary")
 
         if len(headers) > _Limits.MAX_HEADER_COUNT:
-            raise ValidationError(
-                f"Too many headers (max: {_Limits.MAX_HEADER_COUNT})"
-            )
+            raise ValidationError(f"Too many headers (max: {_Limits.MAX_HEADER_COUNT})")
 
         return {
             cls.validate_name(name, strict=strict): cls.validate_value(str(value))
             for name, value in headers.items()
         }
-

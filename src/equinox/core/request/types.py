@@ -74,4 +74,3 @@ class MultipartField(TypedDict):
     key: str
     type: Literal["text", "file"]
     value: str
-

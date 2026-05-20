@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from equinox.core.exceptions import StorageError, ValidationError
 from equinox.storage.utils import validate_variable_key, validate_variable_value
@@ -56,17 +56,16 @@ class GlobalVariablesManager:
         except Exception as exc:
             raise StorageError(f"Failed to remove global variable: {exc}") from exc
 
-    def list_variables(self) -> List[Dict[str, Any]]:
+    def list_variables(self) -> list[dict[str, Any]]:
         """Return all global variables sorted by key."""
         return self.db.fetchall("SELECT * FROM global_variables ORDER BY key")
 
-    def get_variables_dict(self) -> Dict[str, str]:
+    def get_variables_dict(self) -> dict[str, str]:
         """Return global variables as key/value mapping."""
         rows = self.list_variables()
         return {row["key"]: row["value"] for row in rows}
 
-    def get_variable(self, key: str) -> Optional[Dict[str, Any]]:
+    def get_variable(self, key: str) -> dict[str, Any] | None:
         """Return a single global variable row by key."""
         key = validate_variable_key(key)
         return self.db.fetchone("SELECT * FROM global_variables WHERE key = ?", (key,))
-

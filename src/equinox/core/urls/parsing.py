@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from typing import Any, Callable, Dict, List, NamedTuple, Optional, Tuple
+from typing import Any, Callable, NamedTuple
 from urllib.parse import parse_qsl, urlparse
 
 logger = logging.getLogger(__name__)
@@ -50,7 +50,7 @@ def _build_parser() -> Callable[[str], URLComponents]:
 _parse_url: Callable[[str], URLComponents] = _build_parser()
 
 
-def _split_host_port(netloc: str) -> Tuple[str, Optional[int]]:
+def _split_host_port(netloc: str) -> tuple[str, int | None]:
     """Best-effort netloc split into host and optional port."""
     right = (netloc or "").rsplit("@", 1)[-1].strip()
     if not right:
@@ -79,7 +79,7 @@ def _split_host_port(netloc: str) -> Tuple[str, Optional[int]]:
     return right.lower(), None
 
 
-def url_metadata(url: str) -> Dict[str, Any]:
+def url_metadata(url: str) -> dict[str, Any]:
     """Return parsed URL metadata for callers that need raw URL components."""
     parsed = _parse_url(url or "")
     fragment = ""
@@ -97,8 +97,6 @@ def url_metadata(url: str) -> Dict[str, Any]:
     }
 
 
-def parse_query_pairs(query: str, keep_blank_values: bool = True) -> List[Tuple[str, str]]:
+def parse_query_pairs(query: str, keep_blank_values: bool = True) -> list[tuple[str, str]]:
     """Parse a URL query string to ordered key/value tuples."""
     return parse_qsl(query or "", keep_blank_values=keep_blank_values)
-
-

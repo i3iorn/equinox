@@ -114,7 +114,11 @@ def test_environment_menu_ranks_by_usage_with_active_pinned(tmp_path, monkeypatc
         tracker.record(f"env.{alpha_id}", category="environment", context="quick_switch")
 
     win._show_env_menu()
-    labels = [a.text() for a in win._env_menu.actions() if (not a.isSeparator() and "Manage" not in a.text())]
+    labels = [
+        a.text()
+        for a in win._env_menu.actions()
+        if (not a.isSeparator() and "Manage" not in a.text())
+    ]
 
     assert labels[0] == "Gamma"
     assert labels[1] == "Alpha"
@@ -181,7 +185,9 @@ def test_history_context_actions_rank_by_usage_and_keep_delete_last(tmp_path, mo
     _process()
 
 
-def test_variables_session_context_actions_rank_by_usage_and_keep_delete_last(tmp_path, monkeypatch):
+def test_variables_session_context_actions_rank_by_usage_and_keep_delete_last(
+    tmp_path, monkeypatch
+):
     from equinox.gui.variables_panel import VariablesPanel
     from equinox.gui.window import MainWindow
     from equinox.storage import get_db
@@ -210,7 +216,9 @@ def test_variables_session_context_actions_rank_by_usage_and_keep_delete_last(tm
     _process()
 
 
-def test_collections_request_context_actions_rank_by_usage_and_keep_delete_last(tmp_path, monkeypatch):
+def test_collections_request_context_actions_rank_by_usage_and_keep_delete_last(
+    tmp_path, monkeypatch
+):
     from equinox.gui.collection_panel import CollectionsPanel
     from equinox.gui.window import MainWindow
     from equinox.storage import get_db
@@ -237,5 +245,3 @@ def test_collections_request_context_actions_rank_by_usage_and_keep_delete_last(
     panel.deleteLater()
     win.close()
     _process()
-
-

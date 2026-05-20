@@ -68,7 +68,7 @@ def run(self) -> None:
         if not self.parent or not self.parent.isVisible():
             logger.info("Parent widget no longer valid, cancelling work")
             return
-        
+
         # ... perform intelligence analysis ...
     except Exception as exc:
         logger.error("Intelligence worker error", extra={
@@ -230,4 +230,3 @@ pytest --cov=equinox
 - 2 new utility scripts
 - 90% test coverage (up from 87%)
 - 0 breaking changes
-

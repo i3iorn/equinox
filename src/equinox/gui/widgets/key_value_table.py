@@ -1,7 +1,6 @@
 """Auto-growing key-value table widget."""
 
 from contextlib import contextmanager
-from typing import Optional
 
 from PyQt6.QtCore import QObject, pyqtSignal
 from PyQt6.QtWidgets import QHeaderView, QTableWidget, QTableWidgetItem, QWidget
@@ -9,6 +8,7 @@ from PyQt6.QtWidgets import QHeaderView, QTableWidget, QTableWidgetItem, QWidget
 # ---------------------------------------------------------------------------
 # Module-level helpers
 # ---------------------------------------------------------------------------
+
 
 @contextmanager
 def _blocked(obj: QObject):
@@ -30,6 +30,7 @@ def _blocked(obj: QObject):
 # Widget
 # ---------------------------------------------------------------------------
 
+
 class KeyValueTable(QTableWidget):
     """QTableWidget for key-value pairs that adds an empty row automatically
     when the user starts typing in the last row.
@@ -42,18 +43,22 @@ class KeyValueTable(QTableWidget):
     """
 
     # Column indices — centralised so subclasses and callers never use magic numbers.
-    _COL_KEY:   int = 0
+    _COL_KEY: int = 0
     _COL_VALUE: int = 1
     _COL_COUNT: int = 2
 
     data_changed = pyqtSignal()
 
-    def __init__(self, parent: Optional[QWidget] = None) -> None:
+    def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self.setColumnCount(self._COL_COUNT)
         self.setHorizontalHeaderLabels(["Key", "Value"])
-        self.horizontalHeader().setSectionResizeMode(self._COL_KEY,   QHeaderView.ResizeMode.Interactive)
-        self.horizontalHeader().setSectionResizeMode(self._COL_VALUE, QHeaderView.ResizeMode.Stretch)
+        self.horizontalHeader().setSectionResizeMode(
+            self._COL_KEY, QHeaderView.ResizeMode.Interactive
+        )
+        self.horizontalHeader().setSectionResizeMode(
+            self._COL_VALUE, QHeaderView.ResizeMode.Stretch
+        )
         self.verticalHeader().setVisible(False)
         self.setAlternatingRowColors(True)
         self.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
@@ -72,7 +77,7 @@ class KeyValueTable(QTableWidget):
         """
         row = self.rowCount()
         self.insertRow(row)
-        self.setItem(row, self._COL_KEY,   QTableWidgetItem(key))
+        self.setItem(row, self._COL_KEY, QTableWidgetItem(key))
         self.setItem(row, self._COL_VALUE, QTableWidgetItem(value))
 
     def _add_empty_row(self) -> None:
@@ -98,7 +103,7 @@ class KeyValueTable(QTableWidget):
         """
         data: dict[str, str] = {}
         for row in range(self.rowCount()):
-            key_item   = self.item(row, self._COL_KEY)
+            key_item = self.item(row, self._COL_KEY)
             value_item = self.item(row, self._COL_VALUE)
             if key_item and value_item:
                 key = key_item.text().strip()

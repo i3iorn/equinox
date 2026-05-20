@@ -7,9 +7,9 @@ logic can be unit-tested in isolation.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Dict, Optional, Tuple
+from typing import Any
 
-JsonDict = Dict[str, Any]
+JsonDict = dict[str, Any]
 
 
 @dataclass(slots=True)
@@ -23,35 +23,35 @@ class RequestEditorSnapshot:
 
     method: str
     url: str
-    headers: Dict[str, str] = field(default_factory=dict)
-    params: Dict[str, str] = field(default_factory=dict)
-    params_list: Tuple[JsonDict, ...] = ()
-    body: Optional[str] = None
+    headers: dict[str, str] = field(default_factory=dict)
+    params: dict[str, str] = field(default_factory=dict)
+    params_list: tuple[JsonDict, ...] = ()
+    body: str | None = None
     body_type: str = "none"
     graphql_query: str = ""
     graphql_variables: str = ""
-    multipart_data: Tuple[JsonDict, ...] = ()
-    path_params: Dict[str, str] = field(default_factory=dict)
+    multipart_data: tuple[JsonDict, ...] = ()
+    path_params: dict[str, str] = field(default_factory=dict)
     timeout: float = 30.0
     verify_ssl: bool = True
     follow_redirects: bool = True
-    name: Optional[str] = None
-    description: Optional[str] = None
-    collection_id: Optional[int] = None
-    folder: Optional[str] = None
-    request_id: Optional[int] = None
-    auth_type: Optional[str] = None
-    auth_data: Dict[str, Any] = field(default_factory=dict)
-    inherited_auth_type: Optional[str] = None
-    inherited_auth_data: Dict[str, Any] = field(default_factory=dict)
-    inherited_auth_source: Optional[str] = None
-    captures: Tuple[JsonDict, ...] = ()
-    assertions: Tuple[JsonDict, ...] = ()
+    name: str | None = None
+    description: str | None = None
+    collection_id: int | None = None
+    folder: str | None = None
+    request_id: int | None = None
+    auth_type: str | None = None
+    auth_data: dict[str, Any] = field(default_factory=dict)
+    inherited_auth_type: str | None = None
+    inherited_auth_data: dict[str, Any] = field(default_factory=dict)
+    inherited_auth_source: str | None = None
+    captures: tuple[JsonDict, ...] = ()
+    assertions: tuple[JsonDict, ...] = ()
     pre_script: str = ""
     post_script: str = ""
-    cert_path: Optional[str] = None
-    cert_key_path: Optional[str] = None
-    session_vars: Dict[str, str] = field(default_factory=dict)
+    cert_path: str | None = None
+    cert_key_path: str | None = None
+    session_vars: dict[str, str] = field(default_factory=dict)
 
 
 @dataclass(slots=True)
@@ -61,8 +61,8 @@ class PreparationIssue:
     code: str
     message: str
     severity: str = "warning"
-    field_name: Optional[str] = None
-    details: Dict[str, Any] = field(default_factory=dict)
+    field_name: str | None = None
+    details: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass(slots=True)
@@ -70,13 +70,13 @@ class PreparedRequest:
     """Prepared request data ready for construction or dispatch."""
 
     snapshot: RequestEditorSnapshot
-    request_kwargs: Dict[str, Any]
+    request_kwargs: dict[str, Any]
     normalized_url: str
-    resolved_headers: Dict[str, str] = field(default_factory=dict)
-    resolved_params: Dict[str, str] = field(default_factory=dict)
-    resolved_body: Optional[str] = None
-    resolved_path_params: Dict[str, str] = field(default_factory=dict)
-    issues: Tuple[PreparationIssue, ...] = ()
+    resolved_headers: dict[str, str] = field(default_factory=dict)
+    resolved_params: dict[str, str] = field(default_factory=dict)
+    resolved_body: str | None = None
+    resolved_path_params: dict[str, str] = field(default_factory=dict)
+    issues: tuple[PreparationIssue, ...] = ()
 
 
 @dataclass(slots=True)
@@ -84,8 +84,8 @@ class PreparationResult:
     """Outcome of request preparation."""
 
     snapshot: RequestEditorSnapshot
-    prepared_request: Optional[PreparedRequest] = None
-    issues: Tuple[PreparationIssue, ...] = ()
+    prepared_request: PreparedRequest | None = None
+    issues: tuple[PreparationIssue, ...] = ()
     ready_to_send: bool = False
 
 
@@ -94,11 +94,11 @@ class ExecutionResult:
     """Outcome of a request execution attempt."""
 
     prepared_request: PreparedRequest
-    response: Optional[Any] = None
-    error: Optional[Exception] = None
+    response: Any | None = None
+    error: Exception | None = None
     cancelled: bool = False
-    elapsed_ms: Optional[float] = None
-    issues: Tuple[PreparationIssue, ...] = ()
+    elapsed_ms: float | None = None
+    issues: tuple[PreparationIssue, ...] = ()
 
 
 @dataclass(slots=True)
@@ -110,10 +110,10 @@ class SendReadyPackage:
     """
 
     request: Any  # equinox.core.request.Request (typed as Any to avoid circular import)
-    variables: Dict[str, Any]
-    variable_sources: Dict[str, str]
-    pre_script_result: Optional[Any]  # ScriptResult or None — GUI renders this
-    inherited_auth_source: Optional[str]
+    variables: dict[str, Any]
+    variable_sources: dict[str, str]
+    pre_script_result: Any | None  # ScriptResult or None — GUI renders this
+    inherited_auth_source: str | None
     is_auth_inherited: bool
 
 
@@ -125,12 +125,10 @@ class SendOrchestratorResult:
     When ``blocking_issues`` is non-empty the GUI must present them and abort.
     """
 
-    package: Optional[SendReadyPackage] = None
-    blocking_issues: Tuple[PreparationIssue, ...] = ()
+    package: SendReadyPackage | None = None
+    blocking_issues: tuple[PreparationIssue, ...] = ()
 
     @property
     def ready(self) -> bool:
         """True when the request is fully prepared and there are no blockers."""
         return self.package is not None and not self.blocking_issues
-
-

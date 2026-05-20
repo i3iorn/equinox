@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import re
-from typing import Iterable, List
+from collections.abc import Iterable
 
 from equinox.gui.syntax_highlighter.base import RegexHighlighterBase, RegexRule, _make_format
 from equinox.gui.theme import Colors
@@ -14,7 +14,7 @@ class XmlHighlighter(RegexHighlighterBase):
     """
 
     def _build_rules(self) -> Iterable[RegexRule]:
-        rules: List[RegexRule] = []
+        rules: list[RegexRule] = []
 
         # XML comment  <!-- ... -->
         comment_fmt = _make_format(foreground=Colors.FG_MUTED, italic=True)

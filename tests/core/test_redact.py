@@ -1,16 +1,14 @@
 """Tests for equinox.security.redactor — centralised credential redaction."""
 
-import pytest
-
 from equinox.security.redactor import (
-    redact_headers,
-    redact_body,
-    redact_url,
     SENSITIVE_HEADER_NAMES,
+    redact_body,
+    redact_headers,
+    redact_url,
 )
 
-
 # ── redact_headers ────────────────────────────────────────────────────────────
+
 
 class TestRedactHeaders:
     def test_sensitive_keys_are_redacted(self):
@@ -60,6 +58,7 @@ class TestRedactHeaders:
 
 
 # ── redact_body ───────────────────────────────────────────────────────────────
+
 
 class TestRedactBody:
     def test_form_encoded_secrets(self):
@@ -111,6 +110,7 @@ class TestRedactBody:
 
 # ── redact_url ────────────────────────────────────────────────────────────────
 
+
 class TestRedactUrl:
     def test_embedded_credentials(self):
         url = "https://admin:s3cret@api.example.com/v1/users"
@@ -139,4 +139,3 @@ class TestRedactUrl:
     def test_empty_and_none(self):
         assert redact_url("") == ""
         assert redact_url(None) is None
-

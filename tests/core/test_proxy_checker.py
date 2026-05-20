@@ -1,10 +1,9 @@
 import errno
-import types
 
 import pytest
 
-from equinox.core.http import proxy
 from equinox.core.exceptions import RequestError
+from equinox.core.http import proxy
 
 
 class DummySock:
@@ -26,7 +25,6 @@ class DummySock:
 
 def test_check_proxy_reachable_refused(monkeypatch):
     # monkeypatch socket.socket to return DummySock and select to indicate writable
-    import socket
 
     def fake_socket(*args, **kwargs):
         return DummySock()
@@ -40,4 +38,3 @@ def test_check_proxy_reachable_refused(monkeypatch):
 
     with pytest.raises(RequestError):
         proxy.check_proxy_reachable("http://localhost:9999")
-

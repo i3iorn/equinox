@@ -3,19 +3,37 @@
 from __future__ import annotations
 
 import json as _json
-from typing import List
 
-from PyQt6.QtCore import Qt, QSettings
+from PyQt6.QtCore import QSettings, Qt
 from PyQt6.QtWidgets import (
-    QCheckBox, QComboBox, QDialog, QDialogButtonBox, QFormLayout,
-    QGroupBox, QHBoxLayout, QLabel, QLineEdit, QMessageBox,
-    QScrollArea, QSlider, QSpinBox, QVBoxLayout, QWidget,
+    QCheckBox,
+    QComboBox,
+    QDialog,
+    QDialogButtonBox,
+    QFormLayout,
+    QGroupBox,
+    QHBoxLayout,
+    QLabel,
+    QLineEdit,
+    QMessageBox,
+    QScrollArea,
+    QSlider,
+    QSpinBox,
+    QVBoxLayout,
+    QWidget,
 )
 
 from equinox.gui.theme import (
-    DEFAULT_FONT_SIZE, MIN_FONT_SIZE, MAX_FONT_SIZE,
-    THEME_LABELS, THEME_MODES, THEME_SYSTEM,
-    get_font_size, get_theme_mode, set_font_size, set_theme_mode,
+    DEFAULT_FONT_SIZE,
+    MAX_FONT_SIZE,
+    MIN_FONT_SIZE,
+    THEME_LABELS,
+    THEME_MODES,
+    THEME_SYSTEM,
+    get_font_size,
+    get_theme_mode,
+    set_font_size,
+    set_theme_mode,
 )
 
 # ── Module-level constants ────────────────────────────────────────────────────
@@ -41,7 +59,7 @@ class PreferencesDialog(QDialog):
         self.setMinimumWidth(440)
         self._original_size = get_font_size()
         self._original_theme = get_theme_mode()
-        self._analyzer_checks: List[QCheckBox] = []
+        self._analyzer_checks: list[QCheckBox] = []
         self._init_ui()
 
     def _init_ui(self) -> None:
@@ -143,9 +161,7 @@ class PreferencesDialog(QDialog):
         # Load the disabled-analyzer set from persistent settings
         disabled_raw = self._settings.value("intelligence/disabled_analyzers", "[]")
         try:
-            self._disabled_set: set = (
-                set(_json.loads(disabled_raw)) if disabled_raw else set()
-            )
+            self._disabled_set: set = set(_json.loads(disabled_raw)) if disabled_raw else set()
         except (_json.JSONDecodeError, TypeError, ValueError):
             self._disabled_set = set()
 
@@ -160,6 +176,7 @@ class PreferencesDialog(QDialog):
         scroll_widget.setUpdatesEnabled(False)
         try:
             from equinox.core.response_intelligence import AnalysisEngine
+
             analyzer_ids = set()
             current_cat = ""
             for info in AnalysisEngine().get_all_analyzer_info():
@@ -231,9 +248,7 @@ class PreferencesDialog(QDialog):
         self._settings.setValue("proxy/port", proxy_port)
 
         disabled = [
-            cb.property("analyzer_id")
-            for cb in self._analyzer_checks
-            if not cb.isChecked()
+            cb.property("analyzer_id") for cb in self._analyzer_checks if not cb.isChecked()
         ]
         self._settings.setValue("intelligence/disabled_analyzers", _json.dumps(disabled))
         self.accept()
@@ -242,4 +257,3 @@ class PreferencesDialog(QDialog):
         set_font_size(self._original_size)
         set_theme_mode(self._original_theme)
         self.reject()
-

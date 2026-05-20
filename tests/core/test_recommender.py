@@ -172,5 +172,3 @@ def test_find_best_matches_skips_candidate_query_when_netloc_missing():
 
     assert matches == []
     assert db.calls == 0
-
-

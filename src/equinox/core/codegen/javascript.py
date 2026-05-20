@@ -1,7 +1,10 @@
 import json
+
 from equinox.core.request import Request, Response
-from .utils import _build_url_with_params
+
 from ._python_helpers import _inject_auth_into_headers
+from .utils import _build_url_with_params
+
 
 class JavaScriptFetchGenerator:
     def generate(self, response_or_request: Response | Request) -> str:

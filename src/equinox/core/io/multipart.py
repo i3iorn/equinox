@@ -4,15 +4,15 @@ Centralises file validation and handle management so callers (HTTPClient)
 don't duplicate file-opening logic.
 """
 
-import os
 import logging
+import os
 from pathlib import Path
-from typing import Any, List, Tuple, Optional
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
 
-def build_multipart_files(multipart_data) -> Tuple[Optional[List[Tuple[str, Any]]], List[Any]]:
+def build_multipart_files(multipart_data) -> tuple[list[tuple[str, Any]] | None, list[Any]]:
     """Build the httpx ``files`` list from multipart_data, opening file handles.
 
     Returns (multipart_files_or_None, opened_file_handles).
@@ -21,8 +21,8 @@ def build_multipart_files(multipart_data) -> Tuple[Optional[List[Tuple[str, Any]
         logger.debug("No multipart data provided")
         return None, []
 
-    multipart_files: List[Tuple[str, Any]] = []
-    opened_file_handles: List[Any] = []
+    multipart_files: list[tuple[str, Any]] = []
+    opened_file_handles: list[Any] = []
 
     for field in multipart_data:
         field_key = (field.get("key") or "").strip()
@@ -33,6 +33,7 @@ def build_multipart_files(multipart_data) -> Tuple[Optional[List[Tuple[str, Any]
             file_path = (field.get("value") or "").strip()
             if file_path and os.path.isfile(file_path):
                 from equinox.core.validation import Validator
+
                 Validator.validate_file_path(file_path)
                 file_handle = open(file_path, "rb")
                 opened_file_handles.append(file_handle)
@@ -48,5 +49,3 @@ def build_multipart_files(multipart_data) -> Tuple[Optional[List[Tuple[str, Any]
             multipart_files.append((field_key, (None, value)))
 
     return multipart_files or None, opened_file_handles
-
-

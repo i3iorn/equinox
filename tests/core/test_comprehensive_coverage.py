@@ -1,15 +1,11 @@
 from __future__ import annotations
 
-import concurrent.futures
 import json
 import logging
 import random
-import re
 import string
 import threading
-from pathlib import Path
-from typing import Any, Dict
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import pytest
 
@@ -34,13 +30,9 @@ from equinox.core.format.logging_payload import _safe_body_preview
 # ═══════════════════════════════════════════════════════════════════════════════
 # 1. ScriptRunner — sandbox depth
 # ═══════════════════════════════════════════════════════════════════════════════
-
 from equinox.core.scripts import (
-    ALLOWED_MODULES,
-    SAFE_BUILTINS,
     ScriptResult,
     ScriptRunner,
-    _validate_ast,
 )
 
 
@@ -68,10 +60,19 @@ class TestScriptRunnerComprehensive:
 
     # ── AST dangerous attribute access ────────────────────────────────────
 
-    @pytest.mark.parametrize("attr", [
-        "__subclasses__", "__bases__", "__mro__", "__globals__",
-        "__code__", "__builtins__", "__class__", "__dict__",
-    ])
+    @pytest.mark.parametrize(
+        "attr",
+        [
+            "__subclasses__",
+            "__bases__",
+            "__mro__",
+            "__globals__",
+            "__code__",
+            "__builtins__",
+            "__class__",
+            "__dict__",
+        ],
+    )
     def test_ast_blocks_dangerous_attribute(self, attr):
         script = f'x = "".__class__.{attr}'
         result = ScriptRunner.run_pre(script, {}, {})
@@ -112,7 +113,8 @@ class TestScriptRunnerComprehensive:
         # (which IS available) to confirm time.time() returns a float.
         result = ScriptRunner.run_pre(
             'import time; env["t"] = str(isinstance(time.time(), float))',
-            {}, {},
+            {},
+            {},
         )
         assert result.error is None
         assert result.env_changes["t"] == "True"
@@ -120,7 +122,8 @@ class TestScriptRunnerComprehensive:
     def test_allowed_math(self):
         result = ScriptRunner.run_pre(
             'import math; env["pi"] = str(round(math.pi, 2))',
-            {}, {},
+            {},
+            {},
         )
         assert result.error is None
         assert result.env_changes["pi"] == "3.14"
@@ -128,7 +131,8 @@ class TestScriptRunnerComprehensive:
     def test_allowed_datetime(self):
         result = ScriptRunner.run_pre(
             'from datetime import datetime; env["y"] = str(datetime(2024,1,1).year)',
-            {}, {},
+            {},
+            {},
         )
         assert result.error is None
         assert result.env_changes["y"] == "2024"
@@ -136,7 +140,8 @@ class TestScriptRunnerComprehensive:
     def test_allowed_uuid(self):
         result = ScriptRunner.run_pre(
             'import uuid; env["u"] = str(len(str(uuid.uuid4())))',
-            {}, {},
+            {},
+            {},
         )
         assert result.error is None
         assert int(result.env_changes["u"]) == 36  # UUID string length
@@ -144,7 +149,8 @@ class TestScriptRunnerComprehensive:
     def test_allowed_string(self):
         result = ScriptRunner.run_pre(
             'import string; env["d"] = string.digits',
-            {}, {},
+            {},
+            {},
         )
         assert result.error is None
         assert result.env_changes["d"] == "0123456789"
@@ -152,7 +158,8 @@ class TestScriptRunnerComprehensive:
     def test_allowed_collections(self):
         result = ScriptRunner.run_pre(
             'from collections import OrderedDict; env["ok"] = "yes"',
-            {}, {},
+            {},
+            {},
         )
         assert result.error is None
 
@@ -170,10 +177,20 @@ class TestScriptRunnerComprehensive:
 
     # ── Blocked modules ───────────────────────────────────────────────────
 
-    @pytest.mark.parametrize("mod", [
-        "os", "sys", "subprocess", "socket", "shutil", "signal",
-        "ctypes", "pickle", "importlib",
-    ])
+    @pytest.mark.parametrize(
+        "mod",
+        [
+            "os",
+            "sys",
+            "subprocess",
+            "socket",
+            "shutil",
+            "signal",
+            "ctypes",
+            "pickle",
+            "importlib",
+        ],
+    )
     def test_blocked_module(self, mod):
         result = ScriptRunner.run_pre(f"import {mod}", {}, {})
         assert result.error is not None
@@ -226,19 +243,14 @@ class TestScriptRunnerComprehensive:
 
     def test_post_script_json_body_parsing(self):
         resp = {"status_code": 200, "body": '{"items":[1,2,3]}', "json": {"items": [1, 2, 3]}}
-        script = (
-            'import json\n'
-            'env["count"] = str(len(response["json"]["items"]))\n'
-        )
+        script = "import json\n" 'env["count"] = str(len(response["json"]["items"]))\n'
         result = ScriptRunner.run_post(script, resp, {})
         assert result.error is None
         assert result.env_changes["count"] == "3"
 
     def test_post_script_unchanged_vars_not_in_output(self):
         resp = {"status_code": 200, "body": "", "json": None}
-        result = ScriptRunner.run_post(
-            'env["keep"] = "same"', resp, {"keep": "same"}
-        )
+        result = ScriptRunner.run_post('env["keep"] = "same"', resp, {"keep": "same"})
         # Value didn't change → not in output
         assert result.env_changes == {}
 
@@ -248,7 +260,6 @@ class TestScriptRunnerComprehensive:
 # ═══════════════════════════════════════════════════════════════════════════════
 
 from equinox.security.redactor import (
-    SENSITIVE_PAYLOAD_KEYS,
     mask_secret,
     redact_body,
     redact_headers,
@@ -331,11 +342,13 @@ class TestRedactComprehensive:
         assert "name=ok" in result
 
     def test_redact_body_multiple_json_secrets(self):
-        body = json.dumps({
-            "client_secret": "s1",
-            "refresh_token": "r1",
-            "username": "alice",
-        })
+        body = json.dumps(
+            {
+                "client_secret": "s1",
+                "refresh_token": "r1",
+                "username": "alice",
+            }
+        )
         result = redact_body(body)
         assert "s1" not in result
         assert "r1" not in result
@@ -384,7 +397,7 @@ class TestRedactComprehensive:
 # 3. Validation — CRLF, SSRF, XSS, command-injection, fuzz
 # ═══════════════════════════════════════════════════════════════════════════════
 
-from equinox.core.validation import Validator, VALID_HTTP_METHODS
+from equinox.core.validation import VALID_HTTP_METHODS, Validator
 
 
 class TestValidationComprehensive:
@@ -427,11 +440,14 @@ class TestValidationComprehensive:
 
     # ── XSS in URL ────────────────────────────────────────────────────────
 
-    @pytest.mark.parametrize("payload", [
-        "https://example.com/<script>alert(1)</script>",
-        "javascript:alert(1)",
-        "https://example.com/?q=onclick=alert(1)",
-    ])
+    @pytest.mark.parametrize(
+        "payload",
+        [
+            "https://example.com/<script>alert(1)</script>",
+            "javascript:alert(1)",
+            "https://example.com/?q=onclick=alert(1)",
+        ],
+    )
     def test_url_xss_blocked(self, payload):
         with pytest.raises(ValidationError, match="malicious"):
             Validator.validate_url(payload)
@@ -448,14 +464,17 @@ class TestValidationComprehensive:
 
     # ── Command injection in env vars ─────────────────────────────────────
 
-    @pytest.mark.parametrize("bad_val", [
-        "value;rm -rf /",
-        "value|cat /etc/passwd",
-        "value&whoami",
-        "value`id`",
-        "value${HOME}",
-        "value$(whoami)",
-    ])
+    @pytest.mark.parametrize(
+        "bad_val",
+        [
+            "value;rm -rf /",
+            "value|cat /etc/passwd",
+            "value&whoami",
+            "value`id`",
+            "value${HOME}",
+            "value$(whoami)",
+        ],
+    )
     def test_env_var_command_injection(self, bad_val):
         with pytest.raises(ValidationError, match="dangerous"):
             Validator.validate_environment_variable("SAFE_NAME", bad_val)
@@ -483,11 +502,14 @@ class TestValidationComprehensive:
 
     # ── SSRF / metadata ───────────────────────────────────────────────────
 
-    @pytest.mark.parametrize("host", [
-        "169.254.169.254",
-        "metadata.google.internal",
-        "metadata.goog",
-    ])
+    @pytest.mark.parametrize(
+        "host",
+        [
+            "169.254.169.254",
+            "metadata.google.internal",
+            "metadata.goog",
+        ],
+    )
     def test_ssrf_metadata_blocked(self, host):
         with pytest.raises(ValidationError, match="SSRF|metadata"):
             Validator._check_ssrf(host)
@@ -760,6 +782,7 @@ class TestInterpolationComprehensive:
 
     def test_interpolate_request_bytes_body_unchanged(self):
         from equinox.core.request import Request
+
         req = Request(method="POST", url="https://{{host}}/api", body=b"raw bytes")
         result = VariableInterpolator.interpolate_request(req, {"host": "example.com"})
         assert result.url == "https://example.com/api"
@@ -769,9 +792,15 @@ class TestInterpolationComprehensive:
 
     def test_interpolate_request_all_none(self):
         from equinox.core.request import Request
+
         req = Request(
-            method="GET", url="https://api.com",
-            headers=None, params=None, body=None, name=None, description=None
+            method="GET",
+            url="https://api.com",
+            headers=None,
+            params=None,
+            body=None,
+            name=None,
+            description=None,
         )
         result = VariableInterpolator.interpolate_request(req, {"x": "y"})
         assert result.url == "https://api.com"
@@ -782,7 +811,9 @@ class TestInterpolationComprehensive:
     def test_fuzz_interpolate_no_crash(self, _seed):
         random.seed(_seed + 300)
         # Generate a random template
-        var_name = "".join(random.choices(string.ascii_letters + string.digits + "_-", k=random.randint(1, 20)))
+        var_name = "".join(
+            random.choices(string.ascii_letters + string.digits + "_-", k=random.randint(1, 20))
+        )
         value = "".join(random.choices(string.printable, k=random.randint(0, 100)))
         text = f"prefix {{{{{var_name}}}}} suffix"
         try:
@@ -797,12 +828,12 @@ class TestInterpolationComprehensive:
 # ═══════════════════════════════════════════════════════════════════════════════
 
 from equinox.core.interceptors._base import (
+    ErrorInterceptor,
     InterceptorAction,
     InterceptorContext,
     InterceptorResult,
     RequestInterceptor,
     ResponseInterceptor,
-    ErrorInterceptor
 )
 from equinox.core.interceptors.chain import InterceptorChain
 from equinox.core.interceptors.logging import StructuredLogger
@@ -1149,7 +1180,7 @@ class TestResponseComprehensive:
         assert r.encoding is None
 
     def test_text_decoding(self):
-        r = self._resp(body="héllo wörld".encode("utf-8"))
+        r = self._resp(body="héllo wörld".encode())
         assert r.text == "héllo wörld"
 
     def test_text_decoding_with_explicit_charset(self):
@@ -1307,6 +1338,7 @@ class TestRequestComprehensive:
         }
         # Now raises ValidationError (domain exception) instead of ValueError
         from equinox.core.exceptions import ValidationError
+
         with pytest.raises((ValidationError, ValueError), match="Invalid auth"):
             Request.from_dict(d)
 
@@ -1477,11 +1509,21 @@ class TestExceptionHierarchy:
         e = EquinoxError("msg")
         assert e.details == {}
 
-    @pytest.mark.parametrize("cls", [
-        RequestError, AuthError, StorageError, PluginError,
-        ValidationError, SecurityError, RateLimitError,
-        RequestTimeoutError, FileSizeError, CertificateError,
-    ])
+    @pytest.mark.parametrize(
+        "cls",
+        [
+            RequestError,
+            AuthError,
+            StorageError,
+            PluginError,
+            ValidationError,
+            SecurityError,
+            RateLimitError,
+            RequestTimeoutError,
+            FileSizeError,
+            CertificateError,
+        ],
+    )
     def test_subclass_is_equinox_error(self, cls):
         e = cls("test")
         assert isinstance(e, EquinoxError)
@@ -1510,4 +1552,3 @@ class TestExceptionHierarchy:
         for cls in [RequestError, AuthError, ValidationError, SecurityError]:
             with pytest.raises(EquinoxError):
                 raise cls("test")
-

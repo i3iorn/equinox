@@ -1,17 +1,18 @@
 """HAR (HTTP Archive) exporter."""
+
 from __future__ import annotations
 
 import logging
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any
 
-from equinox.versioning import get_app_version
-from equinox.security import redact_headers
 from equinox.core.request import Request, Response
 from equinox.core.util.time import to_iso_z
 from equinox.importers._utils import write_json_file
+from equinox.security import redact_headers
 from equinox.storage.utils import coerce_body_to_str
+from equinox.versioning import get_app_version
 
 __all__ = ["HARExporter"]
 
@@ -32,8 +33,8 @@ class HARExporter:
     def export_request_response(
         request: Request,
         response: Response,
-        started_datetime: Optional[datetime] = None,
-    ) -> Dict[str, Any]:
+        started_datetime: datetime | None = None,
+    ) -> dict[str, Any]:
         """Build a single HAR entry from *request* and *response*.
 
         Sensitive header values are redacted before being embedded.
@@ -46,71 +47,68 @@ class HARExporter:
         Returns:
             A HAR entry dict conforming to the HTTP Archive 1.2 spec.
         """
-        safe_req_headers  = redact_headers(request.headers or {})
+        safe_req_headers = redact_headers(request.headers or {})
         safe_resp_headers = redact_headers(dict(response.headers) if response.headers else {})
-        resp_body         = coerce_body_to_str(response.body) if response.body else ""
-        req_content_type  = (request.headers or {}).get(
+        resp_body = coerce_body_to_str(response.body) if response.body else ""
+        req_content_type = (request.headers or {}).get(
             "Content-Type", "application/x-www-form-urlencoded"
         )
         elapsed_ms = int(response.elapsed * 1000) if response.elapsed else 0
 
         return {
             "startedDateTime": to_iso_z(started_datetime),
-            "time":            elapsed_ms,
+            "time": elapsed_ms,
             "request": {
-                "method":      request.method,
-                "url":         request.url,
+                "method": request.method,
+                "url": request.url,
                 "httpVersion": "HTTP/1.1",
-                "headers":     [{"name": k, "value": v} for k, v in safe_req_headers.items()],
-                "queryString": [
-                    {"name": k, "value": v}
-                    for k, v in (request.params or {}).items()
-                ],
+                "headers": [{"name": k, "value": v} for k, v in safe_req_headers.items()],
+                "queryString": [{"name": k, "value": v} for k, v in (request.params or {}).items()],
                 "postData": (
                     {"mimeType": req_content_type, "text": request.body or ""}
-                    if request.body else None
+                    if request.body
+                    else None
                 ),
-                "cookies":     [],
+                "cookies": [],
                 "headersSize": sum(len(f"{k}: {v}\r\n") for k, v in safe_req_headers.items()),
-                "bodySize":    len(request.body) if request.body else 0,
+                "bodySize": len(request.body) if request.body else 0,
             },
             "response": {
-                "status":      response.status_code,
-                "statusText":  response.reason or "",
+                "status": response.status_code,
+                "statusText": response.reason or "",
                 "httpVersion": "HTTP/1.1",
-                "headers":     [{"name": k, "value": v} for k, v in safe_resp_headers.items()],
-                "cookies":     [],
+                "headers": [{"name": k, "value": v} for k, v in safe_resp_headers.items()],
+                "cookies": [],
                 "content": {
-                    "size":     len(response.body) if response.body else 0,
+                    "size": len(response.body) if response.body else 0,
                     "mimeType": (response.headers or {}).get(
                         "Content-Type", "application/octet-stream"
                     ),
                     "text": resp_body,
                 },
                 "redirectURL": (
-                    (response.headers or {}).get("Location", "")
-                    if response.headers else ""
+                    (response.headers or {}).get("Location", "") if response.headers else ""
                 ),
                 "headersSize": sum(len(f"{k}: {v}\r\n") for k, v in safe_resp_headers.items()),
-                "bodySize":    len(response.body) if response.body else 0,
+                "bodySize": len(response.body) if response.body else 0,
             },
-            "cache":   {},
+            "cache": {},
             "timings": {
                 "blocked": -1,
-                "dns":     -1,
+                "dns": -1,
                 "connect": -1,
-                "send":    -1,
-                "wait":    elapsed_ms,
+                "send": -1,
+                "wait": elapsed_ms,
                 "receive": -1,
-                "ssl":     -1,
+                "ssl": -1,
             },
         }
 
     @staticmethod
     def create_har_archive(
-        entries: List[Dict[str, Any]],
+        entries: list[dict[str, Any]],
         title: str = "Equinox Archive",
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Wrap *entries* in a standard HAR log envelope.
 
         Args:
@@ -130,7 +128,7 @@ class HARExporter:
         }
 
     @staticmethod
-    def export_to_file(har_dict: Dict[str, Any], file_path: Path) -> None:
+    def export_to_file(har_dict: dict[str, Any], file_path: Path) -> None:
         """Write *har_dict* as pretty-printed JSON to *file_path*.
 
         Args:
@@ -141,4 +139,3 @@ class HARExporter:
             IOError: If the file cannot be written.
         """
         write_json_file(har_dict, file_path)
-

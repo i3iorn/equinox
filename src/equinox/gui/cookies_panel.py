@@ -1,20 +1,35 @@
 """Cookie Jar panel — view and manage persistent cookies."""
+
 from __future__ import annotations
 
 import logging
 
-from PyQt6.QtWidgets import (
-    QApplication, QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QLabel, QMenu,
-    QTableWidget, QTableWidgetItem, QMessageBox, QHeaderView,
-    QDialog, QFormLayout, QLineEdit, QCheckBox, QDialogButtonBox,
-)
 from PyQt6.QtCore import Qt
+from PyQt6.QtWidgets import (
+    QApplication,
+    QCheckBox,
+    QDialog,
+    QDialogButtonBox,
+    QFormLayout,
+    QHBoxLayout,
+    QHeaderView,
+    QLabel,
+    QLineEdit,
+    QMenu,
+    QMessageBox,
+    QPushButton,
+    QTableWidget,
+    QTableWidgetItem,
+    QVBoxLayout,
+    QWidget,
+)
 
-from .ui_common import confirm_yes_no, create_muted_label, create_panel_layout
 from equinox.core.exceptions import ValidationError
 from equinox.core.validation import Validator
-from equinox.storage.cookies import CookieJarManager
 from equinox.storage import Database
+from equinox.storage.cookies import CookieJarManager
+
+from .ui_common import confirm_yes_no, create_muted_label, create_panel_layout
 
 __all__ = ["CookiesPanel"]
 
@@ -39,16 +54,16 @@ class _AddCookieDialog(QDialog):
         layout = QVBoxLayout(self)
         form = QFormLayout()
 
-        self.name_edit   = QLineEdit()
-        self.value_edit  = QLineEdit()
+        self.name_edit = QLineEdit()
+        self.value_edit = QLineEdit()
         self.domain_edit = QLineEdit()
-        self.path_edit   = QLineEdit("/")
-        self.secure_cb   = QCheckBox()
+        self.path_edit = QLineEdit("/")
+        self.secure_cb = QCheckBox()
 
-        form.addRow("Name:",   self.name_edit)
-        form.addRow("Value:",  self.value_edit)
+        form.addRow("Name:", self.name_edit)
+        form.addRow("Value:", self.value_edit)
         form.addRow("Domain:", self.domain_edit)
-        form.addRow("Path:",   self.path_edit)
+        form.addRow("Path:", self.path_edit)
         form.addRow("Secure:", self.secure_cb)
         layout.addLayout(form)
 
@@ -78,10 +93,10 @@ class _AddCookieDialog(QDialog):
     def values(self) -> dict[str, object]:
         """Return the form values as a plain dict."""
         return {
-            "name":   Validator.validate_cookie_name(self.name_edit.text().strip()),
-            "value":  Validator.validate_cookie_value(self.value_edit.text()),
+            "name": Validator.validate_cookie_name(self.name_edit.text().strip()),
+            "value": Validator.validate_cookie_value(self.value_edit.text()),
             "domain": self.domain_edit.text().strip(),
-            "path":   self.path_edit.text().strip() or "/",
+            "path": self.path_edit.text().strip() or "/",
             "secure": self.secure_cb.isChecked(),
         }
 
@@ -113,9 +128,9 @@ class CookiesPanel(QWidget):
         layout = create_panel_layout(self)
 
         toolbar = QHBoxLayout()
-        self.add_btn     = QPushButton("Add…")
-        self.delete_btn  = QPushButton("Delete")
-        self.clear_btn   = QPushButton("Clear All")
+        self.add_btn = QPushButton("Add…")
+        self.delete_btn = QPushButton("Delete")
+        self.clear_btn = QPushButton("Clear All")
         self.refresh_btn = QPushButton("Refresh")
 
         self.add_btn.clicked.connect(self._add_cookie)
@@ -138,9 +153,7 @@ class CookiesPanel(QWidget):
 
         self.table = QTableWidget(0, len(self._COLUMNS))
         self.table.setHorizontalHeaderLabels(self._COLUMNS)
-        self.table.horizontalHeader().setSectionResizeMode(
-            1, QHeaderView.ResizeMode.Stretch
-        )
+        self.table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
         self.table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
         self.table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
         self.table.itemSelectionChanged.connect(self._on_selection_changed)
@@ -183,9 +196,9 @@ class CookiesPanel(QWidget):
                 self.table.setItem(row, 1, value_item)
                 self.table.setItem(row, 2, QTableWidgetItem(cookie.get("domain", "")))
                 self.table.setItem(row, 3, QTableWidgetItem(cookie.get("path", "/")))
-                self.table.setItem(row, 4, QTableWidgetItem(
-                    "Yes" if cookie.get("secure") else "No"
-                ))
+                self.table.setItem(
+                    row, 4, QTableWidgetItem("Yes" if cookie.get("secure") else "No")
+                )
         finally:
             self.table.setUpdatesEnabled(True)
             self.table.setSortingEnabled(True)
@@ -271,7 +284,8 @@ class CookiesPanel(QWidget):
 
         if errors:
             QMessageBox.warning(
-                self, "Delete Errors",
+                self,
+                "Delete Errors",
                 f"{len(errors)} deletion(s) failed:\n\n" + "\n".join(errors),
             )
 
@@ -289,4 +303,3 @@ class CookiesPanel(QWidget):
     # ── Private helpers ───────────────────────────────────────────────────────
 
     # Confirmation logic is shared via ``ui_common.confirm_yes_no``.
-

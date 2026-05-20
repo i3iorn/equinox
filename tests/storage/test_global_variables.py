@@ -35,4 +35,3 @@ def test_remove_global_variable(tmp_path) -> None:
     mgr.remove_variable("TOKEN")
 
     assert mgr.get_variable("TOKEN") is None
-

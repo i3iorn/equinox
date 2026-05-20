@@ -6,7 +6,6 @@ Provides a unified interface for getting secret manager instances.
 from __future__ import annotations
 
 import logging
-from typing import Dict, Optional, Type
 
 from equinox.core.secret_managers.base import SecretManager, SecretManagerError
 
@@ -16,33 +15,37 @@ logger = logging.getLogger(__name__)
 _DEFAULT_CACHE_TTL = 300
 
 
-def _get_env_manager() -> Type[SecretManager]:
+def _get_env_manager() -> type[SecretManager]:
     """Lazy loader for EnvironmentVariableManager."""
     from equinox.core.secret_managers.env import EnvironmentVariableManager
+
     return EnvironmentVariableManager
 
 
-def _get_aws_manager() -> Type[SecretManager]:
+def _get_aws_manager() -> type[SecretManager]:
     """Lazy loader for AWSSecretsManagerBackend."""
     from equinox.core.secret_managers.aws import AWSSecretsManagerBackend
+
     return AWSSecretsManagerBackend
 
 
-def _get_vault_manager() -> Type[SecretManager]:
+def _get_vault_manager() -> type[SecretManager]:
     """Lazy loader for VaultManager."""
     from equinox.core.secret_managers.vault import VaultManager
+
     return VaultManager
 
 
-def _get_bitwarden_manager() -> Type[SecretManager]:
+def _get_bitwarden_manager() -> type[SecretManager]:
     """Lazy loader for BitwardenManager."""
     from equinox.core.secret_managers.bitwarden import BitwardenManager
+
     return BitwardenManager
 
 
 # Registry of available secret manager backends
 # Maps type identifiers to lazy-loading functions
-_SECRET_MANAGERS: Dict[str, callable] = {
+_SECRET_MANAGERS: dict[str, callable] = {
     "env": _get_env_manager,
     "environment": _get_env_manager,
     "aws_secrets_manager": _get_aws_manager,
@@ -54,7 +57,7 @@ _SECRET_MANAGERS: Dict[str, callable] = {
 }
 
 # Singleton instances (lazy-loaded)
-_instances: Dict[str, SecretManager] = {}
+_instances: dict[str, SecretManager] = {}
 
 
 def get_secret_manager(
@@ -97,8 +100,7 @@ def get_secret_manager(
     if manager_type_lower not in _SECRET_MANAGERS:
         available = ", ".join(sorted(_SECRET_MANAGERS.keys()))
         raise SecretManagerError(
-            f"Unknown secret manager type: {manager_type}. "
-            f"Available: {available}"
+            f"Unknown secret manager type: {manager_type}. " f"Available: {available}"
         )
 
     # Check if we already have an instance with the same configuration
@@ -125,9 +127,7 @@ def list_available_managers() -> list[str]:
     return sorted(set(_SECRET_MANAGERS.keys()))
 
 
-def register_manager(
-    manager_type: str, loader_func: callable
-) -> None:
+def register_manager(manager_type: str, loader_func: callable) -> None:
     """Register a custom secret manager implementation.
 
     Args:
@@ -146,4 +146,3 @@ def register_manager(
     """
     _SECRET_MANAGERS[manager_type.lower()] = loader_func
     logger.info("Registered custom secret manager: %s", manager_type.lower())
-

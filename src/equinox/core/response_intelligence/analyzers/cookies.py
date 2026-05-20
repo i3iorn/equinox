@@ -1,7 +1,7 @@
 """Cookie security flags analyzer."""
 
 import logging
-from typing import Any, Dict, List
+from typing import Any
 
 from equinox.core.response_intelligence.base import Analyzer
 from equinox.core.response_intelligence.models import (
@@ -28,7 +28,7 @@ class CookieFlagsAnalyzer(Analyzer):
     display_name = "Cookie Security Flags"
 
     @staticmethod
-    def _split_set_cookie_header(raw: str) -> List[str]:
+    def _split_set_cookie_header(raw: str) -> list[str]:
         """Parse Set-Cookie header containing multiple cookies.
 
         Handles comma-separated cookies while respecting expires date format
@@ -36,14 +36,14 @@ class CookieFlagsAnalyzer(Analyzer):
         """
         if not raw:
             return []
-        parts: List[str] = []
-        token: List[str] = []
+        parts: list[str] = []
+        token: list[str] = []
         in_expires = False
         idx = 0
         while idx < len(raw):
             char = raw[idx]
             token.append(char)
-            if raw[idx:idx + 8].lower() == "expires=":
+            if raw[idx : idx + 8].lower() == "expires=":
                 in_expires = True
             elif char == ";" and in_expires:
                 in_expires = False
@@ -61,17 +61,17 @@ class CookieFlagsAnalyzer(Analyzer):
             parts.append(tail)
         return parts
 
-    def analyze(self, ctx: AnalysisContext) -> List[Finding]:
+    def analyze(self, ctx: AnalysisContext) -> list[Finding]:
         """Analyze Set-Cookie headers for security flag issues."""
         import http.cookies as cookies
 
-        findings: List[Finding] = []
+        findings: list[Finding] = []
         raw_set_cookie = ctx.response.headers.get("set-cookie", "")
         if not raw_set_cookie:
             return findings
 
         cookies_raw = self._split_set_cookie_header(raw_set_cookie)
-        issues: List[Dict[str, Any]] = []
+        issues: list[dict[str, Any]] = []
         highest = Severity.INFO
 
         for cookie_entry in cookies_raw:
@@ -83,7 +83,7 @@ class CookieFlagsAnalyzer(Analyzer):
                 continue
 
             for name, morsel in jar.items():
-                problems: List[str] = []
+                problems: list[str] = []
                 severity = Severity.INFO
                 secure_set = bool(morsel["secure"])
 
@@ -107,19 +107,22 @@ class CookieFlagsAnalyzer(Analyzer):
                     severity = Severity.CRITICAL
 
                 if problems:
-                    issues.append({"cookie": name, "problems": problems, "severity": severity.value})
+                    issues.append(
+                        {"cookie": name, "problems": problems, "severity": severity.value}
+                    )
                     if _SEVERITY_RANK[severity] > _SEVERITY_RANK[highest]:
                         highest = severity
 
         if issues:
-            findings.append(Finding(
-                category=self.category,
-                severity=highest,
-                title=f"{len(issues)} cookie(s) missing security flags",
-                description="Cookies should use Secure, HttpOnly, and SameSite attributes.",
-                analyzer_id=self.analyzer_id,
-                recommendation="Set Secure, HttpOnly, and SameSite=Strict or Lax for all session cookies.",
-                details={"cookies": issues},
-            ))
+            findings.append(
+                Finding(
+                    category=self.category,
+                    severity=highest,
+                    title=f"{len(issues)} cookie(s) missing security flags",
+                    description="Cookies should use Secure, HttpOnly, and SameSite attributes.",
+                    analyzer_id=self.analyzer_id,
+                    recommendation="Set Secure, HttpOnly, and SameSite=Strict or Lax for all session cookies.",
+                    details={"cookies": issues},
+                )
+            )
         return findings
-

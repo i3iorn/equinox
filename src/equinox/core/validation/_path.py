@@ -1,12 +1,13 @@
 """File-path validation — prevents directory traversal attacks."""
+
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Optional
 from urllib.parse import unquote_plus
 
 from equinox.core.exceptions import ValidationError
-from ._base import _Patterns, _Guards
+
+from ._base import _Guards, _Patterns
 
 __all__ = ["_PathValidator"]
 
@@ -15,16 +16,14 @@ class _PathValidator:
     """File-path validation — prevents directory traversal attacks."""
 
     @classmethod
-    def validate(cls, path: str, base_dir: Optional[Path] = None) -> Path:
+    def validate(cls, path: str, base_dir: Path | None = None) -> Path:
         _Guards.require_nonempty_str(path, "Path")
 
         # Check both the raw path and URL-decoded form (e.g. "..%2F" → "../").
         for candidate in (path, unquote_plus(path)):
             for rx in _Patterns.PATH_TRAVERSAL:
                 if rx.search(candidate):
-                    raise ValidationError(
-                        f"Path contains traversal pattern: {path}"
-                    )
+                    raise ValidationError(f"Path contains traversal pattern: {path}")
 
         try:
             resolved = Path(path).resolve()
@@ -38,5 +37,3 @@ class _PathValidator:
                 raise ValidationError(f"Path outside allowed directory: {path}")
 
         return resolved
-
-

@@ -10,8 +10,8 @@ Sub-modules
 """
 
 from equinox.gui.request_panel.panel import (  # noqa: F401 – public API
-    RequestPanel,
     _HEADER_PRESETS,
+    RequestPanel,
 )
 from equinox.gui.request_panel.save_dialog import SaveRequestDialog  # noqa: F401
 

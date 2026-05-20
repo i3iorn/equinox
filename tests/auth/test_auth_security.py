@@ -3,21 +3,18 @@
 Covers CRLF injection prevention, input validation, credential masking
 in __repr__, robust from_dict deserialization, and OAuth2 edge cases.
 """
+
 import os
+from unittest.mock import MagicMock, Mock, patch
 
 import pytest
-from unittest.mock import Mock, MagicMock, patch
-from datetime import datetime, timedelta, timezone
 
-from equinox.auth import (
-    BearerAuth, BasicAuth,
-    APIKeyAuth, OAuth2Auth, AWSSigV4Auth
-)
-from equinox.auth._base import _validate_credential, _MAX_CREDENTIAL_LENGTH
+from equinox.auth import APIKeyAuth, AWSSigV4Auth, BasicAuth, BearerAuth, OAuth2Auth
+from equinox.auth._base import _MAX_CREDENTIAL_LENGTH, _validate_credential
 from equinox.core.exceptions import AuthError
 
-
 # ── _validate_credential helper ────────────────────────────────────────────────
+
 
 class TestValidateCredential:
     """Tests for the shared credential validation function."""
@@ -61,6 +58,7 @@ class TestValidateCredential:
 
 # ── BearerAuth security ───────────────────────────────────────────────────────
 
+
 class TestBearerAuthSecurity:
     """Security tests for BearerAuth."""
 
@@ -95,6 +93,7 @@ class TestBearerAuthSecurity:
 
 
 # ── BasicAuth security ─────────────────────────────────────────────────────────
+
 
 class TestBasicAuthSecurity:
     """Security tests for BasicAuth."""
@@ -137,6 +136,7 @@ class TestBasicAuthSecurity:
 
 # ── APIKeyAuth security ───────────────────────────────────────────────────────
 
+
 class TestAPIKeyAuthSecurity:
     """Security tests for APIKeyAuth."""
 
@@ -166,6 +166,7 @@ class TestAPIKeyAuthSecurity:
 
 
 # ── AWSSigV4Auth security ─────────────────────────────────────────────────────
+
 
 class TestAWSSigV4AuthSecurity:
     """Security tests for AWSSigV4Auth."""
@@ -202,6 +203,7 @@ class TestAWSSigV4AuthSecurity:
 
 
 # ── OAuth2Auth security & robustness ──────────────────────────────────────────
+
 
 class TestOAuth2AuthSecurity:
     """Security and robustness tests for OAuth2Auth."""
@@ -243,7 +245,7 @@ class TestOAuth2AuthSecurity:
         """Token endpoint returning expires_in as '3600.5' should not crash."""
         mock_client = MagicMock()
         mock_client_class.return_value.__enter__.return_value = mock_client
-        
+
         mock_resp = Mock()
         mock_resp.status_code = 200
         mock_resp.json.return_value = {
@@ -269,7 +271,7 @@ class TestOAuth2AuthSecurity:
         """Token endpoint returning expires_in as 'invalid' should use default."""
         mock_client = MagicMock()
         mock_client_class.return_value.__enter__.return_value = mock_client
-        
+
         mock_resp = Mock()
         mock_resp.status_code = 200
         mock_resp.json.return_value = {
@@ -295,7 +297,7 @@ class TestOAuth2AuthSecurity:
         """Token endpoint returning negative expires_in should use default."""
         mock_client = MagicMock()
         mock_client_class.return_value.__enter__.return_value = mock_client
-        
+
         mock_resp = Mock()
         mock_resp.status_code = 200
         mock_resp.json.return_value = {
@@ -320,7 +322,7 @@ class TestOAuth2AuthSecurity:
         """Access token with CRLF from a malicious server must be rejected."""
         mock_client = MagicMock()
         mock_client_class.return_value.__enter__.return_value = mock_client
-        
+
         mock_resp = Mock()
         mock_resp.status_code = 200
         mock_resp.json.return_value = {
@@ -342,16 +344,24 @@ class TestOAuth2AuthSecurity:
 
 # ── Package __init__ exports ──────────────────────────────────────────────────
 
+
 class TestPackageExports:
     """Verify all auth classes are accessible from the package."""
 
     def test_aws_sigv4_exported(self):
         from equinox.auth import AWSSigV4Auth
+
         assert AWSSigV4Auth is not None
 
     def test_all_strategies_in_all(self):
         import equinox.auth as auth_pkg
-        for name in ["AuthStrategy", "BearerAuth", "APIKeyAuth",
-                      "BasicAuth", "OAuth2Auth", "AWSSigV4Auth"]:
-            assert name in auth_pkg.__all__
 
+        for name in [
+            "AuthStrategy",
+            "BearerAuth",
+            "APIKeyAuth",
+            "BasicAuth",
+            "OAuth2Auth",
+            "AWSSigV4Auth",
+        ]:
+            assert name in auth_pkg.__all__

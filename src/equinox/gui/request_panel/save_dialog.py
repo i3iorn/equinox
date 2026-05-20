@@ -12,18 +12,20 @@ Non-UI responsibilities intentionally left to the caller / facade:
 - performing the actual save/update persistence
 """
 
-from typing import Iterable, Optional, Tuple, TypedDict
+from collections.abc import Iterable
+from typing import TypedDict
 
 from PyQt6.QtWidgets import (
+    QComboBox,
     QDialog,
-    QVBoxLayout,
+    QDialogButtonBox,
     QHBoxLayout,
     QLabel,
     QLineEdit,
-    QComboBox,
-    QDialogButtonBox,
     QMessageBox,
+    QVBoxLayout,
 )
+
 from equinox.gui.request_panel._constants import (
     SAVE_DIALOG_MIN_WIDTH,
     SAVE_DIALOG_URL_PREVIEW_LEN,
@@ -123,7 +125,7 @@ class SaveRequestDialog(QDialog):
 
     # ── Public API ────────────────────────────────────────────────────────
 
-    def result_values(self) -> Tuple[str, int, str, Optional[str]]:
+    def result_values(self) -> tuple[str, int, str, str | None]:
         """Extract and return the user's choices.
 
         Returns:
@@ -136,6 +138,5 @@ class SaveRequestDialog(QDialog):
         name = self._name_input.text().strip() or self._default_name
         col_id: int = self._col_combo.currentData()
         col_name: str = self._col_combo.currentText()
-        folder: Optional[str] = self._folder_input.text().strip() or None
+        folder: str | None = self._folder_input.text().strip() or None
         return name, col_id, col_name, folder
-

@@ -1,8 +1,9 @@
 """Bearer token authentication"""
 
 import logging
-from typing import Any, Dict, Optional
-from equinox.auth._base import AuthStrategy, _validate_credential, AuthError
+from typing import Any
+
+from equinox.auth._base import AuthError, AuthStrategy, _validate_credential
 from equinox.security import mask_secret
 
 logger = logging.getLogger(__name__)
@@ -37,16 +38,16 @@ class BearerAuth(AuthStrategy):
 
     # ── AuthStrategy interface ────────────────────────────────────────────────
 
-    def apply(self, request: Any, headers: Dict[str, str]) -> None:
+    def apply(self, request: Any, headers: dict[str, str]) -> None:
         """Set ``Authorization: Bearer <token>`` on *headers*."""
         headers["Authorization"] = f"Bearer {self.token}"
         logger.debug("BearerAuth applied (token length: %d)", len(self.token))
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return {"type": self.AUTH_TYPE, "token": self.token}
 
     @classmethod
-    def from_dict(cls, data: Dict[str, Any], **kwargs: Any) -> "BearerAuth":
+    def from_dict(cls, data: dict[str, Any], **kwargs: Any) -> "BearerAuth":
         """Create from a serialised dictionary.
 
         Raises:
@@ -64,7 +65,7 @@ class BearerAuth(AuthStrategy):
     def get_display_summary(self) -> str:
         return f"Token: {mask_secret(self.token)}"
 
-    def get_preflight_warning(self) -> Optional[str]:
+    def get_preflight_warning(self) -> str | None:
         if not self.token:
             return "Bearer token is empty"
         return None

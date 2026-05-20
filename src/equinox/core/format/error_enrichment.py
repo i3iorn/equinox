@@ -8,9 +8,9 @@ labels, and full tracebacks for logging.
 import dataclasses
 import logging
 import traceback
-from typing import Optional
 
-from equinox.security import redact_body as _redact, redact_url as _redact_url
+from equinox.security import redact_body as _redact
+from equinox.security import redact_url as _redact_url
 
 logger = logging.getLogger(__name__)
 
@@ -20,10 +20,10 @@ class RichError:
     """Structured error with a meaningful, user-facing message
     plus a full log-level traceback."""
 
-    exc_type: str       # e.g. "ConnectError", "TimeoutError"
-    message: str        # Human-readable, never empty
-    tb: str             # Full traceback string for the log file
-    hint: str = ""      # Optional actionable hint for the user
+    exc_type: str  # e.g. "ConnectError", "TimeoutError"
+    message: str  # Human-readable, never empty
+    tb: str  # Full traceback string for the log file
+    hint: str = ""  # Optional actionable hint for the user
 
 
 def enrich_exception(exc: Exception) -> RichError:
@@ -94,10 +94,13 @@ def _describe_connect_error(inner: str) -> str:
     lower = inner.lower()
     if "ssl" in lower or "certificate" in lower:
         return (
-            "SSL/TLS error — the server's certificate could not be verified.\n"
-            f"Details: {inner}"
+            "SSL/TLS error — the server's certificate could not be verified.\n" f"Details: {inner}"
         )
-    if "name or service not known" in lower or "nodename nor servname" in lower or "getaddrinfo failed" in lower:
+    if (
+        "name or service not known" in lower
+        or "nodename nor servname" in lower
+        or "getaddrinfo failed" in lower
+    ):
         return "DNS lookup failed — check the hostname in the URL."
     if "connection refused" in lower:
         return "Connection refused — the server is not accepting connections on that port."
@@ -132,11 +135,15 @@ def _is_proxy_connect_error(exc: Exception) -> bool:
     return False
 
 
-def _enrich_equinox_error(exc: Exception, raw: str, exc_type: str) -> Optional[str]:
+def _enrich_equinox_error(exc: Exception, raw: str, exc_type: str) -> str | None:
     """Return a human-readable message for equinox domain errors, or None."""
     from equinox.core.exceptions import (
+        AuthError,
+        RequestError,
+        ValidationError,
+    )
+    from equinox.core.exceptions import (
         TimeoutError as EqTimeoutError,
-        RequestError, ValidationError, AuthError,
     )
 
     if isinstance(exc, EqTimeoutError):
@@ -150,5 +157,3 @@ def _enrich_equinox_error(exc: Exception, raw: str, exc_type: str) -> Optional[s
     if isinstance(exc, RequestError):
         return raw or f"Request failed ({exc_type})"
     return None
-
-

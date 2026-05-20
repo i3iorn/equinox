@@ -1,16 +1,17 @@
 """Extended tests for HistoryManager — covers get_history, delete_history,
 clear_history, get_stats, URL/header sanitization, and list_history validation."""
 
-import pytest
 from unittest.mock import MagicMock
 
+import pytest
+
+from equinox.core.exceptions import SecurityError, StorageError, ValidationError
+from equinox.core.request import Request, Response
 from equinox.storage.database import Database
 from equinox.storage.history import HistoryManager
-from equinox.core.request import Request, Response
-from equinox.core.exceptions import StorageError, ValidationError, SecurityError
-
 
 # ── Fixtures ──────────────────────────────────────────────────────────────────
+
 
 @pytest.fixture
 def db(tmp_path):
@@ -38,8 +39,8 @@ def _resp(status=200):
 
 # ── save_history edge cases ───────────────────────────────────────────────────
 
-class TestSaveHistoryEdgeCases:
 
+class TestSaveHistoryEdgeCases:
     def test_save_with_error_only(self, mgr):
         req = _req()
         hid = mgr.save_history(req, error="Connection refused")
@@ -83,11 +84,13 @@ class TestSaveHistoryEdgeCases:
         assert "tok" not in row["url"]
 
     def test_request_headers_sanitized(self, mgr):
-        req = _req(headers={
-            "Authorization": "Bearer my-secret",
-            "X-Api-Key": "key-value",
-            "Content-Type": "application/json",
-        })
+        req = _req(
+            headers={
+                "Authorization": "Bearer my-secret",
+                "X-Api-Key": "key-value",
+                "Content-Type": "application/json",
+            }
+        )
         hid = mgr.save_history(req)
         row = mgr.get_history(hid)
         assert row["request_headers"]["Authorization"] == "[REDACTED]"
@@ -126,8 +129,8 @@ class TestSaveHistoryEdgeCases:
 
 # ── get_history validation ────────────────────────────────────────────────────
 
-class TestGetHistory:
 
+class TestGetHistory:
     def test_get_existing(self, mgr):
         hid = mgr.save_history(_req())
         row = mgr.get_history(hid)
@@ -146,8 +149,8 @@ class TestGetHistory:
 
 # ── list_history validation ───────────────────────────────────────────────────
 
-class TestListHistory:
 
+class TestListHistory:
     def test_list_default(self, mgr):
         mgr.save_history(_req())
         mgr.save_history(_req())
@@ -189,8 +192,8 @@ class TestListHistory:
 
 # ── delete_history ────────────────────────────────────────────────────────────
 
-class TestDeleteHistory:
 
+class TestDeleteHistory:
     def test_delete_existing(self, mgr):
         hid = mgr.save_history(_req())
         mgr.delete_history(hid)
@@ -207,8 +210,8 @@ class TestDeleteHistory:
 
 # ── clear_history ─────────────────────────────────────────────────────────────
 
-class TestClearHistory:
 
+class TestClearHistory:
     def test_clear_all(self, mgr):
         mgr.save_history(_req())
         mgr.save_history(_req())
@@ -233,8 +236,8 @@ class TestClearHistory:
 
 # ── get_stats ─────────────────────────────────────────────────────────────────
 
-class TestGetStats:
 
+class TestGetStats:
     def test_stats_empty(self, mgr):
         stats = mgr.get_stats()
         print(stats)
@@ -263,8 +266,8 @@ class TestGetStats:
 
 # ── _prepare_url and _prepare_headers (on _HistorySerializer) ──────────────────
 
-class TestSanitizers:
 
+class TestSanitizers:
     def test_sanitize_url_clean(self, mgr):
         url = "https://api.example.com/resource?page=1&size=10"
         result = mgr._serializer._prepare_url(url)
@@ -289,6 +292,7 @@ class TestSanitizers:
         }
         result_json = mgr._serializer._prepare_headers(headers)
         import json
+
         result = json.loads(result_json)
         assert result["Authorization"] == "[REDACTED]"
         assert result["cookie"] == "[REDACTED]"
@@ -296,5 +300,6 @@ class TestSanitizers:
 
     def test_sanitize_headers_empty(self, mgr):
         import json
+
         result_json = mgr._serializer._prepare_headers({})
         assert json.loads(result_json) == {}

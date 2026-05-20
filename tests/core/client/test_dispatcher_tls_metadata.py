@@ -21,8 +21,8 @@ class _FakeSSLObject:
 
     def getpeercert(self):
         return {
-            "subject": ((('commonName', 'api.example.com'),),),
-            "issuer": ((('commonName', 'Example CA'),),),
+            "subject": ((("commonName", "api.example.com"),),),
+            "issuer": ((("commonName", "Example CA"),),),
             "notBefore": "Jan  1 00:00:00 2026 GMT",
             "notAfter": "Jan  1 00:00:00 2027 GMT",
             "serialNumber": "1234ABCD",
@@ -80,7 +80,9 @@ def test_wrap_response_attaches_connection_info_and_sent_url():
         extensions={"network_stream": _FakeStream()},
     )
 
-    wrapped = dispatcher._wrap_response(raw_resp, req, elapsed=0.01, sent_headers={"accept": "application/json"})
+    wrapped = dispatcher._wrap_response(
+        raw_resp, req, elapsed=0.01, sent_headers={"accept": "application/json"}
+    )
 
     assert wrapped.sent_url == "https://api.example.com/users"
     assert wrapped.connection_info is not None
@@ -292,5 +294,3 @@ def test_sync_cookies_to_client_with_no_open_clients():
     dispatcher._sync_cookies_to_client()
 
     assert dispatcher._clients == {}
-
-

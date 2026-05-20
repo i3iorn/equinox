@@ -19,4 +19,3 @@ def test_dialog_text_selectors_present_for_light_and_dark_modes():
             assert "selection-color:" in stylesheet
     finally:
         theme.set_theme_mode(original_mode)
-

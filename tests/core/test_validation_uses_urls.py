@@ -1,8 +1,8 @@
 import pytest
 
-from equinox.core.validation import Validator
-from equinox.core.exceptions import ValidationError
 from equinox.core import urls
+from equinox.core.exceptions import ValidationError
+from equinox.core.validation import Validator
 
 
 def test_validate_resolved_url_rejects_invalid_scheme():
@@ -20,4 +20,3 @@ def test_validate_resolved_url_accepts_expanded_url():
     expanded = urls.expand_placeholders("https://example.com/users/{{id}}", {"id": "1"})
     # Should not raise
     Validator.validate_resolved_url(expanded)
-

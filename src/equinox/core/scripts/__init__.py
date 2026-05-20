@@ -1,4 +1,4 @@
-from .models import ScriptResult, ALLOWED_MODULES
+from .models import ALLOWED_MODULES, ScriptResult
 from .runner import ScriptRunner
 from .sandbox import get_safe_builtins
 from .validation import _validate_ast

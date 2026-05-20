@@ -9,28 +9,40 @@ from __future__ import annotations
 
 import json
 import logging
-from typing import Optional, Tuple
+from typing import Any
 
 from PyQt6.QtCore import Qt, pyqtSignal
-from PyQt6.QtGui import QColor
 from PyQt6.QtWidgets import (
-    QComboBox, QDialog, QDialogButtonBox, QFormLayout, QFrame,
-    QHBoxLayout, QInputDialog, QLabel, QLineEdit, QListWidget,
-    QMessageBox, QPushButton, QSplitter, QStackedWidget,
-    QTextEdit, QVBoxLayout, QWidget,
+    QComboBox,
+    QDialog,
+    QDialogButtonBox,
+    QFormLayout,
+    QFrame,
+    QHBoxLayout,
+    QInputDialog,
+    QLabel,
+    QLineEdit,
+    QListWidget,
+    QMessageBox,
+    QPushButton,
+    QSplitter,
+    QStackedWidget,
+    QTextEdit,
+    QVBoxLayout,
+    QWidget,
 )
 
 from equinox.auth import AUTH_TYPES
-from equinox.gui.theme import Colors, get_mono_font
-from equinox.gui.widgets.secret_row import make_secret_row as _secret_row
 from equinox.gui.dialogs._list_form_dialog_mixin import ListFormDialogMixin
 from equinox.gui.dialogs._oauth_connection_test_mixin import OAuthConnectionTestMixin
 from equinox.gui.dialogs._oauth_form_utils import (
     parse_json_object_field,
 )
+from equinox.gui.theme import Colors, get_mono_font
+from equinox.gui.widgets.secret_row import make_secret_row as _secret_row
 from equinox.storage import Database
-from equinox.storage.saved_credentials import SavedCredentialsManager
 from equinox.storage.oauth_clients import GRANT_TYPES
+from equinox.storage.saved_credentials import SavedCredentialsManager
 
 logger = logging.getLogger(__name__)
 
@@ -43,10 +55,10 @@ _FORM_HEADER_IDLE = (
 
 # Colour per auth type used in the list widget
 _TYPE_COLOUR = {
-    "oauth2":    Colors.BLUE,
-    "api_key":   Colors.AMBER,
-    "basic":     Colors.GREEN,
-    "bearer":    Colors.PURPLE,
+    "oauth2": Colors.BLUE,
+    "api_key": Colors.AMBER,
+    "basic": Colors.GREEN,
+    "bearer": Colors.PURPLE,
     "aws_sigv4": Colors.RED,
 }
 
@@ -63,12 +75,12 @@ class SavedCredentialsDialog(OAuthConnectionTestMixin, ListFormDialogMixin, QDia
 
     def __init__(self, db: Database, parent=None) -> None:
         super().__init__(parent)
-        self.db  = db
+        self.db = db
         self.mgr = SavedCredentialsManager(db)
-        self._current_id: Optional[int] = None
+        self._current_id: int | None = None
         self._dirty = False
-        self._tester: Optional[object] = None  # kept alive until worker completion
-        self._last_test_response: Optional[dict] = None
+        self._tester: object | None = None  # kept alive until worker completion
+        self._last_test_response: dict | None = None
         self._test_btn_idle_text = "🔌  Test Connection"
         self._test_btn_busy_text = "Testing…"
 
@@ -105,7 +117,7 @@ class SavedCredentialsDialog(OAuthConnectionTestMixin, ListFormDialogMixin, QDia
     def _build_left_panel(self) -> QWidget:
         """Scrollable credential list with New / Duplicate / Delete buttons."""
         left = QWidget()
-        ll   = QVBoxLayout(left)
+        ll = QVBoxLayout(left)
         ll.setContentsMargins(0, 0, 4, 0)
         ll.addWidget(QLabel("<b>Saved Credentials</b>"))
 
@@ -115,8 +127,8 @@ class SavedCredentialsDialog(OAuthConnectionTestMixin, ListFormDialogMixin, QDia
         ll.addWidget(self.cred_list, 1)
 
         list_btns = QHBoxLayout()
-        self.new_btn    = QPushButton("New\u2026")
-        self.dup_btn    = QPushButton("Duplicate")
+        self.new_btn = QPushButton("New\u2026")
+        self.dup_btn = QPushButton("Duplicate")
         self.delete_btn = QPushButton("Delete")
         self.dup_btn.setEnabled(False)
         self.delete_btn.setEnabled(False)
@@ -133,7 +145,7 @@ class SavedCredentialsDialog(OAuthConnectionTestMixin, ListFormDialogMixin, QDia
     def _build_right_panel(self) -> QWidget:
         """Inline edit form with type-specific stacked pages and action buttons."""
         right = QWidget()
-        rl    = QVBoxLayout(right)
+        rl = QVBoxLayout(right)
         rl.setContentsMargins(4, 0, 0, 0)
 
         self.form_header = QLabel(_FORM_HEADER_IDLE)
@@ -149,8 +161,8 @@ class SavedCredentialsDialog(OAuthConnectionTestMixin, ListFormDialogMixin, QDia
             self.f_type.addItem(name, userData=key)
         self.f_description = QLineEdit()
         self.f_description.setPlaceholderText("Optional description")
-        top_form.addRow("Name:*",       self.f_name)
-        top_form.addRow("Type:",        self.f_type)
+        top_form.addRow("Name:*", self.f_name)
+        top_form.addRow("Type:", self.f_type)
         top_form.addRow("Description:", self.f_description)
         rl.addLayout(top_form)
 
@@ -160,11 +172,11 @@ class SavedCredentialsDialog(OAuthConnectionTestMixin, ListFormDialogMixin, QDia
 
         # Type-specific stacked pages (order matches AUTH_TYPES tuple)
         self.stack = QStackedWidget()
-        self.stack.addWidget(self._build_oauth2_page())    # 0
-        self.stack.addWidget(self._build_api_key_page())   # 1
-        self.stack.addWidget(self._build_basic_page())     # 2
-        self.stack.addWidget(self._build_bearer_page())    # 3
-        self.stack.addWidget(self._build_aws_sigv4_page()) # 4
+        self.stack.addWidget(self._build_oauth2_page())  # 0
+        self.stack.addWidget(self._build_api_key_page())  # 1
+        self.stack.addWidget(self._build_basic_page())  # 2
+        self.stack.addWidget(self._build_bearer_page())  # 3
+        self.stack.addWidget(self._build_aws_sigv4_page())  # 4
         rl.addWidget(self.stack, 1)
 
         self.f_type.currentIndexChanged.connect(self._on_type_changed)
@@ -175,9 +187,9 @@ class SavedCredentialsDialog(OAuthConnectionTestMixin, ListFormDialogMixin, QDia
 
         # Action buttons
         act_row = QHBoxLayout()
-        self.test_btn    = QPushButton("\U0001f50c  Test Connection")
+        self.test_btn = QPushButton("\U0001f50c  Test Connection")
         self.default_btn = QPushButton("\u2605  Set as Default")
-        self.save_btn    = QPushButton("\U0001f4be  Save")
+        self.save_btn = QPushButton("\U0001f4be  Save")
         self.view_response_btn = QPushButton("View Response…")
         self.view_response_btn.setEnabled(False)
         for b in (self.test_btn, self.view_response_btn, self.default_btn, self.save_btn):
@@ -211,16 +223,16 @@ class SavedCredentialsDialog(OAuthConnectionTestMixin, ListFormDialogMixin, QDia
         lay = QFormLayout(w)
         lay.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.ExpandingFieldsGrow)
 
-        self.o_token_url     = QLineEdit()
+        self.o_token_url = QLineEdit()
         self.o_token_url.setPlaceholderText("https://auth.example.com/oauth/token")
-        self.o_client_id     = QLineEdit()
+        self.o_client_id = QLineEdit()
         self.o_client_id.setPlaceholderText("client_id")
         self.o_client_secret = QLineEdit()
         self.o_client_secret.setEchoMode(QLineEdit.EchoMode.Password)
         self.o_client_secret.setPlaceholderText("client_secret")
-        self.o_scope         = QLineEdit()
+        self.o_scope = QLineEdit()
         self.o_scope.setPlaceholderText("read write  (optional)")
-        self.o_token_auth    = QComboBox()
+        self.o_token_auth = QComboBox()
         self.o_token_auth.addItem("Body (RFC 6749 default)", userData="body")
         self.o_token_auth.addItem("HTTP Basic Auth (D&B Direct+, GitHub…)", userData="basic")
         self.o_token_auth.setToolTip(
@@ -228,20 +240,20 @@ class SavedCredentialsDialog(OAuthConnectionTestMixin, ListFormDialogMixin, QDia
             "• Body — client_id/client_secret in the POST body (default, RFC 6749 §2.3.1)\n"
             "• Basic — Base64-encoded Authorization header (required by some providers)"
         )
-        self.o_grant_type    = QComboBox()
+        self.o_grant_type = QComboBox()
         self.o_grant_type.addItems(list(GRANT_TYPES))
-        self.o_extra         = QTextEdit()
+        self.o_extra = QTextEdit()
         self.o_extra.setPlaceholderText('{ "audience": "https://api.example.com" }')
         self.o_extra.setMaximumHeight(70)
         self.o_extra.setFont(get_mono_font())
 
-        lay.addRow("Token URL:*",    self.o_token_url)
-        lay.addRow("Client ID:*",    self.o_client_id)
+        lay.addRow("Token URL:*", self.o_token_url)
+        lay.addRow("Client ID:*", self.o_client_id)
         lay.addRow("Client Secret:", _secret_row(self.o_client_secret))
-        lay.addRow("Scope:",         self.o_scope)
-        lay.addRow("Client Auth:",   self.o_token_auth)
-        lay.addRow("Grant Type:",    self.o_grant_type)
-        lay.addRow("Extra Params:",  self.o_extra)
+        lay.addRow("Scope:", self.o_scope)
+        lay.addRow("Client Auth:", self.o_token_auth)
+        lay.addRow("Grant Type:", self.o_grant_type)
+        lay.addRow("Extra Params:", self.o_extra)
 
         for w2 in (self.o_token_url, self.o_client_id, self.o_client_secret, self.o_scope):
             w2.textChanged.connect(self._mark_dirty)
@@ -255,17 +267,17 @@ class SavedCredentialsDialog(OAuthConnectionTestMixin, ListFormDialogMixin, QDia
         lay = QFormLayout(w)
         lay.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.ExpandingFieldsGrow)
 
-        self.ak_key      = QLineEdit()
+        self.ak_key = QLineEdit()
         self.ak_key.setPlaceholderText("X-API-Key")
-        self.ak_value    = QLineEdit()
+        self.ak_value = QLineEdit()
         self.ak_value.setEchoMode(QLineEdit.EchoMode.Password)
         self.ak_value.setPlaceholderText("your-api-key")
         self.ak_location = QComboBox()
         self.ak_location.addItems(["header", "query"])
 
         lay.addRow("Header/Param Name:*", self.ak_key)
-        lay.addRow("Key Value:*",         _secret_row(self.ak_value))
-        lay.addRow("Add To:",             self.ak_location)
+        lay.addRow("Key Value:*", _secret_row(self.ak_value))
+        lay.addRow("Add To:", self.ak_location)
 
         for w2 in (self.ak_key, self.ak_value):
             w2.textChanged.connect(self._mark_dirty)
@@ -309,27 +321,32 @@ class SavedCredentialsDialog(OAuthConnectionTestMixin, ListFormDialogMixin, QDia
         lay = QFormLayout(w)
         lay.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.ExpandingFieldsGrow)
 
-        self.aws_access_key    = QLineEdit()
+        self.aws_access_key = QLineEdit()
         self.aws_access_key.setPlaceholderText("AKIAIOSFODNN7EXAMPLE")
-        self.aws_secret_key    = QLineEdit()
+        self.aws_secret_key = QLineEdit()
         self.aws_secret_key.setEchoMode(QLineEdit.EchoMode.Password)
         self.aws_secret_key.setPlaceholderText("wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY")
-        self.aws_region        = QLineEdit()
+        self.aws_region = QLineEdit()
         self.aws_region.setPlaceholderText("us-east-1")
-        self.aws_service       = QLineEdit()
+        self.aws_service = QLineEdit()
         self.aws_service.setPlaceholderText("execute-api")
         self.aws_session_token = QLineEdit()
         self.aws_session_token.setEchoMode(QLineEdit.EchoMode.Password)
         self.aws_session_token.setPlaceholderText("Optional — STS session token")
 
-        lay.addRow("Access Key ID:*",    self.aws_access_key)
+        lay.addRow("Access Key ID:*", self.aws_access_key)
         lay.addRow("Secret Access Key:*", _secret_row(self.aws_secret_key))
-        lay.addRow("Region:*",            self.aws_region)
-        lay.addRow("Service:*",           self.aws_service)
-        lay.addRow("Session Token:",      _secret_row(self.aws_session_token))
+        lay.addRow("Region:*", self.aws_region)
+        lay.addRow("Service:*", self.aws_service)
+        lay.addRow("Session Token:", _secret_row(self.aws_session_token))
 
-        for w2 in (self.aws_access_key, self.aws_secret_key,
-                   self.aws_region, self.aws_service, self.aws_session_token):
+        for w2 in (
+            self.aws_access_key,
+            self.aws_secret_key,
+            self.aws_region,
+            self.aws_service,
+            self.aws_session_token,
+        ):
             w2.textChanged.connect(self._mark_dirty)
         return w
 
@@ -341,16 +358,16 @@ class SavedCredentialsDialog(OAuthConnectionTestMixin, ListFormDialogMixin, QDia
 
     def _update_test_btn(self) -> None:
         auth_type = self.f_type.currentData()
-        self.test_btn.setEnabled(
-            self._current_id is not None and auth_type == "oauth2"
-        )
+        self.test_btn.setEnabled(self._current_id is not None and auth_type == "oauth2")
 
     # ── List management (ListFormDialogMixin template methods) ────────
 
     def _build_list_items(self):
         """Yield (item_id, label, kwargs) for each credential."""
-        from equinox.gui.theme import Colors
         from PyQt6.QtGui import QFont
+
+        from equinox.gui.theme import Colors
+
         for c in self.mgr.list():
             at = c["auth_type"]
             label = AUTH_TYPES.get(at, at)
@@ -380,7 +397,7 @@ class SavedCredentialsDialog(OAuthConnectionTestMixin, ListFormDialogMixin, QDia
         self.f_description.setText(c.get("description", ""))
 
         at_idx = self.f_type.findData(c["auth_type"])
-        idx    = max(at_idx, 0)
+        idx = max(at_idx, 0)
         self.f_type.setCurrentIndex(idx)
         self.stack.setCurrentIndex(idx)
 
@@ -391,9 +408,7 @@ class SavedCredentialsDialog(OAuthConnectionTestMixin, ListFormDialogMixin, QDia
             self.o_scope.setText(cfg.get("scope", ""))
             ta_idx = self.o_token_auth.findData(cfg.get("token_auth", "body") or "body")
             self.o_token_auth.setCurrentIndex(max(ta_idx, 0))
-            gt_idx = self.o_grant_type.findText(
-                cfg.get("grant_type", "client_credentials")
-            )
+            gt_idx = self.o_grant_type.findText(cfg.get("grant_type", "client_credentials"))
             self.o_grant_type.setCurrentIndex(max(gt_idx, 0))
             extra = cfg.get("extra_params", {})
             self.o_extra.setPlainText(json.dumps(extra, indent=2) if extra else "")
@@ -425,14 +440,23 @@ class SavedCredentialsDialog(OAuthConnectionTestMixin, ListFormDialogMixin, QDia
 
     def _block_form(self, block: bool) -> None:
         for w in (
-            self.f_name, self.f_description,
-            self.o_token_url, self.o_client_id, self.o_client_secret,
-            self.o_scope, self.o_extra,
-            self.ak_key, self.ak_value,
-            self.ba_username, self.ba_password,
+            self.f_name,
+            self.f_description,
+            self.o_token_url,
+            self.o_client_id,
+            self.o_client_secret,
+            self.o_scope,
+            self.o_extra,
+            self.ak_key,
+            self.ak_value,
+            self.ba_username,
+            self.ba_password,
             self.bt_token,
-            self.aws_access_key, self.aws_secret_key,
-            self.aws_region, self.aws_service, self.aws_session_token,
+            self.aws_access_key,
+            self.aws_secret_key,
+            self.aws_region,
+            self.aws_service,
+            self.aws_session_token,
         ):
             w.blockSignals(block)
         for cb in (self.f_type, self.o_token_auth, self.o_grant_type, self.ak_location):
@@ -440,8 +464,12 @@ class SavedCredentialsDialog(OAuthConnectionTestMixin, ListFormDialogMixin, QDia
 
     def _set_form_enabled(self, enabled: bool) -> None:
         for w in (
-            self.f_name, self.f_description, self.f_type, self.stack,
-            self.default_btn, self.save_btn,
+            self.f_name,
+            self.f_description,
+            self.f_type,
+            self.stack,
+            self.default_btn,
+            self.save_btn,
         ):
             w.setEnabled(enabled)
         if not enabled:
@@ -463,10 +491,7 @@ class SavedCredentialsDialog(OAuthConnectionTestMixin, ListFormDialogMixin, QDia
         else:
             self.test_btn.setEnabled(False)
             self.view_response_btn.setEnabled(False)
-        self.save_btn.setText(
-            "\U0001f4be  Save *" if self._dirty else "\U0001f4be  Save"
-        )
-
+        self.save_btn.setText("\U0001f4be  Save *" if self._dirty else "\U0001f4be  Save")
 
     # ── CRUD ──────────────────────────────────────────────────────────
 
@@ -490,8 +515,10 @@ class SavedCredentialsDialog(OAuthConnectionTestMixin, ListFormDialogMixin, QDia
             return
         suggested = self.mgr.suggest_copy_name(src["name"])
         name, ok = QInputDialog.getText(
-            self, "Duplicate Credential",
-            "Name for the copy:", text=suggested,
+            self,
+            "Duplicate Credential",
+            "Name for the copy:",
+            text=suggested,
         )
         if not ok or not name.strip():
             return
@@ -510,7 +537,8 @@ class SavedCredentialsDialog(OAuthConnectionTestMixin, ListFormDialogMixin, QDia
         if not c:
             return
         ans = QMessageBox.question(
-            self, "Confirm Delete",
+            self,
+            "Confirm Delete",
             f"Delete credential '{c['name']}'?\n\nThis cannot be undone.",
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
         )
@@ -530,9 +558,9 @@ class SavedCredentialsDialog(OAuthConnectionTestMixin, ListFormDialogMixin, QDia
         if self._current_id is None:
             return False
 
-        name        = self.f_name.text().strip()
+        name = self.f_name.text().strip()
         description = self.f_description.text().strip()
-        auth_type   = self.f_type.currentData()
+        auth_type = self.f_type.currentData()
 
         if not name:
             QMessageBox.warning(self, "Validation", "Name is required.")
@@ -561,7 +589,7 @@ class SavedCredentialsDialog(OAuthConnectionTestMixin, ListFormDialogMixin, QDia
             QMessageBox.critical(self, "Save Failed", str(exc))
             return False
 
-    def _collect_config(self, auth_type: str) -> Tuple[Optional[dict], Optional[str]]:
+    def _collect_config(self, auth_type: str) -> tuple[dict[str, Any] | None, str | None]:
         """Read type-specific form fields.  Returns (config_dict, None) or (None, error)."""
         if auth_type == "oauth2":
             token_url = self.o_token_url.text().strip()
@@ -574,17 +602,17 @@ class SavedCredentialsDialog(OAuthConnectionTestMixin, ListFormDialogMixin, QDia
             if extra_params is None:
                 return None, error
             return {
-                "token_url":     token_url,
-                "client_id":     client_id,
+                "token_url": token_url,
+                "client_id": client_id,
                 "client_secret": self.o_client_secret.text(),
-                "scope":         self.o_scope.text().strip(),
-                "token_auth":    self.o_token_auth.currentData() or "body",
-                "grant_type":    self.o_grant_type.currentText(),
-                "extra_params":  extra_params,
+                "scope": self.o_scope.text().strip(),
+                "token_auth": self.o_token_auth.currentData() or "body",
+                "grant_type": self.o_grant_type.currentText(),
+                "extra_params": extra_params,
             }, None
 
         if auth_type == "api_key":
-            key   = self.ak_key.text().strip()
+            key = self.ak_key.text().strip()
             value = self.ak_value.text()
             if not key:
                 return None, "Header/Param Name is required for API Key."
@@ -610,8 +638,8 @@ class SavedCredentialsDialog(OAuthConnectionTestMixin, ListFormDialogMixin, QDia
         if auth_type == "aws_sigv4":
             access_key = self.aws_access_key.text().strip()
             secret_key = self.aws_secret_key.text().strip()
-            region     = self.aws_region.text().strip()
-            service    = self.aws_service.text().strip()
+            region = self.aws_region.text().strip()
+            service = self.aws_service.text().strip()
             if not access_key:
                 return None, "Access Key ID is required for AWS SigV4."
             if not secret_key:
@@ -623,8 +651,8 @@ class SavedCredentialsDialog(OAuthConnectionTestMixin, ListFormDialogMixin, QDia
             config: dict = {
                 "access_key": access_key,
                 "secret_key": secret_key,
-                "region":     region,
-                "service":    service,
+                "region": region,
+                "service": service,
             }
             session_token = self.aws_session_token.text().strip()
             if session_token:
@@ -649,13 +677,13 @@ class SavedCredentialsDialog(OAuthConnectionTestMixin, ListFormDialogMixin, QDia
     # ── Test connection (OAuth2 only) ─────────────────────────────────
 
     def _test_cred(self) -> None:
-        token_url  = self.o_token_url.text().strip()
-        client_id  = self.o_client_id.text().strip()
-        secret     = self.o_client_secret.text()
-        scope      = self.o_scope.text().strip()
+        token_url = self.o_token_url.text().strip()
+        client_id = self.o_client_id.text().strip()
+        secret = self.o_client_secret.text()
+        scope = self.o_scope.text().strip()
         token_auth = self.o_token_auth.currentData() or "body"
         grant_type = self.o_grant_type.currentText()
-        extra_raw  = self.o_extra.toPlainText().strip()
+        extra_raw = self.o_extra.toPlainText().strip()
 
         self._start_oauth_test(
             token_url=token_url,

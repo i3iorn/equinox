@@ -1,10 +1,10 @@
 import ssl
-import httpx
-
 from types import SimpleNamespace
 
-from equinox.core.format import error_mapper
+import httpx
+
 from equinox.core.exceptions import CertificateError, RequestError, RequestTimeoutError
+from equinox.core.format import error_mapper
 
 
 class DummyReq:
@@ -81,7 +81,11 @@ def test_timeout_handler_factory_sets_timeout_details():
 
 
 def test_http_status_and_http_error_handlers():
-    status_exc = httpx.HTTPStatusError("err", request=httpx.Request("GET", "https://example.com/api"), response=SimpleNamespace(status_code=418))
+    status_exc = httpx.HTTPStatusError(
+        "err",
+        request=httpx.Request("GET", "https://example.com/api"),
+        response=SimpleNamespace(status_code=418),
+    )
     status_result = error_mapper._http_status_handler(
         status_exc,
         SimpleNamespace(url="https://example.com/api"),
@@ -104,4 +108,3 @@ def test_unicode_encode_handler_returns_request_error():
 
     assert isinstance(result["error"], RequestError)
     assert "invalid characters" in str(result["error"]).lower()
-

@@ -1,6 +1,8 @@
 import builtins
 from typing import Any
+
 from .models import ALLOWED_MODULES, ALLOWED_PARENT_PACKAGES
+
 
 def _safe_import(
     name: str,
@@ -22,6 +24,7 @@ def _safe_import(
 
     raise ImportError(f"Module '{name}' is not allowed in scripts")
 
+
 _BLOCKED = frozenset(
     {
         "open",
@@ -35,7 +38,7 @@ _BLOCKED = frozenset(
         "__spec__",
         "__build_class__",
         "getattr",
-        "setattr",   # must be blocked alongside delattr — AST check only catches direct calls
+        "setattr",  # must be blocked alongside delattr — AST check only catches direct calls
         "hasattr",
         "delattr",
         "type",
@@ -45,6 +48,7 @@ _BLOCKED = frozenset(
         "help",
     }
 )
+
 
 def get_safe_builtins() -> dict:
     safe_builtins = {

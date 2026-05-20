@@ -1,20 +1,16 @@
 """Tests for multi-server import handling in OpenAPI and Postman importers."""
 
 import json
-import tempfile
-import pytest
-from pathlib import Path
 
-from equinox.storage import Database, CollectionManager
+import pytest
+
 from equinox.importers import OpenAPIImporter, PostmanImporter, preview_spec
 from equinox.importers.openapi import (
-    ServerInfo,
     _expand_server_variables,
     _resolve_servers_openapi3,
     _resolve_servers_swagger2,
 )
-from equinox.core.exceptions import ValidationError
-
+from equinox.storage import CollectionManager, Database
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Fixtures
@@ -178,39 +174,47 @@ class TestOpenAPIMultiServer:
         assert first_id == collections[0]["id"]
 
     def test_two_servers_create_two_collections(self, openapi_importer, col_mgr):
-        spec = self._make_spec([
-            {"url": "https://api.example.com", "description": "Production"},
-            {"url": "https://staging.example.com", "description": "Staging"},
-        ])
+        spec = self._make_spec(
+            [
+                {"url": "https://api.example.com", "description": "Production"},
+                {"url": "https://staging.example.com", "description": "Staging"},
+            ]
+        )
         openapi_importer.import_dict(spec)
         collections = col_mgr.list_collections()
         assert len(collections) == 2
 
     def test_collection_names_include_server_description(self, openapi_importer, col_mgr):
-        spec = self._make_spec([
-            {"url": "https://api.example.com", "description": "Production"},
-            {"url": "https://staging.example.com", "description": "Staging"},
-        ])
+        spec = self._make_spec(
+            [
+                {"url": "https://api.example.com", "description": "Production"},
+                {"url": "https://staging.example.com", "description": "Staging"},
+            ]
+        )
         openapi_importer.import_dict(spec)
         names = {c["name"] for c in col_mgr.list_collections()}
         assert any("Production" in n for n in names)
         assert any("Staging" in n for n in names)
 
     def test_each_collection_has_requests(self, openapi_importer, col_mgr):
-        spec = self._make_spec([
-            {"url": "https://api.example.com"},
-            {"url": "https://staging.example.com"},
-        ])
+        spec = self._make_spec(
+            [
+                {"url": "https://api.example.com"},
+                {"url": "https://staging.example.com"},
+            ]
+        )
         openapi_importer.import_dict(spec)
         for collection in col_mgr.list_collections():
             requests = col_mgr.list_requests(collection["id"])
             assert len(requests) == 1  # one path × one method
 
     def test_urls_use_correct_server_per_collection(self, openapi_importer, col_mgr):
-        spec = self._make_spec([
-            {"url": "https://prod.example.com"},
-            {"url": "https://staging.example.com"},
-        ])
+        spec = self._make_spec(
+            [
+                {"url": "https://prod.example.com"},
+                {"url": "https://staging.example.com"},
+            ]
+        )
         openapi_importer.import_dict(spec)
         all_urls = set()
         for col in col_mgr.list_collections():
@@ -239,10 +243,12 @@ class TestOpenAPIMultiServer:
         assert "prod.example.com/v3" in req["url"]
 
     def test_first_collection_id_returned(self, openapi_importer, col_mgr):
-        spec = self._make_spec([
-            {"url": "https://a.example.com"},
-            {"url": "https://b.example.com"},
-        ])
+        spec = self._make_spec(
+            [
+                {"url": "https://a.example.com"},
+                {"url": "https://b.example.com"},
+            ]
+        )
         first_id = openapi_importer.import_dict(spec)
         assert first_id == min(c["id"] for c in col_mgr.list_collections())
 
@@ -256,9 +262,7 @@ class TestOpenAPIMultiServer:
         assert collection_id > 0
         # TODO: fix in the future assert len(col_mgr.list_requests(collection_id)) == 1
 
-    def test_swagger2_multiple_schemes_create_multiple_collections(
-        self, openapi_importer, col_mgr
-    ):
+    def test_swagger2_multiple_schemes_create_multiple_collections(self, openapi_importer, col_mgr):
         spec = {
             "swagger": "2.0",
             "info": {"title": "Both Schemes", "version": "1.0.0"},
@@ -270,10 +274,7 @@ class TestOpenAPIMultiServer:
         openapi_importer.import_dict(spec)
         collections = col_mgr.list_collections()
         assert len(collections) == 2
-        urls = {
-            col_mgr.list_requests(c["id"])[0]["url"]
-            for c in collections
-        }
+        urls = {col_mgr.list_requests(c["id"])[0]["url"] for c in collections}
         assert "https://api.example.com/v1/users" in urls
         assert "http://api.example.com/v1/users" in urls
 
@@ -427,4 +428,3 @@ class TestPostmanBaseUrl:
         collection_id = postman_importer.import_dict(col)
         req_obj = col_mgr.get_request(col_mgr.list_requests(collection_id)[0]["id"])
         assert req_obj.headers.get("X-Api-Version") == "v3"
-

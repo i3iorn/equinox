@@ -7,21 +7,21 @@ highlighting, and formatting helpers.  Has no ``__init__`` — relies on
 
 from __future__ import annotations
 
+import difflib
 import json
 import logging
-import difflib
-from typing import Dict, Any, Optional
+from typing import Any
 
 from PyQt6.QtWidgets import QTableWidgetItem
 
 from equinox.core import urls
 from equinox.core.request import Response
-from equinox.gui.response_panel.pretty_print import CT_HIGHLIGHTERS
 from equinox.gui.response_panel._formatting import (
     format_size,
-    pretty_print_body,
     parse_cookies,
+    pretty_print_body,
 )
+from equinox.gui.response_panel.pretty_print import CT_HIGHLIGHTERS
 from equinox.gui.theme import Colors
 from equinox.security import redact_body, redact_headers, redact_url
 
@@ -75,7 +75,9 @@ class ResponseDisplayMixin:
         self.time_label.setText(f"{int(response.elapsed * 1000)} ms")
         self.size_label.setText(format_size(response.size))
         self.content_type_label.setText(content_type_summary)
-        self.content_type_label.setToolTip(content_type or "Content type not provided by the server")
+        self.content_type_label.setToolTip(
+            content_type or "Content type not provided by the server"
+        )
 
         # Verify values were actually set
         logger.debug(
@@ -87,7 +89,8 @@ class ResponseDisplayMixin:
 
         logger.debug(
             "_update_status_bar: %d %s, %d ms, %s",
-            code, response.reason,
+            code,
+            response.reason,
             int(response.elapsed * 1000),
             format_size(response.size),
         )
@@ -110,9 +113,10 @@ class ResponseDisplayMixin:
         """Display response body, handling size warnings."""
         logger.debug(
             "_display_body: size=%d, threshold=%d, body_text=%s visible=%s",
-            response.size, self._LARGE_BODY_THRESHOLD,
+            response.size,
+            self._LARGE_BODY_THRESHOLD,
             type(self.body_text).__name__,
-            self.body_text.isVisible() if hasattr(self.body_text, 'isVisible') else 'N/A',
+            self.body_text.isVisible() if hasattr(self.body_text, "isVisible") else "N/A",
         )
         if response.size > self._LARGE_BODY_THRESHOLD:
             self._body_warning.setVisible(True)
@@ -144,7 +148,9 @@ class ResponseDisplayMixin:
             self._pretty_body_text = pretty_print_body(response)
             self._render_body_by_mode(getattr(self, "_readability_mode", "pretty"))
             # Verify it was set
-            actual_text = self.body_text.toPlainText() if hasattr(self.body_text, 'toPlainText') else '(N/A)'
+            actual_text = (
+                self.body_text.toPlainText() if hasattr(self.body_text, "toPlainText") else "(N/A)"
+            )
             logger.debug(
                 "_display_body: rendered mode=%s body_text now contains %d chars",
                 getattr(self, "_readability_mode", "pretty"),
@@ -224,14 +230,17 @@ class ResponseDisplayMixin:
             logger.debug("Redacting body preview failed", exc_info=True)
             return text
 
-    def _maybe_redact_headers(self, headers: Dict[str, str]) -> Dict[str, str]:
+    def _maybe_redact_headers(self, headers: dict[str, str]) -> dict[str, str]:
         """Return headers with sensitive values masked when redaction preview is enabled."""
         if not getattr(self, "_redaction_preview", False):
             return dict(headers)
         try:
             masked = redact_headers(dict(headers))
             # Ensure non-sensitive values still pass body-level redaction for embedded tokens.
-            return {k: (v if v == "[REDACTED]" else self._maybe_redact_text(str(v))) for k, v in masked.items()}
+            return {
+                k: (v if v == "[REDACTED]" else self._maybe_redact_text(str(v)))
+                for k, v in masked.items()
+            }
         except Exception:
             logger.debug("Redacting headers preview failed", exc_info=True)
             return dict(headers)
@@ -255,7 +264,8 @@ class ResponseDisplayMixin:
             can_show_json = bool(response.is_json and response.size <= self._LARGE_BODY_THRESHOLD)
             logger.debug(
                 "_display_json_tree: is_json=%s, can_show=%s",
-                getattr(response, "is_json", None), can_show_json,
+                getattr(response, "is_json", None),
+                can_show_json,
             )
             if can_show_json:
                 obj = response.json()
@@ -287,7 +297,9 @@ class ResponseDisplayMixin:
         logger.debug(
             "_display_headers: resp_headers_table=%s visible=%s tabs=%s",
             type(self.resp_headers_table).__name__,
-            self.resp_headers_table.isVisible() if hasattr(self.resp_headers_table, 'isVisible') else 'N/A',
+            self.resp_headers_table.isVisible()
+            if hasattr(self.resp_headers_table, "isVisible")
+            else "N/A",
             type(self.tabs).__name__,
         )
 
@@ -305,10 +317,12 @@ class ResponseDisplayMixin:
         self.resp_headers_table.filter(text)
         self._update_headers_count_label(self.resp_headers_table.rowCount())
 
-    def _update_headers_count_label(self, visible_count: Optional[int] = None) -> None:
+    def _update_headers_count_label(self, visible_count: int | None = None) -> None:
         """Show both filtered and total header counts when a filter is active."""
         total_count = int(getattr(self, "_total_header_count", 0) or 0)
-        shown_count = self.resp_headers_table.rowCount() if visible_count is None else int(visible_count)
+        shown_count = (
+            self.resp_headers_table.rowCount() if visible_count is None else int(visible_count)
+        )
 
         if total_count <= 0:
             self._hdrs_count_label.setText("No headers")
@@ -353,7 +367,7 @@ class ResponseDisplayMixin:
     # Cookies
     # ------------------------------------------------------------------
 
-    def _load_cookies_tab(self, headers: Dict[str, str]) -> None:
+    def _load_cookies_tab(self, headers: dict[str, str]) -> None:
         """Parse Set-Cookie headers and populate the Cookies table."""
         self._cookies_table.setRowCount(0)
         cookies = parse_cookies(headers)
@@ -361,7 +375,7 @@ class ResponseDisplayMixin:
             self._add_cookie_row(cookie_name, attributes)
         self._update_cookies_tab_title()
 
-    def _add_cookie_row(self, cookie_name: str, attributes: Dict[str, str]) -> None:
+    def _add_cookie_row(self, cookie_name: str, attributes: dict[str, str]) -> None:
         """Add a single cookie row to the table."""
         row = self._cookies_table.rowCount()
         self._cookies_table.insertRow(row)
@@ -371,8 +385,12 @@ class ResponseDisplayMixin:
         self._cookies_table.setItem(row, 2, QTableWidgetItem(attributes.get("domain", "")))
         self._cookies_table.setItem(row, 3, QTableWidgetItem(attributes.get("path", "")))
         self._cookies_table.setItem(row, 4, QTableWidgetItem(attributes.get("expires", "")))
-        self._cookies_table.setItem(row, 5, QTableWidgetItem("✓" if attributes.get("secure") == "true" else ""))
-        self._cookies_table.setItem(row, 6, QTableWidgetItem("✓" if attributes.get("httponly") == "true" else ""))
+        self._cookies_table.setItem(
+            row, 5, QTableWidgetItem("✓" if attributes.get("secure") == "true" else "")
+        )
+        self._cookies_table.setItem(
+            row, 6, QTableWidgetItem("✓" if attributes.get("httponly") == "true" else "")
+        )
 
     def _update_cookies_tab_title(self) -> None:
         """Update the cookies tab title with the cookie count."""
@@ -408,7 +426,6 @@ class ResponseDisplayMixin:
 
     def _display_sent_request_url(self, response: Response) -> None:
         """Display the URL that was sent (prefer expanded httpx URL)."""
-        req = response.request
         display_url = self._build_display_url(response)
         self.sent_url_label.setText(self._maybe_redact_url(display_url))
 
@@ -431,7 +448,7 @@ class ResponseDisplayMixin:
         sent_hdrs = response.sent_headers or req.headers or {}
         self.sent_headers_table.load(self._maybe_redact_headers(dict(sent_hdrs)))
 
-    def _display_sent_request_body(self, body: Optional[Any]) -> None:
+    def _display_sent_request_body(self, body: Any | None) -> None:
         """Display the request body, if present."""
         if body:
             self.sent_body_text.set_code(self._maybe_redact_text(self._format_request_body(body)))

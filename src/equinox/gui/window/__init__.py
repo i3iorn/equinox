@@ -1,17 +1,35 @@
-﻿"""Main window for Equinox GUI.
+"""Main window for Equinox GUI.
 
 This module keeps high-level orchestration only.
 """
+
 from __future__ import annotations
+
 import json
 import logging
 from typing import Any
+
 from PyQt6 import sip
 from PyQt6.QtCore import QPoint, Qt, QTimer
 from PyQt6.QtGui import QKeySequence, QShortcut
-from PyQt6.QtWidgets import QApplication, QHBoxLayout, QMainWindow, QSplitter, QTabWidget, QVBoxLayout, QWidget
+from PyQt6.QtWidgets import (
+    QApplication,
+    QHBoxLayout,
+    QMainWindow,
+    QSplitter,
+    QTabWidget,
+    QVBoxLayout,
+    QWidget,
+)
+
 from equinox.application.history import HistoryFacade
 from equinox.core.request import Request, Response
+from equinox.storage import Database
+from equinox.storage.cookies import CookieJarManager
+
+from ..logging_utils import log_gui_event
+from ..ui_common import get_gui_settings
+from ..ui_usage_tracker import UIUsageTracker
 from ._environment import _EnvironmentMixin
 from ._frameless import _FramelessMixin
 from ._history import _HistoryMixin
@@ -19,11 +37,6 @@ from ._import_export import _ImportExportMixin
 from ._layout import _LayoutMixin
 from ._menu import _KEY_INTEL_DISABLED, _MenuMixin
 from ._panels import _PanelsMixin
-from ..logging_utils import log_gui_event
-from ..ui_usage_tracker import UIUsageTracker
-from ..ui_common import get_gui_settings
-from equinox.storage import Database
-from equinox.storage.cookies import CookieJarManager
 
 logger = logging.getLogger(__name__)
 
@@ -67,6 +80,7 @@ class MainWindow(
     QMainWindow,
 ):
     """Main application window."""
+
     def __init__(self, db: Database) -> None:
         super().__init__()
         self.db = db
@@ -298,7 +312,9 @@ class MainWindow(
         try:
             return set(json.loads(disabled_raw)) if disabled_raw else set()
         except Exception:
-            logger.debug("Invalid disabled-analyzers setting, defaulting to empty set", exc_info=True)
+            logger.debug(
+                "Invalid disabled-analyzers setting, defaulting to empty set", exc_info=True
+            )
             return set()
 
     def _on_response_received(self, response: Response) -> None:
@@ -310,6 +326,7 @@ class MainWindow(
     def _run_intelligence_analysis(self, response: Response) -> None:
         try:
             from equinox.gui.intelligence_worker import IntelligenceWorker
+
             self._reset_intelligence_worker()
             worker = IntelligenceWorker(
                 request=response.request,

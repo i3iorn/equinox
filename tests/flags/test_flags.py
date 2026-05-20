@@ -1,4 +1,3 @@
-
 import pytest
 
 from equinox.core.config.flags import (
@@ -46,4 +45,3 @@ def test_strict_secret_rotation_flag(monkeypatch):
 
     monkeypatch.setenv("EQUINOX_STRICT_SECRET_ROTATION", "yes")
     assert is_strict_secret_rotation_enabled() is True
-

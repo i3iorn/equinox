@@ -3,16 +3,16 @@
 import os
 from pathlib import Path
 
-from equinox.storage.database import Database
 from equinox.storage.collections import CollectionManager
+from equinox.storage.database import Database
 from equinox.storage.environments import EnvironmentManager
-from equinox.storage.history import HistoryManager
-from equinox.storage.variable_groups import VariableGroupManager
 from equinox.storage.global_variables import GlobalVariablesManager
+from equinox.storage.history import HistoryManager
+from equinox.storage.migrations import MIGRATIONS, MigrationRunner
 from equinox.storage.oauth_clients import OAuthClientManager
 from equinox.storage.saved_credentials import SavedCredentialsManager
 from equinox.storage.secret_manager_configs import SecretManagerConfigStore
-from equinox.storage.migrations import MigrationRunner, MIGRATIONS
+from equinox.storage.variable_groups import VariableGroupManager
 
 # Canonical database path shared by CLI and GUI
 _DEFAULT_DB_PATH = Path.home() / ".equinox" / "equinox.db"

@@ -1,4 +1,5 @@
 """Import/export operations mixin for MainWindow."""
+
 from __future__ import annotations
 
 import logging
@@ -6,7 +7,10 @@ from pathlib import Path
 
 from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import (
-    QFileDialog, QInputDialog, QMessageBox, QProgressDialog,
+    QFileDialog,
+    QInputDialog,
+    QMessageBox,
+    QProgressDialog,
 )
 
 from equinox.storage import CollectionManager
@@ -122,6 +126,7 @@ class _ImportExportMixin:
 
     def _import_postman(self) -> None:
         from equinox.importers import PostmanImporter
+
         self._import_with(
             PostmanImporter,
             "Import Postman Collection",
@@ -131,6 +136,7 @@ class _ImportExportMixin:
 
     def _import_openapi(self) -> None:
         from equinox.importers import OpenAPIImporter
+
         self._import_with(
             OpenAPIImporter,
             "Import OpenAPI/Swagger Specification",
@@ -140,6 +146,7 @@ class _ImportExportMixin:
 
     def _import_har(self) -> None:
         from equinox.importers import HARImporter
+
         self._import_with(
             HARImporter,
             "Import HAR File",
@@ -149,6 +156,7 @@ class _ImportExportMixin:
 
     def _import_insomnia(self) -> None:
         from equinox.importers import InsomniaImporter
+
         self._import_with(
             InsomniaImporter,
             "Import Insomnia Collection",
@@ -190,9 +198,7 @@ class _ImportExportMixin:
 
         openapi_title = col_name
         if format_type == "openapi":
-            title, ok = QInputDialog.getText(
-                self, "OpenAPI Title", "API Title:", text=col_name
-            )
+            title, ok = QInputDialog.getText(self, "OpenAPI Title", "API Title:", text=col_name)
             if not ok:
                 return
             openapi_title = title
@@ -212,7 +218,7 @@ class _ImportExportMixin:
         openapi_title: str,
     ) -> None:
         """Run collection export in the background with retry support."""
-        from equinox.exporters import PostmanExporter, OpenAPIExporter, InsomniaExporter
+        from equinox.exporters import InsomniaExporter, OpenAPIExporter, PostmanExporter
 
         def _operation(cancel_event=None) -> str:
             if cancel_event is not None and cancel_event.is_set():
@@ -244,4 +250,3 @@ class _ImportExportMixin:
                 openapi_title=openapi_title,
             ),
         )
-

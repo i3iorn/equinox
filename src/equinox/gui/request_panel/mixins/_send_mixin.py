@@ -18,25 +18,22 @@ Responsibilities:
 from __future__ import annotations
 
 import logging
-from typing import List, Optional
 
 from PyQt6.QtCore import QTimer
 
-from equinox.core.format.error_enrichment import RichError, enrich_exception
-from equinox.core.log_setup import get_log_file
-from equinox.core.request import Request, Response
-from equinox.gui.error_presenter import ErrorPresenter
 from equinox.application.requests import (
     apply_captures,
-    build_preflight_issues,
     build_error_handling_plan,
+    build_preflight_issues,
     build_success_handling_plan,
     issues_to_messages,
     prepare_send,
     run_post_script,
 )
-from equinox.gui.workers import RequestWorker
-
+from equinox.core.format.error_enrichment import RichError, enrich_exception
+from equinox.core.log_setup import get_log_file
+from equinox.core.request import Request, Response
+from equinox.gui.error_presenter import ErrorPresenter
 from equinox.gui.request_panel._constants import (
     PREFLIGHT_SEPARATOR,
     STATUS_DURATION_LONG,
@@ -46,6 +43,7 @@ from equinox.gui.request_panel._constants import (
 from equinox.gui.request_panel.mixins._helpers import (
     notify_log_panel,
 )
+from equinox.gui.workers import RequestWorker
 
 logger = logging.getLogger(__name__)
 
@@ -82,7 +80,7 @@ class _RequestSendMixin:
 
     # ── Preflight validation ──────────────────────────────────────────────────
 
-    def _run_preflight_checks(self) -> List[str]:
+    def _run_preflight_checks(self) -> list[str]:
         """Return advisory warnings (empty list = all clear).
 
         Checks:
@@ -197,7 +195,9 @@ class _RequestSendMixin:
         self.current_request = request
 
         logger.info(
-            "Sending %s %s", request.method, request.url,
+            "Sending %s %s",
+            request.method,
+            request.url,
             extra={"method": request.method, "url": request.url},
         )
         notify_log_panel(self._logging_panel, "log_request", request)
@@ -216,9 +216,8 @@ class _RequestSendMixin:
         else:
             self._preflight_banner.setVisible(False)
 
-
     @staticmethod
-    def _resolve_proxy_url() -> Optional[str]:
+    def _resolve_proxy_url() -> str | None:
         """Read proxy settings from QSettings on the main thread.
 
         QSettings must NOT be accessed from background QThreads (UB on Windows).
@@ -231,9 +230,7 @@ class _RequestSendMixin:
     @staticmethod
     def _display_script_result(label, result) -> None:
         """Update script-result label with success/error styling."""
-        label.setObjectName(
-            "script-result-error" if result.error else "script-result-ok"
-        )
+        label.setObjectName("script-result-error" if result.error else "script-result-ok")
         if result.error:
             label.setText(f"Error: {result.error}")
         else:
@@ -254,14 +251,13 @@ class _RequestSendMixin:
         """Create and start the background request worker."""
         proxy = self._resolve_proxy_url()
         self._worker = RequestWorker(
-            request, self,
+            request,
+            self,
             cookie_manager=self._cookie_manager,
             proxy=proxy,
         )
         worker_ref = self._worker
-        self._worker.finished.connect(
-            lambda result, w=worker_ref: self._handle_response(result, w)
-        )
+        self._worker.finished.connect(lambda result, w=worker_ref: self._handle_response(result, w))
         self._worker.start()
 
     def _cancel_request(self) -> None:
@@ -335,7 +331,8 @@ class _RequestSendMixin:
 
         # ── Logging ──
         logger.error(
-            "Request failed: %s", result.message,
+            "Request failed: %s",
+            result.message,
             extra={
                 "error_type": result.exc_type,
                 "url": getattr(_sent_request, "url", "")[:_URL_ERROR_LOG_LIMIT],
@@ -415,14 +412,15 @@ class _RequestSendMixin:
         # Refresh auth display (may have been mutated by auto-refresh in worker)
         self._update_auth_display(self._auth)
 
-    def _log_success_response(
-        self, request: Request, response: Response, elapsed_ms: int
-    ) -> None:
+    def _log_success_response(self, request: Request, response: Response, elapsed_ms: int) -> None:
         """Log a successful response with structured context."""
         logger.info(
             "%s %s -> %d %s (%d ms)",
-            request.method, request.url[:_URL_LOG_LIMIT],
-            response.status_code, response.reason, elapsed_ms,
+            request.method,
+            request.url[:_URL_LOG_LIMIT],
+            response.status_code,
+            response.reason,
+            elapsed_ms,
             extra={
                 "method": request.method,
                 "url": request.url[:_URL_LOG_LIMIT],
@@ -443,7 +441,9 @@ class _RequestSendMixin:
         if outcome.session_updates:
             self._session_vars.update(outcome.session_updates)
             self.session_vars_changed.emit(dict(self._session_vars))
-        self.captures_results_label.setText("\n".join(outcome.display_lines) if outcome.display_lines else "—")
+        self.captures_results_label.setText(
+            "\n".join(outcome.display_lines) if outcome.display_lines else "—"
+        )
 
     def _run_post_script(self, response: Response) -> None:
         """Execute post-response script if defined."""
@@ -464,11 +464,15 @@ class _RequestSendMixin:
         self._display_script_result(self.post_script_result, outcome.script_result)
         self._apply_script_vars(outcome.script_result)
 
-    def _apply_deferred_persistence_plan(self, sent_request: Request, response: Optional[Response], plan) -> None:
+    def _apply_deferred_persistence_plan(
+        self, sent_request: Request, response: Response | None, plan
+    ) -> None:
         """Execute deferred persistence side effects from a service-level plan."""
         if plan.save_history:
             if response is None:
-                self._defer_task(self._request_history.save_history_safe, sent_request, error=plan.history_error)
+                self._defer_task(
+                    self._request_history.save_history_safe, sent_request, error=plan.history_error
+                )
             else:
                 self._defer_task(self._request_history.save_history_safe, sent_request, response)
         self._persist_inherited_auth_tokens(should_persist=plan.persist_inherited_token)
@@ -513,7 +517,6 @@ class _RequestSendMixin:
             logger.debug("Persisted own-auth OAuth2 token for request %d", req.id)
         except Exception as exc:
             logger.debug("Failed to persist own OAuth2 token: %s", exc)
-
 
     # ── UI state management ───────────────────────────────────────────────────
 

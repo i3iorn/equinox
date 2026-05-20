@@ -1,21 +1,30 @@
 """Environment management dialog — full variable CRUD."""
 
-from PyQt6.QtWidgets import (
-    QDialog, QVBoxLayout, QHBoxLayout, QSplitter,
-    QListWidget, QListWidgetItem, QPushButton,
-    QInputDialog, QMessageBox, QLabel, QWidget,
-    QTableWidget, QTableWidgetItem, QHeaderView,
-    QDialogButtonBox, QAbstractItemView, QFileDialog,
-)
 from PyQt6.QtCore import Qt, pyqtSignal
-from PyQt6.QtGui import QColor, QFont
-
-from typing import Optional
+from PyQt6.QtGui import QFont
+from PyQt6.QtWidgets import (
+    QAbstractItemView,
+    QDialog,
+    QDialogButtonBox,
+    QFileDialog,
+    QHBoxLayout,
+    QHeaderView,
+    QInputDialog,
+    QLabel,
+    QListWidget,
+    QMessageBox,
+    QPushButton,
+    QSplitter,
+    QTableWidget,
+    QTableWidgetItem,
+    QVBoxLayout,
+    QWidget,
+)
 
 from equinox.core.io.dotenv import parse_dotenv as _parse_dotenv
+from equinox.gui.dialogs._list_form_dialog_mixin import ListFormDialogMixin
 from equinox.gui.file_ops import safe_read_text_file, validate_selected_path
 from equinox.gui.theme import Colors
-from equinox.gui.dialogs._list_form_dialog_mixin import ListFormDialogMixin
 from equinox.storage import Database, EnvironmentManager
 
 _MAX_DOTENV_IMPORT_BYTES = 2 * 1024 * 1024
@@ -30,15 +39,15 @@ class EnvironmentDialog(ListFormDialogMixin, QDialog):
     interpolation throughout the app.
     """
 
-    environment_changed = pyqtSignal()   # emitted after any structural change
+    environment_changed = pyqtSignal()  # emitted after any structural change
 
     def __init__(self, db: Database, parent=None):
         super().__init__(parent)
         self.db = db
         self.env_manager = EnvironmentManager(db)
-        self._current_env_id: Optional[int] = None
-        self._current_id: Optional[int] = None  # Alias for mixin
-        self._dirty = False          # unsaved variable edits
+        self._current_env_id: int | None = None
+        self._current_id: int | None = None  # Alias for mixin
+        self._dirty = False  # unsaved variable edits
 
         # DirtyDialogMixin requirements
         self._save_callback = self._save_variables
@@ -71,10 +80,10 @@ class EnvironmentDialog(ListFormDialogMixin, QDialog):
         llay.addWidget(self.env_list, 1)
 
         env_btns = QHBoxLayout()
-        self.new_btn      = QPushButton("New…")
-        self.rename_btn   = QPushButton("Rename…")
+        self.new_btn = QPushButton("New…")
+        self.rename_btn = QPushButton("Rename…")
         self.activate_btn = QPushButton("Activate")
-        self.delete_btn   = QPushButton("Delete")
+        self.delete_btn = QPushButton("Delete")
         for b in (self.new_btn, self.rename_btn, self.activate_btn, self.delete_btn):
             b.setFixedHeight(26)
             env_btns.addWidget(b)
@@ -117,12 +126,17 @@ class EnvironmentDialog(ListFormDialogMixin, QDialog):
         rlay.addWidget(self.var_table, 1)
 
         var_btns = QHBoxLayout()
-        self.add_var_btn       = QPushButton("Add Variable")
-        self.remove_var_btn    = QPushButton("Remove Selected")
+        self.add_var_btn = QPushButton("Add Variable")
+        self.remove_var_btn = QPushButton("Remove Selected")
         self.import_dotenv_btn = QPushButton("Import .env…")
         self.import_dotenv_btn.setToolTip("Load variables from a .env file (merged with existing)")
-        self.save_vars_btn     = QPushButton("💾  Save Variables")
-        for b in (self.add_var_btn, self.remove_var_btn, self.import_dotenv_btn, self.save_vars_btn):
+        self.save_vars_btn = QPushButton("💾  Save Variables")
+        for b in (
+            self.add_var_btn,
+            self.remove_var_btn,
+            self.import_dotenv_btn,
+            self.save_vars_btn,
+        ):
             b.setEnabled(False)
             var_btns.addWidget(b)
         var_btns.addStretch()
@@ -148,7 +162,6 @@ class EnvironmentDialog(ListFormDialogMixin, QDialog):
 
     def _build_list_items(self):
         """Yield (item_id, label, kwargs) for each environment."""
-        from PyQt6.QtGui import QFont
         envs = self.env_manager.list_environments()
         for env in envs:
             name = env["name"]
@@ -157,6 +170,7 @@ class EnvironmentDialog(ListFormDialogMixin, QDialog):
             kwargs = {}
             if active:
                 from equinox.gui.theme import Colors
+
                 kwargs["fg_color"] = Colors.GREEN
                 font = QFont()
                 font.setBold(True)
@@ -181,9 +195,13 @@ class EnvironmentDialog(ListFormDialogMixin, QDialog):
         """Update button states based on current selection."""
         has = self._current_id is not None
         for btn in (
-            self.rename_btn, self.activate_btn, self.delete_btn,
-            self.add_var_btn, self.remove_var_btn,
-            self.import_dotenv_btn, self.save_vars_btn,
+            self.rename_btn,
+            self.activate_btn,
+            self.delete_btn,
+            self.add_var_btn,
+            self.remove_var_btn,
+            self.import_dotenv_btn,
+            self.save_vars_btn,
         ):
             btn.setEnabled(has)
         if not has:
@@ -195,12 +213,11 @@ class EnvironmentDialog(ListFormDialogMixin, QDialog):
         env = self.env_manager.get_environment(env_id)
         if not env:
             return
-        variables   = env.get("variables", {})
+        variables = env.get("variables", {})
         secret_keys = set(env.get("secret_keys") or [])
-        name        = env["name"]
-        active_tag  = (
-            f" <span style='color:{Colors.GREEN};'>(active)</span>"
-            if env.get("is_active") else ""
+        name = env["name"]
+        active_tag = (
+            f" <span style='color:{Colors.GREEN};'>(active)</span>" if env.get("is_active") else ""
         )
         self.var_header.setText(
             f"<b>Variables — {name}</b>{active_tag}"
@@ -255,9 +272,7 @@ class EnvironmentDialog(ListFormDialogMixin, QDialog):
         self._update_save_btn()
 
     def _remove_selected_variable(self) -> None:
-        rows = sorted(
-            {i.row() for i in self.var_table.selectedItems()}, reverse=True
-        )
+        rows = sorted({i.row() for i in self.var_table.selectedItems()}, reverse=True)
         if not rows:
             QMessageBox.information(self, "No Selection", "Select one or more rows to remove.")
             return
@@ -271,17 +286,17 @@ class EnvironmentDialog(ListFormDialogMixin, QDialog):
     def _save_variables(self) -> bool:
         if self._current_env_id is None:
             return False
-        variables:   dict[str, str] = {}
-        secret_keys: list[str]      = []
+        variables: dict[str, str] = {}
+        secret_keys: list[str] = []
         errors = []
         for row in range(self.var_table.rowCount()):
             k_item = self.var_table.item(row, 0)
             v_item = self.var_table.item(row, 1)
             s_item = self.var_table.item(row, 2)
-            key   = k_item.text().strip() if k_item else ""
-            value = v_item.text()         if v_item else ""
+            key = k_item.text().strip() if k_item else ""
+            value = v_item.text() if v_item else ""
             if not key:
-                continue   # skip blank-key rows
+                continue  # skip blank-key rows
             if key in variables:
                 errors.append(f"Duplicate key: '{key}'")
             else:
@@ -299,7 +314,7 @@ class EnvironmentDialog(ListFormDialogMixin, QDialog):
             )
             self._dirty = False
             self._update_save_btn()
-            self._load_variables(self._current_env_id)   # refresh count in header
+            self._load_variables(self._current_env_id)  # refresh count in header
             self.environment_changed.emit()
             try:
                 self.window().statusBar().showMessage("Variables saved", 3000)
@@ -327,11 +342,9 @@ class EnvironmentDialog(ListFormDialogMixin, QDialog):
         items = self.env_list.selectedItems()
         if not items:
             return
-        env_id   = items[0].data(Qt.ItemDataRole.UserRole)
+        env_id = items[0].data(Qt.ItemDataRole.UserRole)
         old_name = items[0].text().lstrip("✓").strip()
-        new_name, ok = QInputDialog.getText(
-            self, "Rename Environment", "New name:", text=old_name
-        )
+        new_name, ok = QInputDialog.getText(self, "Rename Environment", "New name:", text=old_name)
         if not ok or not new_name.strip() or new_name.strip() == old_name:
             return
         try:
@@ -350,7 +363,7 @@ class EnvironmentDialog(ListFormDialogMixin, QDialog):
             self.env_manager.set_active_environment(env_id)
             self.environment_changed.emit()
             self._refresh_list(select_id=env_id)
-            self._load_variables(env_id)   # refresh active tag in header
+            self._load_variables(env_id)  # refresh active tag in header
         except Exception as exc:
             QMessageBox.critical(self, "Error", f"Failed to activate: {exc}")
 
@@ -358,10 +371,11 @@ class EnvironmentDialog(ListFormDialogMixin, QDialog):
         items = self.env_list.selectedItems()
         if not items:
             return
-        name   = items[0].text().lstrip("✓").strip()
+        name = items[0].text().lstrip("✓").strip()
         env_id = items[0].data(Qt.ItemDataRole.UserRole)
         reply = QMessageBox.question(
-            self, "Confirm Delete",
+            self,
+            "Confirm Delete",
             f"Delete environment '{name}'?\n\nThis cannot be undone.",
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
         )
@@ -381,8 +395,10 @@ class EnvironmentDialog(ListFormDialogMixin, QDialog):
         if self._current_env_id is None:
             return
         path, _ = QFileDialog.getOpenFileName(
-            self, "Import .env File", "",
-            "Env Files (*.env *.env.*);;Text Files (*.txt);;All Files (*)"
+            self,
+            "Import .env File",
+            "",
+            "Env Files (*.env *.env.*);;Text Files (*.txt);;All Files (*)",
         )
         if not path:
             return
@@ -404,8 +420,7 @@ class EnvironmentDialog(ListFormDialogMixin, QDialog):
 
         if not new_vars:
             QMessageBox.information(
-                self, "Import .env",
-                "No KEY=VALUE pairs found in the selected file."
+                self, "Import .env", "No KEY=VALUE pairs found in the selected file."
             )
             return
 
@@ -435,7 +450,8 @@ class EnvironmentDialog(ListFormDialogMixin, QDialog):
         self._dirty = True
         self._update_save_btn()
         QMessageBox.information(
-            self, "Import .env",
+            self,
+            "Import .env",
             f"Imported {len(new_vars)} variable(s): {added} new, {updated} updated.\n\n"
-            "Click 'Save Variables' to persist the changes."
+            "Click 'Save Variables' to persist the changes.",
         )

@@ -1,11 +1,11 @@
 """Tests for secure credential storage."""
 
 import json
-import pytest
-from pathlib import Path
-from equinox.security.secure_storage import SecureStorage, _wipe_bytes
-from equinox.core.exceptions import ValidationError, SecurityError
 
+import pytest
+
+from equinox.core.exceptions import SecurityError, ValidationError
+from equinox.security.secure_storage import SecureStorage, _wipe_bytes
 
 # Strong password that satisfies the ≥12 chars, 3+ char-class rule.
 STRONG_PW = "Str0ng!Export#9"
@@ -29,9 +29,7 @@ class TestSecureStorage:
     def test_store_with_metadata(self, storage):
         """Test storing credential with metadata."""
         storage.store(
-            "oauth_token",
-            "token-abc-123",
-            metadata={"expires": "2024-12-31", "scope": "read:user"}
+            "oauth_token", "token-abc-123", metadata={"expires": "2024-12-31", "scope": "read:user"}
         )
         retrieved = storage.retrieve("oauth_token")
         assert retrieved == "token-abc-123"
@@ -122,7 +120,6 @@ class TestSecureStorage:
         # On Unix-like systems, check permissions
         # On Windows, this might not work the same way
         try:
-            import stat
             mode = storage.storage_path.stat().st_mode
             # Owner should have read/write, others should not
             # This test might need to be skipped on Windows
@@ -131,6 +128,7 @@ class TestSecureStorage:
 
 
 # ── Export / Import ───────────────────────────────────────────────────────────
+
 
 class TestExportImport:
     """Tests for the hardened export_encrypted / import_encrypted flow."""
@@ -243,6 +241,7 @@ class TestExportImport:
     def test_import_legacy_v1_format(self, storage, tmp_path):
         """A v1 export (PBKDF2, 16-byte salt) must still be importable."""
         import base64
+
         from cryptography.fernet import Fernet
 
         pw = STRONG_PW
@@ -272,14 +271,12 @@ class TestExportImport:
     def test_wipe_bytes_zeroes_content(self):
         """_wipe_bytes should zero-fill most of the bytes buffer on CPython."""
         import sys
+
         if sys.implementation.name != "cpython":
             pytest.skip("_wipe_bytes only works on CPython")
-        b = bytes(b"supersecret!1234")
+        b = b"supersecret!1234"
         _wipe_bytes(b)
         # After wiping, the majority of the buffer should be zeroed.
         # Allow a small margin for CPython header layout differences.
         zero_count = b.count(b"\x00")
-        assert zero_count >= len(b) - 2, (
-            f"Expected most bytes zeroed, got {zero_count}/{len(b)}"
-        )
-
+        assert zero_count >= len(b) - 2, f"Expected most bytes zeroed, got {zero_count}/{len(b)}"

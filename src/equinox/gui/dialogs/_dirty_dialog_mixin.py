@@ -15,10 +15,10 @@ parts that genuinely differ.  Subclasses set the ``_list_widget`` and
 
 from __future__ import annotations
 
-from typing import Callable, Optional
+from typing import Callable
 
 from PyQt6.QtCore import Qt
-from PyQt6.QtWidgets import QListWidget, QLabel, QMessageBox
+from PyQt6.QtWidgets import QLabel, QListWidget, QMessageBox
 
 from equinox.gui.theme import Colors
 
@@ -77,7 +77,7 @@ class DirtyDialogMixin:
 
     # ── Dirty-switch prompt ───────────────────────────────────────────
 
-    def _prompt_unsaved(self, current_id: Optional[int]) -> bool:
+    def _prompt_unsaved(self, current_id: int | None) -> bool:
         """Ask the user to save, discard, or cancel an item switch.
 
         Returns ``True`` if the caller should proceed with the switch,
@@ -105,7 +105,7 @@ class DirtyDialogMixin:
     # ── Status label helper ───────────────────────────────────────────
 
     @staticmethod
-    def _format_status(msg: str, ok: Optional[bool]) -> str:
+    def _format_status(msg: str, ok: bool | None) -> str:
         """Return an HTML string for a coloured status message."""
         if ok is True:
             colour = Colors.GREEN
@@ -115,7 +115,6 @@ class DirtyDialogMixin:
             colour = Colors.FG_MUTED
         return f"<span style='color:{colour};'>{msg}</span>"
 
-    def _set_status(self, msg: str, ok: Optional[bool]) -> None:
+    def _set_status(self, msg: str, ok: bool | None) -> None:
         """Set a coloured status message on ``status_label``."""
         self.status_label.setText(self._format_status(msg, ok))
-

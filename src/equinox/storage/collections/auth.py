@@ -1,11 +1,16 @@
 """Auth serialization and resolution methods for CollectionManager."""
 
-import logging
-from typing import Optional
+from __future__ import annotations
 
-from equinox.core.auth_cipher import encrypt_auth_data, decrypt_auth_data
-from equinox.core.exceptions import StorageError, SecurityError
+import logging
+from typing import TYPE_CHECKING
+
+from equinox.core.auth_cipher import decrypt_auth_data, encrypt_auth_data
+from equinox.core.exceptions import SecurityError, StorageError
 from equinox.storage.utils import safe_json_dumps, safe_json_loads
+
+if TYPE_CHECKING:
+    from equinox.core.request import Request
 
 logger = logging.getLogger(__name__)
 
@@ -16,7 +21,7 @@ class CollectionAuthMixin:
     # ── Serialization helpers ──────────────────────────────────────────
 
     @staticmethod
-    def _serialize_auth(auth) -> "tuple[Optional[str], Optional[str]]":
+    def _serialize_auth(auth) -> "tuple[str | None, str | None]":
         """Return (auth_type, encrypted_auth_data) from an auth strategy object or None.
 
         The JSON blob is encrypted at rest via :func:`encrypt_auth_data`.
@@ -31,12 +36,10 @@ class CollectionAuthMixin:
             blob = safe_json_dumps(d, max_len=50_000)
             return d.get("type"), encrypt_auth_data(blob)
         except Exception as exc:
-            raise StorageError(
-                f"Failed to serialize auth ({type(auth).__name__}): {exc}"
-            ) from exc
+            raise StorageError(f"Failed to serialize auth ({type(auth).__name__}): {exc}") from exc
 
     @staticmethod
-    def _deserialize_auth(auth_type: "Optional[str]", auth_data: "Optional[str]"):
+    def _deserialize_auth(auth_type: "str | None", auth_data: "str | None"):
         """Return an auth strategy object from DB columns, or None.
 
         Handles both encrypted (``enc:…``) and legacy plaintext JSON
@@ -76,6 +79,7 @@ class CollectionAuthMixin:
         # Use the embedded "type" key when available; fall back to the
         # auth_type column stored alongside the blob.
         from equinox.auth import auth_from_dict
+
         return auth_from_dict(auth_type, d)
 
     # ── Collection-level auth ─────────────────────────────────────────
@@ -124,7 +128,9 @@ class CollectionAuthMixin:
         )
         logger.info(
             "Set auth on folder %r in collection %d: %s",
-            folder_path, collection_id, a_type,
+            folder_path,
+            collection_id,
+            a_type,
         )
 
     def get_folder_auth(self, collection_id: int, folder_path: str):
@@ -209,9 +215,7 @@ class CollectionAuthMixin:
 
         # Fall back to collection auth
         if collection_row:
-            auth = self._deserialize_auth(
-                collection_row["auth_type"], collection_row["auth_data"]
-            )
+            auth = self._deserialize_auth(collection_row["auth_type"], collection_row["auth_data"])
             if auth is not None:
                 return auth, "collection"
 

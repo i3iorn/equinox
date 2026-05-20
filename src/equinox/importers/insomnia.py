@@ -1,13 +1,12 @@
 """Insomnia v4 collection importer."""
 
-import json
-from equinox.storage.utils import safe_json_loads
 import logging
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict
 
 from equinox.core.request import Request
-from equinox.importers._utils import validate_import_file, normalize_path_variables
+from equinox.importers._utils import normalize_path_variables, validate_import_file
+from equinox.storage.utils import safe_json_loads
 
 logger = logging.getLogger(__name__)
 
@@ -60,7 +59,7 @@ class InsomniaImporter:
 
     # ── Internal helpers ──────────────────────────────────────────────
 
-    def _import_data(self, data: Dict[str, Any]) -> None:
+    def _import_data(self, data: dict[str, Any]) -> None:
         resources = data.get("resources", [])
         if not resources:
             raise ValueError("No resources found in the Insomnia export")
@@ -68,16 +67,14 @@ class InsomniaImporter:
         # Find workspace → collection name
         workspaces = [r for r in resources if r.get("_type") == "workspace"]
         workspace_name = workspaces[0]["name"] if workspaces else "Insomnia Import"
-        workspace_id   = workspaces[0].get("_id", "") if workspaces else ""
+        workspace_id = workspaces[0].get("_id", "") if workspaces else ""
 
         col_id = self.manager.create_collection(workspace_name)
         logger.info("Created collection '%s' (id=%d)", workspace_name, col_id)
 
         # Build folder lookup: _id → resource dict
-        folders: Dict[str, Dict] = {
-            r["_id"]: r
-            for r in resources
-            if r.get("_type") == "request_group"
+        folders: dict[str, Dict] = {
+            r["_id"]: r for r in resources if r.get("_type") == "request_group"
         }
 
         def get_folder_path(resource_id: str) -> str:
@@ -108,14 +105,14 @@ class InsomniaImporter:
 
     def _import_request(
         self,
-        res: Dict[str, Any],
+        res: dict[str, Any],
         col_id: int,
-        folders: Dict[str, Dict],
+        folders: dict[str, Dict],
         workspace_id: str,
         get_folder_path,
     ) -> None:
         """Convert one Insomnia request resource into an Equinox Request and save it."""
-        parent_id   = res.get("parentId", "")
+        parent_id = res.get("parentId", "")
         folder_path = get_folder_path(parent_id) if parent_id != workspace_id else ""
 
         # Headers: list of {"name": "...", "value": "...", "disabled": bool}
@@ -136,7 +133,7 @@ class InsomniaImporter:
 
         # Body
         body_obj = res.get("body") or {}
-        body: Optional[str] = None
+        body: str | None = None
         if isinstance(body_obj, dict):
             if body_obj.get("text"):
                 body = body_obj["text"]

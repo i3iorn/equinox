@@ -3,13 +3,12 @@
 from __future__ import annotations
 
 import sys
-from typing import Optional
 
 from PyQt6.QtGui import QPalette
 from PyQt6.QtWidgets import QApplication
 
 
-def system_is_dark(app: Optional[QApplication] = None) -> bool:
+def system_is_dark(app: QApplication | None = None) -> bool:
     """Best-effort detection of whether the OS/application palette is dark."""
     if sys.platform == "win32":
         try:
@@ -31,4 +30,3 @@ def system_is_dark(app: Optional[QApplication] = None) -> bool:
         return window_color.lightnessF() < 0.5
 
     return False
-

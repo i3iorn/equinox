@@ -1,12 +1,13 @@
 """Streaming JSON/JSONC lexer and PyQt6 syntax highlighter."""
 
 import re
+from collections.abc import Generator
 from enum import Enum
-from typing import Generator, NamedTuple
+from typing import NamedTuple
 
 from PyQt6.QtGui import QSyntaxHighlighter
 
-from equinox.gui.syntax_highlighter.base import _make_format, _VARIABLE_FMT, _VARIABLE_PATTERN
+from equinox.gui.syntax_highlighter.base import _VARIABLE_FMT, _VARIABLE_PATTERN, _make_format
 from equinox.gui.theme import Colors
 
 __all__ = ["JsonHighlighter", "JsonLexer", "State"]
@@ -19,9 +20,7 @@ __all__ = ["JsonHighlighter", "JsonLexer", "State"]
 _NUMBER_RE = re.compile(r"-?(?:0|[1-9]\d*)(?:\.\d+)?(?:[eE][+-]?\d+)?")
 
 # ISO-8601 timestamp: YYYY-MM-DD THH:MM:SS[.fractional][timezone]
-_TIMESTAMP_RE = re.compile(
-    r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})?"
-)
+_TIMESTAMP_RE = re.compile(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})?")
 
 # Unicode escape sequence validator (\uXXXX)
 _UNICODE_HEX_RE = re.compile(r"[0-9a-fA-F]{4}")
@@ -43,6 +42,7 @@ _CONTROL_CHAR_THRESHOLD: int = 0x20
 # ---------------------------------------------------------------------------
 # Lexer state machine
 # ---------------------------------------------------------------------------
+
 
 class State(Enum):
     """Lexer state for multi-line context tracking."""
@@ -69,6 +69,7 @@ class Token(NamedTuple):
 # Lexer
 # ---------------------------------------------------------------------------
 
+
 class JsonLexer:
     """Streaming JSON/JSONC lexer that handles multi-line state.
 
@@ -76,9 +77,7 @@ class JsonLexer:
     block comments. Supports optional JSON5 extensions (comments, timestamps).
     """
 
-    def __init__(
-        self, *, enable_comments: bool = True, enable_timestamps: bool = True
-    ) -> None:
+    def __init__(self, *, enable_comments: bool = True, enable_timestamps: bool = True) -> None:
         """Initialize lexer with optional JSON5 extensions.
 
         Parameters
@@ -95,9 +94,7 @@ class JsonLexer:
     # Main entry point
     # ------------------------------------------------------------------
 
-    def tokenize_line(
-        self, text: str, state: State
-    ) -> Generator[Token, None, State]:
+    def tokenize_line(self, text: str, state: State) -> Generator[Token, None, State]:
         """Tokenize one line, returning tokens and the final state.
 
         The generator's return value (accessed via StopIteration.value) is the
@@ -267,10 +264,10 @@ class JsonLexer:
         return state
 
 
-
 # ---------------------------------------------------------------------------
 # Highlighter
 # ---------------------------------------------------------------------------
+
 
 class JsonHighlighter(QSyntaxHighlighter):
     """JSON/JSONC syntax highlighter using streaming lexer.
@@ -375,8 +372,6 @@ class JsonHighlighter(QSyntaxHighlighter):
         # Apply {{variable}} placeholders last (highest precedence)
         if "{{" in text:
             for match in _VARIABLE_PATTERN.finditer(text):
-                self.setFormat(
-                    match.start(), match.end() - match.start(), _VARIABLE_FMT
-                )
+                self.setFormat(match.start(), match.end() - match.start(), _VARIABLE_FMT)
 
         self.setCurrentBlockState(final_state.value)

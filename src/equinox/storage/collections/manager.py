@@ -1,19 +1,26 @@
 """Collection management"""
 
 import logging
-from typing import List, Dict, Any, Optional
+from typing import Any
 
-from equinox.storage.collections.ordering import CollectionOrderingMixin
-from equinox.storage.collections.folders import CollectionFoldersMixin
+from equinox.core.exceptions import DuplicateError, StorageError, ValidationError
+from equinox.core.request import Request
 from equinox.storage.collections.auth import CollectionAuthMixin
+from equinox.storage.collections.folders import CollectionFoldersMixin
+from equinox.storage.collections.ordering import CollectionOrderingMixin
 from equinox.storage.collections.variables import CollectionVariablesMixin
 from equinox.storage.database import Database
-from equinox.core.request import Request
-from equinox.core.exceptions import StorageError, ValidationError, DuplicateError
+from equinox.storage.utils import (
+    MAX_DESCRIPTION_LENGTH as _MAX_DESC,
+)
 from equinox.storage.utils import (
     MAX_NAME_LENGTH as _MAX_NAME,
-    MAX_DESCRIPTION_LENGTH as _MAX_DESC,
-    require_positive_int, require_str, safe_json_loads, safe_json_dumps,
+)
+from equinox.storage.utils import (
+    require_positive_int,
+    require_str,
+    safe_json_dumps,
+    safe_json_loads,
 )
 
 logger = logging.getLogger(__name__)
@@ -123,7 +130,7 @@ class CollectionManager(
         request: Request,
         collection_id: int,
         *,
-        name_override: Optional[str] = None,
+        name_override: str | None = None,
     ) -> tuple:
         """Build the 21-element parameter tuple for :attr:`REQUEST_INSERT_SQL`.
 
@@ -176,8 +183,8 @@ class CollectionManager(
         request: Request,
         collection_id: int,
         *,
-        name_override: Optional[str] = None,
-        tx: Optional[Any] = None,
+        name_override: str | None = None,
+        tx: Any | None = None,
     ) -> int:
         """Insert a request row using the canonical 21-column INSERT.
 
@@ -196,7 +203,9 @@ class CollectionManager(
             New request row ID.
         """
         params = self._build_request_insert_params(
-            request, collection_id, name_override=name_override,
+            request,
+            collection_id,
+            name_override=name_override,
         )
         inserter = tx if tx is not None else self.db
         return inserter.insert(self.REQUEST_INSERT_SQL, params)
@@ -220,8 +229,7 @@ class CollectionManager(
 
         try:
             collection_id = self.db.insert(
-                "INSERT INTO collections (name, description) VALUES (?, ?)",
-                (name, description)
+                "INSERT INTO collections (name, description) VALUES (?, ?)", (name, description)
             )
             logger.info("Created collection %r with ID %d", name, collection_id)
             return collection_id
@@ -231,7 +239,7 @@ class CollectionManager(
         except Exception as exc:
             raise StorageError(f"Failed to create collection: {exc}")
 
-    def get_collection(self, collection_id: int) -> Optional[Dict[str, Any]]:
+    def get_collection(self, collection_id: int) -> dict[str, Any] | None:
         """Get collection by ID."""
         require_positive_int(collection_id, "Collection ID")
         result = self.db.fetchone("SELECT * FROM collections WHERE id = ?", (collection_id,))
@@ -239,7 +247,7 @@ class CollectionManager(
             logger.debug("Retrieved collection id=%d name=%s", collection_id, result.get("name"))
         return result
 
-    def list_collections(self) -> List[Dict[str, Any]]:
+    def list_collections(self) -> list[dict[str, Any]]:
         """List all collections."""
         return self.db.fetchall("SELECT * FROM collections ORDER BY name")
 
@@ -323,7 +331,7 @@ class CollectionManager(
         except Exception as exc:
             raise StorageError(f"Failed to rename request: {exc}")
 
-    def duplicate_request(self, request_id: int, new_name: Optional[str] = None) -> int:
+    def duplicate_request(self, request_id: int, new_name: str | None = None) -> int:
         """Duplicate a saved request within the same collection.
 
         Loads the original request via :meth:`get_request` and inserts it via
@@ -348,7 +356,7 @@ class CollectionManager(
 
         copy_name = new_name or f"Copy of {source.name}"
         if len(copy_name) > self.MAX_NAME_LENGTH:
-            copy_name = copy_name[:self.MAX_NAME_LENGTH - 3] + "..."
+            copy_name = copy_name[: self.MAX_NAME_LENGTH - 3] + "..."
 
         try:
             new_id = self.insert_request_row(
@@ -391,7 +399,9 @@ class CollectionManager(
         except Exception as exc:
             raise StorageError(f"Failed to delete collection: {exc}")
 
-    def save_request(self, request: Request, collection_id: Optional[int] = None, name: Optional[str] = None) -> int:
+    def save_request(
+        self, request: Request, collection_id: int | None = None, name: str | None = None
+    ) -> int:
         """Save request to collection.
 
         Args:
@@ -413,7 +423,9 @@ class CollectionManager(
 
         try:
             req_id = self.insert_request_row(request, coll_id, name_override=effective_name)
-            logger.info("Saved request %r with ID %d to collection %s", effective_name, req_id, coll_id)
+            logger.info(
+                "Saved request %r with ID %d to collection %s", effective_name, req_id, coll_id
+            )
             return req_id
         except StorageError:
             raise
@@ -430,7 +442,7 @@ class CollectionManager(
         if not name:
             raise ValidationError("Request name cannot be empty or whitespace")
         if len(name) > self.MAX_NAME_LENGTH:
-            name = name[:self.MAX_NAME_LENGTH - 3] + "..."
+            name = name[: self.MAX_NAME_LENGTH - 3] + "..."
         return name
 
     def update_request_auth(self, request_id: int, auth) -> None:
@@ -457,7 +469,7 @@ class CollectionManager(
         except Exception as exc:
             raise StorageError(f"Failed to update request auth: {exc}")
 
-    def get_request(self, request_id: int) -> Optional[Request]:
+    def get_request(self, request_id: int) -> Request | None:
         """Get request by ID."""
         require_positive_int(request_id, "Request ID")
         row = self.db.fetchone("SELECT * FROM requests WHERE id = ?", (request_id,))
@@ -465,18 +477,16 @@ class CollectionManager(
             return None
         return self._row_to_request(row)
 
-    def list_requests(self, collection_id: Optional[int] = None) -> List[Dict[str, Any]]:
+    def list_requests(self, collection_id: int | None = None) -> list[dict[str, Any]]:
         """List requests, optionally filtered by collection."""
         if collection_id is not None:
             return self.db.fetchall(
                 "SELECT * FROM requests WHERE collection_id = ? ORDER BY sort_order, name",
                 (collection_id,),
             )
-        return self.db.fetchall(
-            "SELECT * FROM requests ORDER BY collection_id, sort_order, name"
-        )
+        return self.db.fetchall("SELECT * FROM requests ORDER BY collection_id, sort_order, name")
 
-    def list_requests_in_collection(self, collection_id: int) -> List[Dict[str, Any]]:
+    def list_requests_in_collection(self, collection_id: int) -> list[dict[str, Any]]:
         """Alias for list_requests(collection_id) — explicit name used by exporters."""
         return self.list_requests(collection_id)
 
@@ -502,7 +512,7 @@ class CollectionManager(
         except Exception as exc:
             raise StorageError(f"Failed to delete request: {exc}")
 
-    def _row_to_request(self, row: Dict[str, Any]) -> Request:
+    def _row_to_request(self, row: dict[str, Any]) -> Request:
         """Convert a database row to a Request object."""
         headers = safe_json_loads(row.get("headers"), default={})
         params, params_list = _params_from_json(row.get("params", ""))

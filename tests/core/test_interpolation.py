@@ -1,14 +1,15 @@
 """Tests for variable interpolation"""
 
-import pytest
 from unittest.mock import MagicMock, patch
 
+import pytest
+
+from equinox.core.exceptions import SecurityError, ValidationError
 from equinox.core.interpolation import (
     VariableInterpolator,
     collect_interpolation_variables_detailed,
 )
 from equinox.core.request import Request
-from equinox.core.exceptions import ValidationError, SecurityError
 
 
 class TestBasicInterpolation:
@@ -24,12 +25,7 @@ class TestBasicInterpolation:
     def test_multiple_variables(self):
         """Test multiple variables in text"""
         text = "{{protocol}}://{{host}}:{{port}}/{{path}}"
-        variables = {
-            "protocol": "https",
-            "host": "api.example.com",
-            "port": "443",
-            "path": "users"
-        }
+        variables = {"protocol": "https", "host": "api.example.com", "port": "443", "path": "users"}
         result = VariableInterpolator.interpolate(text, variables)
         assert result == "https://api.example.com:443/users"
 
@@ -92,11 +88,7 @@ class TestNestedInterpolation:
     def test_nested_variables(self):
         """Test variables that reference other variables"""
         text = "{{url}}"
-        variables = {
-            "url": "{{protocol}}://{{host}}",
-            "protocol": "https",
-            "host": "example.com"
-        }
+        variables = {"url": "{{protocol}}://{{host}}", "protocol": "https", "host": "example.com"}
         result = VariableInterpolator.interpolate(text, variables)
         assert result == "https://example.com"
 
@@ -143,10 +135,7 @@ class TestSecurityValidation:
 
         # But if we nest it to cause massive expansion
         text = "{{a}}"
-        variables = {
-            "a": "{{b}}" * 50,
-            "b": "x" * 100
-        }
+        variables = {"a": "{{b}}" * 50, "b": "x" * 100}
 
         with pytest.raises(SecurityError, match="excessive text expansion"):
             VariableInterpolator.interpolate(text, variables)
@@ -211,15 +200,8 @@ class TestRequestInterpolation:
 
     def test_interpolate_url(self):
         """Test URL interpolation"""
-        request = Request(
-            method="GET",
-            url="{{protocol}}://{{host}}/{{path}}"
-        )
-        variables = {
-            "protocol": "https",
-            "host": "api.example.com",
-            "path": "users"
-        }
+        request = Request(method="GET", url="{{protocol}}://{{host}}/{{path}}")
+        variables = {"protocol": "https", "host": "api.example.com", "path": "users"}
 
         request = VariableInterpolator.interpolate_request(request, variables)
         assert request.url == "https://api.example.com/users"
@@ -229,15 +211,9 @@ class TestRequestInterpolation:
         request = Request(
             method="GET",
             url="https://api.example.com",
-            headers={
-                "Authorization": "Bearer {{token}}",
-                "X-API-Key": "{{api_key}}"
-            }
+            headers={"Authorization": "Bearer {{token}}", "X-API-Key": "{{api_key}}"},
         )
-        variables = {
-            "token": "abc123",
-            "api_key": "secret"
-        }
+        variables = {"token": "abc123", "api_key": "secret"}
 
         request = VariableInterpolator.interpolate_request(request, variables)
         assert request.headers["Authorization"] == "Bearer abc123"
@@ -248,15 +224,9 @@ class TestRequestInterpolation:
         request = Request(
             method="GET",
             url="https://api.example.com",
-            params={
-                "user_id": "{{user}}",
-                "limit": "{{limit}}"
-            }
+            params={"user_id": "{{user}}", "limit": "{{limit}}"},
         )
-        variables = {
-            "user": "12345",
-            "limit": "10"
-        }
+        variables = {"user": "12345", "limit": "10"}
 
         request = VariableInterpolator.interpolate_request(request, variables)
         assert request.params["user_id"] == "12345"
@@ -267,23 +237,16 @@ class TestRequestInterpolation:
         request = Request(
             method="POST",
             url="https://api.example.com",
-            body='{"name": "{{name}}", "email": "{{email}}"}'
+            body='{"name": "{{name}}", "email": "{{email}}"}',
         )
-        variables = {
-            "name": "John Doe",
-            "email": "john@example.com"
-        }
+        variables = {"name": "John Doe", "email": "john@example.com"}
 
         request = VariableInterpolator.interpolate_request(request, variables)
         assert request.body == '{"name": "John Doe", "email": "john@example.com"}'
 
     def test_interpolate_name(self):
         """Test request name interpolation"""
-        request = Request(
-            method="GET",
-            url="https://api.example.com",
-            name="Get {{resource}}"
-        )
+        request = Request(method="GET", url="https://api.example.com", name="Get {{resource}}")
         variables = {"resource": "users"}
 
         request = VariableInterpolator.interpolate_request(request, variables)
@@ -294,12 +257,9 @@ class TestRequestInterpolation:
         request = Request(
             method="GET",
             url="https://api.example.com",
-            description="Fetch {{resource}} from {{env}}"
+            description="Fetch {{resource}} from {{env}}",
         )
-        variables = {
-            "resource": "data",
-            "env": "production"
-        }
+        variables = {"resource": "data", "env": "production"}
 
         request = VariableInterpolator.interpolate_request(request, variables)
         assert request.description == "Fetch data from production"
@@ -313,7 +273,7 @@ class TestRequestInterpolation:
             params={"env": "{{environment}}"},
             body='{"key": "{{value}}"}',
             name="Create {{resource}}",
-            description="Create {{resource}} in {{environment}}"
+            description="Create {{resource}} in {{environment}}",
         )
         variables = {
             "base_url": "https://api.example.com",
@@ -321,7 +281,7 @@ class TestRequestInterpolation:
             "token": "secret123",
             "environment": "staging",
             "value": "test",
-            "resource": "item"
+            "resource": "item",
         }
 
         request = VariableInterpolator.interpolate_request(request, variables)
@@ -350,7 +310,7 @@ class TestRequestInterpolation:
             params=None,
             body=None,
             name=None,
-            description=None
+            description=None,
         )
         variables = {"base_url": "https://api.example.com"}
 
@@ -489,7 +449,10 @@ class TestCollectInterpolationVariables:
 
         assert variables["BASE_URL"] == "12345"
         assert sources["BASE_URL"] == "collection"
-        assert VariableInterpolator.interpolate("https://{{BASE_URL}}/livez", variables) == "https://12345/livez"
+        assert (
+            VariableInterpolator.interpolate("https://{{BASE_URL}}/livez", variables)
+            == "https://12345/livez"
+        )
 
     def test_magic_variables_are_available(self):
         db = MagicMock()
@@ -517,5 +480,3 @@ class TestCollectInterpolationVariables:
 
         assert variables["TODAY"] == "2099-01-01"
         assert sources["TODAY"] == "global"
-
-

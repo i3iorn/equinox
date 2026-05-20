@@ -1,8 +1,10 @@
 """Variable groups management panel"""
+
 from __future__ import annotations
 
 import logging
 
+from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtWidgets import (
     QApplication,
     QDialog,
@@ -19,19 +21,21 @@ from PyQt6.QtWidgets import (
     QMenu,
     QMessageBox,
     QPushButton,
+    QSizePolicy,
     QSplitter,
-    QTabWidget,
     QTableWidget,
     QTableWidgetItem,
+    QTabWidget,
     QTextEdit,
-    QSizePolicy,
     QVBoxLayout,
     QWidget,
 )
-from PyQt6.QtCore import Qt, pyqtSignal
 
-from equinox.core.interpolation import VariableInterpolator, collect_interpolation_variables_detailed
 from equinox.core.exceptions import ValidationError
+from equinox.core.interpolation import (
+    VariableInterpolator,
+    collect_interpolation_variables_detailed,
+)
 from equinox.core.validation import Validator
 from equinox.storage import (
     Database,
@@ -39,6 +43,7 @@ from equinox.storage import (
     GlobalVariablesManager,
     VariableGroupManager,
 )
+
 from .ui_common import (
     configure_splitter_persistence,
     confirm_yes_no,
@@ -135,9 +140,7 @@ class VariablesPanel(QWidget):
 
         # ── Global Variables (persisted app-wide) ─────────────────────
         self._global_group = QGroupBox("Global Variables")
-        self._global_group.setSizePolicy(
-            QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Maximum
-        )
+        self._global_group.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Maximum)
         global_layout = QVBoxLayout(self._global_group)
         global_layout.setContentsMargins(4, 4, 4, 4)
         global_layout.setSpacing(4)
@@ -166,17 +169,21 @@ class VariablesPanel(QWidget):
         self._global_table = QTableWidget()
         self._global_table.setColumnCount(3)
         self._global_table.setHorizontalHeaderLabels(["Variable", "Value", "Description"])
-        self._global_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
-        self._global_table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
-        self._global_table.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeMode.Stretch)
+        self._global_table.horizontalHeader().setSectionResizeMode(
+            0, QHeaderView.ResizeMode.ResizeToContents
+        )
+        self._global_table.horizontalHeader().setSectionResizeMode(
+            1, QHeaderView.ResizeMode.Stretch
+        )
+        self._global_table.horizontalHeader().setSectionResizeMode(
+            2, QHeaderView.ResizeMode.Stretch
+        )
         self._global_table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
         self._global_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
         self._global_table.itemSelectionChanged.connect(self._on_global_selection)
         self._global_table.itemDoubleClicked.connect(self._edit_global_var)
         self._global_table.verticalHeader().setVisible(False)
-        self._global_table.setSizePolicy(
-            QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Maximum
-        )
+        self._global_table.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Maximum)
         global_layout.addWidget(self._global_table)
 
         layout.addWidget(self._global_group)
@@ -185,9 +192,7 @@ class VariablesPanel(QWidget):
         self._session_group = QGroupBox("Session Variables")
         self._session_group.setCheckable(True)
         self._session_group.setChecked(True)
-        self._session_group.setSizePolicy(
-            QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Maximum
-        )
+        self._session_group.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Maximum)
         session_layout = QVBoxLayout(self._session_group)
         session_layout.setContentsMargins(4, 4, 4, 4)
         session_layout.setSpacing(4)
@@ -197,7 +202,9 @@ class VariablesPanel(QWidget):
         session_header.addWidget(self._session_count_label)
         session_header.addStretch()
         self._session_copy_btn = QPushButton("Copy All")
-        self._session_copy_btn.setToolTip("Copy all session variables to clipboard as KEY=VALUE lines")
+        self._session_copy_btn.setToolTip(
+            "Copy all session variables to clipboard as KEY=VALUE lines"
+        )
         self._session_copy_btn.clicked.connect(self._copy_session_vars)
         self._session_copy_btn.setEnabled(False)
         session_header.addWidget(self._session_copy_btn)
@@ -232,9 +239,7 @@ class VariablesPanel(QWidget):
         self._session_table.customContextMenuRequested.connect(self._show_session_context_menu)
         self._session_table.itemSelectionChanged.connect(self._on_session_selection)
         self._session_table.verticalHeader().setVisible(False)
-        self._session_table.setSizePolicy(
-            QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Maximum
-        )
+        self._session_table.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Maximum)
         session_layout.addWidget(self._session_table)
 
         self._session_group.toggled.connect(self._on_session_group_toggled)
@@ -289,9 +294,15 @@ class VariablesPanel(QWidget):
         self.variables_table = QTableWidget()
         self.variables_table.setColumnCount(3)
         self.variables_table.setHorizontalHeaderLabels(["Key", "Value", "Description"])
-        self.variables_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
-        self.variables_table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
-        self.variables_table.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeMode.Stretch)
+        self.variables_table.horizontalHeader().setSectionResizeMode(
+            0, QHeaderView.ResizeMode.ResizeToContents
+        )
+        self.variables_table.horizontalHeader().setSectionResizeMode(
+            1, QHeaderView.ResizeMode.Stretch
+        )
+        self.variables_table.horizontalHeader().setSectionResizeMode(
+            2, QHeaderView.ResizeMode.Stretch
+        )
         self.variables_table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
         self.variables_table.itemSelectionChanged.connect(self._on_variable_selected)
         self.variables_table.itemDoubleClicked.connect(self.edit_variable)
@@ -482,7 +493,12 @@ class VariablesPanel(QWidget):
         try:
             db_vars = self._mgr.list_group_variables(self.current_group_id)
         except Exception as exc:
-            logger.error("Failed to load variables for group %s: %s", self.current_group_id, exc, exc_info=True)
+            logger.error(
+                "Failed to load variables for group %s: %s",
+                self.current_group_id,
+                exc,
+                exc_info=True,
+            )
             return
 
         # Build interpolation context once — not inside the per-row loop.
@@ -564,7 +580,9 @@ class VariablesPanel(QWidget):
         name, ok = QInputDialog.getText(self, "New Variable Group", "Group name:")
         if not ok or not name:
             return
-        description, ok = QInputDialog.getText(self, "New Variable Group", "Description (optional):")
+        description, ok = QInputDialog.getText(
+            self, "New Variable Group", "Description (optional):"
+        )
         if not ok:
             return
         try:
@@ -694,7 +712,9 @@ class VariablesPanel(QWidget):
         if selected_row < 0:
             return
         key = self.variables_table.item(selected_row, 0).text()
-        if not confirm_yes_no(self, "Confirm Delete", f"Are you sure you want to delete variable '{key}'?"):
+        if not confirm_yes_no(
+            self, "Confirm Delete", f"Are you sure you want to delete variable '{key}'?"
+        ):
             return
         try:
             self._mgr.remove_variable(self.current_group_id, key)
@@ -857,7 +877,19 @@ class VariablesPanel(QWidget):
     @staticmethod
     def _is_secret_like(key: str) -> bool:
         key_lower = key.lower()
-        return any(token in key_lower for token in ("token", "secret", "password", "passwd", "apikey", "api_key", "credential", "private"))
+        return any(
+            token in key_lower
+            for token in (
+                "token",
+                "secret",
+                "password",
+                "passwd",
+                "apikey",
+                "api_key",
+                "credential",
+                "private",
+            )
+        )
 
     def _copy_session_vars(self) -> None:
         lines = []
@@ -875,7 +907,9 @@ class VariablesPanel(QWidget):
             lines.append(f"{key}={value}")
         if lines:
             if has_secret:
-                logger.warning("Copying session variables with secret-like keys; values were redacted")
+                logger.warning(
+                    "Copying session variables with secret-like keys; values were redacted"
+                )
             clipboard = QApplication.clipboard()
             if clipboard:
                 clipboard.setText("\n".join(lines))
@@ -933,7 +967,11 @@ class VariablesPanel(QWidget):
         if not (vi and clipboard and ki):
             return
         if self._is_secret_like(ki.text()):
-            if not confirm_yes_no(self, "Copy Secret Value", f"Copy the secret value for '{ki.text()}' to the clipboard?"):
+            if not confirm_yes_no(
+                self,
+                "Copy Secret Value",
+                f"Copy the secret value for '{ki.text()}' to the clipboard?",
+            ):
                 return
         clipboard.setText(vi.text())
 
@@ -952,7 +990,9 @@ class VariablesPanel(QWidget):
                 element_id=f"action.{action_id}",
             )
         except Exception:
-            logger.debug("Failed to get context action usage for %s/%s", context, action_id, exc_info=True)
+            logger.debug(
+                "Failed to get context action usage for %s/%s", context, action_id, exc_info=True
+            )
             return 0
 
     def _record_context_action_usage(self, context: str, action_id: str) -> None:
@@ -966,7 +1006,9 @@ class VariablesPanel(QWidget):
                 context=context,
             )
         except Exception:
-            logger.debug("Failed to record context action usage for %s/%s", context, action_id, exc_info=True)
+            logger.debug(
+                "Failed to record context action usage for %s/%s", context, action_id, exc_info=True
+            )
 
     def _run_context_action(self, context: str, action_id: str, callback) -> None:
         self._record_context_action_usage(context, action_id)
@@ -1001,7 +1043,9 @@ class VariablesPanel(QWidget):
                 return
             tab_widget.setTabText(
                 idx,
-                f"Variables ({self._session_var_count})" if self._session_var_count > 0 else "Variables",
+                f"Variables ({self._session_var_count})"
+                if self._session_var_count > 0
+                else "Variables",
             )
         except Exception as exc:
             logger.debug("Failed to update tab badge: %s", exc)

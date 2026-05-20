@@ -8,11 +8,12 @@ Covers:
 """
 
 import pytest
-from equinox.storage.database import Database
-from equinox.storage.collections import CollectionManager
-from equinox.storage.migrations import MigrationRunner
-from equinox.core.request import Request
+
 from equinox.core.exceptions import StorageError
+from equinox.core.request import Request
+from equinox.storage.collections import CollectionManager
+from equinox.storage.database import Database
+from equinox.storage.migrations import MigrationRunner
 
 
 @pytest.fixture
@@ -46,6 +47,7 @@ def request_in_a(mgr, two_collections):
 
 # ── move_request_to_folder ────────────────────────────────────────────────────
 
+
 class TestMoveToFolder:
     def test_move_to_folder(self, mgr, two_collections, request_in_a):
         col_a, _ = two_collections
@@ -66,6 +68,7 @@ class TestMoveToFolder:
 
 
 # ── move_request_to_collection ────────────────────────────────────────────────
+
 
 class TestMoveToCollection:
     def test_move_between_collections(self, mgr, two_collections, request_in_a):
@@ -111,4 +114,3 @@ class TestMoveToCollection:
     def test_nonexistent_collection_raises(self, mgr, two_collections, request_in_a):
         with pytest.raises(StorageError, match="does not exist"):
             mgr.move_request_to_collection(request_in_a, 99999)
-

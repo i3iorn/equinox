@@ -30,7 +30,9 @@ class _ResponseStub:
 
 
 def test_apply_captures_returns_session_updates_and_display_lines() -> None:
-    req = type("Req", (), {"captures": [{"variable": "token", "source": "json", "path": "token"}]})()
+    req = type(
+        "Req", (), {"captures": [{"variable": "token", "source": "json", "path": "token"}]}
+    )()
     resp = _ResponseStub(200, {"content-type": "application/json"}, '{"token":"abc"}', req)
 
     outcome = apply_captures(resp)
@@ -130,7 +132,9 @@ def test_build_error_handling_plan_includes_hint_and_deferred_plan() -> None:
 
 def test_build_success_handling_plan_formats_status_and_url() -> None:
     request = type("Req", (), {"url": "https://api.example.com/x", "id": 1, "collection_id": 2})()
-    response = type("Resp", (), {"elapsed": 0.125, "status_code": 201, "reason": "Created", "request": request})()
+    response = type(
+        "Resp", (), {"elapsed": 0.125, "status_code": 201, "reason": "Created", "request": request}
+    )()
 
     plan = build_success_handling_plan(
         response=response,
@@ -143,5 +147,3 @@ def test_build_success_handling_plan_formats_status_and_url() -> None:
     assert plan.status_message == "201 Created  —  125 ms"
     assert plan.completer_url == "https://api.example.com/x"
     assert plan.deferred_plan.save_history is True
-
-

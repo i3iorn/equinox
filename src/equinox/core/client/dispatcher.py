@@ -3,6 +3,7 @@
 Owns the shared ``httpx.Client`` lifecycle, multipart file handling,
 SSL context construction, and response wrapping.
 """
+
 from __future__ import annotations
 
 import logging
@@ -10,7 +11,7 @@ import ssl
 import threading
 import time
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
 
 import httpx
 
@@ -41,7 +42,7 @@ class HttpxDispatcher:
         timeout: float,
         follow_redirects: bool,
         verify_ssl: bool,
-        proxy: Optional[str],
+        proxy: str | None,
         cookie_handler: CookieHandler,
     ) -> None:
         self._timeout = timeout
@@ -49,7 +50,7 @@ class HttpxDispatcher:
         self._verify_ssl = verify_ssl
         self._proxy = proxy
         self._cookie_handler = cookie_handler
-        self._clients: Dict[bool, httpx.Client] = {}
+        self._clients: dict[bool, httpx.Client] = {}
         self._client_lock = threading.Lock()
 
     # ── Client lifecycle ──────────────────────────────────────────────────────
@@ -124,7 +125,7 @@ class HttpxDispatcher:
     def _apply_cookie_records_to_client(
         self,
         client: httpx.Client,
-        cookie_records: Optional[List[Dict[str, str]]] = None,
+        cookie_records: list[dict[str, str]] | None = None,
     ) -> None:
         """Replace client cookie jar from manager records (name/value/domain/path)."""
         records = (
@@ -147,9 +148,7 @@ class HttpxDispatcher:
 
     # ── Multipart ─────────────────────────────────────────────────────────────
 
-    def _build_multipart_files(
-        self, request: Request
-    ) -> Tuple[Optional[Dict[str, Any]], List[Any]]:
+    def _build_multipart_files(self, request: Request) -> tuple[dict[str, Any] | None, list[Any]]:
         """Build httpx-compatible multipart files from ``request.files``.
 
         Accepted shapes per field::
@@ -165,8 +164,8 @@ class HttpxDispatcher:
         if not getattr(request, "files", None):
             return None, []
 
-        files: Dict[str, Any] = {}
-        opened_handles: List[Any] = []
+        files: dict[str, Any] = {}
+        opened_handles: list[Any] = []
 
         try:
             request_files = getattr(request, "files", {}) or {}
@@ -202,7 +201,9 @@ class HttpxDispatcher:
         body = raw.content
         logger.debug(
             "HttpxDispatcher._wrap_response: status=%d body_len=%d headers_count=%d",
-            raw.status_code, len(body), len(raw.headers),
+            raw.status_code,
+            len(body),
+            len(raw.headers),
         )
         # sent_headers: the actual headers sent to httpx (including injected auth)
         return Response(
@@ -220,9 +221,9 @@ class HttpxDispatcher:
         )
 
     @staticmethod
-    def _extract_tls_info_from_stream(stream: Any) -> Dict[str, Any]:
+    def _extract_tls_info_from_stream(stream: Any) -> dict[str, Any]:
         """Best-effort TLS/certificate extraction from a transport stream."""
-        info: Dict[str, Any] = {}
+        info: dict[str, Any] = {}
         if stream is None or not hasattr(stream, "get_extra_info"):
             return info
 
@@ -280,14 +281,14 @@ class HttpxDispatcher:
 
         return info
 
-    def _extract_connection_info(self, raw: httpx.Response, request: Request) -> Dict[str, Any]:
+    def _extract_connection_info(self, raw: httpx.Response, request: Request) -> dict[str, Any]:
         """Extract transport metadata (TLS/cert/peer) for response diagnostics."""
         follow_redirects = (
             request.follow_redirects
             if request.follow_redirects is not None
             else self._follow_redirects
         )
-        info: Dict[str, Any] = {
+        info: dict[str, Any] = {
             "verify_ssl": bool(getattr(request, "verify_ssl", True)),
             "follow_redirects": bool(follow_redirects),
         }
@@ -340,12 +341,12 @@ class HttpxDispatcher:
     def _log_redirect_chain(raw: httpx.Response) -> None:
         if not raw.history:
             return
-        chain = " → ".join(
-            f"{r.status_code} {r.headers.get('location', '?')}" for r in raw.history
-        )
+        chain = " → ".join(f"{r.status_code} {r.headers.get('location', '?')}" for r in raw.history)
         logger.info(
             "Request followed %d redirect(s): %s → %d",
-            len(raw.history), chain, raw.status_code,
+            len(raw.history),
+            chain,
+            raw.status_code,
         )
 
     # ── Execute ───────────────────────────────────────────────────────────────
@@ -353,8 +354,8 @@ class HttpxDispatcher:
     def execute(
         self,
         request: Request,
-        headers: Dict[str, str],
-        auth_headers: Optional[Dict[str, str]] = None,
+        headers: dict[str, str],
+        auth_headers: dict[str, str] | None = None,
     ) -> Response:
         """Send *request* via httpx and return a wrapped :class:`Response`.
 
@@ -372,7 +373,7 @@ class HttpxDispatcher:
 
         # Route auth headers through the redirect-safe adapter instead of
         # embedding them directly — httpx strips plain headers on redirects.
-        httpx_auth: Optional[_RedirectSafeAuth] = None
+        httpx_auth: _RedirectSafeAuth | None = None
         # Make a copy of headers before popping auth headers for sent_headers
         sent_headers = dict(headers)
         if auth_headers:
@@ -384,7 +385,7 @@ class HttpxDispatcher:
         user_set_content_type = any(k.lower() == "content-type" for k in headers)
 
         start_time = time.perf_counter()
-        raw: Optional[httpx.Response] = None
+        raw: httpx.Response | None = None
         try:
             httpx_request = client.build_request(
                 method=request.method,
@@ -392,9 +393,7 @@ class HttpxDispatcher:
                 headers=headers,
                 params=request.params,
                 content=(
-                    request.body.encode("utf-8")
-                    if (request.body and not multipart_files)
-                    else None
+                    request.body.encode("utf-8") if (request.body and not multipart_files) else None
                 ),
                 files=multipart_files or None,
                 timeout=request.timeout or self._timeout,
@@ -424,7 +423,8 @@ class HttpxDispatcher:
         elapsed = time.perf_counter() - start_time
         logger.debug(
             "HttpxDispatcher: completed in %.3fs — status %d",
-            elapsed, raw.status_code,
+            elapsed,
+            raw.status_code,
         )
         return self._wrap_response(raw, request, elapsed, sent_headers=sent_headers)
 

@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import logging
 import re
-from typing import Dict, List, Tuple
 
 from equinox.core import urls
 from equinox.core.response_intelligence.base import Analyzer
@@ -27,16 +26,16 @@ class DeprecatedAPIAnalyzer(Analyzer):
     category = Category.HINTS
     display_name = "Deprecated API Warnings"
 
-    def analyze(self, ctx: AnalysisContext) -> List[Finding]:
-        findings: List[Finding] = []
+    def analyze(self, ctx: AnalysisContext) -> list[Finding]:
+        findings: list[Finding] = []
         headers = ctx.response.headers
 
         deprecation = headers.get("deprecation", "")
         sunset = headers.get("sunset", "")
         warning_header = headers.get("warning", "")
 
-        signals: List[str] = []
-        details: Dict[str, str] = {}
+        signals: list[str] = []
+        details: dict[str, str] = {}
 
         if deprecation:
             details["deprecation"] = deprecation
@@ -46,22 +45,27 @@ class DeprecatedAPIAnalyzer(Analyzer):
             signals.append(f"Sunset: {sunset}")
         if warning_header:
             details["warning"] = warning_header
-            if any(token in warning_header.lower() for token in ("deprecated", "obsolete", "sunset", "removed")):
+            if any(
+                token in warning_header.lower()
+                for token in ("deprecated", "obsolete", "sunset", "removed")
+            ):
                 signals.append(f"Warning: {warning_header}")
 
         if not signals:
             return findings
 
         severity = Severity.CRITICAL if sunset else Severity.WARNING
-        findings.append(Finding(
-            category=self.category,
-            severity=severity,
-            title="API deprecation notice",
-            description=" | ".join(signals),
-            analyzer_id=self.analyzer_id,
-            recommendation="Plan migration to the replacement endpoint/version before the sunset date.",
-            details=details,
-        ))
+        findings.append(
+            Finding(
+                category=self.category,
+                severity=severity,
+                title="API deprecation notice",
+                description=" | ".join(signals),
+                analyzer_id=self.analyzer_id,
+                recommendation="Plan migration to the replacement endpoint/version before the sunset date.",
+                details=details,
+            )
+        )
         return findings
 
 
@@ -70,8 +74,8 @@ class SuggestedEncodingAnalyzer(Analyzer):
     category = Category.HINTS
     display_name = "Suggested Accept-Encoding"
 
-    def analyze(self, ctx: AnalysisContext) -> List[Finding]:
-        findings: List[Finding] = []
+    def analyze(self, ctx: AnalysisContext) -> list[Finding]:
+        findings: list[Finding] = []
         sent_accept_encoding = (ctx.request.headers or {}).get("Accept-Encoding", "")
         response_encoding = ctx.response.headers.get("content-encoding", "")
         size = ctx.response.size
@@ -83,18 +87,20 @@ class SuggestedEncodingAnalyzer(Analyzer):
         if not is_compressible_content_type(content_type):
             return findings
 
-        findings.append(Finding(
-            category=self.category,
-            severity=Severity.INFO,
-            title="Consider adding Accept-Encoding header",
-            description=(
-                f"Request did not include Accept-Encoding. The {format_bytes(size)} "
-                f"response ({content_type}) could likely be compressed."
-            ),
-            analyzer_id=self.analyzer_id,
-            recommendation="Send Accept-Encoding: gzip, br on clients calling large text-based endpoints.",
-            details={"body_size": size, "content_type": content_type},
-        ))
+        findings.append(
+            Finding(
+                category=self.category,
+                severity=Severity.INFO,
+                title="Consider adding Accept-Encoding header",
+                description=(
+                    f"Request did not include Accept-Encoding. The {format_bytes(size)} "
+                    f"response ({content_type}) could likely be compressed."
+                ),
+                analyzer_id=self.analyzer_id,
+                recommendation="Send Accept-Encoding: gzip, br on clients calling large text-based endpoints.",
+                details={"body_size": size, "content_type": content_type},
+            )
+        )
         return findings
 
 
@@ -107,13 +113,13 @@ class NPlusOneDetectionAnalyzer(Analyzer):
     _INTERLEAVED_WINDOW = 12
 
     @classmethod
-    def _interleaved_counts(cls, keys: List[str]) -> Dict[str, int]:
-        max_counts: Dict[str, int] = {}
+    def _interleaved_counts(cls, keys: list[str]) -> dict[str, int]:
+        max_counts: dict[str, int] = {}
         for start in range(len(keys)):
-            window = keys[start:start + cls._INTERLEAVED_WINDOW]
+            window = keys[start : start + cls._INTERLEAVED_WINDOW]
             if len(window) < cls._THRESHOLD:
                 continue
-            local: Dict[str, int] = {}
+            local: dict[str, int] = {}
             for key in window:
                 local[key] = local.get(key, 0) + 1
             for key, count in local.items():
@@ -121,14 +127,14 @@ class NPlusOneDetectionAnalyzer(Analyzer):
                     max_counts[key] = count
         return max_counts
 
-    def analyze(self, ctx: AnalysisContext) -> List[Finding]:
-        findings: List[Finding] = []
+    def analyze(self, ctx: AnalysisContext) -> list[Finding]:
+        findings: list[Finding] = []
         history_rows = ctx.history_rows
         if not history_rows or len(history_rows) < self._THRESHOLD:
             return findings
 
-        runs: List[Tuple[str, int]] = []
-        all_keys: List[str] = []
+        runs: list[tuple[str, int]] = []
+        all_keys: list[str] = []
         current_pattern = ""
         current_count = 0
 
@@ -149,7 +155,7 @@ class NPlusOneDetectionAnalyzer(Analyzer):
         if current_count >= self._THRESHOLD:
             runs.append((current_pattern, current_count))
 
-        grouped: Dict[str, List[int]] = {}
+        grouped: dict[str, list[int]] = {}
         for pattern, count in runs:
             grouped.setdefault(pattern, []).append(count)
 
@@ -167,25 +173,27 @@ class NPlusOneDetectionAnalyzer(Analyzer):
             n_max = max(counts)
             n_label = f"N={n_min}" if n_min == n_max else f"N={n_min}-{n_max}"
 
-            findings.append(Finding(
-                category=self.category,
-                severity=Severity.WARNING,
-                title=f"Possible N+1 pattern: {bursts} burst(s)",
-                description=(
-                    f'"{pattern}" repeated across {bursts} burst(s) '
-                    f"({n_label}, total {total_calls} calls). Consider batching or using a list endpoint."
-                ),
-                analyzer_id=self.analyzer_id,
-                recommendation="Replace per-item calls with bulk/list endpoints or batch loading.",
-                details={
-                    "pattern": pattern,
-                    "counts": counts,
-                    "bursts": bursts,
-                    "n_min": n_min,
-                    "n_max": n_max,
-                    "total_calls": total_calls,
-                },
-            ))
+            findings.append(
+                Finding(
+                    category=self.category,
+                    severity=Severity.WARNING,
+                    title=f"Possible N+1 pattern: {bursts} burst(s)",
+                    description=(
+                        f'"{pattern}" repeated across {bursts} burst(s) '
+                        f"({n_label}, total {total_calls} calls). Consider batching or using a list endpoint."
+                    ),
+                    analyzer_id=self.analyzer_id,
+                    recommendation="Replace per-item calls with bulk/list endpoints or batch loading.",
+                    details={
+                        "pattern": pattern,
+                        "counts": counts,
+                        "bursts": bursts,
+                        "n_min": n_min,
+                        "n_max": n_max,
+                        "total_calls": total_calls,
+                    },
+                )
+            )
         return findings
 
     @staticmethod
@@ -206,14 +214,14 @@ class ResponseEncodingIssuesAnalyzer(Analyzer):
         re.compile(r"\x00[^\x00]"),
     ]
 
-    def analyze(self, ctx: AnalysisContext) -> List[Finding]:
-        findings: List[Finding] = []
+    def analyze(self, ctx: AnalysisContext) -> list[Finding]:
+        findings: list[Finding] = []
         body = ctx.response.body
         if not body:
             return findings
 
-        issues: List[str] = []
-        details: Dict[str, object] = {}
+        issues: list[str] = []
+        details: dict[str, object] = {}
 
         if body[:3] == self._BOM:
             issues.append("UTF-8 BOM present - may cause JSON parsing issues")
@@ -236,15 +244,17 @@ class ResponseEncodingIssuesAnalyzer(Analyzer):
         if not issues:
             return findings
 
-        findings.append(Finding(
-            category=self.category,
-            severity=Severity.WARNING if details.get("mojibake") else Severity.INFO,
-            title="Response encoding issue" + ("s" if len(issues) > 1 else ""),
-            description=" | ".join(issues),
-            analyzer_id=self.analyzer_id,
-            recommendation="Standardize response encoding to UTF-8 and ensure Content-Type charset matches payload bytes.",
-            details=details,
-        ))
+        findings.append(
+            Finding(
+                category=self.category,
+                severity=Severity.WARNING if details.get("mojibake") else Severity.INFO,
+                title="Response encoding issue" + ("s" if len(issues) > 1 else ""),
+                description=" | ".join(issues),
+                analyzer_id=self.analyzer_id,
+                recommendation="Standardize response encoding to UTF-8 and ensure Content-Type charset matches payload bytes.",
+                details=details,
+            )
+        )
         return findings
 
 
@@ -255,27 +265,28 @@ class LinkHeaderParsingAnalyzer(Analyzer):
 
     _LINK_RE = re.compile(r'<([^>]+)>\s*;\s*rel="?([^",]+)"?')
 
-    def analyze(self, ctx: AnalysisContext) -> List[Finding]:
-        findings: List[Finding] = []
+    def analyze(self, ctx: AnalysisContext) -> list[Finding]:
+        findings: list[Finding] = []
         link_header = ctx.response.headers.get("link", "")
         if not link_header:
             return findings
 
-        links: List[Dict[str, str]] = []
+        links: list[dict[str, str]] = []
         for match in self._LINK_RE.finditer(link_header):
             links.append({"url": match.group(1), "rel": match.group(2).strip()})
 
         if not links:
             return findings
 
-        findings.append(Finding(
-            category=self.category,
-            severity=Severity.INFO,
-            title=f"{len(links)} Link relation(s) found",
-            description=" | ".join([f"{link['rel']}: {link['url']}" for link in links[:5]]),
-            analyzer_id=self.analyzer_id,
-            recommendation="Use Link headers consistently for pagination and include rel=next/prev where applicable.",
-            details={"links": links},
-        ))
+        findings.append(
+            Finding(
+                category=self.category,
+                severity=Severity.INFO,
+                title=f"{len(links)} Link relation(s) found",
+                description=" | ".join([f"{link['rel']}: {link['url']}" for link in links[:5]]),
+                analyzer_id=self.analyzer_id,
+                recommendation="Use Link headers consistently for pagination and include rel=next/prev where applicable.",
+                details={"links": links},
+            )
+        )
         return findings
-

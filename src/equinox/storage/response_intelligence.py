@@ -7,7 +7,7 @@ used by the percentile, anomaly, and drift analyzers.
 import hashlib
 import logging
 import math
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from equinox.core.exceptions import StorageError
 from equinox.storage.database import Database
@@ -39,9 +39,7 @@ class ResponseIntelligenceManager:
 
     # ── Endpoint stats ────────────────────────────────────────────────
 
-    def get_endpoint_stats(
-        self, url_pattern: str, method: str
-    ) -> Optional[Dict[str, Any]]:
+    def get_endpoint_stats(self, url_pattern: str, method: str) -> dict[str, Any] | None:
         """Return stored stats for an endpoint or ``None``."""
         row = self.db.fetchone(
             "SELECT * FROM endpoint_stats WHERE url_pattern = ? AND method = ?",
@@ -49,9 +47,7 @@ class ResponseIntelligenceManager:
         )
         return dict(row) if row else None
 
-    def update_endpoint_stats(
-        self, url_pattern: str, method: str, elapsed_ms: float
-    ) -> None:
+    def update_endpoint_stats(self, url_pattern: str, method: str, elapsed_ms: float) -> None:
         """Append a new timing sample and update aggregate stats.
 
         The read-modify-write cycle is wrapped in a transaction so concurrent
@@ -72,9 +68,7 @@ class ResponseIntelligenceManager:
                 (url_pattern, method_upper),
             )
             if existing is None:
-                vals = safe_json_dumps(
-                    [round(elapsed_ms, 2)], max_len=self._MAX_ELAPSED_JSON_LEN
-                )
+                vals = safe_json_dumps([round(elapsed_ms, 2)], max_len=self._MAX_ELAPSED_JSON_LEN)
                 tx.execute(
                     """INSERT INTO endpoint_stats
                        (url_pattern, method, call_count, total_elapsed,
@@ -86,7 +80,7 @@ class ResponseIntelligenceManager:
                 values = self._decode_elapsed_values(existing.get("elapsed_values"))
                 values.append(round(elapsed_ms, 2))
                 # Keep only the most recent N samples.
-                values = values[-self._MAX_ELAPSED_SAMPLES:]
+                values = values[-self._MAX_ELAPSED_SAMPLES :]
 
                 new_count = (existing["call_count"] or 0) + 1
                 new_total = (existing["total_elapsed"] or 0.0) + elapsed_ms
@@ -113,8 +107,8 @@ class ResponseIntelligenceManager:
         self,
         url_pattern: str,
         method: str,
-        status_code: Optional[int] = None,
-    ) -> Optional[Dict[str, Any]]:
+        status_code: int | None = None,
+    ) -> dict[str, Any] | None:
         """Return stored schema fingerprint for an endpoint/status.
 
         When *status_code* is provided, only the schema captured for that exact
@@ -123,8 +117,7 @@ class ResponseIntelligenceManager:
         comparisons.
         """
         row = self.db.fetchone(
-            "SELECT schema_json FROM response_schemas "
-            "WHERE url_pattern = ? AND method = ?",
+            "SELECT schema_json FROM response_schemas " "WHERE url_pattern = ? AND method = ?",
             (url_pattern, self._normalize_method(method)),
         )
         if row is None:
@@ -156,15 +149,15 @@ class ResponseIntelligenceManager:
         self,
         url_pattern: str,
         method: str,
-        schema: Dict[str, str],
-        status_code: Optional[int] = None,
+        schema: dict[str, str],
+        status_code: int | None = None,
     ) -> None:
         """Insert or replace the schema fingerprint for an endpoint.
 
         Uses a single-statement UPSERT to avoid the read-then-write race that
         two separate SELECT + INSERT/UPDATE calls would introduce.
         """
-        payload: Dict[str, Any]
+        payload: dict[str, Any]
         if status_code is None:
             payload = schema
         else:
@@ -194,15 +187,15 @@ class ResponseIntelligenceManager:
         url_pattern: str,
         method: str,
         status_code: int,
-        schema: Dict[str, str],
-    ) -> Dict[str, Any]:
+        schema: dict[str, str],
+    ) -> dict[str, Any]:
         """Return merged schema payload keyed by HTTP status code."""
         existing = self.db.fetchone(
             "SELECT schema_json FROM response_schemas WHERE url_pattern = ? AND method = ?",
             (url_pattern, self._normalize_method(method)),
         )
 
-        by_status: Dict[str, Dict[str, str]] = {}
+        by_status: dict[str, dict[str, str]] = {}
         if existing and existing.get("schema_json"):
             parsed = safe_json_loads(existing["schema_json"]) or {}
             if isinstance(parsed, dict):
@@ -217,7 +210,7 @@ class ResponseIntelligenceManager:
 
     # ── Recent history for N+1 detection ──────────────────────────────
 
-    def get_recent_history(self, limit: int = 50) -> List[Dict[str, Any]]:
+    def get_recent_history(self, limit: int = 50) -> list[dict[str, Any]]:
         """Return the most recent history rows (url + method only).
 
         *limit* is clamped to ``[1, _MAX_HISTORY_LIMIT]`` to prevent runaway
@@ -225,8 +218,7 @@ class ResponseIntelligenceManager:
         """
         limit = max(1, min(limit, self._MAX_HISTORY_LIMIT))
         rows = self.db.fetchall(
-            "SELECT method, url, elapsed, executed_at "
-            "FROM history ORDER BY id DESC LIMIT ?",
+            "SELECT method, url, elapsed, executed_at " "FROM history ORDER BY id DESC LIMIT ?",
             (limit,),
         )
         return [dict(r) for r in rows]
@@ -239,7 +231,7 @@ class ResponseIntelligenceManager:
         return method.upper()
 
     @staticmethod
-    def _decode_elapsed_values(raw: Optional[str]) -> List[float]:
+    def _decode_elapsed_values(raw: str | None) -> list[float]:
         """Parse the ``elapsed_values`` JSON column into a list of floats.
 
         Returns an empty list for null, empty, or corrupt values so callers

@@ -55,4 +55,3 @@ def test_secret_manager_config_store_upsert_and_delete(tmp_path: Path) -> None:
 
     store.delete("local-env")
     assert "local-env" not in store.load_all()
-

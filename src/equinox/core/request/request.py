@@ -5,12 +5,11 @@ from __future__ import annotations
 import logging
 import shlex
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Union
 
 from equinox.core import urls
 from equinox.core.exceptions import ValidationError
-from equinox.security import redact_url
-from equinox.core.validation import VALID_HTTP_METHODS as VALID_METHODS
+from equinox.core.request.headers import HeaderDict
 from equinox.core.request.types import (
     DEFAULT_METHOD,
     DEFAULT_TIMEOUT,
@@ -18,7 +17,8 @@ from equinox.core.request.types import (
     CaptureRule,
     MultipartField,
 )
-from equinox.core.request.headers import HeaderDict
+from equinox.core.validation import VALID_HTTP_METHODS as VALID_METHODS
+from equinox.security import redact_url
 
 __all__ = ["Request"]
 
@@ -28,7 +28,7 @@ logger = logging.getLogger(__name__)
 # ── Private helpers ───────────────────────────────────────────────────────────
 
 
-def _decode_body(body: Optional[Union[str, bytes]], encoding: str = "utf-8") -> str:
+def _decode_body(body: Union[str, bytes] | None, encoding: str = "utf-8") -> str:
     """Decode *body* to ``str``, handling both ``str`` and ``bytes`` input.
 
     Args:
@@ -61,7 +61,7 @@ def _is_absolute_url(url: str) -> bool:
     return bool(meta.get("scheme") and meta.get("netloc"))
 
 
-def _merge_query_params(url: str, params: Dict[str, str]) -> str:
+def _merge_query_params(url: str, params: dict[str, str]) -> str:
     """Merge *params* into *url*, overriding any colliding existing keys.
 
     Args:
@@ -90,37 +90,37 @@ class Request:
     method: str
     url: str
 
-    headers: Dict[str, str] = field(default_factory=dict)
-    params: Dict[str, str] = field(default_factory=dict)
-    body: Optional[Union[str, bytes]] = None
+    headers: dict[str, str] = field(default_factory=dict)
+    params: dict[str, str] = field(default_factory=dict)
+    body: Union[str, bytes] | None = None
 
-    auth: Optional[Any] = None
+    auth: Any | None = None
 
     timeout: float = field(default=DEFAULT_TIMEOUT)
     follow_redirects: bool = True
     verify_ssl: bool = True
 
     # ── Metadata ──────────────────────────────────────────────────────────────
-    name: Optional[str] = None
-    description: Optional[str] = None
-    collection_id: Optional[int] = None
-    folder: Optional[str] = None
-    id: Optional[int] = None
-    correlation_id: Optional[str] = None
+    name: str | None = None
+    description: str | None = None
+    collection_id: int | None = None
+    folder: str | None = None
+    id: int | None = None
+    correlation_id: str | None = None
 
     # ── Advanced features ─────────────────────────────────────────────────────
-    captures: List[CaptureRule] = field(default_factory=list)
-    assertions: List[AssertionRule] = field(default_factory=list)
-    multipart_data: Optional[List[MultipartField]] = None
-    params_list: Optional[List[Dict[str, Any]]] = None
+    captures: list[CaptureRule] = field(default_factory=list)
+    assertions: list[AssertionRule] = field(default_factory=list)
+    multipart_data: list[MultipartField] | None = None
+    params_list: list[dict[str, Any]] | None = None
 
     pre_script: str = ""
     post_script: str = ""
 
-    cert_path: Optional[str] = None
-    cert_key_path: Optional[str] = None
+    cert_path: str | None = None
+    cert_key_path: str | None = None
 
-    path_params: Dict[str, str] = field(default_factory=dict)
+    path_params: dict[str, str] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         self.method = self.method.upper()
@@ -130,14 +130,17 @@ class Request:
         safe_url = _short(redact_url(self.url) or "")
         logger.debug(
             "Request initialised: %s %s id=%s collection=%s",
-            self.method, safe_url, self.id, self.collection_id,
+            self.method,
+            safe_url,
+            self.id,
+            self.collection_id,
         )
 
     # ── Serialisation ─────────────────────────────────────────────────────────
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """Serialise to a plain dict (suitable for JSON/storage)."""
-        d: Dict[str, Any] = {
+        d: dict[str, Any] = {
             "method": self.method,
             "url": self.url,
             "headers": dict(self.headers),
@@ -167,7 +170,7 @@ class Request:
         return d
 
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> "Request":
+    def from_dict(cls, data: dict[str, Any]) -> Request:
         """Deserialise from a plain dict produced by :meth:`to_dict`."""
         request = cls(
             method=data.get("method", DEFAULT_METHOD),
@@ -196,6 +199,7 @@ class Request:
         if "auth" in data and "auth_type" in data:
             try:
                 from equinox.auth import auth_from_dict
+
                 request.auth = auth_from_dict(data["auth_type"], data["auth"])
             except Exception as exc:
                 logger.exception("Auth reconstruction failed")
@@ -228,4 +232,3 @@ class Request:
             parts.extend(["-d", _decode_body(self.body)])
         parts.append(self._final_url())
         return shlex.join(parts)
-

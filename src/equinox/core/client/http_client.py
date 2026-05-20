@@ -3,36 +3,36 @@
 Orchestrates validation, rate limiting, concurrency, authentication,
 retries, and the request/response pipeline through a single :meth:`send` call.
 """
+
 from __future__ import annotations
 
 import logging
 import threading
 import time
-from typing import Any, Dict, Optional
+from typing import Any
 
 from equinox.auth import AuthStrategy
-from equinox.core.audit import get_audit_logger
-from equinox.core.format import error_mapper
 from equinox.core import urls
-from equinox.core.http.cookies import CookieManager
-from equinox.core.exceptions import RequestError, ValidationError
-from equinox.core.interceptors.chain import InterceptorChain
-from equinox.core.interceptors.logging import RequestResponseLogger
-from equinox.core.log_setup import (
-    generate_request_id,
-    set_current_request_id,
-    clear_current_request_id,
-)
-from equinox.core.http.rate_limiter import RateLimiter
-from equinox.core.request import Request, Response
-from equinox.core.validation import Validator
-
+from equinox.core.audit import get_audit_logger
 from equinox.core.client.auth_applier import AuthApplier
 from equinox.core.client.concurrency_guard import ConcurrencyGuard
 from equinox.core.client.cookie_handler import CookieHandler
 from equinox.core.client.dispatcher import HttpxDispatcher
 from equinox.core.client.pipeline import RequestPipeline
 from equinox.core.client.retry_policy import RetryPolicy
+from equinox.core.exceptions import RequestError, ValidationError
+from equinox.core.format import error_mapper
+from equinox.core.http.cookies import CookieManager
+from equinox.core.http.rate_limiter import RateLimiter
+from equinox.core.interceptors.chain import InterceptorChain
+from equinox.core.interceptors.logging import RequestResponseLogger
+from equinox.core.log_setup import (
+    clear_current_request_id,
+    generate_request_id,
+    set_current_request_id,
+)
+from equinox.core.request import Request, Response
+from equinox.core.validation import Validator
 from equinox.security import redact_url
 
 logger = logging.getLogger(__name__)
@@ -57,12 +57,12 @@ class HTTPClient:
 
     # ── Limits and defaults ───────────────────────────────────────────────────
 
-    MAX_TIMEOUT = 300.0           # 5 minutes
-    MIN_TIMEOUT = 0.1             # 100 ms
+    MAX_TIMEOUT = 300.0  # 5 minutes
+    MIN_TIMEOUT = 0.1  # 100 ms
     DEFAULT_TIMEOUT = 30.0
     MAX_REDIRECTS = 10
-    MAX_RETRIES = 3               # timeout-retry attempts
-    MAX_HTTP_RETRIES = 2          # 429/503/504 retry attempts
+    MAX_RETRIES = 3  # timeout-retry attempts
+    MAX_HTTP_RETRIES = 2  # 429/503/504 retry attempts
     RETRYABLE_STATUS_CODES = {429, 503, 504}
     RETRY_AFTER_CAP_SECONDS = 60.0
     RATE_LIMIT_WINDOW_SECONDS = 60
@@ -72,11 +72,11 @@ class HTTPClient:
         timeout: float = 30.0,
         follow_redirects: bool = True,
         verify_ssl: bool = True,
-        proxy: Optional[str] = None,
+        proxy: str | None = None,
         max_rate_per_minute: int = 60,
         max_concurrent_requests: int = 10,
-        cookie_manager: Optional[CookieManager] = None,
-        cancel_event: Optional[threading.Event] = None,
+        cookie_manager: CookieManager | None = None,
+        cancel_event: threading.Event | None = None,
     ):
         if not isinstance(timeout, (int, float)) or timeout <= 0:
             raise ValidationError("Timeout must be a positive number")
@@ -99,18 +99,20 @@ class HTTPClient:
         if timeout < cls.MIN_TIMEOUT:
             logger.warning(
                 "Timeout %.1fs is below minimum, clamping to %.1fs",
-                timeout, cls.MIN_TIMEOUT,
+                timeout,
+                cls.MIN_TIMEOUT,
             )
             return cls.MIN_TIMEOUT
         if timeout > cls.MAX_TIMEOUT:
             logger.warning(
                 "Timeout %.1fs exceeds maximum, clamping to %.1fs",
-                timeout, cls.MAX_TIMEOUT,
+                timeout,
+                cls.MAX_TIMEOUT,
             )
             return cls.MAX_TIMEOUT
         return timeout
 
-    def _build_components(self, cookie_manager: Optional[CookieManager]) -> None:
+    def _build_components(self, cookie_manager: CookieManager | None) -> None:
         """Instantiate and wire all collaborator objects.
 
         Kept separate from ``__init__`` so the constructor stays focused on
@@ -158,7 +160,7 @@ class HTTPClient:
 
     # ── Context manager ───────────────────────────────────────────────────────
 
-    def __enter__(self) -> "HTTPClient":
+    def __enter__(self) -> HTTPClient:
         if self.proxy:
             logger.debug("HTTPClient: opening with proxy %s", redact_url(self.proxy))
             self.check_proxy_reachable()
@@ -180,9 +182,7 @@ class HTTPClient:
             time.sleep(seconds)
 
     def _validate_request(self, request: Request) -> None:
-        resolved_url = urls.expand_placeholders(
-            request.url, getattr(request, "path_params", None)
-        )
+        resolved_url = urls.expand_placeholders(request.url, getattr(request, "path_params", None))
         Validator.validate_resolved_url(resolved_url)
         Validator.validate_method(request.method)
         if request.headers:
@@ -190,10 +190,12 @@ class HTTPClient:
         if request.params:
             Validator.validate_query_params(request.params)
         if request.body:
-            Validator.validate_request_body(request.body, self._resolve_content_type(request.headers))
+            Validator.validate_request_body(
+                request.body, self._resolve_content_type(request.headers)
+            )
 
     @staticmethod
-    def _resolve_content_type(headers: Optional[Dict[str, Any]]) -> Optional[str]:
+    def _resolve_content_type(headers: dict[str, Any] | None) -> str | None:
         """Return Content-Type value from headers using case-insensitive lookup."""
         if not headers or not hasattr(headers, "items"):
             return None
@@ -211,7 +213,7 @@ class HTTPClient:
     def _execute_single_attempt(
         self,
         request: Request,
-        auth: Optional[AuthStrategy],
+        auth: AuthStrategy | None,
     ) -> Response:
         """Perform one HTTP round-trip: apply auth, dispatch, sync cookies."""
         logger.debug(
@@ -247,7 +249,7 @@ class HTTPClient:
     def _dispatch_with_retries(
         self,
         request: Request,
-        auth: Optional[AuthStrategy],
+        auth: AuthStrategy | None,
     ) -> Response:
         logger.debug(
             "HTTPClient._dispatch_with_retries: starting retry policy",
@@ -279,6 +281,7 @@ class HTTPClient:
 
     def check_proxy_reachable(self) -> None:
         from equinox.core.http.proxy import check_proxy_reachable
+
         if not self.proxy:
             raise ValidationError("Proxy URL is not configured")
         check_proxy_reachable(self.proxy)
@@ -320,7 +323,7 @@ class HTTPClient:
         self._active_requests = self._concurrency.active
         return self._active_requests
 
-    def send(self, request: Request, auth: Optional[AuthStrategy] = None) -> Response:
+    def send(self, request: Request, auth: AuthStrategy | None = None) -> Response:
         """Send *request*, applying *auth* (or ``request.auth``) if provided.
 
         Args:

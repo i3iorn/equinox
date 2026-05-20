@@ -2,7 +2,7 @@
 
 import json
 import logging
-from typing import Any, Optional
+from typing import Any
 
 from equinox.core.exceptions import SecurityError, ValidationError
 
@@ -103,7 +103,7 @@ def require_str(value: Any, field: str, max_len: int, required: bool = True) -> 
 # ── JSON helpers ───────────────────────────────────────────────────────────
 
 
-def coerce_body_to_str(body: Any, strict: bool = False) -> Optional[str]:
+def coerce_body_to_str(body: Any, strict: bool = False) -> str | None:
     """Coerce bytes/str/other body to a string suitable for indexing and matching.
 
     Returns None when body is None. If strict=True then decoding errors raise;
@@ -132,8 +132,8 @@ def coerce_body_to_str(body: Any, strict: bool = False) -> Optional[str]:
 def safe_json_dumps(
     obj: Any,
     *,
-    max_len: Optional[int] = None,
-    indent: Optional[int] = None,
+    max_len: int | None = None,
+    indent: int | None = None,
     ensure_ascii: bool = True,
     sort_keys: bool = False,
 ) -> str:
@@ -160,10 +160,10 @@ def safe_json_dumps(
 
 
 def safe_json_loads(
-    s: Optional[str],
+    s: str | None,
     *,
     default: Any = _MISSING,
-    row_id: Optional[int] = None,
+    row_id: int | None = None,
 ) -> Any:
     """Safely parse a JSON string, returning *default* on failure.
 

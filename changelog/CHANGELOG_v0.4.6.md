@@ -75,4 +75,3 @@ Equinox v0.4.6 completes phases 14-17 of the GUI service-boundary refactor plan.
 - Added architecture guard tests to enforce service/UI/plugin boundary expectations.
 - Improved plugin hook failure observability with consistent audit logging.
 - Synchronized contributor docs and refactor plan checklists with implemented boundaries.
-

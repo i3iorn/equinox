@@ -1,27 +1,29 @@
 """Intelligence panel — displays Response Intelligence findings."""
+
 from __future__ import annotations
 
 import json
 import logging
+from collections.abc import Generator
+from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from contextlib import contextmanager
-from typing import Callable, Generator, Optional
+from typing import Callable
 
-from PyQt6.QtWidgets import (
-    QWidget,
-    QVBoxLayout,
-    QHBoxLayout,
-    QLabel,
-    QScrollArea,
-    QFrame,
-    QToolButton,
-    QPushButton,
-    QListWidget,
-    QListWidgetItem,
-)
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QGuiApplication
+from PyQt6.QtWidgets import (
+    QFrame,
+    QHBoxLayout,
+    QLabel,
+    QListWidget,
+    QListWidgetItem,
+    QPushButton,
+    QScrollArea,
+    QToolButton,
+    QVBoxLayout,
+    QWidget,
+)
 
 from equinox.core.response_intelligence import Category, Finding, Severity
 from equinox.gui.theme import Colors, get_mono_font
@@ -40,8 +42,8 @@ _AUDIT_MAX_LINES = 400
 # keeps the Colors reference explicit and statically checkable.
 _SEV_STYLE: dict[Severity, tuple[str, Callable[[], str]]] = {
     Severity.CRITICAL: ("⛔", lambda: Colors.ERROR),
-    Severity.WARNING:  ("⚠",  lambda: Colors.WARNING),
-    Severity.INFO:     ("ℹ",  lambda: Colors.INFO),
+    Severity.WARNING: ("⚠", lambda: Colors.WARNING),
+    Severity.INFO: ("ℹ", lambda: Colors.INFO),
 }
 
 # Fallback used when a Severity value has no entry in _SEV_STYLE.
@@ -79,8 +81,8 @@ class _FindingCard(QFrame):
     def __init__(
         self,
         finding: Finding,
-        on_apply: Optional[Callable[[Finding], None]] = None,
-        on_mute: Optional[Callable[[Finding], None]] = None,
+        on_apply: Callable[[Finding], None] | None = None,
+        on_mute: Callable[[Finding], None] | None = None,
         parent: QWidget | None = None,
     ) -> None:
         super().__init__(parent)
@@ -186,9 +188,7 @@ class _FindingCard(QFrame):
                 Qt.TextInteractionFlag.TextSelectableByMouse
             )
             try:
-                detail_text = json.dumps(
-                    finding.details, indent=2, ensure_ascii=False, default=str
-                )
+                detail_text = json.dumps(finding.details, indent=2, ensure_ascii=False, default=str)
             except Exception as exc:
                 logger.warning(
                     "Failed to serialise finding details for %r: %s",
@@ -352,9 +352,7 @@ class IntelligencePanel(QWidget):
         finally:
             self._scroll_content.setUpdatesEnabled(True)
 
-    def _set_summary(
-        self, text: str, color: str, *, rich_text: bool = False
-    ) -> None:
+    def _set_summary(self, text: str, color: str, *, rich_text: bool = False) -> None:
         """Update the summary bar label with *text* styled in *color*."""
         self._summary_label.setText(text)
         self._summary_label.setStyleSheet(f"color: {color};")
@@ -362,9 +360,7 @@ class IntelligencePanel(QWidget):
             Qt.TextFormat.RichText if rich_text else Qt.TextFormat.PlainText
         )
 
-    def _set_placeholder(
-        self, text: str, color: str = "", *, bold: bool = False
-    ) -> None:
+    def _set_placeholder(self, text: str, color: str = "", *, bold: bool = False) -> None:
         """Update the placeholder label text and optional styling."""
         self._placeholder.setText(text)
         parts = []
@@ -391,9 +387,7 @@ class IntelligencePanel(QWidget):
             c = counts.get(sev, 0)
             if c:
                 icon, color_fn = _SEV_STYLE.get(sev, _SEV_STYLE_DEFAULT)
-                parts.append(
-                    f'<span style="color:{color_fn()};">{icon} {c} {sev.value}</span>'
-                )
+                parts.append(f'<span style="color:{color_fn()};">{icon} {c} {sev.value}</span>')
         return f"  {len(findings)} finding(s):  " + "   ".join(parts)
 
     def _rebuild_cards(self, findings: list[Finding]) -> None:
@@ -411,9 +405,7 @@ class IntelligencePanel(QWidget):
                 cat_label = QLabel(f"─── {cat.value} ───")
                 cat_label.setObjectName("intelCategory")
                 # Insert before the trailing stretch (always at count - 1).
-                self._scroll_layout.insertWidget(
-                    self._scroll_layout.count() - 1, cat_label
-                )
+                self._scroll_layout.insertWidget(self._scroll_layout.count() - 1, cat_label)
                 for finding in cat_findings:
                     self._scroll_layout.insertWidget(
                         self._scroll_layout.count() - 1,
@@ -439,7 +431,7 @@ class IntelligencePanel(QWidget):
                 for line in template.splitlines():
                     if ":" not in line:
                         continue
-                    key, value = [p.strip() for p in line.split(":", 1)]
+                    key, value = (p.strip() for p in line.split(":", 1))
                     rp.headers_table.add_row(key, value, enabled=True)
                 return
 
@@ -577,5 +569,3 @@ class IntelligencePanel(QWidget):
             w = item.widget()
             if w:
                 w.deleteLater()
-
-

@@ -100,4 +100,3 @@ def test_repr_eq_hash_and_notimplemented() -> None:
     assert hash(p1) == hash(p2)
     assert "timeout_retries=2" in repr(p1)
     assert p1.__eq__(object()) is NotImplemented
-

@@ -1,14 +1,16 @@
 """SQL filter construction and Python post-filters for history search."""
+
 from __future__ import annotations
 
 import logging
 import re
 from datetime import datetime as _dt
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
 
 from equinox.core.exceptions import SecurityError, ValidationError
 from equinox.storage.database import Database
 from equinox.storage.utils import coerce_body_to_str, safe_json_loads
+
 from ._constants import _LIKE_ESCAPE_CLAUSE, _STATUS_CODE_RANGES
 from ._serializer import _HistorySerializer
 
@@ -25,7 +27,7 @@ class _HistorySearcher:
     """
 
     MAX_REGEX_LENGTH = 500
-    MAX_LIMIT        = 10_000
+    MAX_LIMIT = 10_000
 
     # Body bytes examined during regex/JSONPath post-filtering.
     # Applying a user-supplied regex to multi-MB response bodies can cause
@@ -33,7 +35,7 @@ class _HistorySearcher:
     _MAX_BODY_BYTES_FOR_FILTER: int = 512 * 1024  # 512 KB
 
     def __init__(self, db: Database, serializer: _HistorySerializer) -> None:
-        self._db         = db
+        self._db = db
         self._serializer = serializer
 
     # ── Public interface ──────────────────────────────────────────────────────
@@ -53,19 +55,19 @@ class _HistorySearcher:
         query: str = "",
         method: str = "",
         status_class: str = "",
-        status_code: Optional[int] = None,
+        status_code: int | None = None,
         body_regex: str = "",
         jsonpath: str = "",
-        jsonpath_value: Optional[str] = None,
+        jsonpath_value: str | None = None,
         content_type: str = "",
         header: str = "",
-        min_elapsed: Optional[float] = None,
-        max_elapsed: Optional[float] = None,
-        executed_after: Optional[str] = None,
-        executed_before: Optional[str] = None,
+        min_elapsed: float | None = None,
+        max_elapsed: float | None = None,
+        executed_after: str | None = None,
+        executed_before: str | None = None,
         limit: int = 100,
         offset: int = 0,
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         """Run a filtered history search and return decoded rows.
 
         SQL-level filters run first (fast, indexed).  Python post-filters
@@ -74,26 +76,34 @@ class _HistorySearcher:
         """
         self.validate_pagination(limit, offset)
 
-        compiled_regex  = self._compile_body_regex(body_regex)
+        compiled_regex = self._compile_body_regex(body_regex)
         parsed_jsonpath = self._parse_jsonpath(jsonpath)
 
         conditions, params_list = self._build_sql_filters(
-            query=query, method=method, status_code=status_code,
-            status_class=status_class, content_type=content_type,
-            min_elapsed=min_elapsed, max_elapsed=max_elapsed,
-            executed_after=executed_after, executed_before=executed_before,
+            query=query,
+            method=method,
+            status_code=status_code,
+            status_class=status_class,
+            content_type=content_type,
+            min_elapsed=min_elapsed,
+            max_elapsed=max_elapsed,
+            executed_after=executed_after,
+            executed_before=executed_before,
         )
-        where_clause      = ("WHERE " + " AND ".join(conditions)) if conditions else ""
+        where_clause = ("WHERE " + " AND ".join(conditions)) if conditions else ""
         needs_post_filter = bool(compiled_regex or parsed_jsonpath or header)
 
         if not needs_post_filter:
             return self._fast_query(where_clause, params_list, limit, offset)
 
         return self._streaming_query(
-            where_clause=where_clause, params_list=params_list,
-            limit=limit, offset=offset,
+            where_clause=where_clause,
+            params_list=params_list,
+            limit=limit,
+            offset=offset,
             compiled_regex=compiled_regex,
-            parsed_jsonpath=parsed_jsonpath, jsonpath_value=jsonpath_value,
+            parsed_jsonpath=parsed_jsonpath,
+            jsonpath_value=jsonpath_value,
             header=header,
         )
 
@@ -102,14 +112,11 @@ class _HistorySearcher:
     def _fast_query(
         self,
         where_clause: str,
-        params_list: List[Any],
+        params_list: list[Any],
         limit: int,
         offset: int,
-    ) -> List[Dict[str, Any]]:
-        sql  = (
-            f"SELECT * FROM history {where_clause} "
-            "ORDER BY executed_at DESC LIMIT ? OFFSET ?"
-        )
+    ) -> list[dict[str, Any]]:
+        sql = f"SELECT * FROM history {where_clause} " "ORDER BY executed_at DESC LIMIT ? OFFSET ?"
         rows = self._db.fetchall(sql, tuple(params_list) + (limit, offset))
         return [self._serializer.decode_row(dict(row), row_id=row["id"]) for row in rows]
 
@@ -119,22 +126,21 @@ class _HistorySearcher:
         self,
         *,
         where_clause: str,
-        params_list: List[Any],
+        params_list: list[Any],
         limit: int,
         offset: int,
-        compiled_regex: Optional["re.Pattern[str]"],
+        compiled_regex: re.Pattern[str] | None,
         parsed_jsonpath: Any,
-        jsonpath_value: Optional[str],
+        jsonpath_value: str | None,
         header: str,
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         """Fetch rows in growing batches until *limit* post-filter matches are collected."""
         header_name, header_val = self._parse_header_filter(header)
-        result:        List[Dict[str, Any]] = []
-        cursor_offset  = offset
-        batch_size     = max(limit * 4, 200)
-        sql_template   = (
-            f"SELECT * FROM history {where_clause} "
-            "ORDER BY executed_at DESC LIMIT ? OFFSET ?"
+        result: list[dict[str, Any]] = []
+        cursor_offset = offset
+        batch_size = max(limit * 4, 200)
+        sql_template = (
+            f"SELECT * FROM history {where_clause} " "ORDER BY executed_at DESC LIMIT ? OFFSET ?"
         )
 
         while len(result) < limit:
@@ -162,7 +168,7 @@ class _HistorySearcher:
                 break  # SQL cursor exhausted
 
             cursor_offset += batch_size
-            batch_size     = min(batch_size * 2, self.MAX_LIMIT)
+            batch_size = min(batch_size * 2, self.MAX_LIMIT)
 
         return result
 
@@ -173,17 +179,17 @@ class _HistorySearcher:
         *,
         query: str,
         method: str,
-        status_code: Optional[int],
+        status_code: int | None,
         status_class: str,
         content_type: str,
-        min_elapsed: Optional[float],
-        max_elapsed: Optional[float],
-        executed_after: Optional[str],
-        executed_before: Optional[str],
-    ) -> Tuple[List[str], List[Any]]:
+        min_elapsed: float | None,
+        max_elapsed: float | None,
+        executed_after: str | None,
+        executed_before: str | None,
+    ) -> tuple[list[str], list[Any]]:
         """Return ``(conditions, params)`` for the SQL WHERE clause."""
-        conditions: List[str] = []
-        params:     List[Any] = []
+        conditions: list[str] = []
+        params: list[Any] = []
 
         if query and isinstance(query, str):
             like = f"%{self._escape_like(query)}%"
@@ -235,7 +241,7 @@ class _HistorySearcher:
     # ── Post-filter predicates ────────────────────────────────────────────────
 
     @staticmethod
-    def _matches_body_regex(row: Dict[str, Any], compiled_regex: "re.Pattern[str]") -> bool:
+    def _matches_body_regex(row: dict[str, Any], compiled_regex: re.Pattern[str]) -> bool:
         body = coerce_body_to_str(row.get("response_body") or "") or ""
         # Cap the body before matching to prevent catastrophic backtracking on
         # user-supplied patterns against large response bodies.
@@ -245,9 +251,9 @@ class _HistorySearcher:
 
     @staticmethod
     def _matches_jsonpath(
-        row: Dict[str, Any],
+        row: dict[str, Any],
         parsed_jsonpath: Any,
-        jsonpath_value: Optional[str] = None,
+        jsonpath_value: str | None = None,
     ) -> bool:
         body = coerce_body_to_str(row.get("response_body") or "") or ""
         # Cap before JSON decode for the same reason as regex filtering.
@@ -255,6 +261,7 @@ class _HistorySearcher:
             body = body[: _HistorySearcher._MAX_BODY_BYTES_FOR_FILTER]
         try:
             from equinox.storage.utils import safe_json_loads as _loads
+
             data = _loads(body)
             # safe_json_loads returns {} on failure; treat as no-match for
             # non-empty bodies that failed to parse.
@@ -268,9 +275,7 @@ class _HistorySearcher:
         return jsonpath_value is None or str(matches[0].value) == jsonpath_value
 
     @staticmethod
-    def _matches_header(
-        row: Dict[str, Any], header_name: str, header_val: str = ""
-    ) -> bool:
+    def _matches_header(row: dict[str, Any], header_name: str, header_val: str = "") -> bool:
         resp_headers = row.get("response_headers") or {}
         if isinstance(resp_headers, str):
             resp_headers = safe_json_loads(resp_headers, row_id=row.get("id"))
@@ -284,24 +289,23 @@ class _HistorySearcher:
 
     # ── Scalar helpers ────────────────────────────────────────────────────────
 
-    def _compile_body_regex(self, body_regex: str) -> Optional["re.Pattern[str]"]:
+    def _compile_body_regex(self, body_regex: str) -> re.Pattern[str] | None:
         if not body_regex:
             return None
         if len(body_regex) > self.MAX_REGEX_LENGTH:
-            raise ValidationError(
-                f"Regex pattern too long (max {self.MAX_REGEX_LENGTH} chars)"
-            )
+            raise ValidationError(f"Regex pattern too long (max {self.MAX_REGEX_LENGTH} chars)")
         try:
             return re.compile(body_regex, re.IGNORECASE)
         except re.error as exc:
             raise ValidationError(f"Invalid regex pattern: {exc}")
 
     @staticmethod
-    def _parse_jsonpath(jsonpath: str) -> Optional[Any]:
+    def _parse_jsonpath(jsonpath: str) -> Any | None:
         if not jsonpath:
             return None
         try:
             from jsonpath_ng import parse as _jp_parse
+
             return _jp_parse(jsonpath)
         except Exception as exc:
             raise ValidationError(f"Invalid JSONPath expression: {exc}")
@@ -314,9 +318,7 @@ class _HistorySearcher:
         try:
             _dt.fromisoformat(timestamp.rstrip("Z"))
         except ValueError:
-            raise ValidationError(
-                f"{label} must be in ISO-8601 format (e.g. 2026-03-23T16:20:00Z)"
-            )
+            raise ValidationError(f"{label} must be in ISO-8601 format (e.g. 2026-03-23T16:20:00Z)")
 
     @staticmethod
     def _escape_like(text: str) -> str:
@@ -324,7 +326,7 @@ class _HistorySearcher:
         return text.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
 
     @staticmethod
-    def _parse_header_filter(header: str) -> Tuple[str, str]:
+    def _parse_header_filter(header: str) -> tuple[str, str]:
         """Parse ``'Name: value'`` into ``(name_lower, value_lower)``."""
         if not header:
             return "", ""
@@ -332,4 +334,3 @@ class _HistorySearcher:
             name, val = header.split(":", 1)
             return name.strip().lower(), val.strip().lower()
         return header.strip().lower(), ""
-

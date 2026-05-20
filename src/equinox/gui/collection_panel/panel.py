@@ -1,23 +1,34 @@
 """Collections management panel"""
 
-from PyQt6.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QTreeWidgetItem,
-    QPushButton, QInputDialog, QMenu, QCheckBox, QLineEdit,
-    QDialog, QFormLayout, QComboBox, QDialogButtonBox,
-)
-from PyQt6.QtCore import pyqtSignal, Qt, QTimer
-from PyQt6.QtGui import QAction, QColor, QShortcut, QKeySequence
-
-from equinox.gui.theme import Colors
 import logging
+
+from PyQt6.QtCore import Qt, QTimer, pyqtSignal
+from PyQt6.QtGui import QAction, QColor, QKeySequence, QShortcut
+from PyQt6.QtWidgets import (
+    QCheckBox,
+    QComboBox,
+    QDialog,
+    QDialogButtonBox,
+    QFormLayout,
+    QHBoxLayout,
+    QInputDialog,
+    QLineEdit,
+    QMenu,
+    QPushButton,
+    QTreeWidgetItem,
+    QVBoxLayout,
+    QWidget,
+)
+
 from equinox.application.collections import CollectionFacade
-from equinox.storage import Database
-from equinox.gui.widgets.drag_drop_tree import DragDropTree
-from equinox.gui.collection_panel.actions import _CollectionsActionsMixin
 from equinox.gui.collection_panel._dialog_registry import DialogRegistry
 from equinox.gui.collection_panel._spec_export_service import ApiSpecExportService
+from equinox.gui.collection_panel.actions import _CollectionsActionsMixin
 from equinox.gui.dialogs.api_spec_dialog import ApiSpecDialog
 from equinox.gui.error_presenter import ErrorPresenter
+from equinox.gui.theme import Colors
+from equinox.gui.widgets.drag_drop_tree import DragDropTree
+from equinox.storage import Database
 
 logger = logging.getLogger(__name__)
 
@@ -25,6 +36,7 @@ _AUTO_REFRESH_INTERVAL_MS = 30_000
 
 
 # ── Lightweight "new request" dialog ─────────────────────────────────────────
+
 
 class _NewRequestDialog(QDialog):
     """Minimal dialog to create a new request from the collections panel.
@@ -87,7 +99,7 @@ class CollectionsPanel(_CollectionsActionsMixin, QWidget):
     """Panel for managing collections and requests."""
 
     request_selected = pyqtSignal(object)
-    request_run      = pyqtSignal(object)   # fire-and-forget replay
+    request_run = pyqtSignal(object)  # fire-and-forget replay
     collections_changed = pyqtSignal()
 
     def __init__(
@@ -104,7 +116,7 @@ class CollectionsPanel(_CollectionsActionsMixin, QWidget):
         self.auto_refresh_enabled = True
         # Expansion state saved when a filter is first typed.
         # ``None`` means "no filter active — read expansion from the live tree".
-        self._pre_filter_expansion: "dict | None" = None
+        self._pre_filter_expansion: dict | None = None
         self._programmatic_expand = False  # guard against programmatic expand/collapse signals
         self._init_ui()
         self._setup_auto_refresh()
@@ -356,7 +368,7 @@ class CollectionsPanel(_CollectionsActionsMixin, QWidget):
             self.refresh()
 
     def _toggle_auto_refresh(self, state):
-        self.auto_refresh_enabled = (state == Qt.CheckState.Checked.value)
+        self.auto_refresh_enabled = state == Qt.CheckState.Checked.value
         if self.auto_refresh_enabled:
             self.refresh_timer.start(_AUTO_REFRESH_INTERVAL_MS)
         else:
@@ -419,7 +431,9 @@ class CollectionsPanel(_CollectionsActionsMixin, QWidget):
                 col_id = col.get("id")
                 # Defensive: ensure col_id is a positive non-boolean integer.
                 if isinstance(col_id, bool) or not (isinstance(col_id, int) and col_id > 0):
-                    logger.warning("Skipping collection with invalid id=%r name=%r", col_id, col.get("name"))
+                    logger.warning(
+                        "Skipping collection with invalid id=%r name=%r", col_id, col.get("name")
+                    )
                     continue
                 col_item = QTreeWidgetItem([col["name"]])
                 f = col_item.font(0)
@@ -432,8 +446,11 @@ class CollectionsPanel(_CollectionsActionsMixin, QWidget):
                 folder_items: dict[str, QTreeWidgetItem] = {}
                 for folder_path in self._collection_facade.list_folders(col_id):
                     self._ensure_folder_item(
-                        col_item, folder_path, folder_items,
-                        exp_state["folders"], col_id,
+                        col_item,
+                        folder_path,
+                        folder_items,
+                        exp_state["folders"],
+                        col_id,
                     )
 
                 # ── Group requests by folder, counting per node (#11) ─────────
@@ -448,8 +465,11 @@ class CollectionsPanel(_CollectionsActionsMixin, QWidget):
                     # Determine parent node: a folder sub-item or the collection itself
                     if folder_path:
                         parent = self._ensure_folder_item(
-                            col_item, folder_path, folder_items,
-                            exp_state["folders"], col_id,
+                            col_item,
+                            folder_path,
+                            folder_items,
+                            exp_state["folders"],
+                            col_id,
                         )
                         folder_counts[folder_path] = folder_counts.get(folder_path, 0) + 1
                     else:
@@ -460,11 +480,13 @@ class CollectionsPanel(_CollectionsActionsMixin, QWidget):
                     # Strip leading folder prefix from the display name if it
                     # was baked in by the Postman importer ("Folder/Name" → "Name")
                     if folder_path and display_name.startswith(folder_path + "/"):
-                        display_name = display_name[len(folder_path) + 1:]
+                        display_name = display_name[len(folder_path) + 1 :]
 
                     req_item = QTreeWidgetItem([f"{method}  {display_name}"])
                     req_item.setForeground(0, QColor(color))
-                    req_item.setData(0, Qt.ItemDataRole.UserRole, {"type": "request", "id": req["id"]})
+                    req_item.setData(
+                        0, Qt.ItemDataRole.UserRole, {"type": "request", "id": req["id"]}
+                    )
                     parent.addChild(req_item)
 
                 # ── Apply count badges (#11) ───────────────────────────────────
@@ -521,7 +543,8 @@ class CollectionsPanel(_CollectionsActionsMixin, QWidget):
                 folder_font.setItalic(True)
                 folder_item.setFont(0, folder_font)
                 folder_item.setData(
-                    0, Qt.ItemDataRole.UserRole,
+                    0,
+                    Qt.ItemDataRole.UserRole,
                     {"type": "folder", "path": accumulated},
                 )
                 current_parent.addChild(folder_item)
@@ -586,8 +609,18 @@ class CollectionsPanel(_CollectionsActionsMixin, QWidget):
                 logger.debug("CollectionsPanel: invalid collection id for context menu: %r", col_id)
                 return
             create_specs = [
-                ("new_request", "New Request…", lambda: self._new_request_in_collection(col_id), False),
-                ("add_folder", "Add Folder…", lambda: self._create_folder_in_collection(col_id), False),
+                (
+                    "new_request",
+                    "New Request…",
+                    lambda: self._new_request_in_collection(col_id),
+                    False,
+                ),
+                (
+                    "add_folder",
+                    "Add Folder…",
+                    lambda: self._create_folder_in_collection(col_id),
+                    False,
+                ),
             ]
             self._add_ranked_context_actions(menu, "collections_collection", create_specs)
             menu.addSeparator()
@@ -603,13 +636,26 @@ class CollectionsPanel(_CollectionsActionsMixin, QWidget):
                     )
                 )
             else:
-                logger.debug("CollectionsPanel: skipping Show API Spec action for invalid collection id: %r", col_id)
+                logger.debug(
+                    "CollectionsPanel: skipping Show API Spec action for invalid collection id: %r",
+                    col_id,
+                )
             manage_specs.extend(
                 [
                     ("rename", "Rename…", lambda: self._rename_collection(col_id, item), False),
-                    ("manage_variables", "Manage Variables…", lambda: self._manage_variables(col_id), False),
+                    (
+                        "manage_variables",
+                        "Manage Variables…",
+                        lambda: self._manage_variables(col_id),
+                        False,
+                    ),
                     ("set_auth", "Set Auth…", lambda: self._set_collection_auth(col_id), False),
-                    ("clear_auth", "Clear Auth", lambda: self._clear_collection_auth(col_id), False),
+                    (
+                        "clear_auth",
+                        "Clear Auth",
+                        lambda: self._clear_collection_auth(col_id),
+                        False,
+                    ),
                 ]
             )
             self._add_ranked_context_actions(menu, "collections_collection", manage_specs)
@@ -618,14 +664,31 @@ class CollectionsPanel(_CollectionsActionsMixin, QWidget):
             sort_menu = menu.addMenu("Sort Requests")
             if sort_menu is not None:
                 sort_specs = [
-                    ("sort_alpha", "Sort A → Z", lambda: self._sort_group(col_id, None, "alpha"), False),
-                    ("sort_method", "Sort by Method", lambda: self._sort_group(col_id, None, "method"), False),
+                    (
+                        "sort_alpha",
+                        "Sort A → Z",
+                        lambda: self._sort_group(col_id, None, "alpha"),
+                        False,
+                    ),
+                    (
+                        "sort_method",
+                        "Sort by Method",
+                        lambda: self._sort_group(col_id, None, "method"),
+                        False,
+                    ),
                 ]
-                self._add_ranked_context_actions(sort_menu, "collections_collection_sort", sort_specs)
+                self._add_ranked_context_actions(
+                    sort_menu, "collections_collection_sort", sort_specs
+                )
             menu.addSeparator()
 
             delete_specs = [
-                ("delete_collection", "Delete Collection", lambda: self._delete_collection(col_id), True),
+                (
+                    "delete_collection",
+                    "Delete Collection",
+                    lambda: self._delete_collection(col_id),
+                    True,
+                ),
             ]
             self._add_ranked_context_actions(menu, "collections_collection", delete_specs)
 
@@ -633,11 +696,23 @@ class CollectionsPanel(_CollectionsActionsMixin, QWidget):
             col_id = self._col_id_for_item(item)
             folder_path = data["path"]
             if not isinstance(col_id, int):
-                logger.debug("CollectionsPanel: invalid folder collection id for context menu: %r", col_id)
+                logger.debug(
+                    "CollectionsPanel: invalid folder collection id for context menu: %r", col_id
+                )
                 return
             create_specs = [
-                ("new_request_here", "New Request Here…", lambda: self._new_request_in_folder(col_id, folder_path), False),
-                ("add_subfolder", "Add Subfolder…", lambda: self._create_subfolder(col_id, folder_path), False),
+                (
+                    "new_request_here",
+                    "New Request Here…",
+                    lambda: self._new_request_in_folder(col_id, folder_path),
+                    False,
+                ),
+                (
+                    "add_subfolder",
+                    "Add Subfolder…",
+                    lambda: self._create_subfolder(col_id, folder_path),
+                    False,
+                ),
             ]
             self._add_ranked_context_actions(menu, "collections_folder", create_specs)
             menu.addSeparator()
@@ -661,15 +736,35 @@ class CollectionsPanel(_CollectionsActionsMixin, QWidget):
                 self._add_ranked_context_actions(sort_menu, "collections_folder_sort", sort_specs)
 
             manage_specs = [
-                ("set_auth", "Set Auth…", lambda c=col_id, f=folder_path: self._set_folder_auth(c, f), False),
-                ("clear_auth", "Clear Auth", lambda c=col_id, f=folder_path: self._clear_folder_auth(c, f), False),
-                ("rename_folder", "Rename Folder…", lambda: self._rename_folder(col_id, folder_path, item), False),
+                (
+                    "set_auth",
+                    "Set Auth…",
+                    lambda c=col_id, f=folder_path: self._set_folder_auth(c, f),
+                    False,
+                ),
+                (
+                    "clear_auth",
+                    "Clear Auth",
+                    lambda c=col_id, f=folder_path: self._clear_folder_auth(c, f),
+                    False,
+                ),
+                (
+                    "rename_folder",
+                    "Rename Folder…",
+                    lambda: self._rename_folder(col_id, folder_path, item),
+                    False,
+                ),
             ]
             self._add_ranked_context_actions(menu, "collections_folder", manage_specs)
             menu.addSeparator()
 
             delete_specs = [
-                ("delete_folder", "Delete Folder…", lambda: self._delete_folder(col_id, folder_path), True),
+                (
+                    "delete_folder",
+                    "Delete Folder…",
+                    lambda: self._delete_folder(col_id, folder_path),
+                    True,
+                ),
             ]
             self._add_ranked_context_actions(menu, "collections_folder", delete_specs)
 
@@ -693,19 +788,32 @@ class CollectionsPanel(_CollectionsActionsMixin, QWidget):
                     )
                 )
             else:
-                logger.debug("CollectionsPanel: skipping Show API Spec action for invalid request id: %r", req_id)
+                logger.debug(
+                    "CollectionsPanel: skipping Show API Spec action for invalid request id: %r",
+                    req_id,
+                )
             manage_specs.extend(
                 [
                     ("rename", "Rename…", lambda: self._rename_request(data["id"], item), False),
                     ("duplicate", "Duplicate", lambda: self._duplicate_request(data["id"]), False),
-                    ("move_to_folder", "Move to Folder…", lambda: self._move_to_folder(data["id"]), False),
+                    (
+                        "move_to_folder",
+                        "Move to Folder…",
+                        lambda: self._move_to_folder(data["id"]),
+                        False,
+                    ),
                 ]
             )
             self._add_ranked_context_actions(menu, "collections_request", manage_specs)
             menu.addSeparator()
 
             delete_specs = [
-                ("delete_request", "Delete Request", lambda: self._delete_request(data["id"]), True),
+                (
+                    "delete_request",
+                    "Delete Request",
+                    lambda: self._delete_request(data["id"]),
+                    True,
+                ),
             ]
             self._add_ranked_context_actions(menu, "collections_request", delete_specs)
 
@@ -722,7 +830,9 @@ class CollectionsPanel(_CollectionsActionsMixin, QWidget):
                 element_id=f"action.{action_id}",
             )
         except Exception:
-            logger.debug("Failed to get context action usage for %s/%s", context, action_id, exc_info=True)
+            logger.debug(
+                "Failed to get context action usage for %s/%s", context, action_id, exc_info=True
+            )
             return 0
 
     def _record_context_action_usage(self, context: str, action_id: str) -> None:
@@ -736,7 +846,9 @@ class CollectionsPanel(_CollectionsActionsMixin, QWidget):
                 context=context,
             )
         except Exception:
-            logger.debug("Failed to record context action usage for %s/%s", context, action_id, exc_info=True)
+            logger.debug(
+                "Failed to record context action usage for %s/%s", context, action_id, exc_info=True
+            )
 
     def _run_context_action(self, context: str, action_id: str, callback) -> None:
         self._record_context_action_usage(context, action_id)
@@ -756,15 +868,21 @@ class CollectionsPanel(_CollectionsActionsMixin, QWidget):
         safe.sort(key=lambda row: (row[0], row[1]))
         return [row[2] for row in safe] + [row[1] for row in destructive]
 
-    def _add_ranked_context_actions(self, menu: QMenu, context: str, action_specs: list[tuple]) -> None:
+    def _add_ranked_context_actions(
+        self, menu: QMenu, context: str, action_specs: list[tuple]
+    ) -> None:
         added_destructive_separator = False
-        for action_id, label, callback, is_destructive in self._ordered_context_actions(context, action_specs):
+        for action_id, label, callback, is_destructive in self._ordered_context_actions(
+            context, action_specs
+        ):
             if is_destructive and not added_destructive_separator:
                 menu.addSeparator()
                 added_destructive_separator = True
             action = QAction(label, self)
             action.triggered.connect(
-                lambda _checked=False, aid=action_id, cb=callback: self._run_context_action(context, aid, cb)
+                lambda _checked=False, aid=action_id, cb=callback: self._run_context_action(
+                    context, aid, cb
+                )
             )
             menu.addAction(action)
 
@@ -779,7 +897,9 @@ class CollectionsPanel(_CollectionsActionsMixin, QWidget):
             dlg.raise_()
             dlg.activateWindow()
         except Exception:
-            logger.debug("CollectionsPanel: unable to raise/activate API spec dialog", exc_info=True)
+            logger.debug(
+                "CollectionsPanel: unable to raise/activate API spec dialog", exc_info=True
+            )
 
     def _show_api_spec_for_collection(self, collection_id: int) -> None:
         """Open ApiSpecDialog showing OpenAPI and Postman variants for a collection."""
@@ -789,7 +909,9 @@ class CollectionsPanel(_CollectionsActionsMixin, QWidget):
             ErrorPresenter.warning(self, str(exc), title="Invalid Collection")
             return
         except Exception as exc:
-            logger.exception("CollectionsPanel: failed to build collection API spec id=%s", collection_id)
+            logger.exception(
+                "CollectionsPanel: failed to build collection API spec id=%s", collection_id
+            )
             ErrorPresenter.warning(self, f"Failed to load collection: {exc}", title="Export Error")
             return
 
@@ -808,4 +930,3 @@ class CollectionsPanel(_CollectionsActionsMixin, QWidget):
             return
 
         self._show_spec_dialog(payload.title, payload.variants)
-

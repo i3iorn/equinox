@@ -18,6 +18,5 @@ __all__ = [
     "Analyzer",
     "AnalysisEngine",
     "SchemaDriftAnalyzer",
-    "normalize_url_pattern"
+    "normalize_url_pattern",
 ]
-

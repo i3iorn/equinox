@@ -1,19 +1,23 @@
 from __future__ import annotations
+
 from dataclasses import dataclass, field
-from typing import Any, Dict, FrozenSet, Optional
+from typing import FrozenSet
+
 
 @dataclass
 class ScriptResult:
     """Outcome of a script execution."""
+
     stdout: str = ""
     stderr: str = ""
-    error: Optional[str] = None
-    env_changes: Dict[str, str] = field(default_factory=dict)
+    error: str | None = None
+    env_changes: dict[str, str] = field(default_factory=dict)
     duration: float = 0.0
 
     @property
     def ok(self) -> bool:
         return self.error is None
+
 
 ALLOWED_MODULES: FrozenSet[str] = frozenset(
     {

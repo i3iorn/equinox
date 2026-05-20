@@ -9,13 +9,13 @@ from __future__ import annotations
 import json
 import logging
 import subprocess
-from typing import Any, Dict, Optional
+from typing import Any
 
 from equinox.core.secret_managers.base import (
+    SecretAuthError,
     SecretManager,
     SecretManagerError,
     SecretNotFoundError,
-    SecretAuthError,
 )
 from equinox.security import mask_secret
 
@@ -50,10 +50,10 @@ class BitwardenManager(SecretManager):
     def __init__(self, **kwargs: Any) -> None:
         """Initialize Bitwarden manager."""
         super().__init__(**kwargs)
-        self.organization_id: Optional[str] = None
-        self.session_token: Optional[str] = None
+        self.organization_id: str | None = None
+        self.session_token: str | None = None
 
-    def configure(self, organization_id: Optional[str] = None, **kwargs: Any) -> None:
+    def configure(self, organization_id: str | None = None, **kwargs: Any) -> None:
         """Configure Bitwarden connection.
 
         Args:
@@ -66,29 +66,19 @@ class BitwardenManager(SecretManager):
         """
         # Check if bw CLI is available
         try:
-            result = subprocess.run(
-                ["bw", "--version"],
-                capture_output=True,
-                text=True,
-                timeout=5
-            )
+            result = subprocess.run(["bw", "--version"], capture_output=True, text=True, timeout=5)
             if result.returncode != 0:
                 raise SecretManagerError("Bitwarden CLI not found or not executable")
-        except FileNotFoundError:
+        except FileNotFoundError as exc:
             raise SecretManagerError(
                 "Bitwarden CLI not found. Install from: https://bitwarden.com/help/cli/"
-            )
+            ) from exc
         except Exception as exc:
-            raise SecretManagerError(f"Failed to check Bitwarden CLI: {exc}")
+            raise SecretManagerError(f"Failed to check Bitwarden CLI: {exc}") from exc
 
         # Test that we can access Bitwarden (this will fail if not logged in)
         try:
-            result = subprocess.run(
-                ["bw", "status"],
-                capture_output=True,
-                text=True,
-                timeout=5
-            )
+            result = subprocess.run(["bw", "status"], capture_output=True, text=True, timeout=5)
             if result.returncode != 0:
                 raise SecretAuthError(
                     "Not logged in to Bitwarden. Run: bw login your-email@example.com"
@@ -96,21 +86,18 @@ class BitwardenManager(SecretManager):
 
             status = json.loads(result.stdout)
             if status.get("status") == "locked":
-                raise SecretAuthError(
-                    "Bitwarden vault is locked. Run: bw unlock your-password"
-                )
-        except json.JSONDecodeError:
-            raise SecretManagerError("Invalid Bitwarden status response")
+                raise SecretAuthError("Bitwarden vault is locked. Run: bw unlock your-password")
+        except json.JSONDecodeError as exc:
+            raise SecretManagerError("Invalid Bitwarden status response") from exc
         except Exception as exc:
             if isinstance(exc, SecretAuthError):
                 raise
-            raise SecretManagerError(f"Failed to connect to Bitwarden: {exc}")
+            raise SecretManagerError(f"Failed to connect to Bitwarden: {exc}") from exc
 
         self.organization_id = organization_id
         self._configured = True
         logger.info(
-            "Bitwarden configured%s",
-            f" (org: {organization_id})" if organization_id else ""
+            "Bitwarden configured%s", f" (org: {organization_id})" if organization_id else ""
         )
 
     def get_secret(self, secret_name: str) -> str:
@@ -163,9 +150,9 @@ class BitwardenManager(SecretManager):
         except SecretNotFoundError:
             raise
         except Exception as exc:
-            raise SecretManagerError(f"Failed to retrieve secret from Bitwarden: {exc}")
+            raise SecretManagerError(f"Failed to retrieve secret from Bitwarden: {exc}") from exc
 
-    def get_secret_dict(self, secret_name: str) -> Dict[str, Any]:
+    def get_secret_dict(self, secret_name: str) -> dict[str, Any]:
         """Retrieve a secret from Bitwarden as a dictionary.
 
         Useful for credentials with multiple fields (username, password, etc.).
@@ -230,7 +217,7 @@ class BitwardenManager(SecretManager):
         except SecretNotFoundError:
             raise
         except Exception as exc:
-            raise SecretManagerError(f"Failed to retrieve secret from Bitwarden: {exc}")
+            raise SecretManagerError(f"Failed to retrieve secret from Bitwarden: {exc}") from exc
 
     def is_available(self) -> bool:
         """Check if Bitwarden is configured and accessible."""
@@ -238,17 +225,12 @@ class BitwardenManager(SecretManager):
             return False
 
         try:
-            result = subprocess.run(
-                ["bw", "status"],
-                capture_output=True,
-                text=True,
-                timeout=5
-            )
+            result = subprocess.run(["bw", "status"], capture_output=True, text=True, timeout=5)
             return result.returncode == 0
         except Exception:
             return False
 
-    def _get_item(self, secret_name: str) -> Dict[str, Any]:
+    def _get_item(self, secret_name: str) -> dict[str, Any]:
         """Internal method to retrieve an item from Bitwarden.
 
         Args:
@@ -266,10 +248,7 @@ class BitwardenManager(SecretManager):
             # Try to get by ID first (assumes UUID format)
             if self._is_uuid(secret_name):
                 result = subprocess.run(
-                    ["bw", "get", "item", secret_name],
-                    capture_output=True,
-                    text=True,
-                    timeout=10
+                    ["bw", "get", "item", secret_name], capture_output=True, text=True, timeout=10
                 )
             else:
                 # Search by name
@@ -277,7 +256,7 @@ class BitwardenManager(SecretManager):
                     ["bw", "list", "items", "--search", secret_name],
                     capture_output=True,
                     text=True,
-                    timeout=10
+                    timeout=10,
                 )
 
                 if search_result.returncode != 0:
@@ -290,10 +269,7 @@ class BitwardenManager(SecretManager):
                 # Use the first matching item
                 item_id = items[0]["id"]
                 result = subprocess.run(
-                    ["bw", "get", "item", item_id],
-                    capture_output=True,
-                    text=True,
-                    timeout=10
+                    ["bw", "get", "item", item_id], capture_output=True, text=True, timeout=10
                 )
 
             if result.returncode != 0:
@@ -305,13 +281,13 @@ class BitwardenManager(SecretManager):
             return json.loads(result.stdout)
 
         except json.JSONDecodeError as exc:
-            raise SecretManagerError(f"Invalid Bitwarden response: {exc}")
-        except subprocess.TimeoutExpired:
-            raise SecretManagerError("Bitwarden CLI request timed out")
+            raise SecretManagerError(f"Invalid Bitwarden response: {exc}") from exc
+        except subprocess.TimeoutExpired as exc:
+            raise SecretManagerError("Bitwarden CLI request timed out") from exc
         except Exception as exc:
             if isinstance(exc, (SecretNotFoundError, SecretManagerError)):
                 raise
-            raise SecretManagerError(f"Failed to retrieve item from Bitwarden: {exc}")
+            raise SecretManagerError(f"Failed to retrieve item from Bitwarden: {exc}") from exc
 
     @staticmethod
     def _is_uuid(value: str) -> bool:
@@ -324,9 +300,8 @@ class BitwardenManager(SecretManager):
             True if value matches UUID format
         """
         import re
+
         uuid_pattern = re.compile(
-            r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
-            re.IGNORECASE
+            r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$", re.IGNORECASE
         )
         return bool(uuid_pattern.match(value))
-

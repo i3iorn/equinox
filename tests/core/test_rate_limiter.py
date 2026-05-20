@@ -1,8 +1,7 @@
-import time
 import threading
 
-from equinox.core.http.rate_limiter import RateLimiter
 from equinox.core.exceptions import RateLimitError
+from equinox.core.http.rate_limiter import RateLimiter
 
 
 def test_rate_limiter_basic(monkeypatch):
@@ -48,4 +47,3 @@ def test_rate_limiter_concurrent(monkeypatch):
     # should have recorded 50 timestamps
     # cannot access private _times reliably in API but ensure no exception thrown
     assert True
-

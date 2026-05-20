@@ -1,11 +1,13 @@
 """Request/response pipeline: interceptors, audit logging, and error mapping."""
+
 import inspect
 import logging
-from typing import Callable, Iterable, List, Optional, Tuple, Type
+from collections.abc import Iterable
+from typing import Callable
 
-from equinox.core.request import Request, Response
 from equinox.core.exceptions import EquinoxError, RequestError
 from equinox.core.interceptors.chain import InterceptorChain
+from equinox.core.request import Request, Response
 from equinox.security import redact_body, redact_url
 
 logger = logging.getLogger(__name__)
@@ -29,9 +31,9 @@ class _AuditLogger(Protocol):
         method: str,
         url: str,
         *,
-        status_code: Optional[int] = None,
-        error: Optional[str] = None,
-        request_id: Optional[str] = None,
+        status_code: int | None = None,
+        error: str | None = None,
+        request_id: str | None = None,
     ) -> None: ...
 
 
@@ -48,7 +50,7 @@ class _HandlerResult(_HandlerResultBase, total=False):
     optional — omit them when the handler has no meaningful values to emit.
     """
 
-    audit_tag: str   # Short tag written to the audit trail.
+    audit_tag: str  # Short tag written to the audit trail.
     log_message: str  # Human-readable description logged at WARNING level.
 
 
@@ -56,7 +58,7 @@ class _HandlerResult(_HandlerResultBase, total=False):
 _ErrorHandlerFn = Callable[[Exception, Request], _HandlerResult]
 
 # Each entry in the registry pairs an exception type with its handler.
-_ErrorHandlerEntry = Tuple[Type[Exception], _ErrorHandlerFn]
+_ErrorHandlerEntry = tuple[type[Exception], _ErrorHandlerFn]
 
 
 # ---------------------------------------------------------------------------
@@ -95,9 +97,9 @@ class RequestPipeline:
         error_handlers: "Iterable[_ErrorHandlerEntry]",
     ) -> None:
         self._interceptors = interceptors
-        self._audit: "_AuditLogger" = audit_logger
+        self._audit: _AuditLogger = audit_logger
         # Materialise once so iteration is always O(n) without re-wrapping.
-        self._error_handlers: "List[_ErrorHandlerEntry]" = list(error_handlers)
+        self._error_handlers: list[_ErrorHandlerEntry] = list(error_handlers)
         self._audit_supports_request_id = self._supports_request_id(audit_logger)
 
     @staticmethod
@@ -116,9 +118,9 @@ class RequestPipeline:
         method: str,
         url: str,
         *,
-        status_code: Optional[int] = None,
-        error: Optional[str] = None,
-        request_id: Optional[str] = None,
+        status_code: int | None = None,
+        error: str | None = None,
+        request_id: str | None = None,
     ) -> None:
         """Call the audit logger while remaining compatible with legacy signatures."""
         kwargs = {
@@ -135,8 +137,8 @@ class RequestPipeline:
         self,
         request: Request,
         error: Exception,
-        audit_tag: Optional[str],
-        log_message: Optional[str],
+        audit_tag: str | None,
+        log_message: str | None,
     ) -> None:
         """Audit, log, and forward *error* through the interceptor chain.
 
@@ -210,7 +212,7 @@ class RequestPipeline:
                         "request_id": request.correlation_id,
                     },
                 )
-                result: "_HandlerResult" = handler_fn(error, request)
+                result: _HandlerResult = handler_fn(error, request)
                 self._emit_error(
                     request,
                     result.get("error"),
@@ -316,4 +318,4 @@ class RequestPipeline:
             )
             self._handle_error(request, exc)
             # _handle_error returned normally: an interceptor suppressed the error.
-            raise RequestError("Request suppressed by an error interceptor")
+            raise RequestError("Request suppressed by an error interceptor") from exc

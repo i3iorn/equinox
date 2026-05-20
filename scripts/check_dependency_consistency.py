@@ -11,7 +11,6 @@ Rules:
 import re
 import sys
 from pathlib import Path
-from typing import List
 
 
 def _read(path: Path) -> str:
@@ -20,7 +19,7 @@ def _read(path: Path) -> str:
     return path.read_text(encoding="utf-8")
 
 
-def _non_comment_lines(text: str) -> List[str]:
+def _non_comment_lines(text: str) -> list[str]:
     lines = []
     for line in text.splitlines():
         stripped = line.strip()
@@ -30,7 +29,7 @@ def _non_comment_lines(text: str) -> List[str]:
     return lines
 
 
-def check_setup_py(setup_text: str) -> List[str]:
+def check_setup_py(setup_text: str) -> list[str]:
     errors = []
     forbidden = [
         "install_requires",
@@ -42,9 +41,7 @@ def check_setup_py(setup_text: str) -> List[str]:
     ]
     for token in forbidden:
         if token in setup_text:
-            errors.append(
-                f"setup.py should be a thin shim; found forbidden token '{token}'."
-            )
+            errors.append(f"setup.py should be a thin shim; found forbidden token '{token}'.")
 
     if "setup()" not in setup_text:
         errors.append("setup.py must call setup().")
@@ -52,7 +49,7 @@ def check_setup_py(setup_text: str) -> List[str]:
     return errors
 
 
-def check_requirements_txt(requirements_text: str) -> List[str]:
+def check_requirements_txt(requirements_text: str) -> list[str]:
     errors = []
     non_comment = _non_comment_lines(requirements_text)
     expected = ["-r requirements-lock.txt", "-e ."]
@@ -69,16 +66,18 @@ def check_requirements_txt(requirements_text: str) -> List[str]:
     return errors
 
 
-def check_requirements_lock(lock_text: str) -> List[str]:
+def check_requirements_lock(lock_text: str) -> list[str]:
     errors = []
     if not lock_text.strip():
         errors.append("requirements-lock.txt must not be empty.")
     if "#" not in lock_text:
-        errors.append("requirements-lock.txt should look like a generated lockfile with header comments.")
+        errors.append(
+            "requirements-lock.txt should look like a generated lockfile with header comments."
+        )
     return errors
 
 
-def check_pyproject(pyproject_text: str) -> List[str]:
+def check_pyproject(pyproject_text: str) -> list[str]:
     errors = []
     if "[project]" not in pyproject_text:
         errors.append("pyproject.toml is missing [project] section.")
@@ -121,4 +120,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     sys.exit(main())
-

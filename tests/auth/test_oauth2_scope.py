@@ -5,16 +5,17 @@ in token-endpoint requests for both client_credentials and refresh_token
 flows, round-trips through serialization, and propagates from storage layers.
 """
 
-import pytest
-from unittest.mock import Mock, MagicMock, patch
 from datetime import datetime, timedelta, timezone
+from unittest.mock import MagicMock, Mock, patch
+
+import pytest
 
 from equinox.auth import OAuth2Auth
-
 
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
 
 def _mock_token_response(
     access_token="new-token",
@@ -40,6 +41,7 @@ def _mock_token_response(
 # Client-credentials flow – scope handling
 # ---------------------------------------------------------------------------
 
+
 class TestClientCredentialsScopeHandling:
     """Scope must be sent when configured for client_credentials."""
 
@@ -59,7 +61,11 @@ class TestClientCredentialsScopeHandling:
         auth.apply(Mock(), {})
 
         mock_client.post.assert_called_once()
-        sent_data = mock_client.post.call_args[1].get("data") or mock_client.post.call_args[0][1] if len(mock_client.post.call_args[0]) > 1 else mock_client.post.call_args[1]["data"]
+        sent_data = (
+            mock_client.post.call_args[1].get("data") or mock_client.post.call_args[0][1]
+            if len(mock_client.post.call_args[0]) > 1
+            else mock_client.post.call_args[1]["data"]
+        )
         assert sent_data["grant_type"] == "client_credentials"
         assert sent_data["scope"] == "read write"
 
@@ -139,6 +145,7 @@ class TestClientCredentialsScopeHandling:
 # ---------------------------------------------------------------------------
 # Refresh-token flow – scope handling
 # ---------------------------------------------------------------------------
+
 
 class TestRefreshTokenScopeHandling:
     """Scope must be sent when configured for refresh_token flow (RFC 6749 §6)."""
@@ -229,6 +236,7 @@ class TestRefreshTokenScopeHandling:
 # Scope preserved across token refreshes
 # ---------------------------------------------------------------------------
 
+
 class TestScopePreservedAcrossRefreshes:
     """Scope must stay on the instance and be sent on every subsequent refresh."""
 
@@ -264,7 +272,7 @@ class TestScopePreservedAcrossRefreshes:
         """Token endpoint returns a refresh_token; next call should still send scope."""
         mock_client = MagicMock()
         mock_client_class.return_value.__enter__.return_value = mock_client
-        
+
         # First call: client_credentials returns a refresh_token
         mock_client.post.return_value = _mock_token_response(
             access_token="tok1", expires_in=1, refresh_token="rt1"
@@ -298,6 +306,7 @@ class TestScopePreservedAcrossRefreshes:
 # ---------------------------------------------------------------------------
 # Serialization round-trip preserves scope
 # ---------------------------------------------------------------------------
+
 
 class TestScopeSerializationRoundTrip:
     """Scope must survive to_dict → from_dict round trips."""
@@ -367,17 +376,20 @@ class TestScopeSerializationRoundTrip:
 # OAuthClientManager → OAuth2Auth scope propagation
 # ---------------------------------------------------------------------------
 
+
 class TestOAuthClientManagerScopePropagation:
     """Ensure scope set in the DB flows through to_oauth2_auth → actual request."""
 
     @pytest.fixture
     def db(self, tmp_path):
         from equinox.storage.database import Database
+
         return Database(str(tmp_path / "test.db"))
 
     @pytest.fixture
     def mgr(self, db):
         from equinox.storage.oauth_clients import OAuthClientManager
+
         return OAuthClientManager(db)
 
     def test_to_oauth2_auth_passes_scope(self, mgr):
@@ -433,17 +445,20 @@ class TestOAuthClientManagerScopePropagation:
 # SavedCredentialsManager → OAuth2Auth scope propagation
 # ---------------------------------------------------------------------------
 
+
 class TestSavedCredentialsScopePropagation:
     """Ensure scope in saved_credentials config flows to OAuth2Auth."""
 
     @pytest.fixture
     def db(self, tmp_path):
         from equinox.storage.database import Database
+
         return Database(str(tmp_path / "test.db"))
 
     @pytest.fixture
     def mgr(self, db):
         from equinox.storage.saved_credentials import SavedCredentialsManager
+
         return SavedCredentialsManager(db)
 
     def test_saved_credential_scope_propagates(self, mgr):
@@ -500,4 +515,3 @@ class TestSavedCredentialsScopePropagation:
 
         sent_data = mock_client.post.call_args[1].get("data") or mock_client.post.call_args[0][1]
         assert sent_data["scope"] == "read write delete"
-

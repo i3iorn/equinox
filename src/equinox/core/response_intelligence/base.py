@@ -1,12 +1,11 @@
 """Abstract base class for response analyzers."""
 
 import abc
-from typing import List
 
 from equinox.core.response_intelligence.models import (
+    AnalysisContext,
     Category,
     Finding,
-    AnalysisContext,
 )
 
 
@@ -25,6 +24,5 @@ class Analyzer(abc.ABC):
     requires_valid_json_body: bool = False
 
     @abc.abstractmethod
-    def analyze(self, ctx: AnalysisContext) -> List[Finding]:
+    def analyze(self, ctx: AnalysisContext) -> list[Finding]:
         """Run the analysis and return zero or more findings."""
-

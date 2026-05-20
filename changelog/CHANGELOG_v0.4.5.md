@@ -104,4 +104,3 @@ Equinox v0.4.5 completes the second half of the GUI service-boundary refactor. C
 - Added facades for collection/history flows and a centralized error presenter.
 - Migrated send-flow error handling to unified presenter APIs.
 - Stabilized compatibility edges discovered during broad regression testing.
-

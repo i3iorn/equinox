@@ -1,7 +1,9 @@
 """Variable and variable-group methods for CollectionManager."""
 
+# mypy: disable-error-code=attr-defined
+
 import logging
-from typing import Dict, List, Any
+from typing import Any
 
 from equinox.core.exceptions import StorageError, ValidationError
 from equinox.storage.utils import (
@@ -15,6 +17,12 @@ logger = logging.getLogger(__name__)
 
 class CollectionVariablesMixin:
     """Mixin providing variable management for CollectionManager."""
+
+    # Provided by CollectionManager at composition time.
+    db: Any
+    MAX_DESCRIPTION_LENGTH: int
+
+    def get_collection(self, collection_id: int) -> dict[str, Any] | None: ...
 
     def add_variable(self, collection_id: int, key: str, value: str, description: str = "") -> int:
         """Add or update a variable for a collection.
@@ -40,7 +48,9 @@ class CollectionVariablesMixin:
         if not isinstance(description, str):
             raise ValidationError("Variable description must be a string")
         if len(description) > self.MAX_DESCRIPTION_LENGTH:
-            raise ValidationError(f"Variable description too long (max {self.MAX_DESCRIPTION_LENGTH} characters)")
+            raise ValidationError(
+                f"Variable description too long (max {self.MAX_DESCRIPTION_LENGTH} characters)"
+            )
 
         try:
             var_id = self.db.insert(
@@ -52,7 +62,7 @@ class CollectionVariablesMixin:
                     description = excluded.description,
                     updated_at = CURRENT_TIMESTAMP
                 """,
-                (collection_id, key, value, description)
+                (collection_id, key, value, description),
             )
             logger.info("Added/updated variable %r for collection %d", key, collection_id)
             return var_id
@@ -77,13 +87,13 @@ class CollectionVariablesMixin:
         try:
             self.db.execute(
                 "DELETE FROM collection_variables WHERE collection_id = ? AND key = ?",
-                (collection_id, key)
+                (collection_id, key),
             )
             logger.info("Removed variable %r from collection %d", key, collection_id)
         except Exception as exc:
             raise StorageError(f"Failed to remove variable: {exc}")
 
-    def list_collection_variables(self, collection_id: int) -> List[Dict[str, Any]]:
+    def list_collection_variables(self, collection_id: int) -> list[dict[str, Any]]:
         """List all variables for a collection.
 
         Args:
@@ -98,10 +108,10 @@ class CollectionVariablesMixin:
         require_positive_int(collection_id, "Collection ID")
         return self.db.fetchall(
             "SELECT * FROM collection_variables WHERE collection_id = ? ORDER BY key",
-            (collection_id,)
+            (collection_id,),
         )
 
-    def get_collection_variables_dict(self, collection_id: int) -> Dict[str, str]:
+    def get_collection_variables_dict(self, collection_id: int) -> dict[str, str]:
         """Get collection variables as a key-value dictionary."""
         variables = self.list_collection_variables(collection_id)
         return {var["key"]: var["value"] for var in variables}
@@ -134,7 +144,7 @@ class CollectionVariablesMixin:
                 ON CONFLICT(collection_id, group_id) DO UPDATE SET
                     priority = excluded.priority
                 """,
-                (collection_id, group_id, priority)
+                (collection_id, group_id, priority),
             )
             logger.info("Added variable group %d to collection %d", group_id, collection_id)
             return assoc_id
@@ -158,13 +168,13 @@ class CollectionVariablesMixin:
         try:
             self.db.execute(
                 "DELETE FROM collection_variable_groups WHERE collection_id = ? AND group_id = ?",
-                (collection_id, group_id)
+                (collection_id, group_id),
             )
             logger.info("Removed variable group %d from collection %d", group_id, collection_id)
         except Exception as exc:
             raise StorageError(f"Failed to remove variable group from collection: {exc}")
 
-    def list_collection_variable_groups(self, collection_id: int) -> List[Dict[str, Any]]:
+    def list_collection_variable_groups(self, collection_id: int) -> list[dict[str, Any]]:
         """List all variable groups associated with a collection.
 
         Args:
@@ -185,10 +195,10 @@ class CollectionVariablesMixin:
             WHERE cvg.collection_id = ?
             ORDER BY cvg.priority, vg.name
             """,
-            (collection_id,)
+            (collection_id,),
         )
 
-    def get_all_collection_variables(self, collection_id: int) -> Dict[str, str]:
+    def get_all_collection_variables(self, collection_id: int) -> dict[str, str]:
         """Get all variables for a collection (from groups + collection-specific).
 
         Variable precedence (highest to lowest):
@@ -206,7 +216,7 @@ class CollectionVariablesMixin:
         """
         require_positive_int(collection_id, "Collection ID")
 
-        merged: Dict[str, str] = {}
+        merged: dict[str, str] = {}
 
         # Fetch all group variables in a single query, ordered so that
         # higher-priority groups (lower number) come last and overwrite.

@@ -29,4 +29,3 @@ def test_stylesheet_cache_isolated_per_dark_variant():
         assert (theme.THEME_OCEANIC, theme.get_font_size()) in theme._ss_cache
     finally:
         theme.set_theme_mode(original_mode)
-

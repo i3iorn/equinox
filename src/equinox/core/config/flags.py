@@ -34,5 +34,3 @@ def is_strict_secret_rotation_enabled() -> bool:
     """Return True when startup secret-rotation errors should abort initialization."""
     val = os.environ.get("EQUINOX_STRICT_SECRET_ROTATION", "0").lower()
     return val in {"1", "true", "yes", "on"}
-
-

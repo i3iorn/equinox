@@ -3,9 +3,9 @@ delete, get, list, activation, and interpolate_variables."""
 
 import pytest
 
+from equinox.core.exceptions import SecurityError, StorageError, ValidationError
 from equinox.storage.database import Database
 from equinox.storage.environments import EnvironmentManager
-from equinox.core.exceptions import StorageError, ValidationError, SecurityError
 
 
 @pytest.fixture
@@ -28,8 +28,8 @@ def _create(mgr, name="Test Env", variables=None, description=""):
 
 # ── create_environment validation ─────────────────────────────────────────────
 
-class TestCreateEnvironmentValidation:
 
+class TestCreateEnvironmentValidation:
     def test_empty_name_raises(self, mgr):
         with pytest.raises(ValidationError):
             mgr.create_environment("", {})
@@ -84,7 +84,9 @@ class TestCreateEnvironmentValidation:
         assert eid >= 1
 
     def test_successful_creation_with_description(self, mgr):
-        eid = mgr.create_environment("Env With Desc", {"API_URL": "http://x.com"}, description="my desc")
+        eid = mgr.create_environment(
+            "Env With Desc", {"API_URL": "http://x.com"}, description="my desc"
+        )
         env = mgr.get_environment(eid)
         assert env["description"] == "my desc"
 
@@ -96,8 +98,8 @@ class TestCreateEnvironmentValidation:
 
 # ── get_environment ───────────────────────────────────────────────────────────
 
-class TestGetEnvironment:
 
+class TestGetEnvironment:
     def test_get_existing(self, mgr):
         eid = _create(mgr, "Dev")
         env = mgr.get_environment(eid)
@@ -117,8 +119,8 @@ class TestGetEnvironment:
 
 # ── list_environments ─────────────────────────────────────────────────────────
 
-class TestListEnvironments:
 
+class TestListEnvironments:
     def test_list_empty(self, mgr):
         assert mgr.list_environments() == []
 
@@ -137,8 +139,8 @@ class TestListEnvironments:
 
 # ── update_environment ────────────────────────────────────────────────────────
 
-class TestUpdateEnvironment:
 
+class TestUpdateEnvironment:
     def test_update_variables(self, mgr):
         eid = _create(mgr, "Updatable")
         mgr.update_environment(eid, variables={"NEW_KEY": "new_value"})
@@ -270,8 +272,8 @@ class TestUpdateEnvironment:
 
 # ── delete_environment ────────────────────────────────────────────────────────
 
-class TestDeleteEnvironment:
 
+class TestDeleteEnvironment:
     def test_delete_existing(self, mgr):
         eid = _create(mgr, "To Delete")
         mgr.delete_environment(eid)
@@ -288,8 +290,8 @@ class TestDeleteEnvironment:
 
 # ── set_active_environment / get_active_environment ───────────────────────────
 
-class TestActivation:
 
+class TestActivation:
     def test_no_active_by_default(self, mgr):
         _create(mgr, "Inactive")
         assert mgr.get_active_environment() is None
@@ -322,8 +324,8 @@ class TestActivation:
 
 # ── interpolate_variables ─────────────────────────────────────────────────────
 
-class TestInterpolateVariables:
 
+class TestInterpolateVariables:
     def test_no_active_env_returns_unchanged(self, mgr):
         result = mgr.interpolate_variables("Hello {{NAME}}")
         assert result == "Hello {{NAME}}"

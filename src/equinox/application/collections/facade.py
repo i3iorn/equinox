@@ -7,7 +7,7 @@ manager internals.
 
 from __future__ import annotations
 
-from typing import Any, Optional
+from typing import Any
 
 from equinox.core.request import Request
 from equinox.storage import CollectionManager, Database
@@ -19,7 +19,7 @@ class CollectionFacade:
     def __init__(
         self,
         db: Database,
-        collection_manager: Optional[CollectionManager] = None,
+        collection_manager: CollectionManager | None = None,
     ) -> None:
         self._manager = collection_manager or CollectionManager(db)
 
@@ -34,13 +34,13 @@ class CollectionFacade:
     def list_requests(self, collection_id: int) -> list[dict[str, Any]]:
         return list(self._manager.list_requests(collection_id))
 
-    def get_collection(self, collection_id: int) -> Optional[dict[str, Any]]:
+    def get_collection(self, collection_id: int) -> dict[str, Any] | None:
         return self._manager.get_collection(collection_id)
 
-    def get_request(self, request_id: int) -> Optional[Request]:
+    def get_request(self, request_id: int) -> Request | None:
         return self._manager.get_request(request_id)
 
-    def get_request_location(self, request_id: int) -> Optional[tuple[int, Optional[str]]]:
+    def get_request_location(self, request_id: int) -> tuple[int, str | None] | None:
         row = self._manager.db.fetchone(
             "SELECT collection_id, folder FROM requests WHERE id=?",
             (request_id,),
@@ -49,7 +49,7 @@ class CollectionFacade:
             return None
         return row["collection_id"], row["folder"] or None
 
-    def list_group_request_ids(self, collection_id: int, folder: Optional[str]) -> list[int]:
+    def list_group_request_ids(self, collection_id: int, folder: str | None) -> list[int]:
         rows = self._manager.db.fetchall(
             "SELECT id FROM requests "
             "WHERE collection_id=? AND COALESCE(folder, '') = COALESCE(?, '') "
@@ -94,10 +94,12 @@ class CollectionFacade:
 
     # ── Move/reorder operations ───────────────────────────────────────
 
-    def move_request_to_folder(self, request_id: int, folder: Optional[str]) -> None:
+    def move_request_to_folder(self, request_id: int, folder: str | None) -> None:
         self._manager.move_request_to_folder(request_id, folder)
 
-    def move_request_to_collection(self, request_id: int, collection_id: int, folder: Optional[str]) -> None:
+    def move_request_to_collection(
+        self, request_id: int, collection_id: int, folder: str | None
+    ) -> None:
         self._manager.move_request_to_collection(request_id, collection_id, folder)
 
     def reorder_requests(self, ordered_ids: list[int]) -> None:
@@ -118,7 +120,9 @@ class CollectionFacade:
             else:
                 self.move_request_to_folder(dragged_id, t_folder)
 
-        ordered_ids = [rid for rid in self.list_group_request_ids(t_col, t_folder) if rid != dragged_id]
+        ordered_ids = [
+            rid for rid in self.list_group_request_ids(t_col, t_folder) if rid != dragged_id
+        ]
         try:
             insert_at = ordered_ids.index(target_id)
         except ValueError:
@@ -128,10 +132,10 @@ class CollectionFacade:
 
     # ── Sorting ────────────────────────────────────────────────────────
 
-    def sort_requests_alphabetically(self, collection_id: int, folder: Optional[str]) -> None:
+    def sort_requests_alphabetically(self, collection_id: int, folder: str | None) -> None:
         self._manager.sort_requests_alphabetically(collection_id, folder)
 
-    def sort_requests_by_method(self, collection_id: int, folder: Optional[str]) -> None:
+    def sort_requests_by_method(self, collection_id: int, folder: str | None) -> None:
         self._manager.sort_requests_by_method(collection_id, folder)
 
     # ── Hierarchical auth ──────────────────────────────────────────────
@@ -147,4 +151,3 @@ class CollectionFacade:
 
     def set_folder_auth(self, collection_id: int, folder_path: str, auth: Any) -> None:
         self._manager.set_folder_auth(collection_id, folder_path, auth)
-

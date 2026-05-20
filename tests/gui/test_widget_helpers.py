@@ -5,15 +5,15 @@ These functions have no PyQt6 dependency so they run headless.
 
 import pytest
 
-# ── builder helpers ───────────────────────────────────────────────────────────
+from equinox.core.request import Request
 
+# ── builder helpers ───────────────────────────────────────────────────────────
 from equinox.gui.request_panel.builder import (
     assemble_body,
-    inject_content_type,
     detect_body_type,
+    inject_content_type,
 )
 from equinox.gui.request_panel.mixins._default_headers import apply_default_headers
-from equinox.core.request import Request
 
 
 class TestDetectBodyType:
@@ -26,7 +26,10 @@ class TestDetectBodyType:
         assert detect_body_type("anything", {"Content-Type": "text/xml"}) == "raw (XML)"
 
     def test_urlencoded_by_content_type_header(self):
-        assert detect_body_type("anything", {"Content-Type": "application/x-www-form-urlencoded"}) == "form-urlencoded"
+        assert (
+            detect_body_type("anything", {"Content-Type": "application/x-www-form-urlencoded"})
+            == "form-urlencoded"
+        )
 
     def test_text_by_content_type_header(self):
         assert detect_body_type("anything", {"Content-Type": "text/plain"}) == "raw (text)"
@@ -35,7 +38,7 @@ class TestDetectBodyType:
         assert detect_body_type('{"key": "value"}') == "raw (JSON)"
 
     def test_json_sniffing_array(self):
-        assert detect_body_type('[1, 2, 3]') == "raw (JSON)"
+        assert detect_body_type("[1, 2, 3]") == "raw (JSON)"
 
     def test_json_sniffing_empty_object(self):
         assert detect_body_type("{}") == "raw (JSON)"
@@ -89,6 +92,7 @@ class TestAssembleBody:
 
     def test_graphql(self):
         import json
+
         body, mp = assemble_body("GraphQL", "", "query { users { id } }", '{"limit": 10}', [])
         assert mp is None
         assert body is not None
@@ -209,4 +213,3 @@ class TestExtractPathParams:
         # Malformed nested braces
         result = extract_path_params("/{{outer{{inner}}}}")
         assert "inner" in result  # regex captures what it can
-

@@ -9,23 +9,35 @@ from __future__ import annotations
 
 import json
 import logging
-from typing import Optional
 
 from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtWidgets import (
-    QCheckBox, QComboBox, QDialog, QDialogButtonBox, QFormLayout, QFrame,
-    QHBoxLayout, QInputDialog, QLabel, QLineEdit, QListWidget,
-    QMessageBox, QPushButton, QSplitter, QTextEdit,
-    QVBoxLayout, QWidget,
+    QCheckBox,
+    QComboBox,
+    QDialog,
+    QDialogButtonBox,
+    QFormLayout,
+    QFrame,
+    QHBoxLayout,
+    QInputDialog,
+    QLabel,
+    QLineEdit,
+    QListWidget,
+    QMessageBox,
+    QPushButton,
+    QSplitter,
+    QTextEdit,
+    QVBoxLayout,
+    QWidget,
 )
 
-from equinox.gui.theme import Colors, get_mono_font
-from equinox.gui.widgets import make_secret_row
 from equinox.gui.dialogs._list_form_dialog_mixin import ListFormDialogMixin
 from equinox.gui.dialogs._oauth_connection_test_mixin import OAuthConnectionTestMixin
 from equinox.gui.dialogs._oauth_form_utils import (
     parse_json_object_field,
 )
+from equinox.gui.theme import Colors, get_mono_font
+from equinox.gui.widgets import make_secret_row
 from equinox.storage import Database, OAuthClientManager
 from equinox.storage.oauth_clients import GRANT_TYPES
 
@@ -58,10 +70,10 @@ class OAuthClientsDialog(OAuthConnectionTestMixin, ListFormDialogMixin, QDialog)
         super().__init__(parent)
         self.db = db
         self.mgr = OAuthClientManager(db)
-        self._current_id: Optional[int] = None
+        self._current_id: int | None = None
         self._dirty = False
-        self._tester: Optional[object] = None  # kept alive until worker completion
-        self._last_test_response: Optional[dict] = None
+        self._tester: object | None = None  # kept alive until worker completion
+        self._last_test_response: dict | None = None
         self._test_btn_idle_text = "🔌  Test Connection"
         self._test_btn_busy_text = "Testing…"
 
@@ -217,14 +229,23 @@ class OAuthClientsDialog(OAuthConnectionTestMixin, ListFormDialogMixin, QDialog)
         # ── Shared widget collections ─────────────────────────────────
         # QLineEdit fields — used for blockSignals and dirty-signal wiring.
         self._line_fields = (
-            self.f_name, self.f_description, self.f_token_url,
-            self.f_client_id, self.f_client_secret, self.f_scope,
+            self.f_name,
+            self.f_description,
+            self.f_token_url,
+            self.f_client_id,
+            self.f_client_secret,
+            self.f_scope,
         )
         # All editable widgets + action buttons — used by _set_form_enabled.
         self._all_form_widgets = (
             *self._line_fields,
-            self.f_grant_type, self.f_token_auth, self.f_verify_ssl, self.f_extra,
-            self.test_btn, self.default_btn, self.save_btn,
+            self.f_grant_type,
+            self.f_token_auth,
+            self.f_verify_ssl,
+            self.f_extra,
+            self.test_btn,
+            self.default_btn,
+            self.save_btn,
         )
 
         # Wire dirty-tracking signals
@@ -241,8 +262,10 @@ class OAuthClientsDialog(OAuthConnectionTestMixin, ListFormDialogMixin, QDialog)
 
     def _build_list_items(self):
         """Yield (item_id, label, kwargs) for each client."""
-        from equinox.gui.theme import Colors
         from PyQt6.QtGui import QFont
+
+        from equinox.gui.theme import Colors
+
         for c in self.mgr.list_clients():
             tag = " ★" if c["is_default"] else ""
             label = f"{c['name']}{tag}  [{c['grant_type']}]"
@@ -261,8 +284,6 @@ class OAuthClientsDialog(OAuthConnectionTestMixin, ListFormDialogMixin, QDialog)
     # ── Selection logic ───────────────────────────────────────────────
     # _apply_selection() inherited from ListFormDialogMixin
     # _on_item_selected(current, _prev) inherited from ListFormDialogMixin
-
-
 
     def _load_form(self, client_id: int) -> None:
         c = self.mgr.get_client(client_id)
@@ -289,7 +310,13 @@ class OAuthClientsDialog(OAuthConnectionTestMixin, ListFormDialogMixin, QDialog)
         self.status_label.setText("")
 
     def _block_form(self, block: bool) -> None:
-        for w in (*self._line_fields, self.f_extra, self.f_grant_type, self.f_token_auth, self.f_verify_ssl):
+        for w in (
+            *self._line_fields,
+            self.f_extra,
+            self.f_grant_type,
+            self.f_token_auth,
+            self.f_verify_ssl,
+        ):
             w.blockSignals(block)
 
     def _set_form_enabled(self, enabled: bool) -> None:
@@ -306,7 +333,6 @@ class OAuthClientsDialog(OAuthConnectionTestMixin, ListFormDialogMixin, QDialog)
         self.delete_btn.setEnabled(has)
         self.view_response_btn.setEnabled(has and self._last_test_response is not None)
         self.save_btn.setText("💾  Save *" if self._dirty else "💾  Save")
-
 
     # ── CRUD ──────────────────────────────────────────────────────────
 
@@ -334,7 +360,8 @@ class OAuthClientsDialog(OAuthConnectionTestMixin, ListFormDialogMixin, QDialog)
         if not c:
             return
         ans = QMessageBox.question(
-            self, "Confirm Delete",
+            self,
+            "Confirm Delete",
             f"Delete OAuth2 client '{c['name']}'?\n\nThis cannot be undone.",
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
         )
@@ -446,4 +473,3 @@ class OAuthClientsDialog(OAuthConnectionTestMixin, ListFormDialogMixin, QDialog)
 
     # ── Close guard ───────────────────────────────────────────────────
     # _on_close is inherited from DirtyDialogMixin
-

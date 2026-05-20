@@ -1,9 +1,13 @@
 import logging
-from typing import List, Optional
 
+from equinox.core.interceptors._base import (
+    ErrorInterceptor,
+    InterceptorAction,
+    InterceptorContext,
+    RequestInterceptor,
+    ResponseInterceptor,
+)
 from equinox.core.request import Request, Response
-from equinox.core.interceptors._base import RequestInterceptor, ResponseInterceptor, \
-    ErrorInterceptor, InterceptorContext, InterceptorAction
 from equinox.security import redact_url
 
 logger = logging.getLogger(__name__)
@@ -11,9 +15,9 @@ logger = logging.getLogger(__name__)
 
 class InterceptorChain:
     def __init__(self):
-        self.request_interceptors: List[RequestInterceptor] = []
-        self.response_interceptors: List[ResponseInterceptor] = []
-        self.error_interceptors: List[ErrorInterceptor] = []
+        self.request_interceptors: list[RequestInterceptor] = []
+        self.response_interceptors: list[ResponseInterceptor] = []
+        self.error_interceptors: list[ErrorInterceptor] = []
 
     def add_request_interceptor(self, interceptor: RequestInterceptor) -> None:
         self.request_interceptors.append(interceptor)
@@ -31,16 +35,22 @@ class InterceptorChain:
 
     def process_request(self, request: Request) -> Request:
         context = InterceptorContext(request=request)
-        logger.debug("Processing request through %d interceptor(s)", len(self.request_interceptors),
-                     extra={"method": request.method, "url": redact_url(request.url)})
+        logger.debug(
+            "Processing request through %d interceptor(s)",
+            len(self.request_interceptors),
+            extra={"method": request.method, "url": redact_url(request.url)},
+        )
 
         for interceptor in self.request_interceptors:
             if not interceptor.can_intercept(context.request):
                 continue
 
             result = interceptor.intercept(context)
-            logger.debug("Request interceptor %s returned %s",
-                         type(interceptor).__name__, result.action.value)
+            logger.debug(
+                "Request interceptor %s returned %s",
+                type(interceptor).__name__,
+                result.action.value,
+            )
 
             if result.action == InterceptorAction.REPLACE:
                 context.replace_request(result.value)
@@ -55,16 +65,22 @@ class InterceptorChain:
 
     def process_response(self, request: Request, response: Response) -> Response:
         context = InterceptorContext(request=request, response=response)
-        logger.debug("Processing response through %d interceptor(s)", len(self.response_interceptors),
-                     extra={"status_code": response.status_code})
+        logger.debug(
+            "Processing response through %d interceptor(s)",
+            len(self.response_interceptors),
+            extra={"status_code": response.status_code},
+        )
 
         for interceptor in self.response_interceptors:
             if not interceptor.can_intercept(context.response):
                 continue
 
             result = interceptor.intercept(context)
-            logger.debug("Response interceptor %s returned %s",
-                         type(interceptor).__name__, result.action.value)
+            logger.debug(
+                "Response interceptor %s returned %s",
+                type(interceptor).__name__,
+                result.action.value,
+            )
 
             if result.action == InterceptorAction.REPLACE:
                 context.replace_response(result.value)
@@ -77,18 +93,22 @@ class InterceptorChain:
 
     # -------- Error --------
 
-    def process_error(self, request: Request, error: Exception) -> Optional[Exception]:
+    def process_error(self, request: Request, error: Exception) -> Exception | None:
         context = InterceptorContext(request=request, error=error)
-        logger.debug("Processing error through %d interceptor(s): %s",
-                     len(self.error_interceptors), type(error).__name__)
+        logger.debug(
+            "Processing error through %d interceptor(s): %s",
+            len(self.error_interceptors),
+            type(error).__name__,
+        )
 
         for interceptor in self.error_interceptors:
             if not interceptor.can_intercept(context.error, context.request):
                 continue
 
             result = interceptor.intercept(context)
-            logger.debug("Error interceptor %s returned %s",
-                         type(interceptor).__name__, result.action.value)
+            logger.debug(
+                "Error interceptor %s returned %s", type(interceptor).__name__, result.action.value
+            )
 
             if result.action == InterceptorAction.SUPPRESS:
                 logger.debug("Error suppressed by %s", type(interceptor).__name__)

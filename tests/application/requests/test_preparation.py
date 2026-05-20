@@ -116,5 +116,3 @@ def test_interpolate_auth_returns_original_auth_when_interpolation_fails() -> No
     resolved = interpolate_auth(auth, lambda value: value)
 
     assert resolved is auth
-
-

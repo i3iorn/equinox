@@ -9,7 +9,6 @@ history persistence.
 from __future__ import annotations
 
 import logging
-from typing import Optional
 
 from equinox.core.request import Request, Response
 from equinox.storage import Database, HistoryManager
@@ -23,7 +22,7 @@ class RequestHistoryService:
     def __init__(
         self,
         db: Database,
-        history_manager: Optional[HistoryManager] = None,
+        history_manager: HistoryManager | None = None,
     ) -> None:
         self._history_manager = history_manager or HistoryManager(db)
 
@@ -36,8 +35,8 @@ class RequestHistoryService:
     def save_history_safe(
         self,
         request: Request,
-        response: Optional[Response] = None,
-        error: Optional[str] = None,
+        response: Response | None = None,
+        error: str | None = None,
     ) -> None:
         """Persist history without letting storage errors bubble into the GUI."""
         if request is None:
@@ -49,4 +48,3 @@ class RequestHistoryService:
                 self._history_manager.save_history(request, error=error)
         except Exception:
             logger.debug("Failed to save history", exc_info=True)
-

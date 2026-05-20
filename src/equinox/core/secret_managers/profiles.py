@@ -7,8 +7,9 @@ payload parsing rules.
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import Any, Dict, Mapping
+from typing import Any
 
 from equinox.core.secret_managers.base import SecretManager
 from equinox.core.secret_managers.registry import get_secret_manager
@@ -22,14 +23,16 @@ class SecretManagerProfile:
     """Normalized secret-manager configuration profile."""
 
     manager_type: str
-    config: Dict[str, Any]
+    config: dict[str, Any]
     enable_cache: bool = True
     cache_ttl: int = _DEFAULT_CACHE_TTL
 
     @classmethod
-    def from_payload(cls, payload: Mapping[str, Any]) -> "SecretManagerProfile":
+    def from_payload(cls, payload: Mapping[str, Any]) -> SecretManagerProfile:
         """Build a normalized profile from a mapping-like payload."""
-        manager_type = str(payload.get("type") or _DEFAULT_MANAGER_TYPE).strip() or _DEFAULT_MANAGER_TYPE
+        manager_type = (
+            str(payload.get("type") or _DEFAULT_MANAGER_TYPE).strip() or _DEFAULT_MANAGER_TYPE
+        )
         raw_config = payload.get("config", {})
         config = dict(raw_config) if isinstance(raw_config, Mapping) else {}
 
@@ -52,7 +55,7 @@ class SecretManagerProfile:
         config: Mapping[str, Any],
         enable_cache: bool = True,
         cache_ttl: int = _DEFAULT_CACHE_TTL,
-    ) -> "SecretManagerProfile":
+    ) -> SecretManagerProfile:
         """Build a normalized profile from discrete config values."""
         return cls.from_payload(
             {
@@ -63,7 +66,7 @@ class SecretManagerProfile:
             }
         )
 
-    def to_payload(self) -> Dict[str, Any]:
+    def to_payload(self) -> dict[str, Any]:
         """Serialize the profile back to the storage/UI payload shape."""
         return {
             "type": self.manager_type,
@@ -81,4 +84,3 @@ class SecretManagerProfile:
         )
         manager.configure(**self.config)
         return manager
-

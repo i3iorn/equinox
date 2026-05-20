@@ -6,17 +6,25 @@ Contains all ``_build_*`` methods that create the widget tree.  Has no
 
 from __future__ import annotations
 
-from PyQt6.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QLabel, QTabWidget,
-    QTableWidget, QPushButton, QHeaderView,
-    QLineEdit, QToolButton, QMenu,
-)
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QKeySequence, QShortcut
+from PyQt6.QtWidgets import (
+    QHBoxLayout,
+    QHeaderView,
+    QLabel,
+    QLineEdit,
+    QMenu,
+    QPushButton,
+    QTableWidget,
+    QTabWidget,
+    QToolButton,
+    QVBoxLayout,
+    QWidget,
+)
 
 from equinox.core.codegen import GENERATORS
-from equinox.gui.response_panel.intelligence_panel import IntelligencePanel
 from equinox.gui.response_panel.header_table import HeaderTable
+from equinox.gui.response_panel.intelligence_panel import IntelligencePanel
 from equinox.gui.response_panel.json_tree import JsonTree
 from equinox.gui.response_panel.read_only_text import ReadOnlyText
 from equinox.gui.response_panel.search_bar import SearchBar
@@ -33,9 +41,9 @@ _SENT_REQUEST_TAB_MARGINS = (4, 4, 4, 4)
 _SENT_REQUEST_TAB_SPACING = 6
 
 # Button widths
-_BTN_WIDTH_SMALL = 56    # "Diff…"
-_BTN_WIDTH_MEDIUM = 80   # "Copy Body"
-_BTN_WIDTH_LARGE = 90    # "Download…"
+_BTN_WIDTH_SMALL = 56  # "Diff…"
+_BTN_WIDTH_MEDIUM = 80  # "Copy Body"
+_BTN_WIDTH_LARGE = 90  # "Download…"
 _BTN_WIDTH_XLARGE = 110  # "Copy as cURL"
 
 # Widget sizing
@@ -71,7 +79,9 @@ def _make_button(text: str, width: int, tooltip: str = "", parent=None) -> QPush
     return btn
 
 
-def _make_container(margins: tuple[int, int, int, int], spacing: int) -> tuple[QWidget, QVBoxLayout]:
+def _make_container(
+    margins: tuple[int, int, int, int], spacing: int
+) -> tuple[QWidget, QVBoxLayout]:
     """Create a QWidget with QVBoxLayout (contents margins and spacing pre-set).
 
     Returns (container, layout) for convenient setup.
@@ -131,7 +141,9 @@ class ResponseBuilderMixin:
         self._redact_btn.setToolTip("Preview response with sensitive values masked")
         self._redact_btn.toggled.connect(self._on_redaction_toggled)
 
-        diff_btn = _make_button("Diff…", _BTN_WIDTH_SMALL, "Compare response body with a history entry")
+        diff_btn = _make_button(
+            "Diff…", _BTN_WIDTH_SMALL, "Compare response body with a history entry"
+        )
         diff_btn.clicked.connect(self._diff_with_history)
 
         row.addWidget(self.status_label)
@@ -445,5 +457,3 @@ class ResponseBuilderMixin:
     def _build_intelligence_tab(self) -> None:
         self.intelligence_panel = IntelligencePanel()
         self.tabs.addTab(self.intelligence_panel, "Intelligence")
-
-

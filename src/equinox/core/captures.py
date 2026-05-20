@@ -21,8 +21,8 @@ import json
 import logging
 import re
 import threading
-from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional
+from dataclasses import dataclass
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -31,8 +31,8 @@ logger = logging.getLogger(__name__)
 class Capture:
     """A single capture rule."""
 
-    variable: str   # destination variable name, e.g. "auth_token"
-    source: str     # "json" | "header" | "regex" | "status"
+    variable: str  # destination variable name, e.g. "auth_token"
+    source: str  # "json" | "header" | "regex" | "status"
     path: str = ""  # JSON dot-path, header name, or regex pattern
     default: str = ""  # value to use when extraction fails (empty = no fallback)
 
@@ -52,10 +52,10 @@ class CaptureEngine:
 
     # Pre-compiled path-segment regex used by _extract_json.
     # Each segment is: word_chars optionally followed by [digits].
-    _SEG = re.compile(r'^(\w+)(?:\[(\d+)\])?$')
+    _SEG = re.compile(r"^(\w+)(?:\[(\d+)\])?$")
 
     @classmethod
-    def apply_all(cls, captures: List[Capture], response: Any) -> List[CaptureResult]:
+    def apply_all(cls, captures: list[Capture], response: Any) -> list[CaptureResult]:
         """Apply every rule in *captures* to *response*.
 
         Never raises.  Each result records ``success=True/False`` and, on
@@ -70,7 +70,7 @@ class CaptureEngine:
         Returns:
             One :class:`CaptureResult` per rule, in the same order.
         """
-        results: List[CaptureResult] = []
+        results: list[CaptureResult] = []
         for cap in captures:
             try:
                 value = cls._extract(cap, response)
@@ -78,12 +78,14 @@ class CaptureEngine:
             except Exception as exc:
                 err_msg = str(exc)
                 logger.debug("Capture '%s' failed: %s", cap.variable, err_msg)
-                results.append(CaptureResult(
-                    variable=cap.variable,
-                    value=cap.default,
-                    success=False,
-                    error=err_msg,
-                ))
+                results.append(
+                    CaptureResult(
+                        variable=cap.variable,
+                        value=cap.default,
+                        success=False,
+                        error=err_msg,
+                    )
+                )
         return results
 
     # ── Extraction dispatch ───────────────────────────────────────────
@@ -136,13 +138,13 @@ class CaptureEngine:
         # Tokenise: split on ".", then handle optional "[n]" suffix per token.
         # Each token matches: word_chars optionally followed by [digits].
         # _SEG is defined at class level to avoid recompilation on every call.
-        segments: List[tuple] = []
+        segments: list[tuple] = []
         for part in path.split("."):
             m = CaptureEngine._SEG.match(part)
             if not m:
                 raise ValueError(f"Invalid JSON path segment: {part!r}")
             key = m.group(1)
-            idx: Optional[int] = int(m.group(2)) if m.group(2) is not None else None
+            idx: int | None = int(m.group(2)) if m.group(2) is not None else None
             segments.append((key, idx))
 
         current = data
@@ -161,9 +163,7 @@ class CaptureEngine:
                         f"Expected a JSON array for index [{idx}], got {type(current).__name__}"
                     )
                 if idx >= len(current):
-                    raise IndexError(
-                        f"Index [{idx}] is out of range (array length {len(current)})"
-                    )
+                    raise IndexError(f"Index [{idx}] is out of range (array length {len(current)})")
                 current = current[idx]
 
         return current if isinstance(current, str) else json.dumps(current)
@@ -221,14 +221,14 @@ class CaptureEngine:
         try:
             compiled = re.compile(pattern)
         except re.error as exc:
-            raise ValueError(f"Invalid regex pattern: {exc}")
+            raise ValueError(f"Invalid regex pattern: {exc}") from exc
 
         # Limit search to first 1 MB of response text to bound CPU time
         text = response.text[:1_048_576] if len(response.text) > 1_048_576 else response.text
 
         # Run regex in a thread with a timeout to mitigate ReDoS
-        result_container: List[Any] = [None]  # [match_or_None]
-        error_container: List[Any] = [None]
+        result_container: list[Any] = [None]  # [match_or_None]
+        error_container: list[Any] = [None]
 
         def _search() -> None:
             try:
@@ -256,35 +256,37 @@ class CaptureEngine:
     # ── Serialisation helpers ─────────────────────────────────────────
 
     @classmethod
-    def from_dict_list(cls, raw: List[Dict[str, Any]]) -> List[Capture]:
+    def from_dict_list(cls, raw: list[dict[str, Any]]) -> list[Capture]:
         """Convert a list of raw dicts (from DB JSON) to :class:`Capture` objects.
 
         Dicts with a missing or empty ``variable`` key are silently skipped.
         """
-        captures: List[Capture] = []
+        captures: list[Capture] = []
         for d in raw:
             if not isinstance(d, dict):
                 continue
             variable = d.get("variable", "")
             if not variable:
                 continue
-            captures.append(Capture(
-                variable=variable,
-                source=d.get("source", "json"),
-                path=d.get("path", ""),
-                default=d.get("default", ""),
-            ))
+            captures.append(
+                Capture(
+                    variable=variable,
+                    source=d.get("source", "json"),
+                    path=d.get("path", ""),
+                    default=d.get("default", ""),
+                )
+            )
         return captures
 
     @classmethod
-    def to_dict_list(cls, captures: List[Capture]) -> List[Dict[str, Any]]:
+    def to_dict_list(cls, captures: list[Capture]) -> list[dict[str, Any]]:
         """Serialise :class:`Capture` objects to plain dicts for DB storage."""
         return [
             {
                 "variable": c.variable,
-                "source":   c.source,
-                "path":     c.path,
-                "default":  c.default,
+                "source": c.source,
+                "path": c.path,
+                "default": c.default,
             }
             for c in captures
         ]

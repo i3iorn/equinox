@@ -49,4 +49,3 @@ def test_history_facade_reconstructs_request_and_response_from_entry() -> None:
     assert response is not None
     assert response.status_code == 201
     assert response.request.url == "https://api.example.com/items"
-

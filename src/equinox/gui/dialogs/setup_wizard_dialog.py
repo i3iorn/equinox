@@ -2,19 +2,19 @@
 
 from __future__ import annotations
 
-from typing import Dict, Any
+from typing import Any
 
 from PyQt6.QtWidgets import (
-    QDialog,
-    QVBoxLayout,
-    QLabel,
-    QFormLayout,
-    QComboBox,
     QCheckBox,
+    QComboBox,
+    QDialog,
     QDialogButtonBox,
+    QFormLayout,
+    QLabel,
+    QVBoxLayout,
 )
 
-from equinox.gui.theme import THEME_MODES, THEME_LABELS, get_theme_mode
+from equinox.gui.theme import THEME_LABELS, THEME_MODES, get_theme_mode
 
 
 class SetupWizardDialog(QDialog):
@@ -59,11 +59,10 @@ class SetupWizardDialog(QDialog):
         buttons.rejected.connect(self.reject)
         layout.addWidget(buttons)
 
-    def result_data(self) -> Dict[str, Any]:
+    def result_data(self) -> dict[str, Any]:
         """Return selected wizard values as a plain dict."""
         return {
             "theme_mode": self._theme_combo.currentData(),
             "open_environment_manager": self._open_env_check.isChecked(),
             "open_saved_credentials": self._open_creds_check.isChecked(),
         }
-

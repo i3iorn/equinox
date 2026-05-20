@@ -1,9 +1,9 @@
-from click.testing import CliRunner
-from click import Command
 from typing import cast
 
-from equinox.cli.main import main
+from click import Command
+from click.testing import CliRunner
 
+from equinox.cli.main import main
 
 CLI_MAIN = cast(Command, main)
 
@@ -48,4 +48,3 @@ def test_rotate_secrets_accepts_explicit_password(monkeypatch):
     assert result.exit_code == 0
     assert called["db_path"] == "test.db"
     assert called["new_password"] == "cli-provided"
-

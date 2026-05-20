@@ -15,7 +15,8 @@ from __future__ import annotations
 import http.cookies as _hc
 import json
 import logging
-from typing import Any, Dict, Iterable, List, Tuple
+from collections.abc import Iterable
+from typing import Any
 
 from equinox.core.request import Response
 
@@ -25,9 +26,11 @@ logger = logging.getLogger(__name__)
 # If defusedxml is not available, fall back to standard library with warnings
 try:
     import defusedxml.minidom as _SAFE_MINIDOM  # type: ignore
+
     _HAS_DEFUSEDXML = True
 except ImportError:
     import xml.dom.minidom as _SAFE_MINIDOM  # type: ignore
+
     _HAS_DEFUSEDXML = False
     logger.warning(
         "defusedxml not available; XML parsing will use standard library. "
@@ -99,7 +102,7 @@ def _pretty_print_xml(text: str) -> str:
         return text
 
 
-def parse_cookies(headers: Any) -> List[Tuple[str, Dict[str, str]]]:
+def parse_cookies(headers: Any) -> list[tuple[str, dict[str, str]]]:
     """Parse Set-Cookie headers into structured cookie data.
 
     Extracts all Set-Cookie headers and parses them into a list of
@@ -112,7 +115,7 @@ def parse_cookies(headers: Any) -> List[Tuple[str, Dict[str, str]]]:
         List of (cookie_name, attributes) tuples where attributes
         is a dict with keys: value, domain, path, expires, secure, httponly
     """
-    cookies: List[Tuple[str, Dict[str, str]]] = []
+    cookies: list[tuple[str, dict[str, str]]] = []
 
     for value in _iter_set_cookie_values(headers):
         try:
@@ -150,7 +153,7 @@ def _iter_set_cookie_values(headers: Any) -> Iterable[str]:
     # Fallback: dict-like or iterable pair handling.
     try:
         items = headers.items() if hasattr(headers, "items") else headers
-        out: List[str] = []
+        out: list[str] = []
         for key, value in items:
             if str(key).lower() == "set-cookie" and value is not None:
                 out.append(str(value))
@@ -160,7 +163,7 @@ def _iter_set_cookie_values(headers: Any) -> Iterable[str]:
         return []
 
 
-def _parse_cookie_header(value: str) -> List[Tuple[str, Dict[str, str]]]:
+def _parse_cookie_header(value: str) -> list[tuple[str, dict[str, str]]]:
     """Parse a single Set-Cookie header value.
 
     Args:
@@ -173,7 +176,7 @@ def _parse_cookie_header(value: str) -> List[Tuple[str, Dict[str, str]]]:
     Raises:
         Exception: If parsing fails
     """
-    cookies: List[Tuple[str, Dict[str, str]]] = []
+    cookies: list[tuple[str, dict[str, str]]] = []
     morsel_obj = _hc.SimpleCookie()
     morsel_obj.load(value)
 
@@ -189,8 +192,3 @@ def _parse_cookie_header(value: str) -> List[Tuple[str, Dict[str, str]]]:
         cookies.append((cookie_name, attributes))
 
     return cookies
-
-
-
-
-

@@ -23,8 +23,13 @@ This module must never import Qt types.
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING, Any, Dict, Optional, Tuple
+from typing import TYPE_CHECKING, Any
 
+from equinox.application.requests._assembly import (
+    apply_default_headers,
+    assemble_body,
+    inject_content_type,
+)
 from equinox.application.requests.models import (
     PreparationIssue,
     SendOrchestratorResult,
@@ -41,11 +46,6 @@ from equinox.core.interpolation import (
 )
 from equinox.core.request import Request
 from equinox.core.scripts import ScriptRunner
-from equinox.application.requests._assembly import (
-    apply_default_headers,
-    assemble_body,
-    inject_content_type,
-)
 
 if TYPE_CHECKING:
     from equinox.application.requests.models import RequestEditorSnapshot
@@ -57,13 +57,13 @@ logger = logging.getLogger(__name__)
 
 
 def _resolve_send_auth(
-    own_auth: Optional[Any],
-    inherited_auth: Optional[Any],
-    inherited_auth_source: Optional[str],
-    collection_id: Optional[int],
-    folder: Optional[str],
-    collection_manager: Optional[Any],
-) -> Tuple[Optional[Any], Optional[str]]:
+    own_auth: Any | None,
+    inherited_auth: Any | None,
+    inherited_auth_source: str | None,
+    collection_id: int | None,
+    folder: str | None,
+    collection_manager: Any | None,
+) -> tuple[Any, str | None]:
     """Return ``(effective_auth, source_label)``.
 
     Resolution order:
@@ -96,13 +96,13 @@ def _run_pre_script(
     pre_script: str,
     method: str,
     url: str,
-    headers: Dict[str, str],
-    params: Dict[str, str],
-    body: Optional[str],
-    variables: Dict[str, str],
-    session_vars: Dict[str, str],
+    headers: dict[str, str],
+    params: dict[str, str],
+    body: str | None,
+    variables: dict[str, str],
+    session_vars: dict[str, str],
     policy_profile: str,
-) -> Tuple[Dict[str, str], Optional[Any]]:
+) -> tuple[dict[str, str], Any] | None:
     """Execute the pre-request script if defined.
 
     Returns ``(updated_variables, script_result)``.  ``script_result`` is the
@@ -117,7 +117,7 @@ def _run_pre_script(
     if not (pre_script or "").strip():
         return variables, None
 
-    req_dict: Dict[str, Any] = {
+    req_dict: dict[str, Any] = {
         "method": method,
         "url": url,
         "headers": dict(headers),
@@ -142,14 +142,14 @@ def _run_pre_script(
 def _build_request(
     method: str,
     url: str,
-    headers: Dict[str, str],
-    params: Dict[str, str],
+    headers: dict[str, str],
+    params: dict[str, str],
     params_list: list,
-    body: Optional[str],
-    effective_auth: Optional[Any],
-    multipart_data: Optional[list],
-    path_params: Dict[str, str],
-    snapshot: "RequestEditorSnapshot",
+    body: str | None,
+    effective_auth: Any | None,
+    multipart_data: list | None,
+    path_params: dict[str, str],
+    snapshot: RequestEditorSnapshot,
 ) -> Request:
     """Construct the transport-ready ``Request`` from interpolated fields."""
     return Request(
@@ -183,12 +183,12 @@ def _build_request(
 
 
 def prepare_send(
-    snapshot: "RequestEditorSnapshot",
+    snapshot: RequestEditorSnapshot,
     db: Any,
-    collection_manager: Optional[Any],
-    own_auth: Optional[Any],
-    inherited_auth: Optional[Any],
-    inherited_auth_source: Optional[str],
+    collection_manager: Any | None,
+    own_auth: Any | None,
+    inherited_auth: Any | None,
+    inherited_auth_source: str | None,
     policy_profile: str,
 ) -> SendOrchestratorResult:
     """Prepare a snapshot for HTTP dispatch.
@@ -301,6 +301,7 @@ def prepare_send(
 
     if path_params:
         from equinox.core.urls import expand_placeholders
+
         url = expand_placeholders(url, path_params)
         logger.debug("URL expanded with path_params: %s", url[:100])
 

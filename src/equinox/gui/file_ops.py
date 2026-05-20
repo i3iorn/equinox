@@ -5,7 +5,6 @@ from __future__ import annotations
 import os
 from pathlib import Path
 from tempfile import NamedTemporaryFile
-from typing import Optional
 
 
 def validate_selected_path(
@@ -49,7 +48,7 @@ def atomic_write_bytes(path: Path, payload: bytes) -> None:
     if not isinstance(payload, (bytes, bytearray)):
         raise ValueError("Payload must be bytes.")
 
-    tmp_path: Optional[Path] = None
+    tmp_path: Path | None = None
     try:
         with NamedTemporaryFile(
             mode="wb",
@@ -92,4 +91,3 @@ def safe_read_text_file(
         )
 
     return path.read_text(encoding=encoding, errors=errors)
-

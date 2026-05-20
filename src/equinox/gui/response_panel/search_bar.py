@@ -2,14 +2,15 @@ from __future__ import annotations
 
 import json
 import logging
+from collections.abc import Sequence
 from dataclasses import dataclass
 from enum import Enum, auto
-from typing import Any, Callable, List, Optional, Sequence, Tuple
+from typing import Any, Callable
 
 from PyQt6.QtCore import (
     QObject,
-    QRunnable,
     QRegularExpression,
+    QRunnable,
     QThreadPool,
     QTimer,
     pyqtSignal,
@@ -19,10 +20,10 @@ from PyQt6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QLineEdit,
+    QTextEdit,
     QToolButton,
     QVBoxLayout,
     QWidget,
-    QTextEdit,
 )
 
 from equinox.gui.theme import Colors
@@ -147,7 +148,7 @@ class _SearchRunnable(QRunnable):
 
     def _emit_result(
         self,
-        offsets: Sequence[Tuple[int, int]],
+        offsets: Sequence[tuple[int, int]],
         values: Sequence[Any],
         preview: str,
     ) -> None:
@@ -161,7 +162,7 @@ class _SearchRunnable(QRunnable):
 
     def _emit_partial(
         self,
-        offsets: Sequence[Tuple[int, int]],
+        offsets: Sequence[tuple[int, int]],
         values: Sequence[Any],
         preview: str,
         done: bool,
@@ -177,7 +178,7 @@ class _SearchRunnable(QRunnable):
 
     # ── Core search implementations ──────────────────────────────────
 
-    def _search_text(self) -> Tuple[List[Tuple[int, int]], List[Any], str]:
+    def _search_text(self) -> tuple[list[tuple[int, int]], list[Any], str]:
         """Perform literal substring search.
 
         Returns:
@@ -194,7 +195,7 @@ class _SearchRunnable(QRunnable):
             text_lower = text
             term_lower = term
 
-        offsets: List[Tuple[int, int]] = []
+        offsets: list[tuple[int, int]] = []
         start = 0
         while not cfg.cancel_token.cancelled and len(offsets) < _MAX_MATCHES:
             idx = text_lower.find(term_lower, start)
@@ -206,7 +207,7 @@ class _SearchRunnable(QRunnable):
 
         return offsets, [], ""
 
-    def _search_regex(self) -> Tuple[List[Tuple[int, int]], List[Any], str]:
+    def _search_regex(self) -> tuple[list[tuple[int, int]], list[Any], str]:
         """Perform regex search using QRegularExpression.
 
         Returns:
@@ -226,7 +227,7 @@ class _SearchRunnable(QRunnable):
             return [], [], "invalid regex"
 
         text = cfg.doc_text
-        offsets: List[Tuple[int, int]] = []
+        offsets: list[tuple[int, int]] = []
         it = re_pattern.globalMatch(text)
         while it.hasNext() and not cfg.cancel_token.cancelled and len(offsets) < _MAX_MATCHES:
             match = it.next()
@@ -238,7 +239,7 @@ class _SearchRunnable(QRunnable):
 
         return offsets, [], ""
 
-    def _search_jsonpath(self) -> Tuple[List[Tuple[int, int]], List[Any], str]:
+    def _search_jsonpath(self) -> tuple[list[tuple[int, int]], list[Any], str]:
         """Evaluate JSONPath expression against JSON document.
 
         Returns:
@@ -269,7 +270,7 @@ class _SearchRunnable(QRunnable):
         return [], values, preview
 
     @staticmethod
-    def _build_jsonpath_preview(values: List[Any]) -> str:
+    def _build_jsonpath_preview(values: list[Any]) -> str:
         """Build human-readable preview of JSONPath results.
 
         Args:
@@ -281,7 +282,7 @@ class _SearchRunnable(QRunnable):
         if not values:
             return "(path matched no values)"
 
-        previews: List[str] = []
+        previews: list[str] = []
         for v in values[:6]:
             s = json.dumps(v, ensure_ascii=False)
             previews.append(s if len(s) <= 50 else s[:47] + "…")
@@ -303,27 +304,27 @@ class SearchBar(QWidget):
     * JSONPath ($.) — expression evaluated against a JSON document supplied via set_json_doc().
     """
 
-    def __init__(self, target: QTextEdit, parent: Optional[QWidget] = None) -> None:
+    def __init__(self, target: QTextEdit, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self._target = target
         self._json_obj: Any = None
-        self._offsets: List[Tuple[int, int]] = []
+        self._offsets: list[tuple[int, int]] = []
         self._current_idx: int = -1
         # Public-facing convenience alias expected by tests and some callers
         # `_matches` holds the list of matched text snippets (in document order).
-        self._matches: List[str] = []
+        self._matches: list[str] = []
 
         self._job_counter = 0
         self._current_job_id = 0
-        self._current_cancel_token: Optional[_CancelToken] = None
-        self._filter_cb: Optional[Callable[[Optional[str]], None]] = None
+        self._current_cancel_token: _CancelToken | None = None
+        self._filter_cb: Callable[[str | None], None] | None = None
 
         self._thread_pool = QThreadPool.globalInstance()
 
         self._debounce_timer = QTimer(self)
         self._debounce_timer.setSingleShot(True)
         self._debounce_timer.setInterval(250)
-        self._pending_text: Optional[str] = None
+        self._pending_text: str | None = None
         # For deterministic behavior in tests and simple environments we
         # execute searches synchronously. When True, text changes bypass the
         # debounce timer and run immediately.
@@ -345,7 +346,7 @@ class SearchBar(QWidget):
 
     def set_filter_callback(
         self,
-        cb: Optional[Callable[[Optional[str]], None]],
+        cb: Callable[[str | None], None] | None,
     ) -> None:
         """Register a callback to receive filtered body text (JSONPath mode)."""
         self._filter_cb = cb
@@ -607,7 +608,7 @@ class SearchBar(QWidget):
         if job_id != self._current_job_id:
             return
 
-        offs = list(offsets) if offsets else []
+        offs = list(offsets) if isinstance(offsets, (list, tuple)) else []
         self._offsets = [(int(s), int(e)) for s, e in offs]
         # Build human-readable match snippets for tests and callers that
         # expect `_matches` to be present.
@@ -634,7 +635,7 @@ class SearchBar(QWidget):
         if job_id != self._current_job_id:
             return
 
-        new_offs = list(offsets_chunk) if offsets_chunk else []
+        new_offs = list(offsets_chunk) if isinstance(offsets_chunk, (list, tuple)) else []
         remaining = _MAX_MATCHES - len(self._offsets)
         if remaining > 0:
             self._offsets.extend([(int(s), int(e)) for s, e in new_offs[:remaining]])
@@ -683,9 +684,7 @@ class SearchBar(QWidget):
             return
 
         if count:
-            self._match_label.setText(
-                f"{count} match{'es' if count != 1 else ''}"
-            )
+            self._match_label.setText(f"{count} match{'es' if count != 1 else ''}")
         else:
             self._match_label.setText("no matches")
 
@@ -706,7 +705,7 @@ class SearchBar(QWidget):
         if self._filter_cb is None:
             return
 
-        vals = list(values) if values else []
+        vals = list(values) if isinstance(values, (list, tuple)) else []
         try:
             if not vals:
                 filtered = json.dumps([], indent=2, ensure_ascii=False)
@@ -732,7 +731,7 @@ class SearchBar(QWidget):
         cur_fmt = QTextCharFormat()
         cur_fmt.setBackground(QColor("#e8a030"))
 
-        selections: List[QTextEdit.ExtraSelection] = []
+        selections: list[QTextEdit.ExtraSelection] = []
         radius = 5
         start_idx = max(0, self._current_idx - radius)
         end_idx = min(len(self._offsets), self._current_idx + radius + 1)

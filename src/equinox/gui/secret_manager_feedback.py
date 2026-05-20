@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Optional
 
 from PyQt6.QtWidgets import QMessageBox, QWidget
 
@@ -22,7 +21,7 @@ class SecretManagerConnectionMessages:
 
 
 def show_secret_manager_connection_feedback(
-    parent: Optional[QWidget],
+    parent: QWidget | None,
     result: SecretManagerConnectionResult,
     messages: SecretManagerConnectionMessages,
 ) -> None:
@@ -48,4 +47,3 @@ def show_secret_manager_connection_feedback(
         return
 
     QMessageBox.critical(parent, "Error", messages.unexpected.format(**values))
-

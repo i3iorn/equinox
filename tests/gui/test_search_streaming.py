@@ -14,7 +14,7 @@ def test_search_streaming_partial_results(qtbot):
     results arrive and UI remains responsive.
     """
     # Build a large document with repeating tokens
-    lines = [f'line {i}: VALUE_{i % 100}' for i in range(20000)]
+    lines = [f"line {i}: VALUE_{i % 100}" for i in range(20000)]
     big = "\n".join(lines)
 
     editor = QTextEdit()
@@ -28,11 +28,10 @@ def test_search_streaming_partial_results(qtbot):
     sb._start_search_job("VALUE_42")
 
     # Wait until at least one partial batch has been applied
-    qtbot.waitUntil(lambda: hasattr(sb, '_offsets') and len(sb._offsets) > 0, timeout=3000)
+    qtbot.waitUntil(lambda: hasattr(sb, "_offsets") and len(sb._offsets) > 0, timeout=3000)
 
     assert len(sb._offsets) > 0
 
     # Cancel and ensure the UI reflects cancellation
     sb._on_cancel_search()
-    assert sb._match_label.text() == 'cancelled'
-
+    assert sb._match_label.text() == "cancelled"

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
-from typing import Any, Dict, List
+from typing import Any
 
 from equinox.core.response_intelligence.base import Analyzer
 from equinox.core.response_intelligence.models import (
@@ -32,23 +32,25 @@ class CompressionAnalyzer(Analyzer):
 
     _MIN_BODY_FOR_COMPRESSION = 1024
 
-    def analyze(self, ctx: AnalysisContext) -> List[Finding]:
-        findings: List[Finding] = []
+    def analyze(self, ctx: AnalysisContext) -> list[Finding]:
+        findings: list[Finding] = []
         response = ctx.response
         size = response.size
         encoding = response.headers.get("content-encoding", "").lower()
         sent_accept = (ctx.request.headers or {}).get("Accept-Encoding", "")
 
         if encoding:
-            findings.append(Finding(
-                category=self.category,
-                severity=Severity.INFO,
-                title=f"Response compressed ({encoding})",
-                description=f"Transfer encoding: {encoding}. Body size: {format_bytes(size)}.",
-                analyzer_id=self.analyzer_id,
-                recommendation="Keep compression enabled for text payloads and monitor CPU impact on high-traffic endpoints.",
-                details={"encoding": encoding, "body_size": size},
-            ))
+            findings.append(
+                Finding(
+                    category=self.category,
+                    severity=Severity.INFO,
+                    title=f"Response compressed ({encoding})",
+                    description=f"Transfer encoding: {encoding}. Body size: {format_bytes(size)}.",
+                    analyzer_id=self.analyzer_id,
+                    recommendation="Keep compression enabled for text payloads and monitor CPU impact on high-traffic endpoints.",
+                    details={"encoding": encoding, "body_size": size},
+                )
+            )
             return findings
 
         if size < self._MIN_BODY_FOR_COMPRESSION:
@@ -65,19 +67,21 @@ class CompressionAnalyzer(Analyzer):
         else:
             description += "Server did not compress despite Accept-Encoding being sent."
 
-        findings.append(Finding(
-            category=self.category,
-            severity=severity,
-            title="Response not compressed",
-            description=description,
-            analyzer_id=self.analyzer_id,
-            recommendation="Enable gzip/br compression for compressible response types and include Accept-Encoding on clients.",
-            details={
-                "body_size": size,
-                "content_type": content_type,
-                "accept_encoding_sent": bool(sent_accept),
-            },
-        ))
+        findings.append(
+            Finding(
+                category=self.category,
+                severity=severity,
+                title="Response not compressed",
+                description=description,
+                analyzer_id=self.analyzer_id,
+                recommendation="Enable gzip/br compression for compressible response types and include Accept-Encoding on clients.",
+                details={
+                    "body_size": size,
+                    "content_type": content_type,
+                    "accept_encoding_sent": bool(sent_accept),
+                },
+            )
+        )
         return findings
 
 
@@ -86,14 +90,14 @@ class TimingBreakdownAnalyzer(Analyzer):
     category = Category.PERFORMANCE
     display_name = "Timing Breakdown"
 
-    def analyze(self, ctx: AnalysisContext) -> List[Finding]:
-        findings: List[Finding] = []
+    def analyze(self, ctx: AnalysisContext) -> list[Finding]:
+        findings: list[Finding] = []
         timings = getattr(ctx.response, "timings", None)
         if not timings:
             return findings
 
-        details: Dict[str, Any] = {}
-        parts: List[str] = []
+        details: dict[str, Any] = {}
+        parts: list[str] = []
 
         total = timings.get("total_ms", int(ctx.response.elapsed * 1000))
         details["total_ms"] = total
@@ -124,15 +128,17 @@ class TimingBreakdownAnalyzer(Analyzer):
         if timings.get("ttfb_ms", 0) > 2000 or total > 5000:
             severity = Severity.WARNING
 
-        findings.append(Finding(
-            category=self.category,
-            severity=severity,
-            title=f"Response time: {total} ms",
-            description=" | ".join(parts) if parts else f"Total: {total} ms",
-            analyzer_id=self.analyzer_id,
-            recommendation="Investigate the slowest timing phase first (DNS/connect/TLS/TTFB/transfer) to reduce latency.",
-            details=details,
-        ))
+        findings.append(
+            Finding(
+                category=self.category,
+                severity=severity,
+                title=f"Response time: {total} ms",
+                description=" | ".join(parts) if parts else f"Total: {total} ms",
+                analyzer_id=self.analyzer_id,
+                recommendation="Investigate the slowest timing phase first (DNS/connect/TLS/TTFB/transfer) to reduce latency.",
+                details=details,
+            )
+        )
         return findings
 
 
@@ -141,8 +147,8 @@ class ResponseTimePercentileAnalyzer(Analyzer):
     category = Category.PERFORMANCE
     display_name = "Response Time Percentiles"
 
-    def analyze(self, ctx: AnalysisContext) -> List[Finding]:
-        findings: List[Finding] = []
+    def analyze(self, ctx: AnalysisContext) -> list[Finding]:
+        findings: list[Finding] = []
         stats = ctx.endpoint_stats
         if not stats:
             return findings
@@ -178,15 +184,17 @@ class ResponseTimePercentileAnalyzer(Analyzer):
         if current > p99 and len(samples) >= 5:
             severity = Severity.WARNING
 
-        findings.append(Finding(
-            category=self.category,
-            severity=severity,
-            title=f"P50: {details['p50_ms']} ms | P95: {details['p95_ms']} ms | P99: {details['p99_ms']} ms",
-            description=f"Based on {details['sample_size']} recent calls. Current: {details['current_ms']} ms.",
-            analyzer_id=self.analyzer_id,
-            recommendation="Prioritize reducing P95/P99 latency by profiling slow code paths and backend dependencies.",
-            details=details,
-        ))
+        findings.append(
+            Finding(
+                category=self.category,
+                severity=severity,
+                title=f"P50: {details['p50_ms']} ms | P95: {details['p95_ms']} ms | P99: {details['p99_ms']} ms",
+                description=f"Based on {details['sample_size']} recent calls. Current: {details['current_ms']} ms.",
+                analyzer_id=self.analyzer_id,
+                recommendation="Prioritize reducing P95/P99 latency by profiling slow code paths and backend dependencies.",
+                details=details,
+            )
+        )
         return findings
 
 
@@ -200,10 +208,17 @@ class PaginationDetectionAnalyzer(Analyzer):
     _TOTAL_KEYS = {"total", "total_count", "totalCount", "count", "total_items", "totalItems"}
     _PAGE_NUM_KEYS = {"page", "current_page", "currentPage", "page_number", "pageNumber"}
     _PAGE_SIZE_KEYS = {"per_page", "perPage", "page_size", "pageSize", "limit", "size"}
-    _TOTAL_PAGES_KEYS = {"total_pages", "totalPages", "page_count", "pageCount", "last_page", "lastPage"}
+    _TOTAL_PAGES_KEYS = {
+        "total_pages",
+        "totalPages",
+        "page_count",
+        "pageCount",
+        "last_page",
+        "lastPage",
+    }
 
-    def analyze(self, ctx: AnalysisContext) -> List[Finding]:
-        findings: List[Finding] = []
+    def analyze(self, ctx: AnalysisContext) -> list[Finding]:
+        findings: list[Finding] = []
         if not ctx.response.is_json:
             return findings
         try:
@@ -214,7 +229,7 @@ class PaginationDetectionAnalyzer(Analyzer):
             return findings
 
         keys = set(body.keys())
-        detected: Dict[str, object] = {}
+        detected: dict[str, object] = {}
 
         nav = keys & self._PAGE_KEYS
         if nav:
@@ -238,7 +253,7 @@ class PaginationDetectionAnalyzer(Analyzer):
         if not detected:
             return findings
 
-        parts: List[str] = []
+        parts: list[str] = []
         current_page = detected.get("current_page")
         total_pages = detected.get("total_pages")
         total_items = detected.get("total")
@@ -251,14 +266,15 @@ class PaginationDetectionAnalyzer(Analyzer):
         if detected.get("link_header_next"):
             parts.append("Link header contains rel=next")
 
-        findings.append(Finding(
-            category=self.category,
-            severity=Severity.INFO,
-            title="Paginated response detected",
-            description=" | ".join(parts) if parts else "Response contains pagination fields.",
-            analyzer_id=self.analyzer_id,
-            recommendation="Expose consistent pagination metadata (page, size, total, next cursor) across similar endpoints.",
-            details=detected,
-        ))
+        findings.append(
+            Finding(
+                category=self.category,
+                severity=Severity.INFO,
+                title="Paginated response detected",
+                description=" | ".join(parts) if parts else "Response contains pagination fields.",
+                analyzer_id=self.analyzer_id,
+                recommendation="Expose consistent pagination metadata (page, size, total, next cursor) across similar endpoints.",
+                details=detected,
+            )
+        )
         return findings
-

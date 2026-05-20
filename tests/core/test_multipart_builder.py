@@ -1,4 +1,3 @@
-import tempfile
 from pathlib import Path
 
 from equinox.core.io.multipart import build_multipart_files
@@ -31,4 +30,3 @@ def test_build_multipart_files_missing_file(tmp_path: Path):
     assert files is not None
     assert len(files) == 1
     assert handles == []
-

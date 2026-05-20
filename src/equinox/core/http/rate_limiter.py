@@ -5,9 +5,9 @@ It can optionally log a security violation via an AuditLogger when the limit is 
 """
 
 import logging
-import time
 import threading
-from typing import List, Optional, Protocol
+import time
+from typing import Protocol
 
 from equinox.core.exceptions import RateLimitError
 
@@ -40,7 +40,7 @@ class _AuditLoggerLike(Protocol):
         self,
         violation_type: str,
         details: dict,
-        user: Optional[str] = None,
+        user: str | None = None,
     ) -> None: ...
 
 
@@ -67,7 +67,7 @@ class RateLimiter:
         self,
         max_per_minute: int,
         window_seconds: int = 60,
-        audit_logger: Optional[_AuditLoggerLike] = None,
+        audit_logger: _AuditLoggerLike | None = None,
     ) -> None:
         """Create a RateLimiter.
 
@@ -83,7 +83,7 @@ class RateLimiter:
         self.max_per_minute = max_per_minute
         self.window_seconds = window_seconds
         self._audit = audit_logger
-        self._times: List[float] = []
+        self._times: list[float] = []
         self._lock = threading.Lock()
 
     def __repr__(self) -> str:
@@ -169,4 +169,3 @@ class RateLimiter:
             )
         except Exception as exc:
             logger.debug("Failed to log rate-limit audit event: %s", exc)
-

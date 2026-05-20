@@ -1,15 +1,17 @@
 """Secure SQLite database access with parameterized queries and thread safety."""
+
 from __future__ import annotations
 
+import logging
 import re
 import sqlite3
 import threading
-import logging
+from collections.abc import Iterator, Mapping
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Any, Dict, Iterator, List, Mapping, Optional, Tuple, Union
+from typing import Any, Union
 
-from equinox.core.exceptions import StorageError, ValidationError, DuplicateError
+from equinox.core.exceptions import DuplicateError, StorageError, ValidationError
 
 logger = logging.getLogger(__name__)
 
@@ -20,7 +22,7 @@ __all__ = ["Database"]
 # ---------------------------------------------------------------------------
 
 #: Type alias for SQL parameters — positional (tuple/list) or named (Mapping).
-_SqlParams = Union[Tuple[Any, ...], List[Any], Mapping[str, Any]]
+_SqlParams = Union[tuple[Any, ...], list[Any], Mapping[str, Any]]
 
 _CONNECTION_TIMEOUT_SECONDS = 10.0
 
@@ -30,14 +32,15 @@ _NAMED_PARAM_RE = re.compile(r":([A-Za-z_][A-Za-z0-9_]*)")
 # Shared limits — referenced by both Database and _TransactionHelper via the
 # module-level constants so a single change updates both classes.
 _MAX_QUERY_LENGTH = 10_000
-_MAX_PARAMS       = 100
+_MAX_PARAMS = 100
 
 
 # ---------------------------------------------------------------------------
 # SQL validation helpers
 # ---------------------------------------------------------------------------
 
-def _outside_string(query: str) -> Iterator[Tuple[int, str]]:
+
+def _outside_string(query: str) -> Iterator[tuple[int, str]]:
     """Yield ``(index, char)`` for every character outside a single-quoted
     SQL string literal.  Uses SQL's ``''`` escape convention, not backslash.
     """
@@ -48,7 +51,7 @@ def _outside_string(query: str) -> Iterator[Tuple[int, str]]:
         c = query[i]
         if c == "'":
             if in_string and i + 1 < n and query[i + 1] == "'":
-                i += 2   # skip escaped ''
+                i += 2  # skip escaped ''
                 continue
             in_string = not in_string
         elif not in_string:
@@ -56,9 +59,9 @@ def _outside_string(query: str) -> Iterator[Tuple[int, str]]:
         i += 1
 
 
-def _extract_named_placeholders(query: str) -> List[str]:
+def _extract_named_placeholders(query: str) -> list[str]:
     """Return named placeholder identifiers found outside string literals."""
-    names: List[str] = []
+    names: list[str] = []
     skip_until = -1
     for i, c in _outside_string(query):
         if i < skip_until:
@@ -89,15 +92,13 @@ def _validate_placeholders(query: str, params: _SqlParams) -> None:
             raise ValidationError("Positional placeholders require tuple/list parameters")
         count = sum(1 for _, c in _outside_string(query) if c == "?")
         if count != len(params):
-            raise ValidationError(
-                f"Expected {count} parameters but got {len(params)}"
-            )
+            raise ValidationError(f"Expected {count} parameters but got {len(params)}")
     elif has_named:
         if not isinstance(params, Mapping):
             raise ValidationError("Named placeholders require a mapping (dict-like)")
         names = has_named_names
         missing = [n for n in names if n not in params]
-        extra   = [p for p in params if p not in names]
+        extra = [p for p in params if p not in names]
         if missing:
             raise ValidationError(f"Missing parameters for placeholders: {missing}")
         if extra:
@@ -118,9 +119,7 @@ def _validate_sql(query: str, params: _SqlParams) -> None:
     if not query or not isinstance(query, str):
         raise ValidationError("Query must be a non-empty string")
     if len(query) > _MAX_QUERY_LENGTH:
-        raise ValidationError(
-            f"Query exceeds maximum length of {_MAX_QUERY_LENGTH}"
-        )
+        raise ValidationError(f"Query exceeds maximum length of {_MAX_QUERY_LENGTH}")
     if isinstance(params, Mapping):
         if len(params) > _MAX_PARAMS:
             raise ValidationError(f"Too many parameters (max: {_MAX_PARAMS})")
@@ -166,6 +165,7 @@ def _run_sqlite(fn, query: str, params: _SqlParams) -> sqlite3.Cursor:
 # Database
 # ---------------------------------------------------------------------------
 
+
 class Database:
     """Secure SQLite database manager.
 
@@ -178,7 +178,7 @@ class Database:
 
     # Re-exported for backward compatibility; canonical values are module-level.
     MAX_QUERY_LENGTH = _MAX_QUERY_LENGTH
-    MAX_PARAMS       = _MAX_PARAMS
+    MAX_PARAMS = _MAX_PARAMS
 
     def __init__(self, db_path: str = "equinox.db") -> None:
         """Open (or create) the database and run pending schema migrations.
@@ -190,7 +190,7 @@ class Database:
             ValidationError: If *db_path* is invalid.
             StorageError: If the database cannot be opened or migrated.
         """
-        self._conn: Optional[sqlite3.Connection] = None
+        self._conn: sqlite3.Connection | None = None
 
         if not db_path or not isinstance(db_path, str):
             raise ValidationError("Database path must be a non-empty string")
@@ -245,7 +245,7 @@ class Database:
                     "Database connection established at %s (attempt %d/%d)",
                     self.db_path,
                     attempt + 1,
-                    max_retries
+                    max_retries,
                 )
                 return conn
             except sqlite3.OperationalError as exc:
@@ -254,14 +254,15 @@ class Database:
 
                 if is_locked and attempt < max_retries - 1:
                     # Transient lock; retry with backoff
-                    wait = (2 ** attempt) * 0.1  # 0.1, 0.2, 0.4 seconds
+                    wait = (2**attempt) * 0.1  # 0.1, 0.2, 0.4 seconds
                     logger.warning(
                         "Database locked (attempt %d/%d), retrying in %.1fs",
                         attempt + 1,
                         max_retries,
-                        wait
+                        wait,
                     )
                     import time
+
                     time.sleep(wait)
                 else:
                     # Final attempt or non-lock error
@@ -273,7 +274,7 @@ class Database:
                             "path": str(self.db_path),
                             "is_locked": is_locked,
                             "attempts": attempt + 1,
-                        }
+                        },
                     )
                     raise StorageError(
                         f"Cannot open database: {str(exc)}",
@@ -282,19 +283,21 @@ class Database:
                             "error": str(exc),
                             "is_locked": is_locked,
                         },
-                        hint_key="connection"
+                        hint_key="connection",
                     ) from exc
             except Exception as exc:
                 logger.error(
                     "Unexpected error opening database at %s: %s",
                     self.db_path,
                     str(exc),
-                    exc_info=True
+                    exc_info=True,
                 )
                 raise StorageError(
                     f"Cannot open database: {str(exc)}",
-                    details={"path": str(self.db_path), "error": str(exc)}
+                    details={"path": str(self.db_path), "error": str(exc)},
                 ) from exc
+
+        raise StorageError("Cannot open database after retries")
 
     def _configure_persistent_pragmas(self) -> None:
         """Set database-level PRAGMAs that persist across connections.
@@ -308,9 +311,7 @@ class Database:
             # and because sqlite3.connect expects a path-like object.
             conn = sqlite3.connect(str(self.db_path), timeout=_CONNECTION_TIMEOUT_SECONDS)
         except sqlite3.Error as exc:
-            raise StorageError(
-                f"Cannot open database to configure PRAGMAs: {exc}"
-            ) from exc
+            raise StorageError(f"Cannot open database to configure PRAGMAs: {exc}") from exc
         try:
             logger.debug("Configuring PRAGMAs: journal_mode=WAL, secure_delete=ON")
             conn.execute("PRAGMA journal_mode = WAL")
@@ -329,6 +330,7 @@ class Database:
             StorageError: If any migration fails.
         """
         from equinox.storage.migrations import MigrationRunner  # avoid circular import
+
         try:
             version = MigrationRunner(self).run()
             logger.info("Database schema at version %d", version)
@@ -422,7 +424,7 @@ class Database:
         with self._lock:
             return _run_sqlite(self._require_conn().execute, query, params)
 
-    def fetchone(self, query: str, params: _SqlParams = ()) -> Optional[Dict[str, Any]]:
+    def fetchone(self, query: str, params: _SqlParams = ()) -> dict[str, Any] | None:
         """Fetch a single row and return it as a ``dict``, or ``None``.
 
         Raises:
@@ -435,7 +437,7 @@ class Database:
             row = cursor.fetchone()
             return dict(row) if row else None
 
-    def fetchall(self, query: str, params: _SqlParams = ()) -> List[Dict[str, Any]]:
+    def fetchall(self, query: str, params: _SqlParams = ()) -> list[dict[str, Any]]:
         """Fetch all rows and return them as a ``list`` of ``dict``.
 
         Raises:
@@ -461,7 +463,10 @@ class Database:
             raise ValidationError("Query must be an INSERT statement")
         with self._lock:
             cursor = _run_sqlite(self._require_conn().execute, query, params)
-            return cursor.lastrowid
+            row_id = cursor.lastrowid
+            if row_id is None:
+                raise StorageError("INSERT did not return a row id")
+            return int(row_id)
 
     # ── Lifecycle ─────────────────────────────────────────────────────────────
 
@@ -491,7 +496,7 @@ class Database:
         except Exception:  # noqa: BLE001
             pass
 
-    def __enter__(self) -> "Database":
+    def __enter__(self) -> Database:
         """Return *self* so ``with Database(...) as db:`` works."""
         return self
 
@@ -503,6 +508,7 @@ class Database:
 # ---------------------------------------------------------------------------
 # _TransactionHelper
 # ---------------------------------------------------------------------------
+
 
 class _TransactionHelper:
     """Thin wrapper around a ``sqlite3.Connection`` for use inside
@@ -539,19 +545,17 @@ class _TransactionHelper:
         if not query or not isinstance(query, str):
             raise ValidationError("Query must be a non-empty string")
         if len(query) > _MAX_QUERY_LENGTH:
-            raise ValidationError(
-                f"Query exceeds maximum length of {_MAX_QUERY_LENGTH}"
-            )
+            raise ValidationError(f"Query exceeds maximum length of {_MAX_QUERY_LENGTH}")
         return _run_sqlite(self._conn.executemany, query, seq_of_params)
 
-    def fetchone(self, query: str, params: _SqlParams = ()) -> Optional[Dict[str, Any]]:
+    def fetchone(self, query: str, params: _SqlParams = ()) -> dict[str, Any] | None:
         """Execute a query and return a single row as a ``dict``, or ``None``."""
         _validate_sql(query, params)
         cursor = _run_sqlite(self._conn.execute, query, params)
         row = cursor.fetchone()
         return dict(row) if row else None
 
-    def fetchall(self, query: str, params: _SqlParams = ()) -> List[Dict[str, Any]]:
+    def fetchall(self, query: str, params: _SqlParams = ()) -> list[dict[str, Any]]:
         """Execute a query and return all rows as ``dict``."""
         _validate_sql(query, params)
         cursor = _run_sqlite(self._conn.execute, query, params)
@@ -568,5 +572,7 @@ class _TransactionHelper:
         if not query.lstrip().upper().startswith("INSERT"):
             raise ValidationError("Query must be an INSERT statement")
         cursor = _run_sqlite(self._conn.execute, query, params)
-        return cursor.lastrowid
-
+        row_id = cursor.lastrowid
+        if row_id is None:
+            raise StorageError("INSERT did not return a row id")
+        return int(row_id)

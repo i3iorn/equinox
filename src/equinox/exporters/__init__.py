@@ -1,4 +1,4 @@
-﻿"""Export functionality for collections, requests, and responses.
+"""Export functionality for collections, requests, and responses.
 
 Supported formats
 -----------------
@@ -14,13 +14,14 @@ Quick start::
     data = PostmanExporter.export_collection(db, collection_id)
     PostmanExporter.export_to_file(data, Path("collection.json"))
 """
+
 from __future__ import annotations
 
 from equinox.exporters.curl import CurlExporter
-from equinox.exporters.postman import PostmanExporter
-from equinox.exporters.openapi import OpenAPIExporter
 from equinox.exporters.har import HARExporter
 from equinox.exporters.insomnia import InsomniaExporter
+from equinox.exporters.openapi import OpenAPIExporter
+from equinox.exporters.postman import PostmanExporter
 
 __all__ = [
     "CurlExporter",

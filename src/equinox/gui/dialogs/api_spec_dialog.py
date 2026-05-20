@@ -5,25 +5,31 @@ import logging
 import os
 import re
 import tempfile
-from typing import Dict
 
-from PyQt6.QtWidgets import (
-    QDialog, QVBoxLayout, QHBoxLayout, QLabel, QComboBox, QTextEdit,
-    QPushButton, QFileDialog, QApplication, QMessageBox,
-)
 from PyQt6.QtGui import QFont
+from PyQt6.QtWidgets import (
+    QApplication,
+    QComboBox,
+    QDialog,
+    QFileDialog,
+    QHBoxLayout,
+    QLabel,
+    QMessageBox,
+    QPushButton,
+    QTextEdit,
+    QVBoxLayout,
+)
 
 logger = logging.getLogger(__name__)
 
 # Size limits (bytes)
-_PRETTY_PRINT_MAX = 1_000_000   # 1 MB — above this, show truncated raw text
-_CLIPBOARD_MAX   = 1_000_000   # 1 MB — warn before copying larger content
-_SAVE_MAX        = 10_000_000  # 10 MB — warn before saving larger content
+_PRETTY_PRINT_MAX = 1_000_000  # 1 MB — above this, show truncated raw text
+_CLIPBOARD_MAX = 1_000_000  # 1 MB — warn before copying larger content
+_SAVE_MAX = 10_000_000  # 10 MB — warn before saving larger content
 
 # Keywords used for heuristic secret detection in clipboard copy
 _SECRET_KEYWORDS = frozenset(
-    {"client_secret", "client-secret", "secret", "token",
-     "authorization", "api_key", "api-key"}
+    {"client_secret", "client-secret", "secret", "token", "authorization", "api_key", "api-key"}
 )
 
 
@@ -81,7 +87,7 @@ class ApiSpecDialog(QDialog):
         self.setWindowTitle(title)
         self.setMinimumSize(700, 480)
 
-        self._variants: Dict[str, str] = {}
+        self._variants: dict[str, str] = {}
         self._allow_clipboard = True
 
         lay = QVBoxLayout(self)
@@ -117,7 +123,7 @@ class ApiSpecDialog(QDialog):
 
     # ── Public API ────────────────────────────────────────────────────────
 
-    def set_variants(self, variants: Dict[str, str]) -> None:
+    def set_variants(self, variants: dict[str, str]) -> None:
         """Provide a mapping of display-name → text.
 
         The combo is populated with the keys in dict insertion order.
@@ -155,8 +161,7 @@ class ApiSpecDialog(QDialog):
         size = len(text.encode("utf-8"))
         if size > _PRETTY_PRINT_MAX:
             notice = (
-                f"\n\n[Preview truncated: {size:,} bytes "
-                f"> {_PRETTY_PRINT_MAX:,} byte limit]"
+                f"\n\n[Preview truncated: {size:,} bytes " f"> {_PRETTY_PRINT_MAX:,} byte limit]"
             )
             self.preview.setPlainText(text[:4096] + notice)
             return
@@ -176,7 +181,9 @@ class ApiSpecDialog(QDialog):
             return
 
         if not self._allow_clipboard:
-            QMessageBox.warning(self, "Copy blocked", "Copying to clipboard is disabled for this dialog.")
+            QMessageBox.warning(
+                self, "Copy blocked", "Copying to clipboard is disabled for this dialog."
+            )
             logger.info("Clipboard copy blocked by policy")
             return
 

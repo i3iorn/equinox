@@ -13,4 +13,3 @@ def get_app_version() -> str:
         return version("equinox")
     except PackageNotFoundError:
         return "dev"
-

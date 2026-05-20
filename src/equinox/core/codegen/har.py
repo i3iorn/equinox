@@ -1,4 +1,5 @@
 import json
+
 from equinox.core.request import Response
 from equinox.versioning import get_app_version
 
@@ -19,8 +20,12 @@ class HARGenerator:
                             "method": request.method,
                             "url": response.sent_url or request.url,
                             "httpVersion": "HTTP/1.1",
-                            "headers": [{"name": k, "value": v} for k, v in (request.headers or {}).items()],
-                            "queryString": [{"name": k, "value": v} for k, v in (request.params or {}).items()],
+                            "headers": [
+                                {"name": k, "value": v} for k, v in (request.headers or {}).items()
+                            ],
+                            "queryString": [
+                                {"name": k, "value": v} for k, v in (request.params or {}).items()
+                            ],
                             "postData": {
                                 "mimeType": request.headers.get("Content-Type", ""),
                                 "text": request.body or "",
@@ -30,7 +35,9 @@ class HARGenerator:
                             "status": response.status_code,
                             "statusText": response.reason,
                             "httpVersion": "HTTP/1.1",
-                            "headers": [{"name": k, "value": v} for k, v in response.headers.items()],
+                            "headers": [
+                                {"name": k, "value": v} for k, v in response.headers.items()
+                            ],
                             "content": {
                                 "size": response.size,
                                 "mimeType": response.content_type or "",

@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 import re
-from typing import Any, Dict, Generator, Iterator, Optional, Tuple
+from collections.abc import Iterable, Iterator, Mapping
+from typing import Any, cast
 
 from equinox.core.exceptions import ValidationError
 
@@ -30,10 +31,10 @@ class HeaderDict(dict):
       that haven't been updated to the new type.
     """
 
-    def __init__(self, data: Optional[Dict[str, Any]] = None) -> None:
+    def __init__(self, data: dict[str, Any] | None = None) -> None:
         super().__init__()
         # Tracks lower-case name → original-case name for display/export.
-        self._orig: Dict[str, str] = {}
+        self._orig: dict[str, str] = {}
         if data:
             self.update(data)
 
@@ -73,18 +74,18 @@ class HeaderDict(dict):
 
     # ── Overrides that honour original case ───────────────────────────────────
 
-    def get(self, key: str, default: Optional[Any] = None) -> Any:  # type: ignore[override]
+    def get(self, key: str, default: Any = None) -> Any:  # type: ignore[override]
         return super().get(key.lower(), default)
 
     def keys(self):  # type: ignore[override]
         for lower in super().keys():
             yield self._orig.get(lower, lower)
 
-    def items(self) -> Iterator[Tuple[str, str]]:  # type: ignore[override]
+    def items(self) -> Iterator[tuple[str, str]]:  # type: ignore[override]
         for lower, value in super().items():
             yield self._orig.get(lower, lower), value
 
-    def update(self, other: Optional[Dict[str, Any]] = None, **kwargs: Any) -> None:  # type: ignore[override]
+    def update(self, other: dict[str, Any] | None = None, **kwargs: Any) -> None:  # type: ignore[override]
         if other is not None:
             it = other.items() if isinstance(other, dict) else other
             for k, v in it:
@@ -96,20 +97,21 @@ class HeaderDict(dict):
 
     def __eq__(self, other: object) -> bool:
         """Case-insensitive comparison with any dict-like object."""
-        if not isinstance(other, dict):
-            try:
-                other = dict(other)  # type: ignore[arg-type]
-            except Exception:
-                return False
         try:
-            other_lower = {k.lower(): v for k, v in other.items()}
+            if isinstance(other, Mapping):
+                other_items = other.items()
+            else:
+                other_dict = dict(cast(Iterable[tuple[Any, Any]], other))
+                other_items = other_dict.items()
+
+            other_lower = {str(k).lower(): v for k, v in other_items}
             return dict(super().items()) == other_lower
         except Exception:
             return False
 
     # ── Serialisation helper ──────────────────────────────────────────────────
 
-    def as_canonical_dict(self, *, lowercase: bool = True) -> Dict[str, str]:
+    def as_canonical_dict(self, *, lowercase: bool = True) -> dict[str, str]:
         """Return a plain ``dict`` suitable for serialisation or export.
 
         Args:
@@ -123,5 +125,3 @@ class HeaderDict(dict):
 
     def __repr__(self) -> str:  # pragma: no cover
         return f"HeaderDict({dict(self.items())!r})"
-
-

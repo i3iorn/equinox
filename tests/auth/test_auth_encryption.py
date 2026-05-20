@@ -9,14 +9,15 @@ Verifies:
 """
 
 import json
+
 import pytest
 
-from equinox.storage.database import Database
-from equinox.storage.collections import CollectionManager
-from equinox.storage.saved_credentials import SavedCredentialsManager
-from equinox.auth import BearerAuth, BasicAuth, APIKeyAuth
+from equinox.auth import APIKeyAuth, BasicAuth, BearerAuth
 from equinox.auth._oauth2 import OAuth2Auth
-from equinox.core.auth_cipher import encrypt_auth_data, decrypt_auth_data
+from equinox.core.auth_cipher import decrypt_auth_data, encrypt_auth_data
+from equinox.storage.collections import CollectionManager
+from equinox.storage.database import Database
+from equinox.storage.saved_credentials import SavedCredentialsManager
 
 
 @pytest.fixture
@@ -71,9 +72,7 @@ class TestSerializeBoundary:
         auth = BearerAuth(token="super-secret-token")
         mgr.set_collection_auth(col_id, auth)
         # Read raw column — not through _deserialize_auth
-        row = mgr.db.fetchone(
-            "SELECT auth_data FROM collections WHERE id = ?", (col_id,)
-        )
+        row = mgr.db.fetchone("SELECT auth_data FROM collections WHERE id = ?", (col_id,))
         raw = row["auth_data"]
         assert raw.startswith("enc:"), f"auth_data should be encrypted, got: {raw[:40]}"
 
@@ -133,12 +132,16 @@ class TestSerializeBoundary:
     def test_request_auth_encrypted(self, mgr, col_id):
         """Request-level auth_data is also encrypted."""
         from equinox.core.request import Request
+
         req_id = mgr.save_request(
             Request(
-                method="GET", url="https://api.example.com",
-                name="R", auth=BearerAuth(token="req-secret"),
+                method="GET",
+                url="https://api.example.com",
+                name="R",
+                auth=BearerAuth(token="req-secret"),
             ),
-            collection_id=col_id, name="R",
+            collection_id=col_id,
+            name="R",
         )
         row = mgr.db.fetchone("SELECT auth_data FROM requests WHERE id=?", (req_id,))
         assert row["auth_data"].startswith("enc:")
@@ -166,8 +169,11 @@ class TestSavedCredentialsEncryption:
         cid = scm.create(
             name="Test OAuth2",
             auth_type="oauth2",
-            config={"token_url": "https://auth.test/token",
-                    "client_id": "cid", "client_secret": "csec"},
+            config={
+                "token_url": "https://auth.test/token",
+                "client_id": "cid",
+                "client_secret": "csec",
+            },
         )
         result = scm.get(cid)
         assert result["config"]["client_secret"] == "csec"
@@ -191,9 +197,7 @@ class TestSavedCredentialsEncryption:
         cid = scm.create(name="Legacy", auth_type="bearer", config={"token": "x"})
         # Overwrite with raw plaintext
         plain = json.dumps({"token": "legacy-saved"})
-        db.execute(
-            "UPDATE saved_credentials SET config=? WHERE id=?", (plain, cid)
-        )
+        db.execute("UPDATE saved_credentials SET config=? WHERE id=?", (plain, cid))
         result = scm.get(cid)
         assert result["config"]["token"] == "legacy-saved"
 
@@ -218,4 +222,3 @@ class TestOAuth2TokenTimeout:
         d = {"type": "oauth2", "client_id": "c", "token_url": "https://t.test/tok"}
         restored = OAuth2Auth.from_dict(d)
         assert restored.token_timeout == OAuth2Auth.DEFAULT_TOKEN_TIMEOUT
-

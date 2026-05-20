@@ -1,18 +1,16 @@
 """Tests for HARImporter."""
 
 import json
-import os
-import tempfile
 from pathlib import Path
 
 import pytest
 
-from equinox.storage.database import Database
-from equinox.storage.collections import CollectionManager
 from equinox.importers.har import HARImporter
-
+from equinox.storage.collections import CollectionManager
+from equinox.storage.database import Database
 
 # ── Fixtures ──────────────────────────────────────────────────────────────────
+
 
 @pytest.fixture
 def tmp_db(tmp_path):
@@ -94,6 +92,7 @@ def _post_entry(url="https://example.com/data", body='{"key":"value"}') -> dict:
 
 # ── Basic import ──────────────────────────────────────────────────────────────
 
+
 class TestHARImportBasic:
     def test_returns_collection_id(self, mgr, tmp_path):
         p = _write_har(tmp_path, _minimal_har())
@@ -153,6 +152,7 @@ class TestHARImportBasic:
 
 # ── Headers and body ──────────────────────────────────────────────────────────
 
+
 class TestHARHeaders:
     def test_request_headers_preserved(self, mgr, tmp_path):
         headers = [
@@ -203,6 +203,7 @@ class TestHARHeaders:
 
 
 # ── Error handling ────────────────────────────────────────────────────────────
+
 
 class TestHARErrorHandling:
     def test_invalid_json_raises_value_error(self, mgr, tmp_path):

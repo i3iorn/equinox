@@ -122,4 +122,3 @@ class PrettyPrintRunnable(QRunnable):
         except Exception:
             logger.debug("Pretty-print fallback text decode failed", exc_info=True)
             return ""
-

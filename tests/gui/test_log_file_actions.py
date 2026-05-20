@@ -102,5 +102,3 @@ def test_show_log_file_open_result_open_failed(monkeypatch, tmp_path: Path) -> N
     assert opened is False
     assert calls
     assert "boom" in calls[0][2]
-
-

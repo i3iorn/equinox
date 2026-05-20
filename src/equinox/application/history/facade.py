@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime
-from typing import Any, Optional
+from typing import Any
 
 from equinox.core.request import Request, Response
 from equinox.storage import Database, HistoryManager
@@ -23,13 +23,13 @@ class HistoryFacade:
     def __init__(
         self,
         db: Database,
-        history_manager: Optional[HistoryManager] = None,
+        history_manager: HistoryManager | None = None,
     ) -> None:
         self._history_manager = history_manager or HistoryManager(db)
 
     # ── History manager wrappers ───────────────────────────────────────
 
-    def get_history(self, history_id: int) -> Optional[dict[str, Any]]:
+    def get_history(self, history_id: int) -> dict[str, Any] | None:
         return self._history_manager.get_history(history_id)
 
     def search_history(self, **filters: Any) -> list[dict[str, Any]]:
@@ -41,7 +41,7 @@ class HistoryFacade:
     def delete_history(self, history_id: int) -> None:
         self._history_manager.delete_history(history_id)
 
-    def clear_history(self, days: Optional[int] = None) -> None:
+    def clear_history(self, days: int | None = None) -> None:
         self._history_manager.clear_history(days=days)
 
     # ── History row reconstruction ─────────────────────────────────────
@@ -53,9 +53,7 @@ class HistoryFacade:
         try:
             return dict(value)  # type: ignore[arg-type]
         except Exception:
-            logger.debug(
-                "Could not coerce %s to dict, defaulting to {}", field_name, exc_info=True
-            )
+            logger.debug("Could not coerce %s to dict, defaulting to {}", field_name, exc_info=True)
             return {}
 
     @staticmethod
@@ -70,7 +68,7 @@ class HistoryFacade:
             return b""
 
     @staticmethod
-    def _parse_timestamp(value: object) -> Optional[datetime]:
+    def _parse_timestamp(value: object) -> datetime | None:
         if not value:
             return None
         try:
@@ -82,7 +80,9 @@ class HistoryFacade:
     @staticmethod
     def request_from_entry(entry: dict[str, Any]) -> Request:
         """Build a Request instance from a history row dict."""
-        headers = HistoryFacade._coerce_to_dict(entry.get("request_headers") or {}, "request_headers")
+        headers = HistoryFacade._coerce_to_dict(
+            entry.get("request_headers") or {}, "request_headers"
+        )
         params = HistoryFacade._coerce_to_dict(entry.get("request_params") or {}, "request_params")
 
         body = entry.get("request_body")
@@ -106,15 +106,17 @@ class HistoryFacade:
     def response_from_entry(
         entry: dict[str, Any],
         request: Request,
-        history_id: Optional[int] = None,
-    ) -> Optional[Response]:
+        history_id: int | None = None,
+    ) -> Response | None:
         """Build a Response from a history row dict, or None when absent."""
         if entry.get("status_code") is None:
             return None
 
         body_bytes = HistoryFacade._coerce_body_to_bytes(entry.get("response_body") or "")
         timestamp = HistoryFacade._parse_timestamp(entry.get("executed_at")) or datetime.now()
-        headers = HistoryFacade._coerce_to_dict(entry.get("response_headers") or {}, "response_headers")
+        headers = HistoryFacade._coerce_to_dict(
+            entry.get("response_headers") or {}, "response_headers"
+        )
 
         try:
             response = Response(
@@ -141,5 +143,3 @@ class HistoryFacade:
             len(body_bytes),
         )
         return response
-
-

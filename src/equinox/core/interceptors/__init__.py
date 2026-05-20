@@ -10,12 +10,13 @@ Features:
 """
 
 from equinox.core.interceptors.logging import (
-    RequestResponseLogger,
+    LoggingErrorInterceptor,
     LoggingResponseInterceptor,
-    LoggingErrorInterceptor
+    RequestResponseLogger,
 )
 
 __all__ = [
     "RequestResponseLogger",
     "LoggingResponseInterceptor",
+    "LoggingErrorInterceptor",
 ]

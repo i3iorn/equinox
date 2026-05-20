@@ -17,28 +17,27 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime
-from typing import Any, Optional
+from typing import Any
 
 from PyQt6.QtWidgets import (
-    QWidget,
-    QVBoxLayout,
+    QDialog,
     QHBoxLayout,
     QLabel,
     QPushButton,
-    QDialog,
+    QVBoxLayout,
+    QWidget,
 )
 
 from equinox.auth import OAuth2Auth
 from equinox.core.request import Request
-from equinox.security import mask_secret
 from equinox.core.util.time import utc_now
-from equinox.gui.theme import Colors
-
 from equinox.gui.request_panel._constants import (
     AUTH_TAB_MARGINS,
     AUTH_VOLATILE_KEYS,
     FOLDER_AUTH_PREFIX,
 )
+from equinox.gui.theme import Colors
+from equinox.security import mask_secret
 
 logger = logging.getLogger(__name__)
 
@@ -110,12 +109,8 @@ class _RequestAuthMixin:
         layout.setContentsMargins(*AUTH_TAB_MARGINS)
 
         # Create labels with initial state
-        self.auth_type_label = self._create_styled_label(
-            _AUTH_NONE_LABEL, bold=True
-        )
-        self.auth_details_label = self._create_styled_label(
-            _AUTH_NONE_DESC, muted=True, wrap=True
-        )
+        self.auth_type_label = self._create_styled_label(_AUTH_NONE_LABEL, bold=True)
+        self.auth_details_label = self._create_styled_label(_AUTH_NONE_DESC, muted=True, wrap=True)
         self.auth_status_label = self._create_styled_label("", wrap=True)
         self.auth_trust_label = self._create_styled_label("", muted=True, wrap=True)
 
@@ -196,9 +191,7 @@ class _RequestAuthMixin:
         else:
             self._handle_own_auth_dialog_result(saved)
 
-    def _handle_inherited_auth_dialog_result(
-        self, saved: Any, fetched_token: Any
-    ) -> None:
+    def _handle_inherited_auth_dialog_result(self, saved: Any, fetched_token: Any) -> None:
         """Handle auth dialog result when the request was using inherited auth.
 
         Carefully distinguishes between:
@@ -286,7 +279,7 @@ class _RequestAuthMixin:
 
     # ── Inheritance resolution ────────────────────────────────────────
 
-    def _build_auth_probe(self) -> Optional[Request]:
+    def _build_auth_probe(self) -> Request | None:
         """Build a lightweight request probe for inherited-auth resolution.
 
         The resolver needs ``collection_id`` and ``folder``. Prefer the loaded
@@ -350,7 +343,7 @@ class _RequestAuthMixin:
     # ── Display ───────────────────────────────────────────────────────
 
     @staticmethod
-    def _format_inherited_label(source: Optional[str]) -> str:
+    def _format_inherited_label(source: str | None) -> str:
         """Build a human-readable '(inherited from …)' suffix.
 
         Args:
@@ -362,7 +355,7 @@ class _RequestAuthMixin:
         if not source:
             return ""
         if source.startswith(FOLDER_AUTH_PREFIX):
-            folder = source[len(FOLDER_AUTH_PREFIX):]
+            folder = source[len(FOLDER_AUTH_PREFIX) :]
             return _AUTH_INHERITED_FROM_FOLDER.format(folder)
         if source == "collection":
             return _AUTH_INHERITED_FROM_COLLECTION
@@ -396,7 +389,7 @@ class _RequestAuthMixin:
         self._set_auth_display_for_strategy(display_auth, inherited_label)
         self._update_trust_indicator(display_auth)
 
-    def _get_inherited_auth_safe(self) -> Optional[Any]:
+    def _get_inherited_auth_safe(self) -> Any | None:
         """Safely retrieve inherited auth (handles missing attributes).
 
         Returns:
@@ -409,7 +402,7 @@ class _RequestAuthMixin:
         self.auth_type_label.setText(_AUTH_NONE_LABEL)
         self.auth_details_label.setText(_AUTH_NONE_DESC)
 
-    def _update_trust_indicator(self, auth: Optional[Any]) -> None:
+    def _update_trust_indicator(self, auth: Any | None) -> None:
         """Render quick trust-source indicators for auth/environment/transport posture."""
         chips = []
         if auth is None:
@@ -509,7 +502,7 @@ class _RequestAuthMixin:
             info: Token info dict from get_token_info()
 
         Returns:
-            Tuple of (status_text, color_code)
+            tuple of (status_text, color_code)
         """
         if not auth.access_token:
             return _AUTH_TOKEN_NONE, Colors.RED
@@ -544,4 +537,3 @@ class _RequestAuthMixin:
         except (ValueError, TypeError) as exc:
             logger.debug("Failed to parse OAuth2 token expiry: %s", exc)
         return text
-

@@ -287,4 +287,3 @@ pytest tests/gui/                       # GUI-specific tests
 - 0 breaking changes (fully backward compatible)
 - 8 new keyboard shortcuts
 - 2 new storage tables (ui_usage, ui_usage_stats)
-

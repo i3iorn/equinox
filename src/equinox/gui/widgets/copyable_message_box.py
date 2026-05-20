@@ -1,4 +1,5 @@
 """QMessageBox subclass with a built-in *Copy* button."""
+
 from __future__ import annotations
 
 import logging

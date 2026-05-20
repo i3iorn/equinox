@@ -1,11 +1,12 @@
 """Concurrency slot guard for the HTTP client."""
+
 from __future__ import annotations
 
 import contextlib
 import logging
 import threading
 import time
-from typing import Generator, Optional
+from collections.abc import Generator
 
 from equinox.core.exceptions import RequestError
 
@@ -34,9 +35,7 @@ class ConcurrencyGuard:
 
     def __init__(self, max_concurrent: int) -> None:
         if not isinstance(max_concurrent, int) or max_concurrent < 1:
-            raise ValueError(
-                f"max_concurrent must be a positive integer, got {max_concurrent!r}"
-            )
+            raise ValueError(f"max_concurrent must be a positive integer, got {max_concurrent!r}")
         self._max = max_concurrent
         self._active = 0
         self._lock = threading.Lock()
@@ -55,7 +54,7 @@ class ConcurrencyGuard:
             return self._active
 
     @contextlib.contextmanager
-    def slot(self, timeout: Optional[float] = None) -> Generator[None, None, None]:
+    def slot(self, timeout: float | None = None) -> Generator[None, None, None]:
         """Context manager that acquires a slot on entry and releases it on exit.
 
         Args:
@@ -71,7 +70,7 @@ class ConcurrencyGuard:
         finally:
             self.release()
 
-    def acquire(self, timeout: Optional[float] = None) -> None:
+    def acquire(self, timeout: float | None = None) -> None:
         """Claim one concurrency slot.
 
         Args:
@@ -90,6 +89,8 @@ class ConcurrencyGuard:
                     # Timeout=0 means wait indefinitely (classic threading convention)
                     self._condition.wait()
                 elif timeout is not None:
+                    if start is None:
+                        start = time.perf_counter()
                     elapsed = time.perf_counter() - start
                     remaining = timeout - elapsed
                     if remaining <= 0:
@@ -101,9 +102,7 @@ class ConcurrencyGuard:
                     self._condition.wait(timeout=remaining)
                 else:
                     # No timeout: fail immediately
-                    raise RequestError(
-                        f"Too many concurrent requests: {self._active}/{self._max}"
-                    )
+                    raise RequestError(f"Too many concurrent requests: {self._active}/{self._max}")
 
             self._active += 1
             logger.debug("ConcurrencyGuard acquired: active=%d/%d", self._active, self._max)

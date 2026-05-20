@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import logging
 from dataclasses import dataclass
-from typing import Dict, List, Any, Optional
+from typing import Any
 
 from equinox.exporters import CurlExporter, OpenAPIExporter, PostmanExporter
 from equinox.storage import CollectionManager, Database
@@ -16,19 +16,21 @@ class ApiSpecPayload:
     """Dialog payload containing title and export variants."""
 
     title: str
-    variants: Dict[str, str]
+    variants: dict[str, str]
 
 
 class ApiSpecExportService:
     """Build API spec variants for collection/request dialogs."""
 
-    def __init__(self, db: Database, logger_: Optional[logging.Logger] = None):
+    def __init__(self, db: Database, logger_: logging.Logger | None = None):
         self._db = db
         self._logger = logger_ or logging.getLogger(__name__)
         self._mgr = CollectionManager(db)
 
     def build_collection_payload(self, collection_id: int) -> ApiSpecPayload:
-        if isinstance(collection_id, bool) or not (isinstance(collection_id, int) and collection_id > 0):
+        if isinstance(collection_id, bool) or not (
+            isinstance(collection_id, int) and collection_id > 0
+        ):
             raise ValueError("Collection not specified or invalid.")
 
         coll = self._get_collection(collection_id)
@@ -45,8 +47,8 @@ class ApiSpecExportService:
             raise ValueError("Request not found.")
 
         title = f"API Spec - {req.name or 'Request'}"
-        variants: Dict[str, str] = {}
-        errors: List[str] = []
+        variants: dict[str, str] = {}
+        errors: list[str] = []
 
         try:
             variants["cURL"] = CurlExporter.export_request(req)
@@ -75,7 +77,7 @@ class ApiSpecExportService:
 
         return ApiSpecPayload(title=title, variants=variants)
 
-    def _get_collection(self, collection_id: int) -> Dict[str, Any]:
+    def _get_collection(self, collection_id: int) -> dict[str, Any]:
         coll = self._mgr.get_collection(collection_id)
         if isinstance(coll, dict):
             return coll
@@ -85,7 +87,7 @@ class ApiSpecExportService:
                 return normalized
         raise ValueError("Collection not found.")
 
-    def _coerce_collection_list(self, collection_id: int, coll: List[Any]) -> Dict[str, Any]:
+    def _coerce_collection_list(self, collection_id: int, coll: list[Any]) -> dict[str, Any]:
         self._logger.warning(
             "spec_export.collection.coerce_list collection_id=%s",
             collection_id,
@@ -98,9 +100,11 @@ class ApiSpecExportService:
                 return entry
         return {"name": f"Collection {collection_id}", "items": coll}
 
-    def _export_collection_variants(self, collection_id: int, coll: Dict[str, Any]) -> Dict[str, str]:
-        variants: Dict[str, str] = {}
-        errors: List[str] = []
+    def _export_collection_variants(
+        self, collection_id: int, coll: dict[str, Any]
+    ) -> dict[str, str]:
+        variants: dict[str, str] = {}
+        errors: list[str] = []
         reqs = self._mgr.list_requests(collection_id)
 
         try:
@@ -111,7 +115,9 @@ class ApiSpecExportService:
             )
             variants["OpenAPI 3 (JSON)"] = json.dumps(oa, indent=2, ensure_ascii=False)
         except Exception as exc:
-            self._logger.exception("spec_export.collection.openapi_failed collection_id=%s", collection_id)
+            self._logger.exception(
+                "spec_export.collection.openapi_failed collection_id=%s", collection_id
+            )
             variants["OpenAPI 3 (JSON)"] = json.dumps(
                 self._fallback_openapi(coll, reqs),
                 indent=2,
@@ -123,7 +129,9 @@ class ApiSpecExportService:
             pm = PostmanExporter.export_collection(self._db, collection_id)
             variants["Postman v2.1 (JSON)"] = json.dumps(pm, indent=2, ensure_ascii=False)
         except Exception as exc:
-            self._logger.exception("spec_export.collection.postman_failed collection_id=%s", collection_id)
+            self._logger.exception(
+                "spec_export.collection.postman_failed collection_id=%s", collection_id
+            )
             variants["Postman v2.1 (JSON)"] = json.dumps(
                 self._fallback_postman(coll, reqs),
                 indent=2,
@@ -146,8 +154,8 @@ class ApiSpecExportService:
                 return value
         return row.get("name") or ""
 
-    def _fallback_openapi(self, coll: Dict[str, Any], reqs: List[Any]) -> Dict[str, Any]:
-        paths: Dict[str, Dict[str, Dict[str, Any]]] = {}
+    def _fallback_openapi(self, coll: dict[str, Any], reqs: list[Any]) -> dict[str, Any]:
+        paths: dict[str, dict[str, dict[str, Any]]] = {}
         for row in reqs:
             url = self._request_url(row) or "/"
             method = (row.get("method") or "get").lower() if isinstance(row, dict) else "get"
@@ -164,8 +172,8 @@ class ApiSpecExportService:
             "paths": paths,
         }
 
-    def _fallback_postman(self, coll: Dict[str, Any], reqs: List[Any]) -> Dict[str, Any]:
-        items: List[Dict[str, Any]] = []
+    def _fallback_postman(self, coll: dict[str, Any], reqs: list[Any]) -> dict[str, Any]:
+        items: list[dict[str, Any]] = []
         for row in reqs:
             if not isinstance(row, dict):
                 continue
@@ -189,11 +197,11 @@ class ApiSpecExportService:
 
     def _fallback_raw_variants(
         self,
-        coll: Dict[str, Any],
-        reqs: List[Any],
-        errors: List[str],
-    ) -> Dict[str, str]:
-        variants: Dict[str, str] = {}
+        coll: dict[str, Any],
+        reqs: list[Any],
+        errors: list[str],
+    ) -> dict[str, str]:
+        variants: dict[str, str] = {}
         try:
             variants["Raw Collection"] = json.dumps(coll, indent=2, ensure_ascii=False)
         except Exception:
@@ -212,5 +220,3 @@ class ApiSpecExportService:
         if errors:
             info = f"{info}\n\n" + "\n".join(errors)
         return {"Info": info}
-
-

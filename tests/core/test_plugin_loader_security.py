@@ -5,10 +5,10 @@ import json
 from pathlib import Path
 from typing import Any, Dict, Optional
 
+from equinox.core.request import Request
 from equinox.plugins.base import PluginContext
 from equinox.plugins.manager import PluginManager
 from equinox.plugins.security import SecurePluginContext
-from equinox.core.request import Request
 
 
 def _write_plugin(
@@ -159,7 +159,9 @@ class PluginClass(Plugin):
     assert manager.plugins == []
 
 
-def test_plugin_manager_strict_checksum_mode_requires_manifest_checksum(tmp_path: Path, monkeypatch) -> None:
+def test_plugin_manager_strict_checksum_mode_requires_manifest_checksum(
+    tmp_path: Path, monkeypatch
+) -> None:
     _write_plugin(
         tmp_path,
         "strict_plugin",
@@ -207,7 +209,9 @@ class PluginClass(Plugin):
     assert manager.plugins == []
 
 
-def test_plugin_manager_deny_by_default_allows_allowlisted_plugin(tmp_path: Path, monkeypatch) -> None:
+def test_plugin_manager_deny_by_default_allows_allowlisted_plugin(
+    tmp_path: Path, monkeypatch
+) -> None:
     plugin_dir = _write_plugin(
         tmp_path,
         "allowlisted_plugin",
@@ -267,7 +271,9 @@ class PluginClass(Plugin):
     assert manager.plugins == []
 
 
-def test_plugin_manager_allows_dangerous_permissions_with_explicit_opt_in(tmp_path: Path, monkeypatch) -> None:
+def test_plugin_manager_allows_dangerous_permissions_with_explicit_opt_in(
+    tmp_path: Path, monkeypatch
+) -> None:
     _write_plugin(
         tmp_path,
         "dangerous_permission_optin_plugin",
@@ -348,5 +354,3 @@ class PluginClass(Plugin):
 
     assert any(evt["event"] == "hook_error" for evt in events)
     assert any("on_request" in (evt.get("error") or "") for evt in events)
-
-

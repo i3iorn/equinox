@@ -1,15 +1,16 @@
 """100% coverage tests for equinox.core.client.auth_redirect"""
 
 import logging
-import pytest
+
 import httpx
+import pytest
 
 from equinox.core.client.auth_redirect import _RedirectSafeAuth
-
 
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
 
 def _make_httpx_request(method: str = "GET", url: str = "https://example.com") -> httpx.Request:
     return httpx.Request(method, url)
@@ -31,9 +32,13 @@ def _run_auth_flow(auth: _RedirectSafeAuth, request: httpx.Request) -> httpx.Req
 # __init__
 # ---------------------------------------------------------------------------
 
+
 class TestRedirectSafeAuthInit:
     def test_empty_dict_raises_value_error(self):
-        with pytest.raises(ValueError, match="auth_headers required for redirect-safe auth \(must contain at least one header\)"):
+        with pytest.raises(
+            ValueError,
+            match=r"auth_headers required for redirect-safe auth \(must contain at least one header\)",
+        ):
             _RedirectSafeAuth({})
 
     def test_none_equivalent_empty_raises(self):
@@ -61,6 +66,7 @@ class TestRedirectSafeAuthInit:
 # ---------------------------------------------------------------------------
 # auth_flow
 # ---------------------------------------------------------------------------
+
 
 class TestRedirectSafeAuthFlow:
     def test_single_header_injected(self):
@@ -123,6 +129,7 @@ class TestRedirectSafeAuthFlow:
 # __repr__
 # ---------------------------------------------------------------------------
 
+
 class TestRedirectSafeAuthRepr:
     def test_repr_contains_sorted_keys(self):
         auth = _RedirectSafeAuth({"Z-Header": "a", "A-Header": "b"})
@@ -140,4 +147,3 @@ class TestRedirectSafeAuthRepr:
     def test_repr_multiple_keys_sorted(self):
         auth = _RedirectSafeAuth({"X-Key": "x", "Authorization": "tok"})
         assert repr(auth) == "_RedirectSafeAuth(headers=['Authorization', 'X-Key'])"
-

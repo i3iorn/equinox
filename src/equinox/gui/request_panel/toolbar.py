@@ -5,30 +5,30 @@ Provides a consistent left-aligned label and standard control buttons
 file-browse button. Emits PyQt signals which the parent `RequestPanel`
 can connect to so table updates are handled centrally.
 """
-import re
-from typing import Optional, Sequence
 
+import re
+from collections.abc import Sequence
+
+from PyQt6.QtCore import pyqtSignal
 from PyQt6.QtWidgets import (
-    QWidget,
     QHBoxLayout,
     QLabel,
+    QMenu,
     QPushButton,
     QToolButton,
-    QMenu,
+    QWidget,
 )
-from PyQt6.QtCore import pyqtSignal
-
 
 # Button configuration: (text, width, tooltip)
 _BUTTON_CONFIG = {
     "add": ("+ Add", 64, None),
-    "remove": ("− Remove", 80, None),
+    "remove": ("- Remove", 80, None),
     "enable": ("Enable All", 80, "Enable all rows"),
     "disable": ("Disable All", 82, "Disable all rows"),
-    "file": ("Browse File…", 100, "Select a file to upload for the selected row"),
+    "file": ("Browse File...", 100, "Select a file to upload for the selected row"),
 }
 
-_PRESETS_BUTTON_TEXT = "Presets ▾"
+_PRESETS_BUTTON_TEXT = "Presets v"
 _PRESETS_BUTTON_TOOLTIP = "Insert a common header"
 _LAYOUT_MARGINS = (0, 2, 0, 0)
 _LAYOUT_SPACING = 2
@@ -46,10 +46,10 @@ class TabToolbar(QWidget):
 
     def __init__(
         self,
-        label: Optional[str] = None,
+        label: str | None = None,
         *,
-        presets: Optional[Sequence[Optional[tuple[str, str, str]]]] = None,
-        preset_context: Optional[str] = None,
+        presets: Sequence[tuple[str, str, str] | None] | None = None,
+        preset_context: str | None = None,
         include_file_btn: bool = False,
         parent=None,
     ) -> None:
@@ -85,9 +85,7 @@ class TabToolbar(QWidget):
             self._add_file_button(layout)
 
     @staticmethod
-    def _validate_presets(
-        presets: Sequence[Optional[tuple[str, str, str]]]
-    ) -> None:
+    def _validate_presets(presets: Sequence[tuple[str, str, str] | None] | None) -> None:
         """Validate preset structure for type safety.
 
         Args:
@@ -96,7 +94,7 @@ class TabToolbar(QWidget):
         Raises:
             ValueError: If any non-None preset doesn't have exactly 3 string elements.
         """
-        for i, preset in enumerate(presets):
+        for i, preset in enumerate(presets or []):
             if preset is None:
                 continue
             if (
@@ -144,9 +142,7 @@ class TabToolbar(QWidget):
         for key, signal in button_specs:
             self._add_button(layout, key, signal)
 
-    def _add_button(
-        self, layout: QHBoxLayout, key: str, signal: pyqtSignal
-    ) -> None:
+    def _add_button(self, layout: QHBoxLayout, key: str, signal: pyqtSignal) -> None:
         """Create and add a configured button to the layout.
 
         Args:
@@ -243,13 +239,15 @@ class TabToolbar(QWidget):
         for group_idx, group in enumerate(groups):
             ranked = []
             for original_idx, display, key, value in group:
-                ranked.append((
-                    -self._preset_usage_count(key, value),
-                    original_idx,
-                    display,
-                    key,
-                    value,
-                ))
+                ranked.append(
+                    (
+                        -self._preset_usage_count(key, value),
+                        original_idx,
+                        display,
+                        key,
+                        value,
+                    )
+                )
             ranked.sort(key=lambda item: (item[0], item[1]))
             for _, _, display, key, value in ranked:
                 menu.addAction(

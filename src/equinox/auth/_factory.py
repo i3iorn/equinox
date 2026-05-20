@@ -14,7 +14,7 @@ Display names and labels are derived from the classes themselves
 """
 
 import logging
-from typing import Any, Callable, Dict, Optional, Type
+from typing import Any, Callable, Type
 
 from equinox.core.exceptions import AuthError
 
@@ -25,28 +25,34 @@ logger = logging.getLogger(__name__)
 # Lazy-import helpers (avoid circular imports at module level)
 # ---------------------------------------------------------------------------
 
+
 def _get_bearer() -> Type:
     from equinox.auth._bearer import BearerAuth
+
     return BearerAuth
 
 
 def _get_basic() -> Type:
     from equinox.auth._basic import BasicAuth
+
     return BasicAuth
 
 
 def _get_api_key() -> Type:
     from equinox.auth._api_key import APIKeyAuth
+
     return APIKeyAuth
 
 
 def _get_oauth2() -> Type:
     from equinox.auth._oauth2 import OAuth2Auth
+
     return OAuth2Auth
 
 
 def _get_aws_sigv4() -> Type:
     from equinox.auth._aws_sigv4 import AWSSigV4Auth
+
     return AWSSigV4Auth
 
 
@@ -54,18 +60,18 @@ def _get_aws_sigv4() -> Type:
 # Unified registry: maps every known type identifier → lazy class loader
 # ---------------------------------------------------------------------------
 
-AUTH_REGISTRY: Dict[str, Callable[[], Type]] = {
+AUTH_REGISTRY: dict[str, Callable[[], Type]] = {
     # Short names used in to_dict()["type"]
-    "bearer":    _get_bearer,
-    "basic":     _get_basic,
-    "api_key":   _get_api_key,
-    "oauth2":    _get_oauth2,
+    "bearer": _get_bearer,
+    "basic": _get_basic,
+    "api_key": _get_api_key,
+    "oauth2": _get_oauth2,
     "aws_sigv4": _get_aws_sigv4,
     # Class names used in Request.to_dict()["auth_type"]
-    "BearerAuth":   _get_bearer,
-    "BasicAuth":    _get_basic,
-    "APIKeyAuth":   _get_api_key,
-    "OAuth2Auth":   _get_oauth2,
+    "BearerAuth": _get_bearer,
+    "BasicAuth": _get_basic,
+    "APIKeyAuth": _get_api_key,
+    "OAuth2Auth": _get_oauth2,
     "AWSSigV4Auth": _get_aws_sigv4,
 }
 
@@ -78,7 +84,8 @@ AUTH_TYPE_ORDER: tuple = ("basic", "bearer", "oauth2", "api_key", "aws_sigv4")
 # Public API
 # ---------------------------------------------------------------------------
 
-def auth_from_dict(*args, **kwargs) -> Optional[Any]:
+
+def auth_from_dict(*args, **kwargs) -> Any | None:
     """Return an auth object reconstructed from *auth_type* and *data*.
 
     Accepts both short type names (``"bearer"``) and class names
@@ -95,14 +102,15 @@ def auth_from_dict(*args, **kwargs) -> Optional[Any]:
             auth_type = arg["type"]
             data = arg
         else:
-            raise AuthError(f"Invalid arguments to auth_from_dict: expected (auth_type) or (data)\ngot {type(args)}")
+            raise AuthError(
+                f"Invalid arguments to auth_from_dict: expected (auth_type) or (data)\ngot {type(args)}"
+            )
     elif len(args) == 2:
         auth_type, data = args
         if not isinstance(auth_type, str) or not isinstance(data, dict):
             raise AuthError("Invalid arguments to auth_from_dict: expected (auth_type, data)")
     else:
         raise AuthError("Invalid arguments to auth_from_dict: expected (auth_type) or (data)")
-
 
     loader = AUTH_REGISTRY.get(auth_type)
     if loader is None:
@@ -116,7 +124,7 @@ def auth_from_dict(*args, **kwargs) -> Optional[Any]:
     return None
 
 
-def get_auth_class(auth_type: str) -> Optional[Type]:
+def get_auth_class(auth_type: str) -> Type | None:
     """Return the auth class for *auth_type*, or ``None`` if unknown."""
     loader = AUTH_REGISTRY.get(auth_type)
     if loader is None:
@@ -124,13 +132,13 @@ def get_auth_class(auth_type: str) -> Optional[Type]:
     return loader()
 
 
-def get_auth_type_labels() -> Dict[str, str]:
+def get_auth_type_labels() -> dict[str, str]:
     """Return ``{auth_type: display_name}`` for all registered types.
 
     Derived from each class's ``DISPLAY_NAME`` attribute — no separate
     constant to maintain.
     """
-    labels: Dict[str, str] = {}
+    labels: dict[str, str] = {}
     for short_name in AUTH_TYPE_ORDER:
         loader = AUTH_REGISTRY.get(short_name)
         if loader:
@@ -142,4 +150,3 @@ def get_auth_type_labels() -> Dict[str, str]:
 def get_auth_types() -> tuple:
     """Return the canonical tuple of auth-type short names."""
     return AUTH_TYPE_ORDER
-

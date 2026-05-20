@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from typing import Dict, Optional, Tuple
-
 from PyQt6.QtWidgets import QApplication
 
 from .detection import system_is_dark
@@ -17,10 +15,10 @@ from .palettes import (
 from .settings import get_font_size, get_theme_mode, get_ui_font
 from .stylesheet import build_stylesheet
 
-_ss_cache: Dict[Tuple[str, int], str] = {}
+_ss_cache: dict[tuple[str, int], str] = {}
 
 
-def apply_theme(app: Optional[QApplication] = None) -> None:
+def apply_theme(app: QApplication | None = None) -> None:
     """Re-apply the global stylesheet to the running QApplication."""
     qt_app = app if app is not None else QApplication.instance()
     if not isinstance(qt_app, QApplication):
@@ -46,5 +44,3 @@ def is_dark() -> bool:
     """Return True when current resolved theme is dark."""
     mode = get_theme_mode()
     return is_dark_mode(mode, system_is_dark())
-
-

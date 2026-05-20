@@ -1,4 +1,3 @@
-
 """Request builder panel.
 
 Logging strategy:
@@ -10,49 +9,44 @@ Logging strategy:
 import json
 import logging
 import time
-from typing import Any, Optional, Dict, NamedTuple, Tuple
+from typing import Any, NamedTuple
 
+from PyQt6.QtCore import QStringListModel, Qt, QTimer, pyqtSignal
+from PyQt6.QtGui import QAction
 from PyQt6.QtWidgets import (
-    QWidget,
-    QVBoxLayout,
-    QHBoxLayout,
-    QComboBox,
-    QLineEdit,
-    QPushButton,
-    QTabWidget,
-    QPlainTextEdit,
-    QTableWidget,
-    QHeaderView,
-    QLabel,
-    QGroupBox,
-    QCompleter,
-    QSplitter,
     QCheckBox,
+    QComboBox,
+    QCompleter,
     QDoubleSpinBox,
     QFormLayout,
+    QGroupBox,
+    QHBoxLayout,
+    QHeaderView,
+    QLabel,
+    QLineEdit,
     QMenu,
+    QPlainTextEdit,
+    QPushButton,
+    QSplitter,
+    QTableWidget,
+    QTabWidget,
     QToolButton,
+    QVBoxLayout,
+    QWidget,
 )
-from PyQt6.QtCore import pyqtSignal, Qt, QTimer, QStringListModel
-from PyQt6.QtGui import QAction
 
-from equinox.gui.request_panel.body_text_proxy import BodyTextProxy
 from equinox.application.requests import (
     RequestEditorSnapshot,
     RequestHistoryService,
     RequestPersistenceFacade,
 )
-from equinox.gui.theme import get_mono_font
-from equinox.gui.widgets import UrlLineEdit, CheckableKeyValueTable, JsonBodyEditor, PathParamsTable
-from equinox.core.request import Request
-from equinox.core.format.error_enrichment import RichError, enrich_exception  # noqa: F401 (used in mixin layer)
-from equinox.storage import Database
-from equinox.gui.workers import RequestWorker, DEFAULT_TIMEOUT  # noqa: F401 (RequestWorker used as type annotation)
-from equinox.core.http.cookies import CookieManager
-from equinox.gui.request_panel.mixins import (  # noqa: F401
-    _RequestSendMixin,
-    _RequestAuthMixin,
+from equinox.core.format.error_enrichment import (  # noqa: F401 (used in mixin layer)
+    RichError,
+    enrich_exception,
 )
+from equinox.core.http.cookies import CookieManager
+from equinox.core.request import Request
+from equinox.core.validation import Validator
 from equinox.gui.request_panel._constants import (
     BROWSE_BTN_WIDTH,
     CANCEL_BTN_WIDTH,
@@ -62,15 +56,27 @@ from equinox.gui.request_panel._constants import (
     METHOD_COMBO_WIDTH,
     SEND_BTN_WIDTH,
 )
-from equinox.gui.request_panel.body_mixin import RequestBodyMixin  # noqa: F401
-from equinox.gui.request_panel.commands_mixin import RequestCommandsMixin
-from equinox.gui.request_panel.save_flow_mixin import RequestSaveFlowMixin
-from equinox.gui.request_panel.validation_mixin import _RequestValidationMixin  # noqa: F401
-from equinox.core.validation import Validator
-from equinox.gui.request_panel.save_dialog import SaveRequestDialog  # noqa: F401
-from equinox.gui.request_panel.toolbar import TabToolbar
-from equinox.gui.syntax_highlighter.python_highlighter import PythonHighlighter
 from equinox.gui.request_panel.autosave_mixin import RequestAutosaveMixin
+from equinox.gui.request_panel.body_mixin import RequestBodyMixin  # noqa: F401
+from equinox.gui.request_panel.body_text_proxy import BodyTextProxy
+from equinox.gui.request_panel.commands_mixin import RequestCommandsMixin
+from equinox.gui.request_panel.mixins import (  # noqa: F401
+    _RequestAuthMixin,
+    _RequestSendMixin,
+)
+from equinox.gui.request_panel.save_dialog import SaveRequestDialog  # noqa: F401
+from equinox.gui.request_panel.save_flow_mixin import RequestSaveFlowMixin
+from equinox.gui.request_panel.toolbar import TabToolbar
+from equinox.gui.request_panel.validation_mixin import _RequestValidationMixin  # noqa: F401
+from equinox.gui.syntax_highlighter.python_highlighter import PythonHighlighter
+from equinox.gui.theme import get_mono_font
+from equinox.gui.widgets import CheckableKeyValueTable, JsonBodyEditor, PathParamsTable, UrlLineEdit
+from equinox.gui.workers import (  # noqa: F401 (RequestWorker used as type annotation)
+    DEFAULT_TIMEOUT,
+    RequestWorker,
+)
+from equinox.storage import Database
+
 from ..ui_common import configure_tab_persistence, get_gui_settings
 
 logger = logging.getLogger(__name__)
@@ -85,33 +91,36 @@ __all__ = ["RequestPanel"]
 
 # Common header presets for the Headers tab toolbar
 _HEADER_PRESETS = [
-    ("Content-Type: application/json",        "Content-Type", "application/json"),
-    ("Content-Type: application/xml",         "Content-Type", "application/xml"),
-    ("Content-Type: application/x-www-form-urlencoded",
-     "Content-Type", "application/x-www-form-urlencoded"),
-    ("Content-Type: multipart/form-data",     "Content-Type", "multipart/form-data"),
-    ("Content-Type: text/plain",              "Content-Type", "text/plain"),
+    ("Content-Type: application/json", "Content-Type", "application/json"),
+    ("Content-Type: application/xml", "Content-Type", "application/xml"),
+    (
+        "Content-Type: application/x-www-form-urlencoded",
+        "Content-Type",
+        "application/x-www-form-urlencoded",
+    ),
+    ("Content-Type: multipart/form-data", "Content-Type", "multipart/form-data"),
+    ("Content-Type: text/plain", "Content-Type", "text/plain"),
     None,
-    ("Accept: application/json",              "Accept", "application/json"),
-    ("Accept: application/xml",               "Accept", "application/xml"),
-    ("Accept: */*",                           "Accept", "*/*"),
+    ("Accept: application/json", "Accept", "application/json"),
+    ("Accept: application/xml", "Accept", "application/xml"),
+    ("Accept: */*", "Accept", "*/*"),
     None,
-    ("Authorization: Bearer …",               "Authorization", "Bearer "),
-    ("X-API-Key: …",                          "X-API-Key", ""),
+    ("Authorization: Bearer …", "Authorization", "Bearer "),
+    ("X-API-Key: …", "X-API-Key", ""),
     None,
-    ("Cache-Control: no-cache",               "Cache-Control", "no-cache"),
-    ("User-Agent: Equinox/1.0",               "User-Agent", "Equinox/1.0"),
+    ("Cache-Control: no-cache", "Cache-Control", "no-cache"),
+    ("User-Agent: Equinox/1.0", "User-Agent", "Equinox/1.0"),
 ]
 
 # HTML cheat-sheet shown in the collapsible Scripts tab section
 _SCRIPTS_CHEAT_TEXT = (
-    "<h3>Pre/Post Scripts</h3>"
-    "<p>Use Python helpers to mutate the request/response context.</p>"
+    "<h3>Pre/Post Scripts</h3>" "<p>Use Python helpers to mutate the request/response context.</p>"
 )
 
 
 class _KvTabResult(NamedTuple):
     """Return type for ``_build_kv_tab`` — avoids anonymous 4-tuples."""
+
     widget: QWidget
     layout: QVBoxLayout
     toolbar: TabToolbar
@@ -121,6 +130,7 @@ class _KvTabResult(NamedTuple):
 # ─────────────────────────────────────────────────────────────────────────────
 # Request panel
 # ─────────────────────────────────────────────────────────────────────────────
+
 
 class RequestPanel(
     RequestAutosaveMixin,
@@ -135,7 +145,7 @@ class RequestPanel(
     """Panel for building and sending HTTP requests."""
 
     response_received = pyqtSignal(object)
-    request_sent      = pyqtSignal(object)
+    request_sent = pyqtSignal(object)
     session_vars_changed = pyqtSignal(dict)
 
     # ── Accessor helpers ───────────────────────────────────────────────
@@ -154,27 +164,25 @@ class RequestPanel(
         self,
         db: Database,
         parent=None,
-        cookie_manager: Optional[CookieManager] = None,
-        request_persistence: Optional[RequestPersistenceFacade] = None,
-        request_history: Optional[RequestHistoryService] = None,
+        cookie_manager: CookieManager | None = None,
+        request_persistence: RequestPersistenceFacade | None = None,
+        request_history: RequestHistoryService | None = None,
     ):
         super().__init__(parent)
         logger.debug("RequestPanel.__init__ starting")
         self.db = db
-        self._cookie_manager: Optional[CookieManager] = cookie_manager
+        self._cookie_manager: CookieManager | None = cookie_manager
 
         self._request_persistence: RequestPersistenceFacade = (
             request_persistence or RequestPersistenceFacade(db)
         )
-        self._request_history: RequestHistoryService = (
-            request_history or RequestHistoryService(db)
-        )
-        self.current_request: Optional[Request] = None
+        self._request_history: RequestHistoryService = request_history or RequestHistoryService(db)
+        self.current_request: Request | None = None
         self._auth = None
         self._inherited_auth = None
         self._inherited_auth_source = None
-        self._session_vars: Dict[str, str] = {}
-        self._worker: Optional[RequestWorker] = None
+        self._session_vars: dict[str, str] = {}
+        self._worker: RequestWorker | None = None
         self._elapsed_timer = QTimer(self)
         self._elapsed_timer.setInterval(100)
         self._elapsed_timer.timeout.connect(self._tick_elapsed)
@@ -193,13 +201,13 @@ class RequestPanel(
 
     # Dirty-state and autosave behavior moved to RequestAutosaveMixin.
 
-
     # ── Session variable accessors ─────────────────────────────────────
 
-    def get_session_vars(self) -> Dict[str, str]:
+    def get_session_vars(self) -> dict[str, str]:
         """Return a copy of the current session variables."""
         return dict(self._session_vars)
-    def get_interpolation_context(self) -> Dict[str, str]:
+
+    def get_interpolation_context(self) -> dict[str, str]:
         """Return the current interpolation snapshot for helper panels."""
         context = self.get_session_vars()
         try:
@@ -223,7 +231,6 @@ class RequestPanel(
         self.session_vars_changed.emit(dict(self._session_vars))
         return True
 
-
     def clear_session_vars(self) -> None:
         """Clear all session variables and notify listeners."""
         self._session_vars.clear()
@@ -233,7 +240,7 @@ class RequestPanel(
         """Capture the current request-editor widget state as plain data."""
         request = self.current_request
 
-        def _serialize_auth(value: Any) -> tuple[Optional[str], Dict[str, Any]]:
+        def _serialize_auth(value: Any) -> tuple[str | None, dict[str, Any]]:
             if value is None:
                 return None, {}
             auth_type = type(value).__name__
@@ -331,13 +338,12 @@ class RequestPanel(
             except (AttributeError, RuntimeError) as exc:
                 logger.debug(
                     "Signal retrieval skipped (C++ object missing): %s — %s",
-                    name, type(exc).__name__,
+                    name,
+                    type(exc).__name__,
                 )
                 return
             except Exception:
-                logger.warning(
-                    "Unexpected error retrieving signal: %s", name, exc_info=True
-                )
+                logger.warning("Unexpected error retrieving signal: %s", name, exc_info=True)
                 return
             try:
                 sig.connect(slot)
@@ -346,26 +352,92 @@ class RequestPanel(
                 logger.debug("Failed to connect signal after retrieval: %s", name)
 
         safe_connect(lambda: self.url_input.textChanged, self._mark_dirty, "url_input.textChanged")
-        safe_connect(lambda: self.method_combo.currentIndexChanged, self._mark_dirty, "method_combo.currentIndexChanged")
+        safe_connect(
+            lambda: self.method_combo.currentIndexChanged,
+            self._mark_dirty,
+            "method_combo.currentIndexChanged",
+        )
         safe_connect(lambda: self.body_text.textChanged, self._mark_dirty, "body_text.textChanged")
-        safe_connect(lambda: self.body_text.textChanged, self._update_tab_labels, "body_text.textChanged->update_tab_labels")
-        safe_connect(lambda: self.body_type_combo.currentIndexChanged, self._mark_dirty, "body_type_combo.currentIndexChanged")
-        safe_connect(lambda: self.headers_table.itemChanged, self._mark_dirty, "headers_table.itemChanged")
-        safe_connect(lambda: self.headers_table.itemChanged, self._update_tab_labels, "headers_table.itemChanged->update_tab_labels")
-        safe_connect(lambda: self.params_table.itemChanged, self._mark_dirty, "params_table.itemChanged")
-        safe_connect(lambda: self.params_table.itemChanged, self._update_tab_labels, "params_table.itemChanged->update_tab_labels")
-        safe_connect(lambda: self.params_table.itemChanged, self._update_url_suffix, "params_table.itemChanged->update_url_suffix")
-        safe_connect(lambda: self.url_input.textChanged, self._update_url_suffix, "url_input.textChanged->update_url_suffix")
-        safe_connect(lambda: self.path_params_table.paramsChanged, self._mark_dirty, "path_params_table.paramsChanged")
-        safe_connect(lambda: self._multipart_table.itemChanged, self._mark_dirty, "_multipart_table.itemChanged")
-        safe_connect(lambda: self._multipart_table.itemChanged, self._update_tab_labels, "_multipart_table.itemChanged->update_tab_labels")
-        safe_connect(lambda: self.timeout_spin.valueChanged, self._mark_dirty, "timeout_spin.valueChanged")
-        safe_connect(lambda: self.verify_ssl_check.stateChanged, self._mark_dirty, "verify_ssl_check.stateChanged")
-        safe_connect(lambda: self.verify_ssl_check.stateChanged, lambda: self._update_auth_display(self._auth), "verify_ssl_check.stateChanged->auth_display")
-        safe_connect(lambda: self.follow_redirects_check.stateChanged, self._mark_dirty, "follow_redirects_check.stateChanged")
-        safe_connect(lambda: self.url_input.textChanged, lambda: self._update_auth_display(self._auth), "url_input.textChanged->auth_display")
-        safe_connect(lambda: self.notes_editor.textChanged, self._mark_dirty, "notes_editor.textChanged")
-        safe_connect(lambda: self._gql_query.textChanged, self._mark_dirty, "_gql_query.textChanged")
+        safe_connect(
+            lambda: self.body_text.textChanged,
+            self._update_tab_labels,
+            "body_text.textChanged->update_tab_labels",
+        )
+        safe_connect(
+            lambda: self.body_type_combo.currentIndexChanged,
+            self._mark_dirty,
+            "body_type_combo.currentIndexChanged",
+        )
+        safe_connect(
+            lambda: self.headers_table.itemChanged, self._mark_dirty, "headers_table.itemChanged"
+        )
+        safe_connect(
+            lambda: self.headers_table.itemChanged,
+            self._update_tab_labels,
+            "headers_table.itemChanged->update_tab_labels",
+        )
+        safe_connect(
+            lambda: self.params_table.itemChanged, self._mark_dirty, "params_table.itemChanged"
+        )
+        safe_connect(
+            lambda: self.params_table.itemChanged,
+            self._update_tab_labels,
+            "params_table.itemChanged->update_tab_labels",
+        )
+        safe_connect(
+            lambda: self.params_table.itemChanged,
+            self._update_url_suffix,
+            "params_table.itemChanged->update_url_suffix",
+        )
+        safe_connect(
+            lambda: self.url_input.textChanged,
+            self._update_url_suffix,
+            "url_input.textChanged->update_url_suffix",
+        )
+        safe_connect(
+            lambda: self.path_params_table.paramsChanged,
+            self._mark_dirty,
+            "path_params_table.paramsChanged",
+        )
+        safe_connect(
+            lambda: self._multipart_table.itemChanged,
+            self._mark_dirty,
+            "_multipart_table.itemChanged",
+        )
+        safe_connect(
+            lambda: self._multipart_table.itemChanged,
+            self._update_tab_labels,
+            "_multipart_table.itemChanged->update_tab_labels",
+        )
+        safe_connect(
+            lambda: self.timeout_spin.valueChanged, self._mark_dirty, "timeout_spin.valueChanged"
+        )
+        safe_connect(
+            lambda: self.verify_ssl_check.stateChanged,
+            self._mark_dirty,
+            "verify_ssl_check.stateChanged",
+        )
+        safe_connect(
+            lambda: self.verify_ssl_check.stateChanged,
+            lambda: self._update_auth_display(self._auth),
+            "verify_ssl_check.stateChanged->auth_display",
+        )
+        safe_connect(
+            lambda: self.follow_redirects_check.stateChanged,
+            self._mark_dirty,
+            "follow_redirects_check.stateChanged",
+        )
+        safe_connect(
+            lambda: self.url_input.textChanged,
+            lambda: self._update_auth_display(self._auth),
+            "url_input.textChanged->auth_display",
+        )
+        safe_connect(
+            lambda: self.notes_editor.textChanged, self._mark_dirty, "notes_editor.textChanged"
+        )
+        safe_connect(
+            lambda: self._gql_query.textChanged, self._mark_dirty, "_gql_query.textChanged"
+        )
         safe_connect(lambda: self._gql_vars.textChanged, self._mark_dirty, "_gql_vars.textChanged")
         logger.debug("Dirty tracking: %d signal(s) connected", _connected)
 
@@ -413,7 +485,6 @@ class RequestPanel(
             self._known_urls.discard(dropped)
         self._url_model.setStringList(self._url_values)
 
-
     # ── UI construction ───────────────────────────────────────────────
 
     def _init_ui(self) -> None:
@@ -441,8 +512,8 @@ class RequestPanel(
         self.tabs.addTab(self._build_headers_tab(), "Headers")
         self.tabs.addTab(self._build_params_tab(), "Params")
         self.tabs.addTab(self._build_body_tab(), "Body")
-        self.tabs.addTab(self._create_auth_tab(), "Auth")           # defined in _RequestAuthMixin
-        self.tabs.addTab(self._create_captures_tab(), "Captures")   # defined in RequestBodyMixin
+        self.tabs.addTab(self._create_auth_tab(), "Auth")  # defined in _RequestAuthMixin
+        self.tabs.addTab(self._create_captures_tab(), "Captures")  # defined in RequestBodyMixin
         self.tabs.addTab(self._create_assertions_tab(), "Assertions")  # defined in RequestBodyMixin
         self.tabs.addTab(self._create_scripts_tab(), "Scripts")
         self.tabs.addTab(self._create_settings_tab(), "Settings")
@@ -531,7 +602,7 @@ class RequestPanel(
         self._url_hint_label.setText(msg)
         self._url_hint_label.setObjectName("field-error" if is_error else "mutedLabel")
 
-    def _set_url_fix_suggestion(self, suggestion: Optional[str], reason: str = "") -> None:
+    def _set_url_fix_suggestion(self, suggestion: str | None, reason: str = "") -> None:
         """Expose a one-click URL fix when validation can safely auto-correct."""
         self._url_fix_suggestion = suggestion
         can_fix = bool(suggestion)
@@ -716,9 +787,7 @@ class RequestPanel(
         return _KvTabResult(w, layout, toolbar, table)
 
     def _build_headers_tab(self) -> QWidget:
-        result = self._build_kv_tab(
-            "Headers", presets=_HEADER_PRESETS, enable_key_completer=True
-        )
+        result = self._build_kv_tab("Headers", presets=_HEADER_PRESETS, enable_key_completer=True)
         self.headers_table = result.table
         self._headers_toolbar = result.toolbar
         result.toolbar.preset_selected.connect(self._insert_header_preset)
@@ -758,8 +827,15 @@ class RequestPanel(
         type_bar = QHBoxLayout()
         self.body_type_combo = QComboBox()
         self.body_type_combo.addItems(
-            ["none", "raw (JSON)", "raw (XML)", "raw (text)",
-             "form-urlencoded", "multipart/form-data", "GraphQL"]
+            [
+                "none",
+                "raw (JSON)",
+                "raw (XML)",
+                "raw (text)",
+                "form-urlencoded",
+                "multipart/form-data",
+                "GraphQL",
+            ]
         )
         # _on_body_type_changed is defined in RequestBodyMixin
         self.body_type_combo.currentIndexChanged.connect(self._on_body_type_changed)
@@ -876,7 +952,6 @@ class RequestPanel(
         gql_splitter.setSizes([200, 120])
         gql_layout.addWidget(gql_splitter, 1)
 
-
     def _build_notes_tab(self) -> QWidget:
         """Notes tab: free-form description for the request."""
         w = QWidget()
@@ -890,7 +965,9 @@ class RequestPanel(
         layout.addWidget(self.notes_editor, 1)
         return w
 
-    def _build_script_section(self, title: str, placeholder: str) -> Tuple[QGroupBox, QPlainTextEdit, QLabel]:
+    def _build_script_section(
+        self, title: str, placeholder: str
+    ) -> tuple[QGroupBox, QPlainTextEdit, QLabel]:
         """Build a labelled script-editor group box.
 
         Returns ``(group, editor, result_label)`` so the caller can assign
@@ -916,23 +993,19 @@ class RequestPanel(
 
         splitter = QSplitter(Qt.Orientation.Vertical)
 
-        pre_group, self.pre_script_editor, self.pre_script_result = (
-            self._build_script_section(
-                "Pre-request Script",
-                "# Runs before the request is sent\n"
-                "# Available: request (dict), env (dict)\n"
-                "# Example: env['timestamp'] = str(int(__import__('time').time()))",
-            )
+        pre_group, self.pre_script_editor, self.pre_script_result = self._build_script_section(
+            "Pre-request Script",
+            "# Runs before the request is sent\n"
+            "# Available: request (dict), env (dict)\n"
+            "# Example: env['timestamp'] = str(int(__import__('time').time()))",
         )
         splitter.addWidget(pre_group)
 
-        post_group, self.post_script_editor, self.post_script_result = (
-            self._build_script_section(
-                "Post-response Script",
-                "# Runs after response is received\n"
-                "# Available: response (dict with status_code, headers, body, json), env (dict)\n"
-                "# Example: env['user_id'] = str(response['json']['id'])",
-            )
+        post_group, self.post_script_editor, self.post_script_result = self._build_script_section(
+            "Post-response Script",
+            "# Runs after response is received\n"
+            "# Available: response (dict with status_code, headers, body, json), env (dict)\n"
+            "# Example: env['user_id'] = str(response['json']['id'])",
         )
         splitter.addWidget(post_group)
 
@@ -962,8 +1035,11 @@ class RequestPanel(
         cheat_toggle.toggled.connect(
             lambda checked: (
                 cheat_label.setVisible(checked),
-                cheat_toggle.setText("▼ Available variables & modules" if checked
-                                     else "▶ Available variables & modules"),
+                cheat_toggle.setText(
+                    "▼ Available variables & modules"
+                    if checked
+                    else "▶ Available variables & modules"
+                ),
             )
         )
 
@@ -997,11 +1073,13 @@ class RequestPanel(
         settings_form.addRow("", self.follow_redirects_check)
 
         self.policy_profile_combo = QComboBox()
-        self.policy_profile_combo.addItems([
-            _POLICY_STRICT,
-            _POLICY_BALANCED,
-            _POLICY_PERMISSIVE,
-        ])
+        self.policy_profile_combo.addItems(
+            [
+                _POLICY_STRICT,
+                _POLICY_BALANCED,
+                _POLICY_PERMISSIVE,
+            ]
+        )
         idx = self.policy_profile_combo.findText(self._policy_profile)
         if idx >= 0:
             self.policy_profile_combo.setCurrentIndex(idx)
@@ -1077,7 +1155,6 @@ class RequestPanel(
         """Return currently selected request-policy profile."""
         return str(getattr(self, "_policy_profile", _POLICY_BALANCED))
 
-
     # ── URL ghost-params preview ──────────────────────────────────────
 
     def _update_url_suffix(self, *_) -> None:
@@ -1123,5 +1200,7 @@ class RequestPanel(
                 elapsed_ms,
             )
         except json.JSONDecodeError as exc:
-            logger.warning("JSON formatting failed: %s (line %d, col %d)", exc.msg, exc.lineno, exc.colno)
+            logger.warning(
+                "JSON formatting failed: %s (line %d, col %d)", exc.msg, exc.lineno, exc.colno
+            )
             self._status_message(f"Invalid JSON: {exc}")

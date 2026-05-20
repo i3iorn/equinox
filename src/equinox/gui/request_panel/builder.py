@@ -14,14 +14,16 @@ from __future__ import annotations
 
 import json as _json
 import logging
-from typing import Any, Callable, Dict, List, Optional, Tuple
+from typing import Any, Callable
 
 from equinox.auth import AuthStrategy
 
 logger = logging.getLogger(__name__)
 
 __all__ = [
-    "assemble_body", "inject_content_type", "detect_body_type",
+    "assemble_body",
+    "inject_content_type",
+    "detect_body_type",
     "interpolate_auth",
 ]
 
@@ -32,20 +34,20 @@ __all__ = [
 # Canonical mapping: GUI body-type labels → MIME Content-Type values
 # Used by inject_content_type() and detect_body_type()
 # Multipart intentionally absent — httpx sets boundary automatically
-_CONTENT_TYPE_MAP: Dict[str, str] = {
-    "raw (JSON)":       "application/json",
-    "raw (XML)":        "application/xml",
-    "form-urlencoded":  "application/x-www-form-urlencoded",
-    "GraphQL":          "application/json",
+_CONTENT_TYPE_MAP: dict[str, str] = {
+    "raw (JSON)": "application/json",
+    "raw (XML)": "application/xml",
+    "form-urlencoded": "application/x-www-form-urlencoded",
+    "GraphQL": "application/json",
 }
 
 # Reverse mapping for detection: MIME-type substring → GUI label
 # Checked in order; first match wins
-_CT_DETECT_ORDER: Tuple[Tuple[str, str], ...] = (
-    ("json",       "raw (JSON)"),
-    ("xml",        "raw (XML)"),
+_CT_DETECT_ORDER: tuple[tuple[str, str], ...] = (
+    ("json", "raw (JSON)"),
+    ("xml", "raw (XML)"),
     ("urlencoded", "form-urlencoded"),
-    ("text",       "raw (text)"),
+    ("text", "raw (text)"),
 )
 
 # Security: Maximum size for body/JSON parsing (prevent DoS)
@@ -63,8 +65,8 @@ def assemble_body(
     body_text: str,
     gql_query: str,
     gql_vars: str,
-    multipart_rows: List[Dict[str, str]],
-) -> Tuple[Optional[str], Optional[List[Any]]]:
+    multipart_rows: list[dict[str, str]],
+) -> tuple[str | None, list[Any]] | None:
     """Assemble request body from editor state.
 
     Combines body text, GraphQL query/variables, or multipart form data
@@ -78,7 +80,7 @@ def assemble_body(
         multipart_rows: List of multipart form rows as dicts with "key", "type", "value"
 
     Returns:
-        Tuple of (body: Optional[str], multipart_data: Optional[List])
+        tuple of (body: str | None, multipart_data: List | None)
         - For regular bodies: (body_text, None)
         - For multipart: (None, multipart_data)
         - For GraphQL: (json_dict_str, None)
@@ -89,10 +91,7 @@ def assemble_body(
     """
     if body_type == "multipart/form-data":
         # Filter to non-empty rows only
-        multipart_data = [
-            r for r in multipart_rows
-            if r.get("key", "").strip()
-        ]
+        multipart_data = [r for r in multipart_rows if r.get("key", "").strip()]
         return None, multipart_data
 
     if body_type == "GraphQL":
@@ -128,7 +127,7 @@ def _assemble_graphql_body(query: str, variables_json: str) -> str:
     Returns:
         JSON string with query and variables
     """
-    gql_body: Dict[str, Any] = {"query": query}
+    gql_body: dict[str, Any] = {"query": query}
 
     if variables_json and variables_json.strip():
         try:
@@ -144,10 +143,10 @@ def _assemble_graphql_body(query: str, variables_json: str) -> str:
 
 
 def inject_content_type(
-    body: Optional[str],
+    body: str | None,
     body_type: str,
-    headers: Dict[str, str],
-) -> Dict[str, str]:
+    headers: dict[str, str],
+) -> dict[str, str]:
     """Add Content-Type header when appropriate.
 
     Adds a Content-Type header for the detected body type if:
@@ -180,7 +179,7 @@ def inject_content_type(
     return {**headers, "Content-Type": ct}
 
 
-def detect_body_type(body: str, headers: Optional[Dict[str, str]] = None) -> str:
+def detect_body_type(body: str, headers: dict[str, str] | None = None) -> str:
     """Detect body type from content or Content-Type header.
 
     Heuristic detection that checks:
@@ -282,10 +281,11 @@ def _is_form_urlencoded(text: str) -> bool:
 
 # ── Auth interpolation ───────────────────────────────────────────────────────
 
+
 def interpolate_auth(
-    auth: Optional[AuthStrategy],
+    auth: AuthStrategy | None,
     interp: Callable[[str], str],
-) -> Optional[AuthStrategy]:
+) -> AuthStrategy | None:
     """Interpolate {{VAR}} placeholders in auth strategy fields.
 
     Delegates to ``auth.interpolate(interp)`` — each strategy class owns
@@ -313,6 +313,3 @@ def interpolate_auth(
             exc_info=True,
         )
         return auth
-
-
-

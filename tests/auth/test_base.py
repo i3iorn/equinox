@@ -1,17 +1,15 @@
 """100% coverage tests for equinox.auth.base"""
 
-import pytest
 from typing import Any, Dict
 
-from equinox.auth._base import (
-    AuthStrategy, _MAX_CREDENTIAL_LENGTH, _validate_credential,
-    AuthError
-)
+import pytest
 
+from equinox.auth._base import _MAX_CREDENTIAL_LENGTH, AuthError, AuthStrategy, _validate_credential
 
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
 
 class ConcreteAuth(AuthStrategy):
     """Minimal concrete implementation used by tests."""
@@ -37,6 +35,7 @@ class ConcreteAuth(AuthStrategy):
 # _validate_credential — happy path
 # ---------------------------------------------------------------------------
 
+
 class TestValidateCredentialValid:
     def test_returns_value_unchanged(self):
         result = _validate_credential("mysecret", "token")
@@ -58,16 +57,20 @@ class TestValidateCredentialValid:
 # _validate_credential — non-string / empty
 # ---------------------------------------------------------------------------
 
+
 class TestValidateCredentialNotStringOrEmpty:
-    @pytest.mark.parametrize("bad_value", [
-        None,
-        42,
-        3.14,
-        [],
-        {},
-        b"bytes",
-        True,
-    ])
+    @pytest.mark.parametrize(
+        "bad_value",
+        [
+            None,
+            42,
+            3.14,
+            [],
+            {},
+            b"bytes",
+            True,
+        ],
+    )
     def test_non_string_raises(self, bad_value):
         with pytest.raises(AuthError, match="must be a non-empty string"):
             _validate_credential(bad_value, "field")  # type: ignore[arg-type]
@@ -85,6 +88,7 @@ class TestValidateCredentialNotStringOrEmpty:
 # ---------------------------------------------------------------------------
 # _validate_credential — length
 # ---------------------------------------------------------------------------
+
 
 class TestValidateCredentialLength:
     def test_one_over_max_raises(self):
@@ -108,6 +112,7 @@ class TestValidateCredentialLength:
 # ---------------------------------------------------------------------------
 # _validate_credential — CRLF injection
 # ---------------------------------------------------------------------------
+
 
 class TestValidateCredentialCRLF:
     def test_carriage_return_raises(self):
@@ -143,6 +148,7 @@ class TestValidateCredentialCRLF:
 # ---------------------------------------------------------------------------
 # AuthStrategy ABC
 # ---------------------------------------------------------------------------
+
 
 class TestAuthStrategyABC:
     def test_cannot_instantiate_abstract_class(self):
@@ -198,6 +204,7 @@ class TestAuthStrategyABC:
 # ConcreteAuth — verifying the interface contract
 # ---------------------------------------------------------------------------
 
+
 class TestConcreteAuth:
     def test_instantiation(self):
         auth = ConcreteAuth("mytoken")
@@ -223,4 +230,3 @@ class TestConcreteAuth:
         auth = ConcreteAuth.from_dict({"token": "x"})
         assert isinstance(auth, ConcreteAuth)
         assert isinstance(auth, AuthStrategy)
-

@@ -74,4 +74,3 @@ def test_folder_auth_is_used_for_effective_auth_resolution(tmp_path) -> None:
     assert isinstance(effective_auth, BearerAuth)
     assert effective_auth.token == "folder-token"
     assert source == "folder:team"
-

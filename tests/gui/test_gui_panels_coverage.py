@@ -1,9 +1,10 @@
 """Coverage-boosting tests for GUI panels."""
 
-import pytest
 from unittest.mock import MagicMock
-from PyQt6.QtWidgets import QApplication, QLabel
+
+import pytest
 from PyQt6.QtCore import QCoreApplication
+from PyQt6.QtWidgets import QApplication, QLabel
 
 _APP = QApplication.instance() or QApplication([])
 
@@ -16,6 +17,7 @@ def _process():
 def db(tmp_path, monkeypatch):
     monkeypatch.setenv("EQUINOX_DB_PATH", str(tmp_path / "test.db"))
     from equinox.storage import get_db
+
     return get_db()
 
 
@@ -23,9 +25,11 @@ def db(tmp_path, monkeypatch):
 # LoggingPanel
 # ─────────────────────────────────────────────────────────────────────────────
 
+
 class TestLoggingPanel:
     def _make_panel(self):
         from equinox.gui.logging_panel import LoggingPanel
+
         return LoggingPanel()
 
     def test_instantiate(self):
@@ -168,6 +172,7 @@ class TestLoggingPanel:
 
     def test_max_log_entries_eviction(self):
         from equinox.gui.logging_panel import MAX_LOG_ENTRIES
+
         p = self._make_panel()
         req = MagicMock()
         req.method = "GET"
@@ -186,27 +191,32 @@ class TestLoggingPanel:
 # IntelligencePanel
 # ─────────────────────────────────────────────────────────────────────────────
 
+
 class TestIntelligencePanel:
     def test_instantiate(self):
         from equinox.gui.response_panel.intelligence_panel import IntelligencePanel
+
         p = IntelligencePanel()
         assert p is not None
 
     def test_set_analyzing(self):
         from equinox.gui.response_panel.intelligence_panel import IntelligencePanel
+
         p = IntelligencePanel()
         p.set_analyzing()
         _process()
 
     def test_display_findings_empty(self):
         from equinox.gui.response_panel.intelligence_panel import IntelligencePanel
+
         p = IntelligencePanel()
         p.display_findings([])
         _process()
 
     def test_display_findings_with_findings(self):
+        from equinox.core.response_intelligence.models import Category, Finding, Severity
         from equinox.gui.response_panel.intelligence_panel import IntelligencePanel
-        from equinox.core.response_intelligence.models import Finding, Severity, Category
+
         p = IntelligencePanel()
         findings = [
             Finding(
@@ -236,8 +246,9 @@ class TestIntelligencePanel:
         _process()
 
     def test_finding_card_toggle(self):
+        from equinox.core.response_intelligence.models import Category, Finding, Severity
         from equinox.gui.response_panel.intelligence_panel import _FindingCard
-        from equinox.core.response_intelligence.models import Finding, Severity, Category
+
         finding = Finding(
             category=Category.SECURITY,
             severity=Severity.INFO,
@@ -256,8 +267,9 @@ class TestIntelligencePanel:
         assert card._expanded is False
 
     def test_finding_card_no_details(self):
+        from equinox.core.response_intelligence.models import Category, Finding, Severity
         from equinox.gui.response_panel.intelligence_panel import _FindingCard
-        from equinox.core.response_intelligence.models import Finding, Severity, Category
+
         finding = Finding(
             category=Category.SECURITY,
             severity=Severity.INFO,
@@ -269,8 +281,8 @@ class TestIntelligencePanel:
         assert card._toggle_btn is None
 
     def test_finding_card_recommendation_visible(self):
+        from equinox.core.response_intelligence.models import Category, Finding, Severity
         from equinox.gui.response_panel.intelligence_panel import _FindingCard
-        from equinox.core.response_intelligence.models import Finding, Severity, Category
 
         finding = Finding(
             category=Category.SECURITY,
@@ -291,10 +303,12 @@ class TestIntelligencePanel:
 # IntelligenceWorker
 # ─────────────────────────────────────────────────────────────────────────────
 
+
 class TestIntelligenceWorker:
     def test_instantiate(self, db):
-        from equinox.gui.intelligence_worker import IntelligenceWorker
         from equinox.core.request import Request
+        from equinox.gui.intelligence_worker import IntelligenceWorker
+
         req = Request(method="GET", url="https://example.com/api")
         resp = MagicMock()
         resp.status_code = 200
@@ -313,8 +327,9 @@ class TestIntelligenceWorker:
         assert worker._response is resp
 
     def test_run_emits_finished(self, db):
-        from equinox.gui.intelligence_worker import IntelligenceWorker
         from equinox.core.request import Request
+        from equinox.gui.intelligence_worker import IntelligenceWorker
+
         req = Request(method="GET", url="https://example.com/api")
         resp = MagicMock()
         resp.status_code = 200
@@ -336,8 +351,8 @@ class TestIntelligenceWorker:
         assert isinstance(results[0], list)
 
     def test_recommender_hints_disabled_by_settings(self, db):
-        from equinox.gui.intelligence_worker import IntelligenceWorker
         from equinox.core.request import Request
+        from equinox.gui.intelligence_worker import IntelligenceWorker
 
         req = Request(method="GET", url="https://example.com/api")
         resp = MagicMock()
@@ -365,35 +380,42 @@ class TestIntelligenceWorker:
 # WebSocketPanel
 # ─────────────────────────────────────────────────────────────────────────────
 
+
 class TestWebSocketPanel:
     def test_instantiate(self):
         from equinox.gui.websocket_panel import WebSocketPanel
+
         p = WebSocketPanel()
         assert p is not None
 
     def test_has_url_input(self):
         from equinox.gui.websocket_panel import WebSocketPanel
+
         p = WebSocketPanel()
         assert hasattr(p, "url_input")
 
     def test_connect_button_exists(self):
         from equinox.gui.websocket_panel import WebSocketPanel
+
         p = WebSocketPanel()
         assert hasattr(p, "connect_btn")
 
     def test_send_button_exists(self):
         from equinox.gui.websocket_panel import WebSocketPanel
+
         p = WebSocketPanel()
         assert hasattr(p, "send_btn")
 
     def test_set_url(self):
         from equinox.gui.websocket_panel import WebSocketPanel
+
         p = WebSocketPanel()
         p.url_input.setText("wss://echo.example.com")
         assert p.url_input.text() == "wss://echo.example.com"
 
     def test_initial_state_disconnected(self):
         from equinox.gui.websocket_panel import WebSocketPanel
+
         p = WebSocketPanel()
         _process()
         # Connect button should be enabled at start
@@ -403,6 +425,7 @@ class TestWebSocketPanel:
 
     def test_add_message_to_table(self):
         from equinox.gui.websocket_panel import WebSocketPanel
+
         p = WebSocketPanel()
         p._on_message("in", "Hello from server")
         _process()
@@ -410,6 +433,7 @@ class TestWebSocketPanel:
 
     def test_add_outgoing_message(self):
         from equinox.gui.websocket_panel import WebSocketPanel
+
         p = WebSocketPanel()
         p._on_message("out", "Hello to server")
         _process()
@@ -417,6 +441,7 @@ class TestWebSocketPanel:
 
     def test_clear_messages(self):
         from equinox.gui.websocket_panel import WebSocketPanel
+
         p = WebSocketPanel()
         p._on_message("in", "msg1")
         p._on_message("out", "msg2")
@@ -428,6 +453,7 @@ class TestWebSocketPanel:
 
     def test_on_connected(self):
         from equinox.gui.websocket_panel import WebSocketPanel
+
         p = WebSocketPanel()
         p._on_connected()
         _process()
@@ -435,6 +461,7 @@ class TestWebSocketPanel:
 
     def test_on_disconnected(self):
         from equinox.gui.websocket_panel import WebSocketPanel
+
         p = WebSocketPanel()
         p._on_connected()
         p._on_disconnected()
@@ -443,6 +470,7 @@ class TestWebSocketPanel:
 
     def test_on_error(self):
         from equinox.gui.websocket_panel import WebSocketPanel
+
         p = WebSocketPanel()
         p._on_error("Connection refused")
         _process()
@@ -450,6 +478,7 @@ class TestWebSocketPanel:
 
     def test_format_json_message(self):
         from equinox.gui.websocket_panel import WebSocketPanel
+
         p = WebSocketPanel()
         p._fmt_json_check.setChecked(True)
         p._on_message("in", '{"key":"value"}')
@@ -461,14 +490,17 @@ class TestWebSocketPanel:
 # CookiesPanel
 # ─────────────────────────────────────────────────────────────────────────────
 
+
 class TestCookiesPanel:
     def test_instantiate(self, db):
         from equinox.gui.cookies_panel import CookiesPanel
+
         p = CookiesPanel(db)
         assert p is not None
 
     def test_refresh_empty(self, db):
         from equinox.gui.cookies_panel import CookiesPanel
+
         p = CookiesPanel(db)
         p.refresh()
         _process()
@@ -476,6 +508,7 @@ class TestCookiesPanel:
 
     def test_has_buttons(self, db):
         from equinox.gui.cookies_panel import CookiesPanel
+
         p = CookiesPanel(db)
         assert hasattr(p, "add_btn")
         assert hasattr(p, "delete_btn")
@@ -483,6 +516,7 @@ class TestCookiesPanel:
 
     def test_add_cookie_dialog_class(self):
         from equinox.gui.cookies_panel import _AddCookieDialog
+
         dlg = _AddCookieDialog()
         # Check form widgets
         assert dlg.name_edit is not None
@@ -491,6 +525,7 @@ class TestCookiesPanel:
 
     def test_add_cookie_dialog_values(self):
         from equinox.gui.cookies_panel import _AddCookieDialog
+
         dlg = _AddCookieDialog()
         dlg.name_edit.setText("session_id")
         dlg.value_edit.setText("abc123")
@@ -506,6 +541,7 @@ class TestCookiesPanel:
 
     def test_add_cookie_dialog_default_path(self):
         from equinox.gui.cookies_panel import _AddCookieDialog
+
         dlg = _AddCookieDialog()
         dlg.name_edit.setText("x")
         dlg.value_edit.setText("y")
@@ -518,14 +554,17 @@ class TestCookiesPanel:
 # HistoryPanel
 # ─────────────────────────────────────────────────────────────────────────────
 
+
 class TestHistoryPanel:
     def test_instantiate(self, db):
         from equinox.gui.history_panel import HistoryPanel
+
         p = HistoryPanel(db)
         assert p is not None
 
     def test_refresh_empty(self, db):
         from equinox.gui.history_panel import HistoryPanel
+
         p = HistoryPanel(db)
         p.refresh()
         _process()
@@ -533,29 +572,34 @@ class TestHistoryPanel:
 
     def test_has_search_input(self, db):
         from equinox.gui.history_panel import HistoryPanel
+
         p = HistoryPanel(db)
         assert hasattr(p, "search_input")
 
     def test_method_filter(self, db):
         from equinox.gui.history_panel import HistoryPanel
+
         p = HistoryPanel(db)
         p.method_filter.setCurrentText("GET")
         _process()
 
     def test_status_filter(self, db):
         from equinox.gui.history_panel import HistoryPanel
+
         p = HistoryPanel(db)
         p.status_filter.setCurrentText("2xx")
         _process()
 
     def test_search_changes(self, db):
         from equinox.gui.history_panel import HistoryPanel
+
         p = HistoryPanel(db)
         p.search_input.setText("example")
         _process()
 
     def test_auto_refresh_toggle(self, db):
         from equinox.gui.history_panel import HistoryPanel
+
         p = HistoryPanel(db)
         p.auto_refresh_checkbox.setChecked(False)
         _process()
@@ -566,6 +610,7 @@ class TestHistoryPanel:
 
     def test_advanced_filter_toggle(self, db):
         from equinox.gui.history_panel import HistoryPanel
+
         p = HistoryPanel(db)
         # The toggle button text changes — reliable even without a shown window
         p.advanced_toggle.setChecked(True)
@@ -576,16 +621,16 @@ class TestHistoryPanel:
         assert "▶" in p.advanced_toggle.text()
 
     def test_with_history_entries(self, db):
+        from equinox.core.request import Request, Response
         from equinox.gui.history_panel import HistoryPanel
         from equinox.storage import HistoryManager
-        from equinox.core.request import Request, Response
+
         mgr = HistoryManager(db)
         # Save a few history entries
         for i in range(3):
             req = Request(method="GET", url=f"https://example.com/api/{i}")
             resp = Response(
-                status_code=200, reason="OK", headers={},
-                body=b"{}", elapsed=0.1, request=req
+                status_code=200, reason="OK", headers={}, body=b"{}", elapsed=0.1, request=req
             )
             mgr.save_history(req, resp)
         p = HistoryPanel(db)
@@ -594,14 +639,19 @@ class TestHistoryPanel:
         assert p.list_widget.count() > 0
 
     def test_apply_method_filter_with_entries(self, db):
+        from equinox.core.request import Request, Response
         from equinox.gui.history_panel import HistoryPanel
         from equinox.storage import HistoryManager
-        from equinox.core.request import Request, Response
+
         mgr = HistoryManager(db)
         req_get = Request(method="GET", url="https://example.com/get")
         req_post = Request(method="POST", url="https://example.com/post")
-        resp_get = Response(status_code=200, reason="OK", headers={}, body=b"{}", elapsed=0.1, request=req_get)
-        resp_post = Response(status_code=201, reason="Created", headers={}, body=b"{}", elapsed=0.2, request=req_post)
+        resp_get = Response(
+            status_code=200, reason="OK", headers={}, body=b"{}", elapsed=0.1, request=req_get
+        )
+        resp_post = Response(
+            status_code=201, reason="Created", headers={}, body=b"{}", elapsed=0.2, request=req_post
+        )
         mgr.save_history(req_get, resp_get)
         mgr.save_history(req_post, resp_post)
         p = HistoryPanel(db)
@@ -614,6 +664,7 @@ class TestHistoryPanel:
 
     def test_signals_exist(self, db):
         from equinox.gui.history_panel import HistoryPanel
+
         p = HistoryPanel(db)
         assert hasattr(p, "history_selected")
         assert hasattr(p, "history_replay")
@@ -623,33 +674,40 @@ class TestHistoryPanel:
 # VariablesPanel
 # ─────────────────────────────────────────────────────────────────────────────
 
+
 class TestVariablesPanel:
     def test_instantiate(self, db):
         from equinox.gui.variables_panel import VariablesPanel
+
         p = VariablesPanel(db)
         assert p is not None
 
     def test_refresh(self, db):
         from equinox.gui.variables_panel import VariablesPanel
+
         p = VariablesPanel(db)
         p.refresh()
         _process()
 
     def test_refresh_session_vars(self, db):
         from equinox.gui.variables_panel import VariablesPanel
+
         p = VariablesPanel(db)
         p.refresh_session_vars({"TOKEN": "abc123", "USER_ID": "42"})
         _process()
 
     def test_has_group_list(self, db):
         from equinox.gui.variables_panel import VariablesPanel
+
         p = VariablesPanel(db)
         assert hasattr(p, "groups_list")
 
     def test_create_group(self, db):
         from equinox.gui.variables_panel import VariablesPanel
+
         p = VariablesPanel(db)
         from equinox.storage import VariableGroupManager
+
         mgr = VariableGroupManager(db)
         mgr.create_group("Test Group", "Test description")
         p.refresh_groups()
@@ -658,17 +716,20 @@ class TestVariablesPanel:
 
     def test_variable_dialog_instantiate(self):
         from equinox.gui.variables_panel import VariableDialog
+
         dlg = VariableDialog()
         assert dlg is not None
 
     def test_variable_dialog_with_values(self):
         from equinox.gui.variables_panel import VariableDialog
+
         dlg = VariableDialog(key="MY_KEY", value="my_value", description="A test var")
         assert dlg.key_input.text() == "MY_KEY"
         assert dlg.value_input.text() == "my_value"
 
     def test_variable_dialog_get_values(self):
         from equinox.gui.variables_panel import VariableDialog
+
         dlg = VariableDialog()
         dlg.key_input.setText("API_URL")
         dlg.value_input.setText("https://api.example.com")
@@ -680,7 +741,7 @@ class TestVariablesPanel:
 
     def test_signals_exist(self, db):
         from equinox.gui.variables_panel import VariablesPanel
+
         p = VariablesPanel(db)
         assert hasattr(p, "variables_changed")
         assert hasattr(p, "clear_session_requested")
-

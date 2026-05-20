@@ -1,7 +1,10 @@
 import json
+
 from equinox.core.request import Response
-from .utils import _build_url_with_params, _escape_single_quoted
+
 from ._python_helpers import _inject_auth_into_headers
+from .utils import _build_url_with_params, _escape_single_quoted
+
 
 class RubyNetHttpGenerator:
     def generate(self, response: Response) -> str:
@@ -21,9 +24,12 @@ class RubyNetHttpGenerator:
         lines.append("")
 
         method_class = {
-            "GET": "Net::HTTP::Get", "POST": "Net::HTTP::Post",
-            "PUT": "Net::HTTP::Put", "PATCH": "Net::HTTP::Patch",
-            "DELETE": "Net::HTTP::Delete", "HEAD": "Net::HTTP::Head",
+            "GET": "Net::HTTP::Get",
+            "POST": "Net::HTTP::Post",
+            "PUT": "Net::HTTP::Put",
+            "PATCH": "Net::HTTP::Patch",
+            "DELETE": "Net::HTTP::Delete",
+            "HEAD": "Net::HTTP::Head",
         }.get(request.method, f"Net::HTTP::{request.method.capitalize()}")
 
         lines.append(f"request = {method_class}.new(uri)")

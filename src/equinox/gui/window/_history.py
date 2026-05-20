@@ -1,8 +1,8 @@
 """History loading and response reconstruction mixin for MainWindow."""
+
 from __future__ import annotations
 
 import logging
-from typing import Optional
 
 from equinox.application.history import HistoryFacade
 from equinox.core.request import Request
@@ -19,13 +19,11 @@ class _HistoryMixin:
         """Backward-compatible wrapper for tests and legacy call sites."""
         return HistoryFacade.request_from_entry(entry)
 
-    def _fetch_history_entry(self, history_id: int) -> Optional[dict]:
+    def _fetch_history_entry(self, history_id: int) -> dict | None:
         """Fetch a history entry by ID, or None."""
         return self._history_facade.get_history(history_id)
 
-    def _fetch_and_load_history(
-        self, history_id: int
-    ) -> "Optional[tuple[dict, Request]]":
+    def _fetch_and_load_history(self, history_id: int) -> tuple[dict, Request] | None:
         """Autosave, fetch, build, and load a history entry into the request panel.
 
         Returns ``(entry, request)`` on success, ``None`` when the entry is absent.
@@ -39,9 +37,7 @@ class _HistoryMixin:
         try:
             self.request_panel.load_request(request)
         except Exception:
-            logger.error(
-                "Failed to load request from history id=%s", history_id, exc_info=True
-            )
+            logger.error("Failed to load request from history id=%s", history_id, exc_info=True)
         return entry, request
 
     # ── Signal handlers ───────────────────────────────────────────────────────
@@ -61,9 +57,7 @@ class _HistoryMixin:
                 self.response_panel.intelligence_panel.clear()
                 self.response_panel.set_intelligence_badge(0)
         except Exception:
-            logger.error(
-                "Unhandled error loading history entry id=%s", history_id, exc_info=True
-            )
+            logger.error("Unhandled error loading history entry id=%s", history_id, exc_info=True)
             try:
                 ErrorPresenter.error(
                     self,
@@ -77,5 +71,5 @@ class _HistoryMixin:
         if self._fetch_and_load_history(history_id) is None:
             return
         from PyQt6.QtCore import QTimer
-        QTimer.singleShot(0, self.request_panel.send)
 
+        QTimer.singleShot(0, self.request_panel.send)

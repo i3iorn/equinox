@@ -2,29 +2,27 @@
 
 from __future__ import annotations
 
-from typing import List, Dict, Optional
-
 from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import (
     QDialog,
-    QVBoxLayout,
+    QLabel,
     QLineEdit,
     QListWidget,
     QListWidgetItem,
-    QLabel,
+    QVBoxLayout,
 )
 
 
 class CommandPaletteDialog(QDialog):
     """Simple searchable command picker."""
 
-    def __init__(self, commands: List[Dict[str, str]], parent=None) -> None:
+    def __init__(self, commands: list[dict[str, str]], parent=None) -> None:
         super().__init__(parent)
         self.setWindowTitle("Command Palette")
         self.setMinimumSize(520, 380)
 
         self._commands = commands
-        self._selected_id: Optional[str] = None
+        self._selected_id: str | None = None
 
         layout = QVBoxLayout(self)
         self._search = QLineEdit()
@@ -44,7 +42,7 @@ class CommandPaletteDialog(QDialog):
         self._rebuild_list("")
         self._search.setFocus(Qt.FocusReason.ActiveWindowFocusReason)
 
-    def _command_label(self, cmd: Dict[str, str]) -> str:
+    def _command_label(self, cmd: dict[str, str]) -> str:
         shortcut = (cmd.get("shortcut") or "").strip()
         if shortcut:
             return f"{cmd['label']}    [{shortcut}]"
@@ -79,6 +77,5 @@ class CommandPaletteDialog(QDialog):
         self._selected_id = item.data(Qt.ItemDataRole.UserRole)
         self.accept()
 
-    def selected_command_id(self) -> Optional[str]:
+    def selected_command_id(self) -> str | None:
         return self._selected_id
-

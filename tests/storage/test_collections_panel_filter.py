@@ -9,15 +9,16 @@ Verifies that:
 
 import pytest
 
-from equinox.storage.database import Database
-from equinox.storage.collections import CollectionManager
-from equinox.storage.migrations import MigrationRunner
 from equinox.core.request import Request
+from equinox.storage.collections import CollectionManager
+from equinox.storage.database import Database
+from equinox.storage.migrations import MigrationRunner
 
 
 def _can_import_pyqt6() -> bool:
     try:
         import PyQt6  # noqa: F401
+
         return True
     except ImportError:
         return False
@@ -32,10 +33,12 @@ pytestmark = pytest.mark.skipif(
 
 # ── Fixtures ──────────────────────────────────────────────────────────────────
 
+
 @pytest.fixture(scope="session")
 def qapp():
     """Create a single QApplication for the whole test session."""
     from PyQt6.QtWidgets import QApplication
+
     app = QApplication.instance()
     if app is None:
         app = QApplication([])
@@ -58,6 +61,7 @@ def mgr(db):
 @pytest.fixture
 def panel(qapp, db):
     from equinox.gui.collection_panel import CollectionsPanel
+
     p = CollectionsPanel(db)
     yield p
     p.close()
@@ -88,9 +92,11 @@ def seeded(mgr):
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
+
 def _collect_request_visibility(panel):
     """Walk tree and return (visible_names, hidden_names) lists for requests."""
     from PyQt6.QtCore import Qt
+
     visible, hidden = [], []
 
     def _walk(parent):
@@ -111,6 +117,7 @@ def _collect_request_visibility(panel):
 def _get_col_item(panel, col_id):
     """Return the top-level QTreeWidgetItem for the given collection ID."""
     from PyQt6.QtCore import Qt
+
     for i in range(panel.tree.topLevelItemCount()):
         item = panel.tree.topLevelItem(i)
         data = item.data(0, Qt.ItemDataRole.UserRole) or {}
@@ -141,6 +148,7 @@ def _get_folder_item(panel, col_id, folder_path):
 
 
 # ── Tests: filter text preserved ──────────────────────────────────────────────
+
 
 class TestFilterPreservedOnRefresh:
     """The active filter must survive a tree refresh (triggered by drag-drop, etc.)."""
@@ -189,6 +197,7 @@ class TestFilterPreservedOnRefresh:
 
 
 # ── Tests: expansion restored after filter cleared ────────────────────────────
+
 
 class TestExpansionRestoredAfterFilter:
     """When the filter is cleared, collections/folders must return to their
@@ -289,6 +298,7 @@ class TestExpansionRestoredAfterFilter:
 
 # ── Tests: manual expand/collapse while filtered updates saved state ──────────
 
+
 class TestManualExpandCollapseWhileFiltered:
     """If the user expands or collapses a collection/folder while a filter is
     active, that change must be reflected when the filter is cleared."""
@@ -308,8 +318,9 @@ class TestManualExpandCollapseWhileFiltered:
         # Clear filter
         panel._filter_input.setText("")
         col_a_item = _get_col_item(panel, seeded["col_a"])
-        assert not col_a_item.isExpanded(), \
-            "Collection A was collapsed while filtered, should stay collapsed"
+        assert (
+            not col_a_item.isExpanded()
+        ), "Collection A was collapsed while filtered, should stay collapsed"
 
     def test_expand_collection_while_filtered(self, panel, seeded):
         """Collapsing then re-expanding a collection while filtered → stays expanded after clear."""
@@ -324,8 +335,9 @@ class TestManualExpandCollapseWhileFiltered:
 
         panel._filter_input.setText("")
         col_b_item = _get_col_item(panel, seeded["col_b"])
-        assert col_b_item.isExpanded(), \
-            "Collection B was re-expanded while filtered, should stay expanded"
+        assert (
+            col_b_item.isExpanded()
+        ), "Collection B was re-expanded while filtered, should stay expanded"
 
     def test_collapse_folder_while_filtered(self, panel, seeded):
         """Collapsing a folder while filtered → stays collapsed after clear."""
@@ -344,8 +356,9 @@ class TestManualExpandCollapseWhileFiltered:
 
         panel._filter_input.setText("")
         folder_item = _get_folder_item(panel, seeded["col_a"], "Auth")
-        assert not folder_item.isExpanded(), \
-            "Auth folder was collapsed while filtered, should stay collapsed"
+        assert (
+            not folder_item.isExpanded()
+        ), "Auth folder was collapsed while filtered, should stay collapsed"
 
     def test_no_snapshot_without_filter(self, panel, seeded):
         """_pre_filter_expansion should be None when no filter is active."""
@@ -354,5 +367,4 @@ class TestManualExpandCollapseWhileFiltered:
         col_a_item = _get_col_item(panel, seeded["col_a"])
         col_a_item.setExpanded(True)
         col_a_item.setExpanded(False)
-        assert panel._pre_filter_expansion is None, \
-            "Should not snapshot when no filter is active"
+        assert panel._pre_filter_expansion is None, "Should not snapshot when no filter is active"

@@ -1,9 +1,8 @@
 """Coverage-boosting tests for GUI widgets."""
 
-import pytest
-from PyQt6.QtWidgets import QApplication, QTextEdit
 from PyQt6.QtCore import QCoreApplication, Qt
 from PyQt6.QtGui import QKeyEvent
+from PyQt6.QtWidgets import QApplication, QTextEdit
 
 _APP = QApplication.instance() or QApplication([])
 
@@ -16,20 +15,24 @@ def _process():
 # UrlLineEdit
 # ─────────────────────────────────────────────────────────────────────────────
 
+
 class TestUrlLineEdit:
     def test_instantiate(self):
         from equinox.gui.widgets.url_line_edit import UrlLineEdit
+
         w = UrlLineEdit()
         assert w._param_suffix == ""
 
     def test_set_param_suffix_updates(self):
         from equinox.gui.widgets.url_line_edit import UrlLineEdit
+
         w = UrlLineEdit()
         w.set_param_suffix("?a=1&b=2")
         assert w._param_suffix == "?a=1&b=2"
 
     def test_set_same_suffix_no_update(self):
         from equinox.gui.widgets.url_line_edit import UrlLineEdit
+
         w = UrlLineEdit()
         w.set_param_suffix("?x=1")
         w.set_param_suffix("?x=1")  # same — no repaint needed
@@ -37,6 +40,7 @@ class TestUrlLineEdit:
 
     def test_focus_events_do_not_crash(self):
         from equinox.gui.widgets.url_line_edit import UrlLineEdit
+
         w = UrlLineEdit()
         w.show()
         w.setFocus()
@@ -47,6 +51,7 @@ class TestUrlLineEdit:
 
     def test_paint_event_with_suffix(self):
         from equinox.gui.widgets.url_line_edit import UrlLineEdit
+
         w = UrlLineEdit()
         w.resize(300, 30)
         w.setText("https://example.com/api")
@@ -57,6 +62,7 @@ class TestUrlLineEdit:
 
     def test_paint_event_no_suffix(self):
         from equinox.gui.widgets.url_line_edit import UrlLineEdit
+
         w = UrlLineEdit()
         w.resize(300, 30)
         w.setText("https://example.com")
@@ -70,19 +76,23 @@ class TestUrlLineEdit:
 # KeyValueTable
 # ─────────────────────────────────────────────────────────────────────────────
 
+
 class TestKeyValueTable:
     def test_instantiate_has_empty_row(self):
         from equinox.gui.widgets.key_value_table import KeyValueTable
+
         t = KeyValueTable()
         assert t.rowCount() == 1  # one empty trailing row
 
     def test_get_data_empty(self):
         from equinox.gui.widgets.key_value_table import KeyValueTable
+
         t = KeyValueTable()
         assert t.get_data() == {}
 
     def test_set_and_get_data(self):
         from equinox.gui.widgets.key_value_table import KeyValueTable
+
         t = KeyValueTable()
         t.set_data({"Authorization": "Bearer tok", "Content-Type": "application/json"})
         _process()
@@ -92,6 +102,7 @@ class TestKeyValueTable:
 
     def test_reset_clears_rows(self):
         from equinox.gui.widgets.key_value_table import KeyValueTable
+
         t = KeyValueTable()
         t.set_data({"k": "v"})
         t.reset()
@@ -99,14 +110,17 @@ class TestKeyValueTable:
         assert t.get_data() == {}
 
     def test_typing_in_last_row_adds_new_row(self):
-        from equinox.gui.widgets.key_value_table import KeyValueTable
         from PyQt6.QtWidgets import QTableWidgetItem
+
+        from equinox.gui.widgets.key_value_table import KeyValueTable
+
         t = KeyValueTable()
         initial_rows = t.rowCount()
         # Simulate typing in the last row key cell
         item = t.item(initial_rows - 1, 0)
         if item is None:
             from PyQt6.QtWidgets import QTableWidgetItem
+
             item = QTableWidgetItem("new-key")
             t.setItem(initial_rows - 1, 0, item)
         else:
@@ -116,6 +130,7 @@ class TestKeyValueTable:
 
     def test_set_data_empty_dict(self):
         from equinox.gui.widgets.key_value_table import KeyValueTable
+
         t = KeyValueTable()
         t.set_data({})
         _process()
@@ -126,21 +141,26 @@ class TestKeyValueTable:
 # DragDropTree
 # ─────────────────────────────────────────────────────────────────────────────
 
+
 class TestDragDropTree:
     def test_instantiate(self):
         from equinox.gui.widgets.drag_drop_tree import DragDropTree
+
         tree = DragDropTree()
         assert tree.dragEnabled()
         assert tree.acceptDrops()
 
     def test_item_data_none_item(self):
         from equinox.gui.widgets.drag_drop_tree import DragDropTree
+
         tree = DragDropTree()
         assert tree._node_data(None) is None
 
     def test_item_data_with_item(self):
-        from equinox.gui.widgets.drag_drop_tree import DragDropTree
         from PyQt6.QtWidgets import QTreeWidgetItem
+
+        from equinox.gui.widgets.drag_drop_tree import DragDropTree
+
         tree = DragDropTree()
         item = QTreeWidgetItem(["My Request"])
         data = {"type": "request", "id": 42}
@@ -149,13 +169,16 @@ class TestDragDropTree:
 
     def test_start_drag_no_item(self):
         from equinox.gui.widgets.drag_drop_tree import DragDropTree
+
         tree = DragDropTree()
         # Should not crash with no selection
         tree.startDrag(Qt.DropAction.MoveAction)
 
     def test_start_drag_non_request_item(self):
-        from equinox.gui.widgets.drag_drop_tree import DragDropTree
         from PyQt6.QtWidgets import QTreeWidgetItem
+
+        from equinox.gui.widgets.drag_drop_tree import DragDropTree
+
         tree = DragDropTree()
         item = QTreeWidgetItem(["My Collection"])
         item.setData(0, Qt.ItemDataRole.UserRole, {"type": "collection", "id": 1})
@@ -165,9 +188,10 @@ class TestDragDropTree:
         tree.startDrag(Qt.DropAction.MoveAction)
 
     def test_drag_enter_event_accept(self):
+        from PyQt6.QtCore import QMimeData
+
         from equinox.gui.widgets.drag_drop_tree import DragDropTree
-        from PyQt6.QtGui import QDragEnterEvent
-        from PyQt6.QtCore import QMimeData, QPoint
+
         tree = DragDropTree()
         tree.show()
         _process()
@@ -179,6 +203,7 @@ class TestDragDropTree:
 
     def test_signals_exist(self):
         from equinox.gui.widgets.drag_drop_tree import DragDropTree
+
         tree = DragDropTree()
         assert hasattr(tree, "request_dropped")
         assert hasattr(tree, "request_reorder")
@@ -188,20 +213,24 @@ class TestDragDropTree:
 # JsonBodyEditor
 # ─────────────────────────────────────────────────────────────────────────────
 
+
 class TestJsonBodyEditor:
     def test_instantiate(self):
         from equinox.gui.widgets.json_body_editor import JsonBodyEditor
+
         ed = JsonBodyEditor()
         assert ed is not None
 
     def test_set_and_get_text(self):
         from equinox.gui.widgets.json_body_editor import JsonBodyEditor
+
         ed = JsonBodyEditor()
         ed.setPlainText('{"key": "value"}')
         assert ed.toPlainText() == '{"key": "value"}'
 
     def test_line_number_area_width(self):
         from equinox.gui.widgets.json_body_editor import JsonBodyEditor
+
         ed = JsonBodyEditor()
         width = ed.line_number_area_width()
         assert isinstance(width, int)
@@ -209,12 +238,14 @@ class TestJsonBodyEditor:
 
     def test_line_number_area_instantiated(self):
         from equinox.gui.widgets.json_body_editor import JsonBodyEditor, LineNumberArea
+
         ed = JsonBodyEditor()
         assert hasattr(ed, "line_number_area")
         assert isinstance(ed.line_number_area, LineNumberArea)
 
     def test_auto_format_json(self):
         from equinox.gui.widgets.json_body_editor import JsonBodyEditor
+
         ed = JsonBodyEditor()
         ed.setPlainText('{"b":2,"a":1}')
         ed._auto_format_json()
@@ -224,6 +255,7 @@ class TestJsonBodyEditor:
 
     def test_auto_format_json_invalid(self):
         from equinox.gui.widgets.json_body_editor import JsonBodyEditor
+
         ed = JsonBodyEditor()
         ed.setPlainText("{not valid json}")
         # Should not crash on invalid JSON
@@ -231,6 +263,7 @@ class TestJsonBodyEditor:
 
     def test_key_press_tab_inserts_spaces(self):
         from equinox.gui.widgets.json_body_editor import JsonBodyEditor
+
         ed = JsonBodyEditor()
         ed.setPlainText("")
         # Simulate Tab key
@@ -241,15 +274,19 @@ class TestJsonBodyEditor:
 
     def test_key_press_open_brace_auto_closes(self):
         from equinox.gui.widgets.json_body_editor import JsonBodyEditor
+
         ed = JsonBodyEditor()
         ed.setPlainText("")
-        ev = QKeyEvent(QKeyEvent.Type.KeyPress, Qt.Key.Key_BraceLeft, Qt.KeyboardModifier.NoModifier, "{")
+        ev = QKeyEvent(
+            QKeyEvent.Type.KeyPress, Qt.Key.Key_BraceLeft, Qt.KeyboardModifier.NoModifier, "{"
+        )
         ed.keyPressEvent(ev)
         text = ed.toPlainText()
         assert "{" in text
 
     def test_paint_line_numbers(self):
         from equinox.gui.widgets.json_body_editor import JsonBodyEditor
+
         ed = JsonBodyEditor()
         ed.resize(400, 300)
         ed.setPlainText("line1\nline2\nline3")
@@ -259,6 +296,7 @@ class TestJsonBodyEditor:
 
     def test_cursor_position_changed(self):
         from equinox.gui.widgets.json_body_editor import JsonBodyEditor
+
         ed = JsonBodyEditor()
         ed.setPlainText('{"key": "value"}')
         # Move cursor
@@ -272,9 +310,11 @@ class TestJsonBodyEditor:
 # SearchBar
 # ─────────────────────────────────────────────────────────────────────────────
 
+
 class TestSearchBar:
     def _make_bar(self):
         from equinox.gui.response_panel.search_bar import SearchBar
+
         target = QTextEdit()
         target.setPlainText("Hello World\nThis is a test\nHello again")
         bar = SearchBar(target)
@@ -390,6 +430,7 @@ class TestSearchBar:
 
     def test_jsonpath_search_with_json(self):
         from equinox.gui.response_panel.search_bar import SearchBar
+
         target = QTextEdit()
         target.setPlainText('{"users": [{"name": "Alice"}]}')
         bar = SearchBar(target)
@@ -399,4 +440,3 @@ class TestSearchBar:
         bar._input.setText("$.users[0].name")
         _process()
         # Result label should be visible/updated
-

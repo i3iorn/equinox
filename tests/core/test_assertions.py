@@ -1,7 +1,8 @@
 """Tests for core/assertions.py — assertion evaluation engine."""
 
-import pytest
 from unittest.mock import Mock
+
+import pytest
 
 from equinox.core.assertions import evaluate_assertion
 
@@ -55,26 +56,20 @@ class TestStatusAssertion:
 class TestBodyContainsAssertion:
     def test_body_contains_pass(self):
         resp = _mock_response(text='{"users": [{"id": 1}]}')
-        passed, msg = evaluate_assertion(
-            {"type": "body_contains", "expected": "users"}, resp
-        )
+        passed, msg = evaluate_assertion({"type": "body_contains", "expected": "users"}, resp)
         assert passed is True
         assert "users" in msg
 
     def test_body_contains_fail(self):
         resp = _mock_response(text="hello world")
-        passed, msg = evaluate_assertion(
-            {"type": "body_contains", "expected": "foobar"}, resp
-        )
+        passed, msg = evaluate_assertion({"type": "body_contains", "expected": "foobar"}, resp)
         assert passed is False
 
     def test_body_contains_no_text_attr(self):
         """Response without .text attribute uses empty string."""
         resp = Mock(spec=[])  # no .text attribute
         resp.status_code = 200
-        passed, _ = evaluate_assertion(
-            {"type": "body_contains", "expected": "anything"}, resp
-        )
+        passed, _ = evaluate_assertion({"type": "body_contains", "expected": "anything"}, resp)
         assert passed is False
 
 
@@ -154,7 +149,6 @@ class TestJsonpathAssertion:
         """When jsonpath_ng is not installed, falls back to body contains."""
         # We can't easily remove jsonpath_ng at runtime, but we can test the
         # import-error branch by monkeypatching.
-        import importlib
         import sys
 
         saved = sys.modules.get("jsonpath_ng.ext")
@@ -181,16 +175,15 @@ class TestElapsedLtAssertion:
     def test_elapsed_pass(self):
         resp = _mock_response(elapsed=0.05)  # 50 ms
         passed, msg = evaluate_assertion(
-            {"type": "elapsed_lt", "expected": "100"}, resp  # threshold 100 ms
+            {"type": "elapsed_lt", "expected": "100"},
+            resp,  # threshold 100 ms
         )
         assert passed is True
         assert "50.0 ms" in msg
 
     def test_elapsed_fail(self):
         resp = _mock_response(elapsed=0.5)  # 500 ms
-        passed, msg = evaluate_assertion(
-            {"type": "elapsed_lt", "expected": "100"}, resp
-        )
+        passed, msg = evaluate_assertion({"type": "elapsed_lt", "expected": "100"}, resp)
         assert passed is False
         assert "500.0 ms" in msg
 
@@ -201,9 +194,7 @@ class TestElapsedLtAssertion:
 class TestUnknownAssertion:
     def test_unknown_type(self):
         resp = _mock_response()
-        passed, msg = evaluate_assertion(
-            {"type": "nonexistent_type", "expected": "x"}, resp
-        )
+        passed, msg = evaluate_assertion({"type": "nonexistent_type", "expected": "x"}, resp)
         assert passed is False
         assert "unknown assertion type" in msg
 
@@ -214,9 +205,7 @@ class TestUnknownAssertion:
 class TestAssertionErrors:
     def test_invalid_elapsed_threshold(self):
         resp = _mock_response(elapsed=0.1)
-        passed, msg = evaluate_assertion(
-            {"type": "elapsed_lt", "expected": "not-a-number"}, resp
-        )
+        passed, msg = evaluate_assertion({"type": "elapsed_lt", "expected": "not-a-number"}, resp)
         assert passed is False
         assert "error" in msg.lower()
 
@@ -228,4 +217,3 @@ class TestAssertionErrors:
         passed, msg = evaluate_assertion({"type": "status", "expected": "200"}, resp)
         # Should not raise — returns (False, error message)
         assert passed is False
-

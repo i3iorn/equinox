@@ -1,7 +1,6 @@
 import json
 
 import pytest
-
 from PyQt6.QtWidgets import QApplication
 
 from equinox.gui.response_panel import ResponsePanel
@@ -106,5 +105,3 @@ def test_view_actions_follow_manual_tab_selection():
     panel.tabs.setCurrentIndex(panel._body_tab_idx)
     assert panel._view_raw_act.isChecked()
     assert not panel._view_json_act.isChecked()
-
-

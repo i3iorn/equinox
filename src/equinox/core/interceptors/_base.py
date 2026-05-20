@@ -1,7 +1,7 @@
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
-from typing import TypeVar, Generic, Optional, Dict, Any
+from typing import Any, Generic, TypeVar
 
 from equinox.core.request import Request, Response
 from equinox.core.util.time import utc_now
@@ -19,7 +19,7 @@ class InterceptorAction(Enum):
 @dataclass
 class InterceptorResult(Generic[T]):
     action: InterceptorAction
-    value: Optional[T] = None
+    value: T | None = None
 
     @classmethod
     def continue_(cls):
@@ -41,10 +41,10 @@ class InterceptorResult(Generic[T]):
 @dataclass
 class InterceptorContext:
     request: Request
-    response: Optional[Response] = None
-    error: Optional[Exception] = None
+    response: Response | None = None
+    error: Exception | None = None
     timestamp: datetime = field(default_factory=utc_now)
-    metadata: Dict[str, Any] = field(default_factory=dict)
+    metadata: dict[str, Any] = field(default_factory=dict)
 
     def replace_request(self, request: Request) -> None:
         self.request = request
@@ -74,7 +74,7 @@ class ResponseInterceptor:
     def can_intercept(self, response: Response) -> bool:
         """Return True only when the provided object is a Response instance.
 
-        The interceptor chain may pass an Optional[Response]; guard against
+        The interceptor chain may pass an Response | None; guard against
         None and non-Response values here so concrete interceptors can rely
         on a valid response object in their intercept() implementation.
         """

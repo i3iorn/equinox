@@ -20,20 +20,21 @@ Internal structure (one concern per module)
   _path      — ``_PathValidator``  — file-path / traversal validation
   _env       — ``_EnvVarValidator``— environment-variable name/value validation
 """
+
 from __future__ import annotations
 
 import re
 from pathlib import Path
-from typing import Any, Dict, Optional, Tuple
+from typing import Any
 
-from ._base import VALID_HTTP_METHODS, _Limits, _Patterns, _Guards
-from ._ssrf import _SsrfGuard
-from ._url import _UrlValidator
-from ._headers import _HeaderValidator
+from ._base import VALID_HTTP_METHODS, _Guards, _Limits, _Patterns
 from ._body import _BodyValidator
+from ._env import _EnvVarValidator
+from ._headers import _HeaderValidator
 from ._params import _ParamValidator
 from ._path import _PathValidator
-from ._env import _EnvVarValidator
+from ._ssrf import _SsrfGuard
+from ._url import _UrlValidator
 
 __all__ = ["VALID_HTTP_METHODS", "Validator"]
 
@@ -41,6 +42,7 @@ __all__ = ["VALID_HTTP_METHODS", "Validator"]
 # ---------------------------------------------------------------------------
 # Validator — public façade (backward-compatible API)
 # ---------------------------------------------------------------------------
+
 
 class Validator:
     """Zero-trust input validator.
@@ -96,11 +98,13 @@ class Validator:
         name = name.strip()
         if not re.fullmatch(r"[A-Za-z0-9_-]+", name):
             from equinox.core.exceptions import ValidationError
+
             raise ValidationError(
                 "Variable names may contain only letters, numbers, underscore, and hyphen."
             )
         if len(name) > _Limits.MAX_VARIABLE_NAME_LENGTH:
             from equinox.core.exceptions import ValidationError
+
             raise ValidationError("Variable name too long")
         return name
 
@@ -111,6 +115,7 @@ class Validator:
         name = name.strip()
         if not _Patterns.HEADER_NAME.match(name):
             from equinox.core.exceptions import ValidationError
+
             raise ValidationError("Cookie name contains invalid characters")
         return name
 
@@ -119,46 +124,40 @@ class Validator:
         """Validate a cookie value for display and storage."""
         if not isinstance(value, str):
             from equinox.core.exceptions import ValidationError
+
             raise ValidationError("Cookie value must be a string")
         if len(value) > _Limits.MAX_HEADER_LENGTH:
             from equinox.core.exceptions import ValidationError
+
             raise ValidationError("Cookie value too long")
         return _HeaderValidator.validate_value(value)
 
     @classmethod
-    def validate_headers(
-        cls, headers: Dict[str, str], *, strict: bool = True
-    ) -> Dict[str, str]:
+    def validate_headers(cls, headers: dict[str, str], *, strict: bool = True) -> dict[str, str]:
         return _HeaderValidator.validate_all(headers, strict=strict)
 
     # -- Body -----------------------------------------------------------------
 
     @classmethod
-    def validate_request_body(
-        cls, body: Any, content_type: Optional[str] = None
-    ) -> Any:
+    def validate_request_body(cls, body: Any, content_type: str | None = None) -> Any:
         return _BodyValidator.validate(body, content_type)
 
     # -- Query parameters -----------------------------------------------------
 
     @classmethod
-    def validate_query_params(cls, params: Dict[str, Any]) -> Dict[str, Any]:
+    def validate_query_params(cls, params: dict[str, Any]) -> dict[str, Any]:
         return _ParamValidator.validate(params)
 
     # -- File path ------------------------------------------------------------
 
     @classmethod
-    def validate_file_path(
-        cls, path: str, base_dir: Optional[Path] = None
-    ) -> Path:
+    def validate_file_path(cls, path: str, base_dir: Path | None = None) -> Path:
         return _PathValidator.validate(path, base_dir)
 
     # -- Environment variable -------------------------------------------------
 
     @classmethod
-    def validate_environment_variable(
-        cls, name: str, value: str
-    ) -> Tuple[str, str]:
+    def validate_environment_variable(cls, name: str, value: str) -> tuple[str, str]:
         return _EnvVarValidator.validate(name, value)
 
     # -- HTTP method ----------------------------------------------------------
@@ -169,6 +168,7 @@ class Validator:
         method = method.upper().strip()
         if method not in VALID_HTTP_METHODS:
             from equinox.core.exceptions import ValidationError
+
             raise ValidationError(f"Invalid HTTP method: {method}")
         return method
 
@@ -196,4 +196,3 @@ class Validator:
     def _check_ssrf(cls, hostname: str) -> None:
         """Deprecated: use ``validate_hostname`` instead."""
         cls.validate_hostname(hostname)
-

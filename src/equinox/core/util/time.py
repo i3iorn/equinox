@@ -1,8 +1,7 @@
 from datetime import datetime, timezone
-from typing import Optional
 
 
-def utc_now(ts: Optional[datetime] = None) -> datetime:
+def utc_now(ts: datetime | None = None) -> datetime:
     """Return *ts* (converted to naive UTC) if given, else the current naive UTC time.
 
     All returned datetimes are **naive** (no ``tzinfo``) and represent UTC.
@@ -15,7 +14,7 @@ def utc_now(ts: Optional[datetime] = None) -> datetime:
     return datetime.now(timezone.utc).replace(tzinfo=None)
 
 
-def to_iso_z(dt: Optional[datetime] = None) -> str:
+def to_iso_z(dt: datetime | None = None) -> str:
     """Return *dt* (or now) as an ISO 8601 string with a trailing ``Z``.
 
     Uses ``strftime`` directly to produce the compact ``…Z`` suffix rather
@@ -34,4 +33,3 @@ def to_iso_z(dt: Optional[datetime] = None) -> str:
     elif dt.tzinfo is None:
         dt = dt.replace(tzinfo=timezone.utc)
     return dt.strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
-

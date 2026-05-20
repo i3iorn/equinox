@@ -5,8 +5,8 @@ rate limiting, and proxy configuration.
 """
 
 from equinox.core.http.cookies import CookieManager
-from equinox.core.http.rate_limiter import RateLimiter
 from equinox.core.http.proxy import check_proxy_reachable
+from equinox.core.http.rate_limiter import RateLimiter
 
 __all__ = [
     "CookieManager",

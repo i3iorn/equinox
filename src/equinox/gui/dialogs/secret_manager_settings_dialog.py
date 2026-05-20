@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Optional
 
 from PyQt6.QtWidgets import QDialog, QVBoxLayout
 
@@ -13,7 +12,7 @@ from equinox.gui.secret_manager_panel import SecretManagerSettingsPanel
 class SecretManagerSettingsDialog(QDialog):
     """Dedicated dialog host for secret-manager profile management."""
 
-    def __init__(self, config_path: Optional[Path] = None, parent=None) -> None:
+    def __init__(self, config_path: Path | None = None, parent=None) -> None:
         super().__init__(parent)
         self.setWindowTitle("Secret Managers")
         self.setMinimumSize(600, 500)
@@ -21,4 +20,3 @@ class SecretManagerSettingsDialog(QDialog):
         layout = QVBoxLayout(self)
         self.panel = SecretManagerSettingsPanel(config_path=config_path, parent=self)
         layout.addWidget(self.panel)
-

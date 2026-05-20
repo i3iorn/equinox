@@ -474,4 +474,3 @@ def build_stylesheet(base_pt: int, colors: dict[str, str]) -> str:
         border: 1px solid {c["BORDER"]};
     }}
     """
-

@@ -13,7 +13,8 @@ methods used by the client:
 Having an explicit Protocol/ABC improves discoverability and enables
 static typing for `HTTPClient` consumers.
 """
-from typing import Protocol, Dict, Any, List
+
+from typing import Any, Protocol
 
 
 class CookieManager(Protocol):
@@ -21,16 +22,16 @@ class CookieManager(Protocol):
     `HTTPClient`.
     """
 
-    def to_httpx_cookies(self) -> Dict[str, Any]:
+    def to_httpx_cookies(self) -> dict[str, Any]:
         """Return cookies in an httpx-compatible mapping (name -> value)."""
 
-    def update_from_response(self, response_headers: Dict[str, str], url: str) -> None:
+    def update_from_response(self, response_headers: dict[str, str], url: str) -> None:
         """Update the cookie store from response headers and the request URL.
 
         The implementation should safely ignore missing Set-Cookie headers.
         """
 
-    def to_httpx_cookie_records(self) -> List[Dict[str, str]]:
+    def to_httpx_cookie_records(self) -> list[dict[str, str]]:
         """Return scoped cookie records with ``name/value/domain/path`` keys."""
 
 
@@ -41,12 +42,12 @@ class InMemoryCookieManager:
     """
 
     def __init__(self) -> None:
-        self._cookies: Dict[str, str] = {}
+        self._cookies: dict[str, str] = {}
 
-    def to_httpx_cookies(self) -> Dict[str, str]:
+    def to_httpx_cookies(self) -> dict[str, str]:
         return dict(self._cookies)
 
-    def update_from_response(self, response_headers: Dict[str, str], url: str) -> None:
+    def update_from_response(self, response_headers: dict[str, str], url: str) -> None:
         # Very small parser: respect Set-Cookie headers with single name=value entries.
         for k, v in response_headers.items():
             if k.lower() == "set-cookie":
@@ -59,10 +60,8 @@ class InMemoryCookieManager:
                     # Best-effort: ignore malformed Set-Cookie values
                     continue
 
-    def to_httpx_cookie_records(self) -> List[Dict[str, str]]:
+    def to_httpx_cookie_records(self) -> list[dict[str, str]]:
         return [
             {"name": name, "value": value, "domain": "", "path": "/"}
             for name, value in self._cookies.items()
         ]
-
-

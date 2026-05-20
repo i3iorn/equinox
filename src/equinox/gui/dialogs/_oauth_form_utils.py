@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import json
-from typing import Any, Dict, Optional, Tuple
+from typing import Any
 
 
-def parse_json_object_field(raw_text: str, field_name: str = "Extra Params") -> Tuple[Optional[Dict[str, Any]], Optional[str]]:
+def parse_json_object_field(
+    raw_text: str, field_name: str = "Extra Params"
+) -> tuple[dict[str, Any] | None, str | None]:
     """Parse a JSON object field, returning ``(value, error)``.
 
     Blank input is treated as an empty object.
@@ -24,8 +26,7 @@ def parse_json_object_field(raw_text: str, field_name: str = "Extra Params") -> 
         return None, f"{field_name} must be a valid JSON object:\n{exc}"
 
 
-def parse_json_object_field_lenient(raw_text: str) -> Dict[str, Any]:
+def parse_json_object_field_lenient(raw_text: str) -> dict[str, Any]:
     """Parse a JSON object field, returning ``{}`` on any invalid input."""
     value, _error = parse_json_object_field(raw_text)
     return value or {}
-

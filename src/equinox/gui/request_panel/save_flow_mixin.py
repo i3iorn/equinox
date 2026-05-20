@@ -1,8 +1,11 @@
 """Save-dialog orchestration mixin for RequestPanel."""
 
+# mypy: disable-error-code=attr-defined
+
 from __future__ import annotations
 
 import logging
+from typing import Any
 
 from PyQt6.QtWidgets import QDialog, QMessageBox
 
@@ -13,6 +16,14 @@ logger = logging.getLogger(__name__)
 
 class RequestSaveFlowMixin:
     """Encapsulate save-to-collection workflow and side effects."""
+
+    current_request: Any
+    _request_persistence: Any
+
+    def _build_request_editor_snapshot(self) -> Any: ...
+    def _build_request_from_editor(self, name: str, collection_id: int, folder: str) -> Any: ...
+    def _clear_dirty(self) -> None: ...
+    def _status_message(self, message: str) -> None: ...
 
     def _save_request(self) -> bool:
         """Save the current editor state to a collection (prompts for name / folder)."""
@@ -90,4 +101,3 @@ class RequestSaveFlowMixin:
             logger.error("Failed to save request", exc_info=True)
             QMessageBox.critical(self, "Save Failed", str(exc))
             return False
-

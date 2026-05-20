@@ -6,6 +6,7 @@ Responsibilities:
 - Splash screen lifecycle during startup
 - Graceful shutdown logging
 """
+
 from __future__ import annotations
 
 import logging
@@ -13,18 +14,18 @@ import sys
 import traceback
 import types
 from pathlib import Path
-from typing import NoReturn, Any, Optional
+from typing import Any, NoReturn
 
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QColor, QPixmap
 from PyQt6.QtWidgets import QApplication, QSplashScreen
 
 from equinox.core.log_setup import configure_logging
-from equinox.security.secrets_password import set_master_password_prompt
 from equinox.gui.dialogs.master_password_dialog import prompt_master_password
 from equinox.gui.theme import apply_theme
 from equinox.gui.widgets import CopyableMessageBox
 from equinox.gui.window import MainWindow
+from equinox.security.secrets_password import set_master_password_prompt
 from equinox.storage import get_db
 from equinox.versioning import get_app_version
 
@@ -135,9 +136,7 @@ class _SplashScreen:
 
     def show(self) -> None:
         """Display the splash screen and pump events for responsiveness."""
-        self.screen.showMessage(
-            _SPLASH_INITIAL_MSG, _SPLASH_ALIGN, QColor(_SPLASH_TEXT_COLOR)
-        )
+        self.screen.showMessage(_SPLASH_INITIAL_MSG, _SPLASH_ALIGN, QColor(_SPLASH_TEXT_COLOR))
         self.screen.show()
         QApplication.processEvents()
 
@@ -221,15 +220,13 @@ def _init_database(splash: _SplashScreen) -> Any:
     try:
         return get_db()
     except Exception as exc:
-        _show_fatal_error(
-            splash, "Database Error", _ERR_DB_INIT % exc
-        )
+        _show_fatal_error(splash, "Database Error", _ERR_DB_INIT % exc)
 
 
 def _configure_master_password_gui_prompt(app: QApplication) -> None:
     """Route master-password prompts through a Qt dialog for GUI sessions."""
 
-    def _prompt() -> Optional[str]:
+    def _prompt() -> str | None:
         parent = app.activeWindow() if app.activeWindow() is not None else None
         return prompt_master_password(parent)
 
@@ -253,14 +250,10 @@ def _init_main_window(splash: _SplashScreen, db: object) -> MainWindow:
     try:
         return MainWindow(db)
     except Exception as exc:
-        _show_fatal_error(
-            splash, "Startup Error", _ERR_STARTUP % exc
-        )
+        _show_fatal_error(splash, "Startup Error", _ERR_STARTUP % exc)
 
 
-def _show_fatal_error(
-    splash: _SplashScreen, title: str, message: str
-) -> NoReturn:
+def _show_fatal_error(splash: _SplashScreen, title: str, message: str) -> NoReturn:
     """Display a fatal error dialog and terminate the application.
 
     Must be called from within an except block so that traceback.format_exc()

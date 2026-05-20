@@ -3,11 +3,20 @@ from __future__ import annotations
 import difflib
 
 from PyQt6.QtCore import Qt
-from PyQt6.QtGui import QTextCharFormat, QColor
-from PyQt6.QtWidgets import QDialog, QWidget, QVBoxLayout, QTabWidget, QDialogButtonBox, QHBoxLayout, QLabel, QSplitter, \
-    QTextEdit
+from PyQt6.QtGui import QColor, QTextCharFormat
+from PyQt6.QtWidgets import (
+    QDialog,
+    QDialogButtonBox,
+    QHBoxLayout,
+    QLabel,
+    QSplitter,
+    QTabWidget,
+    QTextEdit,
+    QVBoxLayout,
+    QWidget,
+)
 
-from equinox.gui.theme import get_mono_font, Colors
+from equinox.gui.theme import Colors, get_mono_font
 
 
 class HistoryDiffDialog(QDialog):
@@ -121,12 +130,15 @@ class HistoryDiffDialog(QDialog):
     def _make_unified_diff_widget(self) -> QWidget:
         body_a = (self._entry_a.get("response_body") or "").splitlines(keepends=True)
         body_b = (self._entry_b.get("response_body") or "").splitlines(keepends=True)
-        diff_lines = list(difflib.unified_diff(
-            body_a, body_b,
-            fromfile=f"Entry #{self._entry_a.get('id')}",
-            tofile=f"Entry #{self._entry_b.get('id')}",
-            lineterm="",
-        ))
+        diff_lines = list(
+            difflib.unified_diff(
+                body_a,
+                body_b,
+                fromfile=f"Entry #{self._entry_a.get('id')}",
+                tofile=f"Entry #{self._entry_b.get('id')}",
+                lineterm="",
+            )
+        )
 
         w = QWidget()
         lay = QVBoxLayout(w)

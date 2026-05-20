@@ -26,7 +26,10 @@ Adding a migration
 import logging
 import sqlite3
 from dataclasses import dataclass
-from typing import List
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from equinox.storage.database import Database
 
 from equinox.core.exceptions import StorageError
 
@@ -36,6 +39,7 @@ logger = logging.getLogger(__name__)
 # ─────────────────────────────────────────────────────────────────────────────
 # Migration registry
 # ─────────────────────────────────────────────────────────────────────────────
+
 
 @dataclass(frozen=True)
 class Migration:
@@ -47,7 +51,7 @@ class Migration:
 
 
 # All migrations in strict version order.  Never reorder or delete entries.
-MIGRATIONS: List[Migration] = [
+MIGRATIONS: list[Migration] = [
     Migration(
         version=1,
         description="Initial schema",
@@ -155,7 +159,6 @@ CREATE TABLE IF NOT EXISTS collection_variable_groups (
 );
 """,
     ),
-
     Migration(
         version=2,
         description="Add tags and folder support to requests",
@@ -167,7 +170,6 @@ ALTER TABLE requests ADD COLUMN tags TEXT DEFAULT '';
 ALTER TABLE requests ADD COLUMN folder TEXT DEFAULT '';
 """,
     ),
-
     Migration(
         version=3,
         description="Add timeout and SSL settings to requests",
@@ -176,7 +178,6 @@ ALTER TABLE requests ADD COLUMN timeout    REAL    DEFAULT 30.0;
 ALTER TABLE requests ADD COLUMN verify_ssl INTEGER DEFAULT 1;
 """,
     ),
-
     Migration(
         version=4,
         description="Add follow_redirects to requests and size to history",
@@ -185,7 +186,6 @@ ALTER TABLE requests ADD COLUMN follow_redirects INTEGER DEFAULT 1;
 ALTER TABLE history  ADD COLUMN response_size    INTEGER;
 """,
     ),
-
     Migration(
         version=5,
         description="Add environment_id to history for context tracking",
@@ -193,7 +193,6 @@ ALTER TABLE history  ADD COLUMN response_size    INTEGER;
 ALTER TABLE history ADD COLUMN environment_id INTEGER REFERENCES environments(id) ON DELETE SET NULL;
 """,
     ),
-
     Migration(
         version=6,
         description="Add performance indexes for history and request lookups",
@@ -203,7 +202,6 @@ CREATE INDEX IF NOT EXISTS idx_requests_collection ON requests(collection_id);
 CREATE INDEX IF NOT EXISTS idx_history_url ON history(url);
 """,
     ),
-
     Migration(
         version=7,
         description="Add oauth_clients table for named, reusable OAuth2 credentials",
@@ -225,7 +223,6 @@ CREATE TABLE IF NOT EXISTS oauth_clients (
 CREATE INDEX IF NOT EXISTS idx_oauth_clients_default ON oauth_clients(is_default);
 """,
     ),
-
     Migration(
         version=8,
         description="Add saved_credentials table for reusable auth configs of any type",
@@ -258,13 +255,11 @@ SELECT
 FROM oauth_clients;
 """,
     ),
-
     Migration(
         version=9,
         description="Add captures column to requests for response variable extraction",
         sql="ALTER TABLE requests ADD COLUMN captures TEXT DEFAULT '[]';",
     ),
-
     Migration(
         version=10,
         description="Add pre_script, post_script, cert_path, cert_key_path to requests",
@@ -275,7 +270,6 @@ ALTER TABLE requests ADD COLUMN cert_path     TEXT;
 ALTER TABLE requests ADD COLUMN cert_key_path TEXT;
 """,
     ),
-
     Migration(
         version=11,
         description="Add cookies table for persistent cookie jar",
@@ -294,7 +288,6 @@ CREATE TABLE IF NOT EXISTS cookies (
 );
 """,
     ),
-
     Migration(
         version=12,
         description="Add index on history status_code for faster response filtering",
@@ -303,7 +296,6 @@ CREATE INDEX IF NOT EXISTS idx_history_status_code ON history(status_code);
 CREATE INDEX IF NOT EXISTS idx_history_method ON history(method);
 """,
     ),
-
     Migration(
         version=13,
         description="Add collection_folders table for persistent empty folder records",
@@ -320,13 +312,11 @@ CREATE INDEX IF NOT EXISTS idx_collection_folders_collection
     ON collection_folders(collection_id);
 """,
     ),
-
     Migration(
         version=14,
         description="Add sort_order to requests for manual reordering",
         sql="ALTER TABLE requests ADD COLUMN sort_order INTEGER DEFAULT 0;",
     ),
-
     Migration(
         version=15,
         description="Add hierarchical auth to collections and folders",
@@ -337,25 +327,21 @@ ALTER TABLE collection_folders ADD COLUMN auth_type TEXT;
 ALTER TABLE collection_folders ADD COLUMN auth_data TEXT;
 """,
     ),
-
     Migration(
         version=16,
         description="Add secret_keys column to environments for masked variable display",
         sql="ALTER TABLE environments ADD COLUMN secret_keys TEXT DEFAULT '[]';",
     ),
-
     Migration(
         version=17,
         description="Add assertions column to requests for post-response test rules",
         sql="ALTER TABLE requests ADD COLUMN assertions TEXT DEFAULT '[]';",
     ),
-
     Migration(
         version=18,
         description="Add path_params column to requests for structured path parameter values",
         sql="ALTER TABLE requests ADD COLUMN path_params TEXT DEFAULT '{}';",
     ),
-
     Migration(
         version=19,
         description="Add missing performance indexes for environments, collection variables, and variable groups",
@@ -368,7 +354,6 @@ CREATE INDEX IF NOT EXISTS idx_collection_variable_groups_group ON collection_va
 CREATE INDEX IF NOT EXISTS idx_collection_folders_collection ON collection_folders(collection_id);
 """,
     ),
-
     Migration(
         version=20,
         description="Add Response Intelligence tables for endpoint stats and schema drift tracking",
@@ -465,6 +450,7 @@ CREATE INDEX IF NOT EXISTS idx_history_request_correlation_id
 # Runner
 # ─────────────────────────────────────────────────────────────────────────────
 
+
 class MigrationRunner:
     """Apply pending migrations to a database.
 
@@ -479,7 +465,7 @@ class MigrationRunner:
 
     VERSION_TABLE = "schema_version"
 
-    def __init__(self, db: "Database") -> None:  # type: ignore[name-defined]
+    def __init__(self, db: "Database") -> None:
         self._db = db
 
     # ──────────────────────────────────────────────────────────────────────
@@ -507,6 +493,7 @@ class MigrationRunner:
         # Python's default isolation_level='DEFERRED' silently auto-commits before
         # DDL (CREATE TABLE, ALTER TABLE), which breaks savepoint semantics.
         import sqlite3 as _sqlite3
+
         with self._db.lock:
             conn = _sqlite3.connect(
                 str(self._db.db_path),
@@ -521,14 +508,13 @@ class MigrationRunner:
                 pending = [m for m in MIGRATIONS if m.version > current]
 
                 if not pending:
-                    logger.debug(
-                        "Database already at version %d — no migrations needed", current
-                    )
+                    logger.debug("Database already at version %d — no migrations needed", current)
                     return current
 
                 logger.info(
                     "Applying %d migration(s) to database (current version: %d)",
-                    len(pending), current,
+                    len(pending),
+                    current,
                 )
                 for migration in pending:
                     self._apply(conn, migration)
@@ -539,12 +525,12 @@ class MigrationRunner:
             finally:
                 conn.close()
 
-    def pending(self) -> List[Migration]:
+    def pending(self) -> list[Migration]:
         """Return migrations that have not yet been applied."""
         current = self.version
         return [m for m in MIGRATIONS if m.version > current]
 
-    def history(self) -> List[dict]:
+    def history(self) -> list[dict]:
         """Return the log of applied migrations from the database."""
         with self._db.get_connection() as conn:
             try:
@@ -582,14 +568,14 @@ class MigrationRunner:
 
     def _apply(self, conn: sqlite3.Connection, migration: Migration) -> None:
         """Execute one migration wrapped in an explicit transaction."""
-        logger.info(
-            "Applying migration v%d: %s", migration.version, migration.description
-        )
+        logger.info("Applying migration v%d: %s", migration.version, migration.description)
         try:
             conn.execute("BEGIN")
             try:
                 stmts = self._split_sql(migration.sql)
-                logger.debug("Migration v%d contains %d SQL statement(s)", migration.version, len(stmts))
+                logger.debug(
+                    "Migration v%d contains %d SQL statement(s)", migration.version, len(stmts)
+                )
                 for i, stmt in enumerate(stmts, 1):
                     logger.debug("Migration v%d executing statement %d", migration.version, i)
                     self._execute_stmt(conn, stmt)
@@ -608,9 +594,7 @@ class MigrationRunner:
                 raise
         except sqlite3.Error as exc:
             logger.error("Migration v%d failed with database error: %s", migration.version, exc)
-            raise StorageError(
-                f"Migration v{migration.version} failed: {exc}"
-            ) from exc
+            raise StorageError(f"Migration v{migration.version} failed: {exc}") from exc
 
     @staticmethod
     def _execute_stmt(conn: sqlite3.Connection, stmt: str) -> None:
@@ -621,9 +605,11 @@ class MigrationRunner:
         All other statements are executed as-is.
         """
         import re as _re
+
         m = _re.match(
             r"ALTER\s+TABLE\s+(\w+)\s+ADD\s+COLUMN\s+(\w+)",
-            stmt, _re.IGNORECASE,
+            stmt,
+            _re.IGNORECASE,
         )
         if m:
             table, column = m.group(1), m.group(2)
@@ -633,20 +619,23 @@ class MigrationRunner:
                 (table,),
             )
             if cur.fetchone() is None:
-                logger.debug("Target table %s for ALTER TABLE does not exist — skipping statement", table)
+                logger.debug(
+                    "Target table %s for ALTER TABLE does not exist — skipping statement", table
+                )
                 return
             # PRAGMA statements do not support parameter binding. Safely inline
             # the table name by escaping single quotes to avoid SQL errors.
             safe_table = table.replace("'", "''")
-            existing = {row[1] for row in conn.execute(f"PRAGMA table_info('{safe_table}')").fetchall()}
+            existing = {
+                row[1] for row in conn.execute(f"PRAGMA table_info('{safe_table}')").fetchall()
+            }
             # Fallback: some SQLite versions / wrappers don't allow parameter
             # substitution in PRAGMA; if the set is empty, run the non-parameterized
             # variant as a last resort.
             if not existing:
                 try:
                     existing = {
-                        row[1]
-                        for row in conn.execute(f"PRAGMA table_info({table})").fetchall()
+                        row[1] for row in conn.execute(f"PRAGMA table_info({table})").fetchall()
                     }
                 except Exception:
                     existing = set()
@@ -740,7 +729,8 @@ class MigrationRunner:
                 # End of statement
                 raw = "".join(current)
                 lines = [
-                    line for line in raw.splitlines()
+                    line
+                    for line in raw.splitlines()
                     if line.strip() and not line.strip().startswith("--")
                 ]
                 cleaned = "\n".join(lines).strip()
@@ -755,12 +745,10 @@ class MigrationRunner:
         # Handle trailing statement without semicolon
         raw = "".join(current)
         lines = [
-            line for line in raw.splitlines()
-            if line.strip() and not line.strip().startswith("--")
+            line for line in raw.splitlines() if line.strip() and not line.strip().startswith("--")
         ]
         cleaned = "\n".join(lines).strip()
         if cleaned:
             statements.append(cleaned)
 
         return statements
-

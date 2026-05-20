@@ -8,17 +8,11 @@ Verifies that:
 3. The collections panel tree groups requests by folder and starts collapsed.
 """
 
-import os
 import pytest
-import tempfile
-from pathlib import Path
-from unittest.mock import MagicMock, patch
 
-from equinox.storage.database import Database
 from equinox.storage.collections import CollectionManager
+from equinox.storage.database import Database
 from equinox.storage.variable_groups import VariableGroupManager
-from equinox.core.exceptions import ValidationError
-
 
 # ── Fixtures ──────────────────────────────────────────────────────────────────
 
@@ -76,7 +70,7 @@ class TestInheritedVariablePrecedence:
 
         merged = col_mgr.get_all_collection_variables(collection_id)
         assert merged["DB_HOST"] == "high-host"  # lower number wins
-        assert merged["DB_PORT"] == "5432"        # only in low-priority group
+        assert merged["DB_PORT"] == "5432"  # only in low-priority group
 
     def test_three_tier_precedence(self, col_mgr, var_mgr, collection_id):
         """common group → env group → collection-specific."""
@@ -94,9 +88,9 @@ class TestInheritedVariablePrecedence:
         col_mgr.add_variable(collection_id, "A", "collection-A")
 
         merged = col_mgr.get_all_collection_variables(collection_id)
-        assert merged["A"] == "collection-A"   # collection wins
-        assert merged["B"] == "staging-B"       # env group wins
-        assert merged["C"] == "common-C"        # only in common
+        assert merged["A"] == "collection-A"  # collection wins
+        assert merged["B"] == "staging-B"  # env group wins
+        assert merged["C"] == "common-C"  # only in common
 
     def test_no_groups_returns_collection_only(self, col_mgr, collection_id):
         col_mgr.add_variable(collection_id, "KEY", "value")
@@ -131,28 +125,32 @@ class TestInheritedVariablePrecedence:
 
 # ── Folder grouping in list_requests ──────────────────────────────────────────
 
+
 class TestFolderGrouping:
     """Requests with a ``folder`` column should be grouped under folder nodes
     in the collections panel. We test at the storage level here."""
 
     def test_requests_have_folder_column(self, db, col_mgr, collection_id):
         """The requests table has a 'folder' column (from migration v2)."""
-        row = db.fetchone(
-            "SELECT sql FROM sqlite_master WHERE type='table' AND name='requests'"
-        )
+        row = db.fetchone("SELECT sql FROM sqlite_master WHERE type='table' AND name='requests'")
         assert "folder" in row["sql"].lower()
 
     def test_folder_returned_in_list_requests(self, db, col_mgr, collection_id):
         """list_requests returns the folder field for each request."""
         from equinox.core.request import Request
-        req = Request(method="GET", url="https://example.com",
-                      headers={}, params={}, name="Test Req",
-                      collection_id=collection_id)
+
+        req = Request(
+            method="GET",
+            url="https://example.com",
+            headers={},
+            params={},
+            name="Test Req",
+            collection_id=collection_id,
+        )
         req_id = col_mgr.save_request(req, collection_id=collection_id)
 
         # Manually set the folder
-        db.execute("UPDATE requests SET folder = ? WHERE id = ?",
-                   ("Auth", req_id))
+        db.execute("UPDATE requests SET folder = ? WHERE id = ?", ("Auth", req_id))
 
         rows = col_mgr.list_requests(collection_id)
         assert len(rows) == 1
@@ -161,9 +159,15 @@ class TestFolderGrouping:
     def test_folder_empty_by_default(self, db, col_mgr, collection_id):
         """New requests have an empty folder by default."""
         from equinox.core.request import Request
-        req = Request(method="GET", url="https://example.com",
-                      headers={}, params={}, name="Root Req",
-                      collection_id=collection_id)
+
+        req = Request(
+            method="GET",
+            url="https://example.com",
+            headers={},
+            params={},
+            name="Root Req",
+            collection_id=collection_id,
+        )
         col_mgr.save_request(req, collection_id=collection_id)
 
         rows = col_mgr.list_requests(collection_id)
@@ -174,11 +178,16 @@ class TestFolderGrouping:
         path baked into their name (e.g. 'Auth/Login').  We verify the name
         pattern is preserved."""
         from equinox.core.request import Request
-        req = Request(method="POST", url="https://example.com/login",
-                      headers={}, params={}, name="Auth/Login",
-                      collection_id=collection_id)
+
+        req = Request(
+            method="POST",
+            url="https://example.com/login",
+            headers={},
+            params={},
+            name="Auth/Login",
+            collection_id=collection_id,
+        )
         col_mgr.save_request(req, collection_id=collection_id)
 
         rows = col_mgr.list_requests(collection_id)
         assert rows[0]["name"] == "Auth/Login"
-

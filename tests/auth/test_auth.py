@@ -1,13 +1,12 @@
 """Tests for authentication modules."""
+
+import base64
 import os
+from unittest.mock import MagicMock, Mock, patch
 
 import pytest
-from unittest.mock import Mock, MagicMock, patch
-import base64
 
-from equinox.auth import (
-    BearerAuth, BasicAuth, APIKeyAuth, OAuth2Auth
-)
+from equinox.auth import APIKeyAuth, BasicAuth, BearerAuth, OAuth2Auth
 from equinox.core import AuthError
 from equinox.core.request import Request
 
@@ -34,6 +33,7 @@ class TestBearerAuth:
     def test_bearer_auth_with_empty_token(self):
         """Test Bearer auth rejects empty token."""
         from equinox.core.exceptions import AuthError
+
         with pytest.raises(AuthError, match="non-empty string"):
             BearerAuth("")
 
@@ -115,7 +115,7 @@ class TestOAuth2Auth:
         auth = OAuth2Auth(
             client_id="client-123",
             client_secret="secret-456",
-            token_url="https://auth.example.com/token"
+            token_url="https://auth.example.com/token",
         )
 
         assert auth.client_id == "client-123"
@@ -129,31 +129,29 @@ class TestOAuth2Auth:
             client_id="client",
             client_secret="secret",
             token_url="https://auth.example.com/token",
-            access_token="existing-token"
+            access_token="existing-token",
         )
 
         assert auth.access_token == "existing-token"
 
-    @patch('equinox.auth._oauth2.httpx.Client')
+    @patch("equinox.auth._oauth2.httpx.Client")
     def test_oauth2_request_token(self, mock_client_class):
         """Test requesting OAuth2 token."""
         # Mock the httpx.Client instance and its post method
         mock_client = MagicMock()
         mock_client_class.return_value.__enter__.return_value = mock_client
-        
+
         mock_response = Mock()
         mock_response.status_code = 200
         mock_response.json.return_value = {
             "access_token": "new-token",
             "token_type": "Bearer",
-            "expires_in": 3600
+            "expires_in": 3600,
         }
         mock_client.post.return_value = mock_response
 
         auth = OAuth2Auth(
-            client_id="client",
-            client_secret="secret",
-            token_url="https://auth.example.com/token"
+            client_id="client", client_secret="secret", token_url="https://auth.example.com/token"
         )
 
         # Trigger token refresh by applying auth
@@ -167,14 +165,14 @@ class TestOAuth2Auth:
         assert auth.access_token == "new-token"
         assert headers["Authorization"] == "Bearer new-token"
 
-    @patch('equinox.auth._oauth2.httpx.Client')
+    @patch("equinox.auth._oauth2.httpx.Client")
     def test_oauth2_apply_with_token(self, mock_client):
         """Test applying OAuth2 auth with existing token."""
         auth = OAuth2Auth(
             client_id="client",
             client_secret="secret",
             token_url="https://auth.example.com/token",
-            access_token="my-token"
+            access_token="my-token",
         )
 
         request = Mock()
@@ -185,26 +183,24 @@ class TestOAuth2Auth:
         assert "Authorization" in headers
         assert headers["Authorization"] == "Bearer my-token"
 
-    @patch('equinox.auth._oauth2.httpx.Client')
+    @patch("equinox.auth._oauth2.httpx.Client")
     def test_oauth2_apply_requests_token_if_needed(self, mock_client_class):
         """Test that OAuth2 requests token if not available."""
         # Mock the httpx.Client instance and its post method
         mock_client = MagicMock()
         mock_client_class.return_value.__enter__.return_value = mock_client
-        
+
         mock_response = Mock()
         mock_response.status_code = 200
         mock_response.json.return_value = {
             "access_token": "auto-requested-token",
             "token_type": "Bearer",
-            "expires_in": 3600
+            "expires_in": 3600,
         }
         mock_client.post.return_value = mock_response
 
         auth = OAuth2Auth(
-            client_id="client",
-            client_secret="secret",
-            token_url="https://auth.example.com/token"
+            client_id="client", client_secret="secret", token_url="https://auth.example.com/token"
         )
 
         request = Mock()
@@ -217,20 +213,20 @@ class TestOAuth2Auth:
         assert auth.access_token == "auto-requested-token"
         assert headers["Authorization"] == "Bearer auto-requested-token"
 
-    @patch('equinox.auth._oauth2.httpx.Client')
+    @patch("equinox.auth._oauth2.httpx.Client")
     def test_oauth2_token_refresh(self, mock_client_class):
         """Test OAuth2 token refresh."""
         # Mock the httpx.Client instance and its post method
         mock_client = MagicMock()
         mock_client_class.return_value.__enter__.return_value = mock_client
-        
+
         mock_response = Mock()
         mock_response.status_code = 200
         mock_response.json.return_value = {
             "access_token": "refreshed-token",
             "token_type": "Bearer",
             "expires_in": 3600,
-            "refresh_token": "new-refresh-token"
+            "refresh_token": "new-refresh-token",
         }
         mock_client.post.return_value = mock_response
 
@@ -238,7 +234,7 @@ class TestOAuth2Auth:
             client_id="client",
             client_secret="secret",
             token_url="https://auth.example.com/token",
-            refresh_token="old-refresh-token"
+            refresh_token="old-refresh-token",
         )
 
         # Trigger refresh by applying auth (which checks if refresh is needed)
@@ -251,7 +247,7 @@ class TestOAuth2Auth:
         assert auth.access_token == "refreshed-token"
         assert auth.refresh_token == "new-refresh-token"
 
-    @patch('equinox.auth._oauth2.httpx.Client')
+    @patch("equinox.auth._oauth2.httpx.Client")
     def test_oauth2_token_request_failure(self, mock_client):
         """Test OAuth2 token request failure."""
         # Mock failed response
@@ -264,9 +260,7 @@ class TestOAuth2Auth:
         mock_client.return_value.__enter__.return_value = mock_client_instance
 
         auth = OAuth2Auth(
-            client_id="client",
-            client_secret="secret",
-            token_url="https://auth.example.com/token"
+            client_id="client", client_secret="secret", token_url="https://auth.example.com/token"
         )
 
         with pytest.raises(Exception):
@@ -325,6 +319,7 @@ class TestAuthStorage:
         """Create temporary database"""
         import tempfile
         from pathlib import Path
+
         from equinox.storage import Database
 
         with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as tmp:
@@ -341,6 +336,7 @@ class TestAuthStorage:
     def mgr(self, db):
         """Create collection manager"""
         from equinox.storage import CollectionManager
+
         return CollectionManager(db)
 
     @pytest.fixture
@@ -355,7 +351,7 @@ class TestAuthStorage:
             method="GET",
             url="https://api.example.com/protected",
             auth=auth,
-            name="Protected Endpoint"
+            name="Protected Endpoint",
         )
 
         req_id = mgr.save_request(request, collection_id=collection_id)
@@ -376,7 +372,7 @@ class TestAuthStorage:
             method="GET",
             url="https://api.example.com/protected",
             auth=auth,
-            name="Bearer Auth Endpoint"
+            name="Bearer Auth Endpoint",
         )
 
         req_id = mgr.save_request(request, collection_id=collection_id)
@@ -395,10 +391,7 @@ class TestAuthStorage:
             scope="read",
         )
         request = Request(
-            method="GET",
-            url="https://api.example.com/data",
-            auth=auth,
-            name="OAuth2 Endpoint"
+            method="GET", url="https://api.example.com/data", auth=auth, name="OAuth2 Endpoint"
         )
 
         req_id = mgr.save_request(request, collection_id=collection_id)
@@ -415,10 +408,7 @@ class TestAuthStorage:
         """Test saving request with API key"""
         auth = APIKeyAuth(key="X-API-Key", value="key123", location="header")
         request = Request(
-            method="GET",
-            url="https://api.example.com/data",
-            auth=auth,
-            name="API Key Endpoint"
+            method="GET", url="https://api.example.com/data", auth=auth, name="API Key Endpoint"
         )
 
         req_id = mgr.save_request(request, collection_id=collection_id)
@@ -433,9 +423,7 @@ class TestAuthStorage:
     def test_save_request_without_auth(self, mgr, collection_id):
         """Test saving request without auth"""
         request = Request(
-            method="GET",
-            url="https://api.example.com/public",
-            name="Public Endpoint"
+            method="GET", url="https://api.example.com/public", name="Public Endpoint"
         )
 
         req_id = mgr.save_request(request, collection_id=collection_id)
@@ -447,10 +435,7 @@ class TestAuthStorage:
         """Test that loading a request preserves auth"""
         auth = BasicAuth(username="testuser", password="testpass")
         request = Request(
-            method="POST",
-            url="https://api.example.com/create",
-            auth=auth,
-            name="Create Endpoint"
+            method="POST", url="https://api.example.com/create", auth=auth, name="Create Endpoint"
         )
 
         req_id = mgr.save_request(request, collection_id=collection_id)

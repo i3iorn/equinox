@@ -1,10 +1,10 @@
 """Tests for core/audit.py — audit logger convenience methods and sanitisation."""
 
 import json
-import pytest
-from pathlib import Path
 
-from equinox.core.audit import AuditLogger, AuditEventType, AuditLevel
+import pytest
+
+from equinox.core.audit import AuditEventType, AuditLogger
 
 
 @pytest.fixture
@@ -227,4 +227,3 @@ class TestRotateLog:
         parent = audit.log_path.parent
         archives = list(parent.glob("audit_*.log"))
         assert len(archives) >= 1
-

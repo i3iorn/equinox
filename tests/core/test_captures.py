@@ -1,15 +1,16 @@
 """Unit tests for CaptureEngine — response data extraction."""
 
 import json
-import pytest
 from unittest.mock import MagicMock
 
-from equinox.core.captures import Capture, CaptureEngine, CaptureResult
+import pytest
 
+from equinox.core.captures import Capture, CaptureEngine, CaptureResult
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Helpers
 # ─────────────────────────────────────────────────────────────────────────────
+
 
 def _make_response(status=200, body=None, headers=None):
     """Return a minimal mock response."""
@@ -27,8 +28,8 @@ def _make_response(status=200, body=None, headers=None):
 # _extract_json
 # ─────────────────────────────────────────────────────────────────────────────
 
-class TestExtractJson:
 
+class TestExtractJson:
     def test_simple_key(self):
         data = {"id": 42, "name": "alice"}
         assert CaptureEngine._extract_json("id", data) == "42"
@@ -91,8 +92,8 @@ class TestExtractJson:
 # _extract_header
 # ─────────────────────────────────────────────────────────────────────────────
 
-class TestExtractHeader:
 
+class TestExtractHeader:
     def test_exact_match(self):
         resp = _make_response(headers={"content-type": "application/json"})
         assert CaptureEngine._extract_header("content-type", resp) == "application/json"
@@ -119,8 +120,8 @@ class TestExtractHeader:
 # _extract_regex
 # ─────────────────────────────────────────────────────────────────────────────
 
-class TestExtractRegex:
 
+class TestExtractRegex:
     def test_capture_group_returns_group1(self):
         resp = MagicMock()
         resp.text = "order_id=88 and other stuff"
@@ -147,24 +148,24 @@ class TestExtractRegex:
 # apply_all
 # ─────────────────────────────────────────────────────────────────────────────
 
-class TestApplyAll:
 
+class TestApplyAll:
     def _make_full_response(self):
         resp = _make_response(
             status=200,
             body={"user": {"id": 42}, "tokens": ["tok_abc"]},
             headers={"content-type": "application/json", "x-request-id": "req-9"},
         )
-        resp.text = 'user_id=42 token=tok_abc order_id=88'
+        resp.text = "user_id=42 token=tok_abc order_id=88"
         return resp
 
     def test_all_source_types(self):
         resp = self._make_full_response()
         captures = [
-            Capture("uid",    "json",   "user.id"),
-            Capture("tok",    "json",   "tokens[0]"),
-            Capture("ct",     "header", "content-type"),
-            Capture("ord",    "regex",  r"order_id=(\d+)"),
+            Capture("uid", "json", "user.id"),
+            Capture("tok", "json", "tokens[0]"),
+            Capture("ct", "header", "content-type"),
+            Capture("ord", "regex", r"order_id=(\d+)"),
             Capture("status", "status", ""),
         ]
         results = CaptureEngine.apply_all(captures, resp)
@@ -197,9 +198,9 @@ class TestApplyAll:
         resp.text = ""
         resp.headers = {}
         captures = [
-            Capture("a", "json",   "x"),
+            Capture("a", "json", "x"),
             Capture("b", "header", "x-missing"),
-            Capture("c", "regex",  r"no match"),
+            Capture("c", "regex", r"no match"),
         ]
         # Must not raise
         results = CaptureEngine.apply_all(captures, resp)
@@ -224,13 +225,13 @@ class TestApplyAll:
 # from_dict_list / to_dict_list round-trip
 # ─────────────────────────────────────────────────────────────────────────────
 
-class TestSerialisation:
 
+class TestSerialisation:
     def test_round_trip(self):
         captures = [
-            Capture("uid",    "json",   "user.id",   ""),
-            Capture("token",  "header", "x-token",   "none"),
-            Capture("status", "status", "",           ""),
+            Capture("uid", "json", "user.id", ""),
+            Capture("token", "header", "x-token", "none"),
+            Capture("status", "status", "", ""),
         ]
         raw = CaptureEngine.to_dict_list(captures)
         assert len(raw) == 3
@@ -241,7 +242,7 @@ class TestSerialisation:
     def test_from_dict_list_skips_empty_variable(self):
         raw = [
             {"variable": "", "source": "json", "path": "x"},
-            {"source": "json", "path": "y"},          # missing variable key
+            {"source": "json", "path": "y"},  # missing variable key
             {"variable": "ok", "source": "status"},
         ]
         result = CaptureEngine.from_dict_list(raw)

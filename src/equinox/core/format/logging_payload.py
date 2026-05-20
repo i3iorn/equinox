@@ -2,14 +2,14 @@
 
 from __future__ import annotations
 
-from typing import Any, Dict, Optional
+from typing import Any
 
-from equinox.security.redactor import redact_headers, redact_url, redact_body
 from equinox.core.request.request import Request
 from equinox.core.request.response import Response
+from equinox.security.redactor import redact_body, redact_headers, redact_url
 
 
-def _safe_body_preview(body: Optional[Any], limit: int = 1000) -> str:
+def _safe_body_preview(body: Any | None, limit: int = 1000) -> str:
     if body is None:
         return ""
     if isinstance(body, (bytes, bytearray)):
@@ -18,7 +18,7 @@ def _safe_body_preview(body: Optional[Any], limit: int = 1000) -> str:
     return s[:limit]
 
 
-def request_payload(request: Request, include_body: bool = False) -> Dict[str, Any]:
+def request_payload(request: Request, include_body: bool = False) -> dict[str, Any]:
     payload = {
         "method": request.method,
         "url": redact_url(request.url),
@@ -32,7 +32,9 @@ def request_payload(request: Request, include_body: bool = False) -> Dict[str, A
     return payload
 
 
-def response_payload(request: Request, response: Optional[Response], elapsed_time: float, include_body: bool = False) -> Dict[str, Any]:
+def response_payload(
+    request: Request, response: Response | None, elapsed_time: float, include_body: bool = False
+) -> dict[str, Any]:
     payload = {
         "method": request.method,
         "url": redact_url(request.url),
@@ -46,11 +48,10 @@ def response_payload(request: Request, response: Optional[Response], elapsed_tim
     return payload
 
 
-def error_payload(request: Request, error: Exception) -> Dict[str, Any]:
+def error_payload(request: Request, error: Exception) -> dict[str, Any]:
     return {
         "method": request.method,
         "url": redact_url(request.url),
         "error_type": type(error).__name__,
         "error_message": redact_body(str(error), max_len=500),
     }
-

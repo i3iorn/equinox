@@ -1,12 +1,11 @@
 """Tests for AWS SigV4 authentication strategy."""
 
-import pytest
 from unittest.mock import MagicMock
 
 from equinox.auth._aws_sigv4 import AWSSigV4Auth
 
-
 # ── Helpers ───────────────────────────────────────────────────────────────────
+
 
 def _make_request(url="https://s3.amazonaws.com/bucket/key", method="GET", body=None):
     req = MagicMock()
@@ -17,6 +16,7 @@ def _make_request(url="https://s3.amazonaws.com/bucket/key", method="GET", body=
 
 
 # ── apply() — header injection ────────────────────────────────────────────────
+
 
 class TestApply:
     def test_authorization_header_present(self):
@@ -91,10 +91,7 @@ class TestApply:
     def test_query_string_canonicalized(self):
         auth = AWSSigV4Auth("AKID", "secret", "us-east-1", "s3")
         headers = {}
-        auth.apply(
-            _make_request("https://s3.amazonaws.com/bucket?b=2&a=1"),
-            headers
-        )
+        auth.apply(_make_request("https://s3.amazonaws.com/bucket?b=2&a=1"), headers)
         # Should not raise, and auth header should be present
         assert "Authorization" in headers
 
@@ -115,6 +112,7 @@ class TestApply:
 
 # ── Serialization ─────────────────────────────────────────────────────────────
 
+
 class TestSerialization:
     def test_to_dict_round_trip(self):
         auth = AWSSigV4Auth("K", "S", "ap-southeast-1", "lambda", session_token="T")
@@ -131,8 +129,13 @@ class TestSerialization:
         assert auth.to_dict()["type"] == "aws_sigv4"
 
     def test_from_dict_no_session_token(self):
-        d = {"type": "aws_sigv4", "access_key": "K", "secret_key": "S",
-             "region": "us-east-1", "service": "s3"}
+        d = {
+            "type": "aws_sigv4",
+            "access_key": "K",
+            "secret_key": "S",
+            "region": "us-east-1",
+            "service": "s3",
+        }
         auth = AWSSigV4Auth.from_dict(d)
         assert auth.session_token is None
 

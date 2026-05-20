@@ -12,6 +12,7 @@ Internal structure
   _searcher   — ``_HistorySearcher``   — SQL filter building + Python post-filters
   manager     — ``HistoryManager``     — thin public orchestrator
 """
+
 from __future__ import annotations
 
 from .manager import HistoryManager

@@ -1,6 +1,7 @@
 """Tests for HTTP client"""
 
 import pytest
+
 from equinox.core.client import HTTPClient
 from equinox.core.request import Request
 
@@ -97,8 +98,6 @@ def test_send_post_request():
 
     assert response.status_code == 200
     assert response.is_json
-
-
 
 
 if __name__ == "__main__":

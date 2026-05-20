@@ -7,6 +7,7 @@ from typing import Any
 
 logger = logging.getLogger(__name__)
 
+
 def notify_log_panel(log_panel: Any, method: str, *args: Any) -> None:
     """Call a logging-panel method safely.
 
@@ -21,4 +22,3 @@ def notify_log_panel(log_panel: Any, method: str, *args: Any) -> None:
         getattr(log_panel, method)(*args)
     except Exception:
         logger.debug("Failed to call log_panel.%s", method, exc_info=True)
-

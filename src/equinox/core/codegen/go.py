@@ -1,6 +1,8 @@
 from equinox.core.request import Request, Response
-from .utils import _escape_go_string
+
 from ._python_helpers import _inject_auth_into_headers
+from .utils import _escape_go_string
+
 
 class GoHttpGenerator:
     def generate(self, response_or_request: Response | Request) -> str:
@@ -49,7 +51,7 @@ class GoHttpGenerator:
 
         lines.append("    resp, _ := http.DefaultClient.Do(req)")
         lines.append("    defer resp.Body.Close()")
-        lines.append("    fmt.Println(\"Status:\", resp.Status)")
-        lines.append("    fmt.Println(\"Headers:\", resp.Header)")
+        lines.append('    fmt.Println("Status:", resp.Status)')
+        lines.append('    fmt.Println("Headers:", resp.Header)')
         lines.append("}")
         return "\n".join(lines)

@@ -33,7 +33,9 @@ class _ManagerThatFails(_ManagerWithRecords):
         raise RuntimeError("cookie parse failed")
 
 
-def _make_response(headers: Dict[str, str], set_cookie_headers: Optional[List[str]] = None) -> Response:
+def _make_response(
+    headers: Dict[str, str], set_cookie_headers: Optional[List[str]] = None
+) -> Response:
     return Response(
         status_code=200,
         reason="OK",
@@ -99,4 +101,3 @@ def test_cookie_handler_swallows_update_exceptions() -> None:
 
     # Should not raise when manager update fails.
     handler.update_from_response(_make_response({"set-cookie": "x=1"}), "https://example.com")
-

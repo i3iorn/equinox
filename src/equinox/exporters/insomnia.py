@@ -1,13 +1,14 @@
 """Insomnia v4 exporter."""
+
 from __future__ import annotations
 
 import logging
 from datetime import datetime, timezone
-from typing import Any, Dict, List
+from typing import Any
 
 from equinox.core.util.time import to_iso_z
-from equinox.storage.database import Database
 from equinox.exporters._prepared import _BaseCollectionExporter, _PreparedRequest
+from equinox.storage.database import Database
 
 __all__ = ["InsomniaExporter"]
 
@@ -26,7 +27,7 @@ class InsomniaExporter(_BaseCollectionExporter):
     def export_collection(
         db: Database,
         collection_id: int,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Export *collection_id* as an Insomnia v4 dict.
 
         Args:
@@ -42,26 +43,27 @@ class InsomniaExporter(_BaseCollectionExporter):
         collection, requests = InsomniaExporter._load_collection(db, collection_id)
         now_ms = int(datetime.now(timezone.utc).timestamp() * 1000)
 
-        resources: List[Dict[str, Any]] = [
-            InsomniaExporter._build_resource(req, idx, now_ms)
-            for idx, req in enumerate(requests)
+        resources: list[dict[str, Any]] = [
+            InsomniaExporter._build_resource(req, idx, now_ms) for idx, req in enumerate(requests)
         ]
-        resources.append({
-            "_id":                      "fld_root",
-            "_type":                    "request_group",
-            "name":                     collection.get("name", ""),
-            "description":              collection.get("description", ""),
-            "environment":              {},
-            "environmentPropertyOrder": None,
-            "metaSortKey":              -1,
-        })
+        resources.append(
+            {
+                "_id": "fld_root",
+                "_type": "request_group",
+                "name": collection.get("name", ""),
+                "description": collection.get("description", ""),
+                "environment": {},
+                "environmentPropertyOrder": None,
+                "metaSortKey": -1,
+            }
+        )
 
         return {
-            "_type":           "export",
+            "_type": "export",
             "__export_format": 4,
-            "__export_date":   to_iso_z(),
+            "__export_date": to_iso_z(),
             "__export_source": "equinox.api",
-            "resources":       resources,
+            "resources": resources,
         }
 
     @staticmethod
@@ -69,7 +71,7 @@ class InsomniaExporter(_BaseCollectionExporter):
         req: _PreparedRequest,
         idx: int,
         now_ms: int,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Build a single Insomnia request resource dict from *req*.
 
         Args:
@@ -80,22 +82,21 @@ class InsomniaExporter(_BaseCollectionExporter):
         Returns:
             Insomnia request resource dict.
         """
-        resource: Dict[str, Any] = {
-            "_id":            f"req_{idx}",
-            "_type":          "request",
-            "parentId":       "fld_root",
-            "modified":       now_ms,
-            "created":        now_ms,
-            "name":           req.name,
-            "description":    req.description,
-            "method":         req.method,
-            "url":            req.raw_url,
+        resource: dict[str, Any] = {
+            "_id": f"req_{idx}",
+            "_type": "request",
+            "parentId": "fld_root",
+            "modified": now_ms,
+            "created": now_ms,
+            "name": req.name,
+            "description": req.description,
+            "method": req.method,
+            "url": req.raw_url,
             "authentication": {},
-            "parameters":     [{"name": k, "value": v} for k, v in req.params.items()],
-            "headers":        [{"name": k, "value": v} for k, v in req.headers.items()],
-            "body":           None,
+            "parameters": [{"name": k, "value": v} for k, v in req.params.items()],
+            "headers": [{"name": k, "value": v} for k, v in req.headers.items()],
+            "body": None,
         }
         if req.body:
             resource["body"] = {"mimeType": req.content_type, "text": req.body}
         return resource
-

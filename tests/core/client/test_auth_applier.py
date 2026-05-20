@@ -2,22 +2,23 @@
 
 import logging
 from typing import Optional
-import pytest
 from unittest.mock import MagicMock
+
+import pytest
 
 from equinox.auth import AuthStrategy
 from equinox.core.client.auth_applier import (
+    _PROXY_REFUSED_MARKERS,
     AuthApplier,
     _is_proxy_connection_refused,
-    _PROXY_REFUSED_MARKERS,
 )
 from equinox.core.exceptions import RequestError
 from equinox.core.request import Request
 
-
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
+
 
 def _make_request(**kwargs) -> Request:
     """Return a minimal Request; override fields via kwargs."""
@@ -41,6 +42,7 @@ def _make_auth(adds_headers: Optional[dict] = None) -> MagicMock:
 # ---------------------------------------------------------------------------
 # _is_proxy_connection_refused
 # ---------------------------------------------------------------------------
+
 
 class TestIsProxyConnectionRefused:
     @pytest.mark.parametrize("marker", list(_PROXY_REFUSED_MARKERS))
@@ -66,6 +68,7 @@ class TestIsProxyConnectionRefused:
 # ---------------------------------------------------------------------------
 # AuthApplier.apply — no auth
 # ---------------------------------------------------------------------------
+
 
 class TestAuthApplierApplyNoAuth:
     def test_returns_empty_dict_when_no_auth(self):
@@ -94,6 +97,7 @@ class TestAuthApplierApplyNoAuth:
 # AuthApplier.apply — auth resolution precedence
 # ---------------------------------------------------------------------------
 
+
 class TestAuthApplierApplyPrecedence:
     def test_explicit_auth_takes_precedence_over_request_auth(self):
         applier = AuthApplier()
@@ -118,6 +122,7 @@ class TestAuthApplierApplyPrecedence:
 # ---------------------------------------------------------------------------
 # AuthApplier.apply — header isolation
 # ---------------------------------------------------------------------------
+
 
 class TestAuthApplierApplyHeaderIsolation:
     def test_only_added_headers_returned(self):
@@ -159,6 +164,7 @@ class TestAuthApplierApplyHeaderIsolation:
 # AuthApplier.apply — logging on success
 # ---------------------------------------------------------------------------
 
+
 class TestAuthApplierApplyLogging:
     def test_debug_log_when_headers_added(self, caplog):
         applier = AuthApplier()
@@ -180,6 +186,7 @@ class TestAuthApplierApplyLogging:
 # ---------------------------------------------------------------------------
 # AuthApplier._invoke_strategy — proxy injection
 # ---------------------------------------------------------------------------
+
 
 class TestInvokeStrategyProxyInjection:
     def test_apply_with_context_receives_proxy_and_verify_ssl(self):
@@ -254,6 +261,7 @@ class TestInvokeStrategyProxyInjection:
 # ---------------------------------------------------------------------------
 # AuthApplier._map_auth_error
 # ---------------------------------------------------------------------------
+
 
 class TestMapAuthError:
     def _dummy_strategy(self):
@@ -331,6 +339,7 @@ class TestMapAuthError:
 # Full apply() path when strategy raises
 # ---------------------------------------------------------------------------
 
+
 class TestAuthApplierApplyStrategyRaises:
     def test_apply_propagates_request_error_on_strategy_failure(self):
         applier = AuthApplier()
@@ -346,10 +355,5 @@ class TestAuthApplierApplyStrategyRaises:
         auth.apply.side_effect = OSError("connection refused")
         request = _make_request()
         with pytest.raises(RequestError) as exc_info:
-            applier.apply(
-                request, {}, explicit_auth=auth, proxy="http://proxy:3128"
-            )
+            applier.apply(request, {}, explicit_auth=auth, proxy="http://proxy:3128")
         assert "proxy" in str(exc_info.value).lower()
-
-
-

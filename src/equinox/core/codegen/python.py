@@ -1,6 +1,9 @@
 import json
+
 from equinox.core.request import Request, Response
-from ._python_helpers import _inject_auth_into_headers, _auth_kwarg_for_basic, _python_body_lines
+
+from ._python_helpers import _auth_kwarg_for_basic, _inject_auth_into_headers, _python_body_lines
+
 
 class PythonRequestsGenerator:
     def generate(self, response_or_request: Response | Request) -> str:
@@ -43,6 +46,7 @@ class PythonRequestsGenerator:
         lines.append("print(response.text)")
 
         return "\n".join(lines)
+
 
 class PythonHttpxGenerator:
     def generate(self, response_or_request: Response | Request) -> str:

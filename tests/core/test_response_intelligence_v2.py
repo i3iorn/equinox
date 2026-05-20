@@ -4,23 +4,28 @@ import json
 import time
 
 from equinox.core.request import Request, Response
-from equinox.core.response_intelligence import AnalysisEngine, normalize_url_pattern
-from equinox.core.response_intelligence import AnalysisContext, Category, Severity
-from equinox.core.response_intelligence.security import (
-    CORSMisconfigAnalyzer,
-    JWTDecodeAnalyzer,
-    MissingSecurityHeadersAnalyzer,
-)
-from equinox.core.response_intelligence.performance import (
-    CompressionAnalyzer,
-    PaginationDetectionAnalyzer,
+from equinox.core.response_intelligence import (
+    AnalysisContext,
+    AnalysisEngine,
+    Category,
+    Severity,
+    normalize_url_pattern,
 )
 from equinox.core.response_intelligence.consistency import (
     RedirectLocationAnalyzer,
     SchemaDriftAnalyzer,
 )
-from equinox.core.response_intelligence.server import ResponseTimeAnomalyAnalyzer
 from equinox.core.response_intelligence.hints import NPlusOneDetectionAnalyzer
+from equinox.core.response_intelligence.performance import (
+    CompressionAnalyzer,
+    PaginationDetectionAnalyzer,
+)
+from equinox.core.response_intelligence.security import (
+    CORSMisconfigAnalyzer,
+    JWTDecodeAnalyzer,
+    MissingSecurityHeadersAnalyzer,
+)
+from equinox.core.response_intelligence.server import ResponseTimeAnomalyAnalyzer
 
 
 def _make_ctx(
@@ -90,7 +95,9 @@ class TestV2Engine:
 
 class TestV2Helpers:
     def test_normalize_url_pattern(self):
-        assert normalize_url_pattern("https://api.com/users/123/posts/456") == "/users/{id}/posts/{id}"
+        assert (
+            normalize_url_pattern("https://api.com/users/123/posts/456") == "/users/{id}/posts/{id}"
+        )
 
 
 class TestV2Security:
@@ -100,10 +107,13 @@ class TestV2Security:
         assert findings[0].category == Category.SECURITY
 
     def test_cors_wildcard_with_creds_critical(self):
-        ctx = _make_ctx(headers={
-            "access-control-allow-origin": "*",
-            "access-control-allow-credentials": "true",
-        }, body=b"ok")
+        ctx = _make_ctx(
+            headers={
+                "access-control-allow-origin": "*",
+                "access-control-allow-credentials": "true",
+            },
+            body=b"ok",
+        )
         findings = CORSMisconfigAnalyzer().analyze(ctx)
         assert len(findings) == 1
         assert findings[0].severity == Severity.CRITICAL
@@ -111,8 +121,16 @@ class TestV2Security:
     def test_jwt_alg_none_is_critical(self):
         import base64
 
-        header = base64.urlsafe_b64encode(json.dumps({"alg": "none"}).encode()).rstrip(b"=").decode()
-        payload = base64.urlsafe_b64encode(json.dumps({"sub": "u1", "exp": int(time.time()) + 600}).encode()).rstrip(b"=").decode()
+        header = (
+            base64.urlsafe_b64encode(json.dumps({"alg": "none"}).encode()).rstrip(b"=").decode()
+        )
+        payload = (
+            base64.urlsafe_b64encode(
+                json.dumps({"sub": "u1", "exp": int(time.time()) + 600}).encode()
+            )
+            .rstrip(b"=")
+            .decode()
+        )
         token = f"{header}.{payload}.sig"
         ctx = _make_ctx(body=json.dumps({"access_token": token}).encode())
         findings = JWTDecodeAnalyzer().analyze(ctx)
@@ -149,7 +167,9 @@ class TestV2ServerAndHints:
     def test_response_time_anomaly_warning(self):
         values = [100, 105, 98, 110, 102, 99, 103, 107, 101, 104]
         stats = {"elapsed_values": json.dumps(values), "call_count": 10}
-        findings = ResponseTimeAnomalyAnalyzer().analyze(_make_ctx(endpoint_stats=stats, elapsed=0.5, body=b"{}"))
+        findings = ResponseTimeAnomalyAnalyzer().analyze(
+            _make_ctx(endpoint_stats=stats, elapsed=0.5, body=b"{}")
+        )
         assert len(findings) == 1
         assert findings[0].severity == Severity.WARNING
 
@@ -158,4 +178,3 @@ class TestV2ServerAndHints:
         findings = NPlusOneDetectionAnalyzer().analyze(_make_ctx(history_rows=history, body=b"{}"))
         assert len(findings) == 1
         assert "N+1" in findings[0].title
-

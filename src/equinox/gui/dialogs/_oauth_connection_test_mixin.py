@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Optional, TYPE_CHECKING
+from typing import TYPE_CHECKING
 
 from equinox.gui.dialogs._oauth_form_utils import parse_json_object_field_lenient
 from equinox.gui.workers import OAuthTokenTester
@@ -22,14 +22,15 @@ class OAuthConnectionTestMixin:
     - ``_set_status(msg, ok)``
     """
 
-    test_btn: "QPushButton"
-    view_response_btn: "QPushButton"
-    _tester: Optional[OAuthTokenTester]
-    _last_test_response: Optional[dict]
+    test_btn: QPushButton
+    view_response_btn: QPushButton
+    _tester: OAuthTokenTester | None
+    _last_test_response: dict | None
     _test_btn_idle_text: str
     _test_btn_busy_text: str
+
     @staticmethod
-    def _require_token_fields(token_url: str, client_id: str) -> Optional[str]:
+    def _require_token_fields(token_url: str, client_id: str) -> str | None:
         if not token_url.strip() or not client_id.strip():
             return "Token URL and Client ID are required to test the connection."
         return None
@@ -43,8 +44,7 @@ class OAuthConnectionTestMixin:
         dlg = _TokenResponseDialog(self._last_test_response, self)  # type: ignore[arg-type]
         dlg.exec()
 
-
-    def _set_status(self, msg: str, ok: Optional[bool]) -> None:
+    def _set_status(self, msg: str, ok: bool | None) -> None:
         """Update status text using DirtyDialogMixin formatting when available."""
         label = getattr(self, "status_label", None)
         if label is None:
@@ -64,7 +64,7 @@ class OAuthConnectionTestMixin:
         scope: str,
         grant_type: str,
         extra_raw: str,
-        token_auth: Optional[str] = None,
+        token_auth: str | None = None,
     ) -> None:
         """Start an asynchronous OAuth token test from form values."""
         missing = self._require_token_fields(token_url, client_id)
@@ -109,9 +109,3 @@ class OAuthConnectionTestMixin:
     def _view_oauth_test_response(self) -> None:
         """Open the common token-response dialog for the last test run."""
         self._open_token_response()
-
-
-
-
-
-

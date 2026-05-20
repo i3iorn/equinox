@@ -1,4 +1,7 @@
 """Frameless window, resize, cursor, and zoom/theme mixin for MainWindow."""
+
+# mypy: disable-error-code=attr-defined
+
 from __future__ import annotations
 
 import logging
@@ -8,7 +11,11 @@ from PyQt6.QtGui import QMouseEvent
 from PyQt6.QtWidgets import QWidget
 
 from equinox.gui.theme import (
-    DEFAULT_FONT_SIZE, get_font_size, get_theme_mode, set_font_size, set_theme_mode,
+    DEFAULT_FONT_SIZE,
+    get_font_size,
+    get_theme_mode,
+    set_font_size,
+    set_theme_mode,
 )
 
 logger = logging.getLogger(__name__)
@@ -111,9 +118,9 @@ class _FramelessMixin:
 
     def _cursor_for_edges(self, edges: Qt.Edge) -> Qt.CursorShape:
         """Map edge flags to the expected resize cursor shape."""
-        has_left   = bool(edges & Qt.Edge.LeftEdge)
-        has_right  = bool(edges & Qt.Edge.RightEdge)
-        has_top    = bool(edges & Qt.Edge.TopEdge)
+        has_left = bool(edges & Qt.Edge.LeftEdge)
+        has_right = bool(edges & Qt.Edge.RightEdge)
+        has_top = bool(edges & Qt.Edge.TopEdge)
         has_bottom = bool(edges & Qt.Edge.BottomEdge)
 
         if (has_left and has_top) or (has_right and has_bottom):
@@ -195,7 +202,9 @@ class _FramelessMixin:
                     return super().eventFilter(watched, event)
             self._drag_menu_active = not self.isMaximized() and not self.isFullScreen()
             if self._drag_menu_active:
-                self._drag_menu_offset = event.globalPosition().toPoint() - self.frameGeometry().topLeft()
+                self._drag_menu_offset = (
+                    event.globalPosition().toPoint() - self.frameGeometry().topLeft()
+                )
             return False
 
         if (
@@ -246,4 +255,3 @@ class _FramelessMixin:
         if not self._resize_active:
             self.setCursor(Qt.CursorShape.ArrowCursor)
         super().leaveEvent(event)
-

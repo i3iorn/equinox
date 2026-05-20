@@ -1,10 +1,9 @@
 """Tests for the sandboxed ScriptRunner."""
 
-import pytest
-from equinox.core.scripts import ScriptRunner, ScriptResult
-
+from equinox.core.scripts import ScriptRunner
 
 # ── Pre-request script ────────────────────────────────────────────────────────
+
 
 class TestPreScript:
     def test_basic_env_mutation(self):
@@ -57,6 +56,7 @@ class TestPreScript:
 
 # ── Post-response script ──────────────────────────────────────────────────────
 
+
 class TestPostScript:
     def test_extract_from_response(self):
         resp = {"status_code": 200, "body": "", "json": {"id": 99}}
@@ -79,6 +79,7 @@ class TestPostScript:
 
 
 # ── Sandbox security ──────────────────────────────────────────────────────────
+
 
 class TestSandbox:
     def _blocked(self, script):
@@ -126,16 +127,12 @@ class TestSandbox:
         assert result.error is not None
 
     def test_allowed_json(self):
-        result = ScriptRunner.run_pre(
-            "import json; env['x'] = json.dumps({'a': 1})", {}, {}
-        )
+        result = ScriptRunner.run_pre("import json; env['x'] = json.dumps({'a': 1})", {}, {})
         assert result.error is None
         assert result.env_changes["x"] == '{"a": 1}'
 
     def test_allowed_re(self):
-        result = ScriptRunner.run_pre(
-            "import re; env['m'] = re.sub(r'x', 'y', 'axb')", {}, {}
-        )
+        result = ScriptRunner.run_pre("import re; env['m'] = re.sub(r'x', 'y', 'axb')", {}, {})
         assert result.error is None
         assert result.env_changes["m"] == "ayb"
 
@@ -166,10 +163,7 @@ class TestSandboxOutputLimits:
         assert "keys must be strings" in result.error
 
     def test_env_value_length_limit_enforced(self):
-        script = (
-            "env['k'] = 'x' * "
-            f"{ScriptRunner.MAX_ENV_VALUE_LENGTH + 1}"
-        )
+        script = "env['k'] = 'x' * " f"{ScriptRunner.MAX_ENV_VALUE_LENGTH + 1}"
         result = ScriptRunner.run_pre(script, {}, {})
         assert result.error is not None
         assert "value too long" in result.error
@@ -179,4 +173,3 @@ class TestSandboxOutputLimits:
         result = ScriptRunner.run_pre("\n".join(script_lines), {}, {})
         assert result.error is not None
         assert "too many environment variables" in result.error.lower()
-

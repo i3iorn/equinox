@@ -14,7 +14,7 @@ The proxy:
 from __future__ import annotations
 
 import logging
-from typing import Any, Optional, Callable
+from typing import Any, Callable
 
 logger = logging.getLogger(__name__)
 
@@ -81,7 +81,7 @@ class BodyTextProxy:
     ```
     """
 
-    def __init__(self, panel: Any, widget: Optional[Any] = None) -> None:
+    def __init__(self, panel: Any, widget: Any | None = None) -> None:
         """Initialize proxy.
 
         Args:
@@ -93,7 +93,7 @@ class BodyTextProxy:
         self._buffer: str = ""
         # Cached QTextDocument for fallback mode so syntax highlighters
         # always receive the same object reference
-        self._fallback_doc: Optional[Any] = None
+        self._fallback_doc: Any | None = None
 
     # ── Internal helpers ──────────────────────────────────────────────
 
@@ -132,7 +132,9 @@ class BodyTextProxy:
             try:
                 return getattr(self._widget, name)(*args, **kwargs)
             except RuntimeError as e:
-                logger.debug("BodyTextProxy: RuntimeError forwarding %s, invalidating widget: %s", name, e)
+                logger.debug(
+                    "BodyTextProxy: RuntimeError forwarding %s, invalidating widget: %s", name, e
+                )
                 self._invalidate()
         return None
 
@@ -189,6 +191,7 @@ class BodyTextProxy:
         if self._fallback_doc is None:
             try:
                 from PyQt6.QtGui import QTextDocument
+
                 self._fallback_doc = QTextDocument()
                 self._fallback_doc.setPlainText(self._buffer)
                 logger.debug("BodyTextProxy: created fallback QTextDocument")

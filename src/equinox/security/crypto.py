@@ -12,7 +12,6 @@ import logging
 import os
 import tempfile
 from pathlib import Path
-from typing import Optional
 
 from cryptography.fernet import Fernet
 
@@ -38,7 +37,7 @@ def default_key_path() -> Path:
     return Path.home() / ".equinox" / ".key"
 
 
-def key_file_valid(key_path: Optional[Path] = None) -> bool:
+def key_file_valid(key_path: Path | None = None) -> bool:
     """Return ``True`` if *key_path* exists and contains exactly :data:`KEY_SIZE` bytes.
 
     This is a lightweight probe that reads only the file size — it does not
@@ -53,7 +52,7 @@ def key_file_valid(key_path: Optional[Path] = None) -> bool:
         return False
 
 
-def get_or_create_raw_key(key_path: Optional[Path] = None) -> bytes:
+def get_or_create_raw_key(key_path: Path | None = None) -> bytes:
     """Read or generate a :data:`KEY_SIZE`-byte raw encryption key.
 
     * If *key_path* already exists the file is read and its length is
@@ -134,13 +133,11 @@ def make_fernet(key_bytes: bytes) -> Fernet:
     :raises ValueError: if *key_bytes* is not exactly :data:`KEY_SIZE` bytes.
     """
     if len(key_bytes) != KEY_SIZE:
-        raise ValueError(
-            f"key_bytes must be exactly {KEY_SIZE} bytes, got {len(key_bytes)}"
-        )
+        raise ValueError(f"key_bytes must be exactly {KEY_SIZE} bytes, got {len(key_bytes)}")
     return Fernet(base64.urlsafe_b64encode(key_bytes))
 
 
-def get_or_create_fernet(key_path: Optional[Path] = None) -> Fernet:
+def get_or_create_fernet(key_path: Path | None = None) -> Fernet:
     """Convenience wrapper: read/generate the key then return a Fernet cipher.
 
     Equivalent to ``make_fernet(get_or_create_raw_key(key_path))`` but

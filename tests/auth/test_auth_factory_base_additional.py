@@ -53,7 +53,7 @@ class _RoundTripAuth(AuthStrategy):
         return {"type": self.AUTH_TYPE, "token": self.token, "note": self.note}
 
     @classmethod
-    def from_dict(cls, data: Dict[str, Any], **kwargs: Any) -> "_RoundTripAuth":
+    def from_dict(cls, data: Dict[str, Any], **kwargs: Any) -> _RoundTripAuth:
         super().from_dict(data)
         return cls(token=data.get("token", ""), note=data.get("note", ""))
 
@@ -69,7 +69,7 @@ class _FailingToDictAuth(AuthStrategy):
         raise RuntimeError("boom")
 
     @classmethod
-    def from_dict(cls, data: Dict[str, Any], **kwargs: Any) -> "_FailingToDictAuth":
+    def from_dict(cls, data: Dict[str, Any], **kwargs: Any) -> _FailingToDictAuth:
         super().from_dict(data)
         return cls()
 
@@ -119,6 +119,7 @@ def test_authstrategy_default_summary_warning_eq_and_repr_fallback() -> None:
 
 def test_concrete_subclass_requires_auth_type_and_display_name() -> None:
     with pytest.raises(TypeError):
+
         class _MissingAuthType(AuthStrategy):
             DISPLAY_NAME = "Missing Type"
 
@@ -129,11 +130,12 @@ def test_concrete_subclass_requires_auth_type_and_display_name() -> None:
                 return {"type": "x"}
 
             @classmethod
-            def from_dict(cls, data: Dict[str, Any], **kwargs: Any) -> "_MissingAuthType":
+            def from_dict(cls, data: Dict[str, Any], **kwargs: Any) -> _MissingAuthType:
                 super().from_dict(data)
                 return cls()
 
     with pytest.raises(TypeError):
+
         class _MissingDisplayName(AuthStrategy):
             AUTH_TYPE = "missing_display"
 
@@ -144,8 +146,6 @@ def test_concrete_subclass_requires_auth_type_and_display_name() -> None:
                 return {"type": "x"}
 
             @classmethod
-            def from_dict(cls, data: Dict[str, Any], **kwargs: Any) -> "_MissingDisplayName":
+            def from_dict(cls, data: Dict[str, Any], **kwargs: Any) -> _MissingDisplayName:
                 super().from_dict(data)
                 return cls()
-
-

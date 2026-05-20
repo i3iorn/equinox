@@ -3,18 +3,18 @@
 from __future__ import annotations
 
 import re
+from collections.abc import Iterable
 from dataclasses import dataclass
 from re import Pattern
-from typing import Iterable
 
 from PyQt6.QtGui import QColor, QFont, QSyntaxHighlighter, QTextCharFormat
 
 from equinox.gui.theme import Colors
 
-
 # ---------------------------------------------------------------------------
 # Format creation utilities
 # ---------------------------------------------------------------------------
+
 
 def _make_format(
     foreground: str,
@@ -59,6 +59,7 @@ _VARIABLE_PATTERN: Pattern[str] = re.compile(r"\{\{[\w.\-/: ]+\}\}")
 # Rule definition
 # ---------------------------------------------------------------------------
 
+
 @dataclass(frozen=True)
 class RegexRule:
     """Single regex + format rule for a regex-based highlighter.
@@ -78,6 +79,7 @@ class RegexRule:
 # ---------------------------------------------------------------------------
 # Base highlighter
 # ---------------------------------------------------------------------------
+
 
 class RegexHighlighterBase(QSyntaxHighlighter):
     """Base class for simple regex-driven syntax highlighters.
@@ -109,9 +111,7 @@ class RegexHighlighterBase(QSyntaxHighlighter):
         # Apply language-specific rules.
         for rule in self._rules:
             for match in rule.pattern.finditer(text):
-                self.setFormat(
-                    match.start(), match.end() - match.start(), rule.fmt
-                )
+                self.setFormat(match.start(), match.end() - match.start(), rule.fmt)
 
         # Apply {{variable}} placeholders last so they override other formats.
         # Skip the regex scan when no placeholder can be present — this method
@@ -121,6 +121,4 @@ class RegexHighlighterBase(QSyntaxHighlighter):
             return
 
         for match in _VARIABLE_PATTERN.finditer(text):
-            self.setFormat(
-                match.start(), match.end() - match.start(), _VARIABLE_FMT
-            )
+            self.setFormat(match.start(), match.end() - match.start(), _VARIABLE_FMT)

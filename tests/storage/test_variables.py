@@ -1,11 +1,12 @@
 """Tests for variables and variable groups"""
 
-import pytest
 import tempfile
 from pathlib import Path
 
-from equinox.storage import Database, CollectionManager, VariableGroupManager
-from equinox.core.exceptions import ValidationError, StorageError, SecurityError
+import pytest
+
+from equinox.core.exceptions import StorageError, ValidationError
+from equinox.storage import CollectionManager, Database, VariableGroupManager
 
 
 class TestVariableGroups:
@@ -327,7 +328,7 @@ class TestCollectionVariables:
 
         # Add to collection with different priorities
         col_mgr.add_variable_group(collection_id, group1_id, priority=10)  # Lower priority
-        col_mgr.add_variable_group(collection_id, group2_id, priority=5)   # Higher priority
+        col_mgr.add_variable_group(collection_id, group2_id, priority=5)  # Higher priority
 
         all_vars = col_mgr.get_all_collection_variables(collection_id)
 
@@ -374,7 +375,7 @@ class TestCollectionVariables:
 
         # Add groups (lower priority number = higher priority)
         col_mgr.add_variable_group(collection_id, common_id, priority=100)  # Low priority
-        col_mgr.add_variable_group(collection_id, env_id, priority=10)      # High priority
+        col_mgr.add_variable_group(collection_id, env_id, priority=10)  # High priority
 
         # Add collection override
         col_mgr.add_variable(collection_id, "API_URL", "https://collection.example.com")

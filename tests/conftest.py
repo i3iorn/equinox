@@ -1,14 +1,14 @@
 import os
 import sys
-import uuid
 import tempfile
+import uuid
 from pathlib import Path
 
 _ROOT = Path(__file__).resolve().parents[1]
 _SRC = _ROOT / "src"
 
 if str(_SRC) not in sys.path:
-	sys.path.insert(0, str(_SRC))
+    sys.path.insert(0, str(_SRC))
 
 # Force Qt into offscreen/platformless mode for tests so dialogs don't require
 # a display. Must be set before importing PyQt widgets.
@@ -61,6 +61,7 @@ def isolated_environment(test_master_password: str, monkeypatch) -> None:
         # Cleanup: reset history capture state to prevent leaks
         try:
             from equinox.core.history_config import set_capture_bodies
+
             set_capture_bodies(True)
         except Exception:
             pass  # Module may not be imported
@@ -121,7 +122,7 @@ def history_capture_disabled():
 
     @contextmanager
     def _context():
-        from equinox.core.history_config import set_capture_bodies, is_capture_enabled
+        from equinox.core.history_config import is_capture_enabled, set_capture_bodies
 
         old_state = is_capture_enabled()
         try:
@@ -144,5 +145,3 @@ __all__ = [
     "history_capture_disabled",
     "test_master_password",
 ]
-
-

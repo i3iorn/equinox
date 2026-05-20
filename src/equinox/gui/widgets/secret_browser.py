@@ -3,26 +3,26 @@
 from __future__ import annotations
 
 import logging
-from typing import Any, Dict, Optional
+from typing import Any
 
-from PyQt6.QtCore import Qt, pyqtSignal, QThread, QObject
+from PyQt6.QtCore import QObject, Qt, QThread, pyqtSignal
 from PyQt6.QtWidgets import (
-    QWidget,
-    QVBoxLayout,
+    QApplication,
     QHBoxLayout,
+    QLabel,
     QLineEdit,
-    QPushButton,
     QListWidget,
     QListWidgetItem,
-    QLabel,
     QMessageBox,
     QProgressBar,
-    QApplication,
+    QPushButton,
+    QVBoxLayout,
+    QWidget,
 )
 
 from equinox.core.secret_managers import (
-    SecretManagerProfile,
     SecretManagerError,
+    SecretManagerProfile,
     SecretNotFoundError,
 )
 
@@ -39,7 +39,7 @@ class SecretRetrievalWorker(QObject):
     def __init__(
         self,
         manager_type: str,
-        config: Dict[str, Any],
+        config: dict[str, Any],
         enable_cache: bool,
         cache_ttl: int,
         secret_name: str,
@@ -95,10 +95,10 @@ class SecretBrowserWidget(QWidget):
     def __init__(
         self,
         manager_type: str,
-        config: Dict[str, Any],
+        config: dict[str, Any],
         enable_cache: bool = True,
         cache_ttl: int = 300,
-        parent=None
+        parent=None,
     ):
         """Initialize the secret browser.
 
@@ -113,7 +113,7 @@ class SecretBrowserWidget(QWidget):
         self.enable_cache = enable_cache
         self.cache_ttl = cache_ttl
         self._init_ui()
-        self._retrieval_thread: Optional[QThread] = None
+        self._retrieval_thread: QThread | None = None
 
     def _init_ui(self) -> None:
         """Initialize the UI."""
@@ -168,8 +168,8 @@ class SecretBrowserWidget(QWidget):
         use_btn.clicked.connect(self._use_secret)
         layout.addWidget(use_btn)
 
-        self._current_secret: Optional[Dict[str, Any]] = None
-        self._selected_key: Optional[str] = None
+        self._current_secret: dict[str, Any] | None = None
+        self._selected_key: str | None = None
 
     def _retrieve_secret(self) -> None:
         """Retrieve the secret from the manager."""
@@ -187,11 +187,7 @@ class SecretBrowserWidget(QWidget):
 
         # Create worker thread
         worker = SecretRetrievalWorker(
-            self.manager_type,
-            self.config,
-            self.enable_cache,
-            self.cache_ttl,
-            secret_name
+            self.manager_type, self.config, self.enable_cache, self.cache_ttl, secret_name
         )
 
         self._retrieval_thread = QThread()
@@ -203,7 +199,7 @@ class SecretBrowserWidget(QWidget):
         self._retrieval_thread.started.connect(worker.run)
         self._retrieval_thread.start()
 
-    def _on_secret_retrieved(self, secret_name: str, secret_dict: Dict[str, Any]) -> None:
+    def _on_secret_retrieved(self, secret_name: str, secret_dict: dict[str, Any]) -> None:
         """Handle successful secret retrieval.
 
         Args:
@@ -272,4 +268,3 @@ class SecretBrowserWidget(QWidget):
         secret_name = self.secret_input.text().strip()
         self.secret_selected.emit(secret_name, self._current_secret)
         logger.debug("Secret selected: %s", secret_name)
-

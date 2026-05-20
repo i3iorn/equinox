@@ -1,21 +1,22 @@
 """Background worker for Response Intelligence analysis."""
+
 from __future__ import annotations
 
 import logging
-from typing import Callable, Optional, TypeVar
+from typing import Callable, TypeVar
 
 from PyQt6.QtCore import QObject, QThread, pyqtSignal
 
 from equinox.core.request import Request, Response
+from equinox.core.response_intelligence import (
+    AnalysisContext,
+    AnalysisEngine,
+    Finding,
+    SchemaDriftAnalyzer,
+    normalize_url_pattern,
+)
 from equinox.intelligence import Recommender, suggestions_to_findings
 from equinox.storage import Database
-from equinox.core.response_intelligence import (
-    SchemaDriftAnalyzer,
-    AnalysisEngine,
-    normalize_url_pattern,
-    AnalysisContext,
-    Finding
-)
 from equinox.storage.response_intelligence import ResponseIntelligenceManager
 
 __all__ = ["IntelligenceWorker"]
@@ -65,8 +66,7 @@ class IntelligenceWorker(QThread):
         # Only accept non-empty strings; anything else is silently dropped so
         # a malformed caller cannot accidentally disable every analyzer.
         self._disabled: frozenset[str] = frozenset(
-            a for a in (disabled_analyzers or ())
-            if isinstance(a, str) and a
+            a for a in (disabled_analyzers or ()) if isinstance(a, str) and a
         )
 
     # ── QThread entry point ───────────────────────────────────────────────────
@@ -271,7 +271,7 @@ class IntelligenceWorker(QThread):
     # ── Generic DB operation helpers ──────────────────────────────────────────
 
     @staticmethod
-    def _try_fetch(operation: Callable[[], _T], label: str) -> Optional[_T]:
+    def _try_fetch(operation: Callable[[], _T], label: str) -> _T | None:
         """Execute *operation* and return its result; return ``None`` on error.
 
         Errors are logged at DEBUG because transient DB failures during the

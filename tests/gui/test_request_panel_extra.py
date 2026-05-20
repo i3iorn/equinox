@@ -1,10 +1,9 @@
 from types import SimpleNamespace
 from unittest.mock import Mock
 
-from PyQt6.QtWidgets import QApplication
-from PyQt6.QtCore import QCoreApplication
-
 import pytest
+from PyQt6.QtCore import QCoreApplication
+from PyQt6.QtWidgets import QApplication
 
 
 def ensure_qapp():
@@ -28,8 +27,8 @@ def process_events():
 
 def test_insert_header_preset_does_not_create_extra_rows(tmp_db_path):
     ensure_qapp()
-    from equinox.storage import get_db
     from equinox.gui.request_panel.panel import RequestPanel
+    from equinox.storage import get_db
 
     db = get_db()
     panel = RequestPanel(db)
@@ -49,8 +48,8 @@ def test_insert_header_preset_does_not_create_extra_rows(tmp_db_path):
 
 def test_headers_add_and_remove_behaviour_matches_captures(tmp_db_path):
     ensure_qapp()
-    from equinox.storage import get_db
     from equinox.gui.request_panel.panel import RequestPanel
+    from equinox.storage import get_db
 
     db = get_db()
     panel = RequestPanel(db)
@@ -73,8 +72,8 @@ def test_headers_add_and_remove_behaviour_matches_captures(tmp_db_path):
 
 def test_params_add_and_remove_behaviour_matches_captures(tmp_db_path):
     ensure_qapp()
-    from equinox.storage import get_db
     from equinox.gui.request_panel.panel import RequestPanel
+    from equinox.storage import get_db
 
     db = get_db()
     panel = RequestPanel(db)
@@ -94,8 +93,8 @@ def test_params_add_and_remove_behaviour_matches_captures(tmp_db_path):
 
 def test_multipart_add_remove(tmp_db_path):
     ensure_qapp()
-    from equinox.storage import get_db
     from equinox.gui.request_panel.panel import RequestPanel
+    from equinox.storage import get_db
 
     db = get_db()
     panel = RequestPanel(db)
@@ -120,8 +119,8 @@ def test_multipart_add_remove(tmp_db_path):
 
 def test_body_proxy_handles_deleted_widget(tmp_db_path):
     ensure_qapp()
-    from equinox.storage import get_db
     from equinox.gui.request_panel.panel import RequestPanel
+    from equinox.storage import get_db
 
     db = get_db()
     panel = RequestPanel(db)
@@ -140,8 +139,8 @@ def test_body_proxy_handles_deleted_widget(tmp_db_path):
 
 def test_setup_dirty_tracking_is_resilient_when_widgets_missing(tmp_db_path):
     ensure_qapp()
-    from equinox.storage import get_db
     from equinox.gui.request_panel.panel import RequestPanel
+    from equinox.storage import get_db
 
     db = get_db()
     panel = RequestPanel(db)
@@ -160,8 +159,8 @@ def test_setup_dirty_tracking_is_resilient_when_widgets_missing(tmp_db_path):
 
 def test_url_fix_suggestion_encodes_internal_whitespace(tmp_db_path):
     ensure_qapp()
-    from equinox.storage import get_db
     from equinox.gui.request_panel.panel import RequestPanel
+    from equinox.storage import get_db
 
     panel = RequestPanel(get_db())
     fixed = panel._suggest_url_fix("https://api.example.com/has space")
@@ -171,8 +170,8 @@ def test_url_fix_suggestion_encodes_internal_whitespace(tmp_db_path):
 
 def test_json_body_validation_disables_send_for_invalid_json_even_without_content_type(tmp_db_path):
     ensure_qapp()
-    from equinox.storage import get_db
     from equinox.gui.request_panel.panel import RequestPanel
+    from equinox.storage import get_db
 
     panel = RequestPanel(get_db())
     panel.url_input.setText("https://api.example.com")
@@ -186,8 +185,8 @@ def test_json_body_validation_disables_send_for_invalid_json_even_without_conten
 
 def test_request_panel_uses_injected_request_persistence(tmp_db_path):
     ensure_qapp()
-    from equinox.storage import get_db
     from equinox.gui.request_panel.panel import RequestPanel
+    from equinox.storage import get_db
 
     persistence = Mock()
     panel = RequestPanel(get_db(), request_persistence=persistence)
@@ -197,8 +196,8 @@ def test_request_panel_uses_injected_request_persistence(tmp_db_path):
 
 def test_request_panel_uses_injected_request_history(tmp_db_path):
     ensure_qapp()
-    from equinox.storage import get_db
     from equinox.gui.request_panel.panel import RequestPanel
+    from equinox.storage import get_db
 
     history = Mock()
     history.list_recent_urls.return_value = []
@@ -209,8 +208,8 @@ def test_request_panel_uses_injected_request_history(tmp_db_path):
 
 def test_refresh_url_completer_uses_request_history_service(tmp_db_path):
     ensure_qapp()
-    from equinox.storage import get_db
     from equinox.gui.request_panel.panel import RequestPanel
+    from equinox.storage import get_db
 
     history = Mock()
     history.list_recent_urls.return_value = [
@@ -229,8 +228,8 @@ def test_refresh_url_completer_uses_request_history_service(tmp_db_path):
 
 
 def test_autosave_current_routes_through_request_persistence() -> None:
-    from equinox.gui.request_panel.autosave_mixin import RequestAutosaveMixin
     from equinox.core.request import Request
+    from equinox.gui.request_panel.autosave_mixin import RequestAutosaveMixin
 
     class _Panel(RequestAutosaveMixin):
         def __init__(self) -> None:
@@ -246,7 +245,12 @@ def test_autosave_current_routes_through_request_persistence() -> None:
             self._request_persistence = Mock()
 
         def _build_request_from_editor(self, **overrides):
-            return Request(method="GET", url="https://api.example.com/items?active=true", headers={}, **overrides)
+            return Request(
+                method="GET",
+                url="https://api.example.com/items?active=true",
+                headers={},
+                **overrides,
+            )
 
         def _clear_dirty(self):
             self._dirty = False
@@ -268,9 +272,10 @@ def test_save_updates_existing_request_when_collection_unchanged(tmp_db_path, mo
     its collection, update_request() is called instead of save_request().
     """
     ensure_qapp()
-    from equinox.gui.request_panel.save_flow_mixin import RequestSaveFlowMixin
-    from equinox.core.request import Request
     from PyQt6.QtWidgets import QDialog
+
+    from equinox.core.request import Request
+    from equinox.gui.request_panel.save_flow_mixin import RequestSaveFlowMixin
 
     # Create a minimal mock panel with only the save-flow behavior
     class _MockPanel(RequestSaveFlowMixin):
@@ -298,10 +303,7 @@ def test_save_updates_existing_request_when_collection_unchanged(tmp_db_path, mo
         def _build_request_from_editor(self, **overrides):
             """Mock request builder."""
             return Request(
-                method="GET",
-                url="https://api.example.com/items",
-                headers={},
-                **overrides
+                method="GET", url="https://api.example.com/items", headers={}, **overrides
             )
 
         def _mark_dirty(self):
@@ -342,7 +344,9 @@ def test_save_updates_existing_request_when_collection_unchanged(tmp_db_path, mo
         "equinox.gui.request_panel.save_flow_mixin.SaveRequestDialog",
         _FakeDialog,
     )
-    mock_panel._request_persistence.list_save_collections.return_value = [{"id": 7, "name": "Default"}]
+    mock_panel._request_persistence.list_save_collections.return_value = [
+        {"id": 7, "name": "Default"}
+    ]
     mock_panel._request_persistence.save_request_from_dialog.return_value = SimpleNamespace(
         request_id=123,
         updated_existing=True,
@@ -366,9 +370,10 @@ def test_save_calls_save_request_when_collection_changes(tmp_db_path, monkeypatc
     treated as a new save operation (with a new ID).
     """
     ensure_qapp()
-    from equinox.gui.request_panel.save_flow_mixin import RequestSaveFlowMixin
-    from equinox.core.request import Request
     from PyQt6.QtWidgets import QDialog
+
+    from equinox.core.request import Request
+    from equinox.gui.request_panel.save_flow_mixin import RequestSaveFlowMixin
 
     class _MockPanel(RequestSaveFlowMixin):
         def __init__(self):
@@ -393,10 +398,7 @@ def test_save_calls_save_request_when_collection_changes(tmp_db_path, monkeypatc
 
         def _build_request_from_editor(self, **overrides):
             return Request(
-                method="POST",
-                url="https://api.example.com/users",
-                headers={},
-                **overrides
+                method="POST", url="https://api.example.com/users", headers={}, **overrides
             )
 
         def _mark_dirty(self):
@@ -438,7 +440,9 @@ def test_save_calls_save_request_when_collection_changes(tmp_db_path, monkeypatc
         "equinox.gui.request_panel.save_flow_mixin.SaveRequestDialog",
         _FakeDialog,
     )
-    mock_panel._request_persistence.list_save_collections.return_value = [{"id": 99, "name": "Other"}]
+    mock_panel._request_persistence.list_save_collections.return_value = [
+        {"id": 99, "name": "Other"}
+    ]
 
     mock_panel._request_persistence.save_request_from_dialog.return_value = SimpleNamespace(
         request_id=789,

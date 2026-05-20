@@ -1,9 +1,8 @@
-
 import pytest
 
 from equinox.core import history_config
-from equinox.storage.history._serializer import _HistorySerializer
 from equinox.core.request.request import Request
+from equinox.storage.history._serializer import _HistorySerializer
 
 
 @pytest.fixture(autouse=True)
@@ -19,10 +18,7 @@ def test_history_body_capture_toggle_off(monkeypatch):
     history_config.set_capture_bodies(False)
 
     req = Request(
-        method="POST",
-        url="https://example.com/api/echo",
-        headers={},
-        body='{"secret": "abc"}'
+        method="POST", url="https://example.com/api/echo", headers={}, body='{"secret": "abc"}'
     )
     s = _HistorySerializer()
     req_row = s.prepare_request(req)
@@ -42,4 +38,3 @@ def test_history_capture_reset_reloads_from_env(monkeypatch):
     history_config.reset_capture_bodies()
 
     assert history_config.should_capture_bodies() is True
-

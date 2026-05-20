@@ -68,4 +68,3 @@ def test_show_status_writes_to_status_bar():
     ErrorPresenter.show_status(parent, "Saved", timeout_ms=1234)
 
     status.showMessage.assert_called_once_with("Saved", 1234)
-

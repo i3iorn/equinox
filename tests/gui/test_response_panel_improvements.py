@@ -6,7 +6,7 @@ from PyQt6.QtWidgets import QApplication, QTextEdit
 from equinox.core.request import Request, Response
 from equinox.gui.response_panel import ResponsePanel
 from equinox.gui.response_panel._formatting import parse_cookies
-from equinox.gui.response_panel.intelligence_panel import IntelligencePanel, _AUDIT_MAX_LINES
+from equinox.gui.response_panel.intelligence_panel import _AUDIT_MAX_LINES, IntelligencePanel
 from equinox.gui.response_panel.pretty_print import PrettyPrintRunnable
 from equinox.gui.response_panel.search_bar import SearchBar
 
@@ -157,7 +157,7 @@ def test_response_panel_shows_content_type_summary() -> None:
 
     panel.display_response(resp)
 
-    content_type_label = getattr(panel, "content_type_label")
+    content_type_label = panel.content_type_label
     assert content_type_label.text() == "application/json"
     assert "charset=utf-8" in content_type_label.toolTip()
 
@@ -204,10 +204,10 @@ def test_audit_tail_reader_is_bounded(tmp_path) -> None:
     audit = tmp_path / "audit.log"
     with audit.open("w", encoding="utf-8") as fh:
         for i in range(2_000):
-            fh.write(json.dumps({"event_type": "validation_failure", "message": f"event-{i}"}) + "\n")
+            fh.write(
+                json.dumps({"event_type": "validation_failure", "message": f"event-{i}"}) + "\n"
+            )
 
     lines = IntelligencePanel._read_recent_audit_lines(audit)
     assert len(lines) <= _AUDIT_MAX_LINES
     assert any("event-1999" in line for line in lines)
-
-

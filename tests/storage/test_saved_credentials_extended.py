@@ -3,10 +3,10 @@ list filtering, set_default, clear_default, duplicate, to_auth_strategy."""
 
 import pytest
 
+from equinox.auth import APIKeyAuth, BasicAuth, BearerAuth, OAuth2Auth
+from equinox.core.exceptions import StorageError, ValidationError
 from equinox.storage.database import Database
 from equinox.storage.saved_credentials import SavedCredentialsManager
-from equinox.core.exceptions import StorageError, ValidationError
-from equinox.auth import OAuth2Auth, APIKeyAuth, BasicAuth, BearerAuth
 
 
 @pytest.fixture
@@ -31,8 +31,8 @@ def _create(mgr, name="My Cred", auth_type="bearer", config=None, description=""
 
 # ── create validation ─────────────────────────────────────────────────────────
 
-class TestCreate:
 
+class TestCreate:
     def test_empty_name_raises(self, mgr):
         with pytest.raises(ValidationError):
             mgr.create(name="", auth_type="bearer", config={})
@@ -55,16 +55,17 @@ class TestCreate:
             _create(mgr, "Dup")
 
     def test_is_default_flag(self, mgr):
-        cid = mgr.create(name="Default Cred", auth_type="bearer",
-                          config={"token": "t"}, is_default=True)
+        cid = mgr.create(
+            name="Default Cred", auth_type="bearer", config={"token": "t"}, is_default=True
+        )
         cred = mgr.get(cid)
         assert cred["is_default"] is True
 
 
 # ── get / get_by_name / get_default ──────────────────────────────────────────
 
-class TestGetMethods:
 
+class TestGetMethods:
     def test_get_nonexistent_returns_none(self, mgr):
         assert mgr.get(9999) is None
 
@@ -87,11 +88,15 @@ class TestGetMethods:
         assert default["id"] == cid
 
     def test_get_default_by_auth_type(self, mgr):
-        mgr.create(name="OAuth Default", auth_type="oauth2",
-                   config={"token_url": "https://t.example.com", "client_id": "cid"},
-                   is_default=True)
-        mgr.create(name="Bearer Default", auth_type="bearer",
-                   config={"token": "x"}, is_default=True)
+        mgr.create(
+            name="OAuth Default",
+            auth_type="oauth2",
+            config={"token_url": "https://t.example.com", "client_id": "cid"},
+            is_default=True,
+        )
+        mgr.create(
+            name="Bearer Default", auth_type="bearer", config={"token": "x"}, is_default=True
+        )
         d = mgr.get_default(auth_type="oauth2")
         assert d["auth_type"] == "oauth2"
 
@@ -102,8 +107,8 @@ class TestGetMethods:
 
 # ── list ──────────────────────────────────────────────────────────────────────
 
-class TestList:
 
+class TestList:
     def test_list_all(self, mgr):
         _create(mgr, "A", auth_type="bearer")
         _create(mgr, "B", auth_type="basic", config={"username": "u", "password": "p"})
@@ -124,8 +129,8 @@ class TestList:
 
 # ── update ────────────────────────────────────────────────────────────────────
 
-class TestUpdate:
 
+class TestUpdate:
     def test_update_config(self, mgr):
         cid = _create(mgr, "To Update")
         mgr.update(cid, config={"token": "new_token"})
@@ -178,8 +183,8 @@ class TestUpdate:
 
 # ── set_default / clear_default ──────────────────────────────────────────────
 
-class TestDefaultManagement:
 
+class TestDefaultManagement:
     def test_set_default(self, mgr):
         c1 = _create(mgr, "Cred1")
         c2 = _create(mgr, "Cred2")
@@ -202,8 +207,8 @@ class TestDefaultManagement:
 
 # ── duplicate / _unique_copy_name ─────────────────────────────────────────────
 
-class TestDuplicate:
 
+class TestDuplicate:
     def test_duplicate_basic(self, mgr):
         cid = _create(mgr, "Original", auth_type="bearer", config={"token": "tok"})
         new_id = mgr.duplicate(cid)
@@ -232,8 +237,8 @@ class TestDuplicate:
 
 # ── delete ────────────────────────────────────────────────────────────────────
 
-class TestDelete:
 
+class TestDelete:
     def test_delete_existing(self, mgr):
         cid = _create(mgr, "To Delete")
         mgr.delete(cid)
@@ -246,8 +251,8 @@ class TestDelete:
 
 # ── to_auth_strategy ──────────────────────────────────────────────────────────
 
-class TestToAuthStrategy:
 
+class TestToAuthStrategy:
     def test_bearer(self, mgr):
         cid = mgr.create(name="Bearer", auth_type="bearer", config={"token": "abc123"})
         row = mgr.get(cid)
@@ -256,25 +261,35 @@ class TestToAuthStrategy:
         assert auth.token == "abc123"
 
     def test_basic(self, mgr):
-        cid = mgr.create(name="Basic", auth_type="basic",
-                          config={"username": "user", "password": "pass"})
+        cid = mgr.create(
+            name="Basic", auth_type="basic", config={"username": "user", "password": "pass"}
+        )
         row = mgr.get(cid)
         auth = mgr.to_auth_strategy(row)
         assert isinstance(auth, BasicAuth)
         assert auth.username == "user"
 
     def test_api_key(self, mgr):
-        cid = mgr.create(name="API Key", auth_type="api_key",
-                          config={"key": "X-API-Key", "value": "secret", "location": "header"})
+        cid = mgr.create(
+            name="API Key",
+            auth_type="api_key",
+            config={"key": "X-API-Key", "value": "secret", "location": "header"},
+        )
         row = mgr.get(cid)
         auth = mgr.to_auth_strategy(row)
         assert isinstance(auth, APIKeyAuth)
         assert auth.location == "header"
 
     def test_oauth2(self, mgr):
-        cid = mgr.create(name="OAuth", auth_type="oauth2",
-                          config={"token_url": "https://auth.example.com/token",
-                                  "client_id": "cid123", "client_secret": "sec"})
+        cid = mgr.create(
+            name="OAuth",
+            auth_type="oauth2",
+            config={
+                "token_url": "https://auth.example.com/token",
+                "client_id": "cid123",
+                "client_secret": "sec",
+            },
+        )
         row = mgr.get(cid)
         auth = mgr.to_auth_strategy(row)
         assert isinstance(auth, OAuth2Auth)
@@ -287,8 +302,8 @@ class TestToAuthStrategy:
 
 # ── _decode edge cases ────────────────────────────────────────────────────────
 
-class TestDecode:
 
+class TestDecode:
     def test_config_empty_string_decoded_to_empty_dict(self, mgr):
         cid = mgr.create(name="Empty Config", auth_type="bearer", config={})
         row = mgr.get(cid)

@@ -2,18 +2,18 @@
 
 import pytest
 
-from equinox.core.request import Request
 from equinox.core.codegen import (
-    PythonRequestsGenerator,
-    PythonHttpxGenerator,
-    JavaScriptFetchGenerator,
-    GoHttpGenerator,
-    generate_code,
     GENERATORS,
+    GoHttpGenerator,
+    JavaScriptFetchGenerator,
+    PythonHttpxGenerator,
+    PythonRequestsGenerator,
+    generate_code,
 )
-
+from equinox.core.request import Request
 
 # ── Fixtures ──────────────────────────────────────────────────────────────────
+
 
 def _req(**kwargs) -> Request:
     defaults = dict(method="GET", url="https://api.example.com/users")
@@ -31,6 +31,7 @@ def _post_req() -> Request:
 
 
 # ── PythonRequestsGenerator ───────────────────────────────────────────────────
+
 
 class TestPythonRequestsGenerator:
     def test_get_contains_method_and_url(self):
@@ -54,6 +55,7 @@ class TestPythonRequestsGenerator:
 
     def test_bearer_auth_in_header(self):
         from equinox.auth import BearerAuth
+
         req = _req(auth=BearerAuth(token="mytoken123"))
         out = PythonRequestsGenerator().generate(req)
         assert "Authorization" in out
@@ -61,6 +63,7 @@ class TestPythonRequestsGenerator:
 
     def test_basic_auth_kwarg(self):
         from equinox.auth import BasicAuth
+
         req = _req(auth=BasicAuth(username="user", password="pass"))
         out = PythonRequestsGenerator().generate(req)
         assert "auth=" in out
@@ -68,6 +71,7 @@ class TestPythonRequestsGenerator:
 
     def test_api_key_in_header(self):
         from equinox.auth import APIKeyAuth
+
         req = _req(auth=APIKeyAuth(key="X-API-Key", value="secret", location="header"))
         out = PythonRequestsGenerator().generate(req)
         assert "X-API-Key" in out
@@ -85,6 +89,7 @@ class TestPythonRequestsGenerator:
 
 
 # ── PythonHttpxGenerator ──────────────────────────────────────────────────────
+
 
 class TestPythonHttpxGenerator:
     def test_uses_httpx(self):
@@ -111,12 +116,14 @@ class TestPythonHttpxGenerator:
 
     def test_bearer_injected(self):
         from equinox.auth import BearerAuth
+
         req = _req(auth=BearerAuth(token="httpxtoken"))
         out = PythonHttpxGenerator().generate(req)
         assert "Bearer <YOUR_TOKEN>" in out
 
     def test_basic_auth_kwarg(self):
         from equinox.auth import BasicAuth
+
         req = _req(auth=BasicAuth(username="u", password="p"))
         out = PythonHttpxGenerator().generate(req)
         assert "auth=" in out
@@ -128,6 +135,7 @@ class TestPythonHttpxGenerator:
 
 
 # ── JavaScriptFetchGenerator ──────────────────────────────────────────────────
+
 
 class TestJavaScriptFetchGenerator:
     def test_uses_fetch(self):
@@ -158,12 +166,14 @@ class TestJavaScriptFetchGenerator:
 
     def test_bearer_in_headers(self):
         from equinox.auth import BearerAuth
+
         req = _req(auth=BearerAuth(token="jstoken"))
         out = JavaScriptFetchGenerator().generate(req)
         assert "Bearer <YOUR_TOKEN>" in out
 
     def test_basic_auth_redacted(self):
         from equinox.auth import BasicAuth
+
         req = _req(auth=BasicAuth(username="alice", password="secret"))
         out = JavaScriptFetchGenerator().generate(req)
         assert "<YOUR_TOKEN>" in out
@@ -173,6 +183,7 @@ class TestJavaScriptFetchGenerator:
 
 
 # ── GoHttpGenerator ───────────────────────────────────────────────────────────
+
 
 class TestGoHttpGenerator:
     def test_package_main(self):
@@ -200,6 +211,7 @@ class TestGoHttpGenerator:
 
     def test_bearer_header(self):
         from equinox.auth import BearerAuth
+
         req = _req(auth=BearerAuth(token="gotoken"))
         out = GoHttpGenerator().generate(req)
         assert "Bearer <YOUR_TOKEN>" in out
@@ -210,6 +222,7 @@ class TestGoHttpGenerator:
 
 
 # ── generate_code() dispatcher ────────────────────────────────────────────────
+
 
 class TestGenerateCodeDispatcher:
     @pytest.mark.parametrize("fmt", list(GENERATORS.keys()))

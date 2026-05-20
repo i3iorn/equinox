@@ -1,11 +1,12 @@
 """Tests for the database migration system."""
 
 import sqlite3
+
 import pytest
 
-from equinox.storage import Database, MigrationRunner, MIGRATIONS
-from equinox.storage.migrations import Migration
 from equinox.core.exceptions import StorageError
+from equinox.storage import MIGRATIONS, Database, MigrationRunner
+from equinox.storage.migrations import Migration
 
 
 @pytest.fixture
@@ -14,7 +15,6 @@ def db(tmp_path):
 
 
 class TestMigrationRunner:
-
     def test_fresh_db_runs_all_migrations(self, db):
         runner = MigrationRunner(db)
         # DB was already migrated during __init__; version == latest
@@ -30,6 +30,7 @@ class TestMigrationRunner:
         db.db_path = db_path.resolve()
         db.db_path.parent.mkdir(parents=True, exist_ok=True)
         import threading
+
         db._lock = threading.Lock()
         db._conn = sqlite3.connect(str(db.db_path))
         db._conn.row_factory = sqlite3.Row
@@ -69,9 +70,7 @@ class TestMigrationRunner:
 
         # Manually set the version back to 1 to simulate a partially-migrated DB.
         with db.get_connection() as conn:
-            conn.execute(
-                "DELETE FROM schema_version WHERE version > 1"
-            )
+            conn.execute("DELETE FROM schema_version WHERE version > 1")
             conn.commit()
 
         assert runner.version == 1
@@ -100,9 +99,14 @@ class TestMigrationRunner:
                 ).fetchall()
             }
         expected = {
-            "collections", "requests", "history", "environments",
-            "collection_variables", "variable_groups",
-            "variable_group_items", "collection_variable_groups",
+            "collections",
+            "requests",
+            "history",
+            "environments",
+            "collection_variables",
+            "variable_groups",
+            "variable_group_items",
+            "collection_variable_groups",
             "global_variables",
             "schema_version",
         }
@@ -111,44 +115,29 @@ class TestMigrationRunner:
     def test_v2_columns_added(self, db):
         """Migration v2 adds tags and folder columns to requests."""
         with db.get_connection() as conn:
-            cols = {
-                row[1]
-                for row in conn.execute("PRAGMA table_info(requests)").fetchall()
-            }
+            cols = {row[1] for row in conn.execute("PRAGMA table_info(requests)").fetchall()}
         assert "tags" in cols
         assert "folder" in cols
 
     def test_v3_columns_added(self, db):
         """Migration v3 adds timeout and verify_ssl to requests."""
         with db.get_connection() as conn:
-            cols = {
-                row[1]
-                for row in conn.execute("PRAGMA table_info(requests)").fetchall()
-            }
+            cols = {row[1] for row in conn.execute("PRAGMA table_info(requests)").fetchall()}
         assert "timeout" in cols
         assert "verify_ssl" in cols
 
     def test_v4_columns_added(self, db):
         """Migration v4 adds follow_redirects and response_size."""
         with db.get_connection() as conn:
-            req_cols = {
-                row[1]
-                for row in conn.execute("PRAGMA table_info(requests)").fetchall()
-            }
-            hist_cols = {
-                row[1]
-                for row in conn.execute("PRAGMA table_info(history)").fetchall()
-            }
+            req_cols = {row[1] for row in conn.execute("PRAGMA table_info(requests)").fetchall()}
+            hist_cols = {row[1] for row in conn.execute("PRAGMA table_info(history)").fetchall()}
         assert "follow_redirects" in req_cols
         assert "response_size" in hist_cols
 
     def test_v5_column_added(self, db):
         """Migration v5 adds environment_id to history."""
         with db.get_connection() as conn:
-            cols = {
-                row[1]
-                for row in conn.execute("PRAGMA table_info(history)").fetchall()
-            }
+            cols = {row[1] for row in conn.execute("PRAGMA table_info(history)").fetchall()}
         assert "environment_id" in cols
 
     def test_bad_migration_raises_storage_error(self, db):
@@ -165,7 +154,6 @@ class TestMigrationRunner:
 
 
 class TestMigrationIntegrationWithDatabase:
-
     def test_new_database_fully_migrated(self, tmp_path):
         with Database(str(tmp_path / "new.db")) as db:
             runner = MigrationRunner(db)
@@ -174,6 +162,7 @@ class TestMigrationIntegrationWithDatabase:
 
     def test_database_usable_after_migration(self, db):
         from equinox.storage import CollectionManager
+
         mgr = CollectionManager(db)
         col_id = mgr.create_collection("Test Collection")
         assert col_id > 0
@@ -185,9 +174,7 @@ class TestMigrationIntegrationWithDatabase:
         with db.get_connection() as conn:
             indexes = {
                 row[1]
-                for row in conn.execute(
-                    "SELECT * FROM sqlite_master WHERE type='index'"
-                ).fetchall()
+                for row in conn.execute("SELECT * FROM sqlite_master WHERE type='index'").fetchall()
                 if row[1]
             }
         expected = {
@@ -205,9 +192,7 @@ class TestMigrationIntegrationWithDatabase:
         with db.get_connection() as conn:
             indexes = {
                 row[1]
-                for row in conn.execute(
-                    "SELECT * FROM sqlite_master WHERE type='index'"
-                ).fetchall()
+                for row in conn.execute("SELECT * FROM sqlite_master WHERE type='index'").fetchall()
                 if row[1]
             }
 
@@ -220,10 +205,7 @@ class TestMigrationIntegrationWithDatabase:
     def test_v24_oauth_client_columns_added(self, db):
         """Migration v24 adds OAuth2 token auth mode and TLS verification settings."""
         with db.get_connection() as conn:
-            cols = {
-                row[1]
-                for row in conn.execute("PRAGMA table_info(oauth_clients)").fetchall()
-            }
+            cols = {row[1] for row in conn.execute("PRAGMA table_info(oauth_clients)").fetchall()}
 
         assert "token_auth" in cols
         assert "verify_ssl" in cols
@@ -231,15 +213,10 @@ class TestMigrationIntegrationWithDatabase:
     def test_v25_history_request_correlation_column_and_index_added(self, db):
         """Migration v25 adds per-request correlation IDs to history rows."""
         with db.get_connection() as conn:
-            cols = {
-                row[1]
-                for row in conn.execute("PRAGMA table_info(history)").fetchall()
-            }
+            cols = {row[1] for row in conn.execute("PRAGMA table_info(history)").fetchall()}
             indexes = {
                 row[1]
-                for row in conn.execute(
-                    "SELECT * FROM sqlite_master WHERE type='index'"
-                ).fetchall()
+                for row in conn.execute("SELECT * FROM sqlite_master WHERE type='index'").fetchall()
                 if row[1]
             }
 
@@ -253,6 +230,7 @@ class TestMigrationIntegrationWithDatabase:
         db.db_path = db_path.resolve()
         db.db_path.parent.mkdir(parents=True, exist_ok=True)
         import threading
+
         db._lock = threading.Lock()
         db._conn = sqlite3.connect(str(db.db_path))
         db._conn.row_factory = sqlite3.Row
@@ -342,9 +320,7 @@ class TestDatabaseTransaction:
             ("FetchOne", ""),
         )
         with db.transaction() as tx:
-            row = tx.fetchone(
-                "SELECT name FROM collections WHERE name = ?", ("FetchOne",)
-            )
+            row = tx.fetchone("SELECT name FROM collections WHERE name = ?", ("FetchOne",))
         assert row is not None
         assert row["name"] == "FetchOne"
 
@@ -358,9 +334,7 @@ class TestDatabaseTransaction:
             ("FetchAll2", ""),
         )
         with db.transaction() as tx:
-            rows = tx.fetchall(
-                "SELECT name FROM collections WHERE name LIKE ?", ("FetchAll%",)
-            )
+            rows = tx.fetchall("SELECT name FROM collections WHERE name LIKE ?", ("FetchAll%",))
         assert len(rows) == 2
 
     def test_transaction_insert_returns_rowid(self, db):
@@ -371,4 +345,3 @@ class TestDatabaseTransaction:
             )
         assert isinstance(row_id, int)
         assert row_id > 0
-

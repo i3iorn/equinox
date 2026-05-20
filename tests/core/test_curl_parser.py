@@ -49,11 +49,7 @@ class TestParseCurlHeaders:
         assert result["headers"]["Accept"] == "application/json"
 
     def test_multiple_headers(self):
-        cmd = (
-            'curl -H "Accept: text/html" '
-            '-H "X-Custom: value" '
-            "https://example.com"
-        )
+        cmd = 'curl -H "Accept: text/html" ' '-H "X-Custom: value" ' "https://example.com"
         result = parse_curl(cmd)
         assert result["headers"]["Accept"] == "text/html"
         assert result["headers"]["X-Custom"] == "value"
@@ -92,7 +88,7 @@ class TestParseCurlBody:
         assert result["body"] == "hello"
 
     def test_json_flag(self):
-        result = parse_curl('curl --json \'{"a":1}\' https://example.com')
+        result = parse_curl("curl --json '{\"a\":1}' https://example.com")
         assert result["body"] == '{"a":1}'
         assert result["headers"]["Content-Type"] == "application/json"
         assert result["headers"]["Accept"] == "application/json"
@@ -220,4 +216,3 @@ class TestParseCurlComplex:
         assert result["headers"]["Authorization"] == "Bearer tok123"
         assert result["body"] == '{"name":"test"}'
         assert result["verify_ssl"] is True
-

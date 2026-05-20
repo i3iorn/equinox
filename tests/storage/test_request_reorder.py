@@ -12,10 +12,10 @@ Covers:
 
 import pytest
 
-from equinox.storage.database import Database
-from equinox.storage.collections import CollectionManager
-from equinox.storage.migrations import MigrationRunner
 from equinox.core.request import Request
+from equinox.storage.collections import CollectionManager
+from equinox.storage.database import Database
+from equinox.storage.migrations import MigrationRunner
 
 
 @pytest.fixture
@@ -48,12 +48,17 @@ def seeded_requests(mgr, col_id):
     ]
     ids = {}
     for name, method in items:
-        req = Request(method=method, url=f"https://api.example.com/{name.lower().replace(' ', '-')}", name=name)
+        req = Request(
+            method=method,
+            url=f"https://api.example.com/{name.lower().replace(' ', '-')}",
+            name=name,
+        )
         ids[name] = mgr.save_request(req, collection_id=col_id, name=name)
     return ids
 
 
 # ── Migration ─────────────────────────────────────────────────────────────────
+
 
 class TestSortOrderMigration:
     def test_sort_order_column_exists(self, db):
@@ -69,6 +74,7 @@ class TestSortOrderMigration:
 
 
 # ── list_requests ordering ────────────────────────────────────────────────────
+
 
 class TestListRequestsOrdering:
     def test_order_by_sort_order_then_name(self, mgr, col_id, seeded_requests):
@@ -91,6 +97,7 @@ class TestListRequestsOrdering:
 
 
 # ── reorder_requests ──────────────────────────────────────────────────────────
+
 
 class TestReorderRequests:
     def test_reorder_bulk(self, mgr, col_id, seeded_requests):
@@ -120,6 +127,7 @@ class TestReorderRequests:
 
 
 # ── sort_requests_alphabetically ──────────────────────────────────────────────
+
 
 class TestSortAlphabetically:
     def test_sorts_az(self, mgr, col_id, seeded_requests):
@@ -154,6 +162,7 @@ class TestSortAlphabetically:
 
 # ── sort_requests_by_method ───────────────────────────────────────────────────
 
+
 class TestSortByMethod:
     def test_sorts_by_method_then_name(self, mgr, col_id, seeded_requests):
         mgr.sort_requests_by_method(col_id)
@@ -178,9 +187,11 @@ class TestSortByMethod:
 
 # ── GUI reorder handler ──────────────────────────────────────────────────────
 
+
 def _can_import_pyqt6() -> bool:
     try:
         import PyQt6  # noqa: F401
+
         return True
     except ImportError:
         return False
@@ -188,10 +199,10 @@ def _can_import_pyqt6() -> bool:
 
 @pytest.mark.skipif(not _can_import_pyqt6(), reason="PyQt6 not available")
 class TestGUIReorder:
-
     @pytest.fixture
     def qapp(self):
         from PyQt6.QtWidgets import QApplication
+
         app = QApplication.instance()
         if app is None:
             app = QApplication([])
@@ -200,6 +211,7 @@ class TestGUIReorder:
     @pytest.fixture
     def panel(self, qapp, db):
         from equinox.gui.collection_panel import CollectionsPanel
+
         p = CollectionsPanel(db)
         yield p
         p.close()
@@ -241,4 +253,3 @@ class TestGUIReorder:
         methods = [r["method"] for r in rows]
         expected = ["GET", "POST", "PUT", "DELETE", "HEAD"]
         assert methods == expected
-

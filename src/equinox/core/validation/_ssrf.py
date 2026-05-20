@@ -4,16 +4,16 @@ Combines a lazily-initialised DNS thread-pool (``_DnsPool``) with the
 actual guard logic (``_SsrfGuard``).  The pool is an implementation detail
 of the guard and is not part of the public API of this package.
 """
+
 from __future__ import annotations
 
 import concurrent.futures
-import time
 import ipaddress
 import logging
 import socket
 import threading
+import time
 from collections import OrderedDict
-from typing import Optional, Tuple
 
 from equinox.core.config.flags import is_ssrf_allow_on_dns_failure_enabled
 from equinox.core.exceptions import ValidationError
@@ -27,6 +27,7 @@ _logger = logging.getLogger(__name__)
 # _DnsPool — private to this module
 # ---------------------------------------------------------------------------
 
+
 class _DnsPool:
     """Lazily-initialised singleton thread-pool for DNS resolution.
 
@@ -35,7 +36,7 @@ class _DnsPool:
     Thread-safe via double-checked locking.
     """
 
-    _instance: Optional[concurrent.futures.ThreadPoolExecutor] = None
+    _instance: concurrent.futures.ThreadPoolExecutor | None = None
     _lock: threading.Lock = threading.Lock()
 
     @classmethod
@@ -58,6 +59,7 @@ class _DnsPool:
 # _SsrfGuard
 # ---------------------------------------------------------------------------
 
+
 class _SsrfGuard:
     """Blocks requests to private/internal IPs and cloud metadata endpoints.
 
@@ -65,17 +67,19 @@ class _SsrfGuard:
     prevent DNS-rebinding attacks (that requires runtime enforcement).
     """
 
-    _METADATA_HOSTS: frozenset[str] = frozenset({
-        "169.254.169.254",           # AWS / GCP / Azure IMDS
-        "metadata.google.internal",
-        "metadata.goog",
-    })
+    _METADATA_HOSTS: frozenset[str] = frozenset(
+        {
+            "169.254.169.254",  # AWS / GCP / Azure IMDS
+            "metadata.google.internal",
+            "metadata.goog",
+        }
+    )
 
-    _DNS_TIMEOUT: float = 2.0   # seconds
+    _DNS_TIMEOUT: float = 2.0  # seconds
     _DNS_CACHE_TTL_SECONDS: float = 60.0
     _DNS_CACHE_MAX_ENTRIES: int = 512
     _dns_cache_lock: threading.Lock = threading.Lock()
-    _dns_cache: "OrderedDict[str, Tuple[float, bool]]" = OrderedDict()
+    _dns_cache: OrderedDict[str, tuple[float, bool]] = OrderedDict()
 
     @classmethod
     def check(cls, hostname: str) -> None:
@@ -95,12 +99,11 @@ class _SsrfGuard:
             # Literal IP — check address range; no DNS resolution needed.
             if addr.is_private or addr.is_loopback or addr.is_link_local:
                 raise ValidationError(
-                    f"Requests to private/internal IP '{hostname}' are blocked "
-                    "(SSRF protection)"
+                    f"Requests to private/internal IP '{hostname}' are blocked " "(SSRF protection)"
                 )
             return
         except ValueError:
-            pass   # Not a literal IP — fall through to DNS resolution.
+            pass  # Not a literal IP — fall through to DNS resolution.
 
         cls._resolve_and_check(normalized, hostname)
 
@@ -114,8 +117,7 @@ class _SsrfGuard:
                 extra={"hostname": normalized},
             )
             raise ValidationError(
-                f"Requests to metadata endpoint '{normalized}' are blocked "
-                "(SSRF protection)"
+                f"Requests to metadata endpoint '{normalized}' are blocked " "(SSRF protection)"
             )
 
     @classmethod
@@ -129,16 +131,17 @@ class _SsrfGuard:
                 )
             return
 
-        future: Optional[concurrent.futures.Future[list]] = None
+        future: concurrent.futures.Future[list] | None = None
         try:
             has_private = False
             future = _DnsPool.get().submit(
                 socket.getaddrinfo,
-                normalized, None, socket.AF_UNSPEC, socket.SOCK_STREAM,
+                normalized,
+                None,
+                socket.AF_UNSPEC,
+                socket.SOCK_STREAM,
             )
-            for _family, _type, _proto, _canon, sockaddr in future.result(
-                timeout=cls._DNS_TIMEOUT
-            ):
+            for _family, _type, _proto, _canon, sockaddr in future.result(timeout=cls._DNS_TIMEOUT):
                 addr = ipaddress.ip_address(sockaddr[0])
                 if addr.is_private or addr.is_loopback or addr.is_link_local:
                     has_private = True
@@ -173,7 +176,7 @@ class _SsrfGuard:
             )
 
     @classmethod
-    def _get_cached_dns_result(cls, hostname: str) -> Optional[bool]:
+    def _get_cached_dns_result(cls, hostname: str) -> bool | None:
         """Return cached private-IP result when fresh, otherwise ``None``."""
         now = time.monotonic()
         with cls._dns_cache_lock:
@@ -197,4 +200,3 @@ class _SsrfGuard:
             cls._dns_cache.move_to_end(hostname)
             while len(cls._dns_cache) > cls._DNS_CACHE_MAX_ENTRIES:
                 cls._dns_cache.popitem(last=False)
-

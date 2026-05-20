@@ -1,9 +1,9 @@
 from __future__ import annotations
 
 import re
-from typing import Iterable, List
+from collections.abc import Iterable
 
-from equinox.gui.syntax_highlighter.base import _make_format, RegexHighlighterBase, RegexRule
+from equinox.gui.syntax_highlighter.base import RegexHighlighterBase, RegexRule, _make_format
 from equinox.gui.theme import Colors
 
 
@@ -14,7 +14,7 @@ class PythonHighlighter(RegexHighlighterBase):
     """
 
     def _build_rules(self) -> Iterable[RegexRule]:
-        rules: List[RegexRule] = []
+        rules: list[RegexRule] = []
 
         # Keywords
         kw_fmt = _make_format(foreground=Colors.BLUE, bold=True)

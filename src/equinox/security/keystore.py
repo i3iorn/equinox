@@ -10,9 +10,8 @@ local file-based key in ~/.equinox/.key (maintained for compatibility).
 from __future__ import annotations
 
 import base64
-import os
 import logging
-from typing import Optional
+import os
 
 try:
     import keyring  # type: ignore
@@ -35,7 +34,7 @@ def _env_os_keystore_enabled() -> bool:
     return is_os_keystore_enabled()
 
 
-def get_from_os_store() -> Optional[bytes]:
+def get_from_os_store() -> bytes | None:
     """Return the 32-byte key from the OS key store if available."""
     if not _env_os_keystore_enabled() or not _os_keyring_available():
         return None
@@ -59,7 +58,7 @@ def set_in_os_store(key: bytes) -> None:
         logger.exception("Failed to store encryption key in OS keyring")
 
 
-def get_or_create_os_key() -> Optional[bytes]:
+def get_or_create_os_key() -> bytes | None:
     """Return an existing OS-store key or generate and store one.
 
     Returns:

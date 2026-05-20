@@ -23,7 +23,7 @@ from __future__ import annotations
 
 import logging
 from abc import ABC, abstractmethod
-from typing import Any, Callable, Dict, Optional
+from typing import Any, Callable
 
 from equinox.core.exceptions import AuthError
 
@@ -33,13 +33,14 @@ logger = logging.getLogger(__name__)
 _MAX_CREDENTIAL_LENGTH = 16_384
 
 
-AUTH_TYPES: Dict[str, str] = {
-    "oauth2":    "OAuth 2.0",
-    "api_key":   "API Key",
-    "basic":     "Basic Auth",
-    "bearer":    "Bearer Token",
+AUTH_TYPES: dict[str, str] = {
+    "oauth2": "OAuth 2.0",
+    "api_key": "API Key",
+    "basic": "Basic Auth",
+    "bearer": "Bearer Token",
     "aws_sigv4": "AWS SigV4",
 }
+
 
 class CredentialValidationError(AuthError):
     """Raised when credential validation fails.
@@ -78,24 +79,22 @@ def _validate_credential(value: str, field_name: str) -> str:
 
     if len(value) > _MAX_CREDENTIAL_LENGTH:
         raise CredentialValidationError(
-            field_name,
-            f"exceeds maximum length ({len(value)} > {_MAX_CREDENTIAL_LENGTH})"
+            field_name, f"exceeds maximum length ({len(value)} > {_MAX_CREDENTIAL_LENGTH})"
         )
 
     if "\r" in value or "\n" in value:
         logger.warning("CRLF injection attempt detected in %s", field_name)
         raise CredentialValidationError(
-            field_name,
-            "contains invalid characters (CRLF injection attempt)"
+            field_name, "contains invalid characters (CRLF injection attempt)"
         )
 
     return value
 
 
 def _interpolate_field(
-    value: Optional[str],
+    value: str | None,
     interp: Callable[[str], str],
-) -> Optional[str]:
+) -> str | None:
     """Interpolate a single optional string field.
 
     Args:
@@ -130,8 +129,8 @@ class AuthStrategy(ABC):
     - ``get_preflight_warning()`` — for validation warnings.
     """
 
-    AUTH_TYPE: str = ""           # e.g. "bearer", "basic", "oauth2"
-    DISPLAY_NAME: str = ""        # e.g. "Bearer Token", "OAuth 2.0"
+    AUTH_TYPE: str = ""  # e.g. "bearer", "basic", "oauth2"
+    DISPLAY_NAME: str = ""  # e.g. "Bearer Token", "OAuth 2.0"
 
     def __init_subclass__(cls, **kwargs: Any) -> None:
         """Validate that subclass defines AUTH_TYPE and DISPLAY_NAME.
@@ -142,22 +141,17 @@ class AuthStrategy(ABC):
         super().__init_subclass__(**kwargs)
 
         # Don't validate on intermediate abstract classes
-        if not hasattr(cls, '__abstractmethods__') or not cls.__abstractmethods__:
+        if not hasattr(cls, "__abstractmethods__") or not cls.__abstractmethods__:
             if not cls.AUTH_TYPE:
-                raise TypeError(
-                    f"{cls.__name__} must define AUTH_TYPE class variable"
-                )
+                raise TypeError(f"{cls.__name__} must define AUTH_TYPE class variable")
             if not cls.DISPLAY_NAME:
-                raise TypeError(
-                    f"{cls.__name__} must define DISPLAY_NAME class variable"
-                )
-            logger.debug("Registered auth strategy: %s (type=%s)",
-                        cls.__name__, cls.AUTH_TYPE)
+                raise TypeError(f"{cls.__name__} must define DISPLAY_NAME class variable")
+            logger.debug("Registered auth strategy: %s (type=%s)", cls.__name__, cls.AUTH_TYPE)
 
     # ── Core interface (must override) ────────────────────────────────
 
     @abstractmethod
-    def apply(self, request: Any, headers: Dict[str, str]) -> None:
+    def apply(self, request: Any, headers: dict[str, str]) -> None:
         """Apply authentication to request headers (and optionally params).
 
         Args:
@@ -169,7 +163,7 @@ class AuthStrategy(ABC):
         """
 
     @abstractmethod
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """Serialise to a plain dict suitable for JSON / DB storage.
 
         The returned dict MUST include a "type" key matching AUTH_TYPE.
@@ -180,7 +174,7 @@ class AuthStrategy(ABC):
 
     @classmethod
     @abstractmethod
-    def from_dict(cls, data: Dict[str, Any], **kwargs: Any) -> "AuthStrategy":
+    def from_dict(cls, data: dict[str, Any], **kwargs: Any) -> AuthStrategy:
         """Reconstruct from a serialised dict.
 
         Base implementation provides validation of input data structure.
@@ -203,12 +197,14 @@ class AuthStrategy(ABC):
         if "type" not in data:
             raise ValueError("Missing required 'type' key in auth data")
 
+        raise NotImplementedError("Subclasses must implement from_dict")
+
     # ── Optional overrides ────────────────────────────────────────────
 
     def interpolate(
         self,
         interp: Callable[[str], str],
-    ) -> "AuthStrategy":
+    ) -> AuthStrategy:
         """Return a *new* instance with ``{{VAR}}`` placeholders expanded.
 
         This method uses the template method pattern:
@@ -236,7 +232,7 @@ class AuthStrategy(ABC):
     def interpolate_fields(
         self,
         interp: Callable[[str], str],
-    ) -> "AuthStrategy":
+    ) -> AuthStrategy:
         """Interpolate fields in this auth strategy.
 
         Default implementation round-trips through ``to_dict()``/``from_dict()``,
@@ -252,10 +248,7 @@ class AuthStrategy(ABC):
             New AuthStrategy instance with placeholders expanded.
         """
         d = self.to_dict()
-        interpolated = {
-            k: (interp(v) if isinstance(v, str) and v else v)
-            for k, v in d.items()
-        }
+        interpolated = {k: (interp(v) if isinstance(v, str) and v else v) for k, v in d.items()}
         return type(self).from_dict(interpolated)
 
     def get_display_summary(self) -> str:
@@ -269,7 +262,7 @@ class AuthStrategy(ABC):
         """
         return self.DISPLAY_NAME or type(self).__name__
 
-    def get_preflight_warning(self) -> Optional[str]:
+    def get_preflight_warning(self) -> str | None:
         """Return an advisory warning if required fields are missing.
 
         Returns ``None`` when the configuration looks complete.
@@ -317,8 +310,10 @@ class AuthStrategy(ABC):
             data = self.to_dict()
             # Redact sensitive fields for safe logging
             safe_data = {
-                k: "[REDACTED]" if any(sensitive in k.lower()
-                                      for sensitive in ("password", "token", "secret", "key"))
+                k: "[REDACTED]"
+                if any(
+                    sensitive in k.lower() for sensitive in ("password", "token", "secret", "key")
+                )
                 else v
                 for k, v in data.items()
             }
@@ -326,4 +321,3 @@ class AuthStrategy(ABC):
             return f"{type(self).__name__}({items})"
         except Exception:
             return f"{type(self).__name__}(error in __repr__)"
-

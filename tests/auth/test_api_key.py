@@ -1,4 +1,5 @@
 """100% coverage tests for equinox.auth.api_key."""
+
 from __future__ import annotations
 
 import logging
@@ -6,14 +7,14 @@ from unittest.mock import Mock
 
 import pytest
 
-from equinox.auth._base import _MAX_CREDENTIAL_LENGTH
 from equinox.auth._api_key import _VALID_LOCATIONS, APIKeyAuth
+from equinox.auth._base import _MAX_CREDENTIAL_LENGTH
 from equinox.core.exceptions import AuthError
-
 
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
 
 def _make(key="X-Api-Key", value="secret-value", location="header") -> APIKeyAuth:
     return APIKeyAuth(key=key, value=value, location=location)
@@ -28,15 +29,15 @@ def _request_with_params(params) -> Mock:
 
 def _request_without_params() -> Mock:
     """Mock request that has no .params attribute at all."""
-    return Mock(spec=[])   # empty spec → no attributes
+    return Mock(spec=[])  # empty spec → no attributes
 
 
 # ---------------------------------------------------------------------------
 # __init__ — location validation
 # ---------------------------------------------------------------------------
 
-class TestAPIKeyAuthInit:
 
+class TestAPIKeyAuthInit:
     def test_header_location_accepted(self):
         auth = APIKeyAuth(key="X-Api-Key", value="s3cr3t", location="header")
         assert auth.location == "header"
@@ -116,8 +117,8 @@ class TestAPIKeyAuthInit:
 # apply
 # ---------------------------------------------------------------------------
 
-class TestAPIKeyAuthApply:
 
+class TestAPIKeyAuthApply:
     def test_header_location_injects_into_headers(self):
         auth = _make(key="X-Api-Key", value="tok123", location="header")
         headers: dict = {}
@@ -139,7 +140,7 @@ class TestAPIKeyAuthApply:
         auth.apply(req, headers)
         assert req.params["api_key"] == "abc"
         assert req.params["other"] == "1"  # existing params preserved
-        assert headers == {}               # headers untouched
+        assert headers == {}  # headers untouched
 
     def test_query_location_creates_params_when_none(self):
         """request.params is None → should be initialised to {}."""
@@ -174,8 +175,8 @@ class TestAPIKeyAuthApply:
 # to_dict / from_dict
 # ---------------------------------------------------------------------------
 
-class TestAPIKeyAuthSerialization:
 
+class TestAPIKeyAuthSerialization:
     def test_to_dict_header(self):
         auth = _make(key="X-Api-Key", value="tok", location="header")
         d = auth.to_dict()
@@ -230,8 +231,8 @@ class TestAPIKeyAuthSerialization:
 # __eq__ and __hash__
 # ---------------------------------------------------------------------------
 
-class TestAPIKeyAuthEquality:
 
+class TestAPIKeyAuthEquality:
     def test_equal_to_itself(self):
         auth = _make()
         assert auth == auth
@@ -283,14 +284,14 @@ class TestAPIKeyAuthEquality:
 # __repr__
 # ---------------------------------------------------------------------------
 
-class TestAPIKeyAuthRepr:
 
+class TestAPIKeyAuthRepr:
     def test_repr_long_value_is_masked(self):
         """Value > 4 chars → show first 4 chars + '...'."""
         auth = APIKeyAuth(key="X-Api-Key", value="abcde", location="header")
         r = repr(auth)
         assert "abcd..." in r
-        assert "abcde" not in r   # full value must not appear
+        assert "abcde" not in r  # full value must not appear
 
     def test_repr_exactly_five_chars_masked(self):
         auth = APIKeyAuth(key="k", value="12345", location="header")
@@ -325,4 +326,3 @@ class TestAPIKeyAuthRepr:
         assert r.startswith("APIKeyAuth(")
         assert "key='K'" in r
         assert "location='header'" in r
-

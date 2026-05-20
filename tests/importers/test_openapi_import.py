@@ -1,13 +1,14 @@
 """Tests for OpenAPI importer"""
 
-import pytest
 import json
 import tempfile
 from pathlib import Path
 
-from equinox.storage import Database, CollectionManager
-from equinox.importers import OpenAPIImporter, preview_spec
+import pytest
+
 from equinox.core.exceptions import ValidationError
+from equinox.importers import OpenAPIImporter, preview_spec
+from equinox.storage import CollectionManager, Database
 
 
 class TestOpenAPIImporter:
@@ -44,11 +45,9 @@ class TestOpenAPIImporter:
             "info": {
                 "title": "Test API",
                 "version": "1.0.0",
-                "description": "Test API description"
+                "description": "Test API description",
             },
-            "servers": [
-                {"url": "https://api.example.com"}
-            ],
+            "servers": [{"url": "https://api.example.com"}],
             "paths": {
                 "/users": {
                     "get": {
@@ -59,9 +58,9 @@ class TestOpenAPIImporter:
                                 "name": "limit",
                                 "in": "query",
                                 "schema": {"type": "integer"},
-                                "example": 10
+                                "example": 10,
                             }
-                        ]
+                        ],
                     },
                     "post": {
                         "summary": "Create user",
@@ -72,17 +71,14 @@ class TestOpenAPIImporter:
                                         "type": "object",
                                         "properties": {
                                             "name": {"type": "string"},
-                                            "email": {"type": "string"}
-                                        }
+                                            "email": {"type": "string"},
+                                        },
                                     },
-                                    "example": {
-                                        "name": "John Doe",
-                                        "email": "john@example.com"
-                                    }
+                                    "example": {"name": "John Doe", "email": "john@example.com"},
                                 }
                             }
-                        }
-                    }
+                        },
+                    },
                 },
                 "/users/{id}": {
                     "get": {
@@ -92,12 +88,12 @@ class TestOpenAPIImporter:
                                 "name": "id",
                                 "in": "path",
                                 "required": True,
-                                "schema": {"type": "string"}
+                                "schema": {"type": "string"},
                             }
-                        ]
+                        ],
                     }
-                }
-            }
+                },
+            },
         }
 
     @pytest.fixture
@@ -105,10 +101,7 @@ class TestOpenAPIImporter:
         """Swagger 2.0 spec"""
         return {
             "swagger": "2.0",
-            "info": {
-                "title": "Swagger API",
-                "version": "1.0.0"
-            },
+            "info": {"title": "Swagger API", "version": "1.0.0"},
             "host": "api.example.com",
             "basePath": "/v1",
             "schemes": ["https"],
@@ -117,16 +110,11 @@ class TestOpenAPIImporter:
                     "get": {
                         "summary": "List items",
                         "parameters": [
-                            {
-                                "name": "page",
-                                "in": "query",
-                                "type": "integer",
-                                "default": 1
-                            }
-                        ]
+                            {"name": "page", "in": "query", "type": "integer", "default": 1}
+                        ],
                     }
                 }
-            }
+            },
         }
 
     def test_import_openapi_3_from_dict(self, importer, simple_openapi_3):
@@ -188,7 +176,9 @@ class TestOpenAPIImporter:
         requests = col_mgr.list_requests(collection_id)
 
         # Find GET /users request
-        list_users = next(r for r in requests if r["method"] == "GET" and r["url"].endswith("/users"))
+        list_users = next(
+            r for r in requests if r["method"] == "GET" and r["url"].endswith("/users")
+        )
 
         request_obj = col_mgr.get_request(list_users["id"])
         assert "limit" in request_obj.params
@@ -231,7 +221,7 @@ class TestOpenAPIImporter:
         spec = {
             "openapi": "4.0.0",  # Future version
             "info": {"title": "Test"},
-            "paths": {}
+            "paths": {},
         }
 
         with pytest.raises(ValidationError, match="Unsupported"):
@@ -239,17 +229,14 @@ class TestOpenAPIImporter:
 
     def test_missing_version_raises_error(self, importer):
         """Test spec without version raises error"""
-        spec = {
-            "info": {"title": "Test"},
-            "paths": {}
-        }
+        spec = {"info": {"title": "Test"}, "paths": {}}
 
         with pytest.raises(ValidationError, match="Missing"):
             importer.import_dict(spec)
 
     def test_import_from_json_file(self, importer, simple_openapi_3):
         """Test importing from JSON file"""
-        with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as tmp:
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as tmp:
             json.dump(simple_openapi_3, tmp)
             tmp_path = Path(tmp.name)
 
@@ -271,7 +258,7 @@ paths:
     get:
       summary: Test endpoint
 """
-        with tempfile.NamedTemporaryFile(mode='w', suffix='.yaml', delete=False) as tmp:
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False) as tmp:
             tmp.write(yaml_content)
             tmp_path = Path(tmp.name)
 
@@ -283,7 +270,7 @@ paths:
 
     def test_invalid_json_raises_error(self, importer):
         """Test invalid JSON file raises error"""
-        with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as tmp:
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as tmp:
             tmp.write("{ this is not valid json or yaml [[[")
             tmp_path = Path(tmp.name)
 
@@ -295,7 +282,7 @@ paths:
 
     def test_preview_spec(self, simple_openapi_3):
         """Test preview spec functionality"""
-        with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as tmp:
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as tmp:
             json.dump(simple_openapi_3, tmp)
             tmp_path = Path(tmp.name)
 
@@ -316,7 +303,7 @@ paths:
         spec = {
             "openapi": "3.0.0",
             "info": {"title": "Too Many Paths"},
-            "paths": {f"/path{i}": {"get": {}} for i in range(600)}  # Over limit
+            "paths": {f"/path{i}": {"get": {}} for i in range(600)},  # Over limit
         }
 
         with pytest.raises(ValidationError, match="Too many paths"):
@@ -327,14 +314,7 @@ paths:
         spec = {
             "openapi": "3.0.0",
             "info": {"title": "Test"},
-            "paths": {
-                "/users": {
-                    "get": {
-                        "operationId": "listUsers",
-                        "summary": "List all users"
-                    }
-                }
-            }
+            "paths": {"/users": {"get": {"operationId": "listUsers", "summary": "List all users"}}},
         }
 
         collection_id = importer.import_dict(spec)
@@ -347,13 +327,7 @@ paths:
         spec = {
             "openapi": "3.0.0",
             "info": {"title": "Test"},
-            "paths": {
-                "/users": {
-                    "get": {
-                        "summary": "List all users"
-                    }
-                }
-            }
+            "paths": {"/users": {"get": {"summary": "List all users"}}},
         }
 
         collection_id = importer.import_dict(spec)
@@ -367,15 +341,10 @@ paths:
             "openapi": "3.0.0",
             "info": {"title": "Test"},
             "servers": [{"url": "https://api.example.com"}],
-            "paths": {
-                "/orders/{orderId}": {
-                    "get": {"summary": "Get order"}
-                }
-            },
+            "paths": {"/orders/{orderId}": {"get": {"summary": "Get order"}}},
         }
 
         collection_id = importer.import_dict(spec)
         requests = col_mgr.list_requests(collection_id)
         assert len(requests) == 1
         assert requests[0]["url"] == "https://api.example.com/orders/{{orderId}}"
-

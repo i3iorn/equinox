@@ -2,11 +2,11 @@
 
 from __future__ import annotations
 
-from typing import Any, Dict
+from typing import Any
 from urllib.parse import parse_qsl, urlencode
 
 
-def append_query_params(url: str, params: Dict[str, Any], merge_existing: bool = True) -> str:
+def append_query_params(url: str, params: dict[str, Any], merge_existing: bool = True) -> str:
     """Append or merge query parameters into URL."""
     if not params:
         return url
@@ -39,4 +39,3 @@ def join_url_path(base_url: str, path: str) -> str:
     if not rel:
         return base
     return f"{base}/{rel}"
-

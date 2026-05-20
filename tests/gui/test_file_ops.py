@@ -29,4 +29,3 @@ def test_atomic_write_bytes_writes_payload(tmp_path: Path) -> None:
 
     assert target.read_bytes() == b"abc123"
     assert validate_selected_path(str(target), must_exist=True) == target
-

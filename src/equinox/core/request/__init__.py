@@ -21,10 +21,10 @@ continue to work without any changes.
 
 from __future__ import annotations
 
-from equinox.core.request.types import AssertionRule, CaptureRule, MultipartField
 from equinox.core.request.headers import HeaderDict
 from equinox.core.request.request import Request
 from equinox.core.request.response import Response
+from equinox.core.request.types import AssertionRule, CaptureRule, MultipartField
 
 __all__ = [
     "Request",

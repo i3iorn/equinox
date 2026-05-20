@@ -1,22 +1,24 @@
 """Tests for core/error_enrichment.py — rich error conversion."""
 
-import httpx
 from unittest.mock import Mock
 
-from equinox.core.format.error_enrichment import (
-    RichError,
-    enrich_exception,
-    _enrich_httpx_error,
-    _enrich_equinox_error,
-    _describe_connect_error,
+import httpx
+
+from equinox.core.exceptions import (
+    AuthError,
+    RequestError,
+    ValidationError,
 )
 from equinox.core.exceptions import (
     TimeoutError as EqTimeoutError,
-    RequestError,
-    ValidationError,
-    AuthError,
 )
-
+from equinox.core.format.error_enrichment import (
+    RichError,
+    _describe_connect_error,
+    _enrich_equinox_error,
+    _enrich_httpx_error,
+    enrich_exception,
+)
 
 # ── enrich_exception (top-level) ──────────────────────────────────────────
 
@@ -204,4 +206,3 @@ class TestEnrichEquinoxError:
     def test_non_equinox_returns_none(self):
         exc = ValueError("not equinox")
         assert _enrich_equinox_error(exc, str(exc), "ValueError") is None
-

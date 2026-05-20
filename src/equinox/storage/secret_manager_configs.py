@@ -10,7 +10,7 @@ from __future__ import annotations
 import json
 import logging
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any
 
 from equinox.core.secret_managers import SecretManagerProfile
 
@@ -22,11 +22,11 @@ _DEFAULT_CONFIG_PATH = Path.home() / ".equinox" / "secret_managers.json"
 class SecretManagerConfigStore:
     """Read/write named secret manager configurations to a JSON file."""
 
-    def __init__(self, config_path: Optional[Path] = None) -> None:
+    def __init__(self, config_path: Path | None = None) -> None:
         self.config_path = config_path or _DEFAULT_CONFIG_PATH
         self.config_path.parent.mkdir(parents=True, exist_ok=True)
 
-    def load_all(self) -> Dict[str, Dict[str, Any]]:
+    def load_all(self) -> dict[str, dict[str, Any]]:
         """Load all saved configurations.
 
         Returns an empty dict on missing file or invalid payload.
@@ -44,14 +44,14 @@ class SecretManagerConfigStore:
             logger.warning("Ignoring invalid secret manager configuration payload")
             return {}
 
-        out: Dict[str, Dict[str, Any]] = {}
+        out: dict[str, dict[str, Any]] = {}
         for name, payload in raw.items():
             if not isinstance(name, str) or not isinstance(payload, dict):
                 continue
             out[name] = SecretManagerProfile.from_payload(payload).to_payload()
         return out
 
-    def save_all(self, configs: Dict[str, Dict[str, Any]]) -> None:
+    def save_all(self, configs: dict[str, dict[str, Any]]) -> None:
         """Persist *configs* to disk atomically."""
         serializable = {
             str(name): SecretManagerProfile.from_payload(payload).to_payload()
@@ -62,7 +62,7 @@ class SecretManagerConfigStore:
         tmp_path.write_text(json.dumps(serializable, indent=2), encoding="utf-8")
         tmp_path.replace(self.config_path)
 
-    def upsert(self, name: str, payload: Dict[str, Any]) -> None:
+    def upsert(self, name: str, payload: dict[str, Any]) -> None:
         """Create or update a single named configuration."""
         configs = self.load_all()
         configs[name] = payload
@@ -73,4 +73,3 @@ class SecretManagerConfigStore:
         configs = self.load_all()
         configs.pop(name, None)
         self.save_all(configs)
-

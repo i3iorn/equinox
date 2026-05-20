@@ -84,5 +84,3 @@ def test_plugin_modules_do_not_claim_hard_sandbox_isolation() -> None:
     assert "execution sandboxing" not in security_text.lower()
     assert "not a hard isolation boundary" in manager_text.lower()
     assert "process-level isolation" in security_text.lower()
-
-

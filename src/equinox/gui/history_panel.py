@@ -1,4 +1,5 @@
 """History panel"""
+
 from __future__ import annotations
 
 import logging
@@ -8,16 +9,30 @@ from typing import Callable
 from PyQt6.QtCore import Qt, QTimer, pyqtSignal
 from PyQt6.QtGui import QAction, QColor, QFont
 from PyQt6.QtWidgets import (
-    QCheckBox, QComboBox, QDialog, QDialogButtonBox, QDoubleSpinBox,
-    QGridLayout, QGroupBox, QHBoxLayout, QLabel, QLineEdit, QListWidget,
-    QListWidgetItem, QMenu, QPushButton, QSpinBox, QVBoxLayout, QWidget,
+    QCheckBox,
+    QComboBox,
+    QDialog,
+    QDialogButtonBox,
+    QDoubleSpinBox,
+    QGridLayout,
+    QGroupBox,
+    QHBoxLayout,
+    QLabel,
+    QLineEdit,
+    QListWidget,
+    QListWidgetItem,
+    QMenu,
+    QPushButton,
+    QSpinBox,
+    QVBoxLayout,
+    QWidget,
 )
 
+from equinox.application.history import HistoryFacade
 from equinox.gui.dialogs.history_diff_dialog import HistoryDiffDialog
 from equinox.gui.error_presenter import ErrorPresenter
 from equinox.gui.theme import Colors
 from equinox.gui.ui_common import confirm_yes_no, create_muted_label, create_panel_layout
-from equinox.application.history import HistoryFacade
 from equinox.storage import Database
 
 __all__ = ["HistoryPanel"]
@@ -35,8 +50,8 @@ _AUTO_REFRESH_INTERVAL_MS = 30_000
 class HistoryPanel(QWidget):
     """Panel for viewing request history."""
 
-    history_selected = pyqtSignal(int)   # load into editor
-    history_replay   = pyqtSignal(int)   # load + immediately send
+    history_selected = pyqtSignal(int)  # load into editor
+    history_replay = pyqtSignal(int)  # load + immediately send
 
     def __init__(
         self,
@@ -201,7 +216,7 @@ class HistoryPanel(QWidget):
 
         # Replay / Open buttons beneath the list
         btn_row = QHBoxLayout()
-        self.open_btn   = QPushButton("Open in Editor")
+        self.open_btn = QPushButton("Open in Editor")
         self.replay_btn = QPushButton("▶  Replay")
         self.replay_btn.setToolTip("Re-send this request immediately")
         self.open_btn.setEnabled(False)
@@ -240,9 +255,7 @@ class HistoryPanel(QWidget):
 
     def _toggle_advanced_filters(self, checked: bool) -> None:
         self.advanced_group.setVisible(checked)
-        self.advanced_toggle.setText(
-            "▼ Advanced Filters" if checked else "▶ Advanced Filters"
-        )
+        self.advanced_toggle.setText("▼ Advanced Filters" if checked else "▶ Advanced Filters")
         if not checked:
             # Clear advanced fields when collapsing
             self.regex_input.clear()
@@ -278,16 +291,16 @@ class HistoryPanel(QWidget):
         method = "" if method == "All Methods" else method
         status = self.status_filter.currentText()
         status = "" if status == "All Status" else status.lower()
-        query  = self.search_input.text().strip()
+        query = self.search_input.text().strip()
 
         # Advanced filter values — widgets are always present after _init_ui().
-        body_regex     = self.regex_input.text().strip()
-        jsonpath       = self.jsonpath_input.text().strip()
+        body_regex = self.regex_input.text().strip()
+        jsonpath = self.jsonpath_input.text().strip()
         jsonpath_value = self.jsonpath_value_input.text().strip() or None
-        content_type   = self.content_type_input.text().strip()
-        header         = self.header_input.text().strip()
-        min_elapsed    = self.min_elapsed_spin.value() or None
-        max_elapsed    = self.max_elapsed_spin.value() or None
+        content_type = self.content_type_input.text().strip()
+        header = self.header_input.text().strip()
+        min_elapsed = self.min_elapsed_spin.value() or None
+        max_elapsed = self.max_elapsed_spin.value() or None
 
         try:
             entries = self._history.search_history(
@@ -365,10 +378,10 @@ class HistoryPanel(QWidget):
                     self._add_date_separator(group_label)
                     current_group = group_label
 
-                status  = entry.get("status_code", "ERR")
-                method  = entry["method"]
-                url     = entry["url"]
-                ts      = ts_str.split(".")[0]
+                status = entry.get("status_code", "ERR")
+                method = entry["method"]
+                url = entry["url"]
+                ts = ts_str.split(".")[0]
                 elapsed = entry.get("elapsed")
                 elapsed_str = f"  {int(elapsed * 1000)} ms" if elapsed else ""
 
@@ -521,7 +534,9 @@ class HistoryPanel(QWidget):
                 element_id=f"action.{action_id}",
             )
         except Exception:
-            logger.debug("Failed to get context action usage for %s/%s", context, action_id, exc_info=True)
+            logger.debug(
+                "Failed to get context action usage for %s/%s", context, action_id, exc_info=True
+            )
             return 0
 
     def _record_context_action_usage(self, context: str, action_id: str) -> None:
@@ -535,9 +550,13 @@ class HistoryPanel(QWidget):
                 context=context,
             )
         except Exception:
-            logger.debug("Failed to record context action usage for %s/%s", context, action_id, exc_info=True)
+            logger.debug(
+                "Failed to record context action usage for %s/%s", context, action_id, exc_info=True
+            )
 
-    def _run_context_action(self, context: str, action_id: str, callback: Callable[[], None]) -> None:
+    def _run_context_action(
+        self, context: str, action_id: str, callback: Callable[[], None]
+    ) -> None:
         self._record_context_action_usage(context, action_id)
         callback()
 
@@ -637,7 +656,6 @@ class HistoryPanel(QWidget):
         self.refresh()
 
     # ── Private helpers ───────────────────────────────────────────────────────
-
 
     def _selected_real_ids(self) -> list[int]:
         """Return the DB IDs of all selected non-separator list entries.

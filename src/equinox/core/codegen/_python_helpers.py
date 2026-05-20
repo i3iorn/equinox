@@ -1,6 +1,9 @@
 import json
+
 from equinox.core.request import Request
-from .utils import _auth_type_name, _REDACTED_TOKEN, _REDACTED_KEY
+
+from .utils import _REDACTED_KEY, _REDACTED_TOKEN, _auth_type_name
+
 
 def _inject_auth_into_headers(request: Request, headers: dict) -> None:
     if not request.auth:
@@ -14,11 +17,14 @@ def _inject_auth_into_headers(request: Request, headers: dict) -> None:
     elif name == "APIKeyAuth" and getattr(auth, "location", "header") == "header":
         headers[auth.key] = _REDACTED_KEY
 
+
 def _auth_kwarg_for_basic(request: Request) -> str | None:
-    from .utils import _REDACTED_USER, _REDACTED_PASS
+    from .utils import _REDACTED_PASS, _REDACTED_USER
+
     if request.auth and _auth_type_name(request.auth) == "BasicAuth":
         return f"auth=({_REDACTED_USER!r}, {_REDACTED_PASS!r})"
     return None
+
 
 def _python_body_lines(request: Request) -> tuple:
     extra: list = []

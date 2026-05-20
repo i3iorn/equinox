@@ -8,17 +8,18 @@ integrate with ``httpx`` and to absorb ``Set-Cookie`` response headers.
 from __future__ import annotations
 
 import logging
-from typing import Any, Dict, List, Optional
+from typing import Any
 
-from equinox.core.exceptions import StorageError, ValidationError
 from equinox.core import urls
-from equinox.storage.utils import require_positive_int
+from equinox.core.exceptions import StorageError, ValidationError
 from equinox.storage.database import Database
+from equinox.storage.utils import require_positive_int
 
 logger = logging.getLogger(__name__)
 
 
 # ── Module-level validation helper ───────────────────────────────────────────
+
 
 def _validate_str_field(
     field_name: str,
@@ -68,13 +69,13 @@ class CookieJarManager:
     def _validate_path(self, path: str) -> None:
         _validate_str_field("path", path, self.MAX_PATH_LEN)
 
-    def _validate_expires(self, expires: Optional[str]) -> None:
+    def _validate_expires(self, expires: str | None) -> None:
         if expires is not None:
             _validate_str_field("expires", expires, 100)
 
     # ── Public API ────────────────────────────────────────────────────────────
 
-    def list_cookies(self) -> List[Dict[str, Any]]:
+    def list_cookies(self) -> list[dict[str, Any]]:
         """Return all stored cookies ordered by domain, name."""
         rows = self.db.fetchall(
             "SELECT id, name, value, domain, path, secure, http_only, expires, created_at "
@@ -82,7 +83,7 @@ class CookieJarManager:
         )
         return [self._row_to_dict(r) for r in rows]
 
-    def get(self, cookie_id: int) -> Optional[Dict[str, Any]]:
+    def get(self, cookie_id: int) -> dict[str, Any] | None:
         """Return a single cookie by id, or None if not found."""
         require_positive_int(cookie_id, "cookie_id")
         row = self.db.fetchone(
@@ -100,7 +101,7 @@ class CookieJarManager:
         path: str = "/",
         secure: bool = False,
         http_only: bool = False,
-        expires: Optional[str] = None,
+        expires: str | None = None,
     ) -> int:
         """Insert a cookie, replacing any existing entry with the same name+domain+path.
 
@@ -148,10 +149,10 @@ class CookieJarManager:
         self,
         cookie_id: int,
         *,
-        value: Optional[str] = None,
-        secure: Optional[bool] = None,
-        http_only: Optional[bool] = None,
-        expires: Optional[str] = None,
+        value: str | None = None,
+        secure: bool | None = None,
+        http_only: bool | None = None,
+        expires: str | None = None,
     ) -> None:
         """Update mutable fields of an existing cookie."""
         require_positive_int(cookie_id, "cookie_id")
@@ -159,7 +160,7 @@ class CookieJarManager:
             raise StorageError(f"Cookie {cookie_id} not found")
 
         updates = []
-        params: List[Any] = []
+        params: list[Any] = []
         if value is not None:
             self._validate_value(value)
             updates.append("value = ?")
@@ -178,9 +179,7 @@ class CookieJarManager:
         if not updates:
             return
         params.append(cookie_id)
-        self.db.execute(
-            f"UPDATE cookies SET {', '.join(updates)} WHERE id = ?", tuple(params)
-        )
+        self.db.execute(f"UPDATE cookies SET {', '.join(updates)} WHERE id = ?", tuple(params))
 
     def delete_cookie(self, cookie_id: int) -> None:
         """Delete a cookie by id."""
@@ -193,15 +192,15 @@ class CookieJarManager:
         """Delete all cookies."""
         self.db.execute("DELETE FROM cookies", ())
 
-    def update_from_response(self, response_headers: Dict[str, str], url: str) -> None:
+    def update_from_response(self, response_headers: dict[str, str], url: str) -> None:
         """Parse ``Set-Cookie`` headers and upsert into the jar."""
         raw_values = [v for k, v in response_headers.items() if k.lower() == "set-cookie"]
-        set_cookies: List[str] = []
+        set_cookies: list[str] = []
         for raw in raw_values:
             set_cookies.extend(self._split_combined_set_cookie_header(raw))
         self.update_from_set_cookie_headers(set_cookies, url)
 
-    def update_from_set_cookie_headers(self, set_cookies: List[str], url: str) -> None:
+    def update_from_set_cookie_headers(self, set_cookies: list[str], url: str) -> None:
         """Parse a list of raw ``Set-Cookie`` header values and upsert into the jar."""
         if not set_cookies:
             return
@@ -217,16 +216,14 @@ class CookieJarManager:
             except Exception as exc:
                 logger.debug("Failed to parse Set-Cookie '%s': %s", raw[:80], exc)
 
-    def to_httpx_cookies(self) -> Dict[str, str]:
+    def to_httpx_cookies(self) -> dict[str, str]:
         """Return a flat ``{name: value}`` dict for ``httpx.Client(cookies=...)``."""
         rows = self.db.fetchall("SELECT name, value FROM cookies")
         return {row["name"]: row["value"] for row in rows}
 
-    def to_httpx_cookie_records(self) -> List[Dict[str, str]]:
+    def to_httpx_cookie_records(self) -> list[dict[str, str]]:
         """Return scoped cookie records for safe domain/path-aware httpx syncing."""
-        rows = self.db.fetchall(
-            "SELECT name, value, domain, path FROM cookies ORDER BY id"
-        )
+        rows = self.db.fetchall("SELECT name, value, domain, path FROM cookies ORDER BY id")
         return [
             {
                 "name": str(row["name"]),
@@ -247,16 +244,16 @@ class CookieJarManager:
         return row["id"] if row else -1
 
     @staticmethod
-    def _row_to_dict(row: Any) -> Dict[str, Any]:
+    def _row_to_dict(row: Any) -> dict[str, Any]:
         return {
-            "id":         row["id"],
-            "name":       row["name"],
-            "value":      row["value"],
-            "domain":     row["domain"],
-            "path":       row["path"],
-            "secure":     bool(row["secure"]),
-            "http_only":  bool(row["http_only"]),
-            "expires":    row["expires"],
+            "id": row["id"],
+            "name": row["name"],
+            "value": row["value"],
+            "domain": row["domain"],
+            "path": row["path"],
+            "secure": bool(row["secure"]),
+            "http_only": bool(row["http_only"]),
+            "expires": row["expires"],
             "created_at": row["created_at"],
         }
 
@@ -278,7 +275,7 @@ class CookieJarManager:
         path = "/"
         secure = False
         http_only = False
-        expires: Optional[str] = None
+        expires: str | None = None
 
         for attr in parts[1:]:
             attr_key, _, attr_val = attr.partition("=")
@@ -309,7 +306,7 @@ class CookieJarManager:
             logger.debug("Failed to store cookie '%s': %s", name[:80], exc)
 
     @staticmethod
-    def _split_combined_set_cookie_header(raw: str) -> List[str]:
+    def _split_combined_set_cookie_header(raw: str) -> list[str]:
         """Split a combined Set-Cookie line into individual cookie values.
 
         Some adapters collapse repeated Set-Cookie headers into one comma-separated
@@ -321,8 +318,8 @@ class CookieJarManager:
         if "," not in raw:
             return [raw.strip()]
 
-        parts: List[str] = []
-        current: List[str] = []
+        parts: list[str] = []
+        current: list[str] = []
         i = 0
         in_expires = False
 
@@ -348,4 +345,3 @@ class CookieJarManager:
         if tail:
             parts.append(tail)
         return parts
-

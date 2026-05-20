@@ -15,7 +15,7 @@ repo_src = Path(__file__).resolve().parents[1] / "src"
 if str(repo_src) not in sys.path:
     sys.path.insert(0, str(repo_src))
 
-from equinox.core.perf import run_history_search_benchmark
+from equinox.core.perf import run_history_search_benchmark  # isort:skip
 
 
 def _parse_args() -> argparse.Namespace:

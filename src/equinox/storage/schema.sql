@@ -241,4 +241,3 @@ CREATE TABLE IF NOT EXISTS history_index (
 );
 CREATE INDEX IF NOT EXISTS idx_history_index_method_norm
     ON history_index(method, normalized_url);
-

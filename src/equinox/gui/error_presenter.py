@@ -7,8 +7,6 @@ headings, optional log-file hints, and copyable technical details.
 
 from __future__ import annotations
 
-from typing import Optional
-
 from PyQt6.QtWidgets import QMessageBox, QWidget
 
 from equinox.gui.widgets import CopyableMessageBox
@@ -23,16 +21,16 @@ class ErrorPresenter:
     TITLE_REQUEST_FAILED = "Request Failed"
 
     @staticmethod
-    def warning(parent: Optional[QWidget], message: str, *, title: Optional[str] = None) -> None:
+    def warning(parent: QWidget | None, message: str, *, title: str | None = None) -> None:
         QMessageBox.warning(parent, title or ErrorPresenter.TITLE_WARNING, message)
 
     @staticmethod
     def error(
-        parent: Optional[QWidget],
+        parent: QWidget | None,
         message: str,
         *,
-        title: Optional[str] = None,
-        details: Optional[str] = None,
+        title: str | None = None,
+        details: str | None = None,
     ) -> None:
         if details:
             CopyableMessageBox.critical(
@@ -45,18 +43,18 @@ class ErrorPresenter:
         QMessageBox.critical(parent, title or ErrorPresenter.TITLE_ERROR, message)
 
     @staticmethod
-    def info(parent: Optional[QWidget], message: str, *, title: Optional[str] = None) -> None:
+    def info(parent: QWidget | None, message: str, *, title: str | None = None) -> None:
         QMessageBox.information(parent, title or ErrorPresenter.TITLE_INFO, message)
 
     @staticmethod
     def request_failure(
-        parent: Optional[QWidget],
+        parent: QWidget | None,
         *,
         exc_type: str,
         message: str,
-        hint: Optional[str] = None,
-        details: Optional[str] = None,
-        log_file_path: Optional[str] = None,
+        hint: str | None = None,
+        details: str | None = None,
+        log_file_path: str | None = None,
     ) -> None:
         log_hint = f"\n\nFull details in: {log_file_path}" if log_file_path else ""
         dialog_text = f"{message}{log_hint}"
@@ -72,7 +70,7 @@ class ErrorPresenter:
         )
 
     @staticmethod
-    def show_status(parent: Optional[QWidget], message: str, *, timeout_ms: int = 5000) -> None:
+    def show_status(parent: QWidget | None, message: str, *, timeout_ms: int = 5000) -> None:
         if parent is None:
             return
         try:
@@ -82,4 +80,3 @@ class ErrorPresenter:
                 status_bar().showMessage(message, timeout_ms)
         except Exception:
             return
-

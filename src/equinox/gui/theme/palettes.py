@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from typing import Dict
-
 THEME_SYSTEM = "system"
 THEME_LIGHT = "light"
 THEME_DARK = "dark"
@@ -26,7 +24,7 @@ THEME_LABELS = {
     THEME_OCEANIC: "Oceanic (Deep Blue)",
 }
 
-_LIGHT: Dict[str, str] = {
+_LIGHT: dict[str, str] = {
     "GREEN": "#1a7f37",
     "AMBER": "#9a6700",
     "RED": "#cf222e",
@@ -49,7 +47,7 @@ _LIGHT: Dict[str, str] = {
     "SEND_HOVER": "#0860ca",
 }
 
-_DARK: Dict[str, str] = {
+_DARK: dict[str, str] = {
     "GREEN": "#2da44e",
     "AMBER": "#b8860b",
     "RED": "#e0484b",
@@ -72,7 +70,7 @@ _DARK: Dict[str, str] = {
     "SEND_HOVER": "#6ab5eb",
 }
 
-_MUTED_DARK: Dict[str, str] = {
+_MUTED_DARK: dict[str, str] = {
     "GREEN": "#26a641",
     "AMBER": "#9d8501",
     "RED": "#d1444f",
@@ -95,7 +93,7 @@ _MUTED_DARK: Dict[str, str] = {
     "SEND_HOVER": "#5d95dc",
 }
 
-_OCEANIC: Dict[str, str] = {
+_OCEANIC: dict[str, str] = {
     "GREEN": "#40c463",
     "AMBER": "#e3b341",
     "RED": "#f85149",
@@ -132,22 +130,20 @@ def validate_palettes() -> None:
         missing = keys - set(palette.keys())
         extra = set(palette.keys()) - keys
         if missing or extra:
-            raise ValueError(
-                f"Palette {name} mismatch: missing={missing}, extra={extra}"
-            )
+            raise ValueError(f"Palette {name} mismatch: missing={missing}, extra={extra}")
 
 
 validate_palettes()
 
-_active: Dict[str, str] = dict(_LIGHT)
+_active: dict[str, str] = dict(_LIGHT)
 
 
-def set_active_palette(palette: Dict[str, str]) -> None:
+def set_active_palette(palette: dict[str, str]) -> None:
     global _active
     _active = palette
 
 
-def get_active_palette() -> Dict[str, str]:
+def get_active_palette() -> dict[str, str]:
     return _active
 
 
@@ -169,7 +165,7 @@ class _ColorProxy:
         return _active["BLUE"]
 
     @property
-    def METHOD(self) -> Dict[str, str]:
+    def METHOD(self) -> dict[str, str]:
         p = _active
         return {
             "GET": p["GREEN"],
@@ -191,7 +187,7 @@ class _ColorProxy:
 Colors = _ColorProxy()
 
 
-def resolve_palette(mode: str, system_dark: bool) -> Dict[str, str]:
+def resolve_palette(mode: str, system_dark: bool) -> dict[str, str]:
     if mode == THEME_MUTED_DARK:
         return _MUTED_DARK
     if mode == THEME_DARK:
@@ -203,7 +199,7 @@ def resolve_palette(mode: str, system_dark: bool) -> Dict[str, str]:
     return _DARK if system_dark else _LIGHT
 
 
-def palette_cache_key(palette: Dict[str, str]) -> str:
+def palette_cache_key(palette: dict[str, str]) -> str:
     if palette is _LIGHT:
         return THEME_LIGHT
     if palette is _DARK:
@@ -221,4 +217,3 @@ def is_dark_mode(mode: str, system_dark: bool) -> bool:
     if mode == THEME_LIGHT:
         return False
     return system_dark
-

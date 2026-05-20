@@ -12,15 +12,16 @@ Covers:
 - Clearing auth works
 - GUI request panel picks up inherited auth at send time
 """
+
 import os
 
 import pytest
 
-from equinox.storage.database import Database
-from equinox.storage.collections import CollectionManager
-from equinox.storage.migrations import MigrationRunner
+from equinox.auth import APIKeyAuth, BasicAuth, BearerAuth
 from equinox.core.request import Request
-from equinox.auth import BearerAuth, BasicAuth, APIKeyAuth
+from equinox.storage.collections import CollectionManager
+from equinox.storage.database import Database
+from equinox.storage.migrations import MigrationRunner
 
 
 @pytest.fixture
@@ -51,6 +52,7 @@ def folders(mgr, col_id):
 
 # ── Migration ─────────────────────────────────────────────────────────────────
 
+
 class TestMigration15:
     def test_collections_has_auth_columns(self, db):
         rows = db.fetchall("PRAGMA table_info(collections)")
@@ -66,6 +68,7 @@ class TestMigration15:
 
 
 # ── Collection auth ───────────────────────────────────────────────────────────
+
 
 class TestCollectionAuth:
     def test_set_and_get_bearer(self, mgr, col_id):
@@ -92,6 +95,7 @@ class TestCollectionAuth:
 
 
 # ── Folder auth ───────────────────────────────────────────────────────────────
+
 
 class TestFolderAuth:
     def test_set_and_get(self, mgr, folders):
@@ -121,12 +125,18 @@ class TestFolderAuth:
 
 # ── resolve_effective_auth ────────────────────────────────────────────────────
 
+
 class TestResolveEffectiveAuth:
     def test_request_own_auth_wins(self, mgr, col_id):
         """Request-level auth takes priority over everything else."""
         mgr.set_collection_auth(col_id, BearerAuth(token="col-tok"))
-        req = Request(method="GET", url="https://x.com", name="R",
-                      collection_id=col_id, auth=BearerAuth(token="req-tok"))
+        req = Request(
+            method="GET",
+            url="https://x.com",
+            name="R",
+            collection_id=col_id,
+            auth=BearerAuth(token="req-tok"),
+        )
         auth, source = mgr.resolve_effective_auth(req)
         assert isinstance(auth, BearerAuth)
         assert auth.token == "req-tok"
@@ -138,7 +148,8 @@ class TestResolveEffectiveAuth:
         mgr.set_folder_auth(col_id, "Auth", BearerAuth(token="folder-tok"))
         req_id = mgr.save_request(
             Request(method="GET", url="https://x.com", name="R", folder="Auth"),
-            collection_id=col_id, name="R",
+            collection_id=col_id,
+            name="R",
         )
         req = mgr.get_request(req_id)
         auth, source = mgr.resolve_effective_auth(req)
@@ -153,7 +164,8 @@ class TestResolveEffectiveAuth:
         # Auth/OAuth has no auth set
         req_id = mgr.save_request(
             Request(method="GET", url="https://x.com", name="R", folder="Auth/OAuth"),
-            collection_id=col_id, name="R",
+            collection_id=col_id,
+            name="R",
         )
         req = mgr.get_request(req_id)
         auth, source = mgr.resolve_effective_auth(req)
@@ -167,7 +179,8 @@ class TestResolveEffectiveAuth:
         mgr.set_folder_auth(col_id, "Auth/OAuth", BearerAuth(token="child-tok"))
         req_id = mgr.save_request(
             Request(method="GET", url="https://x.com", name="R", folder="Auth/OAuth"),
-            collection_id=col_id, name="R",
+            collection_id=col_id,
+            name="R",
         )
         req = mgr.get_request(req_id)
         auth, source = mgr.resolve_effective_auth(req)
@@ -179,7 +192,8 @@ class TestResolveEffectiveAuth:
         mgr.set_collection_auth(col_id, BearerAuth(token="col-tok"))
         req_id = mgr.save_request(
             Request(method="GET", url="https://x.com", name="R"),
-            collection_id=col_id, name="R",
+            collection_id=col_id,
+            name="R",
         )
         req = mgr.get_request(req_id)
         auth, source = mgr.resolve_effective_auth(req)
@@ -192,7 +206,8 @@ class TestResolveEffectiveAuth:
         mgr.set_collection_auth(col_id, BearerAuth(token="col-tok"))
         req_id = mgr.save_request(
             Request(method="GET", url="https://x.com", name="R", folder="Auth"),
-            collection_id=col_id, name="R",
+            collection_id=col_id,
+            name="R",
         )
         req = mgr.get_request(req_id)
         auth, source = mgr.resolve_effective_auth(req)
@@ -203,7 +218,8 @@ class TestResolveEffectiveAuth:
         """No auth anywhere → (None, None)."""
         req_id = mgr.save_request(
             Request(method="GET", url="https://x.com", name="R"),
-            collection_id=col_id, name="R",
+            collection_id=col_id,
+            name="R",
         )
         req = mgr.get_request(req_id)
         auth, source = mgr.resolve_effective_auth(req)
@@ -224,7 +240,8 @@ class TestResolveEffectiveAuth:
         mgr.set_collection_auth(col_id, BearerAuth(token="col-tok"))
         req_id = mgr.save_request(
             Request(method="GET", url="https://x.com", name="R"),
-            collection_id=col_id, name="R",
+            collection_id=col_id,
+            name="R",
         )
         req = mgr.get_request(req_id)
         auth, source = mgr.resolve_effective_auth(req)
@@ -234,9 +251,11 @@ class TestResolveEffectiveAuth:
 
 # ── GUI integration ───────────────────────────────────────────────────────────
 
+
 def _can_import_pyqt6() -> bool:
     try:
         import PyQt6  # noqa: F401
+
         return True
     except ImportError:
         return False
@@ -244,10 +263,10 @@ def _can_import_pyqt6() -> bool:
 
 @pytest.mark.skipif(not _can_import_pyqt6(), reason="PyQt6 not available")
 class TestGUIInheritedAuth:
-
     @pytest.fixture
     def qapp(self):
         from PyQt6.QtWidgets import QApplication
+
         app = QApplication.instance()
         if app is None:
             app = QApplication([])
@@ -256,6 +275,7 @@ class TestGUIInheritedAuth:
     @pytest.fixture
     def panel(self, qapp, db):
         from equinox.gui.request_panel import RequestPanel
+
         p = RequestPanel(db)
         yield p
         p.close()
@@ -265,7 +285,8 @@ class TestGUIInheritedAuth:
         mgr.set_collection_auth(col_id, BearerAuth(token="col-tok-xyz"))
         req_id = mgr.save_request(
             Request(method="GET", url="https://x.com", name="R"),
-            collection_id=col_id, name="R",
+            collection_id=col_id,
+            name="R",
         )
         req = mgr.get_request(req_id)
         panel.load_request(req)
@@ -280,9 +301,9 @@ class TestGUIInheritedAuth:
         """When request has its own auth, inherited is not resolved."""
         mgr.set_collection_auth(col_id, BearerAuth(token="col-tok"))
         req_id = mgr.save_request(
-            Request(method="GET", url="https://x.com", name="R",
-                    auth=BearerAuth(token="own-tok")),
-            collection_id=col_id, name="R",
+            Request(method="GET", url="https://x.com", name="R", auth=BearerAuth(token="own-tok")),
+            collection_id=col_id,
+            name="R",
         )
         req = mgr.get_request(req_id)
         panel.load_request(req)
@@ -295,7 +316,8 @@ class TestGUIInheritedAuth:
         """No auth at any level → no inherited auth."""
         req_id = mgr.save_request(
             Request(method="GET", url="https://x.com", name="R"),
-            collection_id=col_id, name="R",
+            collection_id=col_id,
+            name="R",
         )
         req = mgr.get_request(req_id)
         panel.load_request(req)
@@ -310,7 +332,8 @@ class TestGUIInheritedAuth:
         mgr.set_collection_auth(col_id, BearerAuth(token="col-tok"))
         req_id = mgr.save_request(
             Request(method="GET", url="https://httpbin.org/get", name="R"),
-            collection_id=col_id, name="R",
+            collection_id=col_id,
+            name="R",
         )
         req = mgr.get_request(req_id)
         panel.load_request(req)
@@ -337,14 +360,16 @@ class TestGUIInheritedAuth:
         mgr.set_collection_auth(col_id, BearerAuth(token="old-token"))
         req_id = mgr.save_request(
             Request(method="GET", url="https://x.com", name="R"),
-            collection_id=col_id, name="R",
+            collection_id=col_id,
+            name="R",
         )
         req = mgr.get_request(req_id)
         panel.load_request(req)
 
         # Simulate: bake inherited auth into current_request (as _send_request does)
         panel.current_request = Request(
-            method="GET", url="https://x.com",
+            method="GET",
+            url="https://x.com",
             auth=BearerAuth(token="old-token"),  # stale
             collection_id=col_id,
         )
@@ -358,9 +383,11 @@ class TestGUIInheritedAuth:
 
         # Verify the probe-based resolution would pick up the new token
         from equinox.storage.collections import CollectionManager
+
         cm = CollectionManager(panel.db)
         probe = Request(
-            method="GET", url="",
+            method="GET",
+            url="",
             collection_id=col_id,
             folder=panel.current_request.folder,
         )
@@ -373,9 +400,9 @@ class TestGUIInheritedAuth:
         """After clearing own auth, inherited auth should be re-resolved."""
         mgr.set_collection_auth(col_id, BearerAuth(token="col-tok"))
         req_id = mgr.save_request(
-            Request(method="GET", url="https://x.com", name="R",
-                    auth=BearerAuth(token="own-tok")),
-            collection_id=col_id, name="R",
+            Request(method="GET", url="https://x.com", name="R", auth=BearerAuth(token="own-tok")),
+            collection_id=col_id,
+            name="R",
         )
         req = mgr.get_request(req_id)
         panel.load_request(req)
@@ -401,7 +428,8 @@ class TestGUIInheritedAuth:
         # Load a request from a collection with NO auth
         req_id = mgr.save_request(
             Request(method="GET", url="https://x.com", name="R"),
-            collection_id=col_id, name="R",
+            collection_id=col_id,
+            name="R",
         )
         req = mgr.get_request(req_id)
         panel.load_request(req)
@@ -421,9 +449,9 @@ class TestGUIInheritedAuth:
         """refresh_inherited_auth should not override own auth."""
         mgr.set_collection_auth(col_id, BearerAuth(token="col-tok"))
         req_id = mgr.save_request(
-            Request(method="GET", url="https://x.com", name="R",
-                    auth=BearerAuth(token="own-tok")),
-            collection_id=col_id, name="R",
+            Request(method="GET", url="https://x.com", name="R", auth=BearerAuth(token="own-tok")),
+            collection_id=col_id,
+            name="R",
         )
         req = mgr.get_request(req_id)
         panel.load_request(req)
@@ -440,7 +468,8 @@ class TestGUIInheritedAuth:
         mgr.set_collection_auth(col_id, BearerAuth(token="col-tok"))
         req_id = mgr.save_request(
             Request(method="GET", url="https://x.com", name="R"),
-            collection_id=col_id, name="R",
+            collection_id=col_id,
+            name="R",
         )
         req = mgr.get_request(req_id)
         panel.load_request(req)
@@ -468,7 +497,8 @@ class TestGUIInheritedAuth:
         the request row and breaking the "auth info should not be cached by
         request" invariant.
         """
-        from unittest.mock import patch, MagicMock
+        from unittest.mock import MagicMock, patch
+
         from equinox.auth import OAuth2Auth
 
         # Set up collection-level OAuth2 auth (inherited)
@@ -481,7 +511,8 @@ class TestGUIInheritedAuth:
         mgr.set_collection_auth(col_id, col_auth)
         req_id = mgr.save_request(
             Request(method="GET", url="https://x.com", name="R"),
-            collection_id=col_id, name="R",
+            collection_id=col_id,
+            name="R",
         )
         req = mgr.get_request(req_id)
         panel.load_request(req)
@@ -518,31 +549,31 @@ class TestGUIInheritedAuth:
         # Token was fetched from *inherited* config that still matches the
         # collection — it must be saved to the collection, NOT to the request.
         assert panel._auth is None, (
-            "_auth must stay None: the token belongs to the collection, "
-            "not to this request row"
+            "_auth must stay None: the token belongs to the collection, " "not to this request row"
         )
         # In-memory inherited auth should reflect the new token
         assert panel._inherited_auth is not None
-        assert panel._inherited_auth.access_token == "new-fetched-token", (
-            "In-memory _inherited_auth must be updated with the fetched token"
-        )
+        assert (
+            panel._inherited_auth.access_token == "new-fetched-token"
+        ), "In-memory _inherited_auth must be updated with the fetched token"
         # DB: the collection's auth should now carry the new token
         col_auth_in_db = mgr.get_collection_auth(col_id)
         if col_auth_in_db is not None:
-            assert col_auth_in_db.access_token == "new-fetched-token", (
-                "Collection DB auth must be updated with the fetched token"
-            )
+            assert (
+                col_auth_in_db.access_token == "new-fetched-token"
+            ), "Collection DB auth must be updated with the fetched token"
         # DB: the request row must NOT have own auth stored
         req_reloaded = mgr.get_request(req_id)
-        assert req_reloaded.auth is None, (
-            "Request row must have auth=None — it should inherit, not own, the auth"
-        )
+        assert (
+            req_reloaded.auth is None
+        ), "Request row must have auth=None — it should inherit, not own, the auth"
 
     def test_configure_auth_guard_still_skips_when_no_fetch(self, panel, mgr, col_id):
         """When the user opens the auth dialog on inherited auth and saves
         without fetching a token (no meaningful change), the guard clause
         should still return early, keeping self._auth = None."""
-        from unittest.mock import patch, MagicMock
+        from unittest.mock import MagicMock, patch
+
         from equinox.auth import OAuth2Auth
 
         col_auth = OAuth2Auth(
@@ -554,7 +585,8 @@ class TestGUIInheritedAuth:
         mgr.set_collection_auth(col_id, col_auth)
         req_id = mgr.save_request(
             Request(method="GET", url="https://x.com", name="R"),
-            collection_id=col_id, name="R",
+            collection_id=col_id,
+            name="R",
         )
         req = mgr.get_request(req_id)
         panel.load_request(req)
@@ -580,19 +612,20 @@ class TestGUIInheritedAuth:
             panel._configure_auth()
 
         # Guard should fire — self._auth stays None (still inheriting)
-        assert panel._auth is None, (
-            "Guard clause should keep self._auth = None when no token was fetched"
-        )
+        assert (
+            panel._auth is None
+        ), "Guard clause should keep self._auth = None when no token was fetched"
 
 
 # ── Query-params default-unchecked ────────────────────────────────────────────
 
+
 @pytest.mark.skipif(not _can_import_pyqt6(), reason="PyQt6 not available")
 class TestQueryParamsDefaultUnchecked:
-
     @pytest.fixture
     def qapp(self):
         from PyQt6.QtWidgets import QApplication
+
         app = QApplication.instance()
         if app is None:
             app = QApplication([])
@@ -600,8 +633,9 @@ class TestQueryParamsDefaultUnchecked:
 
     def test_empty_sentinel_row_is_unchecked(self, qapp):
         """The empty trailing row in CheckableKeyValueTable must be unchecked."""
-        from equinox.gui.widgets import CheckableKeyValueTable
         from PyQt6.QtCore import Qt
+
+        from equinox.gui.widgets import CheckableKeyValueTable
 
         table = CheckableKeyValueTable()
         # Initial state: one empty sentinel row
@@ -611,14 +645,17 @@ class TestQueryParamsDefaultUnchecked:
 
     def test_loaded_params_keep_their_enabled_flag(self, qapp):
         """Params loaded from DB retain their saved enabled state."""
-        from equinox.gui.widgets import CheckableKeyValueTable
         from PyQt6.QtCore import Qt
 
+        from equinox.gui.widgets import CheckableKeyValueTable
+
         table = CheckableKeyValueTable()
-        table.set_data([
-            {"key": "enabled_param", "value": "1", "enabled": True},
-            {"key": "disabled_param", "value": "2", "enabled": False},
-        ])
+        table.set_data(
+            [
+                {"key": "enabled_param", "value": "1", "enabled": True},
+                {"key": "disabled_param", "value": "2", "enabled": False},
+            ]
+        )
 
         # Data rows
         assert table.item(0, 0).checkState() == Qt.CheckState.Checked
@@ -628,8 +665,9 @@ class TestQueryParamsDefaultUnchecked:
 
     def test_dict_data_loaded_as_enabled(self, qapp):
         """When set_data receives a plain dict, all rows are enabled."""
-        from equinox.gui.widgets import CheckableKeyValueTable
         from PyQt6.QtCore import Qt
+
+        from equinox.gui.widgets import CheckableKeyValueTable
 
         table = CheckableKeyValueTable()
         table.set_data({"page": "1", "limit": "50"})
@@ -648,6 +686,7 @@ class TestParamsSetAll:
     @pytest.fixture
     def qapp(self):
         from PyQt6.QtWidgets import QApplication
+
         app = QApplication.instance()
         if app is None:
             app = QApplication([])
@@ -656,6 +695,7 @@ class TestParamsSetAll:
     @pytest.fixture
     def panel(self, qapp, db):
         from equinox.gui.request_panel import RequestPanel
+
         p = RequestPanel(db)
         yield p
         p.close()
@@ -664,10 +704,12 @@ class TestParamsSetAll:
         """Enable All must check every row in the params table."""
         from PyQt6.QtCore import Qt
 
-        panel.params_table.set_data([
-            {"key": "a", "value": "1", "enabled": False},
-            {"key": "b", "value": "2", "enabled": False},
-        ])
+        panel.params_table.set_data(
+            [
+                {"key": "a", "value": "1", "enabled": False},
+                {"key": "b", "value": "2", "enabled": False},
+            ]
+        )
         # Both disabled
         assert panel.params_table.item(0, 0).checkState() == Qt.CheckState.Unchecked
         assert panel.params_table.item(1, 0).checkState() == Qt.CheckState.Unchecked
@@ -681,17 +723,22 @@ class TestParamsSetAll:
         """Disable All must uncheck every row in the params table."""
         from PyQt6.QtCore import Qt
 
-        panel.params_table.set_data([
-            {"key": "a", "value": "1", "enabled": True},
-            {"key": "b", "value": "2", "enabled": True},
-        ])
+        panel.params_table.set_data(
+            [
+                {"key": "a", "value": "1", "enabled": True},
+                {"key": "b", "value": "2", "enabled": True},
+            ]
+        )
         assert panel.params_table.item(0, 0).checkState() == Qt.CheckState.Checked
         assert panel.params_table.item(1, 0).checkState() == Qt.CheckState.Checked
 
         panel._params_set_all(False)
 
         assert panel.params_table.item(0, 0).checkState() == Qt.CheckState.Unchecked
-        assert panel.params_table.item(1, 0).checkState() == Qt.CheckState.Unchecked# ── OAuth2 auto-fetch ─────────────────────────────────────────────────────────
+        assert (
+            panel.params_table.item(1, 0).checkState() == Qt.CheckState.Unchecked
+        )  # ── OAuth2 auto-fetch ─────────────────────────────────────────────────────────
+
 
 class TestOAuth2AutoFetch:
     """Verify that OAuth2Auth with credentials but no token triggers auto-fetch."""
@@ -699,6 +746,7 @@ class TestOAuth2AutoFetch:
     def test_needs_refresh_when_no_token(self):
         """OAuth2Auth with no access_token must need refresh."""
         from equinox.auth._oauth2 import OAuth2Auth
+
         auth = OAuth2Auth(
             token_url="https://auth.example.com/token",
             client_id="cid",
@@ -710,6 +758,7 @@ class TestOAuth2AutoFetch:
     def test_no_refresh_when_token_present_no_expiry(self):
         """OAuth2Auth with existing token and no expiry should NOT refresh."""
         from equinox.auth._oauth2 import OAuth2Auth
+
         auth = OAuth2Auth(
             token_url="https://auth.example.com/token",
             client_id="cid",
@@ -720,7 +769,8 @@ class TestOAuth2AutoFetch:
 
     def test_default_expiry_set_after_fetch(self):
         """When token endpoint omits expires_in, a default expiry is set."""
-        from unittest.mock import patch, Mock, MagicMock
+        from unittest.mock import MagicMock, Mock, patch
+
         from equinox.auth._oauth2 import OAuth2Auth
 
         auth = OAuth2Auth(
@@ -752,10 +802,10 @@ class TestOAuth2AutoFetch:
     def test_auth_error_propagates_with_message(self):
         """Auth errors from _apply_auth must propagate with their original
         message through _send_internal, not be wrapped in a generic error."""
-        from equinox.core.client import HTTPClient
-        from equinox.core.request import Request
-        from equinox.core.exceptions import RequestError
         from equinox.auth._oauth2 import OAuth2Auth
+        from equinox.core.client import HTTPClient
+        from equinox.core.exceptions import RequestError
+        from equinox.core.request import Request
 
         auth = OAuth2Auth(
             token_url="https://will-not-resolve.invalid/token",
@@ -767,6 +817,7 @@ class TestOAuth2AutoFetch:
         client = HTTPClient(timeout=2)
 
         import pytest
+
         with pytest.raises(RequestError, match="Authentication failed"):
             client.send(request)
 
@@ -778,6 +829,7 @@ class TestAuthDialogClientPicker:
     @pytest.fixture
     def qapp(self):
         from PyQt6.QtWidgets import QApplication
+
         app = QApplication.instance()
         if app is None:
             app = QApplication([])
@@ -786,9 +838,9 @@ class TestAuthDialogClientPicker:
     def test_on_client_picked_clears_tokens(self, qapp, db):
         """When a saved credential is picked, access_token and refresh_token
         fields must be cleared so stale tokens don't suppress auto-fetch."""
-        from equinox.storage import SavedCredentialsManager
-        from equinox.gui.dialogs.auth_dialog import AuthDialog
         from equinox.auth import OAuth2Auth
+        from equinox.gui.dialogs.auth_dialog import AuthDialog
+        from equinox.storage import SavedCredentialsManager
 
         # Create a saved credential
         scm = SavedCredentialsManager(db)
@@ -843,12 +895,13 @@ class TestAuthDialogClientPicker:
             "body": {"error": "invalid_client"},
         }
 
-        dialog._on_token_fetched({
-            "ok": False,
-            "auth": None,
-            "error": "Token endpoint returned HTTP 401",
-            "response": response,
-        })
+        dialog._on_token_fetched(
+            {
+                "ok": False,
+                "auth": None,
+                "error": "Token endpoint returned HTTP 401",
+                "response": response,
+            }
+        )
 
         assert dialog.oauth2_view_response_btn.isEnabled() is True
-

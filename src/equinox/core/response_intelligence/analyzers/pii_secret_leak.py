@@ -1,8 +1,9 @@
 """PII and secret leak detection analyzer."""
 
-import re
 import logging
-from typing import Any, Dict, List, Optional, Pattern, Set, Tuple
+import re
+from re import Pattern
+from typing import Any
 
 from equinox.core.response_intelligence.base import Analyzer
 from equinox.core.response_intelligence.models import (
@@ -47,13 +48,12 @@ def _looks_like_high_entropy_secret(
         return False
 
     charset_count = sum(
-        bool(re.search(pattern, candidate))
-        for pattern in (r"[a-z]", r"[A-Z]", r"\d", r"[_\-+=/]")
+        bool(re.search(pattern, candidate)) for pattern in (r"[a-z]", r"[A-Z]", r"\d", r"[_\-+=/]")
     )
     if charset_count < 3:
         return False
 
-    window = body[max(0, start_idx - 48):min(len(body), end_idx + 48)].lower()
+    window = body[max(0, start_idx - 48) : min(len(body), end_idx + 48)].lower()
     markers = (
         "token",
         "secret",
@@ -69,9 +69,7 @@ def _looks_like_high_entropy_secret(
     return any(marker in window for marker in markers)
 
 
-def _contains_sensitive_keys(
-    value: Any, sensitive_keys: Set[str], depth: int = 0
-) -> bool:
+def _contains_sensitive_keys(value: Any, sensitive_keys: set[str], depth: int = 0) -> bool:
     """Recursively check if value contains sensitive keys."""
     if depth > 6:
         return False
@@ -89,7 +87,7 @@ def _contains_sensitive_keys(
     return False
 
 
-def _contains_sensitive_values(body_text: str, patterns: List[Pattern[str]]) -> bool:
+def _contains_sensitive_values(body_text: str, patterns: list[Pattern[str]]) -> bool:
     """Check if body contains sensitive value patterns."""
     if not body_text:
         return False
@@ -99,26 +97,71 @@ def _contains_sensitive_values(body_text: str, patterns: List[Pattern[str]]) -> 
     return False
 
 
-PatternSpec = Tuple[str, Pattern[str], Severity, Optional[callable]]
+PatternSpec = tuple[str, Pattern[str], Severity, callable] | None
 
-_PII_PATTERNS: List[PatternSpec] = [
-    ("Email address", re.compile(r"\b[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}\b"), Severity.WARNING, None),
-    ("Phone number", re.compile(r"\b(?:\+?\d{1,3}[\s.-]?)?(?:\(?\d{2,4}\)?[\s.-]?)?\d{3,4}[\s.-]?\d{4}\b"), Severity.INFO, None),
-    ("Swedish/Finnish SSN", re.compile(r"\b(?:20|19)?\d{2}(?:1[0-2]|0[0-9])(?:3[01]|\d{2})[-+A]?\d{3}[0-9A-Y]\b"), Severity.WARNING, _luhn_valid),
+_PII_PATTERNS: list[PatternSpec] = [
+    (
+        "Email address",
+        re.compile(r"\b[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}\b"),
+        Severity.WARNING,
+        None,
+    ),
+    (
+        "Phone number",
+        re.compile(r"\b(?:\+?\d{1,3}[\s.-]?)?(?:\(?\d{2,4}\)?[\s.-]?)?\d{3,4}[\s.-]?\d{4}\b"),
+        Severity.INFO,
+        None,
+    ),
+    (
+        "Swedish/Finnish SSN",
+        re.compile(r"\b(?:20|19)?\d{2}(?:1[0-2]|0[0-9])(?:3[01]|\d{2})[-+A]?\d{3}[0-9A-Y]\b"),
+        Severity.WARNING,
+        _luhn_valid,
+    ),
     ("Norwegian SSN", re.compile(r"\b\d{6}[- ]?\d{5}\b"), Severity.WARNING, None),
-    ("Danish CPR", re.compile(r"\b(?:0[1-9]|[12][0-9]|3[01])(?:0[1-9]|1[0-2])\d{2}-?\d{4}\b"), Severity.WARNING, None),
+    (
+        "Danish CPR",
+        re.compile(r"\b(?:0[1-9]|[12][0-9]|3[01])(?:0[1-9]|1[0-2])\d{2}-?\d{4}\b"),
+        Severity.WARNING,
+        None,
+    ),
     ("US SSN", re.compile(r"\b\d{3}-\d{2}-\d{4}\b"), Severity.CRITICAL, None),
     ("Credit card", re.compile(r"\b(?:\d[ -]*?){13,19}\b"), Severity.CRITICAL, _luhn_valid),
-    ("AWS access key", re.compile(r"\b(?:AKIA|ASIA|AIDA|AROA)[0-9A-Z]{16}\b"), Severity.WARNING, None),
-    ("AWS secret key", re.compile(r"(?i)aws[_\-]?secret[_\-]?access[_\-]?key[\s:=]+['\"]?([A-Za-z0-9/+=]{40})"), Severity.CRITICAL, None),
+    (
+        "AWS access key",
+        re.compile(r"\b(?:AKIA|ASIA|AIDA|AROA)[0-9A-Z]{16}\b"),
+        Severity.WARNING,
+        None,
+    ),
+    (
+        "AWS secret key",
+        re.compile(r"(?i)aws[_\-]?secret[_\-]?access[_\-]?key[\s:=]+['\"]?([A-Za-z0-9/+=]{40})"),
+        Severity.CRITICAL,
+        None,
+    ),
     ("GitHub token", re.compile(r"\bgh[opusr]_[A-Za-z0-9]{36,255}\b"), Severity.CRITICAL, None),
-    ("Private key", re.compile(r"-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----"), Severity.CRITICAL, None),
-    ("Bearer token in body", re.compile(r"(?i)bearer\s+[A-Za-z0-9\-._~+/]+=*"), Severity.WARNING, None),
-    ("JWT", re.compile(r"\beyJ[a-zA-Z0-9_-]+\.[a-zA-Z0-9_-]+\.[a-zA-Z0-9_-]+\b"), Severity.WARNING, None),
+    (
+        "Private key",
+        re.compile(r"-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----"),
+        Severity.CRITICAL,
+        None,
+    ),
+    (
+        "Bearer token in body",
+        re.compile(r"(?i)bearer\s+[A-Za-z0-9\-._~+/]+=*"),
+        Severity.WARNING,
+        None,
+    ),
+    (
+        "JWT",
+        re.compile(r"\beyJ[a-zA-Z0-9_-]+\.[a-zA-Z0-9_-]+\.[a-zA-Z0-9_-]+\b"),
+        Severity.WARNING,
+        None,
+    ),
 ]
 
 _HIGH_ENTROPY_RE = re.compile(r"\b[A-Za-z0-9_\-+/=]{24,}\b")
-_SENSITIVE_VALUE_PATTERNS: List[Pattern[str]] = [
+_SENSITIVE_VALUE_PATTERNS: list[Pattern[str]] = [
     re.compile(r"\beyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]+\b"),
     re.compile(r"(?i)\bbearer\s+[A-Za-z0-9\-._~+/]+=*"),
 ]
@@ -148,14 +191,14 @@ class PIILeakDetectionAnalyzer(Analyzer):
         "credit_card",
     }
 
-    def analyze(self, ctx: AnalysisContext) -> List[Finding]:
+    def analyze(self, ctx: AnalysisContext) -> list[Finding]:
         """Analyze response body for PII and secret patterns."""
-        findings: List[Finding] = []
-        body = ctx.response.text[:self._MAX_SCAN_SIZE] if ctx.response.body else ""
+        findings: list[Finding] = []
+        body = ctx.response.text[: self._MAX_SCAN_SIZE] if ctx.response.body else ""
         if not body:
             return findings
 
-        detected: List[Dict[str, Any]] = []
+        detected: list[dict[str, Any]] = []
         highest = Severity.INFO
 
         for label, pattern, severity, validator in _PII_PATTERNS:
@@ -178,11 +221,13 @@ class PIILeakDetectionAnalyzer(Analyzer):
                 entropy_hits += 1
 
         if entropy_hits:
-            detected.append({
-                "type": "High entropy secret-like token",
-                "count": entropy_hits,
-                "severity": Severity.WARNING.value,
-            })
+            detected.append(
+                {
+                    "type": "High entropy secret-like token",
+                    "count": entropy_hits,
+                    "severity": Severity.WARNING.value,
+                }
+            )
             if _SEVERITY_RANK[Severity.WARNING] > _SEVERITY_RANK[highest]:
                 highest = Severity.WARNING
 
@@ -199,14 +244,15 @@ class PIILeakDetectionAnalyzer(Analyzer):
             [entry["type"] for entry in detected],
         )
 
-        findings.append(Finding(
-            category=self.category,
-            severity=highest,
-            title="Potential sensitive data in response body",
-            description="The response body contains patterns that may be PII or secrets.",
-            analyzer_id=self.analyzer_id,
-            recommendation="Remove or mask sensitive fields in API responses and rotate any exposed credentials.",
-            details={"detected": detected},
-        ))
+        findings.append(
+            Finding(
+                category=self.category,
+                severity=highest,
+                title="Potential sensitive data in response body",
+                description="The response body contains patterns that may be PII or secrets.",
+                analyzer_id=self.analyzer_id,
+                recommendation="Remove or mask sensitive fields in API responses and rotate any exposed credentials.",
+                details={"detected": detected},
+            )
+        )
         return findings
-

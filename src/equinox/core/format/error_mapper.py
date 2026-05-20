@@ -5,9 +5,9 @@ failures and returns structured dicts compatible with the existing
 HTTPClient._error_handlers entries.
 """
 
-import ssl
 import logging
-from typing import Any, Dict, Optional
+import ssl
+from typing import Any
 
 from equinox.core.exceptions import CertificateError, RequestError, RequestTimeoutError
 from equinox.security import redact_url
@@ -83,7 +83,7 @@ def _is_proxy_error(exc: Exception) -> bool:
     return False
 
 
-def _connect_timeout_handler(exc: Exception, req: Any) -> Dict[str, Any]:
+def _connect_timeout_handler(exc: Exception, req: Any) -> dict[str, Any]:
     """Handle connect timeout errors."""
     url = _url_str(req)
     return dict(
@@ -96,7 +96,7 @@ def _connect_timeout_handler(exc: Exception, req: Any) -> Dict[str, Any]:
     )
 
 
-def _read_timeout_handler(exc: Exception, req: Any) -> Dict[str, Any]:
+def _read_timeout_handler(exc: Exception, req: Any) -> dict[str, Any]:
     """Handle read timeout errors."""
     url = _url_str(req)
     return dict(
@@ -111,7 +111,8 @@ def _read_timeout_handler(exc: Exception, req: Any) -> Dict[str, Any]:
 
 def _timeout_handler_factory(timeout: float):
     """Build generic timeout handler with configured timeout value."""
-    def _handler(exc: Exception, req: Any) -> Dict[str, Any]:
+
+    def _handler(exc: Exception, req: Any) -> dict[str, Any]:
         url = _url_str(req)
         return dict(
             error=RequestTimeoutError(
@@ -126,9 +127,10 @@ def _timeout_handler_factory(timeout: float):
     return _handler
 
 
-def _connect_handler_factory(proxy: Optional[str]):
+def _connect_handler_factory(proxy: str | None):
     """Build connect error handler that distinguishes SSL/proxy/generic cases."""
-    def _handler(exc: Exception, req: Any) -> Dict[str, Any]:
+
+    def _handler(exc: Exception, req: Any) -> dict[str, Any]:
         url = _url_str(req)
         if _is_ssl_error(exc):
             return dict(
@@ -164,7 +166,8 @@ def _connect_handler_factory(proxy: Optional[str]):
 
 def _too_many_redirects_handler_factory(max_redirects: int):
     """Build too-many-redirects handler with max redirects value."""
-    def _handler(exc: Exception, req: Any) -> Dict[str, Any]:
+
+    def _handler(exc: Exception, req: Any) -> dict[str, Any]:
         url = _url_str(req)
         return dict(
             error=RequestError(
@@ -178,7 +181,7 @@ def _too_many_redirects_handler_factory(max_redirects: int):
     return _handler
 
 
-def _http_status_handler(exc: Exception, req: Any) -> Dict[str, Any]:
+def _http_status_handler(exc: Exception, req: Any) -> dict[str, Any]:
     """Handle HTTP status exceptions."""
     url = _url_str(req)
     status = exc.response.status_code
@@ -191,7 +194,7 @@ def _http_status_handler(exc: Exception, req: Any) -> Dict[str, Any]:
     )
 
 
-def _http_error_handler(exc: Exception, req: Any) -> Dict[str, Any]:
+def _http_error_handler(exc: Exception, req: Any) -> dict[str, Any]:
     """Handle generic HTTP transport errors."""
     url = _url_str(req)
     return dict(
@@ -204,7 +207,7 @@ def _http_error_handler(exc: Exception, req: Any) -> Dict[str, Any]:
     )
 
 
-def _unicode_encode_handler(exc: Exception, req: Any) -> Dict[str, Any]:
+def _unicode_encode_handler(exc: Exception, req: Any) -> dict[str, Any]:
     """Handle request encoding failures."""
     return dict(
         error=RequestError(
@@ -262,5 +265,3 @@ def build_error_handlers(client) -> list:
             _unicode_encode_handler,
         ),
     ]
-
-

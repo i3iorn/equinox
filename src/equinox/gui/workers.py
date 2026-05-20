@@ -1,7 +1,7 @@
 """Background worker threads and dialogs for the Equinox GUI."""
 
-import csv
 import base64
+import csv
 import inspect
 import json as _json
 import logging
@@ -11,30 +11,31 @@ import time
 from datetime import datetime as _dt
 from pathlib import Path
 from tempfile import NamedTemporaryFile
-from typing import Optional, Callable, Any, cast
+from typing import Any, Callable, cast
 
+from PyQt6.QtCore import QThread, pyqtSignal
 from PyQt6.QtWidgets import (
     QDialog,
-    QVBoxLayout,
-    QHBoxLayout,
-    QPushButton,
-    QPlainTextEdit,
     QDialogButtonBox,
-    QFormLayout,
     QFileDialog,
+    QFormLayout,
+    QHBoxLayout,
     QMessageBox,
+    QPlainTextEdit,
     QProgressBar,
+    QPushButton,
     QSpinBox,
+    QVBoxLayout,
 )
-from PyQt6.QtCore import QThread, pyqtSignal
 
 from equinox.core.client import HTTPClient
-from equinox.core.http.cookies import CookieManager
-from equinox.core.validation import Validator
-from equinox.security import redact_body
-from equinox.core.request import Request
 from equinox.core.format.error_enrichment import enrich_exception
+from equinox.core.http.cookies import CookieManager
+from equinox.core.request import Request
+from equinox.core.validation import Validator
 from equinox.gui.theme import get_mono_font
+from equinox.security import redact_body
+
 from .ui_common import get_gui_settings, resolve_proxy_url
 
 logger = logging.getLogger(__name__)
@@ -48,6 +49,7 @@ _P99: float = 0.99
 
 # ── Private helpers ───────────────────────────────────────────────────────────
 
+
 def _percentile(sorted_times: list, p: float) -> float:
     """Return the *p*-th percentile value from a pre-sorted sequence of timings."""
     n = len(sorted_times)
@@ -56,8 +58,8 @@ def _percentile(sorted_times: list, p: float) -> float:
 
 def _build_client(
     request: Request,
-    cookie_manager: Optional[CookieManager],
-    proxy: Optional[str],
+    cookie_manager: CookieManager | None,
+    proxy: str | None,
     cancel_event: threading.Event,
 ) -> HTTPClient:
     """Construct an :class:`HTTPClient` from request preferences and run-time context.
@@ -75,7 +77,7 @@ def _build_client(
     )
 
 
-def _validate_export_path(raw_path: str) -> Optional[Path]:
+def _validate_export_path(raw_path: str) -> Path | None:
     """Return a safe export path, or ``None`` when the input is invalid."""
     path = (raw_path or "").strip()
     if not path or "\x00" in path:
@@ -92,7 +94,7 @@ def _validate_export_path(raw_path: str) -> Optional[Path]:
 def _atomic_write_text(path: Path, content: str) -> None:
     """Write UTF-8 text atomically to reduce partial-write corruption risk."""
     path.parent.mkdir(parents=True, exist_ok=True)
-    tmp_path: Optional[Path] = None
+    tmp_path: Path | None = None
     try:
         with NamedTemporaryFile(
             mode="w",
@@ -121,7 +123,7 @@ def _make_oauth2_basic_auth_header(client_id: str, secret: str) -> str:
     """Build a Basic auth header for OAuth2 token requests."""
     if not client_id or not secret:
         raise ValueError("Client ID and secret are required for Basic auth")
-    raw = f"{client_id}:{secret}".encode("utf-8")
+    raw = f"{client_id}:{secret}".encode()
     return f"Basic {base64.b64encode(raw).decode('ascii')}"
 
 
@@ -184,7 +186,9 @@ class OAuthTokenTester(QThread):
                 # RFC 6749 §2.3.1 — credentials in HTTP Basic Authorization header.
                 # Reuse the shared utility from OAuth2Auth to avoid duplication.
                 try:
-                    headers["Authorization"] = _make_oauth2_basic_auth_header(self.client_id, self.secret)
+                    headers["Authorization"] = _make_oauth2_basic_auth_header(
+                        self.client_id, self.secret
+                    )
                 except Exception as exc:
                     if not self._cancelled:
                         self.done.emit(False, str(exc), None)
@@ -217,15 +221,15 @@ class OAuthTokenTester(QThread):
             else:
                 try:
                     body = resp.json()
-                    err = (
-                        body.get("error_description")
-                        or body.get("error")
-                        or resp.text[:200]
-                    )
+                    err = body.get("error_description") or body.get("error") or resp.text[:200]
                 except Exception:
                     err = resp.text[:200]
                 if not self._cancelled:
-                    self.done.emit(False, f"HTTP {resp.status_code}: {redact_body(str(err))}", self._last_response)
+                    self.done.emit(
+                        False,
+                        f"HTTP {resp.status_code}: {redact_body(str(err))}",
+                        self._last_response,
+                    )
         except Exception as exc:
             if not self._cancelled:
                 self.done.emit(False, redact_body(str(exc)), self._last_response)
@@ -233,7 +237,9 @@ class OAuthTokenTester(QThread):
     @staticmethod
     def _snapshot_response(resp) -> dict:
         try:
-            headers = {k: v for k, v in resp.headers.items() if k.lower() not in {"set-cookie", "cookie"}}
+            headers = {
+                k: v for k, v in resp.headers.items() if k.lower() not in {"set-cookie", "cookie"}
+            }
         except Exception:
             headers = {}
         try:
@@ -253,6 +259,7 @@ class OAuthTokenTester(QThread):
 # Background worker
 # ─────────────────────────────────────────────────────────────────────────────
 
+
 class RequestWorker(QThread):
     """Worker thread for sending HTTP requests.
 
@@ -271,8 +278,8 @@ class RequestWorker(QThread):
         self,
         request: Request,
         parent=None,
-        cookie_manager: Optional[CookieManager] = None,
-        proxy: Optional[str] = None,
+        cookie_manager: CookieManager | None = None,
+        proxy: str | None = None,
     ):
         super().__init__(parent)
         self.request = request
@@ -348,15 +355,16 @@ class BackgroundTaskWorker(QThread):
             return operation()
 
         if "cancel_event" in signature.parameters:
-            return getattr(operation, "__call__")(cancel_event=self._cancel_event)
+            return operation.__call__(cancel_event=self._cancel_event)
         if "cancel_token" in signature.parameters:
-            return getattr(operation, "__call__")(cancel_token=self._cancel_event)
+            return operation.__call__(cancel_token=self._cancel_event)
         return operation()
 
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Benchmark worker thread
 # ─────────────────────────────────────────────────────────────────────────────
+
 
 class BenchmarkWorker(QThread):
     """Run the HTTP request loop off the main thread.
@@ -378,8 +386,8 @@ class BenchmarkWorker(QThread):
         self,
         request: Request,
         n: int,
-        proxy: Optional[str],
-        cookie_manager: Optional[CookieManager],
+        proxy: str | None,
+        cookie_manager: CookieManager | None,
         parent=None,
     ):
         super().__init__(parent)
@@ -404,9 +412,7 @@ class BenchmarkWorker(QThread):
         # and gives accurate latency numbers for keep-alive endpoints.
         # Passing cancel_event allows an in-flight request to be aborted
         # immediately when cancel() is called, not just between iterations.
-        client = _build_client(
-            self._request, self._cookie_manager, self._proxy, self._cancel_event
-        )
+        client = _build_client(self._request, self._cookie_manager, self._proxy, self._cancel_event)
 
         for i in range(self._n):
             if self._cancel_event.is_set():
@@ -417,9 +423,7 @@ class BenchmarkWorker(QThread):
                 times.append(time.monotonic() - t0)
             except Exception:
                 errors += 1
-                logger.debug(
-                    "Benchmark iteration %d/%d failed", i + 1, self._n, exc_info=True
-                )
+                logger.debug("Benchmark iteration %d/%d failed", i + 1, self._n, exc_info=True)
             self.progress.emit(i + 1)
 
         self.finished.emit(times, errors)
@@ -429,10 +433,11 @@ class BenchmarkWorker(QThread):
 # Benchmark dialog
 # ─────────────────────────────────────────────────────────────────────────────
 
+
 class BenchmarkDialog(QDialog):
     """Run the current request N times and display timing statistics."""
 
-    def __init__(self, request: Request, parent=None, cookie_manager: Optional[CookieManager]=None):
+    def __init__(self, request: Request, parent=None, cookie_manager: CookieManager | None = None):
         super().__init__(parent)
         self._request = request
         self._cookie_manager = cookie_manager
@@ -440,8 +445,8 @@ class BenchmarkDialog(QDialog):
         self.setMinimumSize(420, 340)
         self._times: list = []
         self._errors: int = 0
-        self._stats: dict = {}          # populated by _on_finished; read by _export_results
-        self._worker: Optional[BenchmarkWorker] = None
+        self._stats: dict = {}  # populated by _on_finished; read by _export_results
+        self._worker: BenchmarkWorker | None = None
         self._was_cancelled = False  # set by _cancel(); read by _on_finished()
         self._init_ui()
 
@@ -507,19 +512,18 @@ class BenchmarkDialog(QDialog):
         n_ok = len(times_s)
         avg = sum(times_s) / n_ok
         return {
-            "n_ok":     n_ok,
-            "errors":   errors,
-            "min_ms":   round(times_s[0] * 1000, 3),
-            "avg_ms":   round(avg * 1000, 3),
-            "max_ms":   round(times_s[-1] * 1000, 3),
-            "p95_ms":   round(_percentile(times_s, _P95) * 1000, 3),
-            "p99_ms":   round(_percentile(times_s, _P99) * 1000, 3),
+            "n_ok": n_ok,
+            "errors": errors,
+            "min_ms": round(times_s[0] * 1000, 3),
+            "avg_ms": round(avg * 1000, 3),
+            "max_ms": round(times_s[-1] * 1000, 3),
+            "p95_ms": round(_percentile(times_s, _P95) * 1000, 3),
+            "p99_ms": round(_percentile(times_s, _P99) * 1000, 3),
             # Per-iteration timings in original run order for CSV export:
             "times_ms": [round(t * 1000, 3) for t in times],
         }
 
     def _run(self) -> None:
-
         n = self._count_spin.value()
         self._progress.setMaximum(n)
         self._progress.setValue(0)
@@ -631,22 +635,24 @@ class BenchmarkDialog(QDialog):
 
         s = self._stats
         summary = {
-            "url":        self._request.url,
-            "method":     self._request.method,
-            "run_at":     _dt.now().isoformat(timespec="seconds"),
-            "requests":   s["n_ok"] + s["errors"],
-            "success":    s["n_ok"],
-            "errors":     s["errors"],
-            "min_ms":     s["min_ms"],
-            "avg_ms":     s["avg_ms"],
-            "max_ms":     s["max_ms"],
-            "p95_ms":     s["p95_ms"],
-            "p99_ms":     s["p99_ms"],
+            "url": self._request.url,
+            "method": self._request.method,
+            "run_at": _dt.now().isoformat(timespec="seconds"),
+            "requests": s["n_ok"] + s["errors"],
+            "success": s["n_ok"],
+            "errors": s["errors"],
+            "min_ms": s["min_ms"],
+            "avg_ms": s["avg_ms"],
+            "max_ms": s["max_ms"],
+            "p95_ms": s["p95_ms"],
+            "p99_ms": s["p99_ms"],
             "iterations": s["times_ms"],
         }
 
         path, selected_filter = QFileDialog.getSaveFileName(
-            self, "Export Benchmark Results", "benchmark.json",
+            self,
+            "Export Benchmark Results",
+            "benchmark.json",
             "JSON files (*.json);;CSV files (*.csv)",
         )
         if not path:

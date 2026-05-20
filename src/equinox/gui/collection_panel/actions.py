@@ -1,13 +1,12 @@
 """Action methods mixin for CollectionsPanel."""
 
-from PyQt6.QtWidgets import (
-    QInputDialog, QMessageBox, QMenu, QDialog, QFormLayout, QLineEdit,
-    QComboBox, QDialogButtonBox,
-)
 from PyQt6.QtCore import Qt
-from PyQt6.QtGui import QAction
+from PyQt6.QtWidgets import (
+    QDialog,
+    QInputDialog,
+    QMessageBox,
+)
 
-from equinox.gui.theme import Colors
 from equinox.core.request import Request
 from equinox.gui.error_presenter import ErrorPresenter
 
@@ -33,9 +32,7 @@ class _CollectionsActionsMixin:
 
     def _rename_collection(self, collection_id: int, item):
         old_name = item.text(0)
-        new_name, ok = QInputDialog.getText(
-            self, "Rename Collection", "New name:", text=old_name
-        )
+        new_name, ok = QInputDialog.getText(self, "Rename Collection", "New name:", text=old_name)
         if not ok or not new_name.strip() or new_name.strip() == old_name:
             return
         try:
@@ -51,9 +48,7 @@ class _CollectionsActionsMixin:
         # "GET  My Request" → "My Request"
         parts = old_display.split("  ", 1)
         old_name = parts[1] if len(parts) > 1 else old_display
-        new_name, ok = QInputDialog.getText(
-            self, "Rename Request", "New name:", text=old_name
-        )
+        new_name, ok = QInputDialog.getText(self, "Rename Request", "New name:", text=old_name)
         if not ok or not new_name.strip() or new_name.strip() == old_name:
             return
         try:
@@ -75,7 +70,8 @@ class _CollectionsActionsMixin:
 
     def _delete_collection(self, collection_id: int):
         reply = QMessageBox.question(
-            self, "Confirm Delete",
+            self,
+            "Confirm Delete",
             "Delete this collection and all its requests?",
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
         )
@@ -89,7 +85,9 @@ class _CollectionsActionsMixin:
 
     def _delete_request(self, request_id: int):
         reply = QMessageBox.question(
-            self, "Confirm Delete", "Delete this request?",
+            self,
+            "Confirm Delete",
+            "Delete this request?",
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
         )
         if reply == QMessageBox.StandardButton.Yes:
@@ -102,6 +100,7 @@ class _CollectionsActionsMixin:
 
     def _manage_variables(self, collection_id: int):
         from equinox.gui.dialogs.collection_variables_dialog import CollectionVariablesDialog
+
         collection = self._collection_facade.get_collection(collection_id)
         if not collection:
             ErrorPresenter.error(self, "Collection not found")
@@ -146,7 +145,7 @@ class _CollectionsActionsMixin:
         if col_id is None:
             return
         name, ok = QInputDialog.getText(
-            self, "Add Subfolder", f"Subfolder name (inside \"{parent_path}\"):"
+            self, "Add Subfolder", f'Subfolder name (inside "{parent_path}"):'
         )
         if not ok or not name.strip():
             return
@@ -165,6 +164,7 @@ class _CollectionsActionsMixin:
         if col_id is None:
             return
         from equinox.gui.collection_panel.panel import _NewRequestDialog
+
         dlg = _NewRequestDialog(self, title="New Request")
         if dlg.exec() != QDialog.DialogCode.Accepted:
             return
@@ -176,8 +176,9 @@ class _CollectionsActionsMixin:
         if col_id is None:
             return
         from equinox.gui.collection_panel.panel import _NewRequestDialog
+
         dlg = _NewRequestDialog(
-            self, title=f"New Request in \"{folder_path}\"", folder_hint=folder_path
+            self, title=f'New Request in "{folder_path}"', folder_hint=folder_path
         )
         if dlg.exec() != QDialog.DialogCode.Accepted:
             return
@@ -236,8 +237,9 @@ class _CollectionsActionsMixin:
         if col_id is None:
             return
         reply = QMessageBox.question(
-            self, "Delete Folder",
-            f"Delete folder \"{folder_path}\"?\n\n"
+            self,
+            "Delete Folder",
+            f'Delete folder "{folder_path}"?\n\n'
             "Choose Yes to move requests to root, or No to delete them.",
             QMessageBox.StandardButton.Yes
             | QMessageBox.StandardButton.No
@@ -255,7 +257,8 @@ class _CollectionsActionsMixin:
 
     def _move_to_folder(self, request_id: int) -> None:
         folder_path, ok = QInputDialog.getText(
-            self, "Move to Folder",
+            self,
+            "Move to Folder",
             "Folder path (leave empty to move to root):",
         )
         if not ok:
@@ -283,7 +286,9 @@ class _CollectionsActionsMixin:
                 return
 
             if source_col != target_col_id:
-                self._collection_facade.move_request_to_collection(request_id, target_col_id, target_folder)
+                self._collection_facade.move_request_to_collection(
+                    request_id, target_col_id, target_folder
+                )
             else:
                 self._collection_facade.move_request_to_folder(request_id, target_folder)
 
@@ -320,6 +325,7 @@ class _CollectionsActionsMixin:
         """Open the auth dialog and persist the result on the collection."""
         current_auth = self._collection_facade.get_collection_auth(col_id)
         from equinox.gui.dialogs.auth_dialog import AuthDialog
+
         dialog = AuthDialog(current_auth, self, db=self.db)
         if dialog.exec() == QDialog.DialogCode.Accepted and hasattr(dialog, "_saved_auth"):
             self._collection_facade.set_collection_auth(col_id, dialog._saved_auth)
@@ -333,6 +339,7 @@ class _CollectionsActionsMixin:
         """Open the auth dialog and persist the result on the folder."""
         current_auth = self._collection_facade.get_folder_auth(col_id, folder_path)
         from equinox.gui.dialogs.auth_dialog import AuthDialog
+
         dialog = AuthDialog(current_auth, self, db=self.db)
         if dialog.exec() == QDialog.DialogCode.Accepted and hasattr(dialog, "_saved_auth"):
             self._collection_facade.set_folder_auth(col_id, folder_path, dialog._saved_auth)

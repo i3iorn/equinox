@@ -7,18 +7,19 @@ server selector is preferred).
 """
 
 import json
-import re
-import yaml
 import logging
+import re
 from dataclasses import dataclass, field
-from typing import Dict, Any, List, Optional
 from pathlib import Path
+from typing import Any
 
+import yaml
+
+from equinox.core.exceptions import SecurityError, ValidationError
 from equinox.core.request import Request
-from equinox.core.exceptions import ValidationError, SecurityError
 from equinox.core.validation import Validator
+from equinox.importers._utils import normalize_path_variables, validate_import_file
 from equinox.storage.collections import CollectionManager
-from equinox.importers._utils import validate_import_file, normalize_path_variables
 
 logger = logging.getLogger(__name__)
 
@@ -30,20 +31,21 @@ _HTTP_METHODS = ["get", "post", "put", "patch", "delete", "head", "options"]
 # Server resolution helpers
 # ──────────────────────────────────────────────────────────────────────────────
 
+
 @dataclass
 class ServerInfo:
     """Resolved server information."""
 
     url: str
     description: str = ""
-    variables: Dict[str, str] = field(default_factory=dict)
+    variables: dict[str, str] = field(default_factory=dict)
 
     def __str__(self) -> str:
         desc = f" ({self.description})" if self.description else ""
         return f"{self.url}{desc}"
 
 
-def _expand_server_variables(url: str, variables: Dict[str, Any]) -> str:
+def _expand_server_variables(url: str, variables: dict[str, Any]) -> str:
     """Expand OpenAPI server variable templates in a URL.
 
     Per the spec, server variables look like ``{variableName}``.
@@ -69,7 +71,7 @@ def _expand_server_variables(url: str, variables: Dict[str, Any]) -> str:
     return re.sub(r"\{([^}]+)\}", replace, url)
 
 
-def _resolve_servers_openapi3(spec_data: Dict[str, Any]) -> List[ServerInfo]:
+def _resolve_servers_openapi3(spec_data: dict[str, Any]) -> list[ServerInfo]:
     """Extract and resolve all servers from an OpenAPI 3.x spec.
 
     Falls back to ``/`` (relative root) when no servers block is present,
@@ -89,7 +91,7 @@ def _resolve_servers_openapi3(spec_data: Dict[str, Any]) -> List[ServerInfo]:
     if not raw_servers:
         return [ServerInfo(url="/")]
 
-    result: List[ServerInfo] = []
+    result: list[ServerInfo] = []
     for entry in raw_servers:
         if not isinstance(entry, dict):
             continue
@@ -117,7 +119,7 @@ def _resolve_servers_openapi3(spec_data: Dict[str, Any]) -> List[ServerInfo]:
     return result or [ServerInfo(url="/")]
 
 
-def _resolve_servers_swagger2(spec_data: Dict[str, Any]) -> List[ServerInfo]:
+def _resolve_servers_swagger2(spec_data: dict[str, Any]) -> list[ServerInfo]:
     """Extract all base URLs from a Swagger 2.0 spec.
 
     Swagger 2.0 supports multiple schemes (http/https) so we generate one
@@ -139,7 +141,7 @@ def _resolve_servers_swagger2(spec_data: Dict[str, Any]) -> List[ServerInfo]:
     ]
 
 
-def _load_spec_file(file_path: Path) -> Dict[str, Any]:
+def _load_spec_file(file_path: Path) -> dict[str, Any]:
     """Read and parse an OpenAPI spec file (YAML or JSON).
 
     Args:
@@ -169,7 +171,7 @@ def _load_spec_file(file_path: Path) -> Dict[str, Any]:
     return spec_data
 
 
-def _count_operations(paths: Dict[str, Any], extra: Optional[Dict[str, Any]] = None) -> int:
+def _count_operations(paths: dict[str, Any], extra: dict[str, Any] | None = None) -> int:
     """Count total HTTP operations across *paths* (and optional *extra* paths such as webhooks).
 
     Args:
@@ -220,7 +222,7 @@ class OpenAPIImporter:
         self._validate_file(file_path)
         return self.import_dict(_load_spec_file(file_path))
 
-    def import_dict(self, spec_data: Dict[str, Any]) -> int:
+    def import_dict(self, spec_data: dict[str, Any]) -> int:
         """Import OpenAPI spec from a dictionary.
 
         When the spec defines multiple servers every server is imported as its
@@ -248,7 +250,7 @@ class OpenAPIImporter:
             logger.debug("Server %d: url=%s desc=%s", i, server.url, server.description)
         logger.info("Found %d server(s)", len(servers))
 
-        first_id: Optional[int] = None
+        first_id: int | None = None
 
         for server in servers:
             # Build a human-readable collection name that includes the server
@@ -272,15 +274,18 @@ class OpenAPIImporter:
             # Persist BASE_URL as a collection variable for easy re-targeting
             try:
                 self.collection_manager.add_variable(
-                    collection_id, "BASE_URL", server.url,
+                    collection_id,
+                    "BASE_URL",
+                    server.url,
                     description=f"Server base URL — {server.description or server.url}",
                 )
             except Exception:
                 # add_variable may not exist on all manager versions; skip
                 pass
 
-            logger.info("Created collection '%s' (ID %d) for server %s",
-                        col_name, collection_id, server.url)
+            logger.info(
+                "Created collection '%s' (ID %d) for server %s", col_name, collection_id, server.url
+            )
 
             paths = spec_data.get("paths") or {}
             count = self._import_paths(spec_data, paths, collection_id, version, server)
@@ -303,7 +308,7 @@ class OpenAPIImporter:
     # Server resolution
     # ──────────────────────────────────────────────────────────────────────
 
-    def _get_servers(self, spec_data: Dict[str, Any], version: str) -> List[ServerInfo]:
+    def _get_servers(self, spec_data: dict[str, Any], version: str) -> list[ServerInfo]:
         """Return resolved server list for any supported OpenAPI/Swagger version."""
         if version.startswith("3."):
             return _resolve_servers_openapi3(spec_data)
@@ -311,12 +316,10 @@ class OpenAPIImporter:
             return _resolve_servers_swagger2(spec_data)
 
     # kept for backwards-compat; callers should prefer _get_servers
-    def _get_base_url(self, spec_data: Dict[str, Any], version: str) -> str:
+    def _get_base_url(self, spec_data: dict[str, Any], version: str) -> str:
         """Return the *first* resolved base URL (legacy helper)."""
         servers = self._get_servers(spec_data, version)
         return servers[0].url if servers else "https://api.example.com"
-
-
 
     def _validate_file(self, file_path: Path) -> None:
         """Validate spec file exists, has a supported extension, and is not too large."""
@@ -327,7 +330,7 @@ class OpenAPIImporter:
             label="OpenAPI spec file",
         )
 
-    def _validate_spec(self, spec_data: Dict[str, Any]) -> None:
+    def _validate_spec(self, spec_data: dict[str, Any]) -> None:
         """Validate OpenAPI spec structure.
 
         Args:
@@ -355,20 +358,20 @@ class OpenAPIImporter:
         if not isinstance(paths, dict):
             raise ValidationError("Paths must be a dictionary")
         if len(paths) > self.MAX_PATHS:
-            raise ValidationError(
-                f"Too many paths: {len(paths)} (max: {self.MAX_PATHS})"
-            )
+            raise ValidationError(f"Too many paths: {len(paths)} (max: {self.MAX_PATHS})")
 
         # Count total operations (paths + webhooks for OAS 3.1)
         webhooks = spec_data.get("webhooks") or {}
-        operation_count = _count_operations(paths, extra=webhooks if isinstance(webhooks, dict) else None)
+        operation_count = _count_operations(
+            paths, extra=webhooks if isinstance(webhooks, dict) else None
+        )
 
         if operation_count > self.MAX_OPERATIONS:
             raise ValidationError(
                 f"Too many operations: {operation_count} (max: {self.MAX_OPERATIONS})"
             )
 
-    def _get_version(self, spec_data: Dict[str, Any]) -> str:
+    def _get_version(self, spec_data: dict[str, Any]) -> str:
         """Get OpenAPI version.
 
         Args:
@@ -389,11 +392,11 @@ class OpenAPIImporter:
 
     def _import_paths(
         self,
-        spec_data: Dict[str, Any],
-        paths: Dict[str, Any],
+        spec_data: dict[str, Any],
+        paths: dict[str, Any],
         collection_id: int,
         version: str,
-        server: Optional[ServerInfo] = None,
+        server: ServerInfo | None = None,
     ) -> int:
         """Import API paths/endpoints.
 
@@ -417,7 +420,7 @@ class OpenAPIImporter:
         if base_url == "/" or not base_url.startswith(("http://", "https://")):
             base_url = "https://{{BASE_URL}}"
 
-        ops: List[Request] = []
+        ops: list[Request] = []
         folders = set()
         for path, path_item in paths.items():
             if not isinstance(path_item, dict):
@@ -449,24 +452,26 @@ class OpenAPIImporter:
                 with self.collection_manager.db.transaction() as tx:
                     for request in ops:
                         self.collection_manager.insert_request_row(
-                            request, collection_id, tx=tx,
+                            request,
+                            collection_id,
+                            tx=tx,
                         )
                         count += 1
             except Exception as exc:
-                logger.error("Failed to insert imported requests in transaction: %s", exc, exc_info=True)
+                logger.error(
+                    "Failed to insert imported requests in transaction: %s", exc, exc_info=True
+                )
                 # Fall back to returning number parsed so far
         return count
-
-
 
     def _parse_operation(
         self,
         path: str,
         method: str,
-        operation: Dict[str, Any],
+        operation: dict[str, Any],
         base_url: str,
-        spec_data: Dict[str, Any],
-        version: str
+        spec_data: dict[str, Any],
+        version: str,
     ) -> Request:
         """Parse OpenAPI operation to Request.
 
@@ -491,9 +496,9 @@ class OpenAPIImporter:
 
         url = Validator.validate_url(base_url + normalize_path_variables(path))
 
-        headers: Dict[str, str] = {}
-        params: Dict[str, str] = {}
-        path_params: Dict[str, str] = {}
+        headers: dict[str, str] = {}
+        params: dict[str, str] = {}
+        path_params: dict[str, str] = {}
         body = None
 
         for param in operation.get("parameters", []):
@@ -535,7 +540,7 @@ class OpenAPIImporter:
         )
 
     @staticmethod
-    def _resolve_schema_type(schema: Dict[str, Any]) -> str:
+    def _resolve_schema_type(schema: dict[str, Any]) -> str:
         """Resolve the effective scalar type of a JSON Schema object.
 
         Handles OAS 3.1 extensions:
@@ -573,7 +578,7 @@ class OpenAPIImporter:
 
         return str(schema_type)
 
-    def _get_parameter_example(self, param: Dict[str, Any], version: str) -> str:
+    def _get_parameter_example(self, param: dict[str, Any], version: str) -> str:
         """Get example value for parameter.
 
         Args:
@@ -599,9 +604,9 @@ class OpenAPIImporter:
             return str(schema["default"])
 
         # Resolve type — prefer schema.type (3.x style) over param.type (2.0 style)
-        raw_type = (
-            schema.get("type") if isinstance(schema, dict) else None
-        ) or param.get("type", "string")
+        raw_type = (schema.get("type") if isinstance(schema, dict) else None) or param.get(
+            "type", "string"
+        )
 
         if isinstance(raw_type, list):
             non_null = [t for t in raw_type if t != "null"]
@@ -624,7 +629,7 @@ class OpenAPIImporter:
 
         return "value"
 
-    def _parse_request_body(self, request_body: Dict[str, Any]) -> Optional[str]:
+    def _parse_request_body(self, request_body: dict[str, Any]) -> str | None:
         """Parse OpenAPI 3.x request body.
 
         Args:
@@ -654,7 +659,7 @@ class OpenAPIImporter:
 
         return None
 
-    def _generate_example_from_schema(self, schema: Dict[str, Any]) -> str:
+    def _generate_example_from_schema(self, schema: dict[str, Any]) -> str:
         """Generate example JSON from schema.
 
         Handles OAS 3.1 extensions: type arrays, const, oneOf/anyOf/allOf.
@@ -709,13 +714,13 @@ class OpenAPIImporter:
             "number": 0.0,
             "boolean": True,
             "array": [],
-            "object": {}
+            "object": {},
         }
 
         return type_examples.get(schema_type, "value")
 
 
-def preview_spec(file_path: Path) -> Dict[str, Any]:
+def preview_spec(file_path: Path) -> dict[str, Any]:
     """Preview OpenAPI spec before importing.
 
     Args:

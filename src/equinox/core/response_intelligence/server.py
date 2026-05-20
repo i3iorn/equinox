@@ -7,7 +7,7 @@ import logging
 import re
 import statistics
 import time
-from typing import Any, Dict, List
+from typing import Any
 
 from equinox.core.response_intelligence.base import Analyzer
 from equinox.core.response_intelligence.models import (
@@ -48,9 +48,9 @@ class ServerFingerprintAnalyzer(Analyzer):
         "x-request-id": "Request ID",
     }
 
-    def analyze(self, ctx: AnalysisContext) -> List[Finding]:
-        findings: List[Finding] = []
-        detected: Dict[str, str] = {}
+    def analyze(self, ctx: AnalysisContext) -> list[Finding]:
+        findings: list[Finding] = []
+        detected: dict[str, str] = {}
         for header, label in self._FINGERPRINT_HEADERS.items():
             value = ctx.response.headers.get(header, "")
             if value:
@@ -59,15 +59,17 @@ class ServerFingerprintAnalyzer(Analyzer):
         if not detected:
             return findings
 
-        findings.append(Finding(
-            category=self.category,
-            severity=Severity.INFO,
-            title=f"Server stack: {detected.get('Server', next(iter(detected.values())))}",
-            description=" | ".join([f"{k}: {v}" for k, v in list(detected.items())[:6]]),
-            analyzer_id=self.analyzer_id,
-            recommendation="Avoid exposing detailed server fingerprint headers in production unless required.",
-            details=detected,
-        ))
+        findings.append(
+            Finding(
+                category=self.category,
+                severity=Severity.INFO,
+                title=f"Server stack: {detected.get('Server', next(iter(detected.values())))}",
+                description=" | ".join([f"{k}: {v}" for k, v in list(detected.items())[:6]]),
+                analyzer_id=self.analyzer_id,
+                recommendation="Avoid exposing detailed server fingerprint headers in production unless required.",
+                details=detected,
+            )
+        )
         return findings
 
 
@@ -90,8 +92,8 @@ class RateLimitDashboardAnalyzer(Analyzer):
             return max(0, reset_value - now_seconds)
         return max(0, reset_value)
 
-    def analyze(self, ctx: AnalysisContext) -> List[Finding]:
-        findings: List[Finding] = []
+    def analyze(self, ctx: AnalysisContext) -> list[Finding]:
+        findings: list[Finding] = []
         headers = ctx.response.headers
 
         limit = first_present_header(headers, self._LIMIT_KEYS)
@@ -102,8 +104,8 @@ class RateLimitDashboardAnalyzer(Analyzer):
         if limit is None and remaining is None and not retry_after:
             return findings
 
-        details: Dict[str, Any] = {}
-        parts: List[str] = []
+        details: dict[str, Any] = {}
+        parts: list[str] = []
 
         if limit is not None:
             details["limit"] = limit
@@ -140,15 +142,17 @@ class RateLimitDashboardAnalyzer(Analyzer):
         if ctx.response.status_code == 429:
             severity = Severity.CRITICAL
 
-        findings.append(Finding(
-            category=self.category,
-            severity=severity,
-            title="Rate limit status" + (f" ({usage_pct:.0f}% used)" if usage_pct else ""),
-            description=" | ".join(parts) if parts else "Rate limit headers detected.",
-            analyzer_id=self.analyzer_id,
-            recommendation="Back off or retry later when near limit, and consider client-side throttling.",
-            details=details,
-        ))
+        findings.append(
+            Finding(
+                category=self.category,
+                severity=severity,
+                title="Rate limit status" + (f" ({usage_pct:.0f}% used)" if usage_pct else ""),
+                description=" | ".join(parts) if parts else "Rate limit headers detected.",
+                analyzer_id=self.analyzer_id,
+                recommendation="Back off or retry later when near limit, and consider client-side throttling.",
+                details=details,
+            )
+        )
         return findings
 
 
@@ -157,8 +161,8 @@ class CachingBehaviorAnalyzer(Analyzer):
     category = Category.SERVER
     display_name = "Caching Behaviour Summary"
 
-    def analyze(self, ctx: AnalysisContext) -> List[Finding]:
-        findings: List[Finding] = []
+    def analyze(self, ctx: AnalysisContext) -> list[Finding]:
+        findings: list[Finding] = []
         headers = ctx.response.headers
 
         cache_control = headers.get("cache-control", "")
@@ -171,8 +175,8 @@ class CachingBehaviorAnalyzer(Analyzer):
         if not any((cache_control, etag, expires, vary, age, pragma)):
             return findings
 
-        details: Dict[str, str] = {}
-        parts: List[str] = []
+        details: dict[str, str] = {}
+        parts: list[str] = []
 
         if cache_control:
             details["cache-control"] = cache_control
@@ -194,15 +198,18 @@ class CachingBehaviorAnalyzer(Analyzer):
         if pragma:
             details["pragma"] = pragma
 
-        findings.append(Finding(
-            category=self.category,
-            severity=Severity.INFO,
-            title="Caching: " + (summarize_cache_control(cache_control) if cache_control else "headers present"),
-            description=" | ".join(parts),
-            analyzer_id=self.analyzer_id,
-            recommendation="Set explicit Cache-Control directives and validators (ETag/Last-Modified) for predictable caching.",
-            details=details,
-        ))
+        findings.append(
+            Finding(
+                category=self.category,
+                severity=Severity.INFO,
+                title="Caching: "
+                + (summarize_cache_control(cache_control) if cache_control else "headers present"),
+                description=" | ".join(parts),
+                analyzer_id=self.analyzer_id,
+                recommendation="Set explicit Cache-Control directives and validators (ETag/Last-Modified) for predictable caching.",
+                details=details,
+            )
+        )
         return findings
 
 
@@ -214,9 +221,9 @@ class APIVersionDetectionAnalyzer(Analyzer):
     _URL_VERSION_RE = re.compile(r"/v(\d+(?:\.\d+)?)(?:/|$|\?)")
     _HEADER_KEYS = ("api-version", "x-api-version", "x-version")
 
-    def analyze(self, ctx: AnalysisContext) -> List[Finding]:
-        findings: List[Finding] = []
-        versions: Dict[str, str] = {}
+    def analyze(self, ctx: AnalysisContext) -> list[Finding]:
+        findings: list[Finding] = []
+        versions: dict[str, str] = {}
 
         url = ctx.response.sent_url or ctx.request.url
         match = self._URL_VERSION_RE.search(url)
@@ -237,15 +244,17 @@ class APIVersionDetectionAnalyzer(Analyzer):
         if not versions:
             return findings
 
-        findings.append(Finding(
-            category=self.category,
-            severity=Severity.INFO,
-            title=f"API version: {next(iter(versions.values()))}",
-            description=" | ".join([f"{src}: {version}" for src, version in versions.items()]),
-            analyzer_id=self.analyzer_id,
-            recommendation="Use one canonical API versioning strategy (path, header, or media type) across endpoints.",
-            details=versions,
-        ))
+        findings.append(
+            Finding(
+                category=self.category,
+                severity=Severity.INFO,
+                title=f"API version: {next(iter(versions.values()))}",
+                description=" | ".join([f"{src}: {version}" for src, version in versions.items()]),
+                analyzer_id=self.analyzer_id,
+                recommendation="Use one canonical API versioning strategy (path, header, or media type) across endpoints.",
+                details=versions,
+            )
+        )
         return findings
 
 
@@ -256,8 +265,8 @@ class ResponseTimeAnomalyAnalyzer(Analyzer):
 
     _ZSCORE_THRESHOLD = 2.5
 
-    def analyze(self, ctx: AnalysisContext) -> List[Finding]:
-        findings: List[Finding] = []
+    def analyze(self, ctx: AnalysisContext) -> list[Finding]:
+        findings: list[Finding] = []
         stats = ctx.endpoint_stats
         if not stats:
             return findings
@@ -292,28 +301,31 @@ class ResponseTimeAnomalyAnalyzer(Analyzer):
         }
 
         if zscore > 0:
-            findings.append(Finding(
-                category=self.category,
-                severity=Severity.WARNING,
-                title=f"Response {round(current_ms)}ms is abnormally slow (z={zscore:.1f})",
-                description=(
-                    f"Average for this endpoint: {round(mean)}ms +/- {round(stdev)}ms. "
-                    f"Current response is {zscore:.1f} standard deviations above average."
-                ),
-                analyzer_id=self.analyzer_id,
-                recommendation="Inspect recent backend dependencies and slow queries for this endpoint.",
-                details=details,
-            ))
+            findings.append(
+                Finding(
+                    category=self.category,
+                    severity=Severity.WARNING,
+                    title=f"Response {round(current_ms)}ms is abnormally slow (z={zscore:.1f})",
+                    description=(
+                        f"Average for this endpoint: {round(mean)}ms +/- {round(stdev)}ms. "
+                        f"Current response is {zscore:.1f} standard deviations above average."
+                    ),
+                    analyzer_id=self.analyzer_id,
+                    recommendation="Inspect recent backend dependencies and slow queries for this endpoint.",
+                    details=details,
+                )
+            )
         else:
-            findings.append(Finding(
-                category=self.category,
-                severity=Severity.INFO,
-                title=f"Response {round(current_ms)}ms is unusually fast (z={zscore:.1f})",
-                description=f"Average for this endpoint: {round(mean)}ms +/- {round(stdev)}ms.",
-                analyzer_id=self.analyzer_id,
-                recommendation="Track whether the improvement is sustained and capture what changed.",
-                details=details,
-            ))
+            findings.append(
+                Finding(
+                    category=self.category,
+                    severity=Severity.INFO,
+                    title=f"Response {round(current_ms)}ms is unusually fast (z={zscore:.1f})",
+                    description=f"Average for this endpoint: {round(mean)}ms +/- {round(stdev)}ms.",
+                    analyzer_id=self.analyzer_id,
+                    recommendation="Track whether the improvement is sustained and capture what changed.",
+                    details=details,
+                )
+            )
 
         return findings
-

@@ -1,5 +1,3 @@
-import pytest
-
 from equinox.gui.syntax_highlighter.json_highlighter import JsonLexer, State
 
 
@@ -17,4 +15,3 @@ def test_timestamp_tokenized():
     ts_tokens = [t for t in tokens if t.type == "TIMESTAMP"]
     assert len(ts_tokens) == 1
     assert ts_tokens[0].value == "2026-03-24T20:16:59.114824"
-

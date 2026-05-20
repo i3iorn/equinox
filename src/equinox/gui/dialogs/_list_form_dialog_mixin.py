@@ -17,8 +17,6 @@ template methods:
 
 from __future__ import annotations
 
-from typing import Optional
-
 from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import QListWidget, QListWidgetItem
 
@@ -56,12 +54,12 @@ class ListFormDialogMixin(DirtyDialogMixin):
     """
 
     _list_widget: QListWidget
-    _current_id: Optional[int]
+    _current_id: int | None
     _dirty: bool
 
     # ── Standard refresh+selection pattern ─────────────────────────────
 
-    def _refresh_list(self, select_id: Optional[int] = None) -> None:
+    def _refresh_list(self, select_id: int | None = None) -> None:
         """Rebuild the list from ``_build_list_items()`` and restore selection.
 
         If ``select_id`` is given, that item is pre-selected while signals are
@@ -79,8 +77,8 @@ class ListFormDialogMixin(DirtyDialogMixin):
                 if extras:
                     kwargs = extras[0] if isinstance(extras[0], dict) else {}
                     if "fg_color" in kwargs:
-                        from equinox.gui.theme import Colors
                         from PyQt6.QtGui import QColor
+
                         item.setForeground(QColor(kwargs["fg_color"]))
                     if "font" in kwargs:
                         item.setFont(kwargs["font"])
@@ -184,4 +182,3 @@ class ListFormDialogMixin(DirtyDialogMixin):
     def _sync_buttons(self) -> None:
         """Update button states based on current selection and dirty flag."""
         raise NotImplementedError("Subclass must implement _sync_buttons()")
-

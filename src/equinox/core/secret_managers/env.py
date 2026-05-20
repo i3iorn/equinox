@@ -8,7 +8,7 @@ from __future__ import annotations
 import json
 import logging
 import os
-from typing import Any, Dict
+from typing import Any
 
 from equinox.core.secret_managers.base import (
     SecretManager,
@@ -76,7 +76,7 @@ class EnvironmentVariableManager(SecretManager):
         self._store_in_cache(secret_name, value)
         return value
 
-    def get_secret_dict(self, secret_name: str) -> Dict[str, Any]:
+    def get_secret_dict(self, secret_name: str) -> dict[str, Any]:
         """Retrieve a secret from environment variables as JSON.
 
         Args:
@@ -93,11 +93,8 @@ class EnvironmentVariableManager(SecretManager):
         try:
             return json.loads(value)
         except json.JSONDecodeError as exc:
-            raise SecretManagerError(
-                f"Secret '{secret_name}' is not valid JSON: {exc}"
-            )
+            raise SecretManagerError(f"Secret '{secret_name}' is not valid JSON: {exc}") from exc
 
     def is_available(self) -> bool:
         """Environment variables are always available."""
         return True
-

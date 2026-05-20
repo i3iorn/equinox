@@ -5,22 +5,17 @@ Provides extensions to the saved credentials dialog to use secrets from managers
 
 from __future__ import annotations
 
-import json
 import logging
-from typing import Any, Dict, Optional
+from typing import Any
 
-from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import (
+    QComboBox,
     QDialog,
-    QVBoxLayout,
-    QHBoxLayout,
+    QFormLayout,
+    QGroupBox,
     QLabel,
     QLineEdit,
     QPushButton,
-    QComboBox,
-    QMessageBox,
-    QGroupBox,
-    QFormLayout,
 )
 
 from equinox.core.secret_managers import list_available_managers
@@ -67,9 +62,7 @@ class SecretSourceConfigWidget(QGroupBox):
         # Secret identifier
         secret_label = QLabel("Secret ID/Path:")
         self.secret_input = QLineEdit()
-        self.secret_input.setPlaceholderText(
-            "e.g., my-secret, secret/data/db-creds, or UUID"
-        )
+        self.secret_input.setPlaceholderText("e.g., my-secret, secret/data/db-creds, or UUID")
         self.secret_input.setVisible(False)
         secret_label.setVisible(False)
         layout.addRow(secret_label, self.secret_input)
@@ -79,7 +72,9 @@ class SecretSourceConfigWidget(QGroupBox):
         # JSON keys (for structured secrets)
         keys_label = QLabel("JSON Keys:")
         self.keys_input = QLineEdit()
-        self.keys_input.setPlaceholderText("e.g., username,password (leave empty to use whole secret)")
+        self.keys_input.setPlaceholderText(
+            "e.g., username,password (leave empty to use whole secret)"
+        )
         self.keys_input.setVisible(False)
         keys_label.setVisible(False)
         layout.addRow(keys_label, self.keys_input)
@@ -117,7 +112,7 @@ class SecretSourceConfigWidget(QGroupBox):
         """
         return self.enable_check.isChecked()
 
-    def get_config(self) -> Optional[Dict[str, Any]]:
+    def get_config(self) -> dict[str, Any] | None:
         """Get the secret source configuration.
 
         Returns:
@@ -126,22 +121,20 @@ class SecretSourceConfigWidget(QGroupBox):
         if not self.is_enabled():
             return None
 
-        config: Dict[str, Any] = {
+        config: dict[str, Any] = {
             "secret_source_type": self.manager_combo.currentText(),
             "secret_source_config": {
                 "secret_name": self.secret_input.text().strip(),
-            }
+            },
         }
 
         keys_str = self.keys_input.text().strip()
         if keys_str:
-            config["secret_source_config"]["json_keys"] = [
-                k.strip() for k in keys_str.split(",")
-            ]
+            config["secret_source_config"]["json_keys"] = [k.strip() for k in keys_str.split(",")]
 
         return config
 
-    def set_config(self, config: Dict[str, Any]) -> None:
+    def set_config(self, config: dict[str, Any]) -> None:
         """Set the secret source configuration.
 
         Args:
@@ -197,9 +190,8 @@ class SecretSourceIntegration:
 
     @staticmethod
     def apply_secret_source_to_config(
-        config: Dict[str, Any],
-        secret_widget: SecretSourceConfigWidget
-    ) -> Dict[str, Any]:
+        config: dict[str, Any], secret_widget: SecretSourceConfigWidget
+    ) -> dict[str, Any]:
         """Apply secret source configuration to a credential config.
 
         Args:
@@ -215,14 +207,14 @@ class SecretSourceIntegration:
         return config
 
     @staticmethod
-    def validate_secret_source(config: Dict[str, Any]) -> tuple[bool, str]:
+    def validate_secret_source(config: dict[str, Any]) -> tuple[bool, str]:
         """Validate secret source configuration.
 
         Args:
             config: Configuration to validate
 
         Returns:
-            Tuple of (is_valid, error_message)
+            tuple of (is_valid, error_message)
         """
         if "secret_source_type" not in config:
             return True, ""  # Secret source is optional
@@ -241,4 +233,3 @@ class SecretSourceIntegration:
             return False, f"Unknown manager type: {source_type}"
 
         return True, ""
-

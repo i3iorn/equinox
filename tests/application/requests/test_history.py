@@ -33,4 +33,3 @@ def test_request_history_service_saves_history_safely() -> None:
     service.save_history_safe(request, error="boom")
 
     manager.save_history.assert_called_once_with(request, error="boom")
-

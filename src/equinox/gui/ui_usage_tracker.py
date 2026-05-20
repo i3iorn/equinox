@@ -9,7 +9,7 @@ from __future__ import annotations
 import json
 import logging
 import re
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from PyQt6.QtCore import QObject, QSettings, QTimer
 from PyQt6.QtGui import QAction
@@ -33,12 +33,12 @@ class UIUsageTracker(QObject):
     def __init__(
         self,
         *,
-        settings: Optional[QSettings] = None,
-        parent: Optional[QObject] = None,
+        settings: QSettings | None = None,
+        parent: QObject | None = None,
     ) -> None:
         super().__init__(parent)
         self._settings = settings or get_gui_settings()
-        self._counts: Dict[str, Dict[str, Any]] = self._load_counts()
+        self._counts: dict[str, dict[str, Any]] = self._load_counts()
         self._dirty = False
         self._bound_buttons: set = set()
         self._bound_actions: set = set()
@@ -82,7 +82,7 @@ class UIUsageTracker(QObject):
         *,
         category: str,
         context: str,
-        metadata: Optional[Dict[str, Any]] = None,
+        metadata: dict[str, Any] | None = None,
     ) -> None:
         """Record a usage hit for a UI element."""
         normalized_id = self._normalize_element_id(element_id)
@@ -115,7 +115,7 @@ class UIUsageTracker(QObject):
             return 0
         return max(0, int(row.get("count", 0)))
 
-    def top_items(self, *, limit: int = _TOP_ITEMS_DEFAULT) -> List[Dict[str, Any]]:
+    def top_items(self, *, limit: int = _TOP_ITEMS_DEFAULT) -> list[dict[str, Any]]:
         """Return most-used tracked elements."""
         rows = list(self._counts.values())
         rows.sort(key=lambda row: int(row.get("count", 0)), reverse=True)
@@ -146,12 +146,9 @@ class UIUsageTracker(QObject):
 
         return "\n".join(lines)
 
-    def low_use_candidates(self, *, max_count: int = 2) -> List[Dict[str, Any]]:
+    def low_use_candidates(self, *, max_count: int = 2) -> list[dict[str, Any]]:
         """Return low-use elements sorted from least-used upward."""
-        rows = [
-            row for row in self._counts.values()
-            if int(row.get("count", 0)) <= max_count
-        ]
+        rows = [row for row in self._counts.values() if int(row.get("count", 0)) <= max_count]
         rows.sort(key=lambda row: (int(row.get("count", 0)), str(row.get("element_id", ""))))
         return rows
 
@@ -245,8 +242,8 @@ class UIUsageTracker(QObject):
         )
 
     @staticmethod
-    def _safe_metadata(metadata: Dict[str, Any]) -> Dict[str, Any]:
-        out: Dict[str, Any] = {}
+    def _safe_metadata(metadata: dict[str, Any]) -> dict[str, Any]:
+        out: dict[str, Any] = {}
         for key, value in metadata.items():
             if isinstance(value, (str, int, float, bool)) or value is None:
                 out[str(key)] = value
@@ -254,7 +251,7 @@ class UIUsageTracker(QObject):
                 out[str(key)] = str(value)
         return out
 
-    def _load_counts(self) -> Dict[str, Dict[str, Any]]:
+    def _load_counts(self) -> dict[str, dict[str, Any]]:
         raw = self._settings.value(_KEY_USAGE_COUNTS, "{}")
         try:
             data = json.loads(str(raw or "{}"))
@@ -265,7 +262,7 @@ class UIUsageTracker(QObject):
         if not isinstance(data, dict):
             return {}
 
-        normalized: Dict[str, Dict[str, Any]] = {}
+        normalized: dict[str, dict[str, Any]] = {}
         for key, row in data.items():
             if not isinstance(row, dict):
                 continue
@@ -317,4 +314,3 @@ class UIUsageTracker(QObject):
     def _normalize_element_id(value: str) -> str:
         cleaned = (value or "").strip().replace(" ", "_")
         return cleaned[:_MAX_ELEMENT_ID_LEN]
-

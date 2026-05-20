@@ -1,7 +1,9 @@
 """Folder management methods for CollectionManager."""
 
+# mypy: disable-error-code=attr-defined
+
 import logging
-from typing import List
+from typing import Any
 
 from equinox.core.exceptions import StorageError, ValidationError
 from equinox.storage.utils import require_positive_int
@@ -30,14 +32,17 @@ def _validate_folder_path(path: str, label: str = "Folder") -> str:
     if "\r" in path or "\n" in path:
         raise ValidationError(f"{label} path contains invalid characters")
     if len(path) > MAX_FOLDER_PATH_LENGTH:
-        raise ValidationError(
-            f"{label} path too long (max {MAX_FOLDER_PATH_LENGTH} characters)"
-        )
+        raise ValidationError(f"{label} path too long (max {MAX_FOLDER_PATH_LENGTH} characters)")
     return path
 
 
 class CollectionFoldersMixin:
     """Mixin providing folder management for CollectionManager."""
+
+    # Provided by CollectionManager at composition time.
+    db: Any
+
+    def get_collection(self, collection_id: int) -> dict[str, Any] | None: ...
 
     def create_folder(
         self,
@@ -74,7 +79,7 @@ class CollectionFoldersMixin:
         except Exception as exc:
             raise StorageError(f"Failed to create folder: {exc}") from exc
 
-    def list_folders(self, collection_id: int) -> List[str]:
+    def list_folders(self, collection_id: int) -> list[str]:
         """Return all explicit folder paths for *collection_id*, sorted alphabetically."""
         rows = self.db.fetchall(
             "SELECT path FROM collection_folders WHERE collection_id=? ORDER BY path",
@@ -116,9 +121,13 @@ class CollectionFoldersMixin:
                 "updated_at = CURRENT_TIMESTAMP "
                 "WHERE collection_id = ? AND (folder = ? OR folder LIKE ?)",
                 (
-                    old_path, new_path,                       # exact match
-                    new_path, len(old_path) + 1,              # prefix replacement
-                    collection_id, old_path, f"{old_path}/%", # WHERE
+                    old_path,
+                    new_path,  # exact match
+                    new_path,
+                    len(old_path) + 1,  # prefix replacement
+                    collection_id,
+                    old_path,
+                    f"{old_path}/%",  # WHERE
                 ),
             )
 
@@ -131,15 +140,21 @@ class CollectionFoldersMixin:
                 "END "
                 "WHERE collection_id = ? AND (path = ? OR path LIKE ?)",
                 (
-                    old_path, new_path,
-                    new_path, len(old_path) + 1,
-                    collection_id, old_path, f"{old_path}/%",
+                    old_path,
+                    new_path,
+                    new_path,
+                    len(old_path) + 1,
+                    collection_id,
+                    old_path,
+                    f"{old_path}/%",
                 ),
             )
 
         logger.info(
             "Renamed folder %r → %r in collection %d",
-            old_path, new_path, collection_id,
+            old_path,
+            new_path,
+            collection_id,
         )
 
     def delete_folder(
@@ -197,10 +212,14 @@ class CollectionFoldersMixin:
             if move_to_root:
                 logger.info(
                     "Moved %d request(s) from folder %r to root in collection %d",
-                    request_count, folder_path, collection_id,
+                    request_count,
+                    folder_path,
+                    collection_id,
                 )
             else:
                 logger.info(
                     "Deleted %d request(s) in folder %r from collection %d",
-                    request_count, folder_path, collection_id,
+                    request_count,
+                    folder_path,
+                    collection_id,
                 )

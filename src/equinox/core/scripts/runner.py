@@ -1,9 +1,10 @@
 from __future__ import annotations
+
 import logging
 import multiprocessing
 import queue
 import time
-from typing import Any, Dict, Optional
+from typing import Any
 
 from .models import ScriptResult
 from .sandbox import get_safe_builtins
@@ -24,10 +25,14 @@ def _apply_resource_limits() -> None:
     """
     try:
         import resource  # Unix-only stdlib module
+
+        if not hasattr(resource, "setrlimit") or not hasattr(resource, "RLIMIT_AS"):
+            return
+
         # Cap virtual address space — catches runaway allocations before they
         # affect the host process or other concurrent scripts.
         resource.setrlimit(
-            resource.RLIMIT_AS,
+            resource.RLIMIT_AS,  # type: ignore[attr-defined]
             (_SCRIPT_MEMORY_LIMIT_BYTES, _SCRIPT_MEMORY_LIMIT_BYTES),
         )
     except (ImportError, AttributeError, ValueError, OSError):
@@ -35,25 +40,26 @@ def _apply_resource_limits() -> None:
 
 
 def _subprocess_exec_target(
-    q: "multiprocessing.Queue[Any]",
+    q: multiprocessing.Queue[Any],
     source: str,
-    extra_locals: Dict[str, Any],
-    session_vars: Dict[str, str],
+    extra_locals: dict[str, Any],
+    session_vars: dict[str, str],
     filename: str,
 ) -> None:
     """Top-level subprocess target for sandboxed script execution."""
     _apply_resource_limits()
     try:
         # get_safe_builtins is reconstructed here inside the child process.
-        globs: Dict[str, Any] = {"__builtins__": get_safe_builtins()}
-        locs: Dict[str, Any] = {"env": dict(session_vars)}
+        globs: dict[str, Any] = {"__builtins__": get_safe_builtins()}
+        locs: dict[str, Any] = {"env": dict(session_vars)}
         locs.update(extra_locals)
         exec(compile(source, filename, "exec"), globs, locs)  # noqa: S102
         q.put(("ok", locs.get("env", {})))
     except Exception as exc:  # noqa: BLE001
         q.put(("error", str(exc)))
 
-def _terminate_process(p: Optional[multiprocessing.Process]) -> None:
+
+def _terminate_process(p: multiprocessing.Process | None) -> None:
     """Terminate and join *p*, escalating to kill if it does not exit promptly.
 
     Always no-ops when *p* is ``None`` or already dead so callers can call this
@@ -96,13 +102,16 @@ class ScriptRunner:
     def run_pre(
         cls,
         script: str,
-        request_dict: Dict[str, Any],
-        session_vars: Dict[str, str],
+        request_dict: dict[str, Any],
+        session_vars: dict[str, str],
     ) -> ScriptResult:
-        logger.debug("Running pre-request script", extra={
-            "script_length": len(script),
-            "session_var_count": len(session_vars),
-        })
+        logger.debug(
+            "Running pre-request script",
+            extra={
+                "script_length": len(script),
+                "session_var_count": len(session_vars),
+            },
+        )
         result = cls._run(script, {"request": dict(request_dict)}, session_vars, "<pre_script>")
         if result.error:
             logger.warning("Pre-request script failed: %s", result.error)
@@ -112,13 +121,16 @@ class ScriptRunner:
     def run_post(
         cls,
         script: str,
-        response_dict: Dict[str, Any],
-        session_vars: Dict[str, str],
+        response_dict: dict[str, Any],
+        session_vars: dict[str, str],
     ) -> ScriptResult:
-        logger.debug("Running post-response script", extra={
-            "script_length": len(script),
-            "session_var_count": len(session_vars),
-        })
+        logger.debug(
+            "Running post-response script",
+            extra={
+                "script_length": len(script),
+                "session_var_count": len(session_vars),
+            },
+        )
         result = cls._run(script, {"response": dict(response_dict)}, session_vars, "<post_script>")
         if result.error:
             logger.warning("Post-response script failed: %s", result.error)
@@ -128,15 +140,17 @@ class ScriptRunner:
     def _run(
         cls,
         script: str,
-        extra_locals: Dict[str, Any],
-        session_vars: Dict[str, str],
+        extra_locals: dict[str, Any],
+        session_vars: dict[str, str],
         filename: str,
     ) -> ScriptResult:
         if not script or not script.strip():
             return ScriptResult()
 
         if len(script) > cls.MAX_SOURCE_LENGTH:
-            return ScriptResult(error=f"Script too long ({len(script)} chars, max {cls.MAX_SOURCE_LENGTH})")
+            return ScriptResult(
+                error=f"Script too long ({len(script)} chars, max {cls.MAX_SOURCE_LENGTH})"
+            )
 
         try:
             tree = _validate_ast(script, filename)
@@ -148,9 +162,11 @@ class ScriptRunner:
 
         try:
             q: multiprocessing.Queue = multiprocessing.Queue()
-            p: Optional[multiprocessing.Process] = None
+            p: multiprocessing.Process | None = None
         except Exception as e:
-            return ScriptResult(error=f"Failed to start script execution: {e}", duration=time.time() - start_time)
+            return ScriptResult(
+                error=f"Failed to start script execution: {e}", duration=time.time() - start_time
+            )
 
         try:
             p = multiprocessing.Process(
@@ -161,7 +177,9 @@ class ScriptRunner:
             p.start()
         except Exception as e:
             _close_queue(q)
-            return ScriptResult(error=f"Failed to start script execution: {e}", duration=time.time() - start_time)
+            return ScriptResult(
+                error=f"Failed to start script execution: {e}", duration=time.time() - start_time
+            )
 
         try:
             status, data = q.get(timeout=cls.EXECUTION_TIMEOUT)
@@ -171,7 +189,10 @@ class ScriptRunner:
             env_changes = cls._collect_changed_env(data, session_vars)
             return ScriptResult(env_changes=env_changes, duration=time.time() - start_time)
         except queue.Empty:
-            return ScriptResult(error=f"Script timed out after {cls.EXECUTION_TIMEOUT}s", duration=time.time() - start_time)
+            return ScriptResult(
+                error=f"Script timed out after {cls.EXECUTION_TIMEOUT}s",
+                duration=time.time() - start_time,
+            )
         except ValueError as ve:
             return ScriptResult(error=str(ve), duration=time.time() - start_time)
         finally:
@@ -179,18 +200,16 @@ class ScriptRunner:
             _close_queue(q)
 
     @classmethod
-    def _collect_changed_env(cls, new_env: Any, session_vars: Dict[str, str]) -> Dict[str, str]:
+    def _collect_changed_env(cls, new_env: Any, session_vars: dict[str, str]) -> dict[str, str]:
         if not isinstance(new_env, dict):
             return {}
 
-        changed: Dict[str, str] = {}
+        changed: dict[str, str] = {}
         total_bytes = 0
 
         for k, v in new_env.items():
             if not isinstance(k, str):
-                raise ValueError(
-                    f"Environment keys must be strings, got {type(k).__name__}: {k!r}"
-                )
+                raise ValueError(f"Environment keys must be strings, got {type(k).__name__}: {k!r}")
 
             sv = str(v)
             if k not in session_vars or session_vars[k] != sv:
@@ -204,7 +223,9 @@ class ScriptRunner:
 
                 entry_size = len(k.encode("utf-8")) + len(sv.encode("utf-8"))
                 if total_bytes + entry_size > cls.MAX_OUTPUT_TOTAL_BYTES:
-                    raise ValueError(f"Total environment size too large (max {cls.MAX_OUTPUT_TOTAL_BYTES} bytes)")
+                    raise ValueError(
+                        f"Total environment size too large (max {cls.MAX_OUTPUT_TOTAL_BYTES} bytes)"
+                    )
 
                 changed[k] = sv
                 total_bytes += entry_size

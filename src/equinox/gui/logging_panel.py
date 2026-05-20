@@ -1,28 +1,34 @@
 """Request/Response logging panel."""
+
 from __future__ import annotations
 
 import json
 import logging
 from typing import Any
 
-from PyQt6.QtWidgets import (
-    QWidget, QHBoxLayout,
-    QTextEdit, QPushButton, QComboBox, QSplitter,
-    QListWidget, QListWidgetItem,
-)
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QColor
+from PyQt6.QtWidgets import (
+    QComboBox,
+    QHBoxLayout,
+    QListWidget,
+    QListWidgetItem,
+    QPushButton,
+    QSplitter,
+    QTextEdit,
+    QWidget,
+)
 
-from equinox.security import redact_body, redact_headers, redact_url
 from equinox.core.util.time import utc_now
-from equinox.gui.theme import Colors, get_mono_font
 from equinox.gui.log_file_actions import show_log_file_open_result, try_open_current_log_file
+from equinox.gui.theme import Colors, get_mono_font
 from equinox.gui.ui_common import (
     configure_splitter_persistence,
     create_muted_label,
     create_panel_layout,
     get_gui_settings,
 )
+from equinox.security import redact_body, redact_headers, redact_url
 
 __all__ = ["LoggingPanel"]
 
@@ -36,15 +42,15 @@ MAX_LOG_ENTRIES: int = 500
 _BODY_REDACT_LEN: int = 2_000
 _ERROR_REDACT_LEN: int = 500
 _ERROR_PREVIEW_LEN: int = 60
-_TS_SLICE = slice(11, 23)          # "HH:MM:SS.mmm" from ISO-8601 timestamp
+_TS_SLICE = slice(11, 23)  # "HH:MM:SS.mmm" from ISO-8601 timestamp
 _SETTINGS_KEY_SPLITTER: str = "splitter/logging"
 _SPLITTER_DEFAULT_SIZES: list[int] = [200, 200]
 
 # Maps combo-box display text → entry["type"] value.
 _FILTER_MAP: dict[str, str] = {
-    "Requests":  "request",
+    "Requests": "request",
     "Responses": "response",
-    "Errors":    "error",
+    "Errors": "error",
 }
 
 
@@ -121,10 +127,14 @@ class LoggingPanel(QWidget):
             "url": safe_url,
             "headers": redact_headers(dict(request.headers or {})),
             "params": dict(request.params or {}),
-            "body": redact_body(request.body, max_length=_BODY_REDACT_LEN) if request.body else None,
+            "body": redact_body(request.body, max_length=_BODY_REDACT_LEN)
+            if request.body
+            else None,
         }
         _py_logger.debug(
-            "→ %s %s", request.method, safe_url,
+            "→ %s %s",
+            request.method,
+            safe_url,
             extra={"method": request.method, "url": safe_url},
         )
         self._push(entry)
@@ -148,7 +158,10 @@ class LoggingPanel(QWidget):
         _py_logger.log(
             level,
             "← %d %s  %s  (%d ms)",
-            response.status_code, response.reason, safe_url, elapsed_ms,
+            response.status_code,
+            response.reason,
+            safe_url,
+            elapsed_ms,
             extra={
                 "method": request.method,
                 "url": safe_url,
@@ -171,7 +184,10 @@ class LoggingPanel(QWidget):
             "error": safe_error,
         }
         _py_logger.warning(
-            "✗ %s %s — %s", method, safe_url, safe_error,
+            "✗ %s %s — %s",
+            method,
+            safe_url,
+            safe_error,
             extra={
                 "method": method,
                 "url": safe_url,
@@ -294,4 +310,3 @@ class LoggingPanel(QWidget):
             f"✗ ERROR  {entry['url']}  {entry['error'][:_ERROR_PREVIEW_LEN]}",
             QColor(Colors.ERROR),
         )
-

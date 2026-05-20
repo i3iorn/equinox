@@ -2,13 +2,12 @@
 
 from __future__ import annotations
 
-import os
 import logging
+import os
 import subprocess
 import sys
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional
 
 from PyQt6.QtWidgets import QMessageBox, QWidget
 
@@ -31,9 +30,9 @@ class LogOpenResult:
     """Outcome of attempting to open the active structured log file."""
 
     status: str
-    log_path: Optional[Path] = None
-    resolved_path: Optional[Path] = None
-    error: Optional[str] = None
+    log_path: Path | None = None
+    resolved_path: Path | None = None
+    error: str | None = None
 
 
 def open_path_in_os(path: Path) -> None:
@@ -78,7 +77,7 @@ def try_open_current_log_file() -> LogOpenResult:
 
 
 def show_log_file_open_result(
-    parent: Optional[QWidget],
+    parent: QWidget | None,
     result: LogOpenResult,
     missing_message: str,
 ) -> bool:
@@ -103,5 +102,3 @@ def show_log_file_open_result(
         return False
 
     return True
-
-

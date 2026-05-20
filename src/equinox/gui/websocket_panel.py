@@ -1,4 +1,5 @@
 """WebSocket panel — connect, send, and receive WebSocket messages."""
+
 from __future__ import annotations
 
 import asyncio
@@ -10,9 +11,17 @@ from datetime import datetime
 from PyQt6.QtCore import Qt, QThread, pyqtSignal
 from PyQt6.QtGui import QColor
 from PyQt6.QtWidgets import (
-    QCheckBox, QHBoxLayout, QHeaderView, QLabel, QLineEdit,
-    QPlainTextEdit, QPushButton, QTableWidget, QTableWidgetItem,
-    QVBoxLayout, QWidget,
+    QCheckBox,
+    QHBoxLayout,
+    QHeaderView,
+    QLabel,
+    QLineEdit,
+    QPlainTextEdit,
+    QPushButton,
+    QTableWidget,
+    QTableWidgetItem,
+    QVBoxLayout,
+    QWidget,
 )
 
 from equinox.core.validation import Validator
@@ -33,15 +42,15 @@ class _WSThread(QThread):
     """Background thread that owns the asyncio event loop + WebSocket connection."""
 
     message_received = pyqtSignal(str, str)  # (direction, text): "in" | "out"
-    connected        = pyqtSignal()
-    disconnected     = pyqtSignal()
-    error_occurred   = pyqtSignal(str)
+    connected = pyqtSignal()
+    disconnected = pyqtSignal()
+    error_occurred = pyqtSignal(str)
 
     def __init__(self, url: str) -> None:
         super().__init__()  # no Qt parent — lifetime managed via deleteLater
-        self._url:  str                    = url
+        self._url: str = url
         self._loop: asyncio.AbstractEventLoop | None = None
-        self._ws                           = None  # websockets.WebSocketClientProtocol
+        self._ws = None  # websockets.WebSocketClientProtocol
         self._connect_task: asyncio.Task | None = None
 
     # ── QThread entry point ───────────────────────────────────────────────────
@@ -122,10 +131,10 @@ class _WSThread(QThread):
 class WebSocketPanel(QWidget):
     """Left-panel tab for WebSocket connections."""
 
-    _COL_DIR  = 0
+    _COL_DIR = 0
     _COL_TIME = 1
     _COL_SIZE = 2
-    _COL_MSG  = 3
+    _COL_MSG = 3
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -167,10 +176,10 @@ class WebSocketPanel(QWidget):
         self.message_log = QTableWidget(0, 4)
         self.message_log.setHorizontalHeaderLabels(["", "Time", "Bytes", "Message"])
         hdr = self.message_log.horizontalHeader()
-        hdr.setSectionResizeMode(self._COL_DIR,  QHeaderView.ResizeMode.Fixed)
+        hdr.setSectionResizeMode(self._COL_DIR, QHeaderView.ResizeMode.Fixed)
         hdr.setSectionResizeMode(self._COL_TIME, QHeaderView.ResizeMode.ResizeToContents)
         hdr.setSectionResizeMode(self._COL_SIZE, QHeaderView.ResizeMode.ResizeToContents)
-        hdr.setSectionResizeMode(self._COL_MSG,  QHeaderView.ResizeMode.Stretch)
+        hdr.setSectionResizeMode(self._COL_MSG, QHeaderView.ResizeMode.Stretch)
         self.message_log.setColumnWidth(self._COL_DIR, 26)
         self.message_log.verticalHeader().setVisible(False)
         self.message_log.setAlternatingRowColors(True)
@@ -236,8 +245,9 @@ class WebSocketPanel(QWidget):
 
     def _on_error(self, msg: str) -> None:
         logger.warning("WebSocket error: %s", msg)
-        self._append_row("⚠", datetime.now().strftime("%H:%M:%S"), "—",
-                         f"Error: {msg}", fg=Colors.RED)
+        self._append_row(
+            "⚠", datetime.now().strftime("%H:%M:%S"), "—", f"Error: {msg}", fg=Colors.RED
+        )
 
     # ── Messaging ─────────────────────────────────────────────────────────────
 
@@ -251,9 +261,9 @@ class WebSocketPanel(QWidget):
 
     def _on_message(self, direction: str, text: str) -> None:
         arrow = "←" if direction == "in" else "→"
-        ts    = datetime.now().strftime("%H:%M:%S")
-        size  = f"{len(text.encode('utf-8'))} B"
-        fg    = Colors.GREEN if direction == "in" else Colors.AMBER
+        ts = datetime.now().strftime("%H:%M:%S")
+        size = f"{len(text.encode('utf-8'))} B"
+        fg = Colors.GREEN if direction == "in" else Colors.AMBER
 
         display = text
         if self._fmt_json_check.isChecked():

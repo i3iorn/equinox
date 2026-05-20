@@ -132,4 +132,3 @@ def test_pipeline_raises_sentinel_error_when_error_interceptor_suppresses() -> N
 
     assert len(audit.events) == 1
     assert audit.events[0]["error"] == "RuntimeError"
-

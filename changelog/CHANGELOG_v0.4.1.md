@@ -104,13 +104,13 @@ Equinox core utilities are reorganized into focused packages with clear domain r
   - `URLComponents` NamedTuple: scheme, netloc, path, query
   - `url_metadata()`: Extract and cache URL metadata
   - Parser selection: Tries `urlps` library (SIMD-fast) → falls back to `urllib.parse`
-  
+
 - `core/urls/normalizer.py`: URL normalization & expansion
   - `expand_placeholders(url, variables)`: Replace {{VAR}} tokens
   - `normalized_parts(url, variables)`: Decompose URL into canonical components
   - `normalize_url(url, variables)`: Return normalized URL string
   - `base_path(normalized_url)`: Extract first path segment
-  
+
 - `core/urls/utils.py`: Convenience helpers
   - `append_query_params(url, params)`: Safe query string appending
   - `join_url_path(base, *segments)`: Path concatenation with proper slashes
@@ -218,4 +218,3 @@ Thanks to the Equinox community for feedback on v0.4.0. This release directly ad
 - 28 files modified (import updates, fixes)
 - 87% test coverage
 - 0 breaking changes (backward-compatible re-exports in place)
-

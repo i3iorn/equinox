@@ -1,5 +1,6 @@
-import pytest
 import socket
+
+import pytest
 
 from equinox.core.exceptions import ValidationError
 from equinox.core.validation._ssrf import _SsrfGuard
@@ -74,5 +75,3 @@ def test_ssrf_dns_failure_can_be_allowed_by_compat_flag(monkeypatch):
     monkeypatch.setattr("equinox.core.validation._ssrf.socket.getaddrinfo", _raise_dns)
 
     _SsrfGuard.check("unresolved.example")
-
-

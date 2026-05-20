@@ -10,9 +10,8 @@ Provides a QTableWidget subclass for displaying HTTP headers with:
 from __future__ import annotations
 
 import logging
-from typing import Dict
 
-from PyQt6.QtWidgets import QTableWidget, QHeaderView, QTableWidgetItem
+from PyQt6.QtWidgets import QHeaderView, QTableWidget, QTableWidgetItem
 
 logger = logging.getLogger(__name__)
 
@@ -33,7 +32,7 @@ class HeaderTable(QTableWidget):
 
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
-        self._all_headers: Dict[str, str] = {}
+        self._all_headers: dict[str, str] = {}
         self._init_table()
 
     def _init_table(self) -> None:
@@ -45,9 +44,7 @@ class HeaderTable(QTableWidget):
         self.horizontalHeader().setSectionResizeMode(
             _NAME_COLUMN, QHeaderView.ResizeMode.Interactive
         )
-        self.horizontalHeader().setSectionResizeMode(
-            _VALUE_COLUMN, QHeaderView.ResizeMode.Stretch
-        )
+        self.horizontalHeader().setSectionResizeMode(_VALUE_COLUMN, QHeaderView.ResizeMode.Stretch)
         self.horizontalHeader().setDefaultSectionSize(_DEFAULT_NAME_WIDTH)
 
         # Configure appearance
@@ -58,7 +55,7 @@ class HeaderTable(QTableWidget):
         self.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
         self.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
 
-    def load(self, headers: Dict[str, str]) -> None:
+    def load(self, headers: dict[str, str]) -> None:
         """Load headers into the table.
 
         Headers are sorted alphabetically by name. An internal copy is kept
@@ -146,4 +143,3 @@ class HeaderTable(QTableWidget):
         """
         self.setItem(row, _NAME_COLUMN, QTableWidgetItem(name))
         self.setItem(row, _VALUE_COLUMN, QTableWidgetItem(str(value)))
-

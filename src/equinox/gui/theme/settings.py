@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import sys
-from typing import Optional
 
 from PyQt6.QtCore import QSettings
 from PyQt6.QtGui import QFont
@@ -94,7 +93,7 @@ def save_theme_mode(mode: str) -> None:
     _settings().setValue("appearance/theme", mode)
 
 
-def get_mono_font(size_override: Optional[int] = None) -> QFont:
+def get_mono_font(size_override: int | None = None) -> QFont:
     size = size_override if size_override is not None else get_font_size()
     family = _settings().value(_MONO_FONT_KEY, None, type=str)
     if family:
@@ -110,7 +109,7 @@ def get_mono_font(size_override: Optional[int] = None) -> QFont:
     return font
 
 
-def get_ui_font(size_override: Optional[int] = None) -> QFont:
+def get_ui_font(size_override: int | None = None) -> QFont:
     size = size_override if size_override is not None else get_font_size()
     family = _settings().value(_UI_FONT_KEY, None, type=str)
     if family:
@@ -128,4 +127,3 @@ def get_ui_font(size_override: Optional[int] = None) -> QFont:
 
 def get_small_text_size(base_pt: int) -> int:
     return max(base_pt - _SM_FONT_REDUCTION, _SM_MIN_PT)
-

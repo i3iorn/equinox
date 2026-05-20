@@ -6,13 +6,12 @@ Shows validation status with visual indicators and prevents send if critical err
 
 import json
 import logging
-from typing import Optional, Tuple
 
-from PyQt6.QtWidgets import QWidget
 from PyQt6.QtCore import QTimer
+from PyQt6.QtWidgets import QWidget
 
-from equinox.core.validation import Validator
 from equinox.core.exceptions import ValidationError
+from equinox.core.validation import Validator
 
 logger = logging.getLogger(__name__)
 
@@ -80,7 +79,9 @@ class _RequestValidationMixin:
         if "{{" in url_text and "}}" in url_text:
             self._set_field_valid(self.url_input, None)  # Don't validate templates
             if hasattr(self, "_set_url_validation_hint"):
-                self._set_url_validation_hint("URL contains template variables; resolved at send time.")
+                self._set_url_validation_hint(
+                    "URL contains template variables; resolved at send time."
+                )
             if hasattr(self, "_set_url_fix_suggestion"):
                 self._set_url_fix_suggestion(None)
             self._url_valid = True
@@ -111,7 +112,7 @@ class _RequestValidationMixin:
             logger.debug("URL validation failed: %s", str(e))
 
     @staticmethod
-    def _suggest_url_fix(url_text: str) -> Optional[Tuple[str, str]]:
+    def _suggest_url_fix(url_text: str) -> tuple[str, str] | None:
         """Return a safe URL correction suggestion, if one is obvious."""
         text = (url_text or "").strip()
         if not text:
@@ -226,7 +227,7 @@ class _RequestValidationMixin:
             self._body_valid = False
             logger.debug("JSON body validation failed: %s", msg)
 
-    def _set_field_valid(self, field: QWidget, status: Optional[str], message: str = "") -> None:
+    def _set_field_valid(self, field: QWidget, status: str | None, message: str = "") -> None:
         """Display validation status on field with visual feedback.
 
         Args:
@@ -234,7 +235,9 @@ class _RequestValidationMixin:
             status: "valid" (green ✓), "error" (red ✗), None (reset to default)
             message: Tooltip message for error details
         """
-        field.setObjectName("field-valid" if status == "valid" else "field-error" if status == "error" else "")
+        field.setObjectName(
+            "field-valid" if status == "valid" else "field-error" if status == "error" else ""
+        )
         if status == "valid":
             field.setToolTip("✓ Valid input")
         elif status == "error":
@@ -260,7 +263,8 @@ class _RequestValidationMixin:
         if not self._headers_valid or not self._body_valid:
             logger.debug(
                 "request_panel.validation.send_gate headers_valid=%s body_valid=%s",
-                self._headers_valid, self._body_valid
+                self._headers_valid,
+                self._body_valid,
             )
             # Actually, let's disable if body is invalid (syntactic error)
             if not self._body_valid:
@@ -270,4 +274,3 @@ class _RequestValidationMixin:
 
         # All critical checks passed
         self.send_button.setEnabled(True)
-

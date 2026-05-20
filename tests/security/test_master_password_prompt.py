@@ -42,4 +42,3 @@ def test_prompt_callback_cancel_does_not_fallback_to_getpass(monkeypatch):
     secrets_password.set_master_password_prompt(_prompt_none)
 
     assert secrets_password.get_master_password() is None
-

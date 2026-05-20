@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from unittest.mock import Mock
 
-from equinox.auth import OAuth2Auth
 from equinox.application.requests import RequestPersistenceFacade
+from equinox.auth import OAuth2Auth
 from equinox.core.request import Request
 
 
@@ -102,11 +102,16 @@ def test_request_persistence_facade_persists_oauth2_tokens_only_when_valid() -> 
     saved_request = Request(method="GET", url="https://example.com", id=5, collection_id=7)
 
     assert facade.persist_request_oauth2_token(saved_request, own_auth) is True
-    assert facade.persist_inherited_oauth2_token(saved_request, "collection", inherited_auth) is True
-    assert facade.persist_request_oauth2_token(Request(method="GET", url="https://example.com"), own_auth) is False
+    assert (
+        facade.persist_inherited_oauth2_token(saved_request, "collection", inherited_auth) is True
+    )
+    assert (
+        facade.persist_request_oauth2_token(
+            Request(method="GET", url="https://example.com"), own_auth
+        )
+        is False
+    )
     assert facade.persist_inherited_oauth2_token(saved_request, None, inherited_auth) is False
 
     manager.update_request_auth.assert_called_once_with(5, own_auth)
     manager.set_collection_auth.assert_called_once_with(7, inherited_auth)
-
-

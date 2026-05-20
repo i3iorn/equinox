@@ -1,26 +1,26 @@
 """Dialog for managing collection variables"""
 
+from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import (
     QDialog,
-    QVBoxLayout,
+    QDialogButtonBox,
+    QFormLayout,
     QHBoxLayout,
-    QTabWidget,
-    QWidget,
-    QTableWidget,
-    QTableWidgetItem,
-    QPushButton,
-    QLabel,
-    QMessageBox,
     QHeaderView,
+    QLabel,
     QListWidget,
     QListWidgetItem,
-    QFormLayout,
+    QMessageBox,
+    QPushButton,
     QSpinBox,
-    QDialogButtonBox,
+    QTableWidget,
+    QTableWidgetItem,
+    QTabWidget,
+    QVBoxLayout,
+    QWidget,
 )
-from PyQt6.QtCore import Qt
 
-from equinox.storage import Database, CollectionManager, VariableGroupManager
+from equinox.storage import CollectionManager, Database, VariableGroupManager
 
 
 class AddVariableGroupDialog(QDialog):
@@ -69,8 +69,7 @@ class AddVariableGroupDialog(QDialog):
         col_mgr = CollectionManager(self._db)
 
         assigned_ids = {
-            g["id"]
-            for g in col_mgr.list_collection_variable_groups(self._collection_id)
+            g["id"] for g in col_mgr.list_collection_variable_groups(self._collection_id)
         }
 
         for group in var_mgr.list_groups():
@@ -295,8 +294,8 @@ class CollectionVariablesDialog(QDialog):
         if row < 0:
             return
 
-        key         = self.variables_table.item(row, 0).text()
-        value       = self.variables_table.item(row, 1).text()
+        key = self.variables_table.item(row, 0).text()
+        value = self.variables_table.item(row, 1).text()
         description = self.variables_table.item(row, 2).text()
 
         # Deferred to avoid circular import (variables_panel imports from dialogs).
@@ -323,7 +322,8 @@ class CollectionVariablesDialog(QDialog):
             return
         key = self.variables_table.item(row, 0).text()
         reply = QMessageBox.question(
-            self, "Confirm Delete",
+            self,
+            "Confirm Delete",
             f"Delete variable '{key}'?",
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
         )
@@ -354,9 +354,10 @@ class CollectionVariablesDialog(QDialog):
         if row < 0:
             return
         group_name = self.groups_table.item(row, 0).text()
-        group_id   = self.groups_table.item(row, 0).data(Qt.ItemDataRole.UserRole)
+        group_id = self.groups_table.item(row, 0).data(Qt.ItemDataRole.UserRole)
         reply = QMessageBox.question(
-            self, "Confirm Remove",
+            self,
+            "Confirm Remove",
             f"Remove group '{group_name}' from this collection?",
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
         )

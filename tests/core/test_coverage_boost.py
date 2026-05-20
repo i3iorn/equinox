@@ -19,24 +19,25 @@ Covers:
 
 import json
 import os
-import tempfile
 from datetime import datetime, timedelta, timezone
-from pathlib import Path
-from unittest.mock import Mock, patch, MagicMock
+from unittest.mock import MagicMock, Mock, patch
 
 import pytest
 from click.testing import CliRunner
 
-from equinox.storage.database import Database
-from equinox.storage.collections import CollectionManager
-from equinox.core.request import Request, Response
 from equinox.core.exceptions import (
-    ValidationError, StorageError, RequestError, RateLimitError,
-    TimeoutError as EqTimeoutError, AuthError,
+    AuthError,
+    RateLimitError,
+    RequestError,
+    StorageError,
+    ValidationError,
 )
-
+from equinox.core.request import Request, Response
+from equinox.storage.collections import CollectionManager
+from equinox.storage.database import Database
 
 # ── Fixtures ──────────────────────────────────────────────────────────────────
+
 
 @pytest.fixture
 def db(tmp_path):
@@ -65,8 +66,9 @@ def temp_db(tmp_path):
         yield db_path
 
 
-def _mock_response(status=200, body=b'{"ok":true}', method="GET",
-                   url="https://example.com", headers=None):
+def _mock_response(
+    status=200, body=b'{"ok":true}', method="GET", url="https://example.com", headers=None
+):
     req = Request(method=method, url=url)
     return Response(
         status_code=status,
@@ -82,10 +84,11 @@ def _mock_response(status=200, body=b'{"ok":true}', method="GET",
 # auth/oauth2.py
 # ═════════════════════════════════════════════════════════════════════════════
 
-class TestOAuth2Coverage:
 
+class TestOAuth2Coverage:
     def test_repr_with_long_token(self):
         from equinox.auth._oauth2 import OAuth2Auth
+
         auth = OAuth2Auth(client_id="cid", access_token="a" * 20)
         r = repr(auth)
         # Token value must NOT appear — only a safe status label
@@ -94,19 +97,21 @@ class TestOAuth2Coverage:
 
     def test_repr_without_token(self):
         from equinox.auth._oauth2 import OAuth2Auth
+
         auth = OAuth2Auth(client_id="cid")
         assert "None" in repr(auth)
 
     def test_get_token_info(self):
         from equinox.auth._oauth2 import OAuth2Auth
-        auth = OAuth2Auth(client_id="cid", access_token="tok12345678",
-                          refresh_token="rt")
+
+        auth = OAuth2Auth(client_id="cid", access_token="tok12345678", refresh_token="rt")
         info = auth.get_token_info()
         assert info["has_refresh_token"] is True
         assert info["needs_refresh"] is False  # has token, no expiry
 
     def test_get_token_info_no_token(self):
         from equinox.auth._oauth2 import OAuth2Auth
+
         auth = OAuth2Auth(client_id="cid")
         info = auth.get_token_info()
         assert info["needs_refresh"] is True
@@ -114,27 +119,34 @@ class TestOAuth2Coverage:
 
     def test_parse_expires_at_valid_iso(self):
         from equinox.auth._oauth2 import OAuth2Auth
+
         result = OAuth2Auth._parse_expires_at("2025-06-01T12:00:00")
         assert isinstance(result, datetime)
         assert result.tzinfo is None
 
     def test_parse_expires_at_with_tz(self):
         from equinox.auth._oauth2 import OAuth2Auth
+
         result = OAuth2Auth._parse_expires_at("2025-06-01T12:00:00+00:00")
         assert result is not None
         assert result.tzinfo is None  # stripped to naive
 
     def test_parse_expires_at_invalid(self):
         from equinox.auth._oauth2 import OAuth2Auth
+
         assert OAuth2Auth._parse_expires_at("not-a-date") is None
         assert OAuth2Auth._parse_expires_at(None) is None
         assert OAuth2Auth._parse_expires_at("") is None
 
     def test_build_grant_data_refresh_token(self):
         from equinox.auth._oauth2 import OAuth2Auth
+
         auth = OAuth2Auth(
-            token_url="https://x.com/token", client_id="c", client_secret="s",
-            refresh_token="rt", scope="read",
+            token_url="https://x.com/token",
+            client_id="c",
+            client_secret="s",
+            refresh_token="rt",
+            scope="read",
         )
         data = auth._build_grant_data()
         assert data["grant_type"] == "refresh_token"
@@ -143,26 +155,32 @@ class TestOAuth2Coverage:
 
     def test_build_grant_data_client_credentials(self):
         from equinox.auth._oauth2 import OAuth2Auth
+
         auth = OAuth2Auth(
-            token_url="https://x.com/token", client_id="c", client_secret="s",
+            token_url="https://x.com/token",
+            client_id="c",
+            client_secret="s",
         )
         data = auth._build_grant_data()
         assert data["grant_type"] == "client_credentials"
 
     def test_build_grant_data_no_credentials(self):
         from equinox.auth._oauth2 import OAuth2Auth
+
         auth = OAuth2Auth(token_url="https://x.com/token")
         with pytest.raises(AuthError, match="No refresh token"):
             auth._build_grant_data()
 
     def test_refresh_access_token_no_url(self):
         from equinox.auth._oauth2 import OAuth2Auth
+
         auth = OAuth2Auth(client_id="c", client_secret="s")
         with pytest.raises(AuthError, match="No token URL"):
             auth._refresh_access_token()
 
     def test_apply_token_response_no_access_token(self):
         from equinox.auth._oauth2 import OAuth2Auth
+
         mock_resp = Mock()
         mock_resp.json.return_value = {"token_type": "Bearer"}
         mock_resp.raise_for_status = Mock()
@@ -173,6 +191,7 @@ class TestOAuth2Coverage:
 
     def test_apply_token_response_invalid_json(self):
         from equinox.auth._oauth2 import OAuth2Auth
+
         mock_resp = Mock()
         mock_resp.json.side_effect = ValueError("bad json")
         mock_resp.text = str(ValueError("bad json"))
@@ -183,6 +202,7 @@ class TestOAuth2Coverage:
 
     def test_apply_token_response_with_refresh_token(self):
         from equinox.auth._oauth2 import OAuth2Auth
+
         mock_resp = Mock()
         mock_resp.json.return_value = {
             "access_token": "new",
@@ -198,6 +218,7 @@ class TestOAuth2Coverage:
 
     def test_apply_token_response_default_expiry(self):
         from equinox.auth._oauth2 import OAuth2Auth
+
         mock_resp = Mock()
         mock_resp.json.return_value = {"access_token": "tok"}
         mock_resp.raise_for_status = Mock()
@@ -207,39 +228,48 @@ class TestOAuth2Coverage:
 
     def test_needs_refresh_expiring_soon(self):
         from equinox.auth._oauth2 import OAuth2Auth
+
         auth = OAuth2Auth(client_id="c", access_token="tok")
         auth.expires_at = datetime.now(timezone.utc).replace(tzinfo=None) + timedelta(seconds=5)
         assert auth._needs_refresh() is True  # within 30s buffer
 
     def test_needs_refresh_not_expiring(self):
         from equinox.auth._oauth2 import OAuth2Auth
+
         auth = OAuth2Auth(client_id="c", access_token="tok")
         auth.expires_at = datetime.now(timezone.utc).replace(tzinfo=None) + timedelta(hours=1)
         assert auth._needs_refresh() is False
 
     def test_needs_refresh_tz_aware_expires_at(self):
         from equinox.auth._oauth2 import OAuth2Auth
+
         auth = OAuth2Auth(client_id="c", access_token="tok")
         auth.expires_at = datetime.now(timezone.utc) + timedelta(seconds=5)
         assert auth._needs_refresh() is True
 
     def test_load_from_storage(self):
         from equinox.auth._oauth2 import OAuth2Auth
+
         mock_storage = Mock()
-        mock_storage.retrieve.return_value = json.dumps({
-            "access_token": "stored-tok",
-            "refresh_token": "stored-rt",
-            "expires_at": "2030-01-01T00:00:00",
-        })
+        mock_storage.retrieve.return_value = json.dumps(
+            {
+                "access_token": "stored-tok",
+                "refresh_token": "stored-rt",
+                "expires_at": "2030-01-01T00:00:00",
+            }
+        )
         auth = OAuth2Auth(
-            client_id="c", client_secret="s",
-            secure_storage=mock_storage, storage_key="test-key",
+            client_id="c",
+            client_secret="s",
+            secure_storage=mock_storage,
+            storage_key="test-key",
         )
         assert auth.access_token == "stored-tok"
         assert auth.refresh_token == "stored-rt"
 
     def test_load_from_storage_failure(self):
         from equinox.auth._oauth2 import OAuth2Auth
+
         mock_storage = Mock()
         mock_storage.retrieve.side_effect = Exception("disk error")
         # Should not raise — just logs warning
@@ -248,23 +278,29 @@ class TestOAuth2Coverage:
 
     def test_save_to_storage(self):
         from equinox.auth._oauth2 import OAuth2Auth
+
         mock_storage = Mock()
         mock_storage.retrieve.return_value = None
         auth = OAuth2Auth(
-            client_id="c", access_token="tok",
-            secure_storage=mock_storage, storage_key="k",
+            client_id="c",
+            access_token="tok",
+            secure_storage=mock_storage,
+            storage_key="k",
         )
         auth._save_to_storage()
         mock_storage.store.assert_called_once()
 
     def test_save_to_storage_failure(self):
         from equinox.auth._oauth2 import OAuth2Auth
+
         mock_storage = Mock()
         mock_storage.retrieve.return_value = None
         mock_storage.store.side_effect = Exception("write error")
         auth = OAuth2Auth(
-            client_id="c", access_token="tok",
-            secure_storage=mock_storage, storage_key="k",
+            client_id="c",
+            access_token="tok",
+            secure_storage=mock_storage,
+            storage_key="k",
         )
         # Should not raise
         auth._save_to_storage()
@@ -272,18 +308,22 @@ class TestOAuth2Coverage:
     @patch("equinox.auth._oauth2.httpx.Client")
     def test_post_token_request_http_status_error(self, mock_client_class):
         from equinox.auth._oauth2 import OAuth2Auth
+
         mock_client = MagicMock()
         mock_client_class.return_value.__enter__.return_value = mock_client
-        
+
         resp = Mock()
         resp.status_code = 401
         resp.raise_for_status.side_effect = __import__("httpx").HTTPStatusError(
-            "Unauthorized", request=Mock(), response=resp,
+            "Unauthorized",
+            request=Mock(),
+            response=resp,
         )
         mock_client.post.return_value = resp
         auth = OAuth2Auth(
             token_url="https://auth.example.com/token",
-            client_id="c", client_secret="s",
+            client_id="c",
+            client_secret="s",
         )
         with pytest.raises(AuthError, match="HTTP 401"):
             os.environ["EQUINOX_SSRF_ALLOW_ON_DNS_FAILURE"] = "1"
@@ -292,9 +332,14 @@ class TestOAuth2Coverage:
 
     def test_to_dict_and_from_dict_round_trip(self):
         from equinox.auth._oauth2 import OAuth2Auth
+
         auth = OAuth2Auth(
-            token_url="https://x.com/token", client_id="c", client_secret="s",
-            scope="read", access_token="tok", refresh_token="rt",
+            token_url="https://x.com/token",
+            client_id="c",
+            client_secret="s",
+            scope="read",
+            access_token="tok",
+            refresh_token="rt",
         )
         auth.expires_at = datetime(2030, 1, 1, 0, 0, 0)
         d = auth.to_dict()
@@ -311,20 +356,23 @@ class TestOAuth2Coverage:
 # core/client.py
 # ═════════════════════════════════════════════════════════════════════════════
 
-class TestHTTPClientCoverage:
 
+class TestHTTPClientCoverage:
     def test_timeout_clamped_below_min(self):
         from equinox.core.client import HTTPClient
+
         client = HTTPClient(timeout=0.01)
         assert client.timeout == HTTPClient.MIN_TIMEOUT
 
     def test_timeout_clamped_above_max(self):
         from equinox.core.client import HTTPClient
+
         client = HTTPClient(timeout=9999)
         assert client.timeout == HTTPClient.MAX_TIMEOUT
 
     def test_invalid_timeout_raises(self):
         from equinox.core.client import HTTPClient
+
         with pytest.raises(ValidationError):
             HTTPClient(timeout=-1)
         with pytest.raises(ValidationError):
@@ -332,6 +380,7 @@ class TestHTTPClientCoverage:
 
     def test_rate_limit_exceeded(self):
         from equinox.core.client import HTTPClient
+
         client = HTTPClient(max_rate_per_minute=1)
         # First call records a timestamp
         client.check_rate_limit()
@@ -341,12 +390,14 @@ class TestHTTPClientCoverage:
 
     def test_rate_limit_unlimited(self):
         from equinox.core.client import HTTPClient
+
         client = HTTPClient(max_rate_per_minute=0)
         # Should not raise
         client.check_rate_limit()
 
     def test_concurrent_limit(self):
         from equinox.core.client import HTTPClient
+
         client = HTTPClient(max_concurrent_requests=1)
         client.check_concurrent_limit()
         with pytest.raises(RequestError, match="Too many concurrent requests"):
@@ -354,6 +405,7 @@ class TestHTTPClientCoverage:
 
     def test_release_concurrent_slot(self):
         from equinox.core.client import HTTPClient
+
         client = HTTPClient(max_concurrent_requests=1)
         client.check_concurrent_limit()
         client._release_concurrent_slot()
@@ -362,24 +414,30 @@ class TestHTTPClientCoverage:
 
     def test_release_slot_never_below_zero(self):
         from equinox.core.client import HTTPClient
+
         client = HTTPClient()
         client._release_concurrent_slot()  # no active requests
         assert client._active_requests == 0
 
     def test_validate_request_headers(self):
         from equinox.core.client import HTTPClient
+
         client = HTTPClient()
-        req = Request(method="GET", url="https://example.com",
-                      headers={"Accept": "application/json"},
-                      params={"q": "test"})
+        req = Request(
+            method="GET",
+            url="https://example.com",
+            headers={"Accept": "application/json"},
+            params={"q": "test"},
+        )
         client._validate_request(req)  # should not raise
+
 
 # ═════════════════════════════════════════════════════════════════════════════
 # importers/openapi.py
 # ═════════════════════════════════════════════════════════════════════════════
 
-class TestOpenAPICoverage:
 
+class TestOpenAPICoverage:
     @pytest.fixture
     def importer(self, db):
         return __import__(
@@ -442,6 +500,7 @@ class TestOpenAPICoverage:
 
     def test_import_file_yaml(self, importer, tmp_path):
         import yaml
+
         spec = {
             "openapi": "3.0.0",
             "info": {"title": "YAML API", "version": "1"},
@@ -454,45 +513,53 @@ class TestOpenAPICoverage:
 
     def test_resolve_schema_type_const_string(self):
         from equinox.importers.openapi import OpenAPIImporter
+
         assert OpenAPIImporter._resolve_schema_type({"const": "hello"}) == "string"
 
     def test_resolve_schema_type_const_int(self):
         from equinox.importers.openapi import OpenAPIImporter
+
         assert OpenAPIImporter._resolve_schema_type({"const": 42}) == "integer"
 
     def test_resolve_schema_type_const_float(self):
         from equinox.importers.openapi import OpenAPIImporter
+
         assert OpenAPIImporter._resolve_schema_type({"const": 3.14}) == "number"
 
     def test_resolve_schema_type_const_bool(self):
         from equinox.importers.openapi import OpenAPIImporter
+
         assert OpenAPIImporter._resolve_schema_type({"const": True}) == "boolean"
 
     def test_resolve_schema_type_const_list(self):
         from equinox.importers.openapi import OpenAPIImporter
+
         assert OpenAPIImporter._resolve_schema_type({"const": [1, 2]}) == "array"
 
     def test_resolve_schema_type_const_dict(self):
         from equinox.importers.openapi import OpenAPIImporter
+
         assert OpenAPIImporter._resolve_schema_type({"const": {"a": 1}}) == "object"
 
     def test_resolve_schema_type_one_of(self):
         from equinox.importers.openapi import OpenAPIImporter
-        assert OpenAPIImporter._resolve_schema_type({
-            "oneOf": [{"type": "string"}, {"type": "integer"}]
-        }) == "string"
+
+        assert (
+            OpenAPIImporter._resolve_schema_type(
+                {"oneOf": [{"type": "string"}, {"type": "integer"}]}
+            )
+            == "string"
+        )
 
     def test_resolve_schema_type_list_type(self):
         from equinox.importers.openapi import OpenAPIImporter
-        assert OpenAPIImporter._resolve_schema_type({
-            "type": ["string", "null"]
-        }) == "string"
+
+        assert OpenAPIImporter._resolve_schema_type({"type": ["string", "null"]}) == "string"
 
     def test_resolve_schema_type_list_type_all_null(self):
         from equinox.importers.openapi import OpenAPIImporter
-        assert OpenAPIImporter._resolve_schema_type({
-            "type": ["null"]
-        }) == "string"
+
+        assert OpenAPIImporter._resolve_schema_type({"type": ["null"]}) == "string"
 
     def test_get_parameter_example_from_example(self, importer):
         assert importer._get_parameter_example({"example": 42}, "3.0") == "42"
@@ -501,9 +568,10 @@ class TestOpenAPICoverage:
         assert importer._get_parameter_example({"default": "val"}, "3.0") == "val"
 
     def test_get_parameter_example_from_schema_example(self, importer):
-        assert importer._get_parameter_example(
-            {"schema": {"example": "schemaEx"}}, "3.0"
-        ) == "schemaEx"
+        assert (
+            importer._get_parameter_example({"schema": {"example": "schemaEx"}}, "3.0")
+            == "schemaEx"
+        )
 
     def test_get_parameter_example_type_integer(self, importer):
         assert importer._get_parameter_example({"type": "integer"}, "2.0") == "0"
@@ -524,9 +592,9 @@ class TestOpenAPICoverage:
         assert importer._get_parameter_example({"type": "custom"}, "2.0") == "value"
 
     def test_get_parameter_example_list_type(self, importer):
-        assert importer._get_parameter_example(
-            {"schema": {"type": ["integer", "null"]}}, "3.1"
-        ) == "0"
+        assert (
+            importer._get_parameter_example({"schema": {"type": ["integer", "null"]}}, "3.1") == "0"
+        )
 
     def test_generate_example_from_schema_const(self, importer):
         result = importer._generate_example_from_schema({"const": "fixed"})
@@ -620,8 +688,8 @@ class TestOpenAPICoverage:
 # storage/collections.py
 # ═════════════════════════════════════════════════════════════════════════════
 
-class TestCollectionManagerCoverage:
 
+class TestCollectionManagerCoverage:
     def test_create_collection_empty_name(self, mgr):
         with pytest.raises(ValidationError):
             mgr.create_collection("")
@@ -654,7 +722,8 @@ class TestCollectionManagerCoverage:
     def test_rename_request(self, mgr, col_id):
         rid = mgr.save_request(
             Request(method="GET", url="https://x.com", name="Old"),
-            collection_id=col_id, name="Old",
+            collection_id=col_id,
+            name="Old",
         )
         mgr.rename_request(rid, "New")
         req = mgr.get_request(rid)
@@ -667,16 +736,23 @@ class TestCollectionManagerCoverage:
     def test_rename_request_empty(self, mgr, col_id):
         rid = mgr.save_request(
             Request(method="GET", url="https://x.com", name="R"),
-            collection_id=col_id, name="R",
+            collection_id=col_id,
+            name="R",
         )
         with pytest.raises(ValidationError):
             mgr.rename_request(rid, "")
 
     def test_duplicate_request(self, mgr, col_id):
         rid = mgr.save_request(
-            Request(method="POST", url="https://x.com", name="Original",
-                    headers={"A": "1"}, body='{"x":1}'),
-            collection_id=col_id, name="Original",
+            Request(
+                method="POST",
+                url="https://x.com",
+                name="Original",
+                headers={"A": "1"},
+                body='{"x":1}',
+            ),
+            collection_id=col_id,
+            name="Original",
         )
         new_id = mgr.duplicate_request(rid)
         assert new_id != rid
@@ -692,7 +768,8 @@ class TestCollectionManagerCoverage:
     def test_duplicate_request_custom_name(self, mgr, col_id):
         rid = mgr.save_request(
             Request(method="GET", url="https://x.com", name="R"),
-            collection_id=col_id, name="R",
+            collection_id=col_id,
+            name="R",
         )
         new_id = mgr.duplicate_request(rid, "Custom Copy")
         dup = mgr.get_request(new_id)
@@ -714,11 +791,13 @@ class TestCollectionManagerCoverage:
     def test_save_and_list_requests(self, mgr, col_id):
         mgr.save_request(
             Request(method="GET", url="https://a.com", name="A"),
-            collection_id=col_id, name="A",
+            collection_id=col_id,
+            name="A",
         )
         mgr.save_request(
             Request(method="POST", url="https://b.com", name="B"),
-            collection_id=col_id, name="B",
+            collection_id=col_id,
+            name="B",
         )
         reqs = mgr.list_requests(col_id)
         assert len(reqs) == 2
@@ -726,14 +805,14 @@ class TestCollectionManagerCoverage:
     def test_delete_request(self, mgr, col_id):
         rid = mgr.save_request(
             Request(method="GET", url="https://x.com", name="R"),
-            collection_id=col_id, name="R",
+            collection_id=col_id,
+            name="R",
         )
         mgr.delete_request(rid)
         assert mgr.get_request(rid) is None
 
     def test_save_request_with_params_list(self, mgr, col_id):
-        req = Request(method="GET", url="https://x.com", name="P",
-                      params={"a": "1"})
+        req = Request(method="GET", url="https://x.com", name="P", params={"a": "1"})
         req.params_list = [
             {"key": "a", "value": "1", "enabled": True},
             {"key": "b", "value": "2", "enabled": False},
@@ -771,7 +850,8 @@ class TestCollectionManagerCoverage:
         col2 = mgr.create_collection("Other")
         rid = mgr.save_request(
             Request(method="GET", url="https://x.com", name="R"),
-            collection_id=col2, name="R",
+            collection_id=col2,
+            name="R",
         )
         reqs = mgr.list_requests(col2)
         assert any(r["id"] == rid for r in reqs)
@@ -780,9 +860,11 @@ class TestCollectionManagerCoverage:
 
     def test_update_request_auth(self, mgr, col_id):
         from equinox.auth import BearerAuth
+
         rid = mgr.save_request(
             Request(method="GET", url="https://x.com", name="R"),
-            collection_id=col_id, name="R",
+            collection_id=col_id,
+            name="R",
         )
         mgr.update_request_auth(rid, BearerAuth(token="new-tok"))
         loaded = mgr.get_request(rid)
@@ -791,12 +873,12 @@ class TestCollectionManagerCoverage:
 
     def test_update_request_auth_clear(self, mgr, col_id):
         from equinox.auth import BearerAuth
+
         rid = mgr.save_request(
-            Request(method="GET", url="https://x.com", name="R",
-                    auth=BearerAuth(token="old")),
-            collection_id=col_id, name="R",
+            Request(method="GET", url="https://x.com", name="R", auth=BearerAuth(token="old")),
+            collection_id=col_id,
+            name="R",
         )
         mgr.update_request_auth(rid, None)
         loaded = mgr.get_request(rid)
         assert loaded.auth is None
-

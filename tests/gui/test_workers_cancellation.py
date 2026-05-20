@@ -58,4 +58,3 @@ def test_background_task_worker_operation_observes_set_cancel_event() -> None:
 
     assert worker._invoke_operation() == "cancelled"
     assert observed["cancelled"] is True
-

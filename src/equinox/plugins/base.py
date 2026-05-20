@@ -2,8 +2,8 @@
 
 import logging
 from abc import ABC, abstractmethod
-from typing import Dict, Any, Optional
 from dataclasses import dataclass
+from typing import Any
 
 from equinox.core.request import Request, Response
 from equinox.security import redact_body, redact_url
@@ -17,7 +17,7 @@ class PluginContext:
 
     storage: Any  # Database storage
     http_client: Any  # HTTP client
-    config: Dict[str, Any]  # Plugin configuration
+    config: dict[str, Any]  # Plugin configuration
 
 
 class Plugin(ABC):
@@ -58,7 +58,7 @@ class Plugin(ABC):
         """Called when plugin is deactivated"""
         logger.info("Plugin deactivated: %s", self.name)
 
-    def on_request(self, request: Request) -> Optional[Request]:
+    def on_request(self, request: Request) -> Request | None:
         """
         Called before request is sent. Can modify request.
 
@@ -70,7 +70,7 @@ class Plugin(ABC):
         """
         return None
 
-    def on_response(self, request: Request, response: Response) -> Optional[Response]:
+    def on_response(self, request: Request, response: Response) -> Response | None:
         """
         Called after response is received. Can modify response.
 
@@ -93,14 +93,16 @@ class Plugin(ABC):
         """
         safe_url = redact_url(request.url) if request and request.url else ""
         safe_error = redact_body(str(error), max_length=200)
-        logger.debug("Plugin %s on_error: %s %s → %s", self.name, request.method, safe_url, safe_error)
+        logger.debug(
+            "Plugin %s on_error: %s %s → %s", self.name, request.method, safe_url, safe_error
+        )
 
 
 class AuthPlugin(Plugin):
     """Base class for authentication plugins"""
 
     @abstractmethod
-    def apply_auth(self, request: Request, headers: Dict[str, str]) -> None:
+    def apply_auth(self, request: Request, headers: dict[str, str]) -> None:
         """
         Apply authentication to request
 

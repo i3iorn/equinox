@@ -4,13 +4,13 @@ Resolves the active :class:`~equinox.auth.base.AuthStrategy` for a request,
 calls its ``apply()`` method, and returns only the headers that were added so
 the dispatcher can attach them via httpx's redirect-safe auth flow.
 """
+
 import logging
-from typing import Dict, Optional
 
 from equinox.auth import AuthStrategy
 from equinox.core.exceptions import RequestError
 from equinox.core.request import Request
-from equinox.security import redact_url, redact_body
+from equinox.security import redact_body, redact_url
 
 logger = logging.getLogger(__name__)
 
@@ -18,9 +18,7 @@ __all__ = ["AuthApplier"]
 
 # Substrings (lowercased) that indicate the proxy refused the TCP connection.
 # Checked against the redacted error message to emit an actionable hint.
-_PROXY_REFUSED_MARKERS: frozenset[str] = frozenset({
-    "10061", "connection refused", "econnrefused"
-})
+_PROXY_REFUSED_MARKERS: frozenset[str] = frozenset({"10061", "connection refused", "econnrefused"})
 
 
 def _is_proxy_connection_refused(message: str) -> bool:
@@ -44,10 +42,10 @@ class AuthApplier:
     def apply(
         self,
         request: Request,
-        headers: Dict[str, str],
-        explicit_auth: Optional[AuthStrategy],
-        proxy: Optional[str],
-    ) -> Dict[str, str]:
+        headers: dict[str, str],
+        explicit_auth: AuthStrategy | None,
+        proxy: str | None,
+    ) -> dict[str, str]:
         """Apply *explicit_auth* (or ``request.auth``) to *headers*.
 
         Args:
@@ -98,8 +96,8 @@ class AuthApplier:
         self,
         strategy: AuthStrategy,
         request: Request,
-        headers: Dict[str, str],
-        proxy: Optional[str],
+        headers: dict[str, str],
+        proxy: str | None,
     ) -> None:
         """Call ``strategy.apply()``, converting any exception to :class:`RequestError`.
 
@@ -143,7 +141,7 @@ class AuthApplier:
     def _map_auth_error(
         exc: Exception,
         strategy: AuthStrategy,
-        proxy: Optional[str],
+        proxy: str | None,
     ) -> RequestError:
         """Build a descriptive :class:`RequestError` from a raw auth exception.
 

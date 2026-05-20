@@ -1,16 +1,18 @@
 """Tests for the session variables viewer in VariablesPanel."""
 
 import sys
-import pytest
 from unittest.mock import MagicMock, patch
 
+import pytest
 
 # ── Qt fixtures ───────────────────────────────────────────────────────────────
+
 
 @pytest.fixture(scope="session")
 def qapp():
     """Ensure a single QApplication exists for the whole test session."""
     from PyQt6.QtWidgets import QApplication
+
     app = QApplication.instance()
     if app is None:
         app = QApplication(sys.argv)
@@ -21,6 +23,7 @@ def qapp():
 def variables_panel(qapp):
     """Create a VariablesPanel with a mocked DB, properly parented."""
     from PyQt6.QtWidgets import QWidget
+
     from equinox.gui.variables_panel import VariablesPanel
 
     db = MagicMock()
@@ -38,6 +41,7 @@ def variables_panel(qapp):
 
 
 # ── RequestPanel accessor tests ───────────────────────────────────────────────
+
 
 class TestRequestPanelSessionVarAccessors:
     """Test the public accessor + clear methods on RequestPanel."""
@@ -66,6 +70,7 @@ class TestRequestPanelSessionVarAccessors:
 
 
 # ── VariablesPanel session table tests ────────────────────────────────────────
+
 
 class TestVariablesPanelRefresh:
     """Test the refresh_session_vars logic."""
@@ -123,9 +128,7 @@ class TestVariablesPanelRefresh:
         vp = variables_panel
         vp.refresh_session_vars({"BASE_URL": "https://api.test", "TOKEN": "abc"})
         clipboard_text = []
-        with patch(
-            "equinox.gui.variables_panel.QApplication.clipboard"
-        ) as mock_cb:
+        with patch("equinox.gui.variables_panel.QApplication.clipboard") as mock_cb:
             mock_clip = MagicMock()
             mock_cb.return_value = mock_clip
             mock_clip.setText = lambda t: clipboard_text.append(t)
@@ -186,9 +189,10 @@ class TestVariablesPanelRefresh:
     def test_add_custom_session_var_rejects_invalid_name(self, variables_panel):
         """Invalid names are rejected before value prompt is shown."""
         vp = variables_panel
-        with patch("equinox.gui.variables_panel.QInputDialog.getText") as mock_get_text, patch(
-            "equinox.gui.variables_panel.QMessageBox.warning"
-        ) as mock_warn:
+        with (
+            patch("equinox.gui.variables_panel.QInputDialog.getText") as mock_get_text,
+            patch("equinox.gui.variables_panel.QMessageBox.warning") as mock_warn,
+        ):
             mock_get_text.return_value = ("bad key", True)
             vp._add_session_var()
 
@@ -211,6 +215,7 @@ class TestVariablesPanelRefresh:
 
 
 # ── Capture engine integration ────────────────────────────────────────────────
+
 
 class TestCaptureIntegration:
     """Verify CaptureEngine produces results that feed into session vars."""
@@ -264,6 +269,7 @@ class TestCaptureIntegration:
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
+
 def _make_mock_panel():
     """Create a minimal mock of RequestPanel for testing accessors."""
     panel = MagicMock()
@@ -271,4 +277,3 @@ def _make_mock_panel():
     panel.session_vars_changed = MagicMock()
     panel.get_session_vars = lambda: dict(panel._session_vars)
     return panel
-

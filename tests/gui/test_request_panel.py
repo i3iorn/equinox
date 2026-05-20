@@ -1,7 +1,6 @@
-from PyQt6.QtWidgets import QApplication
-from PyQt6.QtCore import QCoreApplication
-
 import pytest
+from PyQt6.QtCore import QCoreApplication
+from PyQt6.QtWidgets import QApplication
 
 
 def ensure_qapp():
@@ -33,8 +32,8 @@ def test_request_panel_initializes_without_crash(tmp_db_path):
     ensure_qapp()
 
     # Import here so the environment variable is active before DB is created
-    from equinox.storage import get_db
     from equinox.gui.request_panel.panel import RequestPanel
+    from equinox.storage import get_db
 
     db = get_db()
     panel = RequestPanel(db)
@@ -55,8 +54,8 @@ def test_request_panel_initializes_without_crash(tmp_db_path):
 def test_body_edit_marks_dirty(tmp_db_path):
     """Editing the body editor should mark the panel dirty via textChanged signal."""
     ensure_qapp()
-    from equinox.storage import get_db
     from equinox.gui.request_panel.panel import RequestPanel
+    from equinox.storage import get_db
 
     db = get_db()
     panel = RequestPanel(db)
@@ -64,7 +63,7 @@ def test_body_edit_marks_dirty(tmp_db_path):
     panel._dirty = False
 
     # Change the body editor text — should trigger textChanged and mark dirty
-    panel.body_text.setPlainText("{\n  \"a\": 1\n}")
+    panel.body_text.setPlainText('{\n  "a": 1\n}')
     process_events()
     assert panel.is_dirty() is True
 
@@ -72,38 +71,38 @@ def test_body_edit_marks_dirty(tmp_db_path):
 def test_request_panel_shows_draft_state_feedback(tmp_db_path):
     """Dirty/saved state should be visible without opening any dialogs."""
     ensure_qapp()
-    from equinox.storage import get_db
     from equinox.core.request import Request
     from equinox.gui.request_panel.panel import RequestPanel
+    from equinox.storage import get_db
 
     db = get_db()
     panel = RequestPanel(db)
 
-    assert getattr(panel, "save_button").text() == "Save"
-    assert getattr(panel, "_editor_state_label").text() == "Scratch request"
+    assert panel.save_button.text() == "Save"
+    assert panel._editor_state_label.text() == "Scratch request"
 
     panel.body_text.setPlainText('{"draft": true}')
     process_events()
 
     assert panel.is_dirty() is True
-    assert getattr(panel, "save_button").text() == "Save Changes"
-    assert getattr(panel, "_editor_state_label").text() == "Unsaved changes"
+    assert panel.save_button.text() == "Save Changes"
+    assert panel._editor_state_label.text() == "Unsaved changes"
 
     saved = Request(method="GET", url="https://example.com")
     saved.id = 42
     panel.current_request = saved
     panel._clear_dirty()
 
-    assert getattr(panel, "save_button").text() == "Save"
-    assert getattr(panel, "_editor_state_label").text() == "Saved to collection"
+    assert panel.save_button.text() == "Save"
+    assert panel._editor_state_label.text() == "Saved to collection"
 
 
 def test_request_panel_restores_last_active_tab(tmp_db_path):
     """The request editor should reopen on the last tab the user selected."""
     ensure_qapp()
-    from equinox.storage import get_db
     from equinox.gui.request_panel.panel import RequestPanel
     from equinox.gui.ui_common import get_gui_settings
+    from equinox.storage import get_db
 
     settings = get_gui_settings()
     settings.remove("request/active_tab")
@@ -128,6 +127,7 @@ def test_request_panel_builds_canonical_editor_snapshot(tmp_db_path):
     """The snapshot helper should capture the editor state without Qt types."""
     ensure_qapp()
     from PyQt6.QtWidgets import QTableWidgetItem
+
     from equinox.core.request import Request
     from equinox.gui.request_panel.panel import RequestPanel
     from equinox.storage import get_db
@@ -142,9 +142,11 @@ def test_request_panel_builds_canonical_editor_snapshot(tmp_db_path):
     panel.method_combo.setCurrentText("POST")
     panel.url_input.setText("https://example.com/api")
     panel.headers_table.set_data({"X-Test": "1"})
-    panel.params_table.set_data([
-        {"key": "q", "value": "search", "enabled": True},
-    ])
+    panel.params_table.set_data(
+        [
+            {"key": "q", "value": "search", "enabled": True},
+        ]
+    )
     panel.body_type_combo.setCurrentText("GraphQL")
     panel.body_text.setPlainText("raw body")
     panel._gql_query.setPlainText("query { viewer { id } }")
@@ -176,7 +178,7 @@ def test_request_panel_builds_canonical_editor_snapshot(tmp_db_path):
     panel._inherited_auth = DummyAuth()
     panel._inherited_auth_source = "collection"
 
-    snapshot = getattr(panel, "_build_request_editor_snapshot")()
+    snapshot = panel._build_request_editor_snapshot()
 
     assert snapshot.method == "POST"
     assert snapshot.url == "https://example.com/api"

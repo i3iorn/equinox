@@ -7,13 +7,13 @@ from __future__ import annotations
 
 import json
 import logging
-from typing import Any, Dict, Optional
+from typing import Any
 
 from equinox.core.secret_managers.base import (
+    SecretAuthError,
     SecretManager,
     SecretManagerError,
     SecretNotFoundError,
-    SecretAuthError,
 )
 from equinox.security import mask_secret
 
@@ -36,7 +36,7 @@ class AWSSecretsManagerBackend(SecretManager):
         """Initialize AWS Secrets Manager backend."""
         super().__init__(**kwargs)
         self.client = None
-        self.region_name: Optional[str] = None
+        self.region_name: str | None = None
 
     def configure(self, region_name: str = "us-east-1", **kwargs: Any) -> None:
         """Configure AWS Secrets Manager connection.
@@ -51,11 +51,10 @@ class AWSSecretsManagerBackend(SecretManager):
         """
         try:
             import boto3
-        except ImportError:
+        except ImportError as exc:
             raise SecretManagerError(
-                "boto3 is required for AWS Secrets Manager. "
-                "Install with: pip install boto3"
-            )
+                "boto3 is required for AWS Secrets Manager. " "Install with: pip install boto3"
+            ) from exc
 
         try:
             self.region_name = region_name
@@ -65,9 +64,7 @@ class AWSSecretsManagerBackend(SecretManager):
             self._configured = True
             logger.info("AWS Secrets Manager configured (region: %s)", region_name)
         except Exception as exc:
-            raise SecretAuthError(
-                f"Failed to configure AWS Secrets Manager: {exc}"
-            )
+            raise SecretAuthError(f"Failed to configure AWS Secrets Manager: {exc}") from exc
 
     def get_secret(self, secret_name: str) -> str:
         """Retrieve a secret from AWS Secrets Manager.
@@ -108,16 +105,14 @@ class AWSSecretsManagerBackend(SecretManager):
             logger.debug("Retrieved secret from AWS Secrets Manager: %s", secret_ref)
             return value
 
-        except self.client.exceptions.ResourceNotFoundException:
-            raise SecretNotFoundError(f"Secret not found in AWS: {secret_ref}")
+        except self.client.exceptions.ResourceNotFoundException as exc:
+            raise SecretNotFoundError(f"Secret not found in AWS: {secret_ref}") from exc
         except self.client.exceptions.AccessDeniedException as exc:
             raise SecretAuthError(f"Access denied to AWS secret: {secret_ref}") from exc
         except Exception as exc:
-            raise SecretManagerError(
-                f"Failed to retrieve secret from AWS: {exc}"
-            )
+            raise SecretManagerError(f"Failed to retrieve secret from AWS: {exc}") from exc
 
-    def get_secret_dict(self, secret_name: str) -> Dict[str, Any]:
+    def get_secret_dict(self, secret_name: str) -> dict[str, Any]:
         """Retrieve a secret from AWS Secrets Manager as JSON.
 
         Args:
@@ -136,9 +131,8 @@ class AWSSecretsManagerBackend(SecretManager):
         except json.JSONDecodeError as exc:
             raise SecretManagerError(
                 f"Secret '{mask_secret(secret_name, keep=4)}' is not valid JSON: {exc}"
-            )
+            ) from exc
 
     def is_available(self) -> bool:
         """Check if AWS Secrets Manager is available and configured."""
         return self._configured and self.client is not None
-

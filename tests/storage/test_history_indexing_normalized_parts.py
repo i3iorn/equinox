@@ -22,8 +22,10 @@ def test_index_history_row_expands_placeholders_and_normalizes():
 
     test_url = "https://api.example.com/users/{{id}}/posts"
 
-    with patch("equinox.core.urls.expand_placeholders") as mock_expand, \
-         patch("equinox.core.urls.normalized_parts") as mock_normalized:
+    with (
+        patch("equinox.core.urls.expand_placeholders") as mock_expand,
+        patch("equinox.core.urls.normalized_parts") as mock_normalized,
+    ):
         mock_expand.return_value = "https://api.example.com/users/42/posts"
         mock_normalized.return_value = {
             "normalized_url": "https://api.example.com/users/{id}/posts",
@@ -39,4 +41,3 @@ def test_index_history_row_expands_placeholders_and_normalizes():
         mock_normalized.assert_called_once()
         # Check that an insert into history_index was attempted
         assert db.insert_calls, "history_index insert was not called"
-

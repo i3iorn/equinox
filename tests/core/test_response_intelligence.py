@@ -4,58 +4,57 @@ import json
 import time
 
 from equinox.core.request import Request, Response
-from equinox.core.response_intelligence.models import (
-    AnalysisContext,
-    Category,
-    Severity,
+from equinox.core.response_intelligence.analyzers.pii_secret_leak import (
+    _SENSITIVE_VALUE_PATTERNS,
+    _contains_sensitive_keys,
+    _contains_sensitive_values,
+)
+from equinox.core.response_intelligence.consistency import (
+    ContentTypeMismatchAnalyzer,
+    DateFormatInconsistencyAnalyzer,
+    DuplicateJsonKeysAnalyzer,
+    NullVsMissingAnalyzer,
+    RedirectLocationAnalyzer,
+    SchemaDriftAnalyzer,
+    StatusBodyMismatchAnalyzer,
 )
 from equinox.core.response_intelligence.engine import (
     AnalysisEngine,
     normalize_url_pattern,
 )
-from equinox.core.response_intelligence.security import (
-    MissingSecurityHeadersAnalyzer,
-    CookieFlagsAnalyzer,
-    PIILeakDetectionAnalyzer,
-    CORSMisconfigAnalyzer,
-    JWTDecodeAnalyzer,
-    SensitiveDataCachingAnalyzer,
+from equinox.core.response_intelligence.hints import (
+    DeprecatedAPIAnalyzer,
+    LinkHeaderParsingAnalyzer,
+    NPlusOneDetectionAnalyzer,
+    ResponseEncodingIssuesAnalyzer,
+    SuggestedEncodingAnalyzer,
 )
-from equinox.core.response_intelligence.analyzers.pii_secret_leak import (
-    _contains_sensitive_keys,
-    _contains_sensitive_values,
-    _SENSITIVE_VALUE_PATTERNS,
+from equinox.core.response_intelligence.models import (
+    AnalysisContext,
+    Category,
+    Severity,
 )
 from equinox.core.response_intelligence.performance import (
     CompressionAnalyzer,
-    TimingBreakdownAnalyzer,
-    ResponseTimePercentileAnalyzer,
     PaginationDetectionAnalyzer,
+    ResponseTimePercentileAnalyzer,
+    TimingBreakdownAnalyzer,
 )
-from equinox.core.response_intelligence.consistency import (
-    StatusBodyMismatchAnalyzer,
-    ContentTypeMismatchAnalyzer,
-    DuplicateJsonKeysAnalyzer,
-    RedirectLocationAnalyzer,
-    DateFormatInconsistencyAnalyzer,
-    NullVsMissingAnalyzer,
-    SchemaDriftAnalyzer,
+from equinox.core.response_intelligence.security import (
+    CookieFlagsAnalyzer,
+    CORSMisconfigAnalyzer,
+    JWTDecodeAnalyzer,
+    MissingSecurityHeadersAnalyzer,
+    PIILeakDetectionAnalyzer,
+    SensitiveDataCachingAnalyzer,
 )
 from equinox.core.response_intelligence.server import (
-    ServerFingerprintAnalyzer,
-    RateLimitDashboardAnalyzer,
-    CachingBehaviorAnalyzer,
     APIVersionDetectionAnalyzer,
+    CachingBehaviorAnalyzer,
+    RateLimitDashboardAnalyzer,
     ResponseTimeAnomalyAnalyzer,
+    ServerFingerprintAnalyzer,
 )
-from equinox.core.response_intelligence.hints import (
-    DeprecatedAPIAnalyzer,
-    SuggestedEncodingAnalyzer,
-    NPlusOneDetectionAnalyzer,
-    ResponseEncodingIssuesAnalyzer,
-    LinkHeaderParsingAnalyzer,
-)
-
 
 # ── Helpers ───────────────────────────────────────────────────────────
 
@@ -146,7 +145,9 @@ class TestEngine:
 
 class TestNormalizeUrl:
     def test_numeric_segments(self):
-        assert normalize_url_pattern("https://api.com/users/123/posts/456") == "/users/{id}/posts/{id}"
+        assert (
+            normalize_url_pattern("https://api.com/users/123/posts/456") == "/users/{id}/posts/{id}"
+        )
 
     def test_uuid_segments(self):
         url = "https://api.com/items/550e8400-e29b-41d4-a716-446655440000/details"
@@ -259,12 +260,17 @@ class TestPIILeak:
         ctx = _make_ctx(body=body)
         findings = PIILeakDetectionAnalyzer().analyze(ctx)
         assert len(findings) == 1
-        assert any(d["type"] == "High entropy secret-like token" for d in findings[0].details["detected"])
+        assert any(
+            d["type"] == "High entropy secret-like token" for d in findings[0].details["detected"]
+        )
 
     def test_sensitive_key_helpers(self):
         nested = {"level1": [{"meta": {"client_secret": "abc"}}]}
         assert _contains_sensitive_keys(nested, {"client_secret", "password"}) is True
-        assert _contains_sensitive_keys({"safe": [{"nested": 1}]}, {"client_secret", "password"}) is False
+        assert (
+            _contains_sensitive_keys({"safe": [{"nested": 1}]}, {"client_secret", "password"})
+            is False
+        )
 
     def test_sensitive_value_helper_matches_patterns(self):
         token = "Bearer eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJ1c2VyIn0.signature"
@@ -312,7 +318,10 @@ class TestCORS:
 class TestJWTDecode:
     def _make_jwt(self, claims: dict, exp: int = None) -> str:
         import base64
-        header = base64.urlsafe_b64encode(json.dumps({"alg": "HS256"}).encode()).rstrip(b"=").decode()
+
+        header = (
+            base64.urlsafe_b64encode(json.dumps({"alg": "HS256"}).encode()).rstrip(b"=").decode()
+        )
         if exp is not None:
             claims["exp"] = exp
         payload = base64.urlsafe_b64encode(json.dumps(claims).encode()).rstrip(b"=").decode()
@@ -337,8 +346,16 @@ class TestJWTDecode:
     def test_alg_none_is_critical(self):
         import base64
 
-        header = base64.urlsafe_b64encode(json.dumps({"alg": "none"}).encode()).rstrip(b"=").decode()
-        payload = base64.urlsafe_b64encode(json.dumps({"sub": "u1", "exp": int(time.time()) + 600}).encode()).rstrip(b"=").decode()
+        header = (
+            base64.urlsafe_b64encode(json.dumps({"alg": "none"}).encode()).rstrip(b"=").decode()
+        )
+        payload = (
+            base64.urlsafe_b64encode(
+                json.dumps({"sub": "u1", "exp": int(time.time()) + 600}).encode()
+            )
+            .rstrip(b"=")
+            .decode()
+        )
         token = f"{header}.{payload}.fakesig"
         body = json.dumps({"access_token": token}).encode()
         ctx = _make_ctx(body=body)
@@ -346,7 +363,9 @@ class TestJWTDecode:
         assert any(f.severity == Severity.CRITICAL for f in findings)
 
     def test_claims_are_redacted(self):
-        jwt = self._make_jwt({"sub": "user1", "iss": "auth.example.com", "email": "user@example.com"})
+        jwt = self._make_jwt(
+            {"sub": "user1", "iss": "auth.example.com", "email": "user@example.com"}
+        )
         body = json.dumps({"access_token": jwt}).encode()
         ctx = _make_ctx(body=body)
         findings = JWTDecodeAnalyzer().analyze(ctx)
@@ -358,7 +377,9 @@ class TestJWTDecode:
         assert details["claims"].get("iss") == "auth.example.com"
 
     def test_jwt_in_authorization_header(self):
-        jwt = self._make_jwt({"sub": "user1", "iss": "auth.example.com"}, exp=int(time.time()) + 600)
+        jwt = self._make_jwt(
+            {"sub": "user1", "iss": "auth.example.com"}, exp=int(time.time()) + 600
+        )
         ctx = _make_ctx(headers={"authorization": f"Bearer {jwt}"}, body=b"")
         findings = JWTDecodeAnalyzer().analyze(ctx)
         assert len(findings) == 1
@@ -443,14 +464,21 @@ class TestCompression:
 
 class TestTimingBreakdown:
     def test_with_timings(self):
-        timings = {"total_ms": 500, "dns_ms": 50, "connect_ms": 100, "tls_ms": 80, "ttfb_ms": 200, "transfer_ms": 70}
-        ctx = _make_ctx(timings=timings, body=b'{}')
+        timings = {
+            "total_ms": 500,
+            "dns_ms": 50,
+            "connect_ms": 100,
+            "tls_ms": 80,
+            "ttfb_ms": 200,
+            "transfer_ms": 70,
+        }
+        ctx = _make_ctx(timings=timings, body=b"{}")
         findings = TimingBreakdownAnalyzer().analyze(ctx)
         assert len(findings) == 1
         assert "500 ms" in findings[0].title
 
     def test_no_timings(self):
-        ctx = _make_ctx(body=b'{}')
+        ctx = _make_ctx(body=b"{}")
         findings = TimingBreakdownAnalyzer().analyze(ctx)
         assert len(findings) == 0
 
@@ -461,14 +489,14 @@ class TestPercentiles:
             "elapsed_values": json.dumps([100, 120, 110, 130, 115, 105, 125, 140, 108, 112]),
             "call_count": 10,
         }
-        ctx = _make_ctx(endpoint_stats=stats, elapsed=0.115, body=b'{}')
+        ctx = _make_ctx(endpoint_stats=stats, elapsed=0.115, body=b"{}")
         findings = ResponseTimePercentileAnalyzer().analyze(ctx)
         assert len(findings) == 1
         assert "P50" in findings[0].title
 
     def test_insufficient_data(self):
         stats = {"elapsed_values": json.dumps([100]), "call_count": 1}
-        ctx = _make_ctx(endpoint_stats=stats, body=b'{}')
+        ctx = _make_ctx(endpoint_stats=stats, body=b"{}")
         findings = ResponseTimePercentileAnalyzer().analyze(ctx)
         assert len(findings) == 0
 
@@ -477,19 +505,21 @@ class TestPercentiles:
             "elapsed_values": json.dumps([100, "bad", None, "101", float("inf")]),
             "call_count": 5,
         }
-        ctx = _make_ctx(endpoint_stats=stats, body=b'{}')
+        ctx = _make_ctx(endpoint_stats=stats, body=b"{}")
         findings = ResponseTimePercentileAnalyzer().analyze(ctx)
         assert len(findings) == 0
 
 
 class TestPagination:
     def test_paginated_response(self):
-        body = json.dumps({
-            "data": [{"id": 1}],
-            "page": 2,
-            "total_pages": 10,
-            "total": 95,
-        }).encode()
+        body = json.dumps(
+            {
+                "data": [{"id": 1}],
+                "page": 2,
+                "total_pages": 10,
+                "total": 95,
+            }
+        ).encode()
         ctx = _make_ctx(body=body)
         findings = PaginationDetectionAnalyzer().analyze(ctx)
         assert len(findings) == 1
@@ -586,7 +616,7 @@ class TestDuplicateJsonKeys:
         assert len(findings) == 0
 
     def test_large_body_reports_scan_skipped(self):
-        raw = b"{" + (b'\"a\":1,' * 200_000) + b'\"z\":2}'
+        raw = b"{" + (b'"a":1,' * 200_000) + b'"z":2}'
         hdrs = {"content-type": "application/json"}
         ctx = _make_ctx(headers=hdrs, body=raw)
         findings = DuplicateJsonKeysAnalyzer().analyze(ctx)
@@ -596,21 +626,25 @@ class TestDuplicateJsonKeys:
 
 class TestDateFormats:
     def test_mixed_formats(self):
-        body = json.dumps({
-            "created": "2025-01-15T10:30:00Z",
-            "updated": 1705312200,
-            "display_date": "01/15/2025",
-        }).encode()
+        body = json.dumps(
+            {
+                "created": "2025-01-15T10:30:00Z",
+                "updated": 1705312200,
+                "display_date": "01/15/2025",
+            }
+        ).encode()
         ctx = _make_ctx(body=body)
         findings = DateFormatInconsistencyAnalyzer().analyze(ctx)
         assert len(findings) == 1
         assert "Mixed" in findings[0].title
 
     def test_consistent_format(self):
-        body = json.dumps({
-            "created": "2025-01-15T10:30:00Z",
-            "updated": "2025-02-20T14:00:00Z",
-        }).encode()
+        body = json.dumps(
+            {
+                "created": "2025-01-15T10:30:00Z",
+                "updated": "2025-02-20T14:00:00Z",
+            }
+        ).encode()
         ctx = _make_ctx(body=body)
         findings = DateFormatInconsistencyAnalyzer().analyze(ctx)
         # Only ISO 8601 found — no inconsistency
@@ -619,20 +653,24 @@ class TestDateFormats:
 
 class TestNullVsMissing:
     def test_mixed_patterns(self):
-        body = json.dumps([
-            {"name": "Alice", "email": None},
-            {"name": "Bob"},  # email key missing
-        ]).encode()
+        body = json.dumps(
+            [
+                {"name": "Alice", "email": None},
+                {"name": "Bob"},  # email key missing
+            ]
+        ).encode()
         ctx = _make_ctx(body=body)
         findings = NullVsMissingAnalyzer().analyze(ctx)
         assert len(findings) == 1
         assert "email" in findings[0].details["fields"]
 
     def test_consistent(self):
-        body = json.dumps([
-            {"name": "Alice", "email": None},
-            {"name": "Bob", "email": None},
-        ]).encode()
+        body = json.dumps(
+            [
+                {"name": "Alice", "email": None},
+                {"name": "Bob", "email": None},
+            ]
+        ).encode()
         ctx = _make_ctx(body=body)
         findings = NullVsMissingAnalyzer().analyze(ctx)
         assert len(findings) == 0
@@ -696,13 +734,13 @@ class TestRedirectLocation:
 class TestServerFingerprint:
     def test_detected(self):
         hdrs = {"server": "nginx/1.25.3", "x-powered-by": "Express"}
-        ctx = _make_ctx(headers=hdrs, body=b'{}')
+        ctx = _make_ctx(headers=hdrs, body=b"{}")
         findings = ServerFingerprintAnalyzer().analyze(ctx)
         assert len(findings) == 1
         assert "nginx" in findings[0].title
 
     def test_no_server_header(self):
-        ctx = _make_ctx(headers={}, body=b'{}')
+        ctx = _make_ctx(headers={}, body=b"{}")
         findings = ServerFingerprintAnalyzer().analyze(ctx)
         assert len(findings) == 0
 
@@ -713,14 +751,14 @@ class TestRateLimit:
             "x-ratelimit-limit": "100",
             "x-ratelimit-remaining": "42",
         }
-        ctx = _make_ctx(headers=hdrs, body=b'{}')
+        ctx = _make_ctx(headers=hdrs, body=b"{}")
         findings = RateLimitDashboardAnalyzer().analyze(ctx)
         assert len(findings) == 1
         assert "Limit: 100" in findings[0].description
 
     def test_429_status(self):
         hdrs = {"retry-after": "30"}
-        ctx = _make_ctx(status=429, headers=hdrs, body=b'{}')
+        ctx = _make_ctx(status=429, headers=hdrs, body=b"{}")
         findings = RateLimitDashboardAnalyzer().analyze(ctx)
         assert len(findings) == 1
         assert findings[0].severity == Severity.CRITICAL
@@ -732,7 +770,7 @@ class TestRateLimit:
             "x-ratelimit-remaining": "10",
             "x-ratelimit-reset": str(future_ms),
         }
-        ctx = _make_ctx(headers=hdrs, body=b'{}')
+        ctx = _make_ctx(headers=hdrs, body=b"{}")
         findings = RateLimitDashboardAnalyzer().analyze(ctx)
         assert len(findings) == 1
         secs = findings[0].details.get("resets_in_seconds")
@@ -743,27 +781,27 @@ class TestRateLimit:
 class TestCaching:
     def test_cache_control(self):
         hdrs = {"cache-control": "public, max-age=3600"}
-        ctx = _make_ctx(headers=hdrs, body=b'{}')
+        ctx = _make_ctx(headers=hdrs, body=b"{}")
         findings = CachingBehaviorAnalyzer().analyze(ctx)
         assert len(findings) == 1
         assert "cached" in findings[0].title.lower()
 
     def test_no_caching_headers(self):
-        ctx = _make_ctx(headers={}, body=b'{}')
+        ctx = _make_ctx(headers={}, body=b"{}")
         findings = CachingBehaviorAnalyzer().analyze(ctx)
         assert len(findings) == 0
 
 
 class TestAPIVersion:
     def test_version_in_url(self):
-        ctx = _make_ctx(url="https://api.example.com/v2/users", body=b'{}')
+        ctx = _make_ctx(url="https://api.example.com/v2/users", body=b"{}")
         findings = APIVersionDetectionAnalyzer().analyze(ctx)
         assert len(findings) == 1
         assert "v2" in findings[0].title
 
     def test_version_in_header(self):
         hdrs = {"api-version": "2024-01-01"}
-        ctx = _make_ctx(headers=hdrs, url="https://api.example.com/users", body=b'{}')
+        ctx = _make_ctx(headers=hdrs, url="https://api.example.com/users", body=b"{}")
         findings = APIVersionDetectionAnalyzer().analyze(ctx)
         assert len(findings) == 1
 
@@ -772,7 +810,7 @@ class TestResponseTimeAnomaly:
     def test_anomalous_slow(self):
         values = [100, 105, 98, 110, 102, 99, 103, 107, 101, 104]
         stats = {"elapsed_values": json.dumps(values), "call_count": 10}
-        ctx = _make_ctx(endpoint_stats=stats, elapsed=0.5, body=b'{}')  # 500ms vs ~103ms avg
+        ctx = _make_ctx(endpoint_stats=stats, elapsed=0.5, body=b"{}")  # 500ms vs ~103ms avg
         findings = ResponseTimeAnomalyAnalyzer().analyze(ctx)
         assert len(findings) == 1
         assert findings[0].severity == Severity.WARNING
@@ -780,7 +818,7 @@ class TestResponseTimeAnomaly:
     def test_normal_response(self):
         values = [100, 105, 98, 110, 102, 99, 103, 107, 101, 104]
         stats = {"elapsed_values": json.dumps(values), "call_count": 10}
-        ctx = _make_ctx(endpoint_stats=stats, elapsed=0.103, body=b'{}')
+        ctx = _make_ctx(endpoint_stats=stats, elapsed=0.103, body=b"{}")
         findings = ResponseTimeAnomalyAnalyzer().analyze(ctx)
         assert len(findings) == 0
 
@@ -789,7 +827,7 @@ class TestResponseTimeAnomaly:
             "elapsed_values": json.dumps(["bad", None, "oops", {}]),
             "call_count": 4,
         }
-        ctx = _make_ctx(endpoint_stats=stats, elapsed=0.2, body=b'{}')
+        ctx = _make_ctx(endpoint_stats=stats, elapsed=0.2, body=b"{}")
         findings = ResponseTimeAnomalyAnalyzer().analyze(ctx)
         assert findings == []
 
@@ -800,19 +838,19 @@ class TestResponseTimeAnomaly:
 class TestDeprecated:
     def test_sunset_header(self):
         hdrs = {"sunset": "Sat, 01 Mar 2025 00:00:00 GMT"}
-        ctx = _make_ctx(headers=hdrs, body=b'{}')
+        ctx = _make_ctx(headers=hdrs, body=b"{}")
         findings = DeprecatedAPIAnalyzer().analyze(ctx)
         assert len(findings) == 1
         assert findings[0].severity == Severity.CRITICAL
 
     def test_deprecation_header(self):
         hdrs = {"deprecation": "true"}
-        ctx = _make_ctx(headers=hdrs, body=b'{}')
+        ctx = _make_ctx(headers=hdrs, body=b"{}")
         findings = DeprecatedAPIAnalyzer().analyze(ctx)
         assert len(findings) == 1
 
     def test_no_deprecation(self):
-        ctx = _make_ctx(headers={}, body=b'{}')
+        ctx = _make_ctx(headers={}, body=b"{}")
         findings = DeprecatedAPIAnalyzer().analyze(ctx)
         assert len(findings) == 0
 
@@ -839,7 +877,7 @@ class TestNPlusOne:
             {"method": "GET", "url": f"https://api.com/users/{i}", "elapsed": 0.1}
             for i in range(10)
         ]
-        ctx = _make_ctx(body=b'{}', history_rows=history)
+        ctx = _make_ctx(body=b"{}", history_rows=history)
         findings = NPlusOneDetectionAnalyzer().analyze(ctx)
         assert len(findings) == 1
         assert "N+1" in findings[0].title
@@ -850,7 +888,7 @@ class TestNPlusOne:
             {"method": "POST", "url": "https://api.com/orders", "elapsed": 0.2},
             {"method": "GET", "url": "https://api.com/products", "elapsed": 0.15},
         ]
-        ctx = _make_ctx(body=b'{}', history_rows=history)
+        ctx = _make_ctx(body=b"{}", history_rows=history)
         findings = NPlusOneDetectionAnalyzer().analyze(ctx)
         assert len(findings) == 0
 
@@ -867,7 +905,7 @@ class TestNPlusOne:
             {"method": "GET", "url": "https://api.com/users/13"},
             {"method": "GET", "url": "https://api.com/users/14"},
         ]
-        ctx = _make_ctx(body=b'{}', history_rows=history)
+        ctx = _make_ctx(body=b"{}", history_rows=history)
         findings = NPlusOneDetectionAnalyzer().analyze(ctx)
         assert len(findings) == 1
         detail = findings[0].details
@@ -880,7 +918,7 @@ class TestNPlusOne:
         for i in range(6):
             history.append({"method": "GET", "url": f"https://api.com/users/{i}"})
             history.append({"method": "GET", "url": f"https://api.com/orders/{i}"})
-        ctx = _make_ctx(body=b'{}', history_rows=history)
+        ctx = _make_ctx(body=b"{}", history_rows=history)
         findings = NPlusOneDetectionAnalyzer().analyze(ctx)
         assert any("GET /users/{id}" in finding.details["pattern"] for finding in findings)
 
@@ -902,14 +940,16 @@ class TestEncodingIssues:
 
 class TestLinkHeader:
     def test_link_with_next(self):
-        hdrs = {"link": '<https://api.com/users?page=3>; rel="next", <https://api.com/users?page=1>; rel="prev"'}
-        ctx = _make_ctx(headers=hdrs, body=b'{}')
+        hdrs = {
+            "link": '<https://api.com/users?page=3>; rel="next", <https://api.com/users?page=1>; rel="prev"'
+        }
+        ctx = _make_ctx(headers=hdrs, body=b"{}")
         findings = LinkHeaderParsingAnalyzer().analyze(ctx)
         assert len(findings) == 1
         assert len(findings[0].details["links"]) == 2
 
     def test_no_link_header(self):
-        ctx = _make_ctx(headers={}, body=b'{}')
+        ctx = _make_ctx(headers={}, body=b"{}")
         findings = LinkHeaderParsingAnalyzer().analyze(ctx)
         assert len(findings) == 0
 
@@ -1015,4 +1055,3 @@ class TestResponseIntelligenceManager:
             mgr = ResponseIntelligenceManager(db)
             rows = mgr.get_recent_history(limit=10)
             assert isinstance(rows, list)
-

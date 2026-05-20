@@ -26,4 +26,3 @@ def test_phase2_monitoring_targets_stay_within_size_budget() -> None:
             violations.append(f"{file_path.relative_to(root.parent.parent)}: {count} > {max_lines}")
 
     assert not violations, "\n".join(["Module size budget exceeded:"] + violations)
-

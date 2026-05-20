@@ -5,20 +5,20 @@ from __future__ import annotations
 import json
 import logging
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any
 
 from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtWidgets import (
-    QWidget,
-    QVBoxLayout,
-    QHBoxLayout,
-    QPushButton,
-    QLabel,
     QComboBox,
-    QMessageBox,
-    QGroupBox,
     QFormLayout,
+    QGroupBox,
+    QHBoxLayout,
+    QLabel,
+    QMessageBox,
+    QPushButton,
     QTextEdit,
+    QVBoxLayout,
+    QWidget,
 )
 
 from equinox.core.secret_managers import SecretManagerProfile, test_secret_manager_connection
@@ -55,7 +55,7 @@ class SecretManagerSettingsPanel(QWidget):
     # Signal emitted when a secret is selected for use in a credential
     secret_selected = pyqtSignal(str, dict)  # secret_name, secret_dict
 
-    def __init__(self, config_path: Optional[Path] = None, parent=None):
+    def __init__(self, config_path: Path | None = None, parent=None):
         """Initialize the settings panel.
 
         Args:
@@ -65,10 +65,10 @@ class SecretManagerSettingsPanel(QWidget):
         super().__init__(parent)
         self._config_store = SecretManagerConfigStore(config_path)
 
-        self._current_config: Dict[str, Any] = {}
-        self._configs: Dict[str, Dict[str, Any]] = {}
+        self._current_config: dict[str, Any] = {}
+        self._configs: dict[str, dict[str, Any]] = {}
         self._current_config_name: str = ""
-        self._browser_widget: Optional[SecretBrowserWidget] = None
+        self._browser_widget: SecretBrowserWidget | None = None
 
         self._init_ui()
         self._load_configurations()
@@ -162,13 +162,13 @@ class SecretManagerSettingsPanel(QWidget):
         dialog.config_saved.connect(self._on_config_created)
         dialog.exec()
 
-    def _current_profile(self) -> Optional[SecretManagerProfile]:
+    def _current_profile(self) -> SecretManagerProfile | None:
         """Return the selected secret-manager profile, if any."""
         if not self._current_config:
             return None
         return SecretManagerProfile.from_payload(self._current_config)
 
-    def _on_config_created(self, manager_type: str, config: Dict[str, Any]) -> None:
+    def _on_config_created(self, manager_type: str, config: dict[str, Any]) -> None:
         """Handle configuration creation.
 
         Args:
@@ -179,9 +179,7 @@ class SecretManagerSettingsPanel(QWidget):
         from PyQt6.QtWidgets import QInputDialog
 
         name, ok = QInputDialog.getText(
-            self,
-            "Save Configuration",
-            "Enter a name for this configuration:"
+            self, "Save Configuration", "Enter a name for this configuration:"
         )
 
         if not ok or not name:
@@ -252,13 +250,11 @@ class SecretManagerSettingsPanel(QWidget):
         safe_config = sanitize_details(config)
         warning_text = ""
         if (
-            profile.manager_type in ('vault', 'hashicorp_vault')
-            and config.get('allow_insecure_http')
-            and str(config.get('url', '')).strip().lower().startswith('http://')
+            profile.manager_type in ("vault", "hashicorp_vault")
+            and config.get("allow_insecure_http")
+            and str(config.get("url", "")).strip().lower().startswith("http://")
         ):
-            warning_text = (
-                "\nWARNING: insecure Vault HTTP override is enabled. Use only for trusted local development.\n"
-            )
+            warning_text = "\nWARNING: insecure Vault HTTP override is enabled. Use only for trusted local development.\n"
 
         display_text = f"""
 Manager Type: {profile.manager_type}
@@ -325,11 +321,29 @@ Configuration:
         config["cache_ttl"] = profile.cache_ttl
         result = test_secret_manager_connection(manager_type, config)
         messages = SecretManagerConnectionMessages(
-            success=_PANEL_CONNECTION_MESSAGES.success.format(profile_name=self._current_config_name, manager_type="{manager_type}"),
-            unavailable=_PANEL_CONNECTION_MESSAGES.unavailable.format(profile_name=self._current_config_name, manager_type="{manager_type}", error="{error}"),
-            auth=_PANEL_CONNECTION_MESSAGES.auth.format(profile_name=self._current_config_name, manager_type="{manager_type}", error="{error}"),
-            config=_PANEL_CONNECTION_MESSAGES.config.format(profile_name=self._current_config_name, manager_type="{manager_type}", error="{error}"),
-            unexpected=_PANEL_CONNECTION_MESSAGES.unexpected.format(profile_name=self._current_config_name, manager_type="{manager_type}", error="{error}"),
+            success=_PANEL_CONNECTION_MESSAGES.success.format(
+                profile_name=self._current_config_name, manager_type="{manager_type}"
+            ),
+            unavailable=_PANEL_CONNECTION_MESSAGES.unavailable.format(
+                profile_name=self._current_config_name,
+                manager_type="{manager_type}",
+                error="{error}",
+            ),
+            auth=_PANEL_CONNECTION_MESSAGES.auth.format(
+                profile_name=self._current_config_name,
+                manager_type="{manager_type}",
+                error="{error}",
+            ),
+            config=_PANEL_CONNECTION_MESSAGES.config.format(
+                profile_name=self._current_config_name,
+                manager_type="{manager_type}",
+                error="{error}",
+            ),
+            unexpected=_PANEL_CONNECTION_MESSAGES.unexpected.format(
+                profile_name=self._current_config_name,
+                manager_type="{manager_type}",
+                error="{error}",
+            ),
         )
         show_secret_manager_connection_feedback(self, result, messages)
 
@@ -356,9 +370,7 @@ Configuration:
             return
 
         reply = QMessageBox.question(
-            self,
-            "Confirm Delete",
-            f"Delete configuration '{current_name}'?"
+            self, "Confirm Delete", f"Delete configuration '{current_name}'?"
         )
 
         if reply != QMessageBox.StandardButton.Yes:
@@ -372,4 +384,3 @@ Configuration:
         self.config_display.setText("No configuration loaded")
         self._save_configurations()
         logger.info("Deleted configuration: %s", current_name)
-

@@ -1,10 +1,11 @@
 """Timeout and HTTP-overload retry policies for the HTTP client."""
+
 from __future__ import annotations
 
 import logging
 import threading
 import time
-from typing import AbstractSet, Callable, Optional
+from typing import AbstractSet, Callable
 
 from equinox.core.exceptions import RequestTimeoutError
 from equinox.core.request import Response
@@ -56,9 +57,9 @@ class RetryPolicy:
         self,
         timeout_retries: int,
         http_retries: int,
-        retryable_status_codes: Optional[AbstractSet[int]] = None,
+        retryable_status_codes: AbstractSet[int] | None = None,
         retry_after_cap_seconds: float = _DEFAULT_RETRY_AFTER_CAP,
-        interruptible_sleep: Optional[Callable[[float], None]] = None,
+        interruptible_sleep: Callable[[float], None] | None = None,
     ) -> None:
         if retry_after_cap_seconds <= 0:
             raise ValueError(
@@ -158,14 +159,16 @@ class RetryPolicy:
                 return func()
             except RequestTimeoutError:
                 if attempt < self._timeout_retries - 1:
-                    wait_seconds = 2 ** attempt  # 1 s, 2 s, 4 s, …
+                    wait_seconds = 2**attempt  # 1 s, 2 s, 4 s, …
                     # Record retry event for UI
-                    self._get_retry_events().append({
-                        "type": "timeout",
-                        "attempt": attempt + 1,
-                        "total_attempts": self._timeout_retries,
-                        "wait_seconds": wait_seconds,
-                    })
+                    self._get_retry_events().append(
+                        {
+                            "type": "timeout",
+                            "attempt": attempt + 1,
+                            "total_attempts": self._timeout_retries,
+                            "wait_seconds": wait_seconds,
+                        }
+                    )
                     self._sleep_backoff(attempt)
                 else:
                     logger.error(
@@ -177,7 +180,9 @@ class RetryPolicy:
 
         # Unreachable: __init__ clamps _timeout_retries to ≥ 1 so the loop
         # always executes and either returns or raises above.
-        raise AssertionError("RetryPolicy.execute: loop exited without returning")  # pragma: no cover
+        raise AssertionError(
+            "RetryPolicy.execute: loop exited without returning"
+        )  # pragma: no cover
 
     def execute_with_http_overload(self, func: Callable[[], Response]) -> Response:
         """Execute with timeout retries followed by HTTP overload retries.
@@ -218,13 +223,15 @@ class RetryPolicy:
                 retry_after,
             )
             # Record retry event for UI
-            self._get_retry_events().append({
-                "type": "http",
-                "attempt": attempt + 1,
-                "total_attempts": self._http_retries,
-                "status": response.status_code,
-                "wait_seconds": retry_after,
-            })
+            self._get_retry_events().append(
+                {
+                    "type": "http",
+                    "attempt": attempt + 1,
+                    "total_attempts": self._http_retries,
+                    "status": response.status_code,
+                    "wait_seconds": retry_after,
+                }
+            )
             self._sleep(retry_after)
             response = func()
             logger.debug(
@@ -242,7 +249,7 @@ class RetryPolicy:
 
     def _sleep_backoff(self, attempt: int) -> None:
         """Sleep for ``2**attempt`` seconds and emit a warning log."""
-        wait_seconds = 2 ** attempt  # 1 s, 2 s, 4 s, …
+        wait_seconds = 2**attempt  # 1 s, 2 s, 4 s, …
         logger.warning(
             "Request timed out (attempt %d/%d), retrying in %ds",
             attempt + 1,
@@ -296,9 +303,11 @@ class RetryPolicy:
         )
 
     def __hash__(self) -> int:
-        return hash((
-            self._timeout_retries,
-            self._http_retries,
-            self._retryable_status_codes,
-            self._retry_after_cap_seconds,
-        ))
+        return hash(
+            (
+                self._timeout_retries,
+                self._http_retries,
+                self._retryable_status_codes,
+                self._retry_after_cap_seconds,
+            )
+        )

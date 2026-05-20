@@ -7,7 +7,6 @@ with syntax highlighting. Optimized for large response bodies.
 from __future__ import annotations
 
 import logging
-from typing import Optional
 
 from PyQt6.QtWidgets import QTextEdit
 
@@ -32,7 +31,7 @@ class ReadOnlyText(QTextEdit):
     - Automatic scroll to top on content change
     """
 
-    def __init__(self, parent: Optional[QTextEdit] = None) -> None:
+    def __init__(self, parent: QTextEdit | None = None) -> None:
         """Initialize read-only text editor.
 
         Args:

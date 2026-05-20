@@ -9,7 +9,6 @@ import errno
 import logging
 import select as _select
 import socket
-from typing import Dict, Tuple
 
 from equinox.core import urls
 from equinox.core.exceptions import RequestError
@@ -19,7 +18,7 @@ logger = logging.getLogger(__name__)
 _REFUSED = {errno.ECONNREFUSED, getattr(errno, "WSAECONNREFUSED", 10061)}
 
 
-def _parse_proxy_target(proxy_url: str) -> Tuple[str, int, Dict[str, str]]:
+def _parse_proxy_target(proxy_url: str) -> tuple[str, int, dict[str, str]]:
     parsed = urls.url_metadata(proxy_url)
     host = parsed.get("hostname") or ""
     port = parsed.get("port")
@@ -45,7 +44,9 @@ def _raise_refused(proxy_url: str, host: str, port: int, err: int, errno_name: s
     )
 
 
-def _check_select_result(sock: socket.socket, host: str, port: int, timeout: float, proxy_url: str) -> None:
+def _check_select_result(
+    sock: socket.socket, host: str, port: int, timeout: float, proxy_url: str
+) -> None:
     _, writable, exceptional = _select.select([], [sock], [sock], timeout)
     logger.debug(
         "Proxy pre-flight select() after %.1fs: writable=%s exceptional=%s",
@@ -62,7 +63,9 @@ def _check_select_result(sock: socket.socket, host: str, port: int, timeout: flo
         _raise_refused(proxy_url, host, port, err)
 
 
-def _connect_non_blocking(sock: socket.socket, host: str, port: int, timeout: float, proxy_url: str) -> None:
+def _connect_non_blocking(
+    sock: socket.socket, host: str, port: int, timeout: float, proxy_url: str
+) -> None:
     try:
         logger.debug("Attempting non-blocking connect to %s:%s", host, port)
         sock.connect((host, port))
@@ -127,4 +130,3 @@ def check_proxy_reachable(proxy_url: str) -> None:
         except Exception:
             pass
         logger.debug("Proxy pre-flight: socket closed for %s:%s", host, port)
-

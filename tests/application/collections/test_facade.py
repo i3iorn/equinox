@@ -53,4 +53,3 @@ def test_collection_facade_reorder_request_before_target_cross_collection() -> N
 
     manager.move_request_to_collection.assert_called_once_with(99, 10, "A")
     manager.reorder_requests.assert_called_once_with([99, 10, 11])
-

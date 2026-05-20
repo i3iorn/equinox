@@ -1,15 +1,14 @@
 """Tests for equinox.auth package initialization and factory functions."""
 
 import pytest
-from typing import Type
 
 from equinox.auth import (
-    AuthStrategy,
-    BearerAuth,
-    BasicAuth,
     APIKeyAuth,
-    OAuth2Auth,
+    AuthStrategy,
     AWSSigV4Auth,
+    BasicAuth,
+    BearerAuth,
+    OAuth2Auth,
     auth_from_dict,
     get_auth_type,
     list_auth_types,
@@ -22,6 +21,7 @@ class TestPackageExports:
     def test_all_exports_exist(self):
         """Verify all items in __all__ are actually exported."""
         import equinox.auth as auth_module
+
         for name in auth_module.__all__:
             assert hasattr(auth_module, name), f"Missing export: {name}"
 
@@ -29,6 +29,7 @@ class TestPackageExports:
         """Verify AuthStrategy base class is accessible."""
         assert AuthStrategy is not None
         from abc import ABC
+
         assert issubclass(AuthStrategy, ABC)
 
     def test_all_concrete_types_exported(self):
@@ -121,6 +122,7 @@ class TestModuleMetadata:
     def test_module_has_comprehensive_docstring(self):
         """Verify module has a complete and helpful docstring."""
         import equinox.auth
+
         assert equinox.auth.__doc__ is not None
         doc = equinox.auth.__doc__
 
@@ -149,6 +151,7 @@ class TestModuleMetadata:
     def test_all_list_defined(self):
         """Verify __all__ is properly defined."""
         import equinox.auth
+
         assert hasattr(equinox.auth, "__all__")
         assert isinstance(equinox.auth.__all__, list)
         assert len(equinox.auth.__all__) > 0
@@ -185,7 +188,8 @@ class TestBackwardCompatibility:
 
     def test_direct_imports_still_work(self):
         """Verify direct imports of concrete types still work."""
-        from equinox.auth import BearerAuth, BasicAuth, OAuth2Auth
+        from equinox.auth import BasicAuth, BearerAuth, OAuth2Auth
+
         assert BearerAuth is not None
         assert BasicAuth is not None
         assert OAuth2Auth is not None
@@ -194,13 +198,14 @@ class TestBackwardCompatibility:
         """Verify from equinox.auth import * still works."""
         # This doesn't fail if __all__ is properly defined
         import equinox.auth
-        exported = [name for name in dir(equinox.auth)
-                   if not name.startswith('_')]
+
+        exported = [name for name in dir(equinox.auth) if not name.startswith("_")]
         assert len(exported) > 6
 
     def test_auth_strategy_import_works(self):
         """Verify AuthStrategy can still be imported directly."""
         from equinox.auth import AuthStrategy
+
         assert AuthStrategy is not None
 
 
@@ -210,11 +215,13 @@ class TestExportValidation:
     def test_module_loads_without_error(self):
         """Verify module can be imported without errors."""
         import equinox.auth
+
         assert equinox.auth is not None
 
     def test_validation_catches_sync_issues(self):
         """Verify validation would catch if __all__ gets out of sync."""
         import equinox.auth
+
         # This test passes because validation succeeded at import time
         # If we manually added something to __all__ that didn't exist,
         # the module would fail to import with ImportError
@@ -266,4 +273,3 @@ class TestIntegration:
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
-

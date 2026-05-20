@@ -1,5 +1,4 @@
 """Exceptions for Equinox"""
-from typing import Optional
 
 
 class EquinoxError(Exception):
@@ -27,8 +26,8 @@ class EquinoxError(Exception):
     def __init__(
         self,
         message: str,
-        details: Optional[dict] = None,
-        hint_key: Optional[str] = None,
+        details: dict | None = None,
+        hint_key: str | None = None,
     ):
         """Initialize exception.
 
@@ -60,16 +59,19 @@ class EquinoxError(Exception):
 
 class RequestError(EquinoxError):
     """Error during HTTP request execution."""
+
     pass
 
 
 class AuthError(EquinoxError):
     """Authentication or authorization error."""
+
     pass
 
 
 class StorageError(EquinoxError):
     """Storage/database error."""
+
     pass
 
 
@@ -80,10 +82,13 @@ class DuplicateError(StorageError):
     remains compatible, but callers can catch DuplicateError for more granular
     handling.
     """
+
     pass
+
 
 class PluginError(EquinoxError):
     """Plugin loading or execution error."""
+
     pass
 
 
@@ -92,6 +97,7 @@ class ValidationError(EquinoxError):
 
     Raised when user input fails validation checks.
     """
+
     pass
 
 
@@ -100,16 +106,19 @@ class SecurityError(EquinoxError):
 
     Raised when a security violation is detected.
     """
+
     pass
 
 
 class RateLimitError(EquinoxError):
     """Rate limit exceeded error."""
+
     pass
 
 
 class RequestTimeoutError(EquinoxError):
     """Request timeout error."""
+
     pass
 
 
@@ -119,9 +128,11 @@ TimeoutError = RequestTimeoutError
 
 class FileSizeError(EquinoxError):
     """File size limit exceeded."""
+
     pass
 
 
 class CertificateError(EquinoxError):
     """SSL/TLS certificate validation error."""
+
     pass

@@ -11,10 +11,11 @@ Covers:
 """
 
 import pytest
-from equinox.storage.database import Database
+
+from equinox.core.exceptions import StorageError, ValidationError
 from equinox.storage.collections import CollectionManager
+from equinox.storage.database import Database
 from equinox.storage.migrations import MigrationRunner
-from equinox.core.exceptions import ValidationError, StorageError
 
 
 @pytest.fixture
@@ -36,6 +37,7 @@ def col_id(mgr):
 
 
 # ── create_folder ─────────────────────────────────────────────────────────────
+
 
 class TestCreateFolder:
     def test_creates_folder(self, mgr, col_id):
@@ -86,6 +88,7 @@ class TestCreateFolder:
 
 # ── list_folders ──────────────────────────────────────────────────────────────
 
+
 class TestListFolders:
     def test_empty_by_default(self, mgr, col_id):
         assert mgr.list_folders(col_id) == []
@@ -99,6 +102,7 @@ class TestListFolders:
 
 
 # ── rename_folder ─────────────────────────────────────────────────────────────
+
 
 class TestRenameFolderSync:
     def test_renames_explicit_folder_record(self, mgr, col_id):
@@ -124,8 +128,14 @@ class TestRenameFolderSync:
     def test_renames_requests_and_folder_records(self, mgr, col_id):
         """rename_folder should update both requests.folder and collection_folders.path."""
         from equinox.core.request import Request
-        req = Request(method="GET", url="https://example.com", name="My Req",
-                      collection_id=col_id, folder="Auth")
+
+        req = Request(
+            method="GET",
+            url="https://example.com",
+            name="My Req",
+            collection_id=col_id,
+            folder="Auth",
+        )
         mgr.save_request(req, collection_id=col_id)
         mgr.create_folder(col_id, "Auth")
 
@@ -140,6 +150,7 @@ class TestRenameFolderSync:
 
 
 # ── delete_folder ─────────────────────────────────────────────────────────────
+
 
 class TestDeleteFolderSync:
     def test_deletes_empty_folder_record(self, mgr, col_id):
@@ -156,8 +167,10 @@ class TestDeleteFolderSync:
 
     def test_move_to_root_clears_request_folder(self, mgr, col_id):
         from equinox.core.request import Request
-        req = Request(method="GET", url="https://example.com", name="R",
-                      collection_id=col_id, folder="Auth")
+
+        req = Request(
+            method="GET", url="https://example.com", name="R", collection_id=col_id, folder="Auth"
+        )
         mgr.save_request(req, collection_id=col_id)
         mgr.create_folder(col_id, "Auth")
 
@@ -169,8 +182,10 @@ class TestDeleteFolderSync:
 
     def test_delete_requests_mode(self, mgr, col_id):
         from equinox.core.request import Request
-        req = Request(method="GET", url="https://example.com", name="R",
-                      collection_id=col_id, folder="Auth")
+
+        req = Request(
+            method="GET", url="https://example.com", name="R", collection_id=col_id, folder="Auth"
+        )
         mgr.save_request(req, collection_id=col_id)
         mgr.create_folder(col_id, "Auth")
 

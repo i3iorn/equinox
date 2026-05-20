@@ -7,14 +7,14 @@ from __future__ import annotations
 
 import json
 import logging
-from typing import Any, Dict, Optional
+from typing import Any
 
 from equinox.core import urls
 from equinox.core.secret_managers.base import (
+    SecretAuthError,
     SecretManager,
     SecretManagerError,
     SecretNotFoundError,
-    SecretAuthError,
 )
 from equinox.core.validation import Validator
 from equinox.security import mask_secret
@@ -40,9 +40,9 @@ class VaultManager(SecretManager):
     def __init__(self, **kwargs: Any) -> None:
         """Initialize Vault manager."""
         super().__init__(**kwargs)
-        self.url: Optional[str] = None
-        self.token: Optional[str] = None
-        self.headers: Dict[str, str] = {}
+        self.url: str | None = None
+        self.token: str | None = None
+        self.headers: dict[str, str] = {}
 
     def configure(self, url: str, token: str, **kwargs: Any) -> None:
         """Configure Vault connection.
@@ -91,7 +91,7 @@ class VaultManager(SecretManager):
                 f"{self.url}/v1/sys/health",
                 headers=self.headers,
                 verify=kwargs.get("verify_ssl", True),
-                timeout=kwargs.get("timeout", 10)
+                timeout=kwargs.get("timeout", 10),
             )
             if response.status_code not in (200, 429, 500, 503):
                 raise SecretManagerError(f"Vault health check failed: {response.status_code}")
@@ -163,7 +163,7 @@ class VaultManager(SecretManager):
         except Exception as exc:
             raise SecretManagerError(f"Failed to retrieve secret from Vault: {exc}")
 
-    def get_secret_dict(self, secret_name: str) -> Dict[str, Any]:
+    def get_secret_dict(self, secret_name: str) -> dict[str, Any]:
         """Retrieve a secret from Vault as a dictionary.
 
         Args:
@@ -209,4 +209,3 @@ class VaultManager(SecretManager):
     def is_available(self) -> bool:
         """Check if Vault is configured and reachable."""
         return self._configured and self.url is not None and self.token is not None
-

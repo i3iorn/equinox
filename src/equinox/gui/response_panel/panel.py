@@ -14,16 +14,16 @@ from __future__ import annotations
 
 import json
 import logging
-from typing import Any, Callable, Optional
+from typing import Any, Callable
 
-from PyQt6.QtWidgets import QWidget, QVBoxLayout, QMessageBox, QLabel
 from PyQt6.QtCore import QThreadPool
+from PyQt6.QtWidgets import QLabel, QMessageBox, QVBoxLayout, QWidget
 
 from equinox.core.request import Response
+from equinox.gui import ui_common
+from equinox.gui.response_panel.actions_mixin import ResponseActionsMixin
 from equinox.gui.response_panel.builder import ResponseBuilderMixin
 from equinox.gui.response_panel.display_mixin import ResponseDisplayMixin
-from equinox.gui.response_panel.actions_mixin import ResponseActionsMixin
-from equinox.gui import ui_common
 
 logger = logging.getLogger(__name__)
 
@@ -75,7 +75,7 @@ class ResponsePanel(
         current_response: Currently displayed Response object
     """
 
-    def __init__(self, parent: Optional[QWidget] = None) -> None:
+    def __init__(self, parent: QWidget | None = None) -> None:
         """Initialize ResponsePanel.
 
         Args:
@@ -83,7 +83,7 @@ class ResponsePanel(
         """
         super().__init__(parent)
         # Response state
-        self.current_response: Optional[Response] = None
+        self.current_response: Response | None = None
 
         # Configuration
         self._LARGE_BODY_THRESHOLD = _LARGE_BODY_THRESHOLD
@@ -95,10 +95,12 @@ class ResponsePanel(
         self._settings = ui_common.get_gui_settings()
 
         # View state
-        self._body_highlighter: Optional[Any] = None
+        self._body_highlighter: Any | None = None
         self._view_preference = _VIEW_MODE_RAW  # Preferred view: "raw" or "json"
         self._readability_mode = _READ_MODE_PRETTY
-        self._redaction_preview = bool(self._settings.value(_KEY_REDACTION_PREVIEW, False, type=bool))
+        self._redaction_preview = bool(
+            self._settings.value(_KEY_REDACTION_PREVIEW, False, type=bool)
+        )
         self._raw_body_text = ""
         self._pretty_body_text = ""
         self._total_header_count = 0
@@ -220,7 +222,9 @@ class ResponsePanel(
             failed_sections = []
             if not self._safe_display(self._populate_all_tabs, self.current_response):
                 failed_sections.append("tabs")
-            if not self._safe_display(self._apply_readability_mode_for_response, self.current_response):
+            if not self._safe_display(
+                self._apply_readability_mode_for_response, self.current_response
+            ):
                 failed_sections.append("mode")
             self._update_render_warning(failed_sections)
 
@@ -242,11 +246,7 @@ class ResponsePanel(
         try:
             data = json.loads(raw) if isinstance(raw, str) else {}
             if isinstance(data, dict):
-                return {
-                    str(k): str(v)
-                    for k, v in data.items()
-                    if str(v) in _READABILITY_MODES
-                }
+                return {str(k): str(v) for k, v in data.items() if str(v) in _READABILITY_MODES}
         except Exception:
             logger.debug("Failed to parse readability preferences", exc_info=True)
         return {}
@@ -302,7 +302,6 @@ class ResponsePanel(
                 self._readability_by_type[family] = mode
                 self._save_readability_preferences()
 
-
     def _apply_highlighter_for_response(self, response: Response) -> None:
         """Apply syntax highlighter based on response content-type.
 
@@ -357,9 +356,9 @@ class ResponsePanel(
         try:
             logger.debug("refresh_display: triggering widget updates")
             self.tabs.update()
-            if hasattr(self.body_text, 'update'):
+            if hasattr(self.body_text, "update"):
                 self.body_text.update()
-            if hasattr(self.body_text, 'viewport'):
+            if hasattr(self.body_text, "viewport"):
                 self.body_text.viewport().update()
             self.update()
         except Exception:
@@ -516,4 +515,3 @@ class ResponsePanel(
         except Exception:
             logger.exception("safe_display: %s failed with error", fn.__name__)
             return False
-

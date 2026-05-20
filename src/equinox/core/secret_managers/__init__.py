@@ -49,20 +49,25 @@ Fortress Mentality
 
 from __future__ import annotations
 
+from equinox.core.secret_managers.aws import AWSSecretsManagerBackend
+
 # Export base classes and exceptions
 from equinox.core.secret_managers.base import (
+    SecretAuthError,
+    SecretCacheEntry,
     SecretManager,
     SecretManagerError,
     SecretNotFoundError,
-    SecretAuthError,
-    SecretCacheEntry,
+)
+from equinox.core.secret_managers.bitwarden import BitwardenManager
+from equinox.core.secret_managers.connection import (
+    SecretManagerConnectionResult,
+    test_secret_manager_connection,
 )
 
 # Export concrete implementations
 from equinox.core.secret_managers.env import EnvironmentVariableManager
-from equinox.core.secret_managers.aws import AWSSecretsManagerBackend
-from equinox.core.secret_managers.vault import VaultManager
-from equinox.core.secret_managers.bitwarden import BitwardenManager
+from equinox.core.secret_managers.profiles import SecretManagerProfile
 
 # Export registry functions
 from equinox.core.secret_managers.registry import (
@@ -70,11 +75,7 @@ from equinox.core.secret_managers.registry import (
     list_available_managers,
     register_manager,
 )
-from equinox.core.secret_managers.connection import (
-    SecretManagerConnectionResult,
-    test_secret_manager_connection,
-)
-from equinox.core.secret_managers.profiles import SecretManagerProfile
+from equinox.core.secret_managers.vault import VaultManager
 
 __all__ = [
     # Base classes and exceptions
@@ -96,4 +97,3 @@ __all__ = [
     "SecretManagerConnectionResult",
     "test_secret_manager_connection",
 ]
-

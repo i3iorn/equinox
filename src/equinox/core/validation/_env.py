@@ -1,10 +1,10 @@
 """Environment-variable name and value validation."""
+
 from __future__ import annotations
 
-from typing import Tuple
-
 from equinox.core.exceptions import ValidationError
-from ._base import _Limits, _Patterns, _Guards
+
+from ._base import _Guards, _Limits, _Patterns
 
 __all__ = ["_EnvVarValidator"]
 
@@ -13,7 +13,7 @@ class _EnvVarValidator:
     """Environment-variable name and value validation."""
 
     @classmethod
-    def validate(cls, name: str, value: str) -> Tuple[str, str]:
+    def validate(cls, name: str, value: str) -> tuple[str, str]:
         _Guards.require_nonempty_str(name, "Variable name")
 
         if not isinstance(value, str):
@@ -34,9 +34,6 @@ class _EnvVarValidator:
 
         for rx in _Patterns.COMMAND_INJECTION:
             if rx.search(value):
-                raise ValidationError(
-                    "Variable value contains a potentially dangerous pattern"
-                )
+                raise ValidationError("Variable value contains a potentially dangerous pattern")
 
         return name, value
-

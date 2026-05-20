@@ -3,4 +3,3 @@
 from .facade import CollectionFacade
 
 __all__ = ["CollectionFacade"]
-

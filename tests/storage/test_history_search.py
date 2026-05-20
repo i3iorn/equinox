@@ -5,15 +5,14 @@ JSONPath filter (existence + value match), content-type, elapsed time,
 response header filter, date range, combined filters, and edge cases.
 """
 
-import json
-import pytest
 from unittest.mock import MagicMock
 
+import pytest
+
+from equinox.core.exceptions import ValidationError
+from equinox.core.request import Request, Response
 from equinox.storage.database import Database
 from equinox.storage.history import HistoryManager
-from equinox.core.request import Request, Response
-from equinox.core.exceptions import ValidationError
-
 
 # ── Fixtures ──────────────────────────────────────────────────────────────────
 
@@ -46,43 +45,76 @@ def _seed(mgr):
     """Seed the database with a variety of history entries for search tests."""
     entries = [
         # 0: GET 200 - JSON response
-        (_req(url="https://api.example.com/users", method="GET"),
-         _resp(200, body=b'{"users": [{"id": 1, "name": "Alice"}]}',
-               headers={"content-type": "application/json", "x-request-id": "abc123"},
-               elapsed=0.1)),
+        (
+            _req(url="https://api.example.com/users", method="GET"),
+            _resp(
+                200,
+                body=b'{"users": [{"id": 1, "name": "Alice"}]}',
+                headers={"content-type": "application/json", "x-request-id": "abc123"},
+                elapsed=0.1,
+            ),
+        ),
         # 1: POST 201 - Created
-        (_req(url="https://api.example.com/users", method="POST", body='{"name": "Bob"}'),
-         _resp(201, body=b'{"id": 2, "name": "Bob"}',
-               headers={"content-type": "application/json"},
-               elapsed=0.25)),
+        (
+            _req(url="https://api.example.com/users", method="POST", body='{"name": "Bob"}'),
+            _resp(
+                201,
+                body=b'{"id": 2, "name": "Bob"}',
+                headers={"content-type": "application/json"},
+                elapsed=0.25,
+            ),
+        ),
         # 2: GET 404 - Not found
-        (_req(url="https://api.example.com/users/999", method="GET"),
-         _resp(404, body=b'{"error": "not found"}',
-               headers={"content-type": "application/json"},
-               elapsed=0.02)),
+        (
+            _req(url="https://api.example.com/users/999", method="GET"),
+            _resp(
+                404,
+                body=b'{"error": "not found"}',
+                headers={"content-type": "application/json"},
+                elapsed=0.02,
+            ),
+        ),
         # 3: DELETE 204 - No content
-        (_req(url="https://api.example.com/users/1", method="DELETE"),
-         _resp(204, body=b'',
-               headers={"content-type": "text/plain"},
-               elapsed=0.03)),
+        (
+            _req(url="https://api.example.com/users/1", method="DELETE"),
+            _resp(204, body=b"", headers={"content-type": "text/plain"}, elapsed=0.03),
+        ),
         # 4: GET 500 - Server error
-        (_req(url="https://api.example.com/health", method="GET"),
-         _resp(500, body=b'{"error": "internal server error", "trace": "timeout in db"}',
-               headers={"content-type": "application/json", "x-debug": "true"},
-               elapsed=2.5)),
+        (
+            _req(url="https://api.example.com/health", method="GET"),
+            _resp(
+                500,
+                body=b'{"error": "internal server error", "trace": "timeout in db"}',
+                headers={"content-type": "application/json", "x-debug": "true"},
+                elapsed=2.5,
+            ),
+        ),
         # 5: GET 200 - HTML response
-        (_req(url="https://example.com/page", method="GET"),
-         _resp(200, body=b'<html><body>Hello World</body></html>',
-               headers={"content-type": "text/html; charset=utf-8"},
-               elapsed=0.5)),
+        (
+            _req(url="https://example.com/page", method="GET"),
+            _resp(
+                200,
+                body=b"<html><body>Hello World</body></html>",
+                headers={"content-type": "text/html; charset=utf-8"},
+                elapsed=0.5,
+            ),
+        ),
         # 6: PUT 200 - Update
-        (_req(url="https://api.example.com/users/1", method="PUT", body='{"name": "Alice Updated"}'),
-         _resp(200, body=b'{"id": 1, "name": "Alice Updated", "status": "ok"}',
-               headers={"content-type": "application/json"},
-               elapsed=0.15)),
+        (
+            _req(
+                url="https://api.example.com/users/1",
+                method="PUT",
+                body='{"name": "Alice Updated"}',
+            ),
+            _resp(
+                200,
+                body=b'{"id": 1, "name": "Alice Updated", "status": "ok"}',
+                headers={"content-type": "application/json"},
+                elapsed=0.15,
+            ),
+        ),
         # 7: Error entry (no response)
-        (_req(url="https://api.example.com/timeout", method="GET"),
-         None),
+        (_req(url="https://api.example.com/timeout", method="GET"), None),
     ]
     ids = []
     for req, resp in entries:
@@ -98,7 +130,6 @@ def _seed(mgr):
 
 
 class TestStatusCodeFilter:
-
     def test_exact_status_code(self, mgr):
         _seed(mgr)
         rows = mgr.search_history(status_code=404)
@@ -156,7 +187,6 @@ class TestStatusCodeFilter:
 
 
 class TestBodyRegexFilter:
-
     def test_simple_regex_match(self, mgr):
         _seed(mgr)
         rows = mgr.search_history(body_regex="not found")
@@ -204,7 +234,6 @@ class TestBodyRegexFilter:
 
 
 class TestJsonPathFilter:
-
     def test_jsonpath_existence(self, mgr):
         _seed(mgr)
         # $.users should exist in entry 0
@@ -254,7 +283,6 @@ class TestJsonPathFilter:
 
 
 class TestContentTypeFilter:
-
     def test_json_content_type(self, mgr):
         _seed(mgr)
         rows = mgr.search_history(content_type="application/json")
@@ -281,7 +309,6 @@ class TestContentTypeFilter:
 
 
 class TestElapsedTimeFilter:
-
     def test_min_elapsed(self, mgr):
         _seed(mgr)
         rows = mgr.search_history(min_elapsed=1.0)
@@ -306,7 +333,6 @@ class TestElapsedTimeFilter:
 
 
 class TestHeaderFilter:
-
     def test_header_name_only(self, mgr):
         _seed(mgr)
         rows = mgr.search_history(header="x-request-id")
@@ -333,7 +359,6 @@ class TestHeaderFilter:
 
 
 class TestCombinedFilters:
-
     def test_method_and_status_code(self, mgr):
         _seed(mgr)
         rows = mgr.search_history(method="GET", status_code=200)
@@ -372,7 +397,6 @@ class TestCombinedFilters:
 
 
 class TestEdgeCases:
-
     def test_empty_database(self, mgr):
         rows = mgr.search_history()
         assert rows == []

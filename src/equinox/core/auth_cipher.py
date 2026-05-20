@@ -13,29 +13,27 @@ is stored at ``~/.equinox/.key`` and is shared with
 not yet exist it is created automatically with restrictive permissions.
 """
 
-import base64
 import logging
 import threading
 from pathlib import Path
-from typing import Optional
 
 from cryptography.fernet import Fernet, InvalidToken
 
+from equinox.core.exceptions import SecurityError
 from equinox.security import crypto
 from equinox.security.secrets_password import ensure_master_password_initialized
-from equinox.core.exceptions import SecurityError
 
 logger = logging.getLogger(__name__)
 
 # Module-level singleton — created lazily by _get_fernet().
-_fernet: Optional[Fernet] = None
+_fernet: Fernet | None = None
 _fernet_lock = threading.Lock()
 
 # Prefix that distinguishes encrypted blobs from legacy plaintext JSON.
 _ENC_PREFIX = "enc:"
 
 
-def get_or_create_key(key_path: Optional[Path] = None) -> bytes:
+def get_or_create_key(key_path: Path | None = None) -> bytes:
     """Compatibility wrapper that delegates to :mod:`equinox.security.crypto`.
 
     Keeps the original public function name so callers in the codebase
@@ -105,7 +103,7 @@ def decrypt_auth_data(stored: str, field_name: str = "auth_data") -> str:
         return stored
     if stored.startswith(_ENC_PREFIX):
         f = _get_fernet()
-        ciphertext = stored[len(_ENC_PREFIX):]
+        ciphertext = stored[len(_ENC_PREFIX) :]
 
         try:
             plaintext_bytes = f.decrypt(ciphertext.encode("ascii"))
@@ -119,7 +117,7 @@ def decrypt_auth_data(stored: str, field_name: str = "auth_data") -> str:
                     "field": field_name,
                     "ciphertext_length": len(ciphertext),
                     "error": type(exc).__name__,
-                }
+                },
             )
             raise SecurityError(
                 f"Failed to decrypt {field_name}: token is invalid or corrupted. "
@@ -129,13 +127,13 @@ def decrypt_auth_data(stored: str, field_name: str = "auth_data") -> str:
                     "ciphertext_length": len(stored),
                     "error_type": type(exc).__name__,
                 },
-                hint_key="auth_failed"
+                hint_key="auth_failed",
             ) from exc
         except UnicodeDecodeError as exc:
             logger.error(
                 "Failed to decode decrypted %s as UTF-8",
                 field_name,
-                extra={"field": field_name, "error": str(exc)}
+                extra={"field": field_name, "error": str(exc)},
             )
             raise SecurityError(
                 f"Decrypted {field_name} is not valid UTF-8. Data may be corrupted.",
@@ -144,9 +142,10 @@ def decrypt_auth_data(stored: str, field_name: str = "auth_data") -> str:
         except Exception as exc:
             logger.error(
                 "Unexpected error decrypting %s: %s",
-                field_name, str(exc),
+                field_name,
+                str(exc),
                 extra={"field": field_name, "error": str(exc)},
-                exc_info=True
+                exc_info=True,
             )
             raise SecurityError(
                 f"Unexpected error decrypting {field_name}",
@@ -162,4 +161,3 @@ def reset_cipher() -> None:
     """Clear the cached Fernet instance (useful for testing)."""
     global _fernet
     _fernet = None
-

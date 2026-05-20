@@ -1,8 +1,10 @@
 """API Key authentication"""
 
 import logging
-from typing import Any, Dict, Literal, Optional
-from equinox.auth._base import AuthStrategy, _validate_credential, AuthError
+from typing import Any, Literal
+
+from equinox.auth._base import AuthStrategy, _validate_credential
+from equinox.core.exceptions import AuthError
 
 logger = logging.getLogger(__name__)
 
@@ -60,7 +62,7 @@ class APIKeyAuth(AuthStrategy):
 
     # ── AuthStrategy interface ────────────────────────────────────────────────
 
-    def apply(self, request: Any, headers: Dict[str, str]) -> None:
+    def apply(self, request: Any, headers: dict[str, str]) -> None:
         """Inject the API key into *headers* or *request.params*."""
         if self.location == "header":
             headers[self.key] = self.value
@@ -71,7 +73,7 @@ class APIKeyAuth(AuthStrategy):
             request.params[self.key] = self.value
             logger.debug("APIKeyAuth applied: key=%r in query params", self.key)
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return {
             "type": self.AUTH_TYPE,
             "key": self.key,
@@ -80,7 +82,7 @@ class APIKeyAuth(AuthStrategy):
         }
 
     @classmethod
-    def from_dict(cls, data: Dict[str, Any], **kwargs: Any) -> "APIKeyAuth":
+    def from_dict(cls, data: dict[str, Any], **kwargs: Any) -> "APIKeyAuth":
         """Create from a serialised dictionary.
 
         Raises:
@@ -93,21 +95,15 @@ class APIKeyAuth(AuthStrategy):
                 location=data.get("location", "header"),
             )
         except KeyError as exc:
-            raise AuthError(
-                f"Invalid {cls.__name__} data: missing key {exc}"
-            ) from exc
+            raise AuthError(f"Invalid {cls.__name__} data: missing key {exc}") from exc
 
     # ── Strategy metadata ─────────────────────────────────────────────────────
 
     def get_display_summary(self) -> str:
-        preview = (
-            self.value[:_PREVIEW_LENGTH] + "…"
-            if len(self.value) > _PREVIEW_LENGTH
-            else "***"
-        )
+        preview = self.value[:_PREVIEW_LENGTH] + "…" if len(self.value) > _PREVIEW_LENGTH else "***"
         return f"{self.key} = {preview}  ({self.location})"
 
-    def get_preflight_warning(self) -> Optional[str]:
+    def get_preflight_warning(self) -> str | None:
         if not self.value:
             return "API key value is empty"
         return None
@@ -117,7 +113,9 @@ class APIKeyAuth(AuthStrategy):
     def __eq__(self, other: object) -> bool:
         if not isinstance(other, APIKeyAuth):
             return NotImplemented
-        return self.key == other.key and self.value == other.value and self.location == other.location
+        return (
+            self.key == other.key and self.value == other.value and self.location == other.location
+        )
 
     def __hash__(self) -> int:
         return hash((self.key, self.value, self.location))

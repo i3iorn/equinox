@@ -58,7 +58,9 @@ def test_secret_manager_panel_loads_profiles_from_storage(qtbot, tmp_path: Path)
     assert "Manager Type: env" in panel.config_display.toPlainText()
 
 
-def test_secret_manager_panel_clear_cache_uses_profile_cache_settings(qtbot, monkeypatch, tmp_path: Path) -> None:
+def test_secret_manager_panel_clear_cache_uses_profile_cache_settings(
+    qtbot, monkeypatch, tmp_path: Path
+) -> None:
     panel = SecretManagerSettingsPanel(config_path=tmp_path / "secret_managers.json")
     qtbot.addWidget(panel)
 
@@ -100,5 +102,3 @@ def test_secret_manager_panel_clear_cache_uses_profile_cache_settings(qtbot, mon
     assert captured["cache_ttl"] == 42
     assert captured["configured"]["url"].startswith("https://")
     assert captured["cleared"] is True
-
-

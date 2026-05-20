@@ -71,4 +71,3 @@ confidence = MEDIUM
 # B703: django_mark_safe
 # B801: flask_debug_true_disabled
 # See https://bandit.readthedocs.io/en/latest/plugins/index.html for full reference
-

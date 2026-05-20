@@ -51,4 +51,3 @@ def test_http_status_error_message_redacts_sensitive_values(mock_client_class, m
     assert token_response is not None
     assert token_response["body"]["client_secret"] == "[REDACTED]"
     assert token_response["body"]["access_token"] != "verylongtokenvalue123456789"
-

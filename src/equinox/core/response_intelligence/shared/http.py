@@ -3,10 +3,10 @@
 from __future__ import annotations
 
 import re
-from typing import Iterable, Mapping, Optional
+from collections.abc import Iterable, Mapping
 
 
-def first_present_header(headers: Mapping[str, str], keys: Iterable[str]) -> Optional[str]:
+def first_present_header(headers: Mapping[str, str], keys: Iterable[str]) -> str | None:
     for key in keys:
         value = headers.get(key)
         if value is not None:
@@ -15,7 +15,9 @@ def first_present_header(headers: Mapping[str, str], keys: Iterable[str]) -> Opt
 
 
 def parse_cache_control(cache_control: str) -> list:
-    return [directive.strip() for directive in (cache_control or "").split(",") if directive.strip()]
+    return [
+        directive.strip() for directive in (cache_control or "").split(",") if directive.strip()
+    ]
 
 
 def summarize_cache_control(cache_control: str) -> str:
@@ -34,4 +36,3 @@ def summarize_cache_control(cache_control: str) -> str:
                 return f"cached {secs // 3600}h"
             return f"cached {secs}s"
     return "present"
-

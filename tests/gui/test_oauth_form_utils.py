@@ -14,12 +14,11 @@ def test_parse_json_object_field_accepts_valid_object() -> None:
 
 
 def test_parse_json_object_field_rejects_non_object() -> None:
-    value, error = parse_json_object_field('[1, 2, 3]')
+    value, error = parse_json_object_field("[1, 2, 3]")
 
     assert value is None
     assert "valid JSON object" in (error or "")
 
 
 def test_parse_json_object_field_lenient_returns_empty_dict_for_invalid_input() -> None:
-    assert parse_json_object_field_lenient('{bad json') == {}
-
+    assert parse_json_object_field_lenient("{bad json") == {}

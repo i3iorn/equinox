@@ -1,4 +1,5 @@
 import ast
+
 from equinox.core.exceptions import SecurityError
 
 _DANGEROUS_ATTRS = frozenset(
@@ -22,18 +23,28 @@ _DANGEROUS_ATTRS = frozenset(
     }
 )
 
+
 def _validate_ast(source: str, filename: str) -> ast.Module:
     """Parse *source* and reject dangerous attribute access patterns."""
     try:
         tree = ast.parse(source, filename=filename, mode="exec")
-    except RecursionError:
-        raise SyntaxError("Script is too deeply nested to parse safely")
+    except RecursionError as exc:
+        raise SyntaxError("Script is too deeply nested to parse safely") from exc
 
     # Names that are blocked when used as function calls
-    _BLOCKED_CALLS: frozenset = frozenset({
-        "setattr", "delattr", "vars", "globals", "locals",
-        "classmethod", "staticmethod", "property", "super",
-    })
+    _BLOCKED_CALLS: frozenset = frozenset(
+        {
+            "setattr",
+            "delattr",
+            "vars",
+            "globals",
+            "locals",
+            "classmethod",
+            "staticmethod",
+            "property",
+            "super",
+        }
+    )
 
     for node in ast.walk(tree):
         if isinstance(node, ast.Attribute):

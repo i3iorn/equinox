@@ -1,15 +1,13 @@
 from __future__ import annotations
 
 import types
-
-from click import Command
-from click.testing import CliRunner
 from typing import cast
 
 import pytest
+from click import Command
+from click.testing import CliRunner
 
 import equinox.cli.main as cli_main
-
 
 CLI_MAIN = cast(Command, cli_main.main)
 
@@ -54,4 +52,3 @@ def test_main_entry_calls_click_group(monkeypatch: pytest.MonkeyPatch) -> None:
     cli_main.main_entry()
 
     assert called["ok"] is True
-

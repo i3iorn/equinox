@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from typing import Optional
-
 from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import (
     QCheckBox,
@@ -20,7 +18,7 @@ from PyQt6.QtWidgets import (
 class MasterPasswordDialog(QDialog):
     """Modal dialog that collects a master password for this app session."""
 
-    def __init__(self, parent: Optional[QWidget] = None) -> None:
+    def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self.setWindowTitle("Master Password")
         self.setModal(True)
@@ -29,9 +27,7 @@ class MasterPasswordDialog(QDialog):
         layout = QFormLayout(self)
         layout.setLabelAlignment(Qt.AlignmentFlag.AlignLeft)
 
-        message = QLabel(
-            "Enter the master password used to decrypt encrypted secrets."
-        )
+        message = QLabel("Enter the master password used to decrypt encrypted secrets.")
         message.setWordWrap(True)
         layout.addRow(message)
 
@@ -52,18 +48,14 @@ class MasterPasswordDialog(QDialog):
         layout.addRow(buttons)
 
     def _toggle_password_visibility(self, checked: bool) -> None:
-        mode = (
-            QLineEdit.EchoMode.Normal
-            if checked
-            else QLineEdit.EchoMode.Password
-        )
+        mode = QLineEdit.EchoMode.Normal if checked else QLineEdit.EchoMode.Password
         self._password.setEchoMode(mode)
 
     def password(self) -> str:
         return self._password.text()
 
 
-def prompt_master_password(parent: Optional[QWidget] = None) -> Optional[str]:
+def prompt_master_password(parent: QWidget | None = None) -> str | None:
     """Prompt for a master password and return it, or ``None`` if cancelled."""
     dialog = MasterPasswordDialog(parent)
     if dialog.exec() != QDialog.DialogCode.Accepted:
@@ -78,5 +70,3 @@ def prompt_master_password(parent: Optional[QWidget] = None) -> Optional[str]:
         )
         return None
     return password
-
-

@@ -20,7 +20,7 @@ import uuid
 from contextvars import ContextVar, Token
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Optional, Dict, Any
+from typing import Any
 
 # ──────────────────────────────────────────────────────────────────────────────
 # Module constants
@@ -31,7 +31,7 @@ _CORR_ID_HEX_LENGTH: int = 12
 
 # Log file configuration
 _LOG_FILE_NAME: str = "equinox.log"
-_LOG_MAX_BYTES: int = 10 * 1024 * 1024   # 10 MB
+_LOG_MAX_BYTES: int = 10 * 1024 * 1024  # 10 MB
 _LOG_BACKUP_COUNT: int = 5
 _LOG_ENCODING: str = "utf-8"
 
@@ -64,7 +64,7 @@ class _AppCorrelationIdProvider:
     """Thread-safe provider for the process-level application correlation ID."""
 
     def __init__(self) -> None:
-        self._value: Optional[str] = None
+        self._value: str | None = None
         self._lock = threading.Lock()
 
     def get(self) -> str:
@@ -82,7 +82,7 @@ class _AppCorrelationIdProvider:
 
 
 _APP_CORR_PROVIDER = _AppCorrelationIdProvider()
-_REQUEST_ID_CTX: ContextVar[Optional[str]] = ContextVar("equinox_request_id", default=None)
+_REQUEST_ID_CTX: ContextVar[str | None] = ContextVar("equinox_request_id", default=None)
 
 
 def get_app_corr_id() -> str:
@@ -107,12 +107,12 @@ def set_current_request_id(request_id: str) -> Token:
     return _REQUEST_ID_CTX.set(request_id.strip())
 
 
-def get_current_request_id() -> Optional[str]:
+def get_current_request_id() -> str | None:
     """Return the request correlation ID bound to the current context, if any."""
     return _REQUEST_ID_CTX.get()
 
 
-def clear_current_request_id(token: Optional[Token] = None) -> None:
+def clear_current_request_id(token: Token | None = None) -> None:
     """Clear the context-bound request ID, optionally resetting to *token* state."""
     if token is not None:
         _REQUEST_ID_CTX.reset(token)
@@ -123,6 +123,7 @@ def clear_current_request_id(token: Optional[Token] = None) -> None:
 # ──────────────────────────────────────────────────────────────────────────────
 # Timestamp helpers
 # ──────────────────────────────────────────────────────────────────────────────
+
 
 def _format_utc_timestamp(ts: float) -> str:
     """Format an epoch timestamp as UTC ISO 8601 with millisecond precision.
@@ -151,7 +152,8 @@ def _format_local_timestamp(ts: float) -> str:
 # Serialisation helper
 # ──────────────────────────────────────────────────────────────────────────────
 
-def _safe_serialize(doc: Dict[str, Any]) -> str:
+
+def _safe_serialize(doc: dict[str, Any]) -> str:
     """Serialize *doc* to a JSON string that fits within MAX_LOG_PAYLOAD_SIZE.
 
     Unlike raw string slicing, this approach truncates at the *data* level
@@ -175,7 +177,7 @@ def _safe_serialize(doc: Dict[str, Any]) -> str:
         return result
 
     # --- Step 2: shorten long string field values and re-serialize ----------
-    reduced: Dict[str, Any] = {}
+    reduced: dict[str, Any] = {}
     for k, v in doc.items():
         if isinstance(v, str) and len(v) > _MAX_FIELD_VALUE_LEN:
             reduced[k] = v[:_MAX_FIELD_VALUE_LEN] + _FIELD_TRUNCATION_MARKER
@@ -188,7 +190,7 @@ def _safe_serialize(doc: Dict[str, Any]) -> str:
         return result
 
     # --- Step 3: slim-down safety net — keep only the most critical fields --
-    slim: Dict[str, Any] = {k: reduced[k] for k in _SLIM_FIELDS if k in reduced}
+    slim: dict[str, Any] = {k: reduced[k] for k in _SLIM_FIELDS if k in reduced}
     slim["msg"] = str(slim.get("msg", ""))[:200]
     slim["_truncated"] = True
     return json.dumps(slim, ensure_ascii=True, default=str)
@@ -198,32 +200,49 @@ def _safe_serialize(doc: Dict[str, Any]) -> str:
 # JSON formatter
 # ──────────────────────────────────────────────────────────────────────────────
 
+
 class JsonFormatter(logging.Formatter):
     """Formats log records as single-line JSON objects."""
 
     EXTRA_FIELDS = {
-        "event", "method", "url", "headers", "params", "timeout", "verify_ssl",
-        "status", "status_code", "reason", "elapsed_time_seconds", "elapsed_ms",
-        "size_bytes", "error_type", "error_message", "request_id", "timestamp",
-        "collection_id", "environment_id", "auth_type",
+        "event",
+        "method",
+        "url",
+        "headers",
+        "params",
+        "timeout",
+        "verify_ssl",
+        "status",
+        "status_code",
+        "reason",
+        "elapsed_time_seconds",
+        "elapsed_ms",
+        "size_bytes",
+        "error_type",
+        "error_message",
+        "request_id",
+        "timestamp",
+        "collection_id",
+        "environment_id",
+        "auth_type",
     }
 
     def format(self, record: logging.LogRecord) -> str:  # type: ignore[override]
         return _safe_serialize(self._build_log_doc(record))
 
-    def _build_log_doc(self, record: logging.LogRecord) -> Dict[str, Any]:
+    def _build_log_doc(self, record: logging.LogRecord) -> dict[str, Any]:
         """Construct the structured log dictionary from *record*.
 
         Populates base fields, optional request/process/thread ids, all known
         EXTRA_FIELDS present on the record, a freeform payload dict, and
         exception info when present.
         """
-        doc: Dict[str, Any] = {
-            "ts":           _format_utc_timestamp(record.created),
-            "app_corr_id":  get_app_corr_id(),
-            "level":        record.levelname,
-            "logger":       record.name,
-            "msg":          record.getMessage(),
+        doc: dict[str, Any] = {
+            "ts": _format_utc_timestamp(record.created),
+            "app_corr_id": get_app_corr_id(),
+            "level": record.levelname,
+            "logger": record.name,
+            "msg": record.getMessage(),
         }
 
         # Per-request correlation id
@@ -262,12 +281,13 @@ class JsonFormatter(logging.Formatter):
 # Console formatter
 # ──────────────────────────────────────────────────────────────────────────────
 
+
 class ConsoleFormatter(logging.Formatter):
     COLOURS = {
-        "DEBUG":    "\033[37m",
-        "INFO":     "\033[32m",
-        "WARNING":  "\033[33m",
-        "ERROR":    "\033[31m",
+        "DEBUG": "\033[37m",
+        "INFO": "\033[32m",
+        "WARNING": "\033[33m",
+        "ERROR": "\033[31m",
         "CRITICAL": "\033[35m",
     }
     RESET = "\033[0m"
@@ -302,13 +322,13 @@ class ConsoleFormatter(logging.Formatter):
 # ──────────────────────────────────────────────────────────────────────────────
 
 _LEVEL_NAMES = {
-    "DEBUG":    logging.DEBUG,
-    "INFO":     logging.INFO,
-    "WARN":     logging.WARNING,   # common alias
-    "WARNING":  logging.WARNING,
-    "ERROR":    logging.ERROR,
+    "DEBUG": logging.DEBUG,
+    "INFO": logging.INFO,
+    "WARN": logging.WARNING,  # common alias
+    "WARNING": logging.WARNING,
+    "ERROR": logging.ERROR,
     "CRITICAL": logging.CRITICAL,
-    "FATAL":    logging.CRITICAL,  # common alias
+    "FATAL": logging.CRITICAL,  # common alias
 }
 
 
@@ -321,6 +341,7 @@ def _resolve_level(env_var: str, default: int) -> int:
 # ──────────────────────────────────────────────────────────────────────────────
 # configure_logging helpers
 # ──────────────────────────────────────────────────────────────────────────────
+
 
 def _reset_root_logger() -> logging.Logger:
     """Remove all existing handlers from the root logger and set level to DEBUG.
@@ -378,8 +399,9 @@ def _silence_noisy_loggers() -> None:
 # Public API
 # ──────────────────────────────────────────────────────────────────────────────
 
+
 def configure_logging(
-    log_dir: Optional[Path] = None,
+    log_dir: Path | None = None,
     level: int = logging.DEBUG,
     console_level: int = logging.WARNING,
 ) -> Path:
@@ -414,16 +436,16 @@ def configure_logging(
 
     logging.getLogger(__name__).info(
         "Logging initialised — app_corr_id=%s writing to %s",
-        get_app_corr_id(), log_file,
+        get_app_corr_id(),
+        log_file,
     )
 
     return log_file
 
 
-def get_log_file() -> Optional[Path]:
+def get_log_file() -> Path | None:
     """Return the path of the current log file, or None if not configured."""
     for handler in logging.getLogger().handlers:
         if isinstance(handler, logging.handlers.RotatingFileHandler):
             return Path(handler.baseFilename)
     return None
-

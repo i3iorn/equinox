@@ -1,7 +1,9 @@
 """Request ordering and move methods for CollectionManager."""
 
+# mypy: disable-error-code=attr-defined
+
 import logging
-from typing import Dict, List, Any, Optional
+from typing import Any
 
 from equinox.core.exceptions import StorageError, ValidationError
 from equinox.storage.utils import require_positive_int
@@ -12,7 +14,12 @@ logger = logging.getLogger(__name__)
 class CollectionOrderingMixin:
     """Mixin providing request ordering and move for CollectionManager."""
 
-    def move_request_to_folder(self, request_id: int, folder: Optional[str]) -> None:
+    # Provided by CollectionManager at composition time.
+    db: Any
+
+    def get_collection(self, collection_id: int) -> dict[str, Any] | None: ...
+
+    def move_request_to_folder(self, request_id: int, folder: str | None) -> None:
         """Move a request to a different folder (or root if folder is None/empty).
 
         Args:
@@ -36,7 +43,7 @@ class CollectionOrderingMixin:
         self,
         request_id: int,
         target_collection_id: int,
-        folder: Optional[str] = None,
+        folder: str | None = None,
     ) -> None:
         """Move a request to a different collection (and optionally folder).
 
@@ -58,7 +65,9 @@ class CollectionOrderingMixin:
         )
         logger.info(
             "Moved request %d to collection %d, folder %r",
-            request_id, target_collection_id, folder,
+            request_id,
+            target_collection_id,
+            folder,
         )
 
     # ── Reordering helpers ────────────────────────────────────────────
@@ -77,7 +86,7 @@ class CollectionOrderingMixin:
             (sort_order, request_id),
         )
 
-    def reorder_requests(self, ordered_ids: List[int]) -> None:
+    def reorder_requests(self, ordered_ids: list[int]) -> None:
         """Bulk-update sort_order for a list of request IDs.
 
         The first ID gets sort_order=0, the second gets 1, etc.
@@ -92,13 +101,13 @@ class CollectionOrderingMixin:
             raise ValidationError("ordered_ids must be a list")
         for req_id in ordered_ids:
             require_positive_int(req_id, "Request ID")
-        self._batch_set_sort_order(
-            [(req_id, pos) for pos, req_id in enumerate(ordered_ids)]
-        )
+        self._batch_set_sort_order([(req_id, pos) for pos, req_id in enumerate(ordered_ids)])
         logger.info("Reordered %d requests", len(ordered_ids))
 
     def sort_requests_alphabetically(
-        self, collection_id: int, folder: Optional[str] = None,
+        self,
+        collection_id: int,
+        folder: str | None = None,
     ) -> None:
         """Sort requests A→Z by name within a collection+folder group.
 
@@ -108,16 +117,18 @@ class CollectionOrderingMixin:
         """
         rows = self._select_group(collection_id, folder)
         sorted_rows = sorted(rows, key=lambda r: (r["name"] or "").lower())
-        self._batch_set_sort_order(
-            [(row["id"], pos) for pos, row in enumerate(sorted_rows)]
-        )
+        self._batch_set_sort_order([(row["id"], pos) for pos, row in enumerate(sorted_rows)])
         logger.info(
             "Sorted %d request(s) alphabetically in collection %d, folder %r",
-            len(sorted_rows), collection_id, folder,
+            len(sorted_rows),
+            collection_id,
+            folder,
         )
 
     def sort_requests_by_method(
-        self, collection_id: int, folder: Optional[str] = None,
+        self,
+        collection_id: int,
+        folder: str | None = None,
     ) -> None:
         """Sort requests by HTTP method then name within a collection+folder group.
 
@@ -128,8 +139,13 @@ class CollectionOrderingMixin:
             folder: Folder path, or ``None`` for collection root.
         """
         method_rank = {
-            "GET": 0, "POST": 1, "PUT": 2, "PATCH": 3,
-            "DELETE": 4, "HEAD": 5, "OPTIONS": 6,
+            "GET": 0,
+            "POST": 1,
+            "PUT": 2,
+            "PATCH": 3,
+            "DELETE": 4,
+            "HEAD": 5,
+            "OPTIONS": 6,
         }
         rows = self._select_group(collection_id, folder)
         sorted_rows = sorted(
@@ -139,15 +155,15 @@ class CollectionOrderingMixin:
                 (r["name"] or "").lower(),
             ),
         )
-        self._batch_set_sort_order(
-            [(row["id"], pos) for pos, row in enumerate(sorted_rows)]
-        )
+        self._batch_set_sort_order([(row["id"], pos) for pos, row in enumerate(sorted_rows)])
         logger.info(
             "Sorted %d request(s) by method in collection %d, folder %r",
-            len(sorted_rows), collection_id, folder,
+            len(sorted_rows),
+            collection_id,
+            folder,
         )
 
-    def _batch_set_sort_order(self, id_position_pairs: List["tuple[int, int]"]) -> None:
+    def _batch_set_sort_order(self, id_position_pairs: list["tuple[int, int]"]) -> None:
         """Batch-update sort_order using a single CASE expression per chunk.
 
         Respects the database ``MAX_PARAMS`` limit by splitting large lists
@@ -162,7 +178,7 @@ class CollectionOrderingMixin:
         # Database.MAX_PARAMS is 100 → max 33 items per batch.
         chunk_size = 33
         for start in range(0, len(id_position_pairs), chunk_size):
-            chunk = id_position_pairs[start:start + chunk_size]
+            chunk = id_position_pairs[start : start + chunk_size]
             case_clauses = " ".join("WHEN ? THEN ?" for _ in chunk)
             ids = [rid for rid, _ in chunk]
             placeholders = ", ".join("?" for _ in ids)
@@ -177,8 +193,10 @@ class CollectionOrderingMixin:
             )
 
     def _select_group(
-        self, collection_id: int, folder: Optional[str],
-    ) -> List[Dict[str, Any]]:
+        self,
+        collection_id: int,
+        folder: str | None,
+    ) -> list[dict[str, Any]]:
         """Return requests in a collection+folder group."""
         if folder:
             return self.db.fetchall(

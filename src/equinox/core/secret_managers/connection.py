@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Dict, Optional
+from typing import Any
 
 from equinox.core.secret_managers.base import SecretAuthError, SecretManagerError
 from equinox.core.secret_managers.profiles import SecretManagerProfile
@@ -15,13 +15,13 @@ class SecretManagerConnectionResult:
 
     manager_type: str
     ok: bool
-    error_kind: Optional[str] = None
+    error_kind: str | None = None
     error_message: str = ""
 
 
 def test_secret_manager_connection(
     manager_type: str,
-    config: Dict[str, Any],
+    config: dict[str, Any],
 ) -> SecretManagerConnectionResult:
     """Test a secret manager connection and normalize outcomes."""
     try:
@@ -31,9 +31,7 @@ def test_secret_manager_connection(
         except (TypeError, ValueError):
             cache_ttl = 300
         manager_config = {
-            key: value
-            for key, value in config.items()
-            if key not in {"enable_cache", "cache_ttl"}
+            key: value for key, value in config.items() if key not in {"enable_cache", "cache_ttl"}
         }
         mgr = SecretManagerProfile.from_manager_config(
             manager_type,
@@ -70,4 +68,3 @@ def test_secret_manager_connection(
             error_kind="unexpected",
             error_message=str(exc),
         )
-

@@ -8,17 +8,17 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from email.message import Message
 from functools import cached_property
-from typing import Any, Dict, List, Optional
+from typing import Any
 
-from equinox.core.util.time import utc_now
+from equinox.core.request.headers import HeaderDict
+from equinox.core.request.request import Request
 from equinox.core.request.types import (
     CHARSET_PARAMETER,
     CONTENT_TYPE_HEADER,
     DEFAULT_ENCODING,
     TEXT_DECODE_ERROR_MODE,
 )
-from equinox.core.request.headers import HeaderDict
-from equinox.core.request.request import Request
+from equinox.core.util.time import utc_now
 
 __all__ = ["Response"]
 
@@ -28,7 +28,7 @@ logger = logging.getLogger(__name__)
 # ── Private helpers ───────────────────────────────────────────────────────────
 
 
-def _normalize_content_type(header_value: str) -> Optional[str]:
+def _normalize_content_type(header_value: str) -> str | None:
     """Extract bare MIME type from a Content-Type header value.
 
     ``"application/json; charset=utf-8"`` → ``"application/json"``.
@@ -40,7 +40,7 @@ def _normalize_content_type(header_value: str) -> Optional[str]:
     return header_value.split(";")[0].strip() or None
 
 
-def _parse_charset(header_value: str) -> Optional[str]:
+def _parse_charset(header_value: str) -> str | None:
     """Extract the ``charset`` parameter from a Content-Type header.
 
     ``"application/json; charset=utf-8"`` → ``"utf-8"``.
@@ -68,7 +68,7 @@ class Response:
 
     status_code: int
     reason: str
-    headers: Dict[str, str]
+    headers: dict[str, str]
     body: bytes
     elapsed: float
     request: Request
@@ -76,19 +76,24 @@ class Response:
     timestamp: datetime = field(default_factory=utc_now)
 
     # Optional diagnostics populated by the dispatcher.
-    sent_headers: Optional[Dict[str, str]] = None
-    sent_url: Optional[str] = None
-    timings: Optional[Dict[str, float]] = None
-    connection_info: Optional[Dict[str, Any]] = None
-    retry_summary: Optional[str] = None  # Human-readable summary of retries (e.g. "retried 2× after 429")
+    sent_headers: dict[str, str] | None = None
+    sent_url: str | None = None
+    timings: dict[str, float] | None = None
+    connection_info: dict[str, Any] | None = None
+    retry_summary: str | None = (
+        None  # Human-readable summary of retries (e.g. "retried 2× after 429")
+    )
     # Preserves repeated Set-Cookie header values; dict(headers) collapses them.
-    set_cookie_headers: Optional[List[str]] = None
+    set_cookie_headers: list[str] | None = None
 
     def __post_init__(self) -> None:
         self.headers = HeaderDict(self.headers or {})
         logger.debug(
             "Response: %d (%s) size=%d bytes elapsed=%.3fs body_type=%s",
-            self.status_code, self.reason, len(self.body), self.elapsed,
+            self.status_code,
+            self.reason,
+            len(self.body),
+            self.elapsed,
             type(self.body).__name__,
         )
         if len(self.body) > 0:
@@ -105,12 +110,12 @@ class Response:
     # ── Cached content-type properties ────────────────────────────────────────
 
     @cached_property
-    def content_type(self) -> Optional[str]:
+    def content_type(self) -> str | None:
         """Bare MIME type from ``Content-Type``, e.g. ``"application/json"``."""
         return _normalize_content_type(self._get_header(CONTENT_TYPE_HEADER))
 
     @cached_property
-    def encoding(self) -> Optional[str]:
+    def encoding(self) -> str | None:
         """Charset declared by the ``Content-Type`` header, or ``None``."""
         return _parse_charset(self._get_header(CONTENT_TYPE_HEADER))
 
@@ -157,7 +162,7 @@ class Response:
         except json.JSONDecodeError as exc:
             raise ValueError("Malformed JSON response") from exc
 
-    def json_safe(self) -> Optional[Any]:
+    def json_safe(self) -> Any | None:
         """Parse the response body as JSON, returning ``None`` on failure."""
         try:
             return json.loads(self.text)
@@ -166,7 +171,7 @@ class Response:
 
     # ── Serialisation ─────────────────────────────────────────────────────────
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """Serialise to a plain dict (suitable for JSON/storage)."""
         return {
             "status_code": self.status_code,
@@ -180,4 +185,3 @@ class Response:
             "sent_url": self.sent_url,
             "connection_info": self.connection_info,
         }
-

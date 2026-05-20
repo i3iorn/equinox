@@ -6,7 +6,7 @@ import statistics
 import tempfile
 import time
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any
 
 from equinox.core.request import Request, Response
 from equinox.storage import Database, HistoryManager
@@ -43,8 +43,8 @@ def _seed_history(manager: HistoryManager, entries: int) -> None:
         )
 
 
-def _measure_search(manager: HistoryManager, runs: int) -> List[float]:
-    timings_ms: List[float] = []
+def _measure_search(manager: HistoryManager, runs: int) -> list[float]:
+    timings_ms: list[float] = []
     for i in range(runs):
         t0 = time.perf_counter()
         manager.search_history(
@@ -58,7 +58,7 @@ def _measure_search(manager: HistoryManager, runs: int) -> List[float]:
     return timings_ms
 
 
-def _summarize(timings_ms: List[float], entries: int, runs: int) -> Dict[str, Any]:
+def _summarize(timings_ms: list[float], entries: int, runs: int) -> dict[str, Any]:
     ordered = sorted(timings_ms)
     p95_idx = max(0, int(len(ordered) * 0.95) - 1)
     return {
@@ -72,7 +72,7 @@ def _summarize(timings_ms: List[float], entries: int, runs: int) -> Dict[str, An
     }
 
 
-def run_history_search_benchmark(entries: int, runs: int) -> Dict[str, Any]:
+def run_history_search_benchmark(entries: int, runs: int) -> dict[str, Any]:
     """Run a reproducible history-search benchmark and return summary metrics."""
     if entries <= 0 or runs <= 0:
         raise ValueError("entries and runs must be positive integers")

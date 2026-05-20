@@ -7,8 +7,9 @@ HAR, Insomnia) to avoid code duplication.
 import json
 import logging
 import re
+from collections.abc import Sequence
 from pathlib import Path
-from typing import Any, Dict, Optional, Sequence
+from typing import Any
 
 from equinox.core import urls
 from equinox.core.exceptions import ValidationError
@@ -25,7 +26,7 @@ def validate_import_file(
     path: Path,
     max_bytes: int,
     *,
-    allowed_extensions: Optional[Sequence[str]] = None,
+    allowed_extensions: Sequence[str] | None = None,
     label: str = "Import file",
 ) -> None:
     """Validate that an import file exists, has an allowed extension, and is not too large.
@@ -50,22 +51,19 @@ def validate_import_file(
         if suffix not in allowed_extensions:
             exts = ", ".join(allowed_extensions)
             raise ValidationError(
-                f"{label} has unsupported extension '{suffix}'. "
-                f"Allowed: {exts}"
+                f"{label} has unsupported extension '{suffix}'. " f"Allowed: {exts}"
             )
 
     size = path.stat().st_size
     if size > max_bytes:
-        raise ValidationError(
-            f"{label} too large: {size:,} bytes (max {max_bytes:,} bytes)"
-        )
+        raise ValidationError(f"{label} too large: {size:,} bytes (max {max_bytes:,} bytes)")
     logger.debug("validate_import_file: OK path=%s size=%d", path, size)
 
 
 def json_to_dict(
     raw: str,
-    default: Optional[Dict[str, Any]] = None,
-) -> Dict[str, Any]:
+    default: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     """Parse a JSON string → dict, handling both dict and list-of-pairs formats.
 
     When the stored value is a list (e.g. params stored as ``{key, value,
@@ -84,19 +82,17 @@ def json_to_dict(
     parsed = safe_json_loads(raw, default=default)
     if isinstance(parsed, list):
         return {
-            item.get("key", ""): item.get("value", "")
-            for item in parsed
-            if isinstance(item, dict)
+            item.get("key", ""): item.get("value", "") for item in parsed if isinstance(item, dict)
         }
     return parsed if isinstance(parsed, dict) else default
 
 
-def parse_url_parts(url: str) -> Dict[str, str]:
+def parse_url_parts(url: str) -> dict[str, str]:
     """Safely parse *url* into its export-friendly components.
 
     Returns a dict with keys ``scheme``, ``hostname``, ``port``, ``path``,
     ``query``, and ``netloc``, falling back to safe defaults on any parse
-    failure.  This is distinct from :func:`equinox.core.urls._parse_url`,
+    failure.  This is distinct from :func:`equinox.core.urls._parse_url`
     which returns a ``(scheme, netloc, path, query)`` tuple.
 
     Args:
@@ -108,19 +104,26 @@ def parse_url_parts(url: str) -> Dict[str, str]:
     try:
         p = urls.url_metadata(url)
         return {
-            "scheme":   str(p.get("scheme") or "https"),
+            "scheme": str(p.get("scheme") or "https"),
             "hostname": str(p.get("hostname") or ""),
-            "port":     str(p.get("port") or ""),
-            "path":     str(p.get("path") or "/"),
-            "query":    str(p.get("query") or ""),
-            "netloc":   str(p.get("netloc") or ""),
+            "port": str(p.get("port") or ""),
+            "path": str(p.get("path") or "/"),
+            "query": str(p.get("query") or ""),
+            "netloc": str(p.get("netloc") or ""),
         }
     except Exception as exc:
         logger.warning("Failed to parse URL %s: %s", url, exc)
-        return {"scheme": "https", "hostname": "", "port": "", "path": "/", "query": "", "netloc": ""}
+        return {
+            "scheme": "https",
+            "hostname": "",
+            "port": "",
+            "path": "/",
+            "query": "",
+            "netloc": "",
+        }
 
 
-def write_json_file(data: Dict[str, Any], file_path: Path) -> None:
+def write_json_file(data: dict[str, Any], file_path: Path) -> None:
     """Write *data* as pretty-printed JSON to *file_path*.
 
     Creates any missing parent directories automatically.
@@ -137,7 +140,7 @@ def write_json_file(data: Dict[str, Any], file_path: Path) -> None:
         with open(file_path, "w", encoding="utf-8") as f:
             json.dump(data, f, indent=2, ensure_ascii=False)
         logger.info("Exported to %s", file_path)
-    except IOError as exc:
+    except OSError as exc:
         logger.error("Failed to write %s: %s", file_path, exc)
         raise
 
@@ -155,5 +158,3 @@ def normalize_path_variables(url: str) -> str:
     normalized = _SINGLE_BRACE_PATH_VAR_RE.sub(r"{{\1}}", url)
     normalized = _COLON_PATH_VAR_RE.sub(r"\1{{\2}}", normalized)
     return normalized
-
-

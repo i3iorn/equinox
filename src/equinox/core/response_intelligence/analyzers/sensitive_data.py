@@ -1,8 +1,12 @@
 """Sensitive data caching analyzer."""
 
 import logging
-from typing import Any, Dict, List, Set
+from typing import Any
 
+from equinox.core.response_intelligence.analyzers.pii_secret_leak import (
+    _SENSITIVE_VALUE_PATTERNS,
+    _contains_sensitive_values,
+)
 from equinox.core.response_intelligence.base import Analyzer
 from equinox.core.response_intelligence.models import (
     AnalysisContext,
@@ -10,15 +14,11 @@ from equinox.core.response_intelligence.models import (
     Finding,
     Severity,
 )
-from equinox.core.response_intelligence.analyzers.pii_secret_leak import (
-    _contains_sensitive_values,
-    _SENSITIVE_VALUE_PATTERNS,
-)
 
 logger = logging.getLogger(__name__)
 
 
-def _contains_sensitive_keys(value: Any, sensitive_keys: Set[str], depth: int = 0) -> bool:
+def _contains_sensitive_keys(value: Any, sensitive_keys: set[str], depth: int = 0) -> bool:
     """Recursively check if value contains sensitive keys."""
     if depth > 6:
         return False
@@ -59,13 +59,13 @@ class SensitiveDataCachingAnalyzer(Analyzer):
         "credit_card",
     }
 
-    def analyze(self, ctx: AnalysisContext) -> List[Finding]:
+    def analyze(self, ctx: AnalysisContext) -> list[Finding]:
         """Analyze Cache-Control headers for sensitive response data."""
-        findings: List[Finding] = []
+        findings: list[Finding] = []
         cache_control = (ctx.response.headers.get("cache-control", "") or "").lower()
         pragma = (ctx.response.headers.get("pragma", "") or "").lower()
 
-        exposure_signals: List[str] = []
+        exposure_signals: list[str] = []
         if ctx.response.headers.get("set-cookie"):
             exposure_signals.append("set-cookie")
         if ctx.response.headers.get("authorization"):
@@ -80,10 +80,12 @@ class SensitiveDataCachingAnalyzer(Analyzer):
         if not exposure_signals:
             return findings
 
-        issues: List[str] = []
+        issues: list[str] = []
         severity = Severity.WARNING
         if "public" in cache_control:
-            issues.append("Cache-Control includes 'public' for a response that appears to include sensitive data.")
+            issues.append(
+                "Cache-Control includes 'public' for a response that appears to include sensitive data."
+            )
             severity = Severity.CRITICAL
         if "no-store" not in cache_control:
             issues.append("Cache-Control does not include 'no-store' for sensitive response data.")
@@ -93,18 +95,19 @@ class SensitiveDataCachingAnalyzer(Analyzer):
         if not issues:
             return findings
 
-        findings.append(Finding(
-            category=self.category,
-            severity=severity,
-            title="Sensitive response may be cacheable",
-            description="\n".join(issues),
-            analyzer_id=self.analyzer_id,
-            recommendation="For sensitive responses, return Cache-Control: no-store (and avoid public caches).",
-            details={
-                "signals": exposure_signals,
-                "cache_control": cache_control,
-                "pragma": pragma,
-            },
-        ))
+        findings.append(
+            Finding(
+                category=self.category,
+                severity=severity,
+                title="Sensitive response may be cacheable",
+                description="\n".join(issues),
+                analyzer_id=self.analyzer_id,
+                recommendation="For sensitive responses, return Cache-Control: no-store (and avoid public caches).",
+                details={
+                    "signals": exposure_signals,
+                    "cache_control": cache_control,
+                    "pragma": pragma,
+                },
+            )
+        )
         return findings
-

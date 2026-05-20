@@ -1,8 +1,6 @@
 """Content-related shared helpers."""
 
-from typing import Tuple
-
-_COMPRESSIBLE_TOKENS: Tuple[str, ...] = (
+_COMPRESSIBLE_TOKENS: tuple[str, ...] = (
     "json",
     "xml",
     "html",
@@ -24,4 +22,3 @@ def format_bytes(size: int) -> str:
     if size >= 1024:
         return f"{size / 1024:.1f} KB"
     return f"{size} B"
-

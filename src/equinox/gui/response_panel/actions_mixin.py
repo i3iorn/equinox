@@ -9,19 +9,29 @@ from __future__ import annotations
 
 import difflib
 import logging
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING
 
-from PyQt6.QtWidgets import (
-    QVBoxLayout, QHBoxLayout, QLabel, QTextEdit,
-    QPushButton, QApplication, QDialog, QComboBox,
-    QPlainTextEdit, QListWidget, QListWidgetItem, QMessageBox, QFileDialog,
-)
 from PyQt6.QtCore import Qt
+from PyQt6.QtWidgets import (
+    QApplication,
+    QComboBox,
+    QDialog,
+    QFileDialog,
+    QHBoxLayout,
+    QLabel,
+    QListWidget,
+    QListWidgetItem,
+    QMessageBox,
+    QPlainTextEdit,
+    QPushButton,
+    QTextEdit,
+    QVBoxLayout,
+)
 
 from equinox.core.codegen import GENERATORS, generate_code
 from equinox.gui.file_ops import atomic_write_bytes, validate_selected_path
-from equinox.gui.response_panel.pretty_print import PrettyPrintRunnable
 from equinox.gui.response_panel._formatting import pretty_print_body
+from equinox.gui.response_panel.pretty_print import PrettyPrintRunnable
 from equinox.gui.theme import get_mono_font
 
 if TYPE_CHECKING:
@@ -68,7 +78,7 @@ class ResponseActionsMixin:
                 logger.exception("Failed to pretty-print body")
         return ""
 
-    def _get_database(self) -> "Optional[Database]":
+    def _get_database(self) -> Database | None:
         """Extract database from the main window, or None if unavailable.
 
         Centralizes the risky window traversal so it can be updated in one place.
@@ -169,7 +179,7 @@ class ResponseActionsMixin:
     # JSONPath filter callback
     # ------------------------------------------------------------------
 
-    def _on_jsonpath_filter(self, filtered_text: Optional[str]) -> None:
+    def _on_jsonpath_filter(self, filtered_text: str | None) -> None:
         """Receive filtered JSON text from the SearchBar and update the body view."""
         try:
             if filtered_text is None:
@@ -217,10 +227,9 @@ class ResponseActionsMixin:
 
         try:
             from equinox.storage import HistoryManager
+
             req = self.current_response.request
-            return HistoryManager(db).search_history(
-                query=req.url, method=req.method, limit=30
-            )
+            return HistoryManager(db).search_history(query=req.url, method=req.method, limit=30)
         except Exception:
             logger.exception("Failed to fetch history entries for diff")
             return []
@@ -233,7 +242,7 @@ class ResponseActionsMixin:
         status = entry.get("status_code", "?")
         return f"{ts}  {method}  {url}  [{status}]"
 
-    def _pick_history_entry(self, history_entries: list) -> "Optional[dict]":
+    def _pick_history_entry(self, history_entries: list) -> dict | None:
         """Show a picker dialog and return the selected history entry, or None."""
         picker = QDialog(self)
         picker.setWindowTitle("Choose History Entry")
@@ -429,4 +438,3 @@ class ResponseActionsMixin:
         if self.tabs.currentIndex() != self._body_tab_idx:
             self.tabs.setCurrentIndex(self._body_tab_idx)
         self._search_bar.show_and_focus()
-

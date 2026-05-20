@@ -1,21 +1,13 @@
 import json
 import logging
-import os
-import sys
-import types
-
-import pytest
 
 from equinox.core.request.request import Request
-from equinox.core.request.headers import HeaderDict
-from equinox.core.history_config import set_capture_bodies
-from equinox.storage.history._serializer import _HistorySerializer
-from equinox.security import redact_headers
 
 
 def _capture_log_for(func, *args, **kwargs):
-    import logging
     import io
+    import logging
+
     stream = io.StringIO()
     handler = logging.StreamHandler(stream)
     logger = logging.getLogger("equinox.requests")
@@ -39,7 +31,7 @@ def test_interceptor_redacts_sensitive_headers_and_body(caplog):
             "Content-Type": "application/json",
             "X-Custom": "value",
         },
-        body='{"username":"alice","password":"hunter2"}'
+        body='{"username":"alice","password":"hunter2"}',
     )
 
     # Prepare logging capture before emitting any logs
@@ -48,6 +40,7 @@ def test_interceptor_redacts_sensitive_headers_and_body(caplog):
     # Use the logging interceptor to emit a request log
     from equinox.core.interceptors.chain import InterceptorChain
     from equinox.core.interceptors.logging import LoggingRequestInterceptor
+
     chain = InterceptorChain()
     chain.add_request_interceptor(LoggingRequestInterceptor())
 

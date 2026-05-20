@@ -1,29 +1,65 @@
 """Key-value table with per-row enable/disable checkboxes (for Params)."""
+
 from __future__ import annotations
 
 import logging
 
+from PyQt6.QtCore import QStringListModel, Qt, pyqtSignal
 from PyQt6.QtWidgets import (
-    QTableWidget, QTableWidgetItem, QHeaderView, QStyledItemDelegate, QLineEdit,
     QCompleter,
+    QHeaderView,
+    QLineEdit,
+    QStyledItemDelegate,
+    QTableWidget,
+    QTableWidgetItem,
 )
-from PyQt6.QtCore import Qt, QStringListModel, pyqtSignal
 
 logger = logging.getLogger(__name__)
 
 # Common HTTP request headers for auto-complete
 _COMMON_HTTP_HEADERS = [
-    "Accept", "Accept-Charset", "Accept-Encoding", "Accept-Language",
-    "Authorization", "Cache-Control", "Connection", "Content-Disposition",
-    "Content-Encoding", "Content-Language", "Content-Length", "Content-Type",
-    "Cookie", "Date", "Expect", "From", "Host", "If-Match",
-    "If-Modified-Since", "If-None-Match", "If-Range", "If-Unmodified-Since",
-    "Max-Forwards", "Origin", "Pragma", "Proxy-Authorization",
-    "Range", "Referer", "TE", "Transfer-Encoding", "Upgrade",
-    "User-Agent", "Via", "Warning",
-    "X-API-Key", "X-Auth-Token", "X-Correlation-ID",
-    "X-Forwarded-For", "X-Forwarded-Host", "X-Forwarded-Proto",
-    "X-Real-IP", "X-Request-ID",
+    "Accept",
+    "Accept-Charset",
+    "Accept-Encoding",
+    "Accept-Language",
+    "Authorization",
+    "Cache-Control",
+    "Connection",
+    "Content-Disposition",
+    "Content-Encoding",
+    "Content-Language",
+    "Content-Length",
+    "Content-Type",
+    "Cookie",
+    "Date",
+    "Expect",
+    "From",
+    "Host",
+    "If-Match",
+    "If-Modified-Since",
+    "If-None-Match",
+    "If-Range",
+    "If-Unmodified-Since",
+    "Max-Forwards",
+    "Origin",
+    "Pragma",
+    "Proxy-Authorization",
+    "Range",
+    "Referer",
+    "TE",
+    "Transfer-Encoding",
+    "Upgrade",
+    "User-Agent",
+    "Via",
+    "Warning",
+    "X-API-Key",
+    "X-Auth-Token",
+    "X-Correlation-ID",
+    "X-Forwarded-For",
+    "X-Forwarded-Host",
+    "X-Forwarded-Proto",
+    "X-Real-IP",
+    "X-Request-ID",
 ]
 
 
@@ -76,8 +112,8 @@ class CheckableKeyValueTable(QTableWidget):
 
     # Column indices — used throughout to avoid magic numbers.
     _COL_ENABLED: int = 0
-    _COL_KEY:     int = 1
-    _COL_VALUE:   int = 2
+    _COL_KEY: int = 1
+    _COL_VALUE: int = 2
 
     def __init__(self, parent=None, *, enable_key_completer: bool = False):
         super().__init__(parent)
@@ -86,8 +122,8 @@ class CheckableKeyValueTable(QTableWidget):
         self.setHorizontalHeaderLabels(["", "Key", "Value"])
         header = self.horizontalHeader()
         header.setSectionResizeMode(self._COL_ENABLED, QHeaderView.ResizeMode.Fixed)
-        header.setSectionResizeMode(self._COL_KEY,     QHeaderView.ResizeMode.Interactive)
-        header.setSectionResizeMode(self._COL_VALUE,   QHeaderView.ResizeMode.Stretch)
+        header.setSectionResizeMode(self._COL_KEY, QHeaderView.ResizeMode.Interactive)
+        header.setSectionResizeMode(self._COL_VALUE, QHeaderView.ResizeMode.Stretch)
         self.setColumnWidth(self._COL_ENABLED, 26)
         self.verticalHeader().setVisible(False)
         self.setAlternatingRowColors(True)
@@ -111,8 +147,8 @@ class CheckableKeyValueTable(QTableWidget):
     def _set_row_items(self, row: int, key: str, value: str, enabled: bool) -> None:
         """Populate the three cells of an already-inserted *row*."""
         self.setItem(row, self._COL_ENABLED, self._make_checkbox(enabled))
-        self.setItem(row, self._COL_KEY,     QTableWidgetItem(key))
-        self.setItem(row, self._COL_VALUE,   QTableWidgetItem(value))
+        self.setItem(row, self._COL_KEY, QTableWidgetItem(key))
+        self.setItem(row, self._COL_VALUE, QTableWidgetItem(value))
 
     def _iter_non_empty_rows(self):
         """Yield ``(key, value, enabled)`` for every row with a non-empty key.
@@ -121,12 +157,12 @@ class CheckableKeyValueTable(QTableWidget):
         need to guard against blank entries.
         """
         for row in range(self.rowCount()):
-            key_item   = self.item(row, self._COL_KEY)
+            key_item = self.item(row, self._COL_KEY)
             if not (key_item and key_item.text().strip()):
                 continue
-            checkbox   = self.item(row, self._COL_ENABLED)
+            checkbox = self.item(row, self._COL_ENABLED)
             value_item = self.item(row, self._COL_VALUE)
-            enabled    = bool(checkbox and checkbox.checkState() == Qt.CheckState.Checked)
+            enabled = bool(checkbox and checkbox.checkState() == Qt.CheckState.Checked)
             yield key_item.text().strip(), (value_item.text() if value_item else ""), enabled
 
     def _add_empty_row(self, enabled: bool = False) -> None:
@@ -167,8 +203,11 @@ class CheckableKeyValueTable(QTableWidget):
 
         # Auto-add a fresh trailing empty row when the user starts filling in
         # the last row, so there is always somewhere to add the next entry.
-        if col in (self._COL_KEY, self._COL_VALUE) and \
-                row == self.rowCount() - 1 and item.text().strip():
+        if (
+            col in (self._COL_KEY, self._COL_VALUE)
+            and row == self.rowCount() - 1
+            and item.text().strip()
+        ):
             self._add_empty_row(enabled=False)
 
         self.data_changed.emit()

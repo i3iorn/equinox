@@ -12,9 +12,10 @@ import base64
 import hashlib
 import logging
 import os
-from pathlib import Path
-from typing import Callable, Optional, cast
 from getpass import getpass
+from pathlib import Path
+from typing import Callable, cast
+
 from cryptography.fernet import Fernet
 
 from equinox.core.config.flags import is_strict_secret_rotation_enabled
@@ -23,9 +24,9 @@ _SALT_FILE = Path.home() / ".equinox" / "salt.bin"
 _MASTER_PW_ENV = "EQUINOX_MASTER_PASSWORD"
 
 # In-memory cache for performance and to preserve password during runtime
-_cached_password: Optional[str] = None
-_cached_fernet: Optional[Fernet] = None
-_password_prompt_callback: Optional[Callable[[], Optional[str]]] = None
+_cached_password: str | None = None
+_cached_fernet: Fernet | None = None
+_password_prompt_callback: Callable[[], str | None] | None = None
 
 _ENC_PREFIX = "enc:"
 
@@ -40,6 +41,7 @@ def _read_or_create_salt() -> bytes:
         return _SALT_FILE.read_bytes()
     # 16-byte salt is ample for PBKDF2
     import secrets as _secrets
+
     s = _secrets.token_bytes(16)
     _SALT_FILE.write_bytes(s)
     return s
@@ -51,7 +53,7 @@ def _derive_key_from_password(password: str, salt: bytes) -> bytes:
     return base64.urlsafe_b64encode(dk)
 
 
-def get_master_password() -> Optional[str]:
+def get_master_password() -> str | None:
     """Return the configured master password, prompting if necessary."""
     global _cached_password
     if _cached_password is not None:
@@ -62,7 +64,7 @@ def get_master_password() -> Optional[str]:
         _cached_password = pw
         return pw
     # GUI can register a secure prompt callback to avoid terminal prompts.
-    callback = cast(Optional[Callable[[], Optional[str]]], _password_prompt_callback)
+    callback = cast(Callable[[], str | None] | None, _password_prompt_callback)
     if callback is not None:
         try:
             pw = callback()
@@ -93,9 +95,7 @@ def set_master_password(password: str) -> None:
     _cached_fernet = None
 
 
-def set_master_password_prompt(
-    callback: Optional[Callable[[], Optional[str]]]
-) -> None:
+def set_master_password_prompt(callback: Callable[[], str | None] | None) -> None:
     """Set or clear the runtime password prompt callback.
 
     GUI startup should register a callback that opens a modal dialog.
@@ -113,7 +113,7 @@ def _get_salt() -> bytes:
     return _read_or_create_salt()
 
 
-def _derive_fernet_from_password(password: Optional[str]) -> Optional[Fernet]:
+def _derive_fernet_from_password(password: str | None) -> Fernet | None:
     if not password:
         return None
     salt = _get_salt()
@@ -121,7 +121,7 @@ def _derive_fernet_from_password(password: Optional[str]) -> Optional[Fernet]:
     return Fernet(key)
 
 
-def get_fernet_for_password(password: Optional[str] = None) -> Optional[Fernet]:
+def get_fernet_for_password(password: str | None = None) -> Fernet | None:
     """Return a Fernet instance derived from the given password.
 
     If password is None, attempts to load a configured master password. If no
@@ -137,7 +137,7 @@ def get_fernet_for_password(password: Optional[str] = None) -> Optional[Fernet]:
     return f
 
 
-def ensure_master_password_initialized() -> Optional[Fernet]:
+def ensure_master_password_initialized() -> Fernet | None:
     """Factory helper to ensure a Fernet instance exists from master password.
 
     Startup bootstrap rotates plaintext secrets into enc: blobs automatically
@@ -164,7 +164,7 @@ def ensure_master_password_initialized() -> Optional[Fernet]:
     return f
 
 
-def rotate_all_secrets(db_path: str, new_password: Optional[str] = None) -> None:
+def rotate_all_secrets(db_path: str, new_password: str | None = None) -> None:
     """Rotate all plaintext secrets to be encrypted with a new master password.
 
     This function will take all known plaintext secret fields and re-encrypt
@@ -194,7 +194,7 @@ def rotate_all_secrets(db_path: str, new_password: Optional[str] = None) -> None
         cur = conn.cursor()
         cur.execute("BEGIN")
 
-        def enc(value: Optional[str]) -> Optional[str]:
+        def enc(value: str | None) -> str | None:
             if value is None:
                 return None
             if isinstance(value, str) and value.startswith(_ENC_PREFIX):
@@ -209,7 +209,9 @@ def rotate_all_secrets(db_path: str, new_password: Optional[str] = None) -> None
                 continue
             new_secret = enc(secret)
             if new_secret != secret:
-                conn.execute("UPDATE oauth_clients SET client_secret=? WHERE id=?", (new_secret, uid))
+                conn.execute(
+                    "UPDATE oauth_clients SET client_secret=? WHERE id=?", (new_secret, uid)
+                )
 
         # Rotate saved_credentials.config
         for row in conn.execute("SELECT id, config FROM saved_credentials"):

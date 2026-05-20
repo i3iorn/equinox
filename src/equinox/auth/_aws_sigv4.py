@@ -14,10 +14,10 @@ import hashlib
 import hmac
 import logging
 from datetime import datetime, timezone
-from typing import Any, Callable, Dict, Optional, Tuple
+from typing import Any, Callable
 from urllib.parse import quote
 
-from equinox.auth._base import AuthStrategy, _validate_credential, _interpolate_field, AuthError
+from equinox.auth._base import AuthError, AuthStrategy, _interpolate_field, _validate_credential
 from equinox.core import urls
 
 logger = logging.getLogger(__name__)
@@ -43,7 +43,7 @@ class AWSSigV4Auth(AuthStrategy):
         secret_key: str,
         region: str,
         service: str,
-        session_token: Optional[str] = None,
+        session_token: str | None = None,
     ) -> None:
         # Validate all fields for type, length, and CRLF injection.
         # access_key / secret_key / session_token are injected into HTTP
@@ -52,15 +52,13 @@ class AWSSigV4Auth(AuthStrategy):
         self.secret_key = _validate_credential(secret_key, "AWS secret_key")
         self.region = _validate_credential(region, "AWS region")
         self.service = _validate_credential(service, "AWS service")
-        self.session_token: Optional[str] = (
-            _validate_credential(session_token, "AWS session_token")
-            if session_token
-            else None
+        self.session_token: str | None = (
+            _validate_credential(session_token, "AWS session_token") if session_token else None
         )
 
     # ── AuthStrategy interface ────────────────────────────────────────────────
 
-    def apply(self, request: Any, headers: Dict[str, str]) -> None:
+    def apply(self, request: Any, headers: dict[str, str]) -> None:
         """Compute SigV4 signature and inject signing headers.
 
         Sets:
@@ -72,7 +70,10 @@ class AWSSigV4Auth(AuthStrategy):
         method = (getattr(request, "method", "GET") or "GET").upper()
         logger.debug(
             "Applying AWS SigV4 auth: method=%s url=%s region=%s service=%s",
-            method, url, self.region, self.service,
+            method,
+            url,
+            self.region,
+            self.service,
         )
         now = datetime.now(timezone.utc)
         amzdate = now.strftime("%Y%m%dT%H%M%SZ")
@@ -100,25 +101,31 @@ class AWSSigV4Auth(AuthStrategy):
         payload_hash = hashlib.sha256(body_bytes).hexdigest()
         headers["x-amz-content-sha256"] = payload_hash
 
-        canonical_request = "\n".join([
-            method,
-            canonical_uri,
-            canonical_qs,
-            canonical_headers,
-            signed_headers,
-            payload_hash,
-        ])
+        canonical_request = "\n".join(
+            [
+                method,
+                canonical_uri,
+                canonical_qs,
+                canonical_headers,
+                signed_headers,
+                payload_hash,
+            ]
+        )
 
         credential_scope = "/".join([datestamp, self.region, self.service, "aws4_request"])
-        string_to_sign = "\n".join([
-            "AWS4-HMAC-SHA256",
-            amzdate,
-            credential_scope,
-            hashlib.sha256(canonical_request.encode("utf-8")).hexdigest(),
-        ])
+        string_to_sign = "\n".join(
+            [
+                "AWS4-HMAC-SHA256",
+                amzdate,
+                credential_scope,
+                hashlib.sha256(canonical_request.encode("utf-8")).hexdigest(),
+            ]
+        )
 
         signing_key = self._get_signing_key(datestamp)
-        signature = hmac.new(signing_key, string_to_sign.encode("utf-8"), hashlib.sha256).hexdigest()
+        signature = hmac.new(
+            signing_key, string_to_sign.encode("utf-8"), hashlib.sha256
+        ).hexdigest()
 
         headers["Authorization"] = (
             f"AWS4-HMAC-SHA256 Credential={self.access_key}/{credential_scope}, "
@@ -127,20 +134,20 @@ class AWSSigV4Auth(AuthStrategy):
         )
         logger.debug("AWS SigV4 Authorization header applied (signed_headers=%s)", signed_headers)
 
-    def to_dict(self) -> Dict[str, Any]:
-        d: Dict[str, Any] = {
-            "type":       self.AUTH_TYPE,
+    def to_dict(self) -> dict[str, Any]:
+        d: dict[str, Any] = {
+            "type": self.AUTH_TYPE,
             "access_key": self.access_key,
             "secret_key": self.secret_key,
-            "region":     self.region,
-            "service":    self.service,
+            "region": self.region,
+            "service": self.service,
         }
         if self.session_token:
             d["session_token"] = self.session_token
         return d
 
     @classmethod
-    def from_dict(cls, data: Dict[str, Any], **kwargs: Any) -> "AWSSigV4Auth":
+    def from_dict(cls, data: dict[str, Any], **kwargs: Any) -> AWSSigV4Auth:
         """Create from dictionary.
 
         Raises:
@@ -159,7 +166,7 @@ class AWSSigV4Auth(AuthStrategy):
 
     # ── Strategy metadata ─────────────────────────────────────────────────────
 
-    def interpolate(self, interp: Callable[[str], str]) -> "AWSSigV4Auth":
+    def interpolate(self, interp: Callable[[str], str]) -> AWSSigV4Auth:
         """Return a copy with ``{{VAR}}`` placeholders expanded."""
         return AWSSigV4Auth(
             access_key=interp(self.access_key),
@@ -170,12 +177,10 @@ class AWSSigV4Auth(AuthStrategy):
         )
 
     def get_display_summary(self) -> str:
-        masked_key = (
-            f"{self.access_key[:4]}****" if len(self.access_key) > 4 else "****"
-        )
+        masked_key = f"{self.access_key[:4]}****" if len(self.access_key) > 4 else "****"
         return f"Key: {masked_key}  Region: {self.region}  Service: {self.service}"
 
-    def get_preflight_warning(self) -> Optional[str]:
+    def get_preflight_warning(self) -> str | None:
         if not self.access_key:
             return "AWS access key is empty"
         if not self.secret_key:
@@ -183,9 +188,7 @@ class AWSSigV4Auth(AuthStrategy):
         return None
 
     def __repr__(self) -> str:
-        masked_key = (
-            f"{self.access_key[:4]}****" if len(self.access_key) > 4 else "****"
-        )
+        masked_key = f"{self.access_key[:4]}****" if len(self.access_key) > 4 else "****"
         return (
             f"AWSSigV4Auth(access_key={masked_key!r}, "
             f"region={self.region!r}, service={self.service!r})"
@@ -217,13 +220,11 @@ class AWSSigV4Auth(AuthStrategy):
         if not query:
             return ""
         pairs = urls.parse_query_pairs(query, keep_blank_values=True)
-        encoded = sorted(
-            (quote(k, safe=""), quote(v, safe="")) for k, v in pairs
-        )
+        encoded = sorted((quote(k, safe=""), quote(v, safe="")) for k, v in pairs)
         return "&".join(f"{k}={v}" for k, v in encoded)
 
     @staticmethod
-    def _canonical_headers(headers: Dict[str, str]) -> Tuple[str, str]:
+    def _canonical_headers(headers: dict[str, str]) -> tuple[str, str]:
         """Return (signed_headers_string, canonical_headers_block).
 
         Only lowercase header names are used.  Headers are sorted by name.

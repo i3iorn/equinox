@@ -9,7 +9,6 @@ any values the user has already entered for unchanged parameters.
 import logging
 import re
 from contextlib import contextmanager
-from typing import Optional
 
 from PyQt6.QtCore import QObject, Qt, pyqtSignal
 from PyQt6.QtWidgets import (
@@ -34,6 +33,7 @@ _MAX_PATH_PARAMS: int = 50
 # Module-level helpers
 # ---------------------------------------------------------------------------
 
+
 @contextmanager
 def _blocked(obj: QObject):
     """Block Qt signals on *obj* for the duration of the ``with`` block.
@@ -53,6 +53,7 @@ def _blocked(obj: QObject):
 # ---------------------------------------------------------------------------
 # Public utility
 # ---------------------------------------------------------------------------
+
 
 def extract_path_params(url: str) -> list[str]:
     """Return an ordered, deduplicated list of path-parameter names in *url*.
@@ -81,6 +82,7 @@ def extract_path_params(url: str) -> list[str]:
 # Widget
 # ---------------------------------------------------------------------------
 
+
 class PathParamsTable(QTableWidget):
     """Two-column table that displays path parameters parsed from a URL.
 
@@ -97,7 +99,7 @@ class PathParamsTable(QTableWidget):
 
     paramsChanged = pyqtSignal()
 
-    def __init__(self, parent: Optional[QWidget] = None) -> None:
+    def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(0, self._COL_COUNT, parent)
         self.setHorizontalHeaderLabels(["Parameter", "Value"])
         self.horizontalHeader().setSectionResizeMode(
@@ -111,8 +113,8 @@ class PathParamsTable(QTableWidget):
         self.setAlternatingRowColors(True)
         self.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
 
-        self._params: dict[str, str] = {}   # name → user-entered value
-        self._ordered: list[str] = []        # current ordered param names
+        self._params: dict[str, str] = {}  # name → user-entered value
+        self._ordered: list[str] = []  # current ordered param names
 
         self.itemChanged.connect(self._on_item_changed)
 
@@ -181,8 +183,7 @@ class PathParamsTable(QTableWidget):
                     Qt.ItemFlag.ItemIsSelectable | Qt.ItemFlag.ItemIsEnabled
                 )  # read-only
                 self.setItem(row, self._COL_PARAM, param_item)
-                self.setItem(row, self._COL_VALUE,
-                             QTableWidgetItem(self._params.get(name, "")))
+                self.setItem(row, self._COL_VALUE, QTableWidgetItem(self._params.get(name, "")))
 
     def _sync_from_table(self) -> None:
         """Read current cell values back into ``_params``.

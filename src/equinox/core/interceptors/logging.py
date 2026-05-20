@@ -1,13 +1,16 @@
 import json
 import logging
-from typing import Dict, Any, Optional
+from typing import Any
 
-from equinox.core.request import Response, Request
-from equinox.core.interceptors._base import RequestInterceptor, ResponseInterceptor, \
-    ErrorInterceptor, InterceptorContext, InterceptorResult
-from equinox.core.format.logging_payload import request_payload, response_payload, \
-    error_payload
-
+from equinox.core.format.logging_payload import error_payload, request_payload, response_payload
+from equinox.core.interceptors._base import (
+    ErrorInterceptor,
+    InterceptorContext,
+    InterceptorResult,
+    RequestInterceptor,
+    ResponseInterceptor,
+)
+from equinox.core.request import Request, Response
 from equinox.core.util.time import utc_now
 
 
@@ -15,7 +18,7 @@ class StructuredLogger:
     def __init__(self, logger: logging.Logger):
         self.logger = logger
 
-    def log(self, level: int, event: str, payload: Dict[str, Any]) -> None:
+    def log(self, level: int, event: str, payload: dict[str, Any]) -> None:
         data = {
             "event": event,
             "level": logging.getLevelName(level),
@@ -47,7 +50,7 @@ class RequestResponseLogger:
     def log_response(
         self,
         request_or_payload: Any,
-        response: Optional[Response] = None,
+        response: Response | None = None,
         elapsed_time: float = 0.0,
         level: int = logging.INFO,
         include_body: bool = False,
@@ -64,7 +67,7 @@ class RequestResponseLogger:
     def log_error(
         self,
         request_or_payload: Any,
-        error: Optional[Exception] = None,
+        error: Exception | None = None,
         level: int = logging.ERROR,
     ) -> None:
         err = error or Exception("Unknown request error")
@@ -77,7 +80,7 @@ class RequestResponseLogger:
 
 
 class LoggingRequestInterceptor(RequestInterceptor):
-    def __init__(self, logger: Optional[RequestResponseLogger] = None):
+    def __init__(self, logger: RequestResponseLogger | None = None):
         self.logger = logger or RequestResponseLogger()
 
     def intercept(self, context: InterceptorContext) -> InterceptorResult[Request]:
@@ -88,7 +91,7 @@ class LoggingRequestInterceptor(RequestInterceptor):
 
 
 class LoggingResponseInterceptor(ResponseInterceptor):
-    def __init__(self, logger: Optional[RequestResponseLogger] = None):
+    def __init__(self, logger: RequestResponseLogger | None = None):
         self.logger = logger or RequestResponseLogger()
 
     def intercept(self, context: InterceptorContext) -> InterceptorResult[Response]:
@@ -99,7 +102,7 @@ class LoggingResponseInterceptor(ResponseInterceptor):
 
 
 class LoggingErrorInterceptor(ErrorInterceptor):
-    def __init__(self, logger: Optional[RequestResponseLogger] = None):
+    def __init__(self, logger: RequestResponseLogger | None = None):
         self.logger = logger or RequestResponseLogger()
 
     def intercept(self, context: InterceptorContext) -> InterceptorResult[Exception]:

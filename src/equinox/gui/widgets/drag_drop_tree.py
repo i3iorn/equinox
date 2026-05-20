@@ -1,11 +1,12 @@
 """Drag-and-drop enabled QTreeWidget for the collections panel."""
+
 from __future__ import annotations
 
 import logging
 
-from PyQt6.QtWidgets import QTreeWidget, QTreeWidgetItem, QAbstractItemView
-from PyQt6.QtCore import pyqtSignal, Qt, QMimeData
+from PyQt6.QtCore import QMimeData, Qt, pyqtSignal
 from PyQt6.QtGui import QDrag, QDragEnterEvent, QDragMoveEvent, QDropEvent
+from PyQt6.QtWidgets import QAbstractItemView, QTreeWidget, QTreeWidgetItem
 
 logger = logging.getLogger(__name__)
 
@@ -33,15 +34,10 @@ class DragDropTree(QTreeWidget):
     # ── Private helpers ───────────────────────────────────────────────
 
     @staticmethod
-    def _node_data(item: QTreeWidgetItem | None) -> dict | None:
-        """Return the UserRole dict for *item*, or ``None`` if item is None.
-
-        Returns ``None`` if the item is None, or ``{}`` if the item's UserRole
-        data is not set. Callers should check ``if not data:`` before calling
-        ``.get()`` to handle both None and empty dict cases.
-        """
+    def _node_data(item: QTreeWidgetItem | None) -> dict:
+        """Return the UserRole dict for *item* (or ``{}`` when absent)."""
         if item is None:
-            return None
+            return {}
         return item.data(0, Qt.ItemDataRole.UserRole) or {}
 
     # ── Only request items are draggable ──────────────────────────────
@@ -137,9 +133,7 @@ class DragDropTree(QTreeWidget):
                 event.ignore()
                 return
             if target_req_id is not None:
-                logger.debug(
-                    "dropEvent: reorder request %s → before %s", request_id, target_req_id
-                )
+                logger.debug("dropEvent: reorder request %s → before %s", request_id, target_req_id)
                 event.acceptProposedAction()
                 self.request_reorder.emit(request_id, int(target_req_id))
                 return
@@ -162,7 +156,9 @@ class DragDropTree(QTreeWidget):
 
         logger.debug(
             "dropEvent: move request %s → collection %s, folder=%r",
-            request_id, col_id, folder,
+            request_id,
+            col_id,
+            folder,
         )
         event.acceptProposedAction()
         self.request_dropped.emit(request_id, col_id, folder)

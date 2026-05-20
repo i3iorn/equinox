@@ -12,20 +12,20 @@ Public exports (for backward compatibility):
     - SensitiveDataCachingAnalyzer
 """
 
-from equinox.core.response_intelligence.analyzers.headers import (
-    MissingSecurityHeadersAnalyzer,
-)
 from equinox.core.response_intelligence.analyzers.cookies import (
     CookieFlagsAnalyzer,
-)
-from equinox.core.response_intelligence.analyzers.pii_secret_leak import (
-    PIILeakDetectionAnalyzer,
 )
 from equinox.core.response_intelligence.analyzers.cors import (
     CORSMisconfigAnalyzer,
 )
+from equinox.core.response_intelligence.analyzers.headers import (
+    MissingSecurityHeadersAnalyzer,
+)
 from equinox.core.response_intelligence.analyzers.jwt import (
     JWTDecodeAnalyzer,
+)
+from equinox.core.response_intelligence.analyzers.pii_secret_leak import (
+    PIILeakDetectionAnalyzer,
 )
 from equinox.core.response_intelligence.analyzers.sensitive_data import (
     SensitiveDataCachingAnalyzer,
@@ -39,4 +39,3 @@ __all__ = [
     "JWTDecodeAnalyzer",
     "SensitiveDataCachingAnalyzer",
 ]
-

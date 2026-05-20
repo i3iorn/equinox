@@ -94,7 +94,9 @@ def test_prepare_send_skips_pre_script_when_policy_is_strict(monkeypatch) -> Non
 
     monkeypatch.setattr(
         "equinox.application.requests.execution.ScriptRunner.run_pre",
-        lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("run_pre must not run in strict mode")),
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            AssertionError("run_pre must not run in strict mode")
+        ),
     )
 
     result = prepare_send(
@@ -110,4 +112,3 @@ def test_prepare_send_skips_pre_script_when_policy_is_strict(monkeypatch) -> Non
     assert result.ready is True
     assert result.package is not None
     assert result.package.pre_script_result is None
-

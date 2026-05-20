@@ -3,14 +3,14 @@
 from __future__ import annotations
 
 import math
-from typing import List, Sequence
+from collections.abc import Sequence
 
 
-def coerce_numeric_samples(values: object, max_samples: int = 500) -> List[float]:
+def coerce_numeric_samples(values: object, max_samples: int = 500) -> list[float]:
     if not isinstance(values, list):
         return []
 
-    numeric: List[float] = []
+    numeric: list[float] = []
     for item in values:
         try:
             value = float(item)
@@ -32,5 +32,6 @@ def percentile(sorted_data: Sequence[float], pct: int) -> float:
     ceil_idx = floor_idx + 1
     if ceil_idx >= len(sorted_data):
         return float(sorted_data[floor_idx])
-    return sorted_data[floor_idx] + (k - floor_idx) * (sorted_data[ceil_idx] - sorted_data[floor_idx])
-
+    return sorted_data[floor_idx] + (k - floor_idx) * (
+        sorted_data[ceil_idx] - sorted_data[floor_idx]
+    )

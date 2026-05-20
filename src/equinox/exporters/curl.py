@@ -1,14 +1,15 @@
 """cURL exporter — converts a single request to a ``curl`` command string."""
+
 from __future__ import annotations
 
 import logging
 import platform
 import shlex
 
-from equinox.security import redact_headers
-from equinox.core.validation import Validator
 from equinox.core import urls
 from equinox.core.request import Request
+from equinox.core.validation import Validator
+from equinox.security import redact_headers
 
 __all__ = ["CurlExporter"]
 
@@ -55,8 +56,8 @@ class CurlExporter:
         """
         Validator.validate_url(request.url)
 
-        quote  = CurlExporter._shell_quote
-        parts  = ["curl", "-X", request.method]
+        quote = CurlExporter._shell_quote
+        parts = ["curl", "-X", request.method]
 
         for key, value in redact_headers(request.headers or {}).items():
             parts.append(f"-H {quote(f'{key}: {value}')}")
@@ -70,11 +71,9 @@ class CurlExporter:
         )
         if request.params:
             sep = "&" if "?" in base_url else "?"
-            qs  = "&".join(f"{k}={v}" for k, v in request.params.items())
+            qs = "&".join(f"{k}={v}" for k, v in request.params.items())
             parts.append(quote(f"{base_url}{sep}{qs}"))
         else:
             parts.append(quote(base_url))
 
         return " ".join(parts)
-
-

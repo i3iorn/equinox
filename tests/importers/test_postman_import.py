@@ -1,13 +1,14 @@
 """Tests for Postman collection importer"""
 
-import pytest
 import json
 import tempfile
 from pathlib import Path
 
-from equinox.storage import Database, CollectionManager
-from equinox.importers import PostmanImporter, preview_collection
+import pytest
+
 from equinox.core.exceptions import ValidationError
+from equinox.importers import PostmanImporter, preview_collection
+from equinox.storage import CollectionManager, Database
 
 
 class TestPostmanImporter:
@@ -44,7 +45,7 @@ class TestPostmanImporter:
                 "name": "Test Collection",
                 "description": "Test description",
                 "_postman_id": "12345",
-                "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+                "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
             },
             "item": [
                 {
@@ -56,33 +57,28 @@ class TestPostmanImporter:
                             "raw": "https://api.example.com/users",
                             "protocol": "https",
                             "host": ["api", "example", "com"],
-                            "path": ["users"]
-                        }
-                    }
+                            "path": ["users"],
+                        },
+                    },
                 },
                 {
                     "name": "Create User",
                     "request": {
                         "method": "POST",
-                        "header": [
-                            {
-                                "key": "Content-Type",
-                                "value": "application/json"
-                            }
-                        ],
+                        "header": [{"key": "Content-Type", "value": "application/json"}],
                         "body": {
                             "mode": "raw",
-                            "raw": '{"name": "John Doe", "email": "john@example.com"}'
+                            "raw": '{"name": "John Doe", "email": "john@example.com"}',
                         },
                         "url": {
                             "raw": "https://api.example.com/users",
                             "protocol": "https",
                             "host": ["api", "example", "com"],
-                            "path": ["users"]
-                        }
-                    }
-                }
-            ]
+                            "path": ["users"],
+                        },
+                    },
+                },
+            ],
         }
 
     @pytest.fixture
@@ -92,17 +88,14 @@ class TestPostmanImporter:
             "info": {
                 "name": "V2.0 Collection",
                 "description": "Version 2.0 test",
-                "schema": "https://schema.getpostman.com/json/collection/v2.0.0/collection.json"
+                "schema": "https://schema.getpostman.com/json/collection/v2.0.0/collection.json",
             },
             "item": [
                 {
                     "name": "Simple Request",
-                    "request": {
-                        "method": "GET",
-                        "url": "https://api.example.com/test"
-                    }
+                    "request": {"method": "GET", "url": "https://api.example.com/test"},
                 }
-            ]
+            ],
         }
 
     def test_import_v21_from_dict(self, importer, simple_postman_v21):
@@ -201,9 +194,9 @@ class TestPostmanImporter:
         collection = {
             "info": {
                 "name": "Test",
-                "schema": "https://schema.getpostman.com/json/collection/v3.0.0/collection.json"
+                "schema": "https://schema.getpostman.com/json/collection/v3.0.0/collection.json",
             },
-            "item": []
+            "item": [],
         }
 
         with pytest.raises(ValidationError, match="Unsupported"):
@@ -211,16 +204,14 @@ class TestPostmanImporter:
 
     def test_missing_info_raises_error(self, importer):
         """Test collection without info section raises error"""
-        collection = {
-            "item": []
-        }
+        collection = {"item": []}
 
         with pytest.raises(ValidationError, match="missing 'info' field"):
             importer.import_dict(collection)
 
     def test_import_from_json_file(self, importer, simple_postman_v21):
         """Test importing from JSON file"""
-        with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as tmp:
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as tmp:
             json.dump(simple_postman_v21, tmp)
             tmp_path = Path(tmp.name)
 
@@ -232,7 +223,7 @@ class TestPostmanImporter:
 
     def test_invalid_json_raises_error(self, importer):
         """Test invalid JSON file raises error"""
-        with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as tmp:
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as tmp:
             tmp.write("{ invalid json [[[")
             tmp_path = Path(tmp.name)
 
@@ -250,7 +241,7 @@ class TestPostmanImporter:
     def test_file_too_large_raises_error(self, importer):
         """Test file size limit"""
         # Create a large file
-        with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as tmp:
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as tmp:
             # Write more than MAX_COLLECTION_SIZE
             large_data = {"info": {"name": "Test"}, "item": [], "data": "x" * (11 * 1024 * 1024)}
             json.dump(large_data, tmp)
@@ -267,18 +258,12 @@ class TestPostmanImporter:
         collection = {
             "info": {
                 "name": "Too Many",
-                "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+                "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
             },
             "item": [
-                {
-                    "name": f"Request {i}",
-                    "request": {
-                        "method": "GET",
-                        "url": "https://example.com"
-                    }
-                }
+                {"name": f"Request {i}", "request": {"method": "GET", "url": "https://example.com"}}
                 for i in range(1001)  # Over MAX_REQUESTS
-            ]
+            ],
         }
 
         with pytest.raises(ValidationError, match="Too many requests"):
@@ -289,7 +274,7 @@ class TestPostmanImporter:
         collection = {
             "info": {
                 "name": "Nested Collection",
-                "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+                "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
             },
             "item": [
                 {
@@ -297,10 +282,7 @@ class TestPostmanImporter:
                     "item": [
                         {
                             "name": "Request 1",
-                            "request": {
-                                "method": "GET",
-                                "url": "https://api.example.com/1"
-                            }
+                            "request": {"method": "GET", "url": "https://api.example.com/1"},
                         },
                         {
                             "name": "Subfolder",
@@ -309,14 +291,14 @@ class TestPostmanImporter:
                                     "name": "Request 2",
                                     "request": {
                                         "method": "GET",
-                                        "url": "https://api.example.com/2"
-                                    }
+                                        "url": "https://api.example.com/2",
+                                    },
                                 }
-                            ]
-                        }
-                    ]
+                            ],
+                        },
+                    ],
                 }
-            ]
+            ],
         }
 
         collection_id = importer.import_dict(collection)
@@ -330,7 +312,7 @@ class TestPostmanImporter:
         collection = {
             "info": {
                 "name": "Query Test",
-                "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+                "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
             },
             "item": [
                 {
@@ -341,12 +323,12 @@ class TestPostmanImporter:
                             "raw": "https://api.example.com/search?q=test&limit=10",
                             "query": [
                                 {"key": "q", "value": "test"},
-                                {"key": "limit", "value": "10"}
-                            ]
-                        }
-                    }
+                                {"key": "limit", "value": "10"},
+                            ],
+                        },
+                    },
                 }
-            ]
+            ],
         }
 
         collection_id = importer.import_dict(collection)
@@ -363,7 +345,7 @@ class TestPostmanImporter:
 
     def test_preview_collection(self, simple_postman_v21):
         """Test preview collection functionality"""
-        with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as tmp:
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as tmp:
             json.dump(simple_postman_v21, tmp)
             tmp_path = Path(tmp.name)
 
@@ -382,16 +364,9 @@ class TestPostmanImporter:
         collection = {
             "info": {
                 "name": "Test",
-                "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+                "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
             },
-            "item": [
-                {
-                    "request": {
-                        "method": "GET",
-                        "url": "https://api.example.com/test"
-                    }
-                }
-            ]
+            "item": [{"request": {"method": "GET", "url": "https://api.example.com/test"}}],
         }
 
         collection_id = importer.import_dict(collection)
@@ -405,9 +380,9 @@ class TestPostmanImporter:
         collection = {
             "info": {
                 "name": "Empty",
-                "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+                "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
             },
-            "item": []
+            "item": [],
         }
 
         collection_id = importer.import_dict(collection)
@@ -420,17 +395,14 @@ class TestPostmanImporter:
         collection = {
             "info": {
                 "name": "Variables",
-                "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+                "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
             },
             "item": [
                 {
                     "name": "Variable Test",
-                    "request": {
-                        "method": "GET",
-                        "url": "https://{{host}}/users/{{userId}}"
-                    }
+                    "request": {"method": "GET", "url": "https://{{host}}/users/{{userId}}"},
                 }
-            ]
+            ],
         }
 
         collection_id = importer.import_dict(collection)
@@ -446,7 +418,7 @@ class TestPostmanImporter:
         collection = {
             "info": {
                 "name": "Body Modes",
-                "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+                "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
             },
             "item": [
                 {
@@ -454,11 +426,8 @@ class TestPostmanImporter:
                     "request": {
                         "method": "POST",
                         "url": "https://api.example.com",
-                        "body": {
-                            "mode": "raw",
-                            "raw": '{"key": "value"}'
-                        }
-                    }
+                        "body": {"mode": "raw", "raw": '{"key": "value"}'},
+                    },
                 },
                 {
                     "name": "URLEncoded",
@@ -469,12 +438,12 @@ class TestPostmanImporter:
                             "mode": "urlencoded",
                             "urlencoded": [
                                 {"key": "field1", "value": "value1"},
-                                {"key": "field2", "value": "value2"}
-                            ]
-                        }
-                    }
-                }
-            ]
+                                {"key": "field2", "value": "value2"},
+                            ],
+                        },
+                    },
+                },
+            ],
         }
 
         collection_id = importer.import_dict(collection)
@@ -537,4 +506,3 @@ class TestPostmanImporter:
         requests = col_mgr.list_requests(collection_id)
         request_obj = col_mgr.get_request(requests[0]["id"])
         assert request_obj.url == "https://api.example.com/users/{{userId}}"
-

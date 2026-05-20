@@ -1,8 +1,9 @@
 """Tests for input validation module."""
 
 import pytest
-from equinox.core.validation import Validator
+
 from equinox.core.exceptions import ValidationError
+from equinox.core.validation import Validator
 
 
 class TestURLValidation:
@@ -111,7 +112,7 @@ class TestRequestBodyValidation:
 
     def test_invalid_json_body(self):
         """Test invalid JSON body."""
-        body = '{invalid json}'
+        body = "{invalid json}"
         with pytest.raises(ValidationError, match="Invalid JSON"):
             Validator.validate_request_body(body, "application/json")
 
