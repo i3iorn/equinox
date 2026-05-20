@@ -2,68 +2,203 @@ name: CI
 
 on:
   push:
+    branches: [main, master, "release/**"]
   pull_request:
+    branches: [main, master]
 
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  PYTHON_DEFAULT: "3.11"
+  # Required for PyQt6 to run headless on Linux CI runners
+  QT_QPA_PLATFORM: offscreen
+  PYTHONDONTWRITEBYTECODE: "1"
+  PYTHONUNBUFFERED: "1"
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Job: lint
+# Runs formatting, linting, and import-order checks on a single Python version.
+# Fast-fail to give quick feedback before the heavier test matrix starts.
+# ──────────────────────────────────────────────────────────────────────────────
 jobs:
-  build:
+  lint:
+    name: Lint & Format
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        python-version: ["3.9", "3.10", "3.11"]
     steps:
       - uses: actions/checkout@v4
+
+      - name: Set up Python ${{ env.PYTHON_DEFAULT }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_DEFAULT }}
+          cache: pip
+
+      - name: Install dev dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+
+      - name: Verify dependency manifest consistency
+        run: python scripts/check_dependency_consistency.py
+
+      - name: Verify requirements lockfile is current
+        run: python scripts/manage_requirements_lock.py --check
+
+      - name: Verify CI toolchain consistency
+        run: python scripts/verify_ci_toolchain.py
+
+      - name: Lint with Ruff (errors)
+        run: ruff check src/ tests/
+
+      - name: Format check with Ruff
+        run: ruff format --check src/ tests/
+
+  # ──────────────────────────────────────────────────────────────────────────
+  # Job: typecheck
+  # Strict mypy on src/ and tests/. Runs on the default Python only.
+  # ──────────────────────────────────────────────────────────────────────────
+  typecheck:
+    name: Type Check (mypy)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python ${{ env.PYTHON_DEFAULT }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_DEFAULT }}
+          cache: pip
+
+      - name: Install dev dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+
+      - name: Type check with Mypy (strict)
+        run: mypy --strict src tests
+
+  # ──────────────────────────────────────────────────────────────────────────
+  # Job: test
+  # Full test suite with coverage across the supported Python matrix.
+  # Coverage is reported to Codecov from the default version only.
+  # ──────────────────────────────────────────────────────────────────────────
+  test:
+    name: Test (Python ${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+    needs: [lint]          # Don't spin up matrix jobs if linting failed
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.9", "3.10", "3.11", "3.12"]
+
+    steps:
+      - uses: actions/checkout@v4
+
       - name: Set up Python ${{ matrix.python-version }}
         uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
+          cache: pip
+
       - name: Cache pip
         uses: actions/cache@v4
         with:
           path: ~/.cache/pip
-          key: ${{ runner.os }}-pip-${{ hashFiles('**/pyproject.toml', '**/requirements-lock.txt', '**/requirements.txt') }}
+          key: ${{ runner.os }}-py${{ matrix.python-version }}-pip-${{ hashFiles('**/pyproject.toml') }}
           restore-keys: |
-            ${{ runner.os }}-pip-
-      - name: Install dependencies
+            ${{ runner.os }}-py${{ matrix.python-version }}-pip-
+
+      - name: Install dev dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements.txt
-      - name: Verify dependency manifest consistency
+          pip install -e ".[dev]"
+
+      - name: Install virtual display for Qt (headless)
         run: |
-          python scripts/check_dependency_consistency.py
-      - name: Verify requirements lockfile is current
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends libxcb-cursor0 libegl1 libgl1 libglib2.0-0
+
+      - name: Run tests with coverage
         run: |
-          python scripts/manage_requirements_lock.py --check
-      - name: Lint with Black
-        run: |
-          black --version
-          black --check .
-      - name: Lint with Isort
-        run: |
-          isort --version
-          isort --check .
-      - name: Lint with Ruff
-        run: |
-          ruff --version
-          ruff check .
-      - name: Type checks (Mypy)
-        run: |
-          mypy src/equinox tests
-      - name: Security checks (Bandit) — blocking
-        run: |
-          bandit -r src/equinox -ll --format json -o bandit-blocking.json
-      - name: Security advisories (Bandit low-severity) — informational
-        continue-on-error: true
-        run: |
-          bandit -r src/equinox -l --format json -o bandit-advisory.json
-      - name: Safety checks — advisories only
-        continue-on-error: true
-        run: |
-          safety check --json || true
-      - name: Run tests
-        run: |
-          pytest -q --durations=10 --cov=equinox --cov-report=xml --cov-report=html --cov-fail-under=80
+          pytest -q \
+            --durations=20 \
+            --cov=equinox \
+            --cov-report=xml \
+            --cov-report=html \
+            --cov-report=term-missing \
+            --cov-fail-under=85
+        env:
+          QT_QPA_PLATFORM: offscreen
+          DISPLAY: ""
+
       - name: Upload coverage to Codecov
-        uses: codecov/codecov-action@v3
+        if: matrix.python-version == env.PYTHON_DEFAULT
+        uses: codecov/codecov-action@v4
         with:
           files: coverage.xml
-        if: ${{ always() }}
+          fail_ci_if_error: false
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results-py${{ matrix.python-version }}
+          path: |
+            htmlcov/
+            coverage.xml
+          retention-days: 7
+
+  # ──────────────────────────────────────────────────────────────────────────
+  # Job: security (inline, blocking)
+  # Run bandit at medium+ severity here in addition to the dedicated
+  # security.yml workflow, so every PR gets a fast security gate.
+  # ──────────────────────────────────────────────────────────────────────────
+  security:
+    name: Security Scan (bandit)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python ${{ env.PYTHON_DEFAULT }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_DEFAULT }}
+          cache: pip
+
+      - name: Install security tools
+        run: |
+          python -m pip install --upgrade pip
+          pip install bandit
+
+      - name: Bandit — blocking (medium+ severity)
+        run: bandit -r src/equinox --severity-level=medium -f json -o bandit-ci.json
+
+      - name: Upload Bandit report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: bandit-ci-report
+          path: bandit-ci.json
+          retention-days: 7
+
+  # ──────────────────────────────────────────────────────────────────────────
+  # Final gate — all required jobs must pass
+  # ──────────────────────────────────────────────────────────────────────────
+  ci-pass:
+    name: CI Pass
+    runs-on: ubuntu-latest
+    needs: [lint, typecheck, test, security]
+    if: always()
+    steps:
+      - name: Check all jobs passed
+        run: |
+          if [[ "${{ needs.lint.result }}" != "success" || \
+                "${{ needs.typecheck.result }}" != "success" || \
+                "${{ needs.test.result }}" != "success" || \
+                "${{ needs.security.result }}" != "success" ]]; then
+            echo "One or more required CI jobs failed."
+            exit 1
+          fi
+          echo "All CI jobs passed."

@@ -2,84 +2,102 @@ name: Security Scanning
 
 on:
   push:
-    branches: [ master ]
+    branches: [main, master]
   pull_request:
-    branches: [ master ]
+    branches: [main, master]
+  schedule:
+    # Run weekly on Mondays at 07:00 UTC to catch new CVEs
+    - cron: "0 7 * * 1"
 
 env:
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+  PYTHON_DEFAULT: "3.11"
 
 jobs:
   security:
+    name: Security Analysis
     runs-on: ubuntu-latest
     permissions:
       contents: read
       security-events: write
 
     steps:
-    - uses: actions/checkout@v6
+      - uses: actions/checkout@v4
 
-    - name: Set up Python
-      uses: actions/setup-python@v6
-      with:
-        python-version: '3.11'
-        cache: 'pip'
+      - name: Set up Python ${{ env.PYTHON_DEFAULT }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_DEFAULT }}
+          cache: pip
 
-    - name: Install dependencies
-      run: |
-        python -m pip install --upgrade pip
-        pip install -e ".[dev]"
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+          pip install pip-audit
 
-    - name: Run Bandit security check (medium+ severity fails build)
-      run: |
-        bandit -r src/ -f json -o bandit-report.json --severity-level medium
-        bandit -r src/ -f txt --severity-level medium
+      - name: Bandit — blocking (medium+ severity, JSON)
+        run: |
+          bandit -r src/equinox --severity-level=medium -f json -o bandit-report.json
+          bandit -r src/equinox --severity-level=medium -f txt
 
-    - name: Run Safety vulnerability check
-      # Safety depends on an external advisory DB; allow it to fail without
-      # blocking the build (network issues, DB unavailability, etc.).
-      continue-on-error: true
-      run: |
-        safety check --json || true
-        safety check
+      - name: Safety — advisory only (network-dependent)
+        # Allow failure: Safety depends on an external advisory DB; network issues
+        # or DB unavailability must not block the build.
+        continue-on-error: true
+        run: safety check
 
-    - name: Run pip-audit for dependency vulnerabilities
-      # pip-audit can surface false positives for dev-only packages; allow
-      # it to be informational while we triage findings manually.
-      continue-on-error: true
-      run: |
-        pip install pip-audit
-        pip-audit --desc
+      - name: pip-audit — dependency vulnerability scan (advisory)
+        # Advisory only while findings are triaged. Promote to blocking once
+        # all known false positives are suppressed via .pip-audit-ignore.
+        continue-on-error: true
+        run: pip-audit --desc --format markdown
 
-    - name: Upload Bandit report
-      if: always()
-      uses: actions/upload-artifact@v7
-      with:
-        name: bandit-report
-        path: bandit-report.json
+      - name: Upload Bandit report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: bandit-security-report
+          path: bandit-report.json
+          retention-days: 30
 
-    - name: Comment PR with security results
-      if: github.event_name == 'pull_request'
-      uses: actions/github-script@v6
-      with:
-        script: |
-          const fs = require('fs');
-          let comment = '## Security Scan Results\n\n';
+      - name: Comment PR with security results
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            let comment = '## 🔒 Security Scan Results\n\n';
 
-          try {
-            const banditReport = JSON.parse(fs.readFileSync('bandit-report.json', 'utf8'));
-            comment += `### Bandit Results\n`;
-            comment += `- Issues found: ${banditReport.metrics.total_issues}\n`;
-            comment += `- High severity: ${banditReport.metrics.high_severity}\n`;
-            comment += `- Medium severity: ${banditReport.metrics.medium_severity}\n`;
-            comment += `- Low severity: ${banditReport.metrics.low_severity}\n\n`;
-          } catch(e) {
-            console.log('Bandit report not found');
-          }
+            try {
+              const report = JSON.parse(fs.readFileSync('bandit-report.json', 'utf8'));
+              const m = report.metrics;
+              const total = m ? m.total_issues ?? '?' : '?';
+              const high   = m ? (m.high_severity   ?? m.SEVERITY_HIGH   ?? '?') : '?';
+              const medium = m ? (m.medium_severity ?? m.SEVERITY_MEDIUM ?? '?') : '?';
+              const low    = m ? (m.low_severity    ?? m.SEVERITY_LOW    ?? '?') : '?';
 
-          github.rest.issues.createComment({
-            issue_number: context.issue.number,
-            owner: context.repo.owner,
-            repo: context.repo.repo,
-            body: comment + 'Security checks completed'
-          });
+              comment += `### Bandit — Static Security Analysis\n`;
+              comment += `| Severity | Count |\n|---|---|\n`;
+              comment += `| 🔴 High | ${high} |\n`;
+              comment += `| 🟠 Medium | ${medium} |\n`;
+              comment += `| 🟡 Low | ${low} |\n`;
+              comment += `| **Total** | **${total}** |\n\n`;
+
+              if (parseInt(high) > 0 || parseInt(medium) > 0) {
+                comment += '> ⚠️ **High/Medium severity issues found — review required before merging.**\n\n';
+              } else {
+                comment += '> ✅ No high/medium severity issues found.\n\n';
+              }
+            } catch (e) {
+              comment += '> ⚠️ Bandit report not available.\n\n';
+            }
+
+            comment += '_Full report available in the [workflow artifacts](' +
+              `https://github.com/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId})._`;
+
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: comment,
+            });

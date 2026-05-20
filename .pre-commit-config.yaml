@@ -1,56 +1,74 @@
 repos:
+  # ── Local project-specific checks ──────────────────────────────────────────
   - repo: local
     hooks:
       - id: dependency-manifest-consistency
-        name: dependency-manifest-consistency
+        name: "Check: dependency manifest consistency"
         entry: python scripts/check_dependency_consistency.py
         language: python
         pass_filenames: false
         files: ^(pyproject\.toml|setup\.py|requirements\.txt|requirements-lock\.txt)$
+
       - id: requirements-lock-current
-        name: requirements-lock-current
+        name: "Check: requirements lockfile is current"
         entry: python scripts/manage_requirements_lock.py --check
         language: python
         pass_filenames: false
         files: ^(pyproject\.toml|requirements\.txt|requirements-lock\.txt)$
 
+      - id: verify-ci-toolchain
+        name: "Check: CI toolchain matches declared dependencies"
+        entry: python scripts/verify_ci_toolchain.py
+        language: python
+        pass_filenames: false
+        stages: [pre-commit]
+        files: ^(\.github/workflows/.*\.yml|pyproject\.toml)$
+
+  # ── General file hygiene ────────────────────────────────────────────────────
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v4.6.0
     hooks:
       - id: trailing-whitespace
       - id: end-of-file-fixer
       - id: check-yaml
+      - id: check-toml
       - id: check-json
       - id: check-merge-conflict
       - id: check-added-large-files
         args: ['--maxkb=1000']
       - id: check-case-conflict
+      - id: check-docstring-first
       - id: detect-private-key
+      - id: no-commit-to-branch
+        args: ['--branch', 'main', '--branch', 'master']
 
-  - repo: https://github.com/psf/black
-    rev: 24.4.0
-    hooks:
-      - id: black
-        language_version: python3.9
-
+  # ── Python formatting & linting (ruff replaces black + isort) ──────────────
+  # ruff-format is the drop-in Black replacement; ruff check handles isort (I rule).
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.4.1
+    rev: v0.4.9
     hooks:
       - id: ruff
-        args: [--fix]
+        args: [--fix, --exit-non-zero-on-fix]
       - id: ruff-format
 
+  # ── Type checking ───────────────────────────────────────────────────────────
   - repo: https://github.com/pre-commit/mirrors-mypy
-    rev: v1.9.0
+    rev: v1.10.0
     hooks:
       - id: mypy
-        additional_dependencies: ["types-PyYAML", "types-requests"]
+        additional_dependencies:
+          - "types-PyYAML"
+          - "types-requests"
+          - "cryptography"
+          - "httpx"
+          - "click"
         args: [--strict, src, tests]
-        exclude: ^(tests/|examples/)
+        exclude: ^examples/
 
-  - repo: https://github.com/bandit-org/bandit
-    rev: 1.7.5
+  # ── Security scanning ───────────────────────────────────────────────────────
+  - repo: https://github.com/PyCQA/bandit
+    rev: 1.7.9
     hooks:
       - id: bandit
-        args: [-r, src/equinox, --severity-level=medium]
+        args: [-r, src/equinox, --severity-level=medium, -q]
         exclude: ^tests/
