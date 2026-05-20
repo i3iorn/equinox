@@ -124,11 +124,7 @@ warn_unreachable = true
 strict_optional = true
 
 [[tool.mypy.overrides]]
-module = [
-    "equinox.core.validation.*",
-    "equinox.storage.history.*",
-    "equinox.auth.*",
-]
+module = ["tests.*"]
 disallow_any_generics = true
 disallow_subclassing_any = true
 warn_unused_ignores = true
