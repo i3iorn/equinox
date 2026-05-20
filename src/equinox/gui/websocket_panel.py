@@ -9,7 +9,7 @@ import sys
 from datetime import datetime
 
 from PyQt6.QtCore import Qt, QThread, pyqtSignal
-from PyQt6.QtGui import QColor, QCloseEvent
+from PyQt6.QtGui import QCloseEvent, QColor
 from PyQt6.QtWidgets import (
     QCheckBox,
     QHBoxLayout,

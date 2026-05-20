@@ -92,9 +92,7 @@ class _PreparedRequest:
             raw_url=row.get("url", ""),
             body=row.get("body") or None,
             headers={
-                str(k): str(v)
-                for k, v in (redact_headers(headers) or {}).items()
-                if v is not None
+                str(k): str(v) for k, v in (redact_headers(headers) or {}).items() if v is not None
             },
             params=params,
             path_params=path_params,

@@ -8,6 +8,8 @@ Contains all ``_build_*`` methods that create the widget tree.  Has no
 
 from __future__ import annotations
 
+from typing import Tuple
+
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QKeySequence, QShortcut
 from PyQt6.QtWidgets import (
@@ -185,7 +187,7 @@ class ResponseBuilderMixin:
         btn.clicked.connect(self._view_code_dialog)
         return btn
 
-    def _build_view_selector(self):
+    def _build_view_selector(self) -> Tuple[QToolButton, QMenu]:
         btn = QToolButton()
         btn.setText("View")
         btn.setToolTip("Switch between Raw and JSON Tree view")
@@ -209,7 +211,7 @@ class ResponseBuilderMixin:
 
         return btn, menu
 
-    def _build_readability_selector(self):
+    def _build_readability_selector(self) -> Tuple[QToolButton, QMenu]:
         btn = QToolButton()
         btn.setText("Mode")
         btn.setToolTip("Switch body readability mode")

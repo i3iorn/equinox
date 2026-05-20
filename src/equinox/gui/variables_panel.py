@@ -989,9 +989,9 @@ class VariablesPanel(QWidget):
         try:
             return int(
                 tracker.get_count(
-                category="context_menu",
-                context=context,
-                element_id=f"action.{action_id}",
+                    category="context_menu",
+                    context=context,
+                    element_id=f"action.{action_id}",
                 )
             )
         except Exception:

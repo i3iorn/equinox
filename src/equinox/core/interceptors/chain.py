@@ -108,7 +108,9 @@ class InterceptorChain:
         )
 
         for interceptor in self.error_interceptors:
-            if context.error is None or not interceptor.can_intercept(context.error, context.request):
+            if context.error is None or not interceptor.can_intercept(
+                context.error, context.request
+            ):
                 continue
 
             result = interceptor.intercept(context)

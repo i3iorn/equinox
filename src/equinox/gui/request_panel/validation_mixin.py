@@ -9,7 +9,7 @@ import logging
 from typing import Any, Optional, Tuple
 
 from PyQt6.QtCore import QTimer
-from PyQt6.QtWidgets import QComboBox, QLineEdit, QPushButton, QPlainTextEdit, QWidget
+from PyQt6.QtWidgets import QComboBox, QLineEdit, QPlainTextEdit, QPushButton, QWidget
 
 from equinox.core.exceptions import ValidationError
 from equinox.core.validation import Validator

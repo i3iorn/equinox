@@ -9,7 +9,7 @@ Logging strategy:
 import json
 import logging
 import time
-from typing import Any, NamedTuple, Callable
+from typing import Any, Callable, NamedTuple
 
 from PyQt6.QtCore import QStringListModel, Qt, QTimer, pyqtSignal
 from PyQt6.QtGui import QAction

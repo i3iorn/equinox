@@ -1,5 +1,5 @@
 import logging
-from typing import Union, cast
+from typing import Optional, Union
 
 from equinox.core.request import Request, Response
 from equinox.security import redact_url
@@ -30,8 +30,8 @@ GENERATORS = _GENERATORS
 
 def generate_code(fmt: str, request_or_response: Union[Request, Response]) -> str:
     """Generate client code for the given response/request."""
-    gen_cls = _GENERATORS.get(fmt)
-    if not gen_cls:
+    gen_cls: Optional[type] = _GENERATORS.get(fmt)
+    if gen_cls is None:
         raise KeyError(fmt)
 
     if isinstance(request_or_response, Response):
@@ -57,10 +57,8 @@ def generate_code(fmt: str, request_or_response: Union[Request, Response]) -> st
         redact_url(response.request.url) if response.request.url else "",
         response.status_code,
     )
-    gen_cls = _GENERATORS.get(fmt)
-    if not gen_cls:
-        return f"Error: Unsupported format '{fmt}'"
-    return cast(str, gen_cls().generate(response))
+
+    return gen_cls().generate(response)
 
 
 __all__ = ["generate_code"]

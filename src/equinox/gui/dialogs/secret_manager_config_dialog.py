@@ -56,7 +56,7 @@ class SecretManagerConfigDialog(QDialog):
     config_saved = pyqtSignal(str, dict)  # manager_type, config_dict
     _VAULT_MANAGER_TYPES = ("vault", "hashicorp_vault")
 
-    def __init__(self, parent=None):
+    def __init__(self, parent=None) -> None:
         """Initialize the configuration dialog.
 
         Args:

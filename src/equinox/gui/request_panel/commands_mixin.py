@@ -43,6 +43,7 @@ class RequestCommandsMixin:
     _cookie_manager: Any
 
     if TYPE_CHECKING:
+
         def _send_request(self) -> None: ...
         def _save_request(self) -> None: ...
         def _format_json_body(self) -> None: ...
@@ -135,7 +136,9 @@ class RequestCommandsMixin:
             parsed = parse_curl(text.strip())
         except Exception as exc:
             logger.warning("Failed to parse cURL command (len=%d): %s", len(text), exc)
-            QMessageBox.warning(self._as_qwidget(), "Parse Error", f"Could not parse cURL command:\n{exc}")
+            QMessageBox.warning(
+                self._as_qwidget(), "Parse Error", f"Could not parse cURL command:\n{exc}"
+            )
             return
 
         method = parsed.get("method", "GET")

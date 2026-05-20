@@ -252,21 +252,21 @@ class HistoryManager:
         """
         return list(
             self._searcher.search(
-            query=query,
-            method=method,
-            status_class=status_class,
-            status_code=status_code,
-            body_regex=body_regex,
-            jsonpath=jsonpath,
-            jsonpath_value=jsonpath_value,
-            content_type=content_type,
-            header=header,
-            min_elapsed=min_elapsed,
-            max_elapsed=max_elapsed,
-            executed_after=executed_after,
-            executed_before=executed_before,
-            limit=limit,
-            offset=offset,
+                query=query,
+                method=method,
+                status_class=status_class,
+                status_code=status_code,
+                body_regex=body_regex,
+                jsonpath=jsonpath,
+                jsonpath_value=jsonpath_value,
+                content_type=content_type,
+                header=header,
+                min_elapsed=min_elapsed,
+                max_elapsed=max_elapsed,
+                executed_after=executed_after,
+                executed_before=executed_before,
+                limit=limit,
+                offset=offset,
             )
         )
 

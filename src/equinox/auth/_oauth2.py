@@ -922,9 +922,7 @@ class OAuth2Auth(AuthStrategy):
             return None
 
         current_mode = self.token_auth
-        alternate_mode: Literal["body", "basic"] = (
-            "basic" if current_mode == "body" else "body"
-        )
+        alternate_mode: Literal["body", "basic"] = "basic" if current_mode == "body" else "body"
 
         if alternate_mode == "basic" and not (self.client_id and self.client_secret):
             return None

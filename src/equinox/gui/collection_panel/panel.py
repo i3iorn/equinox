@@ -124,7 +124,7 @@ class CollectionsPanel(_CollectionsActionsMixin, QWidget):
         self._setup_keyboard_shortcuts()
         self.refresh()
 
-    def _init_ui(self):
+    def _init_ui(self) -> None:
         layout = QVBoxLayout(self)
         layout.setContentsMargins(4, 4, 4, 4)
         layout.setSpacing(4)
@@ -171,7 +171,7 @@ class CollectionsPanel(_CollectionsActionsMixin, QWidget):
         layout.addWidget(self.tree)
 
     # #2 — Keyboard shortcuts
-    def _setup_keyboard_shortcuts(self):
+    def _setup_keyboard_shortcuts(self) -> None:
         """Install keyboard shortcuts on the tree widget."""
         # Enter → open selected request
         enter = QShortcut(QKeySequence(Qt.Key.Key_Return), self.tree)
@@ -358,7 +358,7 @@ class CollectionsPanel(_CollectionsActionsMixin, QWidget):
                 else:
                     saved["folders"].discard(key)
 
-    def _setup_auto_refresh(self):
+    def _setup_auto_refresh(self) -> None:
         self.refresh_timer = QTimer(self)
         # #5 — Lazy fallback (30 s); immediate refresh via signal wiring
         self.refresh_timer.timeout.connect(self._refresh_if_visible)
@@ -410,7 +410,7 @@ class CollectionsPanel(_CollectionsActionsMixin, QWidget):
                 folder_set.add(f"{col_id}:{cdata.get('path', '')}")
             self._collect_folder_expansion(child, col_id, folder_set)
 
-    def refresh(self):
+    def refresh(self) -> None:
         """Refresh collections tree, preserving expansion state.
 
         When a filter is active the live tree has items force-expanded, so

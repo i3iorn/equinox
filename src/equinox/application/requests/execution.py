@@ -103,7 +103,7 @@ def _run_pre_script(
     variables: dict[str, str],
     session_vars: dict[str, str],
     policy_profile: str,
-    ) -> tuple[dict[str, str], Any]:
+) -> tuple[dict[str, str], Any]:
     """Execute the pre-request script if defined.
 
     Returns ``(updated_variables, script_result)``.  ``script_result`` is the

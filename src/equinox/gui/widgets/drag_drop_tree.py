@@ -159,7 +159,9 @@ class DragDropTree(QTreeWidget):
 
         # Validate col_id satisfies the signal's declared int type before emitting.
         if not isinstance(col_id, (int, str)):
-            logger.debug("dropEvent: col_id %r is not a supported integer type; drop ignored", col_id)
+            logger.debug(
+                "dropEvent: col_id %r is not a supported integer type; drop ignored", col_id
+            )
             event.ignore()
             return
         try:

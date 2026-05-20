@@ -6,7 +6,7 @@ import re
 from typing import Any, Optional
 
 from PyQt6.QtCore import Qt
-from PyQt6.QtGui import QColor, QFocusEvent, QFontMetricsF, QMouseEvent, QPaintEvent, QPainter
+from PyQt6.QtGui import QColor, QFocusEvent, QFontMetricsF, QMouseEvent, QPainter, QPaintEvent
 from PyQt6.QtWidgets import QLineEdit, QToolTip
 
 from equinox.core.interpolation import VariableInterpolator

@@ -99,7 +99,7 @@ class _RequestSendMixin:
             follow_redirects=self.follow_redirects_check.isChecked(),
             pre_script=self.pre_script_editor.toPlainText(),
             post_script=self.post_script_editor.toPlainText(),
-            auth=self._auth or self._inherited_auth,
+            auth=self._auth or self._inherited_auth,  # type: ignore[has-type]
         )
         return issues_to_messages(issues)
 

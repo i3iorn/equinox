@@ -11,7 +11,7 @@ import os
 import tempfile
 import threading
 from pathlib import Path
-from typing import Any, TypedDict, cast
+from typing import Any, TypedDict
 
 from cryptography.fernet import Fernet
 from cryptography.hazmat.primitives import hashes

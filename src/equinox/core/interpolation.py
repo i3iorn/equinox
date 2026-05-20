@@ -27,7 +27,8 @@ import logging
 import os
 import re
 from collections.abc import Callable
-from dataclasses import is_dataclass, replace as dataclass_replace
+from dataclasses import is_dataclass
+from dataclasses import replace as dataclass_replace
 from datetime import date, datetime
 from typing import Any, Optional, Tuple, TypeVar, cast
 
@@ -234,7 +235,7 @@ def _copy_request_object(request: T) -> T:
 def _interpolate_dict_values(
     values: dict[Any, Any],
     variables: dict[str, str],
-    interpolator: type[VariableInterpolator],
+    interpolator: type["VariableInterpolator"],
 ) -> dict[str, str]:
     """Interpolate all key/value pairs in a dict-like request field."""
     return {
@@ -249,7 +250,7 @@ def _interpolate_request_string_field(
     request: T,
     field_name: str,
     variables: dict[str, str],
-    interpolator: type[VariableInterpolator],
+    interpolator: type["VariableInterpolator"],
 ) -> None:
     """Interpolate one string request field in-place when present."""
     if hasattr(request, field_name):

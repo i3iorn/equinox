@@ -1,8 +1,8 @@
 """Action methods mixin for CollectionsPanel."""
+
 from typing import Any
 
 # mypy: disable-error-code=attr-defined
-
 from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import (
     QDialog,
@@ -115,7 +115,7 @@ class _CollectionsActionsMixin:
     # ── Folder helpers ────────────────────────────────────────────────
 
     @staticmethod
-    def _col_id_for_item(item) -> "int | None": #  type: ignore[no-untyped-def]
+    def _col_id_for_item(item) -> "int | None":  #  type: ignore[no-untyped-def]
         """Walk the parent chain to find the enclosing collection's ID."""
         cursor = item
         while cursor is not None:

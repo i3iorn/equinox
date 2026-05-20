@@ -9,6 +9,7 @@ placeholder widget, keeping startup cost near zero.
 from __future__ import annotations
 
 import logging
+from typing import Callable
 
 logger = logging.getLogger(__name__)
 
@@ -28,7 +29,7 @@ class _PanelsMixin:
             4: self._init_cookies_panel,
             5: self._init_websocket_panel,
         }
-        factory = factories.get(index)
+        factory: Callable = factories.get(index)
         if factory is None:
             return
         try:

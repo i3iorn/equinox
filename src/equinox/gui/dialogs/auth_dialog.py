@@ -2,7 +2,7 @@
 
 import json
 import logging
-from typing import Any, Literal, cast, Optional
+from typing import Any, Literal, Optional
 
 from PyQt6.QtCore import QThread, pyqtSignal
 from PyQt6.QtWidgets import (
@@ -317,7 +317,9 @@ class AuthDialog(QDialog):
             "Inspect the token endpoint response (tokens redacted)"
         )
         self.oauth2_view_response_btn.clicked.connect(self._view_token_response)
-        self._last_fetched_auth: Optional[OAuth2Auth] = None  # stores OAuth2Auth after successful fetch
+        self._last_fetched_auth: Optional[OAuth2Auth] = (
+            None  # stores OAuth2Auth after successful fetch
+        )
         self._last_token_response = None
         self._fetch_requested_token_auth = "body"
         fetch_row = QHBoxLayout()

@@ -18,8 +18,7 @@ from equinox.core.client.auth_applier import AuthApplier
 from equinox.core.client.concurrency_guard import ConcurrencyGuard
 from equinox.core.client.cookie_handler import CookieHandler
 from equinox.core.client.dispatcher import HttpxDispatcher
-from equinox.core.client.pipeline import RequestPipeline
-from equinox.core.client.pipeline import _ErrorHandlerEntry
+from equinox.core.client.pipeline import RequestPipeline, _ErrorHandlerEntry
 from equinox.core.client.retry_policy import RetryPolicy
 from equinox.core.exceptions import RequestError, ValidationError
 from equinox.core.format import error_mapper

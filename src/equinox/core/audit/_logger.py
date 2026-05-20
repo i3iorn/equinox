@@ -1,7 +1,7 @@
 import json
 import logging
 from pathlib import Path
-from typing import Any, Optional, cast
+from typing import Any, Optional
 
 from equinox.core.audit._level import AuditLevel
 from equinox.core.audit._type import AuditEventType
