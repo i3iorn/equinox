@@ -3,7 +3,7 @@
 import logging
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Optional
 
 from equinox.core.request import Request, Response
 from equinox.security import redact_body, redact_url
@@ -23,6 +23,8 @@ class PluginContext:
 class Plugin(ABC):
     """Base class for trusted local plugin extensions."""
 
+    sandbox: Optional[Any]
+
     def __init__(self, context: PluginContext):
         """
         Initialize plugin
@@ -32,6 +34,7 @@ class Plugin(ABC):
         """
         self.context = context
         self.enabled = True
+        self.sandbox = None
 
     @property
     @abstractmethod

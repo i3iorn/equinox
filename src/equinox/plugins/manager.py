@@ -55,7 +55,7 @@ class PluginManager:
         self,
         plugin_dir: str,
         context: PluginContext,
-    ):
+    ) -> None:
         """Initialize plugin manager.
 
         Args:
@@ -131,7 +131,7 @@ class PluginManager:
                 "Plugin requests dangerous permissions without opt-in policy: " + ", ".join(blocked)
             )
 
-    def _load_plugins(self):
+    def _load_plugins(self) -> None:
         """Load all plugins from plugin directory."""
         if not self.plugin_dir.exists():
             logger.debug("Plugin directory does not exist, creating: %s", self.plugin_dir)
@@ -169,7 +169,7 @@ class PluginManager:
             error=f"{hook_name}: {error_text}",
         )
 
-    def _load_plugin(self, plugin_path: Path):
+    def _load_plugin(self, plugin_path: Path) -> None:
         """Load a single plugin from a directory.
 
         Args:
@@ -317,7 +317,7 @@ class PluginManager:
 
         return response
 
-    def handle_error(self, request: Request, error: Exception):
+    def handle_error(self, request: Request, error: Exception) -> None:
         """Notify all enabled plugins of a request error.
 
         Args:
@@ -344,19 +344,19 @@ class PluginManager:
             for plugin in self.plugins
         ]
 
-    def enable_plugin(self, name: str):
+    def enable_plugin(self, name: str) -> None:
         """Enable a plugin."""
         plugin = self.get_plugin(name)
         if plugin:
             plugin.enabled = True
 
-    def disable_plugin(self, name: str):
+    def disable_plugin(self, name: str) -> None:
         """Disable a plugin."""
         plugin = self.get_plugin(name)
         if plugin:
             plugin.enabled = False
 
-    def unload_all(self):
+    def unload_all(self) -> None:
         """Deactivate and unload all plugins."""
         for plugin in self.plugins:
             try:

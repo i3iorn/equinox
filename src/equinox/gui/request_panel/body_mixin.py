@@ -16,7 +16,7 @@ from __future__ import annotations
 import json
 import logging
 import re
-from typing import Any, Dict
+from typing import Any, Dict, List, Optional
 
 from PyQt6.QtGui import QColor, QTextCharFormat, QTextCursor, QTextDocument
 from PyQt6.QtWidgets import (
@@ -87,6 +87,47 @@ class RequestBodyMixin:
     - Multipart form data handling
     - JSONPath evaluation for captures and search
     """
+
+    tabs: Any
+    body_type_combo: QComboBox
+    body_text: Any
+    headers_table: Any
+    params_table: Any
+    path_params_table: Any
+    _path_params_widget: QWidget
+    _multipart_table: QTableWidget
+    _mp_toolbar: QWidget
+    _fmt_json_btn: QPushButton
+    _gql_widget: QWidget
+    _gql_query: Any
+    _gql_vars: Any
+    captures_table: QTableWidget
+    captures_results_label: QLabel
+    assertions_table: QTableWidget
+    assertions_results_label: QLabel
+    pre_script_editor: Any
+    post_script_editor: Any
+    pre_script_result: QLabel
+    post_script_result: QLabel
+    cert_path_input: Any
+    cert_key_input: Any
+    timeout_spin: Any
+    verify_ssl_check: Any
+    follow_redirects_check: Any
+    notes_editor: Any
+    url_input: Any
+    method_combo: QComboBox
+    _worker: Any
+    _auth: Any
+    _inherited_auth: Any
+    _inherited_auth_source: Any
+    current_request: Optional[Request]
+
+    def _resolve_inherited_auth(self) -> None: ...
+    def _update_auth_display(self, auth: Any) -> None: ...
+    def _clear_dirty(self) -> None: ...
+    def _update_url_suffix(self) -> None: ...
+    def _cancel_request(self) -> None: ...
 
     # ── Internal helpers ──────────────────────────────────────────────
 
@@ -482,7 +523,7 @@ class RequestBodyMixin:
                 count += 1
         return count
 
-    def _update_tab_labels(self, *_args) -> None:
+    def _update_tab_labels(self, *_args: Any) -> None:
         """Update tab labels to show data counts as badges."""
         try:
             h = len(self.headers_table.get_data())
@@ -522,7 +563,7 @@ class RequestBodyMixin:
 
     # ── Body search utilities ─────────────────────────────────────────
 
-    def _body_editor_target(self) -> tuple:
+    def _body_editor_target(self) -> tuple[Any, str]:
         """Return ``(editor_widget | None, body_text_str)`` for the body editor.
 
         Handles the :class:`_BodyTextProxy` indirection used in headless
@@ -1032,7 +1073,7 @@ class RequestBodyMixin:
         except Exception:
             logger.debug("Failed to browse multipart file", exc_info=True)
 
-    def _get_multipart_data(self) -> list:
+    def _get_multipart_data(self) -> List[dict[str, str]]:
         """Return a list of multipart entries as dicts: {key, type, value}.
 
         Skip rows with empty key.
@@ -1061,7 +1102,7 @@ class RequestBodyMixin:
             logger.debug("Failed to read multipart data", exc_info=True)
         return out
 
-    def _set_multipart_data(self, data) -> None:
+    def _set_multipart_data(self, data: Optional[List[dict[str, str]]]) -> None:
         """Load multipart rows from a list of dicts {'key','type','value'}.
 
         Overwrites existing rows.

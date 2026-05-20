@@ -3,10 +3,11 @@
 from __future__ import annotations
 
 import logging
+from typing import Any
 
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QKeySequence, QShortcut
-from PyQt6.QtWidgets import QApplication, QInputDialog, QMessageBox
+from PyQt6.QtWidgets import QApplication, QCheckBox, QComboBox, QInputDialog, QLineEdit, QMessageBox
 
 from equinox.core.request import Request
 from equinox.gui.workers import BenchmarkDialog
@@ -16,6 +17,28 @@ logger = logging.getLogger(__name__)
 
 class RequestCommandsMixin:
     """Keyboard shortcuts and action handlers extracted from RequestPanel."""
+
+    url_input: QLineEdit
+    cert_path_input: QLineEdit
+    cert_key_input: QLineEdit
+    method_combo: QComboBox
+    body_type_combo: QComboBox
+    verify_ssl_check: QCheckBox
+    follow_redirects_check: QCheckBox
+    headers_table: Any
+    params_table: Any
+    body_text: Any
+    timeout_spin: Any
+    tabs: Any
+    _cookie_manager: Any
+
+    def _send_request(self) -> None: ...
+    def _save_request(self) -> None: ...
+    def _format_json_body(self) -> None: ...
+    def _detect_body_type(self, body_text: str, headers: dict[str, str]) -> str: ...
+    def _mark_dirty(self) -> None: ...
+    def _status_message(self, message: str) -> None: ...
+    def _update_tab_labels(self, *_args: Any) -> None: ...
 
     def _setup_shortcuts(self) -> None:
         """Register panel-wide keyboard shortcuts."""
@@ -50,7 +73,7 @@ class RequestCommandsMixin:
         current = tabs.currentIndex()
         tabs.setCurrentIndex((current + step) % tabs.count())
 
-    def _browse_file_to_input(self, title: str, filters: str, target) -> None:
+    def _browse_file_to_input(self, title: str, filters: str, target: QLineEdit) -> None:
         """Open a file-picker dialog and write the chosen path into target line edit."""
         from PyQt6.QtWidgets import QFileDialog
 
@@ -154,7 +177,7 @@ class RequestCommandsMixin:
             logger.error("Failed to open benchmark dialog", exc_info=True)
 
     @staticmethod
-    def _set_all_checkable(table, enabled: bool) -> None:
+    def _set_all_checkable(table: Any, enabled: bool) -> None:
         """Enable or disable every row in a checkable key-value table."""
         state = Qt.CheckState.Checked if enabled else Qt.CheckState.Unchecked
         for row in range(table.rowCount()):
@@ -173,7 +196,7 @@ class RequestCommandsMixin:
         self._mark_dirty()
         self._update_tab_labels()
 
-    def _add_row_and_focus(self, table) -> None:
+    def _add_row_and_focus(self, table: Any) -> None:
         """Append an empty row to table, select key cell, and mark dirty."""
         table.add_row("", "", enabled=True)
         last = table.rowCount() - 2
@@ -185,7 +208,7 @@ class RequestCommandsMixin:
         self._mark_dirty()
         self._update_tab_labels()
 
-    def _remove_table_rows(self, table) -> None:
+    def _remove_table_rows(self, table: Any) -> None:
         rows_to_remove = sorted({idx.row() for idx in table.selectedIndexes()}, reverse=True)
         for row in rows_to_remove:
             table.removeRow(row)

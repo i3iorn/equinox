@@ -14,8 +14,9 @@ Display names and labels are derived from the classes themselves
 """
 
 import logging
-from typing import Any, Callable, Type
+from typing import Any, Callable, Optional, Tuple, Type, cast
 
+from equinox.auth._base import AuthStrategy
 from equinox.core.exceptions import AuthError
 
 logger = logging.getLogger(__name__)
@@ -26,41 +27,41 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 
 
-def _get_bearer() -> Type:
+def _get_bearer() -> Type[AuthStrategy]:
     from equinox.auth._bearer import BearerAuth
 
-    return BearerAuth
+    return cast(Type[AuthStrategy], BearerAuth)
 
 
-def _get_basic() -> Type:
+def _get_basic() -> Type[AuthStrategy]:
     from equinox.auth._basic import BasicAuth
 
-    return BasicAuth
+    return cast(Type[AuthStrategy], BasicAuth)
 
 
-def _get_api_key() -> Type:
+def _get_api_key() -> Type[AuthStrategy]:
     from equinox.auth._api_key import APIKeyAuth
 
-    return APIKeyAuth
+    return cast(Type[AuthStrategy], APIKeyAuth)
 
 
-def _get_oauth2() -> Type:
+def _get_oauth2() -> Type[AuthStrategy]:
     from equinox.auth._oauth2 import OAuth2Auth
 
-    return OAuth2Auth
+    return cast(Type[AuthStrategy], OAuth2Auth)
 
 
-def _get_aws_sigv4() -> Type:
+def _get_aws_sigv4() -> Type[AuthStrategy]:
     from equinox.auth._aws_sigv4 import AWSSigV4Auth
 
-    return AWSSigV4Auth
+    return cast(Type[AuthStrategy], AWSSigV4Auth)
 
 
 # ---------------------------------------------------------------------------
 # Unified registry: maps every known type identifier → lazy class loader
 # ---------------------------------------------------------------------------
 
-AUTH_REGISTRY: dict[str, Callable[[], Type]] = {
+AUTH_REGISTRY: dict[str, Callable[[], Type[AuthStrategy]]] = {
     # Short names used in to_dict()["type"]
     "bearer": _get_bearer,
     "basic": _get_basic,
@@ -77,7 +78,7 @@ AUTH_REGISTRY: dict[str, Callable[[], Type]] = {
 
 # Canonical ordering for UI display (tab order, picker order).
 # Each entry is a short type name that can be resolved via AUTH_REGISTRY.
-AUTH_TYPE_ORDER: tuple = ("basic", "bearer", "oauth2", "api_key", "aws_sigv4")
+AUTH_TYPE_ORDER: Tuple[str, ...] = ("basic", "bearer", "oauth2", "api_key", "aws_sigv4")
 
 
 # ---------------------------------------------------------------------------
@@ -85,7 +86,7 @@ AUTH_TYPE_ORDER: tuple = ("basic", "bearer", "oauth2", "api_key", "aws_sigv4")
 # ---------------------------------------------------------------------------
 
 
-def auth_from_dict(*args: object, **kwargs: Any) -> Any | None:
+def auth_from_dict(*args: object, **kwargs: Any) -> Optional[AuthStrategy]:
     """Return an auth object reconstructed from *auth_type* and *data*.
 
     Accepts both short type names (``"bearer"``) and class names
@@ -113,9 +114,11 @@ def auth_from_dict(*args: object, **kwargs: Any) -> Any | None:
                 f"Invalid arguments to auth_from_dict: expected (auth_type) or (data)\ngot {type(args)}"
             )
     elif len(args) == 2:
-        auth_type, data = args
-        if not isinstance(auth_type, str) or not isinstance(data, dict):
+        raw_auth_type, raw_data = args
+        if not isinstance(raw_auth_type, str) or not isinstance(raw_data, dict):
             raise AuthError("Invalid arguments to auth_from_dict: expected (auth_type, data)")
+        auth_type = raw_auth_type
+        data = raw_data
     else:
         raise AuthError("Invalid arguments to auth_from_dict: expected (auth_type) or (data)")
 
@@ -131,7 +134,7 @@ def auth_from_dict(*args: object, **kwargs: Any) -> Any | None:
     return None
 
 
-def get_auth_class(auth_type: str) -> Type | None:
+def get_auth_class(auth_type: str) -> Optional[Type[AuthStrategy]]:
     """Return the auth class for *auth_type*, or ``None`` if unknown."""
     loader = AUTH_REGISTRY.get(auth_type)
     if loader is None:
@@ -154,6 +157,6 @@ def get_auth_type_labels() -> dict[str, str]:
     return labels
 
 
-def get_auth_types() -> tuple:
+def get_auth_types() -> Tuple[str, ...]:
     """Return the canonical tuple of auth-type short names."""
     return AUTH_TYPE_ORDER

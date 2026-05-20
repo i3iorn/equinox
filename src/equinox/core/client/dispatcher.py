@@ -210,9 +210,12 @@ class HttpxDispatcher:
             len(raw.headers),
         )
         # sent_headers: the actual headers sent to httpx (including injected auth)
+        headers_to_redact: dict[str, Any] = (
+            {str(k): v for k, v in sent_headers.items()} if sent_headers is not None else {}
+        )
         redacted_sent_headers = {
             str(k): str(v)
-            for k, v in (redact_headers(sent_headers) or {}).items()
+            for k, v in (redact_headers(headers_to_redact) or {}).items()
             if v is not None
         }
         return Response(

@@ -81,7 +81,7 @@ class Response:
     sent_url: str | None = None
     timings: dict[str, float] | None = None
     connection_info: dict[str, Any] | None = None
-    retry_summary: dict[str, Any] | None = None
+    retry_summary: str | None = None
     # Preserves repeated Set-Cookie header values; dict(headers) collapses them.
     set_cookie_headers: list[str] | None = None
 

@@ -2,10 +2,11 @@
 
 import logging
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any, Callable, Dict
 
 from equinox.core.request import Request
 from equinox.importers._utils import normalize_path_variables, validate_import_file
+from equinox.storage.collections import CollectionManager
 from equinox.storage.utils import safe_json_loads
 
 logger = logging.getLogger(__name__)
@@ -30,7 +31,7 @@ class InsomniaImporter:
     MAX_FILE_SIZE = 50 * 1024 * 1024  # 50 MB
     MAX_REQUESTS = 5000
 
-    def __init__(self, collection_manager):
+    def __init__(self, collection_manager: CollectionManager) -> None:
         self.manager = collection_manager
 
     # ── Public API ────────────────────────────────────────────────────
@@ -109,7 +110,7 @@ class InsomniaImporter:
         col_id: int,
         folders: dict[str, Dict],
         workspace_id: str,
-        get_folder_path,
+        get_folder_path: Callable[[str], str],
     ) -> None:
         """Convert one Insomnia request resource into an Equinox Request and save it."""
         parent_id = res.get("parentId", "")

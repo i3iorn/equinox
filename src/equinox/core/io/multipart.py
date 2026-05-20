@@ -7,12 +7,14 @@ don't duplicate file-opening logic.
 import logging
 import os
 from pathlib import Path
-from typing import Any
+from typing import Any, List, Optional, Tuple
 
 logger = logging.getLogger(__name__)
 
 
-def build_multipart_files(multipart_data) -> tuple[list[tuple[str, Any]] | None, list[Any]]:
+def build_multipart_files(
+    multipart_data: Optional[List[dict[str, Any]]],
+) -> Tuple[Optional[List[Tuple[str, Any]]], List[Any]]:
     """Build the httpx ``files`` list from multipart_data, opening file handles.
 
     Returns (multipart_files_or_None, opened_file_handles).
@@ -21,8 +23,8 @@ def build_multipart_files(multipart_data) -> tuple[list[tuple[str, Any]] | None,
         logger.debug("No multipart data provided")
         return None, []
 
-    multipart_files: list[tuple[str, Any]] = []
-    opened_file_handles: list[Any] = []
+    multipart_files: List[Tuple[str, Any]] = []
+    opened_file_handles: List[Any] = []
 
     for field in multipart_data:
         field_key = (field.get("key") or "").strip()
@@ -43,7 +45,8 @@ def build_multipart_files(multipart_data) -> tuple[list[tuple[str, Any]] | None,
                 logger.debug("Multipart: file not found for field %s, sending empty", field_key)
                 multipart_files.append((field_key, (None, b"")))
         else:
-            value = field.get("value", "")
+            raw_value = field.get("value", "")
+            value = raw_value if isinstance(raw_value, str) else str(raw_value)
             value_preview = (value[:30] + "...") if len(value) > 30 else value
             logger.debug("Multipart: added text field %s = %s", field_key, value_preview)
             multipart_files.append((field_key, (None, value)))

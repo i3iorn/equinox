@@ -304,6 +304,7 @@ class PostmanImporter:
             col_variables = {}
 
         request_data = item["request"]
+        params_list: list[dict[str, Any]] = []
 
         name = item.get("name", "Untitled Request")
         if folder_name:
@@ -315,12 +316,10 @@ class PostmanImporter:
             url = normalize_path_variables(_resolve_postman_variable(request_data, col_variables))
             headers: dict[str, str] = {}
             body = None
-            params_list = []
         else:
             method = request_data.get("method", "GET")
 
             url_data = request_data.get("url", {})
-            params_list: list = []
             if isinstance(url_data, str):
                 url = normalize_path_variables(_resolve_postman_variable(url_data, col_variables))
             elif isinstance(url_data, dict):
@@ -381,8 +380,8 @@ class PostmanImporter:
             body=body,
             name=name,
             description=description,
-            pre_script=pre_script or None,
-            post_script=post_script or None,
+            pre_script=pre_script,
+            post_script=post_script,
         )
 
     def _build_url(

@@ -68,6 +68,8 @@ class HTTPClient:
     RETRY_AFTER_CAP_SECONDS = 60.0
     RATE_LIMIT_WINDOW_SECONDS = 60
 
+    _concurrency: ConcurrencyGuard
+
     def __init__(
         self,
         timeout: float = 30.0,
@@ -158,7 +160,7 @@ class HTTPClient:
     @property
     def active_requests(self) -> int:
         """Number of requests currently in flight."""
-        return self._concurrency.active
+        return int(self._concurrency.active)
 
     # ── Context manager ───────────────────────────────────────────────────────
 
@@ -271,8 +273,7 @@ class HTTPClient:
             logger.info(
                 "HTTPClient._dispatch_with_retries: completed with retries",
                 extra={
-                    "retry_attempts": retry_summary.get("attempts", 0),
-                    "retry_reasons": retry_summary.get("reasons", []),
+                    "retry_summary": retry_summary,
                     "status_code": response.status_code,
                 },
             )

@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import json as _json
 import logging
-from typing import TYPE_CHECKING, Any, Callable, Union
+from typing import TYPE_CHECKING, Any, Callable, Optional, Union
 from uuid import uuid4
 
 from equinox.versioning import get_app_version
@@ -64,7 +64,7 @@ def assemble_body(
     gql_query: str,
     gql_vars: str,
     multipart_rows: list[dict[str, str]],
-) -> tuple[str | None, list[Any]] | None:
+) -> tuple[Optional[str], Optional[list[Any]]]:
     """Assemble request body from editor state.
 
     Returns ``(body, multipart_data)``.  Exactly one of the two will be set

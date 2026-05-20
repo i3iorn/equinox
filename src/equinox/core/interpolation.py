@@ -27,9 +27,9 @@ import logging
 import os
 import re
 from collections.abc import Callable
-from dataclasses import replace as dataclass_replace
+from dataclasses import is_dataclass, replace as dataclass_replace
 from datetime import date, datetime
-from typing import Any, TypeVar, cast
+from typing import Any, Optional, Tuple, TypeVar, cast
 
 from equinox.core.exceptions import SecurityError, ValidationError
 
@@ -59,7 +59,9 @@ def _shift_months(base: date, delta_months: int) -> date:
     return date(year, month, day)
 
 
-def _magic_variables(today: date | None = None, now: datetime | None = None) -> dict[str, str]:
+def _magic_variables(
+    today: Optional[date] = None, now: Optional[datetime] = None
+) -> dict[str, str]:
     """Return built-in dynamic variables for date/time convenience."""
     now_value = now or datetime.now()
     today_value = today or now_value.date()
@@ -99,7 +101,7 @@ def _validate_interpolation_inputs(
         )
 
 
-def _sanitize_variables(variables: dict[str, str]) -> dict[str, str]:
+def _sanitize_variables(variables: dict[Any, Any]) -> dict[str, str]:
     """Keep only valid string variable names and values."""
     sanitized_variables: dict[str, str] = {}
     for key, value in variables.items():
@@ -224,10 +226,9 @@ def _interpolate_until_stable(
 
 def _copy_request_object(request: T) -> T:
     """Return a shallow copy while preserving dataclass behavior."""
-    try:
-        return cast(T, dataclass_replace(request))
-    except TypeError:
-        return copy.copy(request)
+    if is_dataclass(request) and not isinstance(request, type):
+        return cast(T, dataclass_replace(cast(Any, request)))
+    return copy.copy(request)
 
 
 def _interpolate_dict_values(
@@ -271,7 +272,10 @@ class VariableInterpolator:
 
     @classmethod
     def interpolate(
-        cls, text: str, variables: dict[str, str], max_iterations: int | None = None
+        cls,
+        text: str,
+        variables: dict[str, str],
+        max_iterations: Optional[int] = None,
     ) -> str:
         """Interpolate {{var}} placeholders with bounded multi-pass expansion."""
         _validate_interpolation_inputs(text, variables, cls.MAX_INPUT_BYTES)
@@ -352,7 +356,7 @@ class VariableInterpolator:
         return request
 
     @classmethod
-    def find_variables(cls, text: str) -> list[str]:
+    def find_variables(cls, text: object) -> list[str]:
         """Find all unique variable names referenced in text.
 
         Searches for all {{variable}} patterns and extracts the variable names.
@@ -373,7 +377,7 @@ class VariableInterpolator:
         return list(set(cls.VARIABLE_PATTERN.findall(text)))
 
     @classmethod
-    def has_variables(cls, text: str) -> bool:
+    def has_variables(cls, text: object) -> bool:
         """Return True if text contains any {{variable}} placeholders.
 
         Quick check to see if interpolation is needed.
@@ -393,7 +397,7 @@ class VariableInterpolator:
         return bool(cls.VARIABLE_PATTERN.search(text))
 
 
-def _normalize_values(raw: dict[str, Any], source: str) -> dict[str, str]:
+def _normalize_values(raw: dict[Any, Any], source: str) -> dict[str, str]:
     """Normalize variable dict values to strings while skipping invalid entries."""
     normalized: dict[str, str] = {}
     for key, value in raw.items():
@@ -500,7 +504,7 @@ def _load_environment_variables(db: Any) -> dict[str, str]:
     return {}
 
 
-def _load_collection_variables(db: Any, collection_id: int | None) -> dict[str, str]:
+def _load_collection_variables(db: Any, collection_id: Optional[int]) -> dict[str, str]:
     """Load collection-scoped interpolation variables from storage."""
     if collection_id is None:
         return {}
@@ -528,9 +532,9 @@ def _load_collection_variables(db: Any, collection_id: int | None) -> dict[str, 
 
 def collect_interpolation_variables_detailed(
     db: Any,
-    collection_id: int | None = None,
-    session_vars: dict[str, str] | None = None,
-) -> tuple[dict[str, str], dict[str, str]]:
+    collection_id: Optional[int] = None,
+    session_vars: Optional[dict[str, str]] = None,
+) -> Tuple[dict[str, str], dict[str, str]]:
     """Collect interpolation variables and source labels by precedence order."""
 
     variables: dict[str, str] = {}
@@ -570,8 +574,8 @@ def collect_interpolation_variables_detailed(
 
 def collect_interpolation_variables(
     db: Any,
-    collection_id: int | None = None,
-    session_vars: dict[str, str] | None = None,
+    collection_id: Optional[int] = None,
+    session_vars: Optional[dict[str, str]] = None,
 ) -> dict[str, str]:
     """Compatibility wrapper returning only collected variables."""
     variables, _sources = collect_interpolation_variables_detailed(
