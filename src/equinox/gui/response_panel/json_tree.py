@@ -275,8 +275,9 @@ class JsonTree(QWidget):
 
         # Configure columns
         hdr = tree.header()
-        hdr.setSectionResizeMode(0, QHeaderView.ResizeMode.Interactive)
-        hdr.setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
+        if hdr is not None:
+            hdr.setSectionResizeMode(0, QHeaderView.ResizeMode.Interactive)
+            hdr.setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
 
         # Configure appearance
         tree.setAlternatingRowColors(True)

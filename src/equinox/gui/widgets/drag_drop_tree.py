@@ -6,7 +6,7 @@ import logging
 
 from PyQt6.QtCore import QMimeData, Qt, pyqtSignal
 from PyQt6.QtGui import QDrag, QDragEnterEvent, QDragMoveEvent, QDropEvent
-from PyQt6.QtWidgets import QAbstractItemView, QTreeWidget, QTreeWidgetItem
+from PyQt6.QtWidgets import QAbstractItemView, QTreeWidget, QTreeWidgetItem, QWidget
 
 logger = logging.getLogger(__name__)
 
@@ -22,7 +22,7 @@ class DragDropTree(QTreeWidget):
     # Args: dragged_request_id (int), target_request_id (int)
     request_reorder = pyqtSignal(int, int)
 
-    def __init__(self, parent=None):
+    def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self.setDragEnabled(True)
         self.setAcceptDrops(True)
@@ -34,7 +34,7 @@ class DragDropTree(QTreeWidget):
     # ── Private helpers ───────────────────────────────────────────────
 
     @staticmethod
-    def _node_data(item: QTreeWidgetItem | None) -> dict:
+    def _node_data(item: QTreeWidgetItem | None) -> dict[str, object]:
         """Return the UserRole dict for *item* (or ``{}`` when absent)."""
         if item is None:
             return {}
@@ -61,13 +61,18 @@ class DragDropTree(QTreeWidget):
 
     # ── Visual feedback: highlight valid targets ──────────────────────
 
-    def dragEnterEvent(self, event: QDragEnterEvent) -> None:
-        if event.mimeData().hasText():
+    def dragEnterEvent(self, event: QDragEnterEvent | None) -> None:
+        if event is None:
+            return
+        mime = event.mimeData()
+        if mime is not None and mime.hasText():
             event.acceptProposedAction()
         else:
             event.ignore()
 
-    def dragMoveEvent(self, event: QDragMoveEvent) -> None:
+    def dragMoveEvent(self, event: QDragMoveEvent | None) -> None:
+        if event is None:
+            return
         target = self.itemAt(event.position().toPoint())
         tdata = self._node_data(target)
         if not tdata:
@@ -82,7 +87,8 @@ class DragDropTree(QTreeWidget):
         # dragged — it can't be dropped onto itself.
         if ttype == "request":
             try:
-                if int(event.mimeData().text()) == tdata.get("id"):
+                mime = event.mimeData()
+                if mime is not None and int(mime.text()) == tdata.get("id"):
                     event.ignore()
                     return
             except (ValueError, TypeError):
@@ -92,7 +98,9 @@ class DragDropTree(QTreeWidget):
 
     # ── Handle the drop ───────────────────────────────────────────────
 
-    def dropEvent(self, event: QDropEvent) -> None:
+    def dropEvent(self, event: QDropEvent | None) -> None:
+        if event is None:
+            return
         mime = event.mimeData()
         if not mime or not mime.hasText():
             event.ignore()

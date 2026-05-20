@@ -8,6 +8,7 @@ can connect to so table updates are handled centrally.
 
 import re
 from collections.abc import Sequence
+from typing import Any, Optional, Protocol, Tuple
 
 from PyQt6.QtCore import pyqtSignal
 from PyQt6.QtWidgets import (
@@ -34,6 +35,11 @@ _LAYOUT_MARGINS = (0, 2, 0, 0)
 _LAYOUT_SPACING = 2
 
 
+class _SignalEmitter(Protocol):
+    def emit(self) -> None:
+        ...
+
+
 class TabToolbar(QWidget):
     """Toolbar for managing rows in a table with optional presets and file selection."""
 
@@ -46,12 +52,12 @@ class TabToolbar(QWidget):
 
     def __init__(
         self,
-        label: str | None = None,
+        label: Optional[str] = None,
         *,
-        presets: Sequence[tuple[str, str, str] | None] | None = None,
-        preset_context: str | None = None,
+        presets: Optional[Sequence[Optional[Tuple[str, str, str]]]] = None,
+        preset_context: Optional[str] = None,
         include_file_btn: bool = False,
-        parent: QWidget | None = None,
+        parent: Optional[QWidget] = None,
     ) -> None:
         """Initialize the toolbar.
 
@@ -85,7 +91,7 @@ class TabToolbar(QWidget):
             self._add_file_button(layout)
 
     @staticmethod
-    def _validate_presets(presets: Sequence[tuple[str, str, str] | None] | None) -> None:
+    def _validate_presets(presets: Optional[Sequence[Optional[Tuple[str, str, str]]]]) -> None:
         """Validate preset structure for type safety.
 
         Args:
@@ -142,7 +148,7 @@ class TabToolbar(QWidget):
         for key, signal in button_specs:
             self._add_button(layout, key, signal)
 
-    def _add_button(self, layout: QHBoxLayout, key: str, signal: pyqtSignal) -> None:
+    def _add_button(self, layout: QHBoxLayout, key: str, signal: _SignalEmitter) -> None:
         """Create and add a configured button to the layout.
 
         Args:
@@ -194,11 +200,12 @@ class TabToolbar(QWidget):
         if tracker is None:
             return 0
         try:
-            return tracker.get_count(
+            count = tracker.get_count(
                 category="preset",
                 context=self._preset_context,
                 element_id=self._preset_usage_key(key, value),
             )
+            return int(count)
         except Exception:
             return 0
 
@@ -226,7 +233,7 @@ class TabToolbar(QWidget):
         menu = self._presets_menu
         menu.clear()
 
-        groups: list = [[]]
+        groups: list[list[tuple[int, str, str, str]]] = [[]]
         for idx, preset in enumerate(self._presets):
             if preset is None:
                 if groups[-1]:
@@ -237,7 +244,7 @@ class TabToolbar(QWidget):
 
         groups = [g for g in groups if g]
         for group_idx, group in enumerate(groups):
-            ranked = []
+            ranked: list[tuple[int, int, str, str, str]] = []
             for original_idx, display, key, value in group:
                 ranked.append(
                     (

@@ -131,11 +131,14 @@ class CheckableKeyValueTable(QTableWidget):
         self.setColumnCount(3)
         self.setHorizontalHeaderLabels(["", "Key", "Value"])
         header = self.horizontalHeader()
-        header.setSectionResizeMode(self._COL_ENABLED, QHeaderView.ResizeMode.Fixed)
-        header.setSectionResizeMode(self._COL_KEY, QHeaderView.ResizeMode.Interactive)
-        header.setSectionResizeMode(self._COL_VALUE, QHeaderView.ResizeMode.Stretch)
+        if header is not None:
+            header.setSectionResizeMode(self._COL_ENABLED, QHeaderView.ResizeMode.Fixed)
+            header.setSectionResizeMode(self._COL_KEY, QHeaderView.ResizeMode.Interactive)
+            header.setSectionResizeMode(self._COL_VALUE, QHeaderView.ResizeMode.Stretch)
         self.setColumnWidth(self._COL_ENABLED, 26)
-        self.verticalHeader().setVisible(False)
+        v_header = self.verticalHeader()
+        if v_header is not None:
+            v_header.setVisible(False)
         self.setAlternatingRowColors(True)
         self.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
         if enable_key_completer:

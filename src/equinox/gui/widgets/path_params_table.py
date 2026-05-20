@@ -9,7 +9,7 @@ any values the user has already entered for unchanged parameters.
 import logging
 import re
 from contextlib import contextmanager
-from typing import Iterator
+from typing import Iterator, Optional
 
 from PyQt6.QtCore import QObject, Qt, pyqtSignal
 from PyQt6.QtWidgets import (
@@ -100,17 +100,17 @@ class PathParamsTable(QTableWidget):
 
     paramsChanged = pyqtSignal()
 
-    def __init__(self, parent: QWidget | None = None) -> None:
+    def __init__(self, parent: Optional[QWidget] = None) -> None:
         super().__init__(0, self._COL_COUNT, parent)
         self.setHorizontalHeaderLabels(["Parameter", "Value"])
-        self.horizontalHeader().setSectionResizeMode(
-            self._COL_PARAM, QHeaderView.ResizeMode.Interactive
-        )
-        self.horizontalHeader().setSectionResizeMode(
-            self._COL_VALUE, QHeaderView.ResizeMode.Stretch
-        )
-        self.horizontalHeader().setDefaultSectionSize(160)
-        self.verticalHeader().setVisible(False)
+        h_header = self.horizontalHeader()
+        if h_header is not None:
+            h_header.setSectionResizeMode(self._COL_PARAM, QHeaderView.ResizeMode.Interactive)
+            h_header.setSectionResizeMode(self._COL_VALUE, QHeaderView.ResizeMode.Stretch)
+            h_header.setDefaultSectionSize(160)
+        v_header = self.verticalHeader()
+        if v_header is not None:
+            v_header.setVisible(False)
         self.setAlternatingRowColors(True)
         self.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
 

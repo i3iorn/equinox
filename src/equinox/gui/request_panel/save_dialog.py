@@ -13,7 +13,7 @@ Non-UI responsibilities intentionally left to the caller / facade:
 """
 
 from collections.abc import Iterable
-from typing import TypedDict
+from typing import Optional, Tuple, TypedDict
 
 from PyQt6.QtWidgets import (
     QComboBox,
@@ -49,7 +49,7 @@ class SaveRequestDialog(QDialog):
         method: str,
         url: str,
         current_folder: str = "",
-        parent: QWidget | None = None,
+        parent: Optional[QWidget] = None,
     ) -> None:
         super().__init__(parent)
         self.setWindowTitle("Save Request")
@@ -126,7 +126,7 @@ class SaveRequestDialog(QDialog):
 
     # ── Public API ────────────────────────────────────────────────────────
 
-    def result_values(self) -> tuple[str, int, str, str | None]:
+    def result_values(self) -> Tuple[str, int, str, Optional[str]]:
         """Extract and return the user's choices.
 
         Returns:
@@ -139,5 +139,5 @@ class SaveRequestDialog(QDialog):
         name = self._name_input.text().strip() or self._default_name
         col_id: int = self._col_combo.currentData()
         col_name: str = self._col_combo.currentText()
-        folder: str | None = self._folder_input.text().strip() or None
+        folder: Optional[str] = self._folder_input.text().strip() or None
         return name, col_id, col_name, folder

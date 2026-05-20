@@ -10,6 +10,7 @@ Provides a QTableWidget subclass for displaying HTTP headers with:
 from __future__ import annotations
 
 import logging
+from collections.abc import Mapping
 
 from PyQt6.QtWidgets import QHeaderView, QTableWidget, QTableWidgetItem, QWidget
 
@@ -41,21 +42,23 @@ class HeaderTable(QTableWidget):
         self.setHorizontalHeaderLabels(["Header", "Value"])
 
         # Configure column sizing behavior
-        self.horizontalHeader().setSectionResizeMode(
-            _NAME_COLUMN, QHeaderView.ResizeMode.Interactive
-        )
-        self.horizontalHeader().setSectionResizeMode(_VALUE_COLUMN, QHeaderView.ResizeMode.Stretch)
-        self.horizontalHeader().setDefaultSectionSize(_DEFAULT_NAME_WIDTH)
+        h_header = self.horizontalHeader()
+        if h_header is not None:
+            h_header.setSectionResizeMode(_NAME_COLUMN, QHeaderView.ResizeMode.Interactive)
+            h_header.setSectionResizeMode(_VALUE_COLUMN, QHeaderView.ResizeMode.Stretch)
+            h_header.setDefaultSectionSize(_DEFAULT_NAME_WIDTH)
 
         # Configure appearance
-        self.verticalHeader().setVisible(False)
+        v_header = self.verticalHeader()
+        if v_header is not None:
+            v_header.setVisible(False)
         self.setAlternatingRowColors(True)
 
         # Configure interaction
         self.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
         self.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
 
-    def load(self, headers: dict[str, str]) -> None:
+    def load(self, headers: object) -> None:
         """Load headers into the table.
 
         Headers are sorted alphabetically by name. An internal copy is kept
@@ -64,11 +67,11 @@ class HeaderTable(QTableWidget):
         Args:
             headers: Dictionary of header name → value pairs
         """
-        if not isinstance(headers, dict):
+        if not isinstance(headers, Mapping):
             logger.warning("Expected dict for headers, got %s; ignoring", type(headers).__name__)
             self._all_headers = {}
         else:
-            self._all_headers = dict(sorted(headers.items()))
+            self._all_headers = dict(sorted((str(k), str(v)) for k, v in headers.items()))
 
         self._apply_filter("")
 
@@ -102,7 +105,7 @@ class HeaderTable(QTableWidget):
         finally:
             self.setUpdatesEnabled(True)
 
-    def _get_filtered_rows(self, filter_term: str) -> list:
+    def _get_filtered_rows(self, filter_term: str) -> list[tuple[str, str]]:
         """Get headers matching the filter term.
 
         Args:
@@ -120,7 +123,7 @@ class HeaderTable(QTableWidget):
             if filter_term in k.lower() or filter_term in str(v).lower()
         ]
 
-    def _populate_table(self, rows: list) -> None:
+    def _populate_table(self, rows: list[tuple[str, str]]) -> None:
         """Populate the table with the given rows.
 
         Args:
