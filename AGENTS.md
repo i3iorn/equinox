@@ -156,6 +156,28 @@ equinox rotate-secrets --db-path ./equinox.db  # rotate plaintext secrets to enc
 - GUI modules must not construct storage managers directly in request/history/collection flows.
 - Use `gui/error_presenter.py` for user-visible error dialogs instead of ad-hoc `QMessageBox` formatting.
 
+### Developer Workflow & Contribution Quick Links
+
+**Getting started?**
+
+- Read [DEVELOPMENT.md](DEVELOPMENT.md) for step-by-step workflow and common tasks
+- Read [CONTRIBUTING.md](CONTRIBUTING.md) for code standards and architecture principles
+- This file (`AGENTS.md`) provides deep-dive architecture details
+
+**Before committing code:**
+
+```bash
+pre-commit run --all-files  # Format, lint, type-check, security scan
+pytest --no-cov             # Run tests (fast)
+```
+
+**Before opening a PR:**
+
+```bash
+pytest --cov=equinox --cov-report=html  # Full coverage check
+# Review htmlcov/index.html for coverage gaps
+```
+
 ## Project-Specific Conventions
 
 ### Variable interpolation (`{{VAR}}` syntax)

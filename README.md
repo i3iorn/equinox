@@ -2,6 +2,8 @@
 
 Equinox is a secure, local-first API testing tool with GUI and CLI workflows. Build, test, and monitor REST/HTTP APIs with zero data leaving your machine.
 
+> **Getting started?** See [WORKFLOW.md](WORKFLOW.md) for a complete documentation map and quick navigation guide.
+
 ## Highlights
 
 - **Local-first storage** (SQLite) with AES-256 encrypted credential/auth persistence
@@ -298,11 +300,32 @@ python -m equinox.gui.app
 
 Contributions are welcome. Please open an issue or submit a PR with a clear change description.
 
+For detailed guidelines, see **[CONTRIBUTING.md](CONTRIBUTING.md)** for code standards, testing requirements, and PR processes, and **[DEVELOPMENT.md](DEVELOPMENT.md)** for step-by-step workflow instructions.
+
 When adding code, keep service boundaries explicit:
 - Put orchestration/business logic in application services (for request flows, prefer `src/equinox/application/requests/`).
 - Keep GUI modules presentation-focused (event handling, rendering, and dialog wiring).
 - Do not add direct storage-manager construction in GUI panels/mixins.
 - Route user-visible failures through `src/equinox/gui/error_presenter.py`.
+
+## Development Workflow (Quick Start)
+
+```bash
+# Setup
+git clone https://github.com/i3iorn/equinox.git && cd equinox
+python -m venv .venv
+source .venv/bin/activate  # or .venv\Scripts\activate on Windows
+pip install -e ".[dev]" && pre-commit install
+
+# Before every commit
+pre-commit run --all-files
+pytest --no-cov
+
+# Before opening a PR
+pytest --cov=equinox --cov-report=html
+```
+
+**See [DEVELOPMENT.md](DEVELOPMENT.md) for detailed workflow and common tasks.**
 
 ## Security
 
