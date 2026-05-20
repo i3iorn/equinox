@@ -3,9 +3,9 @@
 import re
 from collections.abc import Generator
 from enum import Enum
-from typing import NamedTuple
+from typing import NamedTuple, Optional
 
-from PyQt6.QtGui import QSyntaxHighlighter, QTextDocument
+from PyQt6.QtGui import QSyntaxHighlighter, QTextCharFormat, QTextDocument
 
 from equinox.gui.syntax_highlighter.base import _VARIABLE_FMT, _VARIABLE_PATTERN, _make_format
 from equinox.gui.theme import Colors
@@ -329,16 +329,17 @@ class JsonHighlighter(QSyntaxHighlighter):
         self.formats = self._build_formats()
 
     @classmethod
-    def _build_formats(cls) -> dict[str, object]:
+    def _build_formats(cls) -> dict[str, QTextCharFormat]:
         """Build QTextCharFormat map from color and style specs."""
-        formats: dict[str, object] = {}
+        formats: dict[str, QTextCharFormat] = {}
         for token_type, color in cls._FORMAT_MAP.items():
             styles = cls._FORMAT_STYLES.get(token_type, {})
             formats[token_type] = _make_format(color, **styles)
         return formats
 
-    def highlightBlock(self, text: str) -> None:  # noqa: N802
+    def highlightBlock(self, text: Optional[str]) -> None:  # noqa: N802
         """Highlight one line of the document."""
+        text = text or ""
         prev_state = self.previousBlockState()
 
         try:

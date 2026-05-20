@@ -9,7 +9,7 @@ import threading
 from collections.abc import Iterator, Mapping
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Any, Callable, Union
+from typing import Any, Callable, Union, cast
 
 from equinox.core.exceptions import DuplicateError, StorageError, ValidationError
 
@@ -347,7 +347,7 @@ class Database:
         conn = getattr(self, "_conn", None)
         if conn is None:
             raise StorageError("Database connection is closed")
-        return conn
+        return cast(sqlite3.Connection, conn)
 
     # ── Backward-compatible public attribute ──────────────────────────────────
 

@@ -2,7 +2,7 @@
 
 import logging
 from datetime import timedelta
-from typing import Any, Callable, Protocol
+from typing import Any, Callable, Protocol, Union
 
 logger = logging.getLogger(__name__)
 
@@ -10,7 +10,7 @@ logger = logging.getLogger(__name__)
 class _ResponseLike(Protocol):
     status_code: int
     headers: dict[str, str]
-    elapsed: timedelta | float
+    elapsed: Union[timedelta, float]
 
     @property
     def text(self) -> str: ...

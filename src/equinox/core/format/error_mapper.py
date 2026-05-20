@@ -7,7 +7,7 @@ HTTPClient._error_handlers entries.
 
 import logging
 import ssl
-from typing import Any
+from typing import Any, Optional
 
 from equinox.core.exceptions import CertificateError, RequestError, RequestTimeoutError
 from equinox.security import redact_url
@@ -35,8 +35,6 @@ def _is_ssl_error(exc: BaseException) -> bool:
     stack: list[BaseException] = [exc]
     while stack:
         e = stack.pop()
-        if not isinstance(e, BaseException):
-            continue
         eid = id(e)
         if eid in seen:
             continue
@@ -63,8 +61,6 @@ def _is_proxy_error(exc: BaseException) -> bool:
     stack: list[BaseException] = [exc]
     while stack:
         e = stack.pop()
-        if not isinstance(e, BaseException):
-            continue
         eid = id(e)
         if eid in seen:
             continue
@@ -127,7 +123,7 @@ def _timeout_handler_factory(timeout: float) -> Any:
     return _handler
 
 
-def _connect_handler_factory(proxy: str | None) -> Any:
+def _connect_handler_factory(proxy: Optional[str]) -> Any:
     """Build connect error handler that distinguishes SSL/proxy/generic cases."""
 
     def _handler(exc: Exception, req: Any) -> dict[str, Any]:

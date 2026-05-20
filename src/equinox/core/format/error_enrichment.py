@@ -8,6 +8,7 @@ labels, and full tracebacks for logging.
 import dataclasses
 import logging
 import traceback
+from typing import Optional
 
 from equinox.security import redact_body as _redact
 from equinox.security import redact_url as _redact_url
@@ -61,7 +62,7 @@ def enrich_exception(exc: Exception) -> RichError:
     return RichError(exc_type=exc_type, message=safe_msg, tb=safe_tb, hint=hint)
 
 
-def _enrich_httpx_error(exc: Exception, raw: str, exc_type: str) -> "str | None":
+def _enrich_httpx_error(exc: Exception, raw: str, exc_type: str) -> Optional[str]:
     """Return a human-readable message for httpx errors, or None."""
     import httpx
 
@@ -137,7 +138,7 @@ def _is_proxy_connect_error(exc: Exception) -> bool:
     return False
 
 
-def _enrich_equinox_error(exc: Exception, raw: str, exc_type: str) -> str | None:
+def _enrich_equinox_error(exc: Exception, raw: str, exc_type: str) -> Optional[str]:
     """Return a human-readable message for equinox domain errors, or None."""
     from equinox.core.exceptions import (
         AuthError,

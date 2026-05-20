@@ -5,6 +5,7 @@ import logging
 import os
 import re
 import tempfile
+from typing import Optional
 
 from PyQt6.QtGui import QFont
 from PyQt6.QtWidgets import (
@@ -83,7 +84,7 @@ class ApiSpecDialog(QDialog):
         dlg.exec()
     """
 
-    def __init__(self, parent: QWidget | None = None, title: str = "API Spec") -> None:
+    def __init__(self, parent: Optional[QWidget] = None, title: str = "API Spec") -> None:
         super().__init__(parent)
         self.setWindowTitle(title)
         self.setMinimumSize(700, 480)
@@ -214,7 +215,11 @@ class ApiSpecDialog(QDialog):
                 logger.info("User cancelled large clipboard copy (size=%d)", size)
                 return
 
-        QApplication.clipboard().setText(text)
+        clipboard = QApplication.clipboard()
+        if clipboard is None:
+            logger.warning("Clipboard is unavailable; skipping copy")
+            return
+        clipboard.setText(text)
         logger.info("Copied spec to clipboard (size=%d)", size)
 
     def _on_save(self) -> None:

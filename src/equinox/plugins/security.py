@@ -14,7 +14,7 @@ import time
 from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
-from typing import Any
+from typing import Any, Optional, cast
 
 from equinox.core.audit import get_audit_logger
 from equinox.core.exceptions import SecurityError
@@ -65,7 +65,7 @@ class PluginManifest:
     permissions: set[Permission] = field(default_factory=set)
     homepage: str = ""
     license: str = ""
-    checksum: str | None = None
+    checksum: Optional[str] = None
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "PluginManifest":
@@ -149,7 +149,7 @@ class PluginSandbox:
     provide process-level isolation.
     """
 
-    def __init__(self, manifest: PluginManifest, limits: ResourceLimits | None = None):
+    def __init__(self, manifest: PluginManifest, limits: Optional[ResourceLimits] = None):
         """Initialize plugin execution guard.
 
         Args:
@@ -162,7 +162,7 @@ class PluginSandbox:
         # Tracking
         self._network_requests = 0
         self._storage_operations = 0
-        self._start_time: float | None = None
+        self._start_time: Optional[float] = None
 
         # Audit
         audit_logger.log_plugin_event(manifest.name, "loaded", user="system")
@@ -292,9 +292,9 @@ class SecurePluginContext:
     def __init__(
         self,
         sandbox: PluginSandbox,
-        storage: Any | None = None,
-        http_client: Any | None = None,
-        config: dict[str, Any] | None = None,
+        storage: Optional[Any] = None,
+        http_client: Optional[Any] = None,
+        config: Optional[dict[str, Any]] = None,
     ):
         """Initialize secure context.
 
@@ -352,7 +352,7 @@ class SecureStorageProxy:
         """Fetch all rows with permission check."""
         self._sandbox.check_permission(Permission.STORAGE_READ)
         self._sandbox.check_storage_operation()
-        return self._storage.fetchall(query, params)
+        return cast(list[Any], self._storage.fetchall(query, params))
 
     def execute(self, query: str, params: tuple = ()) -> Any:
         """Execute query with permission check."""
@@ -617,7 +617,7 @@ def _iter_local_import_targets(node: ast.AST, current_file: Path, plugin_root: P
 
 
 def validate_plugin_dependency_graph(
-    entry_file: Path, plugin_root: Path | None = None
+    entry_file: Path, plugin_root: Optional[Path] = None
 ) -> set[Path]:
     """Validate *entry_file* and all locally imported plugin modules.
 

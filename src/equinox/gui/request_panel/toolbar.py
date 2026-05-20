@@ -8,7 +8,7 @@ can connect to so table updates are handled centrally.
 
 import re
 from collections.abc import Sequence
-from typing import Any, Optional, Protocol, Tuple
+from typing import Optional, Protocol, Tuple
 
 from PyQt6.QtCore import pyqtSignal
 from PyQt6.QtWidgets import (

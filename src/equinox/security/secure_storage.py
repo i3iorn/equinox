@@ -11,7 +11,7 @@ import os
 import tempfile
 import threading
 from pathlib import Path
-from typing import Any, TypedDict
+from typing import Any, TypedDict, cast
 
 from cryptography.fernet import Fernet
 from cryptography.hazmat.primitives import hashes
@@ -191,7 +191,8 @@ class SecureStorage:
         key_path = local if local.exists() else crypto.default_key_path()
 
         try:
-            return crypto.get_or_create_raw_key(key_path)
+            key = crypto.get_or_create_raw_key(key_path)
+            return cast(bytes, key)
         except Exception as exc:
             logger.exception("Key generation failed")
             raise SecurityError("Failed to load encryption key") from exc

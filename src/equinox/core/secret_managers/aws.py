@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import json
 import logging
-from typing import Any
+from typing import Any, Optional, cast
 
 from equinox.core.secret_managers.base import (
     SecretAuthError,
@@ -35,8 +35,8 @@ class AWSSecretsManagerBackend(SecretManager):
     def __init__(self, **kwargs: Any) -> None:
         """Initialize AWS Secrets Manager backend."""
         super().__init__(**kwargs)
-        self.client: Any | None = None
-        self.region_name: str | None = None
+        self.client: Optional[Any] = None
+        self.region_name: Optional[str] = None
 
     def configure(self, region_name: str = "us-east-1", **kwargs: Any) -> None:
         """Configure AWS Secrets Manager connection.
@@ -50,7 +50,7 @@ class AWSSecretsManagerBackend(SecretManager):
             SecretManagerError: If boto3 is not installed
         """
         try:
-            import boto3
+            import boto3  # type: ignore[import-not-found]
         except ImportError as exc:
             raise SecretManagerError(
                 "boto3 is required for AWS Secrets Manager. " "Install with: pip install boto3"
@@ -88,7 +88,7 @@ class AWSSecretsManagerBackend(SecretManager):
         # Check cache
         cached = self._get_from_cache(secret_name)
         if cached is not None:
-            return cached
+            return cast(str, cached)
 
         secret_ref = mask_secret(secret_name, keep=4)
 
@@ -97,9 +97,9 @@ class AWSSecretsManagerBackend(SecretManager):
 
             # AWS returns either SecretString or SecretBinary
             if "SecretString" in response:
-                value = response["SecretString"]
+                value = cast(str, response["SecretString"])
             elif "SecretBinary" in response:
-                value = response["SecretBinary"].decode("utf-8")
+                value = cast(bytes, response["SecretBinary"]).decode("utf-8")
             else:
                 raise SecretManagerError(f"Invalid secret response for {secret_ref}")
 
@@ -130,7 +130,12 @@ class AWSSecretsManagerBackend(SecretManager):
         """
         value = self.get_secret(secret_name)
         try:
-            return json.loads(value)
+            loaded = json.loads(value)
+            if not isinstance(loaded, dict):
+                raise SecretManagerError(
+                    f"Secret '{mask_secret(secret_name, keep=4)}' JSON value is not an object"
+                )
+            return cast(dict[str, Any], loaded)
         except json.JSONDecodeError as exc:
             raise SecretManagerError(
                 f"Secret '{mask_secret(secret_name, keep=4)}' is not valid JSON: {exc}"
