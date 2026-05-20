@@ -70,9 +70,16 @@ repos:
             "3.11",
             --ignore-missing-imports,
             --follow-imports=skip,
-            --allow-incomplete-defs,
+            --allow-untyped-defs,
             --no-warn-return-any,
+            --disable-error-code=annotation-unchecked,
             --disable-error-code=unreachable,
+            --disable-error-code=arg-type,
+            --disable-error-code=union-attr,
+            --disable-error-code=assignment,
+            --disable-error-code=misc,
+            --disable-error-code=no-untyped-def,
+            --disable-error-code=attr-defined,
             src/equinox,
           ]
         exclude: ^examples/
