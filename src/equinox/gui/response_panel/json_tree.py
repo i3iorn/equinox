@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import json
 import logging
-from typing import Any
+from typing import Any, Callable
 
 from PyQt6.QtWidgets import (
     QApplication,
@@ -247,7 +247,7 @@ class JsonTree(QWidget):
         layout.addLayout(toolbar)
 
     @staticmethod
-    def _create_button(text: str, callback) -> QPushButton:
+    def _create_button(text: str, callback: Callable[[], None]) -> QPushButton:
         """Create a toolbar button.
 
         Args:

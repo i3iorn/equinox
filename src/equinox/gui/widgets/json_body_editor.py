@@ -14,14 +14,17 @@ import json as _json
 import logging
 from collections.abc import Iterator
 
-from PyQt6.QtCore import QSize, Qt
+from PyQt6.QtCore import QRect, QSize, Qt
 from PyQt6.QtGui import (
     QColor,
     QKeyEvent,
+    QPaintEvent,
     QPainter,
+    QResizeEvent,
     QTextBlock,
     QTextCharFormat,
     QTextCursor,
+    QTextDocument,
 )
 from PyQt6.QtWidgets import QPlainTextEdit, QTextEdit, QWidget
 
@@ -73,7 +76,7 @@ class LineNumberArea(QWidget):
     def sizeHint(self) -> QSize:
         return QSize(self._editor.line_number_area_width(), 0)
 
-    def paintEvent(self, event) -> None:  # noqa: N802
+    def paintEvent(self, event: QPaintEvent) -> None:  # noqa: N802
         painter = QPainter(self)
         painter.fillRect(event.rect(), QColor(240, 240, 240))
 
@@ -164,7 +167,7 @@ class JsonBodyEditor(QPlainTextEdit):
     def _update_line_number_area_width(self, _: int) -> None:
         self.setViewportMargins(self.line_number_area_width(), 0, 0, 0)
 
-    def _update_line_number_area(self, rect, dy: int) -> None:
+    def _update_line_number_area(self, rect: QRect, dy: int) -> None:
         if dy:
             self._line_number_area.scroll(0, dy)
         else:
@@ -174,7 +177,7 @@ class JsonBodyEditor(QPlainTextEdit):
         if rect.contains(self.viewport().rect()):
             self._update_line_number_area_width(0)
 
-    def resizeEvent(self, event) -> None:  # noqa: N802
+    def resizeEvent(self, event: QResizeEvent) -> None:  # noqa: N802
         super().resizeEvent(event)
         cr = self.contentsRect()
         self._line_number_area.setGeometry(
@@ -219,7 +222,7 @@ class JsonBodyEditor(QPlainTextEdit):
                 self.setExtraSelections(sels)
 
     def _find_matching_forward(
-        self, doc, start: int, open_char: str, close_char: str
+        self, doc: QTextDocument, start: int, open_char: str, close_char: str
     ) -> int | None:
         """Return the position of the closing bracket matching *open_char* at *start*."""
         depth = 1
@@ -235,7 +238,7 @@ class JsonBodyEditor(QPlainTextEdit):
         return None
 
     def _find_matching_backward(
-        self, doc, start: int, open_char: str, close_char: str
+        self, doc: QTextDocument, start: int, open_char: str, close_char: str
     ) -> int | None:
         """Return the position of the opening bracket matching *close_char* at *start*."""
         depth = 1

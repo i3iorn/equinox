@@ -11,7 +11,7 @@ from PyQt6.QtWidgets import (
     QDialogButtonBox,
     QFormLayout,
     QLabel,
-    QVBoxLayout,
+    QVBoxLayout, QWidget,
 )
 
 from equinox.gui.theme import THEME_LABELS, THEME_MODES, get_theme_mode
@@ -20,7 +20,7 @@ from equinox.gui.theme import THEME_LABELS, THEME_MODES, get_theme_mode
 class SetupWizardDialog(QDialog):
     """Collect first-run preferences and optional onboarding actions."""
 
-    def __init__(self, parent=None) -> None:
+    def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self.setWindowTitle("Welcome to Equinox")
         self.setMinimumWidth(460)

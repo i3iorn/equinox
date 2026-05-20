@@ -1,14 +1,17 @@
 """Frameless window, resize, cursor, and zoom/theme mixin for MainWindow."""
 
 # mypy: disable-error-code=attr-defined
+# mypy: disable-error-code=no-untyped-def
 
 from __future__ import annotations
 
 import logging
 
-from PyQt6.QtCore import QEvent, QPoint, Qt
+from typing import TYPE_CHECKING, Any
+
+from PyQt6.QtCore import QEvent, QObject, QPoint, Qt
 from PyQt6.QtGui import QMouseEvent
-from PyQt6.QtWidgets import QWidget
+from PyQt6.QtWidgets import QMainWindow, QWidget
 
 from equinox.gui.theme import (
     DEFAULT_FONT_SIZE,
@@ -20,13 +23,25 @@ from equinox.gui.theme import (
 
 logger = logging.getLogger(__name__)
 
+if TYPE_CHECKING:
+    _FramelessBase = QMainWindow
+else:
+    _FramelessBase = object
+
 # Window edge grab-zone for frameless resize.
 _RESIZE_BORDER_PX = 6
 _MAX_RESIZE_BORDER_PX = 14
 
 
-class _FramelessMixin:
+class _FramelessMixin(_FramelessBase):
     """Frameless-window resize/drag behavior and zoom/theme controls."""
+
+    _theme_actions: dict[str, Any]
+    _win_max_btn: Any
+    _drag_menu_active: bool
+    _resize_active: bool
+    _drag_handles: list[QObject]
+    _drag_menu_offset: QPoint
 
     # ── Zoom ──────────────────────────────────────────────────────────────────
 
@@ -74,7 +89,7 @@ class _FramelessMixin:
             self._win_max_btn.setText("□")
             self._win_max_btn.setToolTip("Maximize")
 
-    def changeEvent(self, event) -> None:  # type: ignore[override]
+    def changeEvent(self, event: QEvent) -> None:  # type: ignore[override]
         if event.type() == QEvent.Type.WindowStateChange:
             self._sync_window_controls()
             if not self._can_resize_frameless():
@@ -145,7 +160,7 @@ class _FramelessMixin:
         """Update resize cursor from a global point emitted by child widgets."""
         self._update_resize_cursor(self.mapFromGlobal(global_pos))
 
-    def _handle_frameless_resize_event(self, watched, event) -> bool:
+    def _handle_frameless_resize_event(self, watched: QObject, event: QEvent) -> bool:
         """Handle resize/cursor behavior for this window from child widget events."""
         if not isinstance(event, QMouseEvent):
             return False
@@ -184,7 +199,7 @@ class _FramelessMixin:
 
     # ── Qt event overrides ────────────────────────────────────────────────────
 
-    def eventFilter(self, watched, event):  # type: ignore[override]
+    def eventFilter(self, watched: QObject, event: QEvent) -> bool:  # type: ignore[override]
         """Enable dragging the frameless window from empty menu-bar/title area."""
         if self._handle_frameless_resize_event(watched, event):
             return True
@@ -227,7 +242,7 @@ class _FramelessMixin:
 
         return super().eventFilter(watched, event)
 
-    def mousePressEvent(self, event) -> None:  # type: ignore[override]
+    def mousePressEvent(self, event: QMouseEvent) -> None:  # type: ignore[override]
         if (
             event.button() == Qt.MouseButton.LeftButton
             and self._can_resize_frameless()
@@ -242,16 +257,16 @@ class _FramelessMixin:
                     return
         super().mousePressEvent(event)
 
-    def mouseMoveEvent(self, event) -> None:  # type: ignore[override]
+    def mouseMoveEvent(self, event: QMouseEvent) -> None:  # type: ignore[override]
         self._update_resize_cursor(event.position().toPoint())
         super().mouseMoveEvent(event)
 
-    def mouseReleaseEvent(self, event) -> None:  # type: ignore[override]
+    def mouseReleaseEvent(self, event: QMouseEvent) -> None:  # type: ignore[override]
         self._resize_active = False
         self._update_resize_cursor(event.position().toPoint())
         super().mouseReleaseEvent(event)
 
-    def leaveEvent(self, event) -> None:  # type: ignore[override]
+    def leaveEvent(self, event: QEvent) -> None:  # type: ignore[override]
         if not self._resize_active:
             self.setCursor(Qt.CursorShape.ArrowCursor)
         super().leaveEvent(event)

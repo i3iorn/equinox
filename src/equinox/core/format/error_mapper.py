@@ -17,7 +17,7 @@ logger = logging.getLogger(__name__)
 
 def _url_str(req: Any) -> str:
     """Return redacted URL string for error/log payloads."""
-    return redact_url(req.url)
+    return redact_url(req.url) or ""
 
 
 def _suffix(exc: Exception) -> str:
@@ -25,14 +25,14 @@ def _suffix(exc: Exception) -> str:
     return f": {exc}" if str(exc) else ""
 
 
-def _is_ssl_error(exc: Exception) -> bool:
+def _is_ssl_error(exc: BaseException) -> bool:
     """Return True if *exc* wraps an SSL failure.
 
     Walks the __cause__ / __context__ chain and also falls back to
     checking the exception message for SSL-related keywords.
     """
     seen = set()
-    stack = [exc]
+    stack: list[BaseException] = [exc]
     while stack:
         e = stack.pop()
         if not isinstance(e, BaseException):
@@ -53,14 +53,14 @@ def _is_ssl_error(exc: Exception) -> bool:
     return "ssl" in msg or "certificate" in msg
 
 
-def _is_proxy_error(exc: Exception) -> bool:
+def _is_proxy_error(exc: BaseException) -> bool:
     """Detect whether *exc* originated from an http-proxy connection attempt.
 
     We heuristically inspect traceback frames for httpcore's proxy module
     filenames. This follows the original implementation in HTTPClient.
     """
     seen = set()
-    stack = [exc]
+    stack: list[BaseException] = [exc]
     while stack:
         e = stack.pop()
         if not isinstance(e, BaseException):
@@ -109,7 +109,7 @@ def _read_timeout_handler(exc: Exception, req: Any) -> dict[str, Any]:
     )
 
 
-def _timeout_handler_factory(timeout: float):
+def _timeout_handler_factory(timeout: float) -> Any:
     """Build generic timeout handler with configured timeout value."""
 
     def _handler(exc: Exception, req: Any) -> dict[str, Any]:
@@ -127,7 +127,7 @@ def _timeout_handler_factory(timeout: float):
     return _handler
 
 
-def _connect_handler_factory(proxy: str | None):
+def _connect_handler_factory(proxy: str | None) -> Any:
     """Build connect error handler that distinguishes SSL/proxy/generic cases."""
 
     def _handler(exc: Exception, req: Any) -> dict[str, Any]:
@@ -164,7 +164,7 @@ def _connect_handler_factory(proxy: str | None):
     return _handler
 
 
-def _too_many_redirects_handler_factory(max_redirects: int):
+def _too_many_redirects_handler_factory(max_redirects: int) -> Any:
     """Build too-many-redirects handler with max redirects value."""
 
     def _handler(exc: Exception, req: Any) -> dict[str, Any]:
@@ -181,7 +181,7 @@ def _too_many_redirects_handler_factory(max_redirects: int):
     return _handler
 
 
-def _http_status_handler(exc: Exception, req: Any) -> dict[str, Any]:
+def _http_status_handler(exc: Any, req: Any) -> dict[str, Any]:
     """Handle HTTP status exceptions."""
     url = _url_str(req)
     status = exc.response.status_code
@@ -219,7 +219,7 @@ def _unicode_encode_handler(exc: Exception, req: Any) -> dict[str, Any]:
     )
 
 
-def build_error_handlers(client) -> list:
+def build_error_handlers(client: Any) -> list[tuple[type[BaseException], Any]]:
     """Return the list of (exc_type, handler_fn) entries for the HTTPClient.
 
     The returned handlers are compatible with the existing client contract:

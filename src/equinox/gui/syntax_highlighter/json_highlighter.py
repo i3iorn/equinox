@@ -5,7 +5,7 @@ from collections.abc import Generator
 from enum import Enum
 from typing import NamedTuple
 
-from PyQt6.QtGui import QSyntaxHighlighter
+from PyQt6.QtGui import QSyntaxHighlighter, QTextDocument
 
 from equinox.gui.syntax_highlighter.base import _VARIABLE_FMT, _VARIABLE_PATTERN, _make_format
 from equinox.gui.theme import Colors
@@ -315,7 +315,7 @@ class JsonHighlighter(QSyntaxHighlighter):
         "ERROR_NUMBER": {"bold": True},
     }
 
-    def __init__(self, document) -> None:
+    def __init__(self, document: QTextDocument) -> None:
         """Initialize the highlighter.
 
         Parameters

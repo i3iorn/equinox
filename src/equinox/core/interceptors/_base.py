@@ -22,19 +22,19 @@ class InterceptorResult(Generic[T]):
     value: T | None = None
 
     @classmethod
-    def continue_(cls):
+    def continue_(cls) -> "InterceptorResult[T]":
         return cls(InterceptorAction.CONTINUE)
 
     @classmethod
-    def stop(cls):
+    def stop(cls) -> "InterceptorResult[T]":
         return cls(InterceptorAction.STOP)
 
     @classmethod
-    def replace(cls, value: T):
+    def replace(cls, value: T) -> "InterceptorResult[T]":
         return cls(InterceptorAction.REPLACE, value)
 
     @classmethod
-    def suppress(cls):
+    def suppress(cls) -> "InterceptorResult[T]":
         return cls(InterceptorAction.SUPPRESS)
 
 

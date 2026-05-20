@@ -51,7 +51,7 @@ class TabToolbar(QWidget):
         presets: Sequence[tuple[str, str, str] | None] | None = None,
         preset_context: str | None = None,
         include_file_btn: bool = False,
-        parent=None,
+        parent: QWidget | None = None,
     ) -> None:
         """Initialize the toolbar.
 

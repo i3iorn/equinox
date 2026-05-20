@@ -3,15 +3,18 @@
 from __future__ import annotations
 
 import logging
+from typing import Generator
 
-from PyQt6.QtCore import QStringListModel, Qt, pyqtSignal
+from PyQt6.QtCore import QModelIndex, QStringListModel, Qt, pyqtSignal
 from PyQt6.QtWidgets import (
     QCompleter,
     QHeaderView,
     QLineEdit,
+    QStyleOptionViewItem,
     QStyledItemDelegate,
     QTableWidget,
     QTableWidgetItem,
+    QWidget,
 )
 
 logger = logging.getLogger(__name__)
@@ -66,13 +69,18 @@ _COMMON_HTTP_HEADERS = [
 class _HeaderCompleterDelegate(QStyledItemDelegate):
     """QStyledItemDelegate that attaches a QCompleter to Key-column editors."""
 
-    def __init__(self, parent=None):
+    def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         # Build the model once so every cell editor shares the same data
         # instead of allocating a new QStringListModel on every keypress.
         self._model = QStringListModel(_COMMON_HTTP_HEADERS, self)
 
-    def createEditor(self, parent, option, index):
+    def createEditor(
+        self,
+        parent: QWidget | None,
+        option: QStyleOptionViewItem,
+        index: QModelIndex,
+    ) -> QWidget | None:
         editor = super().createEditor(parent, option, index)
         if isinstance(editor, QLineEdit):
             completer = QCompleter(self._model, editor)
@@ -115,7 +123,9 @@ class CheckableKeyValueTable(QTableWidget):
     _COL_KEY: int = 1
     _COL_VALUE: int = 2
 
-    def __init__(self, parent=None, *, enable_key_completer: bool = False):
+    def __init__(
+        self, parent: QWidget | None = None, *, enable_key_completer: bool = False
+    ) -> None:
         super().__init__(parent)
         self._updating = False  # reentrancy guard for _on_item_changed
         self.setColumnCount(3)
@@ -150,7 +160,7 @@ class CheckableKeyValueTable(QTableWidget):
         self.setItem(row, self._COL_KEY, QTableWidgetItem(key))
         self.setItem(row, self._COL_VALUE, QTableWidgetItem(value))
 
-    def _iter_non_empty_rows(self):
+    def _iter_non_empty_rows(self) -> Generator[tuple[str, str, bool], None, None]:
         """Yield ``(key, value, enabled)`` for every row with a non-empty key.
 
         Skips the trailing empty sentinel row transparently so callers never
@@ -235,7 +245,7 @@ class CheckableKeyValueTable(QTableWidget):
         """Backward-compat alias for get_enabled_data."""
         return self.get_enabled_data()
 
-    def set_data(self, data) -> None:
+    def set_data(self, data: dict[str, str] | list[dict]) -> None:
         """Load rows.
 
         ``data`` can be:

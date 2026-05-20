@@ -66,8 +66,8 @@ _SCRYPT_SALT_LEN = 32
 _PBKDF2_ITERATIONS = 1_000_000
 
 # JSON serialization format (compact, no whitespace)
-_JSON_COMPACT = {"separators": (",", ":")}
-_JSON_PRETTY = {"indent": 2}
+_JSON_COMPACT: dict[str, Any] = {"separators": (",", ":")}
+_JSON_PRETTY: dict[str, Any] = {"indent": 2}
 
 # Export format version
 _EXPORT_VERSION_V2 = 2

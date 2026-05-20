@@ -9,7 +9,7 @@ import threading
 from collections.abc import Iterator, Mapping
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Any, Union
+from typing import Any, Callable, Union
 
 from equinox.core.exceptions import DuplicateError, StorageError, ValidationError
 
@@ -131,7 +131,9 @@ def _validate_sql(query: str, params: _SqlParams) -> None:
     _validate_placeholders(query, params)
 
 
-def _run_sqlite(fn, query: str, params: _SqlParams) -> sqlite3.Cursor:
+def _run_sqlite(
+    fn: Callable[..., sqlite3.Cursor], query: str, params: _SqlParams
+) -> sqlite3.Cursor:
     """Call *fn(query, params)* and map ``sqlite3`` errors to app exceptions.
 
     Centralises the error-translation logic that would otherwise be duplicated
@@ -362,7 +364,7 @@ class Database:
     # ── Context managers ──────────────────────────────────────────────────────
 
     @contextmanager
-    def get_connection(self):
+    def get_connection(self) -> Iterator[sqlite3.Connection]:
         """Yield the persistent connection under the database lock.
 
         Low-level escape hatch — prefer the typed helpers
@@ -376,7 +378,7 @@ class Database:
             yield self._require_conn()
 
     @contextmanager
-    def transaction(self):
+    def transaction(self) -> Iterator["_TransactionHelper"]:
         """Context manager for multi-statement atomic transactions.
 
         All statements executed on the yielded :class:`_TransactionHelper` run
@@ -500,7 +502,12 @@ class Database:
         """Return *self* so ``with Database(...) as db:`` works."""
         return self
 
-    def __exit__(self, exc_type, exc_val, exc_tb) -> None:
+    def __exit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc_val: BaseException | None,
+        exc_tb: Any,
+    ) -> None:
         """Close on context exit (clean or exceptional)."""
         self.close()
 
@@ -529,7 +536,11 @@ class _TransactionHelper:
         _validate_sql(query, params)
         return _run_sqlite(self._conn.execute, query, params)
 
-    def executemany(self, query: str, seq_of_params) -> sqlite3.Cursor:
+    def executemany(
+        self,
+        query: str,
+        seq_of_params: list[tuple[Any, ...]] | tuple[tuple[Any, ...], ...],
+    ) -> sqlite3.Cursor:
         """Execute a statement against each item in *seq_of_params*.
 
         Applies the same query-length validation as :meth:`execute` and routes

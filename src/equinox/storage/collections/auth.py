@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from equinox.core.auth_cipher import decrypt_auth_data, encrypt_auth_data
 from equinox.core.exceptions import SecurityError, StorageError
@@ -11,6 +11,7 @@ from equinox.storage.utils import safe_json_dumps, safe_json_loads
 
 if TYPE_CHECKING:
     from equinox.core.request import Request
+    from equinox.storage.database import Database
 
 logger = logging.getLogger(__name__)
 
@@ -18,10 +19,12 @@ logger = logging.getLogger(__name__)
 class CollectionAuthMixin:
     """Mixin providing auth configuration for CollectionManager."""
 
+    db: "Database"
+
     # ── Serialization helpers ──────────────────────────────────────────
 
     @staticmethod
-    def _serialize_auth(auth) -> "tuple[str | None, str | None]":
+    def _serialize_auth(auth: Any) -> tuple[str | None, str | None]:
         """Return (auth_type, encrypted_auth_data) from an auth strategy object or None.
 
         The JSON blob is encrypted at rest via :func:`encrypt_auth_data`.
@@ -39,7 +42,7 @@ class CollectionAuthMixin:
             raise StorageError(f"Failed to serialize auth ({type(auth).__name__}): {exc}") from exc
 
     @staticmethod
-    def _deserialize_auth(auth_type: "str | None", auth_data: "str | None"):
+    def _deserialize_auth(auth_type: str | None, auth_data: str | None) -> Any | None:
         """Return an auth strategy object from DB columns, or None.
 
         Handles both encrypted (``enc:…``) and legacy plaintext JSON
@@ -84,7 +87,7 @@ class CollectionAuthMixin:
 
     # ── Collection-level auth ─────────────────────────────────────────
 
-    def set_collection_auth(self, collection_id: int, auth) -> None:
+    def set_collection_auth(self, collection_id: int, auth: Any | None) -> None:
         """Set or clear the default auth for a collection.
 
         Args:
@@ -98,7 +101,7 @@ class CollectionAuthMixin:
         )
         logger.info("Set auth on collection %d: %s", collection_id, a_type)
 
-    def get_collection_auth(self, collection_id: int):
+    def get_collection_auth(self, collection_id: int) -> Any | None:
         """Return the auth strategy set on a collection, or ``None``."""
         row = self.db.fetchone(
             "SELECT auth_type, auth_data FROM collections WHERE id=?",
@@ -110,7 +113,7 @@ class CollectionAuthMixin:
 
     # ── Folder-level auth ─────────────────────────────────────────────
 
-    def set_folder_auth(self, collection_id: int, folder_path: str, auth) -> None:
+    def set_folder_auth(self, collection_id: int, folder_path: str, auth: Any | None) -> None:
         """Set or clear the default auth for a folder.
 
         The folder must already exist in ``collection_folders``.
@@ -133,7 +136,7 @@ class CollectionAuthMixin:
             a_type,
         )
 
-    def get_folder_auth(self, collection_id: int, folder_path: str):
+    def get_folder_auth(self, collection_id: int, folder_path: str) -> Any | None:
         """Return the auth strategy set on a folder, or ``None``."""
         row = self.db.fetchone(
             "SELECT auth_type, auth_data FROM collection_folders "
@@ -146,7 +149,7 @@ class CollectionAuthMixin:
 
     # ── Resolve effective auth (request → folders → collection) ───────
 
-    def resolve_effective_auth(self, request: "Request"):
+    def resolve_effective_auth(self, request: "Request") -> tuple[Any | None, str | None]:
         """Walk the auth hierarchy and return the first auth found.
 
         Resolution order:
@@ -170,7 +173,7 @@ class CollectionAuthMixin:
             return None, None
 
         # Build ancestor list deepest-first (e.g. "A/B/C" → ["A/B/C", "A/B", "A"])
-        ancestors: list = []
+        ancestors: list[str] = []
         folder = request.folder
         if folder:
             parts = folder.split("/")

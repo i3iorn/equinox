@@ -3,12 +3,15 @@
 from __future__ import annotations
 
 import logging
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from equinox.core.exceptions import StorageError, ValidationError
 from equinox.storage.utils import validate_variable_key, validate_variable_value
 
 logger = logging.getLogger(__name__)
+
+if TYPE_CHECKING:
+    from equinox.storage.database import Database
 
 
 class GlobalVariablesManager:
@@ -16,7 +19,7 @@ class GlobalVariablesManager:
 
     MAX_DESCRIPTION_LENGTH = 1000
 
-    def __init__(self, db) -> None:
+    def __init__(self, db: "Database") -> None:
         self.db = db
 
     def set_variable(self, key: str, value: str, description: str = "") -> int:

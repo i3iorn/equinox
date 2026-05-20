@@ -18,6 +18,7 @@ from PyQt6.QtWidgets import (
     QPushButton,
     QTextEdit,
     QVBoxLayout,
+    QWidget,
 )
 
 logger = logging.getLogger(__name__)
@@ -82,7 +83,7 @@ class ApiSpecDialog(QDialog):
         dlg.exec()
     """
 
-    def __init__(self, parent=None, title: str = "API Spec"):
+    def __init__(self, parent: QWidget | None = None, title: str = "API Spec") -> None:
         super().__init__(parent)
         self.setWindowTitle(title)
         self.setMinimumSize(700, 480)

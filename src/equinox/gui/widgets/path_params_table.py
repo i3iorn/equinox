@@ -9,6 +9,7 @@ any values the user has already entered for unchanged parameters.
 import logging
 import re
 from contextlib import contextmanager
+from typing import Iterator
 
 from PyQt6.QtCore import QObject, Qt, pyqtSignal
 from PyQt6.QtWidgets import (
@@ -35,7 +36,7 @@ _MAX_PATH_PARAMS: int = 50
 
 
 @contextmanager
-def _blocked(obj: QObject):
+def _blocked(obj: QObject) -> Iterator[None]:
     """Block Qt signals on *obj* for the duration of the ``with`` block.
 
     Saves and restores the previous blocked state so nested calls are safe —

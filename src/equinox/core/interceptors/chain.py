@@ -14,7 +14,7 @@ logger = logging.getLogger(__name__)
 
 
 class InterceptorChain:
-    def __init__(self):
+    def __init__(self) -> None:
         self.request_interceptors: list[RequestInterceptor] = []
         self.response_interceptors: list[ResponseInterceptor] = []
         self.error_interceptors: list[ErrorInterceptor] = []

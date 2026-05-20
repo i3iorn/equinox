@@ -8,6 +8,7 @@ from dataclasses import dataclass
 from re import Pattern
 
 from PyQt6.QtGui import QColor, QFont, QSyntaxHighlighter, QTextCharFormat
+from PyQt6.QtWidgets import QWidget
 
 from equinox.gui.theme import Colors
 
@@ -93,7 +94,7 @@ class RegexHighlighterBase(QSyntaxHighlighter):
     rules are provided), making it suitable for plain-text contexts.
     """
 
-    def __init__(self, parent=None) -> None:
+    def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         # Compile rules once at construction time; subclass implementations
         # are expected to be cheap (just returning a list).

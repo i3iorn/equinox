@@ -77,7 +77,7 @@ class HeaderDict(dict):
     def get(self, key: str, default: Any = None) -> Any:  # type: ignore[override]
         return super().get(key.lower(), default)
 
-    def keys(self):  # type: ignore[override]
+    def keys(self) -> Iterator[str]:  # type: ignore[override]
         for lower in super().keys():
             yield self._orig.get(lower, lower)
 

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from PyQt6.QtCore import Qt
+from PyQt6.QtGui import QKeyEvent
 from PyQt6.QtWidgets import (
     QDialog,
     QLabel,
@@ -10,13 +11,16 @@ from PyQt6.QtWidgets import (
     QListWidget,
     QListWidgetItem,
     QVBoxLayout,
+    QWidget,
 )
 
 
 class CommandPaletteDialog(QDialog):
     """Simple searchable command picker."""
 
-    def __init__(self, commands: list[dict[str, str]], parent=None) -> None:
+    def __init__(
+        self, commands: list[dict[str, str]], parent: QWidget | None = None
+    ) -> None:
         super().__init__(parent)
         self.setWindowTitle("Command Palette")
         self.setMinimumSize(520, 380)
@@ -62,7 +66,7 @@ class CommandPaletteDialog(QDialog):
         if self._list.count() > 0:
             self._list.setCurrentRow(0)
 
-    def keyPressEvent(self, event) -> None:  # type: ignore[override]
+    def keyPressEvent(self, event: QKeyEvent) -> None:  # type: ignore[override]
         if event.key() in (Qt.Key.Key_Down, Qt.Key.Key_Up):
             self._list.setFocus(Qt.FocusReason.ShortcutFocusReason)
             return super().keyPressEvent(event)

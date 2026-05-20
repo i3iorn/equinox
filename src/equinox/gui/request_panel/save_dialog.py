@@ -24,6 +24,7 @@ from PyQt6.QtWidgets import (
     QLineEdit,
     QMessageBox,
     QVBoxLayout,
+    QWidget,
 )
 
 from equinox.gui.request_panel._constants import (
@@ -48,8 +49,8 @@ class SaveRequestDialog(QDialog):
         method: str,
         url: str,
         current_folder: str = "",
-        parent=None,
-    ):
+        parent: QWidget | None = None,
+    ) -> None:
         super().__init__(parent)
         self.setWindowTitle("Save Request")
         self.setMinimumWidth(SAVE_DIALOG_MIN_WIDTH)

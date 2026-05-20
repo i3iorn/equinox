@@ -112,10 +112,12 @@ def mask_secret(value: str | None, *, keep: int = _DEFAULT_MASK_KEEP_CHARS) -> s
     return _MASKED_SHORT
 
 
-def sanitize_details(details: dict, *, max_string_len: int = _DEFAULT_MAX_STRING_LEN) -> dict:
-    def _sanitize(obj):
+def sanitize_details(
+    details: dict[str, Any], *, max_string_len: int = _DEFAULT_MAX_STRING_LEN
+) -> dict[str, Any]:
+    def _sanitize(obj: Any) -> Any:
         if isinstance(obj, dict):
-            out = {}
+            out: dict[str, Any] = {}
             for k, v in obj.items():
                 k_lower = k.lower()
                 if any(s in k_lower for s in SENSITIVE_PAYLOAD_KEYS):
@@ -131,4 +133,7 @@ def sanitize_details(details: dict, *, max_string_len: int = _DEFAULT_MAX_STRING
             return obj
         return obj
 
-    return _sanitize(details)
+    sanitized = _sanitize(details)
+    if isinstance(sanitized, dict):
+        return sanitized
+    return {}

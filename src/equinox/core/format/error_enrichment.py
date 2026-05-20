@@ -56,7 +56,9 @@ def enrich_exception(exc: Exception) -> RichError:
             hint = f"💡 {hints_dict[exc.hint_key]}"
 
     # Scrub any credential fragments that leaked through exception strings
-    return RichError(exc_type=exc_type, message=_redact(msg), tb=_redact(tb), hint=hint)
+    safe_msg = _redact(msg) or ""
+    safe_tb = _redact(tb) or ""
+    return RichError(exc_type=exc_type, message=safe_msg, tb=safe_tb, hint=hint)
 
 
 def _enrich_httpx_error(exc: Exception, raw: str, exc_type: str) -> "str | None":
@@ -90,7 +92,7 @@ def _enrich_httpx_error(exc: Exception, raw: str, exc_type: str) -> "str | None"
 def _describe_connect_error(inner: str) -> str:
     """Produce a helpful message for an httpx.ConnectError."""
     # Sanitize the inner message — it may contain URLs with embedded credentials
-    inner = _redact_url(inner)
+    inner = _redact_url(inner) or ""
     lower = inner.lower()
     if "ssl" in lower or "certificate" in lower:
         return (

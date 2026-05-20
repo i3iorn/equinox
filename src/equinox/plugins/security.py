@@ -133,7 +133,7 @@ class ResourceLimits:
     max_network_requests: int = 100  # Maximum network requests
     max_storage_operations: int = 100  # Maximum database operations
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         """Validate limits."""
         if self.max_memory_mb < 1 or self.max_memory_mb > 1000:
             raise ValueError("max_memory_mb must be between 1 and 1000")
@@ -382,13 +382,13 @@ class SecureHTTPClientProxy:
         self._sandbox.check_network_request()
         return self._client.send(request)
 
-    def get(self, url: str, **kwargs) -> Any:
+    def get(self, url: str, **kwargs: Any) -> Any:
         """GET request with permission check."""
         self._sandbox.check_permission(Permission.NETWORK_HTTP)
         self._sandbox.check_network_request()
         return self._client.get(url, **kwargs)
 
-    def post(self, url: str, **kwargs) -> Any:
+    def post(self, url: str, **kwargs: Any) -> Any:
         """POST request with permission check."""
         self._sandbox.check_permission(Permission.NETWORK_HTTP)
         self._sandbox.check_network_request()

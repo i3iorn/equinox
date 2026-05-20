@@ -14,7 +14,7 @@ import logging
 import os
 from getpass import getpass
 from pathlib import Path
-from typing import Callable, cast
+from typing import Callable
 
 from cryptography.fernet import Fernet
 
@@ -64,7 +64,7 @@ def get_master_password() -> str | None:
         _cached_password = pw
         return pw
     # GUI can register a secure prompt callback to avoid terminal prompts.
-    callback = cast(Callable[[], str | None] | None, _password_prompt_callback)
+    callback = _password_prompt_callback
     if callback is not None:
         try:
             pw = callback()

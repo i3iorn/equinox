@@ -48,18 +48,19 @@ class RequestSaveFlowMixin:
             return False
 
         name, col_id, col_name, folder = dlg.result_values()
+        folder_value = folder or ""
         logger.debug(
             "request_panel.save_dialog_values op=save_request name=%s collection_id=%s folder=%s",
             name,
             col_id,
-            folder,
+            folder_value,
         )
 
         try:
             request = self._build_request_from_editor(
                 name=name,
                 collection_id=col_id,
-                folder=folder,
+                folder=folder_value,
             )
             save_result = self._request_persistence.save_request_from_dialog(
                 request,

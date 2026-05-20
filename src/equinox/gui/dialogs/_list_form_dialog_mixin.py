@@ -17,10 +17,15 @@ template methods:
 
 from __future__ import annotations
 
+from collections.abc import Iterable
+from typing import Any
+
 from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import QListWidget, QListWidgetItem
 
 from equinox.gui.dialogs._dirty_dialog_mixin import DirtyDialogMixin
+
+_ListItemSpec = tuple[int, str] | tuple[int, str, dict[str, Any]]
 
 
 class ListFormDialogMixin(DirtyDialogMixin):
@@ -119,7 +124,9 @@ class ListFormDialogMixin(DirtyDialogMixin):
         self._dirty = False
         self._sync_buttons()
 
-    def _on_item_selected(self, current: QListWidgetItem, _prev) -> None:
+    def _on_item_selected(
+        self, current: QListWidgetItem | None, _prev: QListWidgetItem | None
+    ) -> None:
         """Handle interactive selection changes from the list (signal slot).
 
         Checks if form is dirty and prompts to save before switching.
@@ -154,7 +161,7 @@ class ListFormDialogMixin(DirtyDialogMixin):
 
     # ── Abstract/template methods (override in subclass) ──────────────
 
-    def _build_list_items(self):
+    def _build_list_items(self) -> Iterable[_ListItemSpec]:
         """Yield (item_id, label, **kwargs) tuples for each list item.
 
         Override to customize item rendering. Optional kwargs:

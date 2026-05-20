@@ -88,7 +88,7 @@ class AuditLogger:
         # consistent across modules (audit, logging, exports).
         return sanitize_details(details, max_string_len=200)
 
-    def log_auth_success(self, auth_type: str, user: str | None = None):
+    def log_auth_success(self, auth_type: str, user: str | None = None) -> None:
         """Log successful authentication."""
         self.log_event(
             AuditEventType.AUTH_SUCCESS,
@@ -98,7 +98,7 @@ class AuditLogger:
             user=user,
         )
 
-    def log_auth_failure(self, auth_type: str, reason: str, user: str | None = None):
+    def log_auth_failure(self, auth_type: str, reason: str, user: str | None = None) -> None:
         """Log failed authentication."""
         safe_reason = redact_body(reason, max_length=200) or "unknown"
         self.log_event(
@@ -109,7 +109,7 @@ class AuditLogger:
             user=user,
         )
 
-    def log_credential_access(self, operation: str, key: str, user: str | None = None):
+    def log_credential_access(self, operation: str, key: str, user: str | None = None) -> None:
         """Log credential access."""
         event_map = {
             "store": AuditEventType.CREDENTIAL_STORED,
@@ -133,7 +133,7 @@ class AuditLogger:
         error: str | None = None,
         user: str | None = None,
         request_id: str | None = None,
-    ):
+    ) -> None:
         """Log HTTP request."""
         safe_url = redact_url(url)
         safe_error = redact_body(error, max_length=200) if error else None
@@ -162,7 +162,7 @@ class AuditLogger:
         action: str,
         error: str | None = None,
         user: str | None = None,
-    ):
+    ) -> None:
         """Log plugin event."""
         event_map = {
             "loaded": AuditEventType.PLUGIN_LOADED,
@@ -182,7 +182,7 @@ class AuditLogger:
 
     def log_security_violation(
         self, violation_type: str, details: dict[str, Any], user: str | None = None
-    ):
+    ) -> None:
         """Log security violation."""
         event_map = {
             "validation": AuditEventType.VALIDATION_FAILURE,
@@ -199,7 +199,7 @@ class AuditLogger:
             user=user,
         )
 
-    def log_file_operation(self, operation: str, file_path: str, user: str | None = None):
+    def log_file_operation(self, operation: str, file_path: str, user: str | None = None) -> None:
         """Log file operation."""
         event_map = {
             "read": AuditEventType.FILE_READ,

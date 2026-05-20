@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import logging
 
-from PyQt6.QtWidgets import QHeaderView, QTableWidget, QTableWidgetItem
+from PyQt6.QtWidgets import QHeaderView, QTableWidget, QTableWidgetItem, QWidget
 
 logger = logging.getLogger(__name__)
 
@@ -30,7 +30,7 @@ class HeaderTable(QTableWidget):
     All updates are batched to prevent UI flickering.
     """
 
-    def __init__(self, parent=None) -> None:
+    def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self._all_headers: dict[str, str] = {}
         self._init_table()

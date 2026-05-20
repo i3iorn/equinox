@@ -118,7 +118,7 @@ class LoggingPanel(QWidget):
 
     # ── Public log methods ────────────────────────────────────────────────────
 
-    def log_request(self, request) -> None:
+    def log_request(self, request: Any) -> None:
         safe_url = redact_url(request.url) if request.url else ""
         entry = {
             "type": "request",
@@ -139,7 +139,7 @@ class LoggingPanel(QWidget):
         )
         self._push(entry)
 
-    def log_response(self, request, response) -> None:
+    def log_response(self, request: Any, response: Any) -> None:
         # Guard against None elapsed (e.g. cancelled or error responses).
         elapsed_ms = int((response.elapsed or 0) * 1000)
         safe_url = redact_url(request.url) if request.url else ""
@@ -172,7 +172,7 @@ class LoggingPanel(QWidget):
         )
         self._push(entry)
 
-    def log_error(self, request, error) -> None:
+    def log_error(self, request: Any, error: Any) -> None:
         method = getattr(request, "method", "?")
         safe_url = redact_url(getattr(request, "url", "?"))
         safe_error = redact_body(str(error), max_length=_ERROR_REDACT_LEN) or str(error)

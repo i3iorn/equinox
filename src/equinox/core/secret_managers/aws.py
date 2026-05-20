@@ -35,7 +35,7 @@ class AWSSecretsManagerBackend(SecretManager):
     def __init__(self, **kwargs: Any) -> None:
         """Initialize AWS Secrets Manager backend."""
         super().__init__(**kwargs)
-        self.client = None
+        self.client: Any | None = None
         self.region_name: str | None = None
 
     def configure(self, region_name: str = "us-east-1", **kwargs: Any) -> None:
@@ -81,6 +81,9 @@ class AWSSecretsManagerBackend(SecretManager):
         """
         if not self._configured:
             raise SecretManagerError("AWS Secrets Manager not configured")
+        client = self.client
+        if client is None:
+            raise SecretManagerError("AWS Secrets Manager client not initialized")
 
         # Check cache
         cached = self._get_from_cache(secret_name)
@@ -90,7 +93,7 @@ class AWSSecretsManagerBackend(SecretManager):
         secret_ref = mask_secret(secret_name, keep=4)
 
         try:
-            response = self.client.get_secret_value(SecretId=secret_name)
+            response = client.get_secret_value(SecretId=secret_name)
 
             # AWS returns either SecretString or SecretBinary
             if "SecretString" in response:
@@ -105,9 +108,9 @@ class AWSSecretsManagerBackend(SecretManager):
             logger.debug("Retrieved secret from AWS Secrets Manager: %s", secret_ref)
             return value
 
-        except self.client.exceptions.ResourceNotFoundException as exc:
+        except client.exceptions.ResourceNotFoundException as exc:
             raise SecretNotFoundError(f"Secret not found in AWS: {secret_ref}") from exc
-        except self.client.exceptions.AccessDeniedException as exc:
+        except client.exceptions.AccessDeniedException as exc:
             raise SecretAuthError(f"Access denied to AWS secret: {secret_ref}") from exc
         except Exception as exc:
             raise SecretManagerError(f"Failed to retrieve secret from AWS: {exc}") from exc
