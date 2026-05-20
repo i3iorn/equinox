@@ -66,7 +66,7 @@ jobs:
         with:
           script: |
             const fs = require('fs');
-            let comment = '## 🔒 Security Scan Results\n\n';
+            let comment = '## Security Scan Results\n\n';
 
             try {
               const report = JSON.parse(fs.readFileSync('bandit-report.json', 'utf8'));
@@ -78,18 +78,18 @@ jobs:
 
               comment += `### Bandit — Static Security Analysis\n`;
               comment += `| Severity | Count |\n|---|---|\n`;
-              comment += `| 🔴 High | ${high} |\n`;
-              comment += `| 🟠 Medium | ${medium} |\n`;
-              comment += `| 🟡 Low | ${low} |\n`;
+              comment += `| High | ${high} |\n`;
+              comment += `| Medium | ${medium} |\n`;
+              comment += `| Low | ${low} |\n`;
               comment += `| **Total** | **${total}** |\n\n`;
 
               if (parseInt(high) > 0 || parseInt(medium) > 0) {
-                comment += '> ⚠️ **High/Medium severity issues found — review required before merging.**\n\n';
+                comment += '> **High/Medium severity issues found — review required before merging.**\n\n';
               } else {
-                comment += '> ✅ No high/medium severity issues found.\n\n';
+                comment += '> No high/medium severity issues found.\n\n';
               }
             } catch (e) {
-              comment += '> ⚠️ Bandit report not available.\n\n';
+              comment += '> Bandit report not available.\n\n';
             }
 
             comment += '_Full report available in the [workflow artifacts](' +
