@@ -4,6 +4,8 @@ Contains all ``_build_*`` methods that create the widget tree.  Has no
 ``__init__`` — relies on ``self.*`` attributes set by ``ResponsePanel.__init__``.
 """
 
+# mypy: disable-error-code=attr-defined
+
 from __future__ import annotations
 
 from PyQt6.QtCore import Qt

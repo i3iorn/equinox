@@ -1,4 +1,7 @@
 """Action methods mixin for CollectionsPanel."""
+from typing import Any
+
+# mypy: disable-error-code=attr-defined
 
 from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import (
@@ -83,7 +86,7 @@ class _CollectionsActionsMixin:
             except Exception as e:
                 ErrorPresenter.error(self, f"Failed to delete collection: {e}")
 
-    def _delete_request(self, request_id: int):
+    def _delete_request(self, request_id: int) -> None:
         reply = QMessageBox.question(
             self,
             "Confirm Delete",
@@ -112,7 +115,7 @@ class _CollectionsActionsMixin:
     # ── Folder helpers ────────────────────────────────────────────────
 
     @staticmethod
-    def _col_id_for_item(item) -> "int | None":
+    def _col_id_for_item(item) -> "int | None": #  type: ignore[no-untyped-def]
         """Walk the parent chain to find the enclosing collection's ID."""
         cursor = item
         while cursor is not None:
@@ -217,7 +220,7 @@ class _CollectionsActionsMixin:
         self,
         col_id: "int | None",
         old_path: str,
-        item,
+        item: Any,
     ) -> None:
         if col_id is None:
             return
@@ -270,7 +273,7 @@ class _CollectionsActionsMixin:
         except Exception as exc:
             ErrorPresenter.error(self, str(exc))
 
-    def _on_request_dropped(self, request_id: int, target_col_id: int, target_folder) -> None:
+    def _on_request_dropped(self, request_id: int, target_col_id: int, target_folder: str) -> None:
         """Handle a drag-and-drop move of a request to a new collection/folder."""
         try:
             # Check if it's a cross-collection or same-collection move

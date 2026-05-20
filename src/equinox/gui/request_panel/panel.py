@@ -9,7 +9,7 @@ Logging strategy:
 import json
 import logging
 import time
-from typing import Any, NamedTuple
+from typing import Any, NamedTuple, Callable
 
 from PyQt6.QtCore import QStringListModel, Qt, QTimer, pyqtSignal
 from PyQt6.QtGui import QAction
@@ -330,7 +330,7 @@ class RequestPanel(
         """Connect change signals on all editor widgets to mark dirty."""
         _connected = 0
 
-        def safe_connect(get_signal, slot, name=None):
+        def safe_connect(get_signal: Callable[[], pyqtSignal], slot: Callable, name=None):
             """Lazily retrieve a signal via get_signal() and connect it to slot."""
             nonlocal _connected
             try:

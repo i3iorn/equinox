@@ -1,9 +1,12 @@
 """Import/export operations mixin for MainWindow."""
 
+# mypy: disable-error-code=attr-defined
+
 from __future__ import annotations
 
 import logging
 from pathlib import Path
+from typing import Optional
 
 from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import (
@@ -23,7 +26,7 @@ class _ImportExportMixin:
 
     def _import_with(
         self,
-        importer_class,
+        importer_class: type,
         dialog_title: str,
         file_filter: str,
         success_msg: str,
@@ -34,10 +37,10 @@ class _ImportExportMixin:
             return
         self._start_import(importer_class, Path(file_path), success_msg)
 
-    def _start_import(self, importer_class, file_path: Path, success_msg: str) -> None:
+    def _start_import(self, importer_class: type, file_path: Path, success_msg: str) -> None:
         """Run selected importer in background with retry on error."""
 
-        def _operation(cancel_event=None) -> bool:
+        def _operation(cancel_event: Optional[object] = None) -> bool:
             if cancel_event is not None and cancel_event.is_set():
                 raise RuntimeError("Import cancelled")
             mgr = CollectionManager(self.db)

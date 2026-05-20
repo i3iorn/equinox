@@ -1,6 +1,7 @@
 """Collections management panel"""
 
 import logging
+from typing import Tuple
 
 from PyQt6.QtCore import Qt, QTimer, pyqtSignal
 from PyQt6.QtGui import QAction, QColor, QKeySequence, QShortcut
@@ -46,7 +47,7 @@ class _NewRequestDialog(QDialog):
 
     METHODS = ["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"]
 
-    def __init__(self, parent=None, title="New Request", folder_hint: str = ""):
+    def __init__(self, parent=None, title="New Request", folder_hint: str = "") -> None:
         super().__init__(parent)
         self.setWindowTitle(title)
         self.setMinimumWidth(420)
@@ -86,7 +87,7 @@ class _NewRequestDialog(QDialog):
             return
         self.accept()
 
-    def values(self):
+    def values(self) -> Tuple[str, str, str]:
         """Return (name, method, url) after the dialog is accepted."""
         name = self._name.text().strip() or f"{self._method.currentText()} Request"
         return name, self._method.currentText(), self._url.text().strip()

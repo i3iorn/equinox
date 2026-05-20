@@ -13,6 +13,9 @@ This mixin has no ``__init__`` and relies on ``self.*`` attributes set by
 ``RequestPanel.__init__`` (PyQt6 MRO is respected).
 """
 
+# mypy: disable-error-code=attr-defined
+# mypy: disable-error-code=has-type
+
 from __future__ import annotations
 
 import logging

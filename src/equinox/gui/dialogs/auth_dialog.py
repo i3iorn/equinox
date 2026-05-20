@@ -2,7 +2,7 @@
 
 import json
 import logging
-from typing import Any, Literal, cast
+from typing import Any, Literal, cast, Optional
 
 from PyQt6.QtCore import QThread, pyqtSignal
 from PyQt6.QtWidgets import (
@@ -54,7 +54,7 @@ class _TokenFetchWorker(QThread):
     # Emits a dict payload: {ok, auth, error, response}
     finished = pyqtSignal(object)
 
-    def __init__(self, auth, parent=None):
+    def __init__(self, auth, parent=None) -> None:
         super().__init__(parent)
         self._auth = auth
 
@@ -160,7 +160,7 @@ class AuthDialog(QDialog):
         "aws_sigv4": _TAB_AWS,
     }
 
-    def __init__(self, current_auth=None, parent=None, db=None):
+    def __init__(self, current_auth=None, parent=None, db=None) -> None:
         super().__init__(parent)
         self.current_auth = current_auth
         self._db = db  # optional — enables the saved-credential picker
@@ -174,7 +174,7 @@ class AuthDialog(QDialog):
         if self._db:
             self._refresh_client_picker()
 
-    def _init_ui(self):
+    def _init_ui(self) -> None:
         layout = QVBoxLayout(self)
 
         # ── Saved credential picker (above tabs) ──────────────────────
@@ -317,7 +317,7 @@ class AuthDialog(QDialog):
             "Inspect the token endpoint response (tokens redacted)"
         )
         self.oauth2_view_response_btn.clicked.connect(self._view_token_response)
-        self._last_fetched_auth = None  # stores OAuth2Auth after successful fetch
+        self._last_fetched_auth: Optional[OAuth2Auth] = None  # stores OAuth2Auth after successful fetch
         self._last_token_response = None
         self._fetch_requested_token_auth = "body"
         fetch_row = QHBoxLayout()
@@ -748,7 +748,7 @@ class AuthDialog(QDialog):
             return APIKeyAuth(
                 key=key_name,
                 value=key_value,
-                location=cast(Literal["header", "query"], location),
+                location=location,
             )
 
         if tab == self._TAB_AWS:

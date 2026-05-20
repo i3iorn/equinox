@@ -15,6 +15,8 @@ Responsibilities:
 - Deferred persistence (history)
 """
 
+# mypy: disable-error-code=attr-defined
+
 from __future__ import annotations
 
 import logging

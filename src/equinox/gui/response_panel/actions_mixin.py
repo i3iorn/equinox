@@ -5,6 +5,8 @@ large-body loading.  Has no ``__init__`` — relies on ``self.*`` attributes
 set by ``ResponsePanel.__init__``.
 """
 
+# mypy: disable-error-code=attr-defined
+
 from __future__ import annotations
 
 import difflib

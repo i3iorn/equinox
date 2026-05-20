@@ -1,5 +1,7 @@
 """Menu bar, command palette, and dialogs mixin for MainWindow."""
 
+# mypy: disable-error-code=attr-defined
+
 from __future__ import annotations
 
 import logging
