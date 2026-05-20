@@ -124,3 +124,84 @@ def test_request_panel_restores_last_active_tab(tmp_db_path):
     settings.sync()
 
 
+def test_request_panel_builds_canonical_editor_snapshot(tmp_db_path):
+    """The snapshot helper should capture the editor state without Qt types."""
+    ensure_qapp()
+    from PyQt6.QtWidgets import QTableWidgetItem
+    from equinox.core.request import Request
+    from equinox.gui.request_panel.panel import RequestPanel
+    from equinox.storage import get_db
+
+    class DummyAuth:
+        def to_dict(self):
+            return {"token": "secret"}
+
+    db = get_db()
+    panel = RequestPanel(db)
+
+    panel.method_combo.setCurrentText("POST")
+    panel.url_input.setText("https://example.com/api")
+    panel.headers_table.set_data({"X-Test": "1"})
+    panel.params_table.set_data([
+        {"key": "q", "value": "search", "enabled": True},
+    ])
+    panel.body_type_combo.setCurrentText("GraphQL")
+    panel.body_text.setPlainText("raw body")
+    panel._gql_query.setPlainText("query { viewer { id } }")
+    panel._gql_vars.setPlainText('{"limit": 1}')
+    panel.notes_editor.setPlainText("Request notes")
+    panel.pre_script_editor.setPlainText("print('pre')")
+    panel.post_script_editor.setPlainText("print('post')")
+    panel.timeout_spin.setValue(12.5)
+    panel.verify_ssl_check.setChecked(False)
+    panel.follow_redirects_check.setChecked(False)
+    panel.cert_path_input.setText(r"C:\certs\client.crt")
+    panel.cert_key_input.setText(r"C:\certs\client.key")
+    panel.path_params_table.set_data({"id": "42"})
+    panel.set_session_var("token", "abc")
+
+    panel._multipart_table.setRowCount(1)
+    panel._multipart_table.setItem(0, 0, QTableWidgetItem("file"))
+    panel._multipart_table.setItem(0, 1, QTableWidgetItem("file"))
+    panel._multipart_table.setItem(0, 2, QTableWidgetItem(r"C:\tmp\upload.txt"))
+
+    request = Request(method="GET", url="https://example.com")
+    request.id = 99
+    request.name = "Example"
+    request.description = "Existing description"
+    request.collection_id = 7
+    request.folder = "Folder A"
+    panel.current_request = request
+    panel._auth = DummyAuth()
+    panel._inherited_auth = DummyAuth()
+    panel._inherited_auth_source = "collection"
+
+    snapshot = getattr(panel, "_build_request_editor_snapshot")()
+
+    assert snapshot.method == "POST"
+    assert snapshot.url == "https://example.com/api"
+    assert snapshot.headers == {"X-Test": "1"}
+    assert snapshot.params == {"q": "search"}
+    assert snapshot.params_list == ({"key": "q", "value": "search", "enabled": True},)
+    assert snapshot.body == "raw body"
+    assert snapshot.body_type == "GraphQL"
+    assert snapshot.graphql_query == "query { viewer { id } }"
+    assert snapshot.graphql_variables == '{"limit": 1}'
+    assert snapshot.multipart_data == (
+        {"key": "file", "type": "file", "value": r"C:\tmp\upload.txt"},
+    )
+    assert snapshot.path_params == {"id": "42"}
+    assert snapshot.timeout == 12.5
+    assert snapshot.verify_ssl is False
+    assert snapshot.follow_redirects is False
+    assert snapshot.name == "Example"
+    assert snapshot.description == "Request notes"
+    assert snapshot.collection_id == 7
+    assert snapshot.folder == "Folder A"
+    assert snapshot.request_id == 99
+    assert snapshot.auth_type == "DummyAuth"
+    assert snapshot.auth_data == {"token": "secret"}
+    assert snapshot.inherited_auth_type == "DummyAuth"
+    assert snapshot.inherited_auth_data == {"token": "secret"}
+    assert snapshot.inherited_auth_source == "collection"
+    assert snapshot.session_vars == {"token": "abc"}

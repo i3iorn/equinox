@@ -1,12 +1,18 @@
 """Save-request dialog — prompts for name, collection, and optional folder.
 
-Provides a simple form for the user to specify:
-- Request name (or defaults to a method + URL preview)
-- Target collection (auto-creates a default if none exist)
-- Optional folder hierarchy (e.g. "Auth/OAuth")
+UI responsibilities only:
+- collect a request name (or fall back to a method + URL preview)
+- present caller-provided collection choices
+- collect an optional folder path
+- perform lightweight UI validation before accepting
+
+Non-UI responsibilities intentionally left to the caller / facade:
+- loading collections from storage
+- auto-creating a default collection when none exist
+- performing the actual save/update persistence
 """
 
-from typing import Optional, Tuple
+from typing import Iterable, Optional, Tuple, TypedDict
 
 from PyQt6.QtWidgets import (
     QDialog,
@@ -18,20 +24,25 @@ from PyQt6.QtWidgets import (
     QDialogButtonBox,
     QMessageBox,
 )
-
-from equinox.storage import Database, CollectionManager
 from equinox.gui.request_panel._constants import (
     SAVE_DIALOG_MIN_WIDTH,
     SAVE_DIALOG_URL_PREVIEW_LEN,
 )
 
 
+class SaveDialogCollectionChoice(TypedDict):
+    """Plain collection choice consumed by :class:`SaveRequestDialog`."""
+
+    id: int
+    name: str
+
+
 class SaveRequestDialog(QDialog):
-    """Dialog for saving a request to a collection with optional folder nesting."""
+    """Pure UI form for choosing request name, collection, and folder."""
 
     def __init__(
         self,
-        db: Database,
+        collections: Iterable[SaveDialogCollectionChoice],
         method: str,
         url: str,
         current_folder: str = "",
@@ -58,7 +69,7 @@ class SaveRequestDialog(QDialog):
         col_row = QHBoxLayout()
         col_row.addWidget(QLabel("Collection:"))
         self._col_combo = QComboBox()
-        self._populate_collections(db)
+        self._populate_collections(collections)
         col_row.addWidget(self._col_combo)
         layout.addLayout(col_row)
 
@@ -82,26 +93,20 @@ class SaveRequestDialog(QDialog):
 
     # ── Private helpers ───────────────────────────────────────────────────
 
-    def _populate_collections(self, db: Database) -> None:
-        """Load collections into the combo, auto-creating a default if none exist.
-
-        **Side effect**: Creates a collection named "My Requests" if the
-        database is empty. This ensures the user always has a valid target.
-        """
-        mgr = CollectionManager(db)
-        collections = mgr.list_collections()
-        if not collections:
-            # Auto-create a default collection for first-time users
-            mgr.create_collection("My Requests", "Default collection")
-            collections = mgr.list_collections()
+    def _populate_collections(self, collections: Iterable[SaveDialogCollectionChoice]) -> None:
+        """Load caller-provided collection choices into the combo box."""
         for col in collections:
             self._col_combo.addItem(col["name"], col["id"])
 
     def _validate_inputs(self) -> bool:
-        """Validate that a collection is selected.
+        """Validate UI state only.
 
         Returns:
-            True if inputs are valid, False otherwise (warning shown to user).
+            True if the user selected a collection, False otherwise.
+
+        Notes:
+            This method intentionally performs only form-level validation. It
+            does not reach into storage, create collections, or persist data.
         """
         if self._col_combo.currentData() is None:
             QMessageBox.warning(

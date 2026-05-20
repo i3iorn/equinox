@@ -2,7 +2,7 @@
 
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QTreeWidgetItem,
-    QPushButton, QInputDialog, QMessageBox, QMenu, QCheckBox, QLineEdit,
+    QPushButton, QInputDialog, QMenu, QCheckBox, QLineEdit,
     QDialog, QFormLayout, QComboBox, QDialogButtonBox,
 )
 from PyQt6.QtCore import pyqtSignal, Qt, QTimer
@@ -10,12 +10,14 @@ from PyQt6.QtGui import QAction, QColor, QShortcut, QKeySequence
 
 from equinox.gui.theme import Colors
 import logging
-from equinox.storage import Database, CollectionManager
+from equinox.application.collections import CollectionFacade
+from equinox.storage import Database
 from equinox.gui.widgets.drag_drop_tree import DragDropTree
 from equinox.gui.collection_panel.actions import _CollectionsActionsMixin
 from equinox.gui.collection_panel._dialog_registry import DialogRegistry
 from equinox.gui.collection_panel._spec_export_service import ApiSpecExportService
 from equinox.gui.dialogs.api_spec_dialog import ApiSpecDialog
+from equinox.gui.error_presenter import ErrorPresenter
 
 logger = logging.getLogger(__name__)
 
@@ -68,7 +70,7 @@ class _NewRequestDialog(QDialog):
 
     def _on_accept(self):
         if not self._url.text().strip():
-            QMessageBox.warning(self, "Missing URL", "URL is required.")
+            ErrorPresenter.warning(self, "URL is required.", title="Missing URL")
             return
         self.accept()
 
@@ -88,9 +90,15 @@ class CollectionsPanel(_CollectionsActionsMixin, QWidget):
     request_run      = pyqtSignal(object)   # fire-and-forget replay
     collections_changed = pyqtSignal()
 
-    def __init__(self, db: Database, parent=None):
+    def __init__(
+        self,
+        db: Database,
+        parent=None,
+        collection_facade: "CollectionFacade | None" = None,
+    ):
         super().__init__(parent)
         self.db = db
+        self._collection_facade = collection_facade or CollectionFacade(db)
         self._api_spec_service = ApiSpecExportService(db, logger)
         self._dialog_registry = DialogRegistry()
         self.auto_refresh_enabled = True
@@ -405,8 +413,7 @@ class CollectionsPanel(_CollectionsActionsMixin, QWidget):
         self._programmatic_expand = True
         try:
             self.tree.clear()
-            mgr = CollectionManager(self.db)
-            collections = mgr.list_collections()
+            collections = self._collection_facade.list_collections()
 
             for col in collections:
                 col_id = col.get("id")
@@ -423,7 +430,7 @@ class CollectionsPanel(_CollectionsActionsMixin, QWidget):
 
                 # ── Materialise explicit (possibly-empty) folder records first ──
                 folder_items: dict[str, QTreeWidgetItem] = {}
-                for folder_path in mgr.list_folders(col_id):
+                for folder_path in self._collection_facade.list_folders(col_id):
                     self._ensure_folder_item(
                         col_item, folder_path, folder_items,
                         exp_state["folders"], col_id,
@@ -433,7 +440,7 @@ class CollectionsPanel(_CollectionsActionsMixin, QWidget):
                 folder_counts: dict[str, int] = {}
                 col_root_count = 0
 
-                for req in mgr.list_requests(col_id):
+                for req in self._collection_facade.list_requests(col_id):
                     method = req["method"]
                     color = Colors.METHOD.get(method, Colors.MUTED)
                     folder_path = (req.get("folder") or "").strip()
@@ -533,26 +540,23 @@ class CollectionsPanel(_CollectionsActionsMixin, QWidget):
     def create_collection(self):
         name, ok = QInputDialog.getText(self, "New Collection", "Collection name:")
         if ok and name:
-            mgr = CollectionManager(self.db)
             try:
-                mgr.create_collection(name)
+                self._collection_facade.create_collection(name)
                 self.refresh()
                 self.collections_changed.emit()
             except Exception as e:
-                QMessageBox.critical(self, "Error", f"Failed to create collection: {e}")
+                ErrorPresenter.error(self, f"Failed to create collection: {e}")
 
     def get_collections(self):
         logger.debug("get_collections called")
-        mgr = CollectionManager(self.db)
-        return mgr.list_collections()
+        return self._collection_facade.list_collections()
 
     def _on_item_double_clicked(self, item: QTreeWidgetItem, column: int):
         data = item.data(0, Qt.ItemDataRole.UserRole)
         if not data:
             return
         if data["type"] == "request":
-            mgr = CollectionManager(self.db)
-            request = mgr.get_request(data["id"])
+            request = self._collection_facade.get_request(data["id"])
             if request:
                 self.request_selected.emit(request)
         elif data["type"] == "collection":
@@ -782,11 +786,11 @@ class CollectionsPanel(_CollectionsActionsMixin, QWidget):
         try:
             payload = self._api_spec_service.build_collection_payload(collection_id)
         except ValueError as exc:
-            QMessageBox.warning(self, "Invalid Collection", str(exc))
+            ErrorPresenter.warning(self, str(exc), title="Invalid Collection")
             return
         except Exception as exc:
             logger.exception("CollectionsPanel: failed to build collection API spec id=%s", collection_id)
-            QMessageBox.warning(self, "Export Error", f"Failed to load collection: {exc}")
+            ErrorPresenter.warning(self, f"Failed to load collection: {exc}", title="Export Error")
             return
 
         self._show_spec_dialog(payload.title, payload.variants)
@@ -796,11 +800,11 @@ class CollectionsPanel(_CollectionsActionsMixin, QWidget):
         try:
             payload = self._api_spec_service.build_request_payload(request_id)
         except ValueError as exc:
-            QMessageBox.warning(self, "Not Found", str(exc))
+            ErrorPresenter.warning(self, str(exc), title="Not Found")
             return
         except Exception as exc:
             logger.exception("CollectionsPanel: failed to build request API spec id=%s", request_id)
-            QMessageBox.warning(self, "Export Error", f"Failed to load request: {exc}")
+            ErrorPresenter.warning(self, f"Failed to load request: {exc}", title="Export Error")
             return
 
         self._show_spec_dialog(payload.title, payload.variants)

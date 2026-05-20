@@ -60,7 +60,7 @@ class _PanelsMixin:
 
     def _init_history_panel(self):
         from equinox.gui.history_panel import HistoryPanel
-        self.history_panel = HistoryPanel(self.db, self)
+        self.history_panel = HistoryPanel(self.db, self, history_facade=self._history_facade)
         self.history_panel.history_selected.connect(self._load_history_entry)
         self.history_panel.history_replay.connect(self._replay_history_entry)
         return self.history_panel

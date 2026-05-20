@@ -8,8 +8,8 @@ from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QAction
 
 from equinox.gui.theme import Colors
-from equinox.storage import CollectionManager
 from equinox.core.request import Request
+from equinox.gui.error_presenter import ErrorPresenter
 
 
 class _CollectionsActionsMixin:
@@ -21,15 +21,13 @@ class _CollectionsActionsMixin:
     """
 
     def _load_request(self, request_id: int):
-        mgr = CollectionManager(self.db)
-        request = mgr.get_request(request_id)
+        request = self._collection_facade.get_request(request_id)
         if request:
             self.request_selected.emit(request)
 
     def _run_request(self, request_id: int):
         """Load and immediately fire the request without opening the editor."""
-        mgr = CollectionManager(self.db)
-        request = mgr.get_request(request_id)
+        request = self._collection_facade.get_request(request_id)
         if request:
             self.request_run.emit(request)
 
@@ -40,13 +38,12 @@ class _CollectionsActionsMixin:
         )
         if not ok or not new_name.strip() or new_name.strip() == old_name:
             return
-        mgr = CollectionManager(self.db)
         try:
-            mgr.rename_collection(collection_id, new_name.strip())
+            self._collection_facade.rename_collection(collection_id, new_name.strip())
             self.refresh()
             self.collections_changed.emit()
         except Exception as exc:
-            QMessageBox.critical(self, "Error", str(exc))
+            ErrorPresenter.error(self, str(exc))
 
     def _rename_request(self, request_id: int, item):
         # Strip method prefix from displayed name
@@ -59,22 +56,20 @@ class _CollectionsActionsMixin:
         )
         if not ok or not new_name.strip() or new_name.strip() == old_name:
             return
-        mgr = CollectionManager(self.db)
         try:
-            mgr.rename_request(request_id, new_name.strip())
+            self._collection_facade.rename_request(request_id, new_name.strip())
             self.refresh()
             self.collections_changed.emit()
         except Exception as exc:
-            QMessageBox.critical(self, "Error", str(exc))
+            ErrorPresenter.error(self, str(exc))
 
     def _duplicate_request(self, request_id: int):
-        mgr = CollectionManager(self.db)
         try:
-            mgr.duplicate_request(request_id)
+            self._collection_facade.duplicate_request(request_id)
             self.refresh()
             self.collections_changed.emit()
         except Exception as exc:
-            QMessageBox.critical(self, "Error", str(exc))
+            ErrorPresenter.error(self, str(exc))
 
     # ── Delete ────────────────────────────────────────────────────────
 
@@ -85,13 +80,12 @@ class _CollectionsActionsMixin:
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
         )
         if reply == QMessageBox.StandardButton.Yes:
-            mgr = CollectionManager(self.db)
             try:
-                mgr.delete_collection(collection_id)
+                self._collection_facade.delete_collection(collection_id)
                 self.refresh()
                 self.collections_changed.emit()
             except Exception as e:
-                QMessageBox.critical(self, "Error", f"Failed to delete collection: {e}")
+                ErrorPresenter.error(self, f"Failed to delete collection: {e}")
 
     def _delete_request(self, request_id: int):
         reply = QMessageBox.question(
@@ -99,20 +93,18 @@ class _CollectionsActionsMixin:
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
         )
         if reply == QMessageBox.StandardButton.Yes:
-            mgr = CollectionManager(self.db)
             try:
-                mgr.delete_request(request_id)
+                self._collection_facade.delete_request(request_id)
                 self.refresh()
                 self.collections_changed.emit()
             except Exception as e:
-                QMessageBox.critical(self, "Error", f"Failed to delete request: {e}")
+                ErrorPresenter.error(self, f"Failed to delete request: {e}")
 
     def _manage_variables(self, collection_id: int):
         from equinox.gui.dialogs.collection_variables_dialog import CollectionVariablesDialog
-        mgr = CollectionManager(self.db)
-        collection = mgr.get_collection(collection_id)
+        collection = self._collection_facade.get_collection(collection_id)
         if not collection:
-            QMessageBox.critical(self, "Error", "Collection not found")
+            ErrorPresenter.error(self, "Collection not found")
             return
 
         dialog = CollectionVariablesDialog(self.db, collection_id, collection["name"], self)
@@ -142,13 +134,12 @@ class _CollectionsActionsMixin:
         )
         if not ok or not path.strip():
             return
-        mgr = CollectionManager(self.db)
         try:
-            mgr.create_folder(col_id, path.strip())
+            self._collection_facade.create_folder(col_id, path.strip())
             self.refresh()
             self.collections_changed.emit()
         except Exception as exc:
-            QMessageBox.critical(self, "Error", str(exc))
+            ErrorPresenter.error(self, str(exc))
 
     def _create_subfolder(self, col_id: "int | None", parent_path: str) -> None:
         """Prompt the user for a subfolder name and create it under *parent_path*."""
@@ -160,13 +151,12 @@ class _CollectionsActionsMixin:
         if not ok or not name.strip():
             return
         full_path = f"{parent_path}/{name.strip()}"
-        mgr = CollectionManager(self.db)
         try:
-            mgr.create_folder(col_id, full_path)
+            self._collection_facade.create_folder(col_id, full_path)
             self.refresh()
             self.collections_changed.emit()
         except Exception as exc:
-            QMessageBox.critical(self, "Error", str(exc))
+            ErrorPresenter.error(self, str(exc))
 
     # ── Request creation from the panel ──────────────────────────────
 
@@ -203,7 +193,6 @@ class _CollectionsActionsMixin:
         folder: "str | None",
     ) -> None:
         """Persist a new request and emit request_selected to open it in the editor."""
-        mgr = CollectionManager(self.db)
         req = Request(
             method=method,
             url=url,
@@ -212,14 +201,14 @@ class _CollectionsActionsMixin:
             folder=folder,
         )
         try:
-            req_id = mgr.save_request(req, collection_id=col_id, name=name)
-            saved = mgr.get_request(req_id)
+            req_id = self._collection_facade.save_request(req, collection_id=col_id, name=name)
+            saved = self._collection_facade.get_request(req_id)
             if saved:
                 self.request_selected.emit(saved)
             self.refresh()
             self.collections_changed.emit()
         except Exception as exc:
-            QMessageBox.critical(self, "Error", f"Failed to create request: {exc}")
+            ErrorPresenter.error(self, f"Failed to create request: {exc}")
 
     # ── Folder rename / delete ────────────────────────────────────────
 
@@ -236,13 +225,12 @@ class _CollectionsActionsMixin:
         )
         if not ok or not new_path.strip() or new_path.strip() == old_path:
             return
-        mgr = CollectionManager(self.db)
         try:
-            mgr.rename_folder(col_id, old_path, new_path.strip())
+            self._collection_facade.rename_folder(col_id, old_path, new_path.strip())
             self.refresh()
             self.collections_changed.emit()
         except Exception as exc:
-            QMessageBox.critical(self, "Error", str(exc))
+            ErrorPresenter.error(self, str(exc))
 
     def _delete_folder(self, col_id: "int | None", folder_path: str) -> None:
         if col_id is None:
@@ -258,13 +246,12 @@ class _CollectionsActionsMixin:
         if reply == QMessageBox.StandardButton.Cancel:
             return
         move_to_root = reply == QMessageBox.StandardButton.Yes
-        mgr = CollectionManager(self.db)
         try:
-            mgr.delete_folder(col_id, folder_path, move_to_root=move_to_root)
+            self._collection_facade.delete_folder(col_id, folder_path, move_to_root=move_to_root)
             self.refresh()
             self.collections_changed.emit()
         except Exception as exc:
-            QMessageBox.critical(self, "Error", str(exc))
+            ErrorPresenter.error(self, str(exc))
 
     def _move_to_folder(self, request_id: int) -> None:
         folder_path, ok = QInputDialog.getText(
@@ -273,20 +260,18 @@ class _CollectionsActionsMixin:
         )
         if not ok:
             return
-        mgr = CollectionManager(self.db)
         try:
-            mgr.move_request_to_folder(request_id, folder_path.strip() or None)
+            self._collection_facade.move_request_to_folder(request_id, folder_path.strip() or None)
             self.refresh()
             self.collections_changed.emit()
         except Exception as exc:
-            QMessageBox.critical(self, "Error", str(exc))
+            ErrorPresenter.error(self, str(exc))
 
     def _on_request_dropped(self, request_id: int, target_col_id: int, target_folder) -> None:
         """Handle a drag-and-drop move of a request to a new collection/folder."""
-        mgr = CollectionManager(self.db)
         try:
             # Check if it's a cross-collection or same-collection move
-            req = mgr.get_request(request_id)
+            req = self._collection_facade.get_request(request_id)
             if not req:
                 return
 
@@ -298,97 +283,61 @@ class _CollectionsActionsMixin:
                 return
 
             if source_col != target_col_id:
-                mgr.move_request_to_collection(request_id, target_col_id, target_folder)
+                self._collection_facade.move_request_to_collection(request_id, target_col_id, target_folder)
             else:
-                mgr.move_request_to_folder(request_id, target_folder)
+                self._collection_facade.move_request_to_folder(request_id, target_folder)
 
             self.refresh()
             self.collections_changed.emit()
         except Exception as exc:
-            QMessageBox.critical(self, "Error", f"Failed to move request: {exc}")
+            ErrorPresenter.error(self, f"Failed to move request: {exc}")
 
     def _on_request_reorder(self, dragged_id: int, target_id: int) -> None:
         """Handle reordering: place *dragged_id* immediately before *target_id*."""
-        mgr = CollectionManager(self.db)
         try:
-            target_row = mgr.db.fetchone(
-                "SELECT collection_id, folder FROM requests WHERE id=?", (target_id,),
-            )
-            dragged_row = mgr.db.fetchone(
-                "SELECT collection_id, folder FROM requests WHERE id=?", (dragged_id,),
-            )
-            if not target_row or not dragged_row:
-                return
-
-            t_col = target_row["collection_id"]
-            t_folder = target_row["folder"] or None
-            d_col = dragged_row["collection_id"]
-            d_folder = dragged_row["folder"] or None
-
-            # If the dragged item is in a different group, move it first
-            if d_col != t_col or d_folder != t_folder:
-                if d_col != t_col:
-                    mgr.move_request_to_collection(dragged_id, t_col, t_folder)
-                else:
-                    mgr.move_request_to_folder(dragged_id, t_folder)
-
-            # Build ordered list for this group
-            group = mgr._select_group(t_col, t_folder)
-            ordered_ids = [r["id"] for r in group if r["id"] != dragged_id]
-            # Insert dragged before target
-            try:
-                insert_at = ordered_ids.index(target_id)
-            except ValueError:
-                insert_at = len(ordered_ids)
-            ordered_ids.insert(insert_at, dragged_id)
-            mgr.reorder_requests(ordered_ids)
+            self._collection_facade.reorder_request_before_target(dragged_id, target_id)
 
             self.refresh()
             self.collections_changed.emit()
         except Exception as exc:
-            QMessageBox.critical(self, "Error", f"Failed to reorder: {exc}")
+            ErrorPresenter.error(self, f"Failed to reorder: {exc}")
 
     def _sort_group(self, col_id: int, folder: "str | None", mode: str) -> None:
         """Sort requests in a collection/folder group."""
-        mgr = CollectionManager(self.db)
         try:
             if mode == "alpha":
-                mgr.sort_requests_alphabetically(col_id, folder)
+                self._collection_facade.sort_requests_alphabetically(col_id, folder)
             elif mode == "method":
-                mgr.sort_requests_by_method(col_id, folder)
+                self._collection_facade.sort_requests_by_method(col_id, folder)
             self.refresh()
             self.collections_changed.emit()
         except Exception as exc:
-            QMessageBox.critical(self, "Error", f"Failed to sort: {exc}")
+            ErrorPresenter.error(self, f"Failed to sort: {exc}")
 
     # ── Hierarchical auth ─────────────────────────────────────────────
 
     def _set_collection_auth(self, col_id: int) -> None:
         """Open the auth dialog and persist the result on the collection."""
-        mgr = CollectionManager(self.db)
-        current_auth = mgr.get_collection_auth(col_id)
+        current_auth = self._collection_facade.get_collection_auth(col_id)
         from equinox.gui.dialogs.auth_dialog import AuthDialog
         dialog = AuthDialog(current_auth, self, db=self.db)
         if dialog.exec() == QDialog.DialogCode.Accepted and hasattr(dialog, "_saved_auth"):
-            mgr.set_collection_auth(col_id, dialog._saved_auth)
+            self._collection_facade.set_collection_auth(col_id, dialog._saved_auth)
             self.collections_changed.emit()
 
     def _clear_collection_auth(self, col_id: int) -> None:
-        mgr = CollectionManager(self.db)
-        mgr.set_collection_auth(col_id, None)
+        self._collection_facade.set_collection_auth(col_id, None)
         self.collections_changed.emit()
 
     def _set_folder_auth(self, col_id: int, folder_path: str) -> None:
         """Open the auth dialog and persist the result on the folder."""
-        mgr = CollectionManager(self.db)
-        current_auth = mgr.get_folder_auth(col_id, folder_path)
+        current_auth = self._collection_facade.get_folder_auth(col_id, folder_path)
         from equinox.gui.dialogs.auth_dialog import AuthDialog
         dialog = AuthDialog(current_auth, self, db=self.db)
         if dialog.exec() == QDialog.DialogCode.Accepted and hasattr(dialog, "_saved_auth"):
-            mgr.set_folder_auth(col_id, folder_path, dialog._saved_auth)
+            self._collection_facade.set_folder_auth(col_id, folder_path, dialog._saved_auth)
             self.collections_changed.emit()
 
     def _clear_folder_auth(self, col_id: int, folder_path: str) -> None:
-        mgr = CollectionManager(self.db)
-        mgr.set_folder_auth(col_id, folder_path, None)
+        self._collection_facade.set_folder_auth(col_id, folder_path, None)
         self.collections_changed.emit()

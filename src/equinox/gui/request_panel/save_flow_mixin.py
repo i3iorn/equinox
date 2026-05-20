@@ -16,20 +16,22 @@ class RequestSaveFlowMixin:
 
     def _save_request(self) -> bool:
         """Save the current editor state to a collection (prompts for name / folder)."""
-        url = self.url_input.text().strip()
+        snapshot = self._build_request_editor_snapshot()
+        url = snapshot.url
         if not url:
             QMessageBox.warning(self, "Missing URL", "Please enter a URL before saving.")
             return False
 
-        method = self.method_combo.currentText()
-        current_folder = getattr(self.current_request, "folder", None) or ""
+        method = snapshot.method
+        current_folder = snapshot.folder or ""
         logger.debug(
             "request_panel.save_dialog_open op=save_request method=%s url=%s",
             method,
             url,
         )
 
-        dlg = SaveRequestDialog(self.db, method, url, current_folder, parent=self)
+        collections = self._request_persistence.list_save_collections()
+        dlg = SaveRequestDialog(collections, method, url, current_folder, parent=self)
         logger.debug("request_panel.save_dialog_created op=save_request")
         if dlg.exec() != QDialog.DialogCode.Accepted:
             return False
@@ -43,18 +45,20 @@ class RequestSaveFlowMixin:
         )
 
         try:
-            existing_req = self.current_request
-            existing_id = getattr(existing_req, "id", None)
-            existing_collection_id = getattr(existing_req, "collection_id", None)
             request = self._build_request_from_editor(
                 name=name,
                 collection_id=col_id,
                 folder=folder,
             )
-            if existing_id and existing_collection_id == col_id:
-                request.id = existing_id
-                self._collection_mgr.update_request(request)
-                req_id = existing_id
+            save_result = self._request_persistence.save_request_from_dialog(
+                request,
+                existing_request_id=snapshot.request_id,
+                existing_collection_id=snapshot.collection_id,
+                target_collection_id=col_id,
+                name=name,
+            )
+            req_id = save_result.request_id
+            if save_result.updated_existing:
                 logger.info(
                     "request_panel.request_updated op=save_request request_id=%d collection_id=%d method=%s url=%s",
                     req_id,
@@ -63,8 +67,6 @@ class RequestSaveFlowMixin:
                     url,
                 )
             else:
-                req_id = self._collection_mgr.save_request(request, collection_id=col_id, name=name)
-                request.id = req_id
                 logger.info(
                     "request_panel.request_saved op=save_request request_id=%d collection_id=%d method=%s url=%s",
                     req_id,

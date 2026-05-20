@@ -10,13 +10,15 @@ from PyQt6.QtGui import QAction, QColor, QFont
 from PyQt6.QtWidgets import (
     QCheckBox, QComboBox, QDialog, QDialogButtonBox, QDoubleSpinBox,
     QGridLayout, QGroupBox, QHBoxLayout, QLabel, QLineEdit, QListWidget,
-    QListWidgetItem, QMenu, QMessageBox, QPushButton, QSpinBox, QVBoxLayout, QWidget,
+    QListWidgetItem, QMenu, QPushButton, QSpinBox, QVBoxLayout, QWidget,
 )
 
 from equinox.gui.dialogs.history_diff_dialog import HistoryDiffDialog
+from equinox.gui.error_presenter import ErrorPresenter
 from equinox.gui.theme import Colors
 from equinox.gui.ui_common import confirm_yes_no, create_muted_label, create_panel_layout
-from equinox.storage import Database, HistoryManager
+from equinox.application.history import HistoryFacade
+from equinox.storage import Database
 
 __all__ = ["HistoryPanel"]
 
@@ -36,12 +38,15 @@ class HistoryPanel(QWidget):
     history_selected = pyqtSignal(int)   # load into editor
     history_replay   = pyqtSignal(int)   # load + immediately send
 
-    def __init__(self, db: Database, parent: QWidget | None = None) -> None:
+    def __init__(
+        self,
+        db: Database,
+        parent: QWidget | None = None,
+        history_facade: HistoryFacade | None = None,
+    ) -> None:
         super().__init__(parent)
         self.db = db
-        # Cache the manager — it is a lightweight DB wrapper; no need to
-        # reconstruct it on every operation.
-        self._mgr = HistoryManager(db)
+        self._history = history_facade or HistoryFacade(db)
         self.auto_refresh_enabled = True
         self._init_ui()
         self._setup_auto_refresh()
@@ -285,7 +290,7 @@ class HistoryPanel(QWidget):
         max_elapsed    = self.max_elapsed_spin.value() or None
 
         try:
-            entries = self._mgr.search_history(
+            entries = self._history.search_history(
                 query=query,
                 method=method,
                 status_class=status,
@@ -395,7 +400,7 @@ class HistoryPanel(QWidget):
         """Refresh history list and stats."""
         self._apply_filters()
         try:
-            stats = self._mgr.get_stats()
+            stats = self._history.get_stats()
             self.stats_label.setText(
                 f"Total: {stats['total']}  |  "
                 f"OK: {stats['successful']}  |  "
@@ -439,7 +444,7 @@ class HistoryPanel(QWidget):
         errors: list[str] = []
         for hid in ids:
             try:
-                self._mgr.delete_history(hid)
+                self._history.delete_history(hid)
             except Exception as exc:
                 logger.error("Failed to delete history id=%s: %s", hid, exc, exc_info=True)
                 errors.append(str(exc))
@@ -448,9 +453,10 @@ class HistoryPanel(QWidget):
         self.refresh()
 
         if errors:
-            QMessageBox.warning(
-                self, "Delete Errors",
+            ErrorPresenter.warning(
+                self,
                 f"{len(errors)} deletion(s) failed:\n\n" + "\n".join(errors),
+                title="Delete Errors",
             )
 
     def _show_context_menu(self, position) -> None:
@@ -552,10 +558,10 @@ class HistoryPanel(QWidget):
     def _delete_one(self, history_id: int) -> None:
         """Delete a single history entry (via context menu)."""
         try:
-            self._mgr.delete_history(history_id)
+            self._history.delete_history(history_id)
         except Exception as exc:
             logger.error("Failed to delete history id=%s: %s", history_id, exc, exc_info=True)
-            QMessageBox.warning(self, "Error", str(exc))
+            ErrorPresenter.warning(self, str(exc), title="Delete Error")
             return
         self.refresh()
 
@@ -566,23 +572,27 @@ class HistoryPanel(QWidget):
             return
         id_a, id_b = ids
         try:
-            entry_a = self._mgr.get_history(id_a)
-            entry_b = self._mgr.get_history(id_b)
+            entry_a = self._history.get_history(id_a)
+            entry_b = self._history.get_history(id_b)
             if entry_a and entry_b:
                 HistoryDiffDialog(entry_a, entry_b, self).exec()
             else:
                 logger.warning("Could not load history entries for comparison: %r %r", id_a, id_b)
         except Exception as exc:
-            QMessageBox.critical(self, "Error", f"Failed to load history entries:\n{exc}")
+            ErrorPresenter.error(
+                self,
+                "Failed to load history entries.",
+                details=str(exc),
+            )
 
     def _clear_history(self) -> None:
         if not confirm_yes_no(self, "Confirm Clear", "Clear all history?"):
             return
         try:
-            self._mgr.clear_history()
+            self._history.clear_history()
         except Exception as exc:
             logger.error("Failed to clear history: %s", exc, exc_info=True)
-            QMessageBox.warning(self, "Error", str(exc))
+            ErrorPresenter.warning(self, str(exc))
             return
         self.refresh()
 
@@ -615,10 +625,14 @@ class HistoryPanel(QWidget):
 
         days = spin.value()
         try:
-            self._mgr.clear_history(days=days)
+            self._history.clear_history(days=days)
         except Exception as exc:
             logger.error("Failed to clean up history (days=%d): %s", days, exc, exc_info=True)
-            QMessageBox.critical(self, "Error", f"Failed to clean up history:\n{exc}")
+            ErrorPresenter.error(
+                self,
+                "Failed to clean up history.",
+                details=str(exc),
+            )
             return
         self.refresh()
 

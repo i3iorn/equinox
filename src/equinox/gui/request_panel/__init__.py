@@ -14,11 +14,9 @@ from equinox.gui.request_panel.panel import (  # noqa: F401 – public API
     _HEADER_PRESETS,
 )
 from equinox.gui.request_panel.save_dialog import SaveRequestDialog  # noqa: F401
-from equinox.gui.request_panel.mixins import _save_history_safe  # noqa: F401
 
 __all__ = [
     "RequestPanel",
     "SaveRequestDialog",
     "_HEADER_PRESETS",
-    "_save_history_safe",
 ]

@@ -29,6 +29,7 @@ from PyQt6.QtWidgets import (
 )
 
 from equinox.auth import OAuth2Auth
+from equinox.core.request import Request
 from equinox.security import mask_secret
 from equinox.core.util.time import utc_now
 from equinox.gui.theme import Colors
@@ -38,7 +39,6 @@ from equinox.gui.request_panel._constants import (
     AUTH_VOLATILE_KEYS,
     FOLDER_AUTH_PREFIX,
 )
-from equinox.gui.request_panel.mixins._helpers import write_auth_to_source
 
 logger = logging.getLogger(__name__)
 
@@ -92,7 +92,7 @@ class _RequestAuthMixin:
             logger.debug("No current request or collection_id; token not persisted")
             return
         try:
-            write_auth_to_source(self._collection_mgr, req.collection_id, source, auth)
+            self._request_persistence.persist_auth_to_source(req.collection_id, source, auth)
             logger.debug("Saved dialog-fetched token to source: %s", mask_secret(source))
         except Exception as exc:
             logger.debug("Failed to save dialog token to source: %s", exc, exc_info=True)
@@ -286,6 +286,41 @@ class _RequestAuthMixin:
 
     # ── Inheritance resolution ────────────────────────────────────────
 
+    def _build_auth_probe(self) -> Optional[Request]:
+        """Build a lightweight request probe for inherited-auth resolution.
+
+        The resolver needs ``collection_id`` and ``folder``. Prefer the loaded
+        request context and fall back to the editor snapshot when available.
+        """
+        collection_id = None
+        folder = None
+
+        req = getattr(self, "current_request", None)
+        if req is not None:
+            collection_id = getattr(req, "collection_id", None)
+            folder = getattr(req, "folder", None)
+
+        if collection_id is None and hasattr(self, "_build_request_editor_snapshot"):
+            try:
+                snapshot = self._build_request_editor_snapshot()
+                collection_id = getattr(snapshot, "collection_id", None)
+                folder = getattr(snapshot, "folder", folder)
+            except Exception:
+                logger.debug("Failed to build auth probe from editor snapshot", exc_info=True)
+
+        if not collection_id:
+            return None
+
+        method = getattr(req, "method", "GET") if req is not None else "GET"
+        url = getattr(req, "url", "") if req is not None else ""
+        return Request(
+            method=method,
+            url=url,
+            collection_id=collection_id,
+            folder=folder,
+            auth=None,
+        )
+
     def _resolve_inherited_auth(self) -> None:
         """Re-resolve inherited auth from the collection/folder hierarchy.
 
@@ -298,7 +333,7 @@ class _RequestAuthMixin:
         if probe is None:
             return
         try:
-            inh_auth, inh_source = self._collection_mgr.resolve_effective_auth(probe)
+            inh_auth, inh_source = self._request_persistence.resolve_effective_auth(probe)
             if inh_auth is not None:
                 self._inherited_auth = inh_auth
                 self._inherited_auth_source = inh_source

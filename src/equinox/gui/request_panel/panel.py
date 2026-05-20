@@ -10,7 +10,7 @@ Logging strategy:
 import json
 import logging
 import time
-from typing import Optional, Dict, NamedTuple, Tuple
+from typing import Any, Optional, Dict, NamedTuple, Tuple
 
 from PyQt6.QtWidgets import (
     QWidget,
@@ -37,17 +37,21 @@ from PyQt6.QtCore import pyqtSignal, Qt, QTimer, QStringListModel
 from PyQt6.QtGui import QAction
 
 from equinox.gui.request_panel.body_text_proxy import BodyTextProxy
+from equinox.application.requests import (
+    RequestEditorSnapshot,
+    RequestHistoryService,
+    RequestPersistenceFacade,
+)
 from equinox.gui.theme import get_mono_font
 from equinox.gui.widgets import UrlLineEdit, CheckableKeyValueTable, JsonBodyEditor, PathParamsTable
 from equinox.core.request import Request
 from equinox.core.format.error_enrichment import RichError, enrich_exception  # noqa: F401 (used in mixin layer)
-from equinox.storage import Database, HistoryManager, CollectionManager
+from equinox.storage import Database
 from equinox.gui.workers import RequestWorker, DEFAULT_TIMEOUT  # noqa: F401 (RequestWorker used as type annotation)
 from equinox.core.http.cookies import CookieManager
 from equinox.gui.request_panel.mixins import (  # noqa: F401
     _RequestSendMixin,
     _RequestAuthMixin,
-    _save_history_safe,
 )
 from equinox.gui.request_panel._constants import (
     BROWSE_BTN_WIDTH,
@@ -146,13 +150,25 @@ class RequestPanel(
             logger.debug("Could not access logging panel", exc_info=True)
             return None
 
-    def __init__(self, db: Database, parent=None, cookie_manager: Optional[CookieManager]=None):
+    def __init__(
+        self,
+        db: Database,
+        parent=None,
+        cookie_manager: Optional[CookieManager] = None,
+        request_persistence: Optional[RequestPersistenceFacade] = None,
+        request_history: Optional[RequestHistoryService] = None,
+    ):
         super().__init__(parent)
         logger.debug("RequestPanel.__init__ starting")
         self.db = db
         self._cookie_manager: Optional[CookieManager] = cookie_manager
 
-        self._collection_mgr: CollectionManager = CollectionManager(db)
+        self._request_persistence: RequestPersistenceFacade = (
+            request_persistence or RequestPersistenceFacade(db)
+        )
+        self._request_history: RequestHistoryService = (
+            request_history or RequestHistoryService(db)
+        )
         self.current_request: Optional[Request] = None
         self._auth = None
         self._inherited_auth = None
@@ -212,6 +228,59 @@ class RequestPanel(
         """Clear all session variables and notify listeners."""
         self._session_vars.clear()
         self.session_vars_changed.emit({})
+
+    def _build_request_editor_snapshot(self) -> RequestEditorSnapshot:
+        """Capture the current request-editor widget state as plain data."""
+        request = self.current_request
+
+        def _serialize_auth(value: Any) -> tuple[Optional[str], Dict[str, Any]]:
+            if value is None:
+                return None, {}
+            auth_type = type(value).__name__
+            to_dict = getattr(value, "to_dict", None)
+            if not callable(to_dict):
+                return auth_type, {}
+            try:
+                return auth_type, dict(to_dict())
+            except Exception:
+                logger.debug("Failed to serialise auth state for snapshot", exc_info=True)
+                return auth_type, {}
+
+        auth_type, auth_data = _serialize_auth(self._auth)
+        inherited_auth_type, inherited_auth_data = _serialize_auth(self._inherited_auth)
+        return RequestEditorSnapshot(
+            method=self.method_combo.currentText(),
+            url=self.url_input.text().strip(),
+            headers=dict(self.headers_table.get_data()),
+            params=dict(self.params_table.get_enabled_data()),
+            params_list=tuple(dict(row) for row in self.params_table.get_all_rows()),
+            body=self.body_text.toPlainText(),
+            body_type=self.body_type_combo.currentText(),
+            graphql_query=self._gql_query.toPlainText(),
+            graphql_variables=self._gql_vars.toPlainText(),
+            multipart_data=tuple(dict(row) for row in self._get_multipart_data()),
+            path_params=dict(self.path_params_table.get_all_data()),
+            timeout=float(self.timeout_spin.value()),
+            verify_ssl=bool(self.verify_ssl_check.isChecked()),
+            follow_redirects=bool(self.follow_redirects_check.isChecked()),
+            name=getattr(request, "name", None),
+            description=self.notes_editor.toPlainText().strip() or None,
+            collection_id=getattr(request, "collection_id", None),
+            folder=getattr(request, "folder", None),
+            request_id=getattr(request, "id", None),
+            auth_type=auth_type,
+            auth_data=auth_data,
+            inherited_auth_type=inherited_auth_type,
+            inherited_auth_data=inherited_auth_data,
+            inherited_auth_source=self._inherited_auth_source,
+            captures=tuple(dict(rule) for rule in self._get_captures()),
+            assertions=tuple(dict(rule) for rule in self._get_assertions()),
+            pre_script=self.pre_script_editor.toPlainText(),
+            post_script=self.post_script_editor.toPlainText(),
+            cert_path=self.cert_path_input.text().strip() or None,
+            cert_key_path=self.cert_key_input.text().strip() or None,
+            session_vars=dict(self._session_vars),
+        )
 
     def _clear_dirty(self) -> None:
         self._dirty = False
@@ -318,17 +387,13 @@ class RequestPanel(
         """Populate the completer model from recent history URLs."""
         t0 = time.perf_counter()
         try:
-            entries = HistoryManager(self.db).list_history(limit=HISTORY_COMPLETER_LIMIT)
-            urls = [e["url"] for e in entries if e.get("url")]
-            # Deduplicate while preserving order (most-recent first from history).
-            unique_urls = list(dict.fromkeys(urls))
-            self._known_urls = set(unique_urls)
-            self._url_values = unique_urls
+            self._url_values = self._request_history.list_recent_urls(limit=HISTORY_COMPLETER_LIMIT)
+            self._known_urls = set(self._url_values)
             self._url_model.setStringList(self._url_values)
             elapsed_ms = int((time.perf_counter() - t0) * 1000)
             logger.debug(
                 "request_panel.url_completer_refreshed op=refresh_url_completer history_entries=%d url_count=%d elapsed_ms=%d",
-                len(entries),
+                len(self._url_values),
                 len(self._url_values),
                 elapsed_ms,
             )

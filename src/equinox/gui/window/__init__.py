@@ -10,6 +10,7 @@ from PyQt6 import sip
 from PyQt6.QtCore import QPoint, Qt, QTimer
 from PyQt6.QtGui import QKeySequence, QShortcut
 from PyQt6.QtWidgets import QApplication, QHBoxLayout, QMainWindow, QSplitter, QTabWidget, QVBoxLayout, QWidget
+from equinox.application.history import HistoryFacade
 from equinox.core.request import Request, Response
 from ._environment import _EnvironmentMixin
 from ._frameless import _FramelessMixin
@@ -69,6 +70,7 @@ class MainWindow(
     def __init__(self, db: Database) -> None:
         super().__init__()
         self.db = db
+        self._history_facade = HistoryFacade(db)
         self._drag_menu_active = False
         self._drag_menu_offset = QPoint()
         self._resize_active = False

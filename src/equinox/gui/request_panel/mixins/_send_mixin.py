@@ -18,27 +18,26 @@ Responsibilities:
 from __future__ import annotations
 
 import logging
-import re
-from typing import Any, Dict, List, Optional, Tuple
+from typing import List, Optional
 
 from PyQt6.QtCore import QTimer
-from PyQt6.QtWidgets import QMessageBox
 
-from equinox.auth import OAuth2Auth
-from equinox.core.captures import CaptureEngine
 from equinox.core.format.error_enrichment import RichError, enrich_exception
-from equinox.core.interpolation import (
-    VariableInterpolator,
-    collect_interpolation_variables_detailed,
-)
 from equinox.core.log_setup import get_log_file
 from equinox.core.request import Request, Response
-from equinox.core.scripts import ScriptRunner
-from equinox.gui.request_panel.builder import assemble_body, inject_content_type, interpolate_auth
+from equinox.gui.error_presenter import ErrorPresenter
+from equinox.application.requests import (
+    apply_captures,
+    build_preflight_issues,
+    build_error_handling_plan,
+    build_success_handling_plan,
+    issues_to_messages,
+    prepare_send,
+    run_post_script,
+)
 from equinox.gui.workers import RequestWorker
 
 from equinox.gui.request_panel._constants import (
-    HTTP_SCHEME_RE,
     PREFLIGHT_SEPARATOR,
     STATUS_DURATION_LONG,
     STATUS_DURATION_SHORT,
@@ -46,16 +45,12 @@ from equinox.gui.request_panel._constants import (
 )
 from equinox.gui.request_panel.mixins._helpers import (
     notify_log_panel,
-    save_history_safe,
-    write_auth_to_source,
 )
-from equinox.gui.request_panel.mixins._default_headers import apply_default_headers
 
 logger = logging.getLogger(__name__)
 
 # ── Status message templates ──────────────────────────────────────────────────
 _MSG_MISSING_URL = "Please enter a request URL."
-_MSG_ERROR_PREFIX = "Error: "
 _MSG_CANCELLED = "Request cancelled"
 _MSG_VAR_FAILED = "Failed to expand variables"
 _MSG_AUTH_VAR_FAILED = "Failed to expand variables in auth fields"
@@ -63,7 +58,6 @@ _MSG_AUTH_VAR_FAILED = "Failed to expand variables in auth fields"
 # ── String truncation for safe logging ────────────────────────────────────────
 _URL_LOG_LIMIT = 80
 _URL_ERROR_LOG_LIMIT = 80
-_UNRESOLVED_VAR_RE = re.compile(r"\{\{([a-zA-Z0-9_-]+)\}\}")
 
 
 class _RequestSendMixin:
@@ -98,201 +92,130 @@ class _RequestSendMixin:
         Returns:
             List of warning strings (never raises)
         """
-        warnings: List[str] = []
-        url = self.url_input.text().strip()
-
-        if url and "{{" not in url and not HTTP_SCHEME_RE.match(url):
-            warnings.append("URL does not start with http:// or https://")
-
-        profile = ""
-        try:
-            profile = str(self.get_policy_profile()).lower()
-        except Exception:
-            profile = "balanced"
-
-        if profile == "strict":
-            if url.lower().startswith("http://"):
-                warnings.append("Strict policy blocks insecure HTTP requests; use https://")
-            if not self.verify_ssl_check.isChecked():
-                warnings.append("Strict policy requires SSL verification")
-            if self.follow_redirects_check.isChecked():
-                warnings.append("Strict policy recommends disabling redirects")
-            if self.pre_script_editor.toPlainText().strip() or self.post_script_editor.toPlainText().strip():
-                warnings.append("Strict policy disables pre/post scripts")
-
-        auth = self._auth or self._inherited_auth
-        if auth is not None and hasattr(auth, "get_preflight_warning"):
-            warning = auth.get_preflight_warning()
-            if warning:
-                warnings.append(warning)
-
-        return warnings
-
-    # ── Request assembly & interpolation ──────────────────────────────────────
-
-    def _build_auth_probe(self) -> Optional[Request]:
-        """Build lightweight Request for auth-hierarchy resolution.
-
-        Returns None if no collection context available.
-        """
-        req = self.current_request
-        if not req or not getattr(req, "collection_id", None):
-            return None
-        return Request(
-            method="GET", url="",
-            collection_id=req.collection_id,
-            folder=getattr(req, "folder", None),
+        issues = build_preflight_issues(
+            url=self.url_input.text().strip(),
+            policy_profile=self.get_policy_profile(),
+            verify_ssl=self.verify_ssl_check.isChecked(),
+            follow_redirects=self.follow_redirects_check.isChecked(),
+            pre_script=self.pre_script_editor.toPlainText(),
+            post_script=self.post_script_editor.toPlainText(),
+            auth=self._auth or self._inherited_auth,
         )
+        return issues_to_messages(issues)
 
-    def _resolve_send_auth(self) -> Tuple[Any, Optional[str]]:
-        """Resolve effective auth: own → DB-inherited → cached inherited.
+    # ── Core send pipeline ────────────────────────────────────────────────────
 
-        Returns (effective_auth, inherited_source).
+    def _send_request(self) -> None:
+        """Orchestrate full request send cycle.
+
+        Pipeline (GUI responsibilities):
+        1. Validate URL present
+        2. Display preflight warnings
+        3. Guard against strict policy blocks
+        4. Call prepare_send() service
+        5. Render pre-script result label
+        6. Merge pre-script env_changes into session_vars
+        7. Track inherited auth for post-send token persistence
+        8. Dispatch worker thread
+
+        All preparation, variable collection, auth resolution, interpolation,
+        and request construction are delegated to the send service (Phase 5).
+
+        NOTE: Worker creation stays in the GUI as an intermediate state while
+        the execution adapter boundary is defined in a later phase.
         """
-        if self._auth is not None:
-            return self._auth, None
+        snapshot = self._build_request_editor_snapshot()
+        url = snapshot.url
+        if not url:
+            ErrorPresenter.warning(self, _MSG_MISSING_URL, title="Missing URL")
+            return
 
-        effective_auth = None
-        inherited_source: Optional[str] = None
-        probe = self._build_auth_probe()
-        if probe is not None:
-            try:
-                inh, inherited_source = self._collection_mgr.resolve_effective_auth(probe)
-                if inh is not None:
-                    effective_auth = inh
-            except Exception as exc:
-                logger.debug("Send-time inherited auth resolution failed: %s", exc)
+        logger.debug("_send_request() initiated: url=%s", url[:80])
 
-        if effective_auth is None and getattr(self, "_inherited_auth", None):
-            effective_auth = self._inherited_auth
-            inherited_source = getattr(self, "_inherited_auth_source", None)
+        self._display_preflight_warnings()
 
-        return effective_auth, inherited_source
-
-    def _run_pre_script(
-        self,
-        method: str,
-        url: str,
-        headers: Dict[str, str],
-        params: Dict[str, str],
-        body: Optional[str],
-        variables: Dict[str, str],
-    ) -> Dict[str, str]:
-        """Execute pre-request script; return (possibly updated) variables.
-
-        Script execution is isolated: exceptions are logged, not raised.
-        Session variables are merged into the return dict.
-        """
         try:
             if str(self.get_policy_profile()).lower() == "strict":
-                self.pre_script_result.setText("Skipped by strict policy")
-                return variables
+                if url.lower().startswith("http://"):
+                    ErrorPresenter.warning(
+                        self,
+                        "Strict policy blocks insecure HTTP requests. Use https:// instead.",
+                        title="Strict Policy",
+                    )
+                    return
+                if not snapshot.verify_ssl:
+                    ErrorPresenter.warning(
+                        self,
+                        "Strict policy requires SSL certificate verification.",
+                        title="Strict Policy",
+                    )
+                    return
         except Exception:
-            pass
+            logger.debug("Failed to evaluate strict policy block checks", exc_info=True)
 
-        pre_src = self.pre_script_editor.toPlainText()
-        if not pre_src.strip():
-            return variables
-        try:
-            req_dict = {
-                "method": method, "url": url,
-                "headers": dict(headers), "params": dict(params), "body": body,
-            }
-            result = ScriptRunner.run_pre(pre_src, req_dict, self._session_vars)
-            self._display_script_result(self.pre_script_result, result)
-            self._apply_script_vars(result)
-            if not result.error:
-                variables.update(self._session_vars)
-        except Exception as exc:
-            logger.debug("Pre-script failed: %s", exc)
-        return variables
+        if self._worker is not None and self._worker.isRunning():
+            return
 
-    @staticmethod
-    def _resolve_path_params(
-        path_params: Dict[str, str], variables: Dict[str, str]
-    ) -> Dict[str, str]:
-        """Resolve path params against global vars and other path params.
+        # ── Delegate to send orchestration service ──
+        result = prepare_send(
+            snapshot=snapshot,
+            db=self.db,
+            collection_manager=getattr(self, "_request_persistence", None),
+            own_auth=self._auth,
+            inherited_auth=getattr(self, "_inherited_auth", None),
+            inherited_auth_source=getattr(self, "_inherited_auth_source", None),
+            policy_profile=self.get_policy_profile(),
+        )
 
-        Supports chained references such as:
-        ``item = {{id}}`` and ``id = {{USER_ID}}``.
-        """
-        resolved: Dict[str, str] = {}
-        # Resolve keys first so unusual key templates are stable before merging.
-        for k, v in path_params.items():
-            key = VariableInterpolator.interpolate(k, variables)
-            resolved[key] = v
+        if not result.ready:
+            for issue in result.blocking_issues:
+                title = {
+                    "variables.unresolved": "Variable Error",
+                    "interpolation.failed": "Variable Error",
+                    "auth.interpolation_failed": "Variable Error",
+                    "body.assembly_failed": "Request Validation",
+                    "request.construction_failed": "Request Error",
+                }.get(issue.code, "Request Error")
+                ErrorPresenter.warning(self, issue.message, title=title)
+            return
 
-        # Path params can reference each other, but a key must not shadow itself.
-        # Example: BASE_URL={{BASE_URL}} should resolve from global variables.
-        resolved_values: Dict[str, str] = {}
-        for k, v in resolved.items():
-            context = dict(variables)
-            context.update(resolved)
-            if k in variables:
-                context[k] = variables[k]
-            resolved_values[k] = VariableInterpolator.interpolate(v, context)
+        pkg = result.package
 
-        return resolved_values
+        # ── Render pre-script result (GUI responsibility — Step 5.7) ──
+        if pkg.pre_script_result is not None:
+            self._display_script_result(self.pre_script_result, pkg.pre_script_result)
+            self._apply_script_vars(pkg.pre_script_result)
+        elif str(self.get_policy_profile()).lower() == "strict" and snapshot.pre_script.strip():
+            self.pre_script_result.setText("Skipped by strict policy")
 
-    @staticmethod
-    def _interpolate_request_fields(
-        url: str,
-        headers: Dict[str, str],
-        params: Dict[str, str],
-        body: Optional[str],
-        path_params: Dict[str, str],
-        variables: Dict[str, str],
-    ) -> Tuple[str, Dict[str, str], Dict[str, str], Optional[str], Dict[str, str]]:
-        """Interpolate {{VAR}} placeholders in all request fields.
+        # ── Track inherited auth for post-send token persistence ──
+        self._send_inherited_auth = pkg.request.auth if pkg.is_auth_inherited else None
+        self._send_inherited_source = pkg.inherited_auth_source if pkg.is_auth_inherited else None
 
-        Returns (url, headers, params, body, path_params) with variables expanded.
-        Raises on interpolation failure (caller handles & shows error dialog).
-        """
-        logger.debug("Interpolating variables in request (url_len=%d)", len(url))
-        path_params = _RequestSendMixin._resolve_path_params(path_params, variables)
+        # ── Dispatch ──
+        request = pkg.request
+        self.current_request = request
 
-        # Allow URL/headers/query/body to reference resolved path parameters.
-        merged_vars = dict(variables)
-        merged_vars.update(path_params)
+        logger.info(
+            "Sending %s %s", request.method, request.url,
+            extra={"method": request.method, "url": request.url},
+        )
+        notify_log_panel(self._logging_panel, "log_request", request)
 
-        url = VariableInterpolator.interpolate(url, merged_vars)
-        headers = {
-            VariableInterpolator.interpolate(k, merged_vars):
-            VariableInterpolator.interpolate(v, merged_vars)
-            for k, v in headers.items()
-        }
-        params = {
-            VariableInterpolator.interpolate(k, merged_vars):
-            VariableInterpolator.interpolate(v, merged_vars)
-            for k, v in params.items()
-        }
-        if body:
-            body = VariableInterpolator.interpolate(body, merged_vars)
-        logger.debug("Variable interpolation completed successfully")
-        return url, headers, params, body, path_params
+        self.request_sent.emit(request)
+        self._set_sending_state(True)
+        self._dispatch_worker(request)
 
-    @staticmethod
-    def _collect_unresolved_placeholders(
-        url: str,
-        headers: Dict[str, str],
-        params: Dict[str, str],
-        body: Optional[str],
-        path_params: Dict[str, str],
-    ) -> List[str]:
-        """Return unresolved placeholder names across all request fields."""
-        unresolved = set(_UNRESOLVED_VAR_RE.findall(url or ""))
-        for k, v in headers.items():
-            unresolved.update(_UNRESOLVED_VAR_RE.findall(k or ""))
-            unresolved.update(_UNRESOLVED_VAR_RE.findall(v or ""))
-        for k, v in params.items():
-            unresolved.update(_UNRESOLVED_VAR_RE.findall(k or ""))
-            unresolved.update(_UNRESOLVED_VAR_RE.findall(v or ""))
-        if body:
-            unresolved.update(_UNRESOLVED_VAR_RE.findall(body))
-        for k, v in path_params.items():
-            unresolved.update(_UNRESOLVED_VAR_RE.findall(k or ""))
-            unresolved.update(_UNRESOLVED_VAR_RE.findall(v or ""))
-        return sorted(unresolved)
+    def _display_preflight_warnings(self) -> None:
+        """Run preflight checks and show/hide the warning banner."""
+        pf_warnings = self._run_preflight_checks()
+        if pf_warnings:
+            self._preflight_label.setText(PREFLIGHT_SEPARATOR.join(pf_warnings))
+            self._preflight_banner.setVisible(True)
+            logger.debug("Preflight warnings: %s", pf_warnings)
+        else:
+            self._preflight_banner.setVisible(False)
+
 
     @staticmethod
     def _resolve_proxy_url() -> Optional[str]:
@@ -326,220 +249,6 @@ class _RequestSendMixin:
             return
         self._session_vars.update(result.env_changes)
         self.session_vars_changed.emit(dict(self._session_vars))
-
-    # ── Core send pipeline ────────────────────────────────────────────────────
-
-    def _send_request(self) -> None:
-        """Orchestrate full request send cycle.
-
-        Pipeline:
-        1. Validate URL
-        2. Run preflight checks
-        3. Gather fields from UI
-        4. Resolve variables and run pre-script
-        5. Interpolate fields
-        6. Resolve and interpolate auth
-        7. Build Request object
-        8. Dispatch worker thread
-        """
-        url = self.url_input.text().strip()
-        if not url:
-            QMessageBox.warning(self, "Missing URL", _MSG_MISSING_URL)
-            return
-
-        logger.debug("_send_request() initiated: url=%s", url[:80])
-
-        self._display_preflight_warnings()
-
-        try:
-            if str(self.get_policy_profile()).lower() == "strict":
-                if url.lower().startswith("http://"):
-                    QMessageBox.warning(
-                        self,
-                        "Strict Policy",
-                        "Strict policy blocks insecure HTTP requests. Use https:// instead.",
-                    )
-                    return
-                if not self.verify_ssl_check.isChecked():
-                    QMessageBox.warning(
-                        self,
-                        "Strict Policy",
-                        "Strict policy requires SSL certificate verification.",
-                    )
-                    return
-        except Exception:
-            logger.debug("Failed to evaluate strict policy block checks", exc_info=True)
-
-        if self._worker is not None and self._worker.isRunning():
-            return
-
-        # ── Gather, interpolate, and validate ──
-        try:
-            method, headers, params, params_list, body, body_type, multipart_data, path_params = (
-                self._gather_request_fields()
-            )
-            headers = inject_content_type(body, body_type, headers)
-
-            variables, variable_sources = collect_interpolation_variables_detailed(
-                self.db,
-                collection_id=getattr(self.current_request, "collection_id", None),
-                session_vars=self._session_vars,
-            )
-            variables = self._run_pre_script(method, url, headers, params, body, variables)
-
-            url, headers, params, body, path_params = self._interpolate_request_fields(
-                url, headers, params, body, path_params, variables,
-            )
-
-            if path_params:
-                from equinox.core.urls import expand_placeholders
-                url = expand_placeholders(url, path_params)
-                logger.debug("URL expanded with path_params: %s", url[:100])
-
-            unresolved = self._collect_unresolved_placeholders(
-                url, headers, params, body, path_params
-            )
-            if unresolved:
-                unresolved_details = []
-                for name in unresolved:
-                    value = variables.get(name)
-                    unresolved_details.append(
-                        f"{name}(source={variable_sources.get(name, 'missing')}, "
-                        f"value_type={type(value).__name__ if value is not None else 'missing'}, "
-                        f"value_is_template={bool(isinstance(value, str) and VariableInterpolator.has_variables(value))})"
-                    )
-                logger.warning(
-                    "Unresolved placeholders before dispatch: %s (available_keys=%s)",
-                    unresolved_details,
-                    sorted(str(k) for k in variables.keys()),
-                )
-                QMessageBox.warning(
-                    self,
-                    "Variable Error",
-                    "Failed to expand variables:\n"
-                    f"Unresolved placeholders: {', '.join(unresolved_details)}",
-                )
-                return
-
-        except ValueError as exc:
-            logger.warning(
-                "request_panel.send.input_validation_failed op=send_request error=%s",
-                exc,
-            )
-            QMessageBox.warning(self, "Request Validation", str(exc))
-            return
-        except Exception as exc:
-            logger.warning("Variable interpolation failed: %s", exc)
-            QMessageBox.warning(self, "Variable Error", f"{_MSG_VAR_FAILED}:\n{exc}")
-            return
-
-        # ── Resolve auth ──
-        effective_auth, inherited_source = self._resolve_send_auth()
-
-        try:
-            effective_auth = interpolate_auth(
-                effective_auth,
-                lambda s: VariableInterpolator.interpolate(s, variables),
-            )
-        except Exception as exc:
-            logger.warning("Auth variable interpolation failed: %s", exc)
-            QMessageBox.warning(self, "Variable Error", f"{_MSG_AUTH_VAR_FAILED}:\n{exc}")
-            return
-
-        self._track_inherited_auth_for_send(effective_auth, inherited_source)
-
-        # ── Build and dispatch ──
-        request = self._build_request_object(
-            method, url, headers, params, params_list, body,
-            effective_auth, multipart_data, path_params,
-        )
-        apply_default_headers(request)
-        self.current_request = request
-
-        logger.info(
-            "Sending %s %s", method, url,
-            extra={"method": method, "url": url},
-        )
-        notify_log_panel(self._logging_panel, "log_request", request)
-
-        self.request_sent.emit(request)
-        self._set_sending_state(True)
-        self._dispatch_worker(request)
-
-    def _display_preflight_warnings(self) -> None:
-        """Run preflight checks and show/hide the warning banner."""
-        pf_warnings = self._run_preflight_checks()
-        if pf_warnings:
-            self._preflight_label.setText(PREFLIGHT_SEPARATOR.join(pf_warnings))
-            self._preflight_banner.setVisible(True)
-            logger.debug("Preflight warnings: %s", pf_warnings)
-        else:
-            self._preflight_banner.setVisible(False)
-
-    def _gather_request_fields(
-        self,
-    ) -> Tuple[str, Dict[str, str], Dict[str, str], list, Optional[str], str, Optional[list], Dict[str, str]]:
-        """Read all request fields from UI widgets.
-
-        Returns:
-            (method, headers, params, params_list, body, body_type, multipart_data, path_params)
-        """
-        method = self.method_combo.currentText()
-        headers = self.headers_table.get_data()
-        params = self.params_table.get_enabled_data()
-        params_list = self.params_table.get_all_rows()
-        path_params = self.path_params_table.get_all_data()
-        body_type = self.body_type_combo.currentText()
-        body, multipart_data = assemble_body(
-            body_type,
-            self.body_text.toPlainText().strip(),
-            self._gql_query.toPlainText().strip(),
-            self._gql_vars.toPlainText().strip(),
-            self._get_multipart_data(),
-        )
-        return method, headers, params, params_list, body, body_type, multipart_data, path_params
-
-    def _track_inherited_auth_for_send(
-        self, effective_auth: Any, inherited_source: Optional[str]
-    ) -> None:
-        """Store inherited auth context for post-send token persistence."""
-        is_inherited = self._auth is None
-        self._send_inherited_auth = effective_auth if is_inherited else None
-        self._send_inherited_source = inherited_source if is_inherited else None
-
-    def _build_request_object(
-        self,
-        method: str,
-        url: str,
-        headers: Dict[str, str],
-        params: Dict[str, str],
-        params_list: list,
-        body: Optional[str],
-        effective_auth: Any,
-        multipart_data: Optional[list],
-        path_params: Optional[Dict[str, str]] = None,
-    ) -> Request:
-        """Build Request object carrying forward collection context.
-
-        Applies send-specific overrides: interpolated fields, effective auth,
-        multipart data, path parameters. Preserves collection_id, folder, id, name.
-        """
-        _prev = self.current_request
-        return self._build_request_from_editor(
-            method=method,
-            url=url,
-            headers=headers,
-            params=params,
-            params_list=params_list,
-            body=body,
-            auth=effective_auth,
-            multipart_data=multipart_data,
-            path_params=path_params or {},
-            collection_id=getattr(_prev, "collection_id", None),
-            folder=getattr(_prev, "folder", None),
-            id=getattr(_prev, "id", None),
-            name=getattr(_prev, "name", None),
-        )
 
     def _dispatch_worker(self, request: Request) -> None:
         """Create and start the background request worker."""
@@ -635,26 +344,35 @@ class _RequestSendMixin:
         )
 
         # ── UI feedback ──
-        self._status_message(f"{_MSG_ERROR_PREFIX}{result.message}", STATUS_DURATION_LONG)
+        plan = build_error_handling_plan(
+            error=result,
+            request=_sent_request,
+            log_file_path=get_log_file(),
+            send_inherited_auth=getattr(self, "_send_inherited_auth", None),
+            send_inherited_source=getattr(self, "_send_inherited_source", None),
+            own_auth=self._auth,
+        )
+        self._status_message(plan.status_message, STATUS_DURATION_LONG)
 
         # ── Error dialog ──
-        from equinox.gui.widgets import CopyableMessageBox
-        log_hint = f"\n\nFull details in: {get_log_file()}" if get_log_file() else ""
-        dialog_text = f"{result.message}{log_hint}"
-        if result.hint:
-            dialog_text = f"{result.message}\n\n{result.hint}{log_hint}"
-        CopyableMessageBox.critical(
-            self, f"Request Failed — {result.exc_type}",
-            dialog_text,
-            copy_text=result.tb,
+        ErrorPresenter.request_failure(
+            self,
+            exc_type=result.exc_type,
+            message=result.message,
+            hint=result.hint,
+            details=plan.copy_text,
+            log_file_path=get_log_file(),
         )
 
         # ── Logging panel ──
-        notify_log_panel(self._logging_panel, "log_error", _sent_request, result.message)
+        notify_log_panel(self._logging_panel, "log_error", _sent_request, plan.log_panel_message)
 
         # ── Deferred tasks ──
-        self._defer_task(save_history_safe, self.db, _sent_request, error=result.message)
-        self._persist_inherited_auth_tokens()
+        self._apply_deferred_persistence_plan(
+            sent_request=_sent_request,
+            response=None,
+            plan=plan.deferred_plan,
+        )
 
     def _handle_success_result(self, result: Response, worker: RequestWorker) -> None:
         """Process successful response from worker.
@@ -664,33 +382,35 @@ class _RequestSendMixin:
         2. Deferred: DB writes and other expensive operations
         """
         response: Response = result
-        elapsed_ms = int(response.elapsed * 1000)
         _sent_request = response.request
+        plan = build_success_handling_plan(
+            response=response,
+            send_inherited_auth=getattr(self, "_send_inherited_auth", None),
+            send_inherited_source=getattr(self, "_send_inherited_source", None),
+            own_auth=self._auth,
+        )
 
         # ── Phase 1: Immediate response handling (sync) ──
 
-        self._log_success_response(_sent_request, response, elapsed_ms)
-        self._status_message(
-            f"{response.status_code} {response.reason}  —  {elapsed_ms} ms",
-            STATUS_DURATION_LONG,
-        )
+        self._log_success_response(_sent_request, response, plan.elapsed_ms)
+        self._status_message(plan.status_message, STATUS_DURATION_LONG)
         self.response_received.emit(response)
 
         # Run post-response processing pipeline (must complete before deferred tasks)
         self._apply_captures(response)
         self._evaluate_assertions(response)
         self._run_post_script(response)
-        self._add_url_to_completer(getattr(response.request, "url", ""))
+        self._add_url_to_completer(plan.completer_url)
 
         notify_log_panel(self._logging_panel, "log_response", _sent_request, response)
 
         # ── Phase 2: Deferred tasks (async-safe on main thread) ──
 
-        self._defer_task(save_history_safe, self.db, _sent_request, response)
-
-        # Persist refreshed tokens (separate ownership paths)
-        self._persist_inherited_auth_tokens()
-        self._persist_own_oauth2_token()
+        self._apply_deferred_persistence_plan(
+            sent_request=_sent_request,
+            response=response,
+            plan=plan.deferred_plan,
+        )
 
         # Refresh auth display (may have been mutated by auto-refresh in worker)
         self._update_auth_display(self._auth)
@@ -716,92 +436,80 @@ class _RequestSendMixin:
 
     def _apply_captures(self, response: Response) -> None:
         """Run capture rules against response; update session vars."""
-        try:
-            caps_raw = getattr(response.request, "captures", [])
-            if not caps_raw:
-                return
-            results = CaptureEngine.apply_all(
-                CaptureEngine.from_dict_list(caps_raw), response
-            )
-            for r in results:
-                self._session_vars[r.variable] = r.value
+        outcome = apply_captures(response)
+        if outcome.error:
+            logger.debug("Capture processing failed: %s", outcome.error)
+            return
+        if outcome.session_updates:
+            self._session_vars.update(outcome.session_updates)
             self.session_vars_changed.emit(dict(self._session_vars))
-            lines = [
-                f"{'✓' if r.success else '✗'} {r.variable} = {r.value!r}"
-                + (f"  ({r.error})" if not r.success else "")
-                for r in results
-            ]
-            self.captures_results_label.setText("\n".join(lines) if lines else "—")
-        except Exception as exc:
-            logger.debug("Capture processing failed: %s", exc, exc_info=True)
+        self.captures_results_label.setText("\n".join(outcome.display_lines) if outcome.display_lines else "—")
 
     def _run_post_script(self, response: Response) -> None:
         """Execute post-response script if defined."""
-        try:
-            if str(self.get_policy_profile()).lower() == "strict":
-                self.post_script_result.setText("Skipped by strict policy")
-                return
-        except Exception:
-            pass
-
-        post_src = self.post_script_editor.toPlainText()
-        if not post_src.strip():
+        outcome = run_post_script(
+            policy_profile=self.get_policy_profile(),
+            post_script=self.post_script_editor.toPlainText(),
+            response=response,
+            session_vars=self._session_vars,
+        )
+        if outcome.skipped:
+            self.post_script_result.setText(outcome.skip_message or "Skipped")
             return
-        try:
-            resp_dict: Dict[str, Any] = {
-                "status_code": response.status_code,
-                "headers": dict(response.headers),
-                "body": response.text if hasattr(response, "text") else "",
-                "json": None,
-            }
-            try:
-                resp_dict["json"] = response.json()
-            except Exception:
-                logger.debug("Response body is not JSON; post-script will see json=None")
-            result = ScriptRunner.run_post(post_src, resp_dict, self._session_vars)
-            self._display_script_result(self.post_script_result, result)
-            self._apply_script_vars(result)
-        except Exception as exc:
-            logger.debug("Post-script failed: %s", exc)
+        if outcome.error:
+            logger.debug("Post-script failed: %s", outcome.error)
+            return
+        if outcome.script_result is None:
+            return
+        self._display_script_result(self.post_script_result, outcome.script_result)
+        self._apply_script_vars(outcome.script_result)
+
+    def _apply_deferred_persistence_plan(self, sent_request: Request, response: Optional[Response], plan) -> None:
+        """Execute deferred persistence side effects from a service-level plan."""
+        if plan.save_history:
+            if response is None:
+                self._defer_task(self._request_history.save_history_safe, sent_request, error=plan.history_error)
+            else:
+                self._defer_task(self._request_history.save_history_safe, sent_request, response)
+        self._persist_inherited_auth_tokens(should_persist=plan.persist_inherited_token)
+        self._persist_own_oauth2_token(should_persist=plan.persist_own_oauth2_token)
 
     # ── Token persistence ─────────────────────────────────────────────────────
 
-    def _persist_inherited_auth_tokens(self) -> None:
+    def _persist_inherited_auth_tokens(self, should_persist: bool = True) -> None:
         """Save refreshed tokens on inherited auth to DB.
 
         After OAuth2Auth.apply() auto-refreshes, write the new token back
         to collection/folder so subsequent requests reuse it.
         """
+        if not should_persist:
+            return
         auth = getattr(self, "_send_inherited_auth", None)
         source = getattr(self, "_send_inherited_source", None)
-        if auth is None or source is None:
-            return
-        if not isinstance(auth, OAuth2Auth) or not auth.access_token:
-            return
         try:
             req = self.current_request
-            if not req or not req.collection_id:
+            persisted = self._request_persistence.persist_inherited_oauth2_token(req, source, auth)
+            if not persisted:
                 return
-            write_auth_to_source(self._collection_mgr, req.collection_id, source, auth)
             self._inherited_auth = auth
             self._inherited_auth_source = source
             self._update_auth_display(self._auth)
         except Exception as exc:
             logger.debug("Failed to persist inherited auth tokens: %s", exc)
 
-    def _persist_own_oauth2_token(self) -> None:
+    def _persist_own_oauth2_token(self, should_persist: bool = True) -> None:
         """Save refreshed OAuth2 token on own auth to request row.
 
         _send_request() never sets dirty, so "send without edits" would
         discard token on next navigation. Persist directly regardless of dirty state.
         """
-        if not isinstance(self._auth, OAuth2Auth) or not self._auth.access_token:
+        if not should_persist:
             return
         req = self.current_request
-        if not req or not getattr(req, "id", None):
-            return
         try:
-            self._collection_mgr.update_request_auth(req.id, self._auth)
+            persisted = self._request_persistence.persist_request_oauth2_token(req, self._auth)
+            if not persisted:
+                return
             logger.debug("Persisted own-auth OAuth2 token for request %d", req.id)
         except Exception as exc:
             logger.debug("Failed to persist own OAuth2 token: %s", exc)

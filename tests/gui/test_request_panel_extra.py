@@ -1,3 +1,4 @@
+from types import SimpleNamespace
 from unittest.mock import Mock
 
 from PyQt6.QtWidgets import QApplication
@@ -183,6 +184,83 @@ def test_json_body_validation_disables_send_for_invalid_json_even_without_conten
     assert panel.send_button.isEnabled() is False
 
 
+def test_request_panel_uses_injected_request_persistence(tmp_db_path):
+    ensure_qapp()
+    from equinox.storage import get_db
+    from equinox.gui.request_panel.panel import RequestPanel
+
+    persistence = Mock()
+    panel = RequestPanel(get_db(), request_persistence=persistence)
+
+    assert panel._request_persistence is persistence
+
+
+def test_request_panel_uses_injected_request_history(tmp_db_path):
+    ensure_qapp()
+    from equinox.storage import get_db
+    from equinox.gui.request_panel.panel import RequestPanel
+
+    history = Mock()
+    history.list_recent_urls.return_value = []
+    panel = RequestPanel(get_db(), request_history=history)
+
+    assert panel._request_history is history
+
+
+def test_refresh_url_completer_uses_request_history_service(tmp_db_path):
+    ensure_qapp()
+    from equinox.storage import get_db
+    from equinox.gui.request_panel.panel import RequestPanel
+
+    history = Mock()
+    history.list_recent_urls.return_value = [
+        "https://api.example.com/a",
+        "https://api.example.com/b",
+    ]
+    panel = RequestPanel(get_db(), request_history=history)
+
+    panel._refresh_url_completer()
+
+    history.list_recent_urls.assert_called_with(limit=200)
+    assert panel._url_values[:2] == [
+        "https://api.example.com/a",
+        "https://api.example.com/b",
+    ]
+
+
+def test_autosave_current_routes_through_request_persistence() -> None:
+    from equinox.gui.request_panel.autosave_mixin import RequestAutosaveMixin
+    from equinox.core.request import Request
+
+    class _Panel(RequestAutosaveMixin):
+        def __init__(self) -> None:
+            self._dirty = True
+            self.current_request = Request(
+                method="GET",
+                url="https://api.example.com/items",
+                id=17,
+                name="Items",
+                collection_id=7,
+                folder="",
+            )
+            self._request_persistence = Mock()
+
+        def _build_request_from_editor(self, **overrides):
+            return Request(method="GET", url="https://api.example.com/items?active=true", headers={}, **overrides)
+
+        def _clear_dirty(self):
+            self._dirty = False
+
+        def _status_message(self, text: str, timeout_ms: int = 5000):
+            return None
+
+    panel = _Panel()
+    panel.autosave_current()
+
+    panel._request_persistence.autosave_request.assert_called_once()
+    assert panel.is_dirty() is False
+
+
 def test_save_updates_existing_request_when_collection_unchanged(tmp_db_path, monkeypatch):
     """Test that saving an existing request in the same collection calls update_request.
 
@@ -199,9 +277,19 @@ def test_save_updates_existing_request_when_collection_unchanged(tmp_db_path, mo
         def __init__(self):
             self.db = None
             self.current_request = None
-            self._collection_mgr = Mock()
+            self._request_persistence = Mock()
             self.url_input = Mock()
             self.method_combo = Mock()
+
+        def _build_request_editor_snapshot(self):
+            req = self.current_request
+            return SimpleNamespace(
+                url=self.url_input.text(),
+                method=self.method_combo.currentText(),
+                folder=getattr(req, "folder", "") or "",
+                request_id=getattr(req, "id", None),
+                collection_id=getattr(req, "collection_id", None),
+            )
 
         def window(self):
             """Mock window to prevent access to collections_panel."""
@@ -254,14 +342,21 @@ def test_save_updates_existing_request_when_collection_unchanged(tmp_db_path, mo
         "equinox.gui.request_panel.save_flow_mixin.SaveRequestDialog",
         _FakeDialog,
     )
+    mock_panel._request_persistence.list_save_collections.return_value = [{"id": 7, "name": "Default"}]
+    mock_panel._request_persistence.save_request_from_dialog.return_value = SimpleNamespace(
+        request_id=123,
+        updated_existing=True,
+    )
 
     # Call the save flow
     result = mock_panel._save_request()
 
     # Verify update_request was called (not save_request)
     assert result is True
-    mock_panel._collection_mgr.update_request.assert_called_once()
-    mock_panel._collection_mgr.save_request.assert_not_called()
+    mock_panel._request_persistence.list_save_collections.assert_called_once()
+    mock_panel._request_persistence.save_request_from_dialog.assert_called_once()
+    mock_panel._request_persistence.update_request.assert_not_called()
+    mock_panel._request_persistence.save_request.assert_not_called()
 
 
 def test_save_calls_save_request_when_collection_changes(tmp_db_path, monkeypatch):
@@ -279,9 +374,19 @@ def test_save_calls_save_request_when_collection_changes(tmp_db_path, monkeypatc
         def __init__(self):
             self.db = None
             self.current_request = None
-            self._collection_mgr = Mock()
+            self._request_persistence = Mock()
             self.url_input = Mock()
             self.method_combo = Mock()
+
+        def _build_request_editor_snapshot(self):
+            req = self.current_request
+            return SimpleNamespace(
+                url=self.url_input.text(),
+                method=self.method_combo.currentText(),
+                folder=getattr(req, "folder", "") or "",
+                request_id=getattr(req, "id", None),
+                collection_id=getattr(req, "collection_id", None),
+            )
 
         def window(self):
             return Mock()
@@ -333,13 +438,18 @@ def test_save_calls_save_request_when_collection_changes(tmp_db_path, monkeypatc
         "equinox.gui.request_panel.save_flow_mixin.SaveRequestDialog",
         _FakeDialog,
     )
+    mock_panel._request_persistence.list_save_collections.return_value = [{"id": 99, "name": "Other"}]
 
-    # Mock save_request to return a new ID
-    mock_panel._collection_mgr.save_request.return_value = 789
+    mock_panel._request_persistence.save_request_from_dialog.return_value = SimpleNamespace(
+        request_id=789,
+        updated_existing=False,
+    )
 
     result = mock_panel._save_request()
 
     # Verify save_request was called (not update_request)
     assert result is True
-    mock_panel._collection_mgr.save_request.assert_called_once()
-    mock_panel._collection_mgr.update_request.assert_not_called()
+    mock_panel._request_persistence.list_save_collections.assert_called_once()
+    mock_panel._request_persistence.save_request_from_dialog.assert_called_once()
+    mock_panel._request_persistence.save_request.assert_not_called()
+    mock_panel._request_persistence.update_request.assert_not_called()

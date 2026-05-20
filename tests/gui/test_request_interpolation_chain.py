@@ -2,6 +2,12 @@
 
 from types import SimpleNamespace
 
+from equinox.application.requests import (
+    collect_unresolved_placeholders,
+    interpolate_request_fields,
+    resolve_path_params,
+)
+from equinox.application.requests.models import PreparationIssue, SendOrchestratorResult
 from equinox.gui.request_panel.mixins._send_mixin import _RequestSendMixin
 import equinox.gui.request_panel.mixins._send_mixin as send_mixin_mod
 
@@ -13,7 +19,7 @@ def test_resolve_path_params_supports_chained_values() -> None:
         "resource": "{{entity}}",
     }
 
-    resolved = _RequestSendMixin._resolve_path_params(path_params, variables)
+    resolved = resolve_path_params(path_params, variables)
 
     assert resolved == {
         "entity": "42",
@@ -22,7 +28,7 @@ def test_resolve_path_params_supports_chained_values() -> None:
 
 
 def test_interpolate_request_fields_uses_resolved_path_params_in_url_and_query() -> None:
-    url, headers, params, body, path_params = _RequestSendMixin._interpolate_request_fields(
+    url, headers, params, body, path_params = interpolate_request_fields(
         url="https://api.example.com/{{resource}}",
         headers={"X-Entity": "{{entity}}"},
         params={"id": "{{resource}}", "owner": "{{USER_ID}}"},
@@ -39,7 +45,7 @@ def test_interpolate_request_fields_uses_resolved_path_params_in_url_and_query()
 
 
 def test_resolve_path_params_allows_chained_key_interpolation() -> None:
-    resolved = _RequestSendMixin._resolve_path_params(
+    resolved = resolve_path_params(
         path_params={"{{PKEY}}": "{{PVAL}}", "suffix": "{{PKEY}}-ok"},
         variables={"PKEY": "id", "PVAL": "abc"},
     )
@@ -49,7 +55,7 @@ def test_resolve_path_params_allows_chained_key_interpolation() -> None:
 
 
 def test_resolve_path_params_uses_global_value_for_self_referential_key() -> None:
-    resolved = _RequestSendMixin._resolve_path_params(
+    resolved = resolve_path_params(
         path_params={"BASE_URL": "{{BASE_URL}}"},
         variables={"BASE_URL": "api.example.com"},
     )
@@ -58,7 +64,7 @@ def test_resolve_path_params_uses_global_value_for_self_referential_key() -> Non
 
 
 def test_interpolate_request_fields_resolves_base_url_case_mismatch() -> None:
-    url, headers, params, body, path_params = _RequestSendMixin._interpolate_request_fields(
+    url, headers, params, body, path_params = interpolate_request_fields(
         url="https://{{BASE_URL}}/livez",
         headers={},
         params={},
@@ -75,7 +81,7 @@ def test_interpolate_request_fields_resolves_base_url_case_mismatch() -> None:
 
 
 def test_collect_unresolved_placeholders_scans_all_request_fields() -> None:
-    unresolved = _RequestSendMixin._collect_unresolved_placeholders(
+    unresolved = collect_unresolved_placeholders(
         url="https://{{BASE_URL}}/v1/{{resource}}",
         headers={"X-{{HKEY}}": "{{HVAL}}"},
         params={"{{PKEY}}": "{{PVAL}}"},
@@ -108,60 +114,50 @@ def test_send_request_blocks_dispatch_when_placeholders_still_unresolved(monkeyp
         def setEnabled(self, _enabled: bool) -> None:
             return None
 
-    class _FakeCombo:
-        def currentText(self) -> str:
-            return "GET"
-
-        def setEnabled(self, _enabled: bool) -> None:
-            return None
-
-    class _FakeButton:
-        def setEnabled(self, _enabled: bool) -> None:
-            return None
-
-        def setVisible(self, _visible: bool) -> None:
-            return None
-
-        def setText(self, _text: str) -> None:
-            return None
-
     class _Harness(_RequestSendMixin):
         def __init__(self) -> None:
             self.url_input = _FakeLineEdit("https://{{BASE_URL}}/livez")
-            self.method_combo = _FakeCombo()
-            self.send_button = _FakeButton()
-            self.cancel_button = _FakeButton()
-            self._elapsed_timer = SimpleNamespace(start=lambda: None, stop=lambda: None)
             self._worker = None
             self.db = object()
-            self.current_request = SimpleNamespace(collection_id=25)
-            self._session_vars = {}
-            self.request_sent = SimpleNamespace(emit=lambda _req: None)
+            self._auth = None
 
         def _display_preflight_warnings(self) -> None:
             return None
 
-        def _gather_request_fields(self):
-            return "GET", {}, {}, [], None, "None", None, {}
+        def _build_request_editor_snapshot(self):
+            return SimpleNamespace(
+                url="https://{{BASE_URL}}/livez",
+                verify_ssl=True,
+                pre_script="",
+                collection_id=25,
+                folder=None,
+            )
 
-        def _run_pre_script(self, method, url, headers, params, body, variables):
-            return variables
-
-        def _resolve_send_auth(self):
-            raise AssertionError("auth resolution should not run when variables are unresolved")
+        def get_policy_profile(self) -> str:
+            return "balanced"
 
     monkeypatch.setattr(
         send_mixin_mod,
-        "collect_interpolation_variables_detailed",
-        lambda _db, collection_id=None, session_vars=None: (
-            {"BASE_URL": "{{BASE_URL}}"},
-            {"BASE_URL": "collection"},
+        "prepare_send",
+        lambda **_kwargs: SendOrchestratorResult(
+            blocking_issues=(
+                PreparationIssue(
+                    code="variables.unresolved",
+                    message=(
+                        "Failed to expand variables:\n"
+                        "Unresolved placeholders: "
+                        "BASE_URL(source=collection, value_type=str, value_is_template=True)"
+                    ),
+                    severity="error",
+                    field_name="url",
+                ),
+            )
         ),
     )
     monkeypatch.setattr(
-        send_mixin_mod.QMessageBox,
+        send_mixin_mod.ErrorPresenter,
         "warning",
-        lambda _parent, _title, message: warned.append(message),
+        lambda _parent, message, title=None: warned.append(message),
     )
 
     _Harness()._send_request()

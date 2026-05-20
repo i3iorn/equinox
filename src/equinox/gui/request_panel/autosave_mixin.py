@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import logging
 
+from equinox.gui.request_panel.builder import assemble_body
 from equinox.core.request import Request
 from equinox.gui.request_panel._constants import STATUS_DURATION_LONG
 
@@ -37,25 +38,38 @@ class RequestAutosaveMixin:
 
     def _build_request_from_editor(self, **overrides) -> Request:
         """Construct a Request from the current editor widget state."""
+        snapshot = self._build_request_editor_snapshot()
+        body, multipart_data = assemble_body(
+            snapshot.body_type,
+            snapshot.body.strip(),
+            snapshot.graphql_query.strip(),
+            snapshot.graphql_variables.strip(),
+            list(snapshot.multipart_data),
+        )
         fields = dict(
-            method=self.method_combo.currentText(),
-            url=self.url_input.text().strip(),
-            headers=self.headers_table.get_data(),
-            params=self.params_table.get_enabled_data(),
-            params_list=self.params_table.get_all_rows(),
-            body=self.body_text.toPlainText().strip() or None,
+            method=snapshot.method,
+            url=snapshot.url,
+            headers=snapshot.headers,
+            params=snapshot.params,
+            params_list=list(snapshot.params_list),
+            body=body,
             auth=self._auth,
-            timeout=self.timeout_spin.value(),
-            verify_ssl=self.verify_ssl_check.isChecked(),
-            follow_redirects=self.follow_redirects_check.isChecked(),
-            captures=self._get_captures(),
-            assertions=self._get_assertions(),
-            pre_script=self.pre_script_editor.toPlainText(),
-            post_script=self.post_script_editor.toPlainText(),
-            cert_path=self.cert_path_input.text().strip() or None,
-            cert_key_path=self.cert_key_input.text().strip() or None,
-            description=self.notes_editor.toPlainText().strip() or None,
-            path_params=self.path_params_table.get_all_data(),
+            timeout=snapshot.timeout,
+            verify_ssl=snapshot.verify_ssl,
+            follow_redirects=snapshot.follow_redirects,
+            name=snapshot.name,
+            description=snapshot.description,
+            collection_id=snapshot.collection_id,
+            folder=snapshot.folder,
+            id=snapshot.request_id,
+            captures=list(snapshot.captures),
+            assertions=list(snapshot.assertions),
+            multipart_data=multipart_data,
+            pre_script=snapshot.pre_script,
+            post_script=snapshot.post_script,
+            cert_path=snapshot.cert_path,
+            cert_key_path=snapshot.cert_key_path,
+            path_params=snapshot.path_params,
         )
         fields.update(overrides)
         return Request(**fields)
@@ -74,7 +88,7 @@ class RequestAutosaveMixin:
                 folder=req.folder,
                 id=req.id,
             )
-            self._collection_mgr.update_request(updated)
+            self._request_persistence.autosave_request(updated)
             self._clear_dirty()
             logger.debug("Autosaved request id=%s %s %s", req.id, updated.method, updated.url)
         except Exception:

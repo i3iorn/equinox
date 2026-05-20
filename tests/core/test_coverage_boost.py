@@ -175,6 +175,7 @@ class TestOAuth2Coverage:
         from equinox.auth._oauth2 import OAuth2Auth
         mock_resp = Mock()
         mock_resp.json.side_effect = ValueError("bad json")
+        mock_resp.text = str(ValueError("bad json"))
 
         auth = OAuth2Auth(token_url="https://x.com/token", client_id="c", client_secret="s")
         with pytest.raises(AuthError, match="Token endpoint returned non-JSON response"):
