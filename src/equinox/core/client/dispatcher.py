@@ -195,7 +195,11 @@ class HttpxDispatcher:
     # ── Response helpers ──────────────────────────────────────────────────────
 
     def _wrap_response(
-        self, raw: httpx.Response, request: Request, elapsed: float, sent_headers: dict = None
+        self,
+        raw: httpx.Response,
+        request: Request,
+        elapsed: float,
+        sent_headers: dict[str, str] | None = None,
     ) -> Response:
         # Explicitly read the body to ensure it's properly consumed
         body = raw.content
@@ -206,6 +210,11 @@ class HttpxDispatcher:
             len(raw.headers),
         )
         # sent_headers: the actual headers sent to httpx (including injected auth)
+        redacted_sent_headers = {
+            str(k): str(v)
+            for k, v in (redact_headers(sent_headers) or {}).items()
+            if v is not None
+        }
         return Response(
             status_code=raw.status_code,
             reason=self._extract_reason_phrase(raw),
@@ -214,7 +223,7 @@ class HttpxDispatcher:
             elapsed=elapsed,
             request=request,
             timestamp=utc_now(),
-            sent_headers=redact_headers(sent_headers),
+            sent_headers=redacted_sent_headers,
             sent_url=str(raw.request.url) if getattr(raw, "request", None) is not None else None,
             connection_info=self._extract_connection_info(raw, request),
             set_cookie_headers=raw.headers.get_list("set-cookie"),
@@ -393,7 +402,13 @@ class HttpxDispatcher:
                 headers=headers,
                 params=request.params,
                 content=(
-                    request.body.encode("utf-8") if (request.body and not multipart_files) else None
+                    (
+                        request.body.encode("utf-8")
+                        if isinstance(request.body, str)
+                        else request.body
+                    )
+                    if (request.body and not multipart_files)
+                    else None
                 ),
                 files=multipart_files or None,
                 timeout=request.timeout or self._timeout,

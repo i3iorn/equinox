@@ -143,7 +143,10 @@ class DragDropTree(QTreeWidget):
             if target_req_id is not None:
                 logger.debug("dropEvent: reorder request %s → before %s", request_id, target_req_id)
                 event.acceptProposedAction()
-                self.request_reorder.emit(request_id, int(target_req_id))
+                if isinstance(target_req_id, (int, str)):
+                    self.request_reorder.emit(request_id, int(target_req_id))
+                else:
+                    event.ignore()
                 return
         else:
             event.ignore()
@@ -181,7 +184,9 @@ class DragDropTree(QTreeWidget):
             d = DragDropTree._node_data(cursor)
             if d.get("type") == "collection":
                 col_id = d.get("id")
-                return int(col_id) if col_id is not None else None
+                if isinstance(col_id, (int, str)):
+                    return int(col_id)
+                return None
             cursor = cursor.parent()
         return None
 

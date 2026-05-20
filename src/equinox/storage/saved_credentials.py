@@ -344,7 +344,7 @@ class SavedCredentialsManager:
         return encrypt_auth_data(json_str)
 
     @staticmethod
-    def _decode(row) -> dict[str, Any]:
+    def _decode(row: Any) -> dict[str, Any]:
         d: dict[str, Any] = dict(row)  # type: ignore[arg-type]
         raw_config = d.get("config") or "{}"
         try:

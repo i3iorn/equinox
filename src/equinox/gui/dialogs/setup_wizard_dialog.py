@@ -11,7 +11,8 @@ from PyQt6.QtWidgets import (
     QDialogButtonBox,
     QFormLayout,
     QLabel,
-    QVBoxLayout, QWidget,
+    QVBoxLayout,
+    QWidget,
 )
 
 from equinox.gui.theme import THEME_LABELS, THEME_MODES, get_theme_mode

@@ -6,7 +6,6 @@
 from __future__ import annotations
 
 import logging
-
 from typing import TYPE_CHECKING, Any
 
 from PyQt6.QtCore import QEvent, QObject, QPoint, Qt
@@ -26,7 +25,7 @@ logger = logging.getLogger(__name__)
 if TYPE_CHECKING:
     _FramelessBase = QMainWindow
 else:
-    _FramelessBase = object
+    _FramelessBase = QMainWindow
 
 # Window edge grab-zone for frameless resize.
 _RESIZE_BORDER_PX = 6

@@ -63,7 +63,12 @@ class CurlExporter:
             parts.append(f"-H {quote(f'{key}: {value}')}")
 
         if request.body:
-            parts.append(f"-d {quote(request.body)}")
+            body_text = (
+                request.body.decode("utf-8", errors="replace")
+                if isinstance(request.body, bytes)
+                else request.body
+            )
+            parts.append(f"-d {quote(body_text)}")
 
         base_url = urls.expand_placeholders(
             request.url,

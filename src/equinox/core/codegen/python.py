@@ -1,4 +1,5 @@
 import json
+from typing import Union
 
 from equinox.core.request import Request, Response
 
@@ -6,7 +7,7 @@ from ._python_helpers import _auth_kwarg_for_basic, _inject_auth_into_headers, _
 
 
 class PythonRequestsGenerator:
-    def generate(self, response_or_request: Response | Request) -> str:
+    def generate(self, response_or_request: Union[Response, Request]) -> str:
         request = (
             response_or_request.request
             if isinstance(response_or_request, Response)
@@ -49,7 +50,7 @@ class PythonRequestsGenerator:
 
 
 class PythonHttpxGenerator:
-    def generate(self, response_or_request: Response | Request) -> str:
+    def generate(self, response_or_request: Union[Response, Request]) -> str:
         request = (
             response_or_request.request
             if isinstance(response_or_request, Response)

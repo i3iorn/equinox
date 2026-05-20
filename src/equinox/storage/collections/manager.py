@@ -39,7 +39,7 @@ def _params_to_json(request: Request) -> str:
     return safe_json_dumps(request.params or {}, max_len=50_000) if request.params else "[]"
 
 
-def _params_from_json(raw_str: str):
+def _params_from_json(raw_str: str) -> tuple[dict[str, str], list[dict[str, Any]]]:
     """Deserialise params from storage, returning ``(params_dict, params_list)``.
 
     Handles both the legacy dict format and the new list format.
@@ -353,6 +353,8 @@ class CollectionManager(
         source = self.get_request(request_id)
         if not source:
             raise StorageError(f"Request {request_id} not found")
+        if source.collection_id is None:
+            raise StorageError(f"Request {request_id} is not linked to a collection")
 
         copy_name = new_name or f"Copy of {source.name}"
         if len(copy_name) > self.MAX_NAME_LENGTH:
@@ -416,6 +418,8 @@ class CollectionManager(
             StorageError: If save fails or collection doesn't exist
         """
         coll_id = collection_id if collection_id is not None else request.collection_id
+        if coll_id is None:
+            raise StorageError("Collection ID is required to save a request")
         if coll_id is not None and not self.get_collection(coll_id):
             raise StorageError(f"Collection with ID {coll_id} does not exist")
 
@@ -445,7 +449,7 @@ class CollectionManager(
             name = name[: self.MAX_NAME_LENGTH - 3] + "..."
         return name
 
-    def update_request_auth(self, request_id: int, auth) -> None:
+    def update_request_auth(self, request_id: int, auth: Any) -> None:
         """Update only the auth on an existing request.
 
         Args:

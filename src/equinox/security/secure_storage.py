@@ -192,7 +192,7 @@ class SecureStorage:
 
         try:
             key = crypto.get_or_create_raw_key(key_path)
-            return cast(bytes, key)
+            return key
         except Exception as exc:
             logger.exception("Key generation failed")
             raise SecurityError("Failed to load encryption key") from exc

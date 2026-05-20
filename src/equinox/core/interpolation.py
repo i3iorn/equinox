@@ -26,9 +26,10 @@ import copy
 import logging
 import os
 import re
+from collections.abc import Callable
 from dataclasses import replace as dataclass_replace
 from datetime import date, datetime
-from typing import Any, TypeVar
+from typing import Any, TypeVar, cast
 
 from equinox.core.exceptions import SecurityError, ValidationError
 
@@ -119,7 +120,7 @@ def _sanitize_variables(variables: dict[str, str]) -> dict[str, str]:
     return sanitized_variables
 
 
-def _build_casefold_lookup(sanitized_variables: dict[str, str]) -> tuple[dict[str, str], set]:
+def _build_casefold_lookup(sanitized_variables: dict[str, str]) -> tuple[dict[str, str], set[str]]:
     """Build casefold lookup and track ambiguous folded keys."""
     casefold_map: dict[str, str] = {}
     ambiguous_casefolds = set()
@@ -170,8 +171,8 @@ def _check_expansion_limits(
 def _build_substitute_variable(
     sanitized_variables: dict[str, str],
     casefold_map: dict[str, str],
-    ambiguous_casefolds: set,
-):
+    ambiguous_casefolds: set[str],
+) -> Callable[[re.Match[str]], str]:
     """Build replacement callable for regex substitution."""
 
     def substitute_variable(match: re.Match[str]) -> str:
@@ -192,8 +193,8 @@ def _build_substitute_variable(
 
 def _interpolate_until_stable(
     text: str,
-    pattern: re.Pattern,
-    substitute_variable,
+    pattern: re.Pattern[str],
+    substitute_variable: Callable[[re.Match[str]], str],
     iteration_limit: int,
     expansion_limit: int,
     max_output_bytes: int,
@@ -224,13 +225,15 @@ def _interpolate_until_stable(
 def _copy_request_object(request: T) -> T:
     """Return a shallow copy while preserving dataclass behavior."""
     try:
-        return dataclass_replace(request)
+        return cast(T, dataclass_replace(request))
     except TypeError:
         return copy.copy(request)
 
 
 def _interpolate_dict_values(
-    values: dict[Any, Any], variables: dict[str, str], interpolator
+    values: dict[Any, Any],
+    variables: dict[str, str],
+    interpolator: type[VariableInterpolator],
 ) -> dict[str, str]:
     """Interpolate all key/value pairs in a dict-like request field."""
     return {
@@ -242,7 +245,10 @@ def _interpolate_dict_values(
 
 
 def _interpolate_request_string_field(
-    request: T, field_name: str, variables: dict[str, str], interpolator
+    request: T,
+    field_name: str,
+    variables: dict[str, str],
+    interpolator: type[VariableInterpolator],
 ) -> None:
     """Interpolate one string request field in-place when present."""
     if hasattr(request, field_name):
@@ -464,7 +470,7 @@ def _merge_os_variables(variables: dict[str, str], sources: dict[str, str]) -> N
     )
 
 
-def _load_global_variables(db) -> dict[str, str]:
+def _load_global_variables(db: Any) -> dict[str, str]:
     """Load global interpolation variables from storage."""
     try:
         from equinox.storage.global_variables import GlobalVariablesManager
@@ -478,7 +484,7 @@ def _load_global_variables(db) -> dict[str, str]:
         return {}
 
 
-def _load_environment_variables(db) -> dict[str, str]:
+def _load_environment_variables(db: Any) -> dict[str, str]:
     """Load active environment interpolation variables from storage."""
     try:
         from equinox.storage.environments import EnvironmentManager
@@ -494,7 +500,7 @@ def _load_environment_variables(db) -> dict[str, str]:
     return {}
 
 
-def _load_collection_variables(db, collection_id: int | None) -> dict[str, str]:
+def _load_collection_variables(db: Any, collection_id: int | None) -> dict[str, str]:
     """Load collection-scoped interpolation variables from storage."""
     if collection_id is None:
         return {}
@@ -521,7 +527,7 @@ def _load_collection_variables(db, collection_id: int | None) -> dict[str, str]:
 
 
 def collect_interpolation_variables_detailed(
-    db,
+    db: Any,
     collection_id: int | None = None,
     session_vars: dict[str, str] | None = None,
 ) -> tuple[dict[str, str], dict[str, str]]:
@@ -563,7 +569,7 @@ def collect_interpolation_variables_detailed(
 
 
 def collect_interpolation_variables(
-    db,
+    db: Any,
     collection_id: int | None = None,
     session_vars: dict[str, str] | None = None,
 ) -> dict[str, str]:

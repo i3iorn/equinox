@@ -1,4 +1,5 @@
 import json
+from typing import Union
 
 from equinox.core.request import Request, Response
 
@@ -7,7 +8,7 @@ from .utils import _build_url_with_params
 
 
 class JavaScriptFetchGenerator:
-    def generate(self, response_or_request: Response | Request) -> str:
+    def generate(self, response_or_request: Union[Response, Request]) -> str:
         request = (
             response_or_request.request
             if isinstance(response_or_request, Response)

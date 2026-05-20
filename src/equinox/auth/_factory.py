@@ -85,7 +85,7 @@ AUTH_TYPE_ORDER: tuple = ("basic", "bearer", "oauth2", "api_key", "aws_sigv4")
 # ---------------------------------------------------------------------------
 
 
-def auth_from_dict(*args, **kwargs) -> Any | None:
+def auth_from_dict(*args: object, **kwargs: Any) -> Any | None:
     """Return an auth object reconstructed from *auth_type* and *data*.
 
     Accepts both short type names (``"bearer"``) and class names
@@ -94,10 +94,17 @@ def auth_from_dict(*args, **kwargs) -> Any | None:
     Raises:
         ValueError: If the type is not in :data:`AUTH_REGISTRY`.
     """
+    data: dict[str, Any]
     if len(args) == 1:
         arg = args[0]
         if isinstance(arg, str):
             auth_type = arg
+            candidate = kwargs.get("data")
+            if not isinstance(candidate, dict):
+                raise AuthError(
+                    "Invalid arguments to auth_from_dict: missing 'data' when called as (auth_type)"
+                )
+            data = candidate
         elif isinstance(arg, dict):
             auth_type = arg["type"]
             data = arg

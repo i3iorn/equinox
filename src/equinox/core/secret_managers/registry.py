@@ -6,6 +6,7 @@ Provides a unified interface for getting secret manager instances.
 from __future__ import annotations
 
 import logging
+from typing import Callable, cast
 
 from equinox.core.secret_managers.base import SecretManager, SecretManagerError
 
@@ -19,33 +20,33 @@ def _get_env_manager() -> type[SecretManager]:
     """Lazy loader for EnvironmentVariableManager."""
     from equinox.core.secret_managers.env import EnvironmentVariableManager
 
-    return EnvironmentVariableManager
+    return cast(type[SecretManager], EnvironmentVariableManager)
 
 
 def _get_aws_manager() -> type[SecretManager]:
     """Lazy loader for AWSSecretsManagerBackend."""
     from equinox.core.secret_managers.aws import AWSSecretsManagerBackend
 
-    return AWSSecretsManagerBackend
+    return cast(type[SecretManager], AWSSecretsManagerBackend)
 
 
 def _get_vault_manager() -> type[SecretManager]:
     """Lazy loader for VaultManager."""
     from equinox.core.secret_managers.vault import VaultManager
 
-    return VaultManager
+    return cast(type[SecretManager], VaultManager)
 
 
 def _get_bitwarden_manager() -> type[SecretManager]:
     """Lazy loader for BitwardenManager."""
     from equinox.core.secret_managers.bitwarden import BitwardenManager
 
-    return BitwardenManager
+    return cast(type[SecretManager], BitwardenManager)
 
 
 # Registry of available secret manager backends
 # Maps type identifiers to lazy-loading functions
-_SECRET_MANAGERS: dict[str, callable] = {
+_SECRET_MANAGERS: dict[str, Callable[[], type[SecretManager]]] = {
     "env": _get_env_manager,
     "environment": _get_env_manager,
     "aws_secrets_manager": _get_aws_manager,
@@ -127,7 +128,10 @@ def list_available_managers() -> list[str]:
     return sorted(set(_SECRET_MANAGERS.keys()))
 
 
-def register_manager(manager_type: str, loader_func: callable) -> None:
+def register_manager(
+    manager_type: str,
+    loader_func: Callable[[], type[SecretManager]],
+) -> None:
     """Register a custom secret manager implementation.
 
     Args:

@@ -18,8 +18,8 @@ from PyQt6.QtCore import QRect, QSize, Qt
 from PyQt6.QtGui import (
     QColor,
     QKeyEvent,
-    QPaintEvent,
     QPainter,
+    QPaintEvent,
     QResizeEvent,
     QTextBlock,
     QTextCharFormat,

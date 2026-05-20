@@ -6,9 +6,10 @@ Shows validation status with visual indicators and prevents send if critical err
 
 import json
 import logging
+from typing import Any, Optional, Tuple
 
 from PyQt6.QtCore import QTimer
-from PyQt6.QtWidgets import QWidget
+from PyQt6.QtWidgets import QComboBox, QLineEdit, QPushButton, QPlainTextEdit, QWidget
 
 from equinox.core.exceptions import ValidationError
 from equinox.core.validation import Validator
@@ -19,6 +20,17 @@ _MAX_SYNC_JSON_VALIDATE_BYTES = 5_000_000
 
 
 class _RequestValidationMixin:
+    url_input: QLineEdit
+    headers_table: Any
+    body_text: QPlainTextEdit
+    body_type_combo: QComboBox
+    _gql_vars: QPlainTextEdit
+    send_button: QPushButton
+    _validation_timer: QTimer
+    _url_valid: bool
+    _headers_valid: bool
+    _body_valid: bool
+
     """Real-time validation for request input fields.
 
     Provides:
@@ -112,7 +124,7 @@ class _RequestValidationMixin:
             logger.debug("URL validation failed: %s", str(e))
 
     @staticmethod
-    def _suggest_url_fix(url_text: str) -> tuple[str, str] | None:
+    def _suggest_url_fix(url_text: str) -> Optional[Tuple[str, str]]:
         """Return a safe URL correction suggestion, if one is obvious."""
         text = (url_text or "").strip()
         if not text:
@@ -227,7 +239,7 @@ class _RequestValidationMixin:
             self._body_valid = False
             logger.debug("JSON body validation failed: %s", msg)
 
-    def _set_field_valid(self, field: QWidget, status: str | None, message: str = "") -> None:
+    def _set_field_valid(self, field: QWidget, status: Optional[str], message: str = "") -> None:
         """Display validation status on field with visual feedback.
 
         Args:

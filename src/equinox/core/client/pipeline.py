@@ -123,13 +123,16 @@ class RequestPipeline:
         request_id: str | None = None,
     ) -> None:
         """Call the audit logger while remaining compatible with legacy signatures."""
-        kwargs = {
-            "status_code": status_code,
-            "error": error,
-        }
         if self._audit_supports_request_id:
-            kwargs["request_id"] = request_id
-        self._audit.log_request(method, url, **kwargs)
+            self._audit.log_request(
+                method,
+                url,
+                status_code=status_code,
+                error=error,
+                request_id=request_id,
+            )
+            return
+        self._audit.log_request(method, url, status_code=status_code, error=error)
 
     # ── Error-handling helpers ────────────────────────────────────────────────
 
@@ -213,9 +216,12 @@ class RequestPipeline:
                     },
                 )
                 result: _HandlerResult = handler_fn(error, request)
+                mapped_error = result.get("error")
+                if not isinstance(mapped_error, Exception):
+                    mapped_error = RequestError("Request failed")
                 self._emit_error(
                     request,
-                    result.get("error"),
+                    mapped_error,
                     result.get("audit_tag"),
                     result.get("log_message"),
                 )

@@ -499,6 +499,8 @@ class OAuth2Auth(AuthStrategy):
         if not self._has_storage:
             logger.debug("OAuth2 secure storage not configured (key=%s)", self.storage_key)
             return
+        if self.secure_storage is None:
+            return
 
         try:
             logger.debug("Loading OAuth2 tokens from secure storage (key=%s)", self.storage_key)
@@ -532,6 +534,8 @@ class OAuth2Auth(AuthStrategy):
         """Persist current tokens to secure storage."""
         if not self._has_storage:
             logger.debug("OAuth2 secure storage not configured, skipping save")
+            return
+        if self.secure_storage is None:
             return
 
         try:
@@ -918,7 +922,9 @@ class OAuth2Auth(AuthStrategy):
             return None
 
         current_mode = self.token_auth
-        alternate_mode = "basic" if current_mode == "body" else "body"
+        alternate_mode: Literal["body", "basic"] = (
+            "basic" if current_mode == "body" else "body"
+        )
 
         if alternate_mode == "basic" and not (self.client_id and self.client_secret):
             return None

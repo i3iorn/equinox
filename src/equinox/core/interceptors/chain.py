@@ -42,7 +42,7 @@ class InterceptorChain:
         )
 
         for interceptor in self.request_interceptors:
-            if not interceptor.can_intercept(context.request):
+            if context.request is None or not interceptor.can_intercept(context.request):
                 continue
 
             result = interceptor.intercept(context)
@@ -53,12 +53,15 @@ class InterceptorChain:
             )
 
             if result.action == InterceptorAction.REPLACE:
-                context.replace_request(result.value)
+                if isinstance(result.value, Request):
+                    context.replace_request(result.value)
 
             elif result.action == InterceptorAction.STOP:
                 logger.debug("Request interceptor chain stopped by %s", type(interceptor).__name__)
                 break
 
+        if context.request is None:
+            raise RuntimeError("Request interceptor chain produced an empty request")
         return context.request
 
     # -------- Response --------
@@ -72,7 +75,7 @@ class InterceptorChain:
         )
 
         for interceptor in self.response_interceptors:
-            if not interceptor.can_intercept(context.response):
+            if context.response is None or not interceptor.can_intercept(context.response):
                 continue
 
             result = interceptor.intercept(context)
@@ -83,12 +86,15 @@ class InterceptorChain:
             )
 
             if result.action == InterceptorAction.REPLACE:
-                context.replace_response(result.value)
+                if isinstance(result.value, Response):
+                    context.replace_response(result.value)
 
             elif result.action == InterceptorAction.STOP:
                 logger.debug("Response interceptor chain stopped by %s", type(interceptor).__name__)
                 break
 
+        if context.response is None:
+            raise RuntimeError("Response interceptor chain produced an empty response")
         return context.response
 
     # -------- Error --------
@@ -102,7 +108,7 @@ class InterceptorChain:
         )
 
         for interceptor in self.error_interceptors:
-            if not interceptor.can_intercept(context.error, context.request):
+            if context.error is None or not interceptor.can_intercept(context.error, context.request):
                 continue
 
             result = interceptor.intercept(context)
@@ -115,7 +121,8 @@ class InterceptorChain:
                 return None
 
             if result.action == InterceptorAction.REPLACE:
-                context.replace_error(result.value)
+                if isinstance(result.value, Exception):
+                    context.replace_error(result.value)
 
             elif result.action == InterceptorAction.STOP:
                 logger.debug("Error interceptor chain stopped by %s", type(interceptor).__name__)

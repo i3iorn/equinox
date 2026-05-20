@@ -18,9 +18,7 @@ from PyQt6.QtWidgets import (
 class CommandPaletteDialog(QDialog):
     """Simple searchable command picker."""
 
-    def __init__(
-        self, commands: list[dict[str, str]], parent: QWidget | None = None
-    ) -> None:
+    def __init__(self, commands: list[dict[str, str]], parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self.setWindowTitle("Command Palette")
         self.setMinimumSize(520, 380)

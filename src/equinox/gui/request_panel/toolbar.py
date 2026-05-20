@@ -36,8 +36,7 @@ _LAYOUT_SPACING = 2
 
 
 class _SignalEmitter(Protocol):
-    def emit(self) -> None:
-        ...
+    def emit(self) -> None: ...
 
 
 class TabToolbar(QWidget):

@@ -47,11 +47,12 @@ def format_size(size: int) -> str:
     Returns:
         Human-readable size (e.g., "1.2 MB")
     """
+    size_value = float(size)
     for unit in ("B", "KB", "MB", "GB"):
-        if size < 1024 or unit == "GB":
-            return f"{size:.1f} {unit}" if unit != "B" else f"{size} {unit}"
-        size /= 1024.0
-    return f"{size:.1f} GB"
+        if size_value < 1024 or unit == "GB":
+            return f"{size_value:.1f} {unit}" if unit != "B" else f"{int(size_value)} {unit}"
+        size_value /= 1024.0
+    return f"{size_value:.1f} GB"
 
 
 def pretty_print_body(response: Response) -> str:

@@ -19,10 +19,10 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 from typing import Any, Dict, Optional, Tuple, Union
-from typing_extensions import TypeAlias
 
 from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import QListWidget, QListWidgetItem
+from typing_extensions import TypeAlias
 
 from equinox.gui.dialogs._dirty_dialog_mixin import DirtyDialogMixin
 

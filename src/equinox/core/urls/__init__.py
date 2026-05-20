@@ -48,7 +48,7 @@ def url_metadata(url: str) -> dict[str, Any]:
     return _parser.url_metadata(url)
 
 
-def parse_query_pairs(query: str, keep_blank_values: bool = True):
+def parse_query_pairs(query: str, keep_blank_values: bool = True) -> list[tuple[str, str]]:
     return _parser.parse_query_pairs(query, keep_blank_values=keep_blank_values)
 
 

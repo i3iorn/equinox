@@ -125,7 +125,7 @@ class EnvironmentManager:
 
         return description.strip()
 
-    def _validate_secret_keys(self, secret_keys: list[str]) -> list[str | None]:
+    def _validate_secret_keys(self, secret_keys: list[str]) -> list[str]:
         """Validate and normalize secret_keys list.
 
         Args:

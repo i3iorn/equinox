@@ -1,6 +1,7 @@
 """Auto-growing key-value table widget."""
 
 from contextlib import contextmanager
+from typing import Iterator
 
 from PyQt6.QtCore import QObject, pyqtSignal
 from PyQt6.QtWidgets import QHeaderView, QTableWidget, QTableWidgetItem, QWidget
@@ -11,7 +12,7 @@ from PyQt6.QtWidgets import QHeaderView, QTableWidget, QTableWidgetItem, QWidget
 
 
 @contextmanager
-def _blocked(obj: QObject):
+def _blocked(obj: QObject) -> Iterator[None]:
     """Block Qt signals on *obj* for the duration of the ``with`` block.
 
     Saves and restores the previous blocked state so this helper is safe to

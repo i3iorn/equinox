@@ -51,7 +51,8 @@ def _parse_charset(header_value: str) -> str | None:
         return None
     msg = Message()
     msg["content-type"] = header_value
-    return msg.get_param(CHARSET_PARAMETER)
+    parsed = msg.get_param(CHARSET_PARAMETER)
+    return parsed if isinstance(parsed, str) else None
 
 
 # ── Response dataclass ────────────────────────────────────────────────────────
@@ -80,9 +81,7 @@ class Response:
     sent_url: str | None = None
     timings: dict[str, float] | None = None
     connection_info: dict[str, Any] | None = None
-    retry_summary: str | None = (
-        None  # Human-readable summary of retries (e.g. "retried 2× after 429")
-    )
+    retry_summary: dict[str, Any] | None = None
     # Preserves repeated Set-Cookie header values; dict(headers) collapses them.
     set_cookie_headers: list[str] | None = None
 

@@ -1,3 +1,5 @@
+from typing import Union
+
 from equinox.core.request import Request, Response
 
 from ._python_helpers import _inject_auth_into_headers
@@ -5,7 +7,7 @@ from .utils import _escape_go_string
 
 
 class GoHttpGenerator:
-    def generate(self, response_or_request: Response | Request) -> str:
+    def generate(self, response_or_request: Union[Response, Request]) -> str:
         request = (
             response_or_request.request
             if isinstance(response_or_request, Response)

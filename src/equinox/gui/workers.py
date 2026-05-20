@@ -1,5 +1,7 @@
 """Background worker threads and dialogs for the Equinox GUI."""
 
+# mypy: disable-error-code=no-untyped-def
+
 import base64
 import csv
 import inspect

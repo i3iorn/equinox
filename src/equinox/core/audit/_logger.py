@@ -86,7 +86,7 @@ class AuditLogger:
         """
         # Delegate to central redact.sanitize_details to keep behavior
         # consistent across modules (audit, logging, exports).
-        return cast(dict[str, Any], sanitize_details(details, max_string_len=200))
+        return sanitize_details(details, max_string_len=200)
 
     def log_auth_success(self, auth_type: str, user: Optional[str] = None) -> None:
         """Log successful authentication."""
@@ -199,7 +199,9 @@ class AuditLogger:
             user=user,
         )
 
-    def log_file_operation(self, operation: str, file_path: str, user: Optional[str] = None) -> None:
+    def log_file_operation(
+        self, operation: str, file_path: str, user: Optional[str] = None
+    ) -> None:
         """Log file operation."""
         event_map = {
             "read": AuditEventType.FILE_READ,

@@ -9,7 +9,7 @@ from __future__ import annotations
 import logging
 import threading
 import time
-from typing import Any
+from typing import Any, cast
 
 from equinox.auth import AuthStrategy
 from equinox.core import urls
@@ -19,6 +19,7 @@ from equinox.core.client.concurrency_guard import ConcurrencyGuard
 from equinox.core.client.cookie_handler import CookieHandler
 from equinox.core.client.dispatcher import HttpxDispatcher
 from equinox.core.client.pipeline import RequestPipeline
+from equinox.core.client.pipeline import _ErrorHandlerEntry
 from equinox.core.client.retry_policy import RetryPolicy
 from equinox.core.exceptions import RequestError, ValidationError
 from equinox.core.format import error_mapper
@@ -145,10 +146,11 @@ class HTTPClient:
             interruptible_sleep=self._interruptible_sleep,
         )
         self._error_handlers = error_mapper.build_error_handlers(self)
+        typed_error_handlers = cast(list[_ErrorHandlerEntry], self._error_handlers)
         self._pipeline = RequestPipeline(
             interceptors=self.interceptors,
             audit_logger=self._audit,
-            error_handlers=self._error_handlers,
+            error_handlers=typed_error_handlers,
         )
 
     # ── Properties ────────────────────────────────────────────────────────────
@@ -167,7 +169,7 @@ class HTTPClient:
         self._dispatcher.open()
         return self
 
-    def __exit__(self, exc_type, exc_val, exc_tb) -> None:
+    def __exit__(self, exc_type: object, exc_val: object, exc_tb: object) -> None:
         self._dispatcher.close()
 
     # ── Private helpers ───────────────────────────────────────────────────────

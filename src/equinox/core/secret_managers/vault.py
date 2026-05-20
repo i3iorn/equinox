@@ -44,7 +44,7 @@ class VaultManager(SecretManager):
         self.token: str | None = None
         self.headers: dict[str, str] = {}
 
-    def configure(self, url: str, token: str, **kwargs: Any) -> None:
+    def configure(self, **kwargs: Any) -> None:
         """Configure Vault connection.
 
         Args:
@@ -61,6 +61,13 @@ class VaultManager(SecretManager):
             raise SecretManagerError(
                 "requests is required for Vault. Install with: pip install requests"
             )
+
+        url = kwargs.get("url")
+        token = kwargs.get("token")
+        if not isinstance(url, str) or not url.strip():
+            raise SecretManagerError("Vault configuration requires a non-empty 'url'")
+        if not isinstance(token, str) or not token.strip():
+            raise SecretManagerError("Vault configuration requires a non-empty 'token'")
 
         raw_url = str(url).strip()
 

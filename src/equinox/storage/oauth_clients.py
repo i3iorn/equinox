@@ -165,7 +165,8 @@ class OAuthClientManager:
         if not existing:
             raise StorageError(f"OAuth2 client {client_id} not found")
 
-        updates, params = [], []
+        updates: list[str] = []
+        params: list[Any] = []
 
         if name is not None:
             updates.append("name = ?")
@@ -287,7 +288,7 @@ class OAuthClientManager:
             extra_params=client.get("extra_params"),
         )
 
-    def _decode_and_maybe_migrate(self, row) -> dict[str, Any]:
+    def _decode_and_maybe_migrate(self, row: Any) -> dict[str, Any]:
         base: dict[str, Any] = {str(key): row[key] for key in row.keys()}
         raw_secret = base.get("client_secret")
         decrypted_secret = self._decrypt_client_secret(raw_secret)

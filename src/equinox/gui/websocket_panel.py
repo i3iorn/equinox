@@ -9,7 +9,7 @@ import sys
 from datetime import datetime
 
 from PyQt6.QtCore import Qt, QThread, pyqtSignal
-from PyQt6.QtGui import QColor
+from PyQt6.QtGui import QColor, QCloseEvent
 from PyQt6.QtWidgets import (
     QCheckBox,
     QHBoxLayout,
@@ -305,7 +305,7 @@ class WebSocketPanel(QWidget):
 
     # ── Cleanup ───────────────────────────────────────────────────────────────
 
-    def closeEvent(self, event) -> None:
+    def closeEvent(self, event: QCloseEvent) -> None:
         if self._thread is not None and self._thread.isRunning():
             self._thread.stop()
             # Wait briefly so the asyncio loop can close cleanly.

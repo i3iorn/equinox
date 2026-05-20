@@ -66,7 +66,7 @@ def assemble_body(
     gql_query: str,
     gql_vars: str,
     multipart_rows: list[dict[str, str]],
-) -> tuple[str | None, list[Any]] | None:
+) -> tuple[str | None, list[Any] | None]:
     """Assemble request body from editor state.
 
     Combines body text, GraphQL query/variables, or multipart form data
