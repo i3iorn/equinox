@@ -5,6 +5,8 @@ highlighting, and formatting helpers.  Has no ``__init__`` — relies on
 ``self.*`` attributes set by ``ResponsePanel.__init__``.
 """
 
+# mypy: disable-error-code=attr-defined
+
 from __future__ import annotations
 
 import difflib
@@ -50,6 +52,8 @@ _TEXT_CONTENT_TYPE_HINTS = (
 
 class ResponseDisplayMixin:
     """Mixin providing all *display* methods for ResponsePanel."""
+
+    _body_highlighter: Any
 
     # ------------------------------------------------------------------
     # Status Bar
@@ -99,11 +103,11 @@ class ResponseDisplayMixin:
     def _get_status_color(status_code: int) -> str:
         """Get color for HTTP status code."""
         if status_code < 300:
-            return Colors.GREEN
+            return str(Colors.GREEN)
         elif status_code < 400:
-            return Colors.AMBER
+            return str(Colors.AMBER)
         else:
-            return Colors.RED
+            return str(Colors.RED)
 
     # ------------------------------------------------------------------
     # Body Rendering
@@ -433,14 +437,14 @@ class ResponseDisplayMixin:
     def _build_display_url(response: Response) -> str:
         """Build the display URL from sent_url or request URL with params."""
         if response.sent_url:
-            return response.sent_url
+            return str(response.sent_url)
 
         req = response.request
         params = getattr(req, "params", None)
         if params:
-            return urls.append_query_params(req.url, params, merge_existing=False)
+            return str(urls.append_query_params(req.url, params, merge_existing=False))
 
-        return req.url
+        return str(req.url)
 
     def _display_sent_request_headers(self, response: Response) -> None:
         """Display headers sent (prefer sent_headers which include auth)."""

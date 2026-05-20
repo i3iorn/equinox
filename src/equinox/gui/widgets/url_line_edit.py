@@ -3,7 +3,7 @@
 import logging
 import os
 import re
-from typing import Any, Optional, cast
+from typing import Any, Optional
 
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QColor, QFocusEvent, QFontMetricsF, QMouseEvent, QPaintEvent, QPainter
@@ -59,7 +59,7 @@ class _VariableResolver:
         self._merge_path_params(variables)
 
         try:
-            return cast(str, VariableInterpolator.interpolate(token, variables))
+            return VariableInterpolator.interpolate(token, variables)
         except Exception as e:
             logger.debug("VariableInterpolator.interpolate failed: %s", e)
             return token

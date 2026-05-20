@@ -10,7 +10,7 @@ from __future__ import annotations
 import logging
 from collections.abc import Mapping
 from datetime import datetime
-from typing import Any, Optional, cast
+from typing import Any
 
 from equinox.core.request import Request, Response
 from equinox.storage import Database, HistoryManager
@@ -31,13 +31,13 @@ class HistoryFacade:
     # ── History manager wrappers ───────────────────────────────────────
 
     def get_history(self, history_id: int) -> dict[str, Any] | None:
-        return cast(Optional[dict[str, Any]], self._history_manager.get_history(history_id))
+        return self._history_manager.get_history(history_id)
 
     def search_history(self, **filters: Any) -> list[dict[str, Any]]:
         return list(self._history_manager.search_history(**filters))
 
     def get_stats(self) -> dict[str, Any]:
-        return cast(dict[str, Any], self._history_manager.get_stats())
+        return self._history_manager.get_stats()
 
     def delete_history(self, history_id: int) -> None:
         self._history_manager.delete_history(history_id)

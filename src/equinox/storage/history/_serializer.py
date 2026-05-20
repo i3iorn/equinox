@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from typing import Any, Optional, cast
+from typing import Any, Optional
 
 from equinox.core.exceptions import SecurityError, ValidationError
 from equinox.core.history_config import should_capture_bodies
@@ -140,7 +140,7 @@ class _HistorySerializer:
     def _prepare_headers(self, headers: dict[str, Any]) -> str:
         if not isinstance(headers, dict):
             raise ValidationError("Request headers must be a dictionary")
-        return cast(str, serialize_headers(headers))
+        return str(serialize_headers(headers))
 
     def _prepare_body(self, body: Any) -> str | None:
         if body is None:

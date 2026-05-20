@@ -3,7 +3,7 @@
 import logging
 import re
 from re import Pattern
-from typing import Any
+from typing import Any, Callable, Optional
 
 from equinox.core.response_intelligence.base import Analyzer
 from equinox.core.response_intelligence.models import (
@@ -97,7 +97,7 @@ def _contains_sensitive_values(body_text: str, patterns: list[Pattern[str]]) -> 
     return False
 
 
-PatternSpec = tuple[str, Pattern[str], Severity, callable] | None
+PatternSpec = tuple[str, Pattern[str], Severity, Optional[Callable[[str], bool]]]
 
 _PII_PATTERNS: list[PatternSpec] = [
     (

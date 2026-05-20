@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from typing import Any, Optional, Tuple, cast
+from typing import Any, Optional, Tuple
 
 from equinox.core.exceptions import SecurityError, StorageError, ValidationError
 from equinox.core.request import Request, Response
@@ -250,8 +250,7 @@ class HistoryManager:
         Raises:
             ValidationError: On invalid limit/offset, bad regex, or bad JSONPath.
         """
-        return cast(
-            list[dict[str, Any]],
+        return list(
             self._searcher.search(
             query=query,
             method=method,
@@ -268,7 +267,7 @@ class HistoryManager:
             executed_before=executed_before,
             limit=limit,
             offset=offset,
-            ),
+            )
         )
 
     def get_stats(self) -> dict[str, Any]:

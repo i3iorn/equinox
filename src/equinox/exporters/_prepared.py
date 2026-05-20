@@ -91,7 +91,11 @@ class _PreparedRequest:
             method=row.get("method", "GET"),
             raw_url=row.get("url", ""),
             body=row.get("body") or None,
-            headers=dict(redact_headers(headers)),
+            headers={
+                str(k): str(v)
+                for k, v in (redact_headers(headers) or {}).items()
+                if v is not None
+            },
             params=params,
             path_params=path_params,
             auth_obj=auth_obj,

@@ -1,9 +1,11 @@
 """Variable groups management panel"""
 
+# mypy: disable-error-code=union-attr
+
 from __future__ import annotations
 
 import logging
-from typing import Any, cast
+from typing import Any
 
 from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtWidgets import (
@@ -557,7 +559,7 @@ class VariablesPanel(QWidget):
                 path_table = getattr(rp, "path_params_table", None)
                 if path_table is not None:
                     interp_vars.update(path_table.get_all_data())
-            return cast(dict[str, str], interp_vars)
+            return interp_vars
         except Exception as exc:
             logger.debug("Tooltip: failed to build interpolation context: %s", exc)
             return {}

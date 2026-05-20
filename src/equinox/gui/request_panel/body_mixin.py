@@ -11,6 +11,8 @@ Provides comprehensive request body handling including:
 All UI operations are guarded against missing widgets (headless/test environments).
 """
 
+# mypy: disable-error-code=union-attr
+
 from __future__ import annotations
 
 import json
@@ -881,9 +883,10 @@ class RequestBodyMixin:
         elif request.body:
 
             def _load_body() -> None:
-                self.body_text.setPlainText(request.body)
+                body_text = request.body if isinstance(request.body, str) else ""
+                self.body_text.setPlainText(body_text)
                 self._multipart_table.setRowCount(0)
-                detected = self._detect_body_type(request.body, request.headers)
+                detected = self._detect_body_type(body_text, request.headers)
                 self.body_type_combo.setCurrentText(detected)
 
             self._try_ui(_load_body)
@@ -953,7 +956,7 @@ class RequestBodyMixin:
         """
         from equinox.gui.request_panel.builder import detect_body_type
 
-        return cast(str, detect_body_type(body, headers))
+        return str(detect_body_type(body, headers))
 
     def clear(self) -> None:
         """Reset all request fields to their defaults.

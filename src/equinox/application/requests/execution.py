@@ -23,7 +23,7 @@ This module must never import Qt types.
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 from equinox.application.requests._assembly import (
     apply_default_headers,
@@ -45,6 +45,7 @@ from equinox.core.interpolation import (
     collect_interpolation_variables_detailed,
 )
 from equinox.core.request import Request
+from equinox.core.request.types import AssertionRule, CaptureRule
 from equinox.core.scripts import ScriptRunner
 
 if TYPE_CHECKING:
@@ -102,7 +103,7 @@ def _run_pre_script(
     variables: dict[str, str],
     session_vars: dict[str, str],
     policy_profile: str,
-) -> tuple[dict[str, str], Any] | None:
+    ) -> tuple[dict[str, str], Any]:
     """Execute the pre-request script if defined.
 
     Returns ``(updated_variables, script_result)``.  ``script_result`` is the
@@ -168,8 +169,8 @@ def _build_request(
         collection_id=snapshot.collection_id,
         folder=snapshot.folder,
         id=snapshot.request_id,
-        captures=list(snapshot.captures),
-        assertions=list(snapshot.assertions),
+        captures=list(cast(tuple[CaptureRule, ...], snapshot.captures)),
+        assertions=list(cast(tuple[AssertionRule, ...], snapshot.assertions)),
         multipart_data=multipart_data,
         pre_script=snapshot.pre_script,
         post_script=snapshot.post_script,
