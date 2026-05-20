@@ -1,4 +1,8 @@
-"""Plugin manager"""
+"""Plugin manager for trusted local extensions.
+
+Plugins execute in-process. Security checks here are policy guards (permissions,
+checksums, allowlists, and validation), not a hard isolation boundary.
+"""
 
 import json
 import importlib.util
@@ -43,7 +47,7 @@ def _env_flag_enabled(name: str) -> bool:
 
 
 class PluginManager:
-    """Manage plugins"""
+    """Manage trusted local plugins with policy enforcement."""
 
     def __init__(
         self,
@@ -141,6 +145,29 @@ class PluginManager:
                 plugin_count += 1
         logger.info("Loaded %d plugin(s)", len(self.plugins))
 
+    def _log_plugin_hook_failure(
+        self,
+        plugin_name: str,
+        hook_name: str,
+        exc: Exception,
+    ) -> None:
+        """Emit a consistent warning + audit event for plugin hook failures."""
+        error_text = str(exc) or type(exc).__name__
+        logger.warning(
+            "Plugin hook failure",
+            extra={
+                "plugin": plugin_name,
+                "hook": hook_name,
+                "error": error_text,
+                "error_type": type(exc).__name__,
+            },
+        )
+        _audit.log_plugin_event(
+            plugin_name,
+            "hook_error",
+            error=f"{hook_name}: {error_text}",
+        )
+
     def _load_plugin(self, plugin_path: Path):
         """Load a single plugin from a directory.
 
@@ -193,8 +220,8 @@ class PluginManager:
             module = importlib.util.module_from_spec(spec)
             sys.modules[plugin_manifest.name] = module
 
-            # SECURITY: activate sandbox *before* exec_module so execution
-            # time limits are enforced from the very first statement.
+            # Activate policy guard before module import to apply limits from
+            # the first executed statement.
             sandbox.start_execution()
             try:
                 spec.loader.exec_module(module)
@@ -259,7 +286,7 @@ class PluginManager:
                 if modified:
                     request = modified
             except Exception as exc:
-                logger.warning("Plugin %s error in on_request: %s", plugin.name, exc)
+                self._log_plugin_hook_failure(plugin.name, "on_request", exc)
 
         return request
 
@@ -281,7 +308,7 @@ class PluginManager:
                 if modified:
                     response = modified
             except Exception as exc:
-                logger.warning("Plugin %s error in on_response: %s", plugin.name, exc)
+                self._log_plugin_hook_failure(plugin.name, "on_response", exc)
 
         return response
 
@@ -298,7 +325,7 @@ class PluginManager:
             try:
                 plugin.on_error(request, error)
             except Exception as exc:
-                logger.warning("Plugin %s error in on_error: %s", plugin.name, exc)
+                self._log_plugin_hook_failure(plugin.name, "on_error", exc)
 
     def list_plugins(self) -> List[Dict[str, Any]]:
         """List all loaded plugins."""

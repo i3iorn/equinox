@@ -204,6 +204,11 @@ Starting in v0.4.3, Equinox tracks local usage patterns to intelligently rank me
 
 Refer to `docs/adr/ADR-0001-security-boundaries-and-extension-safety.md` for architectural decision rationale.
 
+## Plugin Trust Model
+
+> [!WARNING]
+> Plugins run as trusted local, in-process extensions with the same user-level access as Equinox. Permission checks, checksums, and allowlists are policy guardrails, not a hard isolation boundary.
+
 ## Safe Change Checklist
 
 Before requesting review, confirm all items below:
@@ -292,6 +297,12 @@ python -m equinox.gui.app
 ## Contributing
 
 Contributions are welcome. Please open an issue or submit a PR with a clear change description.
+
+When adding code, keep service boundaries explicit:
+- Put orchestration/business logic in application services (for request flows, prefer `src/equinox/application/requests/`).
+- Keep GUI modules presentation-focused (event handling, rendering, and dialog wiring).
+- Do not add direct storage-manager construction in GUI panels/mixins.
+- Route user-visible failures through `src/equinox/gui/error_presenter.py`.
 
 ## Security
 

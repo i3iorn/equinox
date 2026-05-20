@@ -1,9 +1,9 @@
-"""Plugin security and sandboxing.
+"""Plugin security policy guards.
 
 This module provides security features for plugins including:
 - Permission system
 - Resource limits
-- Execution sandboxing
+- In-process execution guards
 - Security validation
 """
 
@@ -143,14 +143,18 @@ class ResourceLimits:
 
 
 class PluginSandbox:
-    """Sandbox for plugin execution with security controls."""
+    """In-process policy guard for plugin execution.
+
+    This helper enforces declared permissions and resource limits, but does not
+    provide process-level isolation.
+    """
 
     def __init__(
         self,
         manifest: PluginManifest,
         limits: Optional[ResourceLimits] = None
     ):
-        """Initialize plugin sandbox.
+        """Initialize plugin execution guard.
 
         Args:
             manifest: Plugin manifest
@@ -293,7 +297,13 @@ class PluginSandbox:
 
 
 class SecurePluginContext:
-    """Secure plugin context with permission checks."""
+    """Permission-gated plugin context.
+
+    Intentionally exposes only guarded storage/http proxies plus read-only
+    plugin config.
+    """
+
+    __slots__ = ("_sandbox", "_storage_proxy", "_http_proxy", "_config")
 
     def __init__(
         self,
@@ -311,21 +321,21 @@ class SecurePluginContext:
             config: Plugin configuration (optional)
         """
         self._sandbox = sandbox
-        self._storage = storage
-        self._http_client = http_client
+        self._storage_proxy = SecureStorageProxy(sandbox, storage)
+        self._http_proxy = SecureHTTPClientProxy(sandbox, http_client)
         self._config = config or {}
 
     @property
     def storage(self) -> Any:
         """Get storage with permission check."""
         self._sandbox.check_permission(Permission.STORAGE_READ)
-        return SecureStorageProxy(self._sandbox, self._storage)
+        return self._storage_proxy
 
     @property
     def http_client(self) -> Any:
         """Get HTTP client with permission check."""
         self._sandbox.check_permission(Permission.NETWORK_HTTP)
-        return SecureHTTPClientProxy(self._sandbox, self._http_client)
+        return self._http_proxy
 
     @property
     def config(self) -> Dict[str, Any]:
@@ -335,6 +345,8 @@ class SecurePluginContext:
 
 class SecureStorageProxy:
     """Proxy for storage with permission checks."""
+
+    __slots__ = ("_sandbox", "_storage")
 
     def __init__(self, sandbox: PluginSandbox, storage: Any):
         """Initialize proxy.
@@ -367,6 +379,8 @@ class SecureStorageProxy:
 
 class SecureHTTPClientProxy:
     """Proxy for HTTP client with permission checks."""
+
+    __slots__ = ("_sandbox", "_client")
 
     def __init__(self, sandbox: PluginSandbox, client: Any):
         """Initialize proxy.
@@ -434,7 +448,7 @@ def validate_plugin_file(plugin_path: Path) -> bool:
     _DANGEROUS_MODULES = frozenset({
         "subprocess", "shutil", "ctypes", "multiprocessing",
         "signal", "resource", "pty", "fcntl", "termios",
-        # Additional modules that can bypass sandbox restrictions:
+        # Additional modules that can bypass in-process policy restrictions:
         "importlib",    # dynamic import bypasses AST checks
         "code",         # interactive interpreter
         "codeop",       # compile helpers

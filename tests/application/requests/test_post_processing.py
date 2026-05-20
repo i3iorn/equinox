@@ -57,6 +57,23 @@ def test_run_post_script_skips_in_strict_policy() -> None:
     assert outcome.script_result is None
 
 
+def test_run_post_script_returns_error_when_script_raises() -> None:
+    req = type("Req", (), {"captures": []})()
+    resp = _ResponseStub(200, {}, "{}", req)
+
+    outcome = run_post_script(
+        policy_profile="balanced",
+        post_script="raise RuntimeError('bad script')",
+        response=resp,
+        session_vars={},
+    )
+
+    assert outcome.skipped is False
+    assert outcome.error is None
+    assert outcome.script_result is not None
+    assert outcome.script_result.error == "bad script"
+
+
 def test_build_deferred_persistence_plan_sets_expected_flags() -> None:
     own = OAuth2Auth(token_url="https://idp/token", client_id="cid")
     own.access_token = "own-token"

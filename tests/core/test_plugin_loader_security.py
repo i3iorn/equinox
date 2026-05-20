@@ -8,6 +8,7 @@ from typing import Any, Dict, Optional
 from equinox.plugins.base import PluginContext
 from equinox.plugins.manager import PluginManager
 from equinox.plugins.security import SecurePluginContext
+from equinox.core.request import Request
 
 
 def _write_plugin(
@@ -311,5 +312,41 @@ class PluginClass(Plugin):
 
     manager = PluginManager(str(tmp_path), _manager_context())
     assert manager.plugins == []
+
+
+def test_plugin_hook_failures_emit_consistent_audit_events(tmp_path: Path, monkeypatch) -> None:
+    _write_plugin(
+        tmp_path,
+        "hook_error_plugin",
+        """
+from equinox.plugins.base import Plugin
+
+class PluginClass(Plugin):
+    @property
+    def name(self):
+        return "hook-error"
+
+    @property
+    def version(self):
+        return "1.0"
+
+    def on_request(self, request):
+        raise RuntimeError("plugin-request-failure")
+""".strip(),
+    )
+
+    events = []
+
+    class _AuditRecorder:
+        def log_plugin_event(self, plugin_name, event, error=None, user=None):
+            events.append({"plugin": plugin_name, "event": event, "error": error, "user": user})
+
+    monkeypatch.setattr("equinox.plugins.manager._audit", _AuditRecorder())
+
+    manager = PluginManager(str(tmp_path), _manager_context())
+    manager.process_request(Request(method="GET", url="https://example.com"))
+
+    assert any(evt["event"] == "hook_error" for evt in events)
+    assert any("on_request" in (evt.get("error") or "") for evt in events)
 
 

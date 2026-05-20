@@ -13,7 +13,7 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class PluginContext:
-    """Context passed to plugins"""
+    """Host context for trusted in-process plugins."""
 
     storage: Any  # Database storage
     http_client: Any  # HTTP client
@@ -21,7 +21,7 @@ class PluginContext:
 
 
 class Plugin(ABC):
-    """Base class for plugins"""
+    """Base class for trusted local plugin extensions."""
 
     def __init__(self, context: PluginContext):
         """

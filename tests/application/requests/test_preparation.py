@@ -107,3 +107,14 @@ def test_interpolate_auth_returns_changed_auth_when_supported() -> None:
     assert resolved.value == "abc"
 
 
+def test_interpolate_auth_returns_original_auth_when_interpolation_fails() -> None:
+    class _FailingAuth:
+        def interpolate(self, _interp):
+            raise RuntimeError("boom")
+
+    auth = _FailingAuth()
+    resolved = interpolate_auth(auth, lambda value: value)
+
+    assert resolved is auth
+
+

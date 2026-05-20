@@ -99,6 +99,12 @@ Relative base URLs (e.g. `/`) are promoted to `https://{{BASE_URL}}` so requests
 
 **Zero-trust validation**: All user inputs validated before use, even from internal components.
 
+### Plugin trust model (explicit)
+
+- Plugins are trusted local, in-process extensions.
+- Plugin permission checks, checksums, and allowlists are policy controls, not hard isolation.
+- Do not describe plugin execution as a security sandbox boundary.
+
 ### Key Security Patterns
 
 1. **Input Validation** (`core/validation/` package): SQL/command/CRLF/path-traversal patterns blocked; URL scheme/length enforced; header/body size limits. The public façade is `Validator` (imported from `core/validation/__init__.py`). Internal validators are in sub-modules (`_url.py`, `_headers.py`, `_body.py`, `_params.py`, `_path.py`, `_env.py`, `_ssrf.py`, `_guards.py`, `_limits.py`, `_patterns.py`). Always call `Validator.validate_*()` before processing input.
@@ -142,6 +148,13 @@ equinox rotate-secrets --db-path ./equinox.db  # rotate plaintext secrets to enc
 - Keep CI aligned with local checks: Ruff, Mypy, tests, and security/static checks as configured.
 - Use `pre-commit` locally and keep hooks in sync with CI behavior.
 - Keep agent-facing docs aligned with the actual command set in `README.md`.
+
+### Boundary placement rules for new code
+
+- Put request orchestration/business rules in `application/requests/` modules.
+- Keep GUI modules presentation-only (widget state, event wiring, rendering).
+- GUI modules must not construct storage managers directly in request/history/collection flows.
+- Use `gui/error_presenter.py` for user-visible error dialogs instead of ad-hoc `QMessageBox` formatting.
 
 ## Project-Specific Conventions
 
@@ -214,7 +227,7 @@ Environment-toggled behavior is centralized in `core/config/flags.py`:
 
 ### Autosave and request persistence
 
-`RequestPanel.autosave_current()` persists dirty editor state to the DB via `CollectionManager.update_request()`. It runs automatically before switching requests, loading history, closing the window, or creating a new request. Only acts when the loaded request has a DB `id` (collection request); ad-hoc / history requests are silently skipped.
+`RequestPanel.autosave_current()` persists dirty editor state through `RequestPersistenceFacade`. It runs automatically before switching requests, loading history, closing the window, or creating a new request. Only acts when the loaded request has a DB `id` (collection request); ad-hoc / history requests are silently skipped.
 
 **Critical rules for the dirty flag**:
 - `_send_request()` must **never** call `_clear_dirty()`. Sending is not a save — the user's edits need to survive autosave when switching away. The dirty flag stays True so `autosave_current()` writes to the DB.
@@ -223,7 +236,7 @@ Environment-toggled behavior is centralized in `core/config/flags.py`:
 
 **Important**: `_send_request()` bakes `effective_auth` (which may be inherited) into `self.current_request.auth`, but `autosave_current()` always reads `self._auth` (own auth only) so inherited auth is never accidentally persisted onto the request row.
 
-**path_params**: Both `save_request()` and `update_request()` persist the `path_params` JSON column, and `_row_to_request()` reads it back. All three must stay in sync when adding new request fields.
+**path_params**: Facade-backed save/update flows persist the `path_params` JSON column, and storage hydration reads it back. Keep both sides in sync when adding new request fields.
 
 ### GUI logging
 
