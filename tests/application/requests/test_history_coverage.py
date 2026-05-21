@@ -66,4 +66,3 @@ class TestRequestHistoryServiceCoverage:
         service.save_history_safe(request, error="Timeout")
 
         manager.save_history.assert_called_once_with(request, error="Timeout")
-

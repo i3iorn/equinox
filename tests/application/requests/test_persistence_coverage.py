@@ -57,7 +57,9 @@ class TestPersistInheritedOAuth2Token:
 
     def test_returns_false_when_request_is_none(self) -> None:
         facade = RequestPersistenceFacade(db=Mock(), collection_manager=Mock())
-        assert facade.persist_inherited_oauth2_token(None, "collection", self._make_oauth2()) is False
+        assert (
+            facade.persist_inherited_oauth2_token(None, "collection", self._make_oauth2()) is False
+        )
 
     def test_returns_false_when_source_is_none(self) -> None:
         facade = RequestPersistenceFacade(db=Mock(), collection_manager=Mock())
@@ -75,14 +77,20 @@ class TestPersistInheritedOAuth2Token:
         facade = RequestPersistenceFacade(db=Mock(), collection_manager=Mock())
         request = Request(method="GET", url="https://example.com")
         # No collection_id → getattr returns None → not isinstance(int) → False
-        assert facade.persist_inherited_oauth2_token(request, "collection", self._make_oauth2()) is False
+        assert (
+            facade.persist_inherited_oauth2_token(request, "collection", self._make_oauth2())
+            is False
+        )
 
     def test_returns_false_when_auth_not_oauth2(self) -> None:
         from equinox.auth import BearerAuth
 
         facade = RequestPersistenceFacade(db=Mock(), collection_manager=Mock())
         request = Request(method="GET", url="https://example.com", collection_id=1)
-        assert facade.persist_inherited_oauth2_token(request, "collection", BearerAuth(token="t")) is False
+        assert (
+            facade.persist_inherited_oauth2_token(request, "collection", BearerAuth(token="t"))
+            is False
+        )
 
     def test_persist_request_oauth2_token_returns_false_for_non_int_id(self) -> None:
         manager = Mock()
@@ -95,4 +103,3 @@ class TestPersistInheritedOAuth2Token:
 
         result = facade.persist_request_oauth2_token(request, auth)
         assert result is False
-

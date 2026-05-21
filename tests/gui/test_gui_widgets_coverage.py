@@ -154,7 +154,7 @@ class TestDragDropTree:
         from equinox.gui.widgets.drag_drop_tree import DragDropTree
 
         tree = DragDropTree()
-        assert tree._node_data(None) =={}
+        assert tree._node_data(None) == {}
 
     def test_item_data_with_item(self):
         from PyQt6.QtWidgets import QTreeWidgetItem

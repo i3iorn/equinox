@@ -181,4 +181,3 @@ class TestCollectionFacadeSorting:
         facade, manager = _make_facade()
         facade.sort_requests_by_method(1, "Auth")
         manager.sort_requests_by_method.assert_called_once_with(1, "Auth")
-

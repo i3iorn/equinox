@@ -80,4 +80,3 @@ def test_apply_default_headers_user_agent_contains_version() -> None:
     apply_default_headers(request)
 
     assert "Equinox" in request.headers["User-Agent"]
-

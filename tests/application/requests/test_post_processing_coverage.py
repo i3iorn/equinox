@@ -29,6 +29,7 @@ class _ResponseStub:
 
     def json(self):
         import json
+
         return json.loads(self.body_text)
 
 
@@ -202,4 +203,3 @@ class TestBuildSuccessHandlingPlanCoverage:
             own_auth=auth,
         )
         assert plan.deferred_plan.persist_own_oauth2_token is True
-

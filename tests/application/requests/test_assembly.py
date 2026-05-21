@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+
 import pytest
 
 from equinox.application.requests._assembly import (
@@ -12,8 +13,8 @@ from equinox.application.requests._assembly import (
     inject_content_type,
 )
 
-
 # ── assemble_body ──────────────────────────────────────────────────────────────
+
 
 class TestAssembleBodyMultipart:
     def test_multipart_returns_none_body_with_filtered_rows(self) -> None:
@@ -86,6 +87,7 @@ class TestAssembleBodyPlainText:
 
 # ── _assemble_graphql_body ─────────────────────────────────────────────────────
 
+
 class TestAssembleGraphQLBody:
     def test_empty_variables_string_omitted(self) -> None:
         result = _assemble_graphql_body("{ ping }", "")
@@ -108,6 +110,7 @@ class TestAssembleGraphQLBody:
 
 
 # ── inject_content_type ────────────────────────────────────────────────────────
+
 
 class TestInjectContentType:
     def test_no_body_returns_headers_unchanged(self) -> None:
@@ -148,4 +151,3 @@ class TestInjectContentType:
         result = inject_content_type('{"a":1}', "raw (JSON)", original)
         assert "Content-Type" not in original
         assert result is not original
-

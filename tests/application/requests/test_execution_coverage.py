@@ -2,10 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 from unittest.mock import Mock, patch
-
-import pytest
 
 from equinox.application.requests.execution import (
     _resolve_send_auth,
@@ -37,6 +34,7 @@ def _mock_vars(base_url="api.example.com"):
 
 
 # ── _resolve_send_auth ─────────────────────────────────────────────────────────
+
 
 class TestResolveSendAuth:
     def test_own_auth_returned_directly(self) -> None:
@@ -112,27 +110,25 @@ class TestResolveSendAuth:
 
 # ── _run_pre_script ────────────────────────────────────────────────────────────
 
+
 class TestRunPreScript:
     def test_strict_policy_skips_script(self) -> None:
         vars_, result = _run_pre_script(
-            "env['x'] = 'y'", "GET", "https://example.com", {}, {}, None,
-            {"K": "V"}, {}, "strict"
+            "env['x'] = 'y'", "GET", "https://example.com", {}, {}, None, {"K": "V"}, {}, "strict"
         )
         assert vars_ == {"K": "V"}
         assert result is None
 
     def test_empty_script_returns_unchanged_vars(self) -> None:
         vars_, result = _run_pre_script(
-            "", "GET", "https://example.com", {}, {}, None,
-            {"K": "V"}, {}, "balanced"
+            "", "GET", "https://example.com", {}, {}, None, {"K": "V"}, {}, "balanced"
         )
         assert vars_ == {"K": "V"}
         assert result is None
 
     def test_whitespace_script_skipped(self) -> None:
         vars_, result = _run_pre_script(
-            "   \n\t  ", "GET", "https://example.com", {}, {}, None,
-            {"K": "V"}, {}, "balanced"
+            "   \n\t  ", "GET", "https://example.com", {}, {}, None, {"K": "V"}, {}, "balanced"
         )
         assert vars_ == {"K": "V"}
         assert result is None
@@ -140,8 +136,7 @@ class TestRunPreScript:
     def test_script_with_env_changes_updates_vars(self) -> None:
         script = "env['DYNAMIC'] = 'injected'"
         vars_, result = _run_pre_script(
-            script, "GET", "https://example.com", {}, {}, None,
-            {}, {}, "balanced"
+            script, "GET", "https://example.com", {}, {}, None, {}, {}, "balanced"
         )
         assert vars_.get("DYNAMIC") == "injected"
         assert result is not None
@@ -149,8 +144,7 @@ class TestRunPreScript:
     def test_script_without_env_changes_returns_original_vars(self) -> None:
         script = "assert True"
         vars_, result = _run_pre_script(
-            script, "GET", "https://example.com", {}, {}, None,
-            {"K": "V"}, {}, "balanced"
+            script, "GET", "https://example.com", {}, {}, None, {"K": "V"}, {}, "balanced"
         )
         # No env changes → original vars unchanged
         assert "K" in vars_
@@ -163,14 +157,21 @@ class TestRunPreScript:
         ):
             vars_, result = _run_pre_script(
                 "raise RuntimeError('boom')",
-                "GET", "https://example.com", {}, {}, None,
-                {"K": "V"}, {}, "balanced"
+                "GET",
+                "https://example.com",
+                {},
+                {},
+                None,
+                {"K": "V"},
+                {},
+                "balanced",
             )
         assert vars_ == {"K": "V"}
         assert result is None
 
 
 # ── prepare_send error paths ───────────────────────────────────────────────────
+
 
 class TestPrepareSendErrorPaths:
     def _patched_vars(self, monkeypatch, vars_=None):
@@ -290,4 +291,3 @@ class TestPrepareSendErrorPaths:
         # The path params should be expanded — request URL should contain 99
         if result.ready:
             assert "99" in result.package.request.url
-

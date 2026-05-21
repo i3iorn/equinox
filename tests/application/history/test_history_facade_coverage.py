@@ -5,13 +5,11 @@ from __future__ import annotations
 from collections.abc import Mapping
 from unittest.mock import Mock
 
-import pytest
-
 from equinox.application.history import HistoryFacade
 from equinox.core.request import Request
 
-
 # ── _coerce_to_dict ────────────────────────────────────────────────────────────
+
 
 class TestCoerceToDict:
     def test_plain_dict_returned_as_copy(self) -> None:
@@ -24,10 +22,13 @@ class TestCoerceToDict:
         class MyMapping(Mapping):
             def __init__(self):
                 self._data = {"k": "v"}
+
             def __getitem__(self, key):
                 return self._data[key]
+
             def __iter__(self):
                 return iter(self._data)
+
             def __len__(self):
                 return len(self._data)
 
@@ -38,10 +39,13 @@ class TestCoerceToDict:
         class BrokenMapping(Mapping):
             def __getitem__(self, key):
                 raise RuntimeError("broken")
+
             def __iter__(self):
                 raise RuntimeError("broken")
+
             def __len__(self):
                 return 0
+
             def items(self):
                 raise RuntimeError("items broken")
 
@@ -58,6 +62,7 @@ class TestCoerceToDict:
 
 
 # ── _coerce_body_to_bytes ──────────────────────────────────────────────────────
+
 
 class TestCoerceBodyToBytes:
     def test_bytes_input_returned_unchanged(self) -> None:
@@ -84,6 +89,7 @@ class TestCoerceBodyToBytes:
 
 # ── _parse_timestamp ───────────────────────────────────────────────────────────
 
+
 class TestParseTimestamp:
     def test_none_returns_none(self) -> None:
         assert HistoryFacade._parse_timestamp(None) is None
@@ -109,6 +115,7 @@ class TestParseTimestamp:
 
 
 # ── request_from_entry ─────────────────────────────────────────────────────────
+
 
 class TestRequestFromEntry:
     def test_bytes_body_decoded_to_str(self) -> None:
@@ -151,6 +158,7 @@ class TestRequestFromEntry:
 
 
 # ── response_from_entry ────────────────────────────────────────────────────────
+
 
 class TestResponseFromEntry:
     def test_missing_status_code_returns_none(self) -> None:
@@ -203,6 +211,7 @@ class TestResponseFromEntry:
 
 # ── Delegation wrappers ────────────────────────────────────────────────────────
 
+
 class TestHistoryFacadeDelegation:
     def test_get_history_delegates(self) -> None:
         manager = Mock()
@@ -216,4 +225,3 @@ class TestHistoryFacadeDelegation:
         facade = HistoryFacade(db=Mock(), history_manager=manager)
         facade.clear_history()
         manager.clear_history.assert_called_once_with(days=None)
-
