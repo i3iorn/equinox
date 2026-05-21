@@ -16,7 +16,7 @@ Display names and labels are derived from the classes themselves
 import logging
 from typing import Any, Callable, Optional, Tuple, Type, cast
 
-from equinox.auth._base import AuthStrategy, AuthError
+from equinox.auth._base import AuthError, AuthStrategy
 
 logger = logging.getLogger(__name__)
 

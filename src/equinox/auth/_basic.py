@@ -4,7 +4,7 @@ import base64
 import logging
 from typing import Any
 
-from equinox.auth._base import AuthStrategy, _validate_credential, AuthError
+from equinox.auth._base import AuthError, AuthStrategy, _validate_credential
 
 logger = logging.getLogger(__name__)
 

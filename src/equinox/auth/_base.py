@@ -27,6 +27,8 @@ from typing import Any, Callable
 
 from equinox.core.exceptions import AuthError, CredentialValidationError
 
+__all__ = ["AuthStrategy", "AuthError", "AUTH_TYPES"]
+
 logger = logging.getLogger(__name__)
 
 # Maximum length for any single credential value (tokens, passwords, keys).
