@@ -202,10 +202,6 @@ Starting in v0.4.3, Equinox tracks local usage patterns to intelligently rank me
 - **View Stats:** Settings → Usage Statistics
 - **Tracked:** Command palette usage, menu items, tab navigation, environment switching
 
-## Architecture Decisions
-
-Refer to `docs/adr/ADR-0001-security-boundaries-and-extension-safety.md` for architectural decision rationale.
-
 ## Plugin Trust Model
 
 > [!WARNING]
@@ -226,10 +222,6 @@ Before requesting review, confirm all items below:
 - [ ] **Keyboard shortcuts:** Don't conflict with input handling or platform shortcuts
 - [ ] **Performance:** No regression in critical paths (benchmark harness validates)
 - [ ] **UI usage tracking:** If adding new UI actions, integrate with `UIUsageTracker`
-
-## Architecture Decisions
-
-- `docs/adr/ADR-0001-security-boundaries-and-extension-safety.md`
 
 ## Examples
 
@@ -264,21 +256,6 @@ def reset_history_capture():
     yield
     set_capture_bodies(True)  # Reset after test
 ```
-
-### Worker Threads Crash When Parent Widget Deleted
-
-**Symptom:** Crashes when closing the intelligence panel while analysis is running
-
-**Solution:** Fixed in v0.4.2. Update to latest version. Defensive parent widget checks prevent orphaned worker access.
-
-### OAuth2 Token Request Fails with 401
-
-**Symptom:** "Unauthorized" error when requesting OAuth2 token
-
-**Solution (v0.4.2+):** Equinox now supports both standard client credentials (POST body) and HTTP Basic authentication. Verify:
-- Client ID and secret are correct
-- Token URL is reachable and returns 401 (not other errors)
-- Server supports one of: POST body `client_id`/`client_secret`, or HTTP Basic auth
 
 ### Keyboard Shortcuts Don't Work in Text Fields
 
