@@ -28,6 +28,9 @@ def _compile_lock(output_path: Path) -> subprocess.CompletedProcess[str]:
         str(PYPROJECT_PATH),
         "--extra",
         "dev",
+        # Keep --write and --check behavior aligned even when an existing
+        # requirements-lock.txt is present.
+        "--upgrade",
         "--output-file",
         str(output_path),
         "--quiet",
