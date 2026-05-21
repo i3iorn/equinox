@@ -111,10 +111,11 @@ git push origin feature/my-feature
 
 ## Testing Requirements
 
-- **Minimum coverage:** 85% (enforced by CI)
+- **Minimum coverage:** 87% (enforced by CI)
 - **Test location:** `tests/` mirrors `src/` structure
 - **Run locally:** `pytest --cov=equinox --cov-report=html`
 - **Security tests:** always test new validation/encryption code
+- **Fast local gate:** `python scripts/run_affected_tests.py` (changed modules only)
 
 ---
 
@@ -189,13 +190,16 @@ test: add regression tests for X
 GitHub Actions runs on every push:
 
 1. **Pre-commit hooks:** ruff format, type checking, security scan
-2. **Tests:** full suite with ≥ 85% coverage requirement
+2. **Tests:** full suite with ≥ 87% coverage requirement
 3. **Security:** bandit checks for vulnerabilities
 4. **Type checking:** mypy strict mode
+5. **Dependency lock check:** `scripts/manage_requirements_lock.py --check` (validate-only; no CI writes)
 
 **Simulate locally:**
 ```bash
 pre-commit run --all-files
+python scripts/run_affected_tests.py
+python scripts/manage_requirements_lock.py --check
 pytest --cov=equinox --cov-report=term
 mypy src tests
 bandit -r src/equinox --severity-level=medium

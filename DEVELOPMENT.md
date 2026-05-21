@@ -100,6 +100,9 @@ class MyFeatureMixin:
 # Fast check (no coverage, fail-fast)
 pytest --no-cov -x tests/
 
+# Fast pre-commit-aligned check (changed modules only)
+python scripts/run_affected_tests.py
+
 # Specific test file
 pytest --no-cov tests/core/test_validation.py
 
@@ -115,6 +118,8 @@ pytest -vv tests/
 # Showing print statements
 pytest -vv -s tests/core/test_my_feature.py
 ```
+
+Use `scripts/run_affected_tests.py` for fast local iteration. Before merge/release, still run the full suite (`pytest --cov=equinox`).
 
 ### 4. Type Checking & Linting
 
@@ -161,6 +166,7 @@ git commit -m "feat: my feature"
 - Type checking (mypy)
 - Security scan (bandit)
 - Custom checks (dependency consistency)
+- Affected-test execution with coverage threshold enforcement (`run-affected-tests`)
 
 ### 6. Committing Changes
 
@@ -306,9 +312,11 @@ pip list | grep equinox
 # Run full test suite
 pytest --cov=equinox
 
-# Update lock files (if managed)
-pip install pip-tools
-pip-compile pyproject.toml
+# Validate lockfile consistency (CI-safe)
+python scripts/manage_requirements_lock.py --check
+
+# Regenerate lockfile intentionally
+python scripts/manage_requirements_lock.py --write
 
 # Commit
 git commit -m "chore: update dependencies"

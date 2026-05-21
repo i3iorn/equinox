@@ -3,6 +3,8 @@
 Equinox is a secure, local-first API testing tool with GUI and CLI workflows. Build, test, and monitor REST/HTTP APIs with zero data leaving your machine.
 
 > **Getting started?** See [WORKFLOW.md](WORKFLOW.md) for a complete documentation map and quick navigation guide.
+>
+> **Latest release notes:** [changelog/CHANGELOG_v0.4.8.md](changelog/CHANGELOG_v0.4.8.md)
 
 ## Highlights
 
@@ -53,7 +55,7 @@ src/equinox/
     history/          # Request/response history with search and indexing
     ui_usage_tracker.py  # UI interaction analytics (local only)
     database.py       # SQLite ORM with migrations
-    migrations.py     # Versioned schema (currently v22)
+    migrations.py     # Versioned schema (currently v24)
   auth/               # Auth strategies (OAuth2, Bearer, Basic, AWS SigV4)
   importers/          # Multi-format importers (OpenAPI, Postman, HAR, Insomnia)
   exporters/          # Export to Postman, OpenAPI, HAR, cURL
@@ -138,6 +140,9 @@ pip install -e ".[dev]"
 # Run full test suite with coverage
 pytest --cov=equinox --cov-report=html
 
+# Run only tests affected by changed/staged modules
+python scripts/run_affected_tests.py
+
 # Run specific test categories
 pytest tests/core/                      # Core utilities
 pytest tests/storage/                   # Database and migrations
@@ -155,7 +160,13 @@ mypy src tests
 
 # Run security scan
 bandit -r src/equinox
+
+# Lockfile maintenance
+python scripts/manage_requirements_lock.py --check
+python scripts/manage_requirements_lock.py --write
 ```
+
+`--check` validates lockfile consistency (no writes); `--write` regenerates lock artifacts when updates are intentional.
 
 ## Performance & Observability
 
