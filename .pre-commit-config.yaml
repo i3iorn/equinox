@@ -25,6 +25,14 @@ repos:
         stages: [pre-commit]
         files: ^(\.github/workflows/.*\.yml|pyproject\.toml)$
 
+      - id: run-affected-tests
+        name: "Check: run affected tests with coverage (may take several minutes)"
+        entry: python scripts/run_affected_tests.py
+        language: system
+        pass_filenames: true
+        stages: [pre-commit]
+        files: ^(src/equinox/.*\.py|tests/.*\.py|pyproject\.toml)$
+
   # ── General file hygiene ────────────────────────────────────────────────────
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v4.6.0
@@ -76,7 +84,6 @@ repos:
             --disable-error-code=unreachable,
             --disable-error-code=arg-type,
             --disable-error-code=union-attr,
-            --disable-error-code=assignment,
             --disable-error-code=misc,
             --disable-error-code=no-untyped-def,
             --disable-error-code=attr-defined,
