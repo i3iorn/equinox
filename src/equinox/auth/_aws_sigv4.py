@@ -18,7 +18,7 @@ from typing import Any, Callable
 from urllib.parse import quote
 
 from equinox.auth._base import AuthError, AuthStrategy, _interpolate_field, _validate_credential
-from equinox.core import urls
+from equinox.core.urls import parse_query_pairs, url_metadata
 
 logger = logging.getLogger(__name__)
 
@@ -86,7 +86,7 @@ class AWSSigV4Auth(AuthStrategy):
         body = getattr(request, "body", None) or ""
         body_bytes = body.encode("utf-8") if isinstance(body, str) else body
 
-        parsed = urls.url_metadata(url)
+        parsed = url_metadata(url)
         canonical_uri = self._canonical_uri(str(parsed.get("path") or ""))
         canonical_qs = self._canonical_query_string(str(parsed.get("query") or ""))
 
@@ -219,7 +219,7 @@ class AWSSigV4Auth(AuthStrategy):
     def _canonical_query_string(query: str) -> str:
         if not query:
             return ""
-        pairs = urls.parse_query_pairs(query, keep_blank_values=True)
+        pairs = parse_query_pairs(query, keep_blank_values=True)
         encoded = sorted((quote(k, safe=""), quote(v, safe="")) for k, v in pairs)
         return "&".join(f"{k}={v}" for k, v in encoded)
 

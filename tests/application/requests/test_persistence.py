@@ -9,6 +9,7 @@ from equinox.core.request import Request
 
 def test_request_persistence_facade_delegates_request_operations() -> None:
     manager = Mock()
+    manager.save_request.return_value = 33
     facade = RequestPersistenceFacade(db=Mock(), collection_manager=manager)
     request = Request(method="GET", url="https://example.com")
 

@@ -69,6 +69,21 @@ class AuthError(EquinoxError):
     pass
 
 
+
+class CredentialValidationError(AuthError):
+    """Raised when credential validation fails.
+
+    Attributes:
+        field_name: Name of the field that failed validation.
+        reason: Specific reason for the validation failure.
+    """
+
+    def __init__(self, field_name: str, reason: str):
+        self.field_name = field_name
+        self.reason = reason
+        super().__init__(f"{field_name}: {reason}")
+
+
 class StorageError(EquinoxError):
     """Storage/database error."""
 

@@ -19,7 +19,6 @@ from .redactor import (  # noqa: F401  # noqa: F401
     redact_url,
     sanitize_details,
 )
-from .secure_storage import SecureStorage  # noqa: F401
 
 __all__ = [
     "redact_headers",
@@ -32,5 +31,4 @@ __all__ = [
     "get_or_create_raw_key",
     "make_fernet",
     "get_or_create_fernet",
-    "SecureStorage",
 ]

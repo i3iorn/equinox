@@ -5,6 +5,7 @@ These functions have no PyQt6 dependency so they run headless.
 
 import pytest
 
+from equinox.application.requests._assembly import apply_default_headers
 from equinox.core.request import Request
 
 # ── builder helpers ───────────────────────────────────────────────────────────
@@ -13,7 +14,6 @@ from equinox.gui.request_panel.builder import (
     detect_body_type,
     inject_content_type,
 )
-from equinox.gui.request_panel.mixins._default_headers import apply_default_headers
 
 
 class TestDetectBodyType:

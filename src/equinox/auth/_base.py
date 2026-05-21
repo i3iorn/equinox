@@ -25,7 +25,7 @@ import logging
 from abc import ABC, abstractmethod
 from typing import Any, Callable
 
-from equinox.core.exceptions import AuthError
+from equinox.core.exceptions import AuthError, CredentialValidationError
 
 logger = logging.getLogger(__name__)
 
@@ -40,20 +40,6 @@ AUTH_TYPES: dict[str, str] = {
     "bearer": "Bearer Token",
     "aws_sigv4": "AWS SigV4",
 }
-
-
-class CredentialValidationError(AuthError):
-    """Raised when credential validation fails.
-
-    Attributes:
-        field_name: Name of the field that failed validation.
-        reason: Specific reason for the validation failure.
-    """
-
-    def __init__(self, field_name: str, reason: str):
-        self.field_name = field_name
-        self.reason = reason
-        super().__init__(f"{field_name}: {reason}")
 
 
 def _validate_credential(value: str, field_name: str) -> str:

@@ -6,8 +6,11 @@ the dispatcher can attach them via httpx's redirect-safe auth flow.
 """
 
 import logging
+from typing import TYPE_CHECKING
 
-from equinox.auth import AuthStrategy
+if TYPE_CHECKING:
+    from equinox.auth import AuthStrategy
+
 from equinox.core.exceptions import RequestError
 from equinox.core.request import Request
 from equinox.security import redact_body, redact_url
@@ -43,7 +46,7 @@ class AuthApplier:
         self,
         request: Request,
         headers: dict[str, str],
-        explicit_auth: AuthStrategy | None,
+        explicit_auth: "AuthStrategy | None",
         proxy: str | None,
     ) -> dict[str, str]:
         """Apply *explicit_auth* (or ``request.auth``) to *headers*.
@@ -94,7 +97,7 @@ class AuthApplier:
 
     def _invoke_strategy(
         self,
-        strategy: AuthStrategy,
+        strategy: "AuthStrategy",
         request: Request,
         headers: dict[str, str],
         proxy: str | None,
@@ -140,7 +143,7 @@ class AuthApplier:
     @staticmethod
     def _map_auth_error(
         exc: Exception,
-        strategy: AuthStrategy,
+        strategy: "AuthStrategy",
         proxy: str | None,
     ) -> RequestError:
         """Build a descriptive :class:`RequestError` from a raw auth exception.

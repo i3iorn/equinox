@@ -9,9 +9,11 @@ from __future__ import annotations
 import logging
 import threading
 import time
-from typing import Any, cast
+from typing import TYPE_CHECKING, Any, cast
 
-from equinox.auth import AuthStrategy
+if TYPE_CHECKING:
+    from equinox.auth import AuthStrategy
+
 from equinox.core import urls
 from equinox.core.audit import get_audit_logger
 from equinox.core.client.auth_applier import AuthApplier

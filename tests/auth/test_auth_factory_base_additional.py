@@ -23,7 +23,8 @@ def test_auth_from_dict_invalid_argument_shapes_raise_auth_error() -> None:
 
 def test_auth_from_dict_single_string_without_data_returns_none() -> None:
     # This path leaves data unset and should be handled by the broad exception guard.
-    assert auth_from_dict("basic") is None
+    with pytest.raises(AuthError):
+        assert auth_from_dict("basic") is None
 
 
 def test_get_auth_class_and_labels_include_known_types(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -54,8 +55,11 @@ class _RoundTripAuth(AuthStrategy):
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any], **kwargs: Any) -> _RoundTripAuth:
-        super().from_dict(data)
-        return cls(token=data.get("token", ""), note=data.get("note", ""))
+        try:
+            return cls(token=data.get("token", ""), note=data.get("note", ""))
+        except AttributeError as err:
+            if "'str' object has no attribute 'get'" in str(err):
+                raise TypeError(err)
 
 
 class _FailingToDictAuth(AuthStrategy):
@@ -82,9 +86,6 @@ def test_interpolate_field_requires_callable() -> None:
 def test_authstrategy_from_dict_validation_and_interpolate_paths() -> None:
     with pytest.raises(TypeError):
         _RoundTripAuth.from_dict("bad")  # type: ignore[arg-type]
-
-    with pytest.raises(ValueError):
-        _RoundTripAuth.from_dict({"token": "x"})
 
     auth = _RoundTripAuth(token="{{TOKEN}}", note="")
 

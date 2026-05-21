@@ -16,8 +16,7 @@ Display names and labels are derived from the classes themselves
 import logging
 from typing import Any, Callable, Optional, Tuple, Type, cast
 
-from equinox.auth._base import AuthStrategy
-from equinox.core.exceptions import AuthError
+from equinox.auth._base import AuthStrategy, AuthError
 
 logger = logging.getLogger(__name__)
 
@@ -101,7 +100,7 @@ def auth_from_dict(*args: object, **kwargs: Any) -> Optional[AuthStrategy]:
         if isinstance(arg, str):
             auth_type = arg
             candidate = kwargs.get("data")
-            if not isinstance(candidate, dict):
+            if kwargs is not None and not isinstance(candidate, dict):
                 raise AuthError(
                     "Invalid arguments to auth_from_dict: missing 'data' when called as (auth_type)"
                 )
