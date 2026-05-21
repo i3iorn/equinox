@@ -107,7 +107,7 @@ precision = 1
 skip_covered = true
 skip_empty = true
 show_missing = true
-fail_under = 80
+fail_under = 87
 
 [tool.setuptools.package-data]
 equinox = ["py.typed"]
