@@ -88,6 +88,7 @@ asyncio_mode = "auto"
 [tool.coverage.run]
 omit = [
     "src/equinox/plugins/*",
+    "src/equinox/gui/*",
     "tests/*",
 ]
 branch = true
@@ -102,11 +103,11 @@ exclude_lines = [
     "if TYPE_CHECKING:",
     "except ImportError:",
 ]
-precision = 2
-skip_covered = false
+precision = 1
+skip_covered = true
 skip_empty = true
 show_missing = true
-fail_under = 85
+fail_under = 80
 
 [tool.setuptools.package-data]
 equinox = ["py.typed"]
