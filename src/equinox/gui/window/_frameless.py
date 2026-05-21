@@ -33,7 +33,7 @@ class _FramelessMixin:
     _win_max_btn: Any
     _drag_menu_active: bool
     _resize_active: bool
-    _drag_handles: list[QObject]
+    _drag_handles: set[QObject]
     _drag_menu_offset: QPoint
 
     def _main_window(self) -> QMainWindow:

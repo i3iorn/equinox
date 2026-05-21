@@ -40,4 +40,3 @@ Equinox v0.4.7 is a release metadata update that prepares the project for the ne
 - Bumped project/runtime version to `0.4.7`.
 - Updated workflow metadata links to the new release.
 - Added a dedicated v0.4.7 changelog document.
-

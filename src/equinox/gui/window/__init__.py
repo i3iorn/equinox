@@ -27,6 +27,7 @@ from equinox.core.request import Request, Response
 from equinox.storage import Database
 from equinox.storage.cookies import CookieJarManager
 
+from ..intelligence_worker import IntelligenceWorker
 from ..logging_utils import log_gui_event
 from ..ui_common import get_gui_settings
 from ..ui_usage_tracker import UIUsageTracker
@@ -91,7 +92,7 @@ class MainWindow(
         self._drag_handles: set = set()
         self._app_event_filter_installed = False
         self._settings = get_gui_settings()
-        self._intelligence_worker = None
+        self._intelligence_worker: IntelligenceWorker | None = None
         self._background_workers: set = set()
         self._pending_panel_refreshes: set = set()
         self.setWindowTitle("Equinox - API Testing")

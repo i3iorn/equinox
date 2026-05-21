@@ -80,6 +80,8 @@ class _RequestSendMixin:
     - All task deferrals use QTimer to unblock the UI
     """
 
+    _worker: RequestWorker | None
+
     # ── Preflight validation ──────────────────────────────────────────────────
 
     def _run_preflight_checks(self) -> list[str]:

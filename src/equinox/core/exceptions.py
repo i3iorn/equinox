@@ -69,7 +69,6 @@ class AuthError(EquinoxError):
     pass
 
 
-
 class CredentialValidationError(AuthError):
     """Raised when credential validation fails.
 

@@ -8,7 +8,7 @@ from collections.abc import Generator
 from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Callable
+from typing import Any, Callable
 
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QGuiApplication
@@ -431,19 +431,19 @@ class IntelligencePanel(QWidget):
                 for line in template.splitlines():
                     if ":" not in line:
                         continue
-                    key, value = (p.strip() for p in line.split(":", 1))
-                    rp.headers_table.add_row(key, value, enabled=True)
+                    key, header_value = (p.strip() for p in line.split(":", 1))
+                    rp.headers_table.add_row(key, header_value, enabled=True)
                 return
 
             if finding.analyzer_id == "recommender":
                 ftype = str((finding.details or {}).get("type") or "")
                 key = str((finding.details or {}).get("key") or "")
-                value = (finding.details or {}).get("suggested_value")
+                suggested_value: Any | None = (finding.details or {}).get("suggested_value")
                 if ftype == "header" and key:
-                    rp.headers_table.add_row(key, str(value or ""), enabled=True)
+                    rp.headers_table.add_row(key, str(suggested_value or ""), enabled=True)
                     return
                 if ftype == "query" and key:
-                    rp.params_table.add_row(key, str(value or ""), enabled=True)
+                    rp.params_table.add_row(key, str(suggested_value or ""), enabled=True)
                     return
 
             self._copy_finding_template(finding)

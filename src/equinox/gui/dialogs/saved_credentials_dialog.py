@@ -40,6 +40,7 @@ from equinox.gui.dialogs._oauth_form_utils import (
 )
 from equinox.gui.theme import Colors, get_mono_font
 from equinox.gui.widgets.secret_row import make_secret_row as _secret_row
+from equinox.gui.workers import OAuthTokenTester
 from equinox.storage import Database
 from equinox.storage.oauth_clients import GRANT_TYPES
 from equinox.storage.saved_credentials import SavedCredentialsManager
@@ -79,7 +80,7 @@ class SavedCredentialsDialog(OAuthConnectionTestMixin, ListFormDialogMixin, QDia
         self.mgr = SavedCredentialsManager(db)
         self._current_id: int | None = None
         self._dirty = False
-        self._tester: object | None = None  # kept alive until worker completion
+        self._tester: OAuthTokenTester | None = None  # kept alive until worker completion
         self._last_test_response: dict | None = None
         self._test_btn_idle_text = "🔌  Test Connection"
         self._test_btn_busy_text = "Testing…"

@@ -6,6 +6,8 @@ Logging strategy:
 - Errors: full exception context with request details
 """
 
+from __future__ import annotations
+
 import json
 import logging
 import time
@@ -573,7 +575,7 @@ class RequestPanel(
         self._url_fix_button.setToolTip("Apply suggested URL fix")
         self._url_fix_button.clicked.connect(self._apply_url_fix)
         self._url_fix_button.setVisible(False)
-        self._url_fix_suggestion = None
+        self._url_fix_suggestion: str | None = None
         self.send_button = QPushButton("Send")
         self.send_button.setObjectName("sendBtn")
         self.send_button.setProperty("usage_track_id", "request.send")

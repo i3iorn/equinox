@@ -320,7 +320,7 @@ class AuthDialog(QDialog):
         self._last_fetched_auth: Optional[OAuth2Auth] = (
             None  # stores OAuth2Auth after successful fetch
         )
-        self._last_token_response = None
+        self._last_token_response: dict[str, Any] | None = None
         self._fetch_requested_token_auth = "body"
         fetch_row = QHBoxLayout()
         fetch_row.addWidget(self.oauth2_fetch_btn)
@@ -546,7 +546,7 @@ class AuthDialog(QDialog):
             for i in range(1, self.cred_picker.count()):
                 cid = self.cred_picker.itemData(i)
                 if cid:
-                    c = mgr.get(cid)
+                    c = mgr.get(cid) or {}
                     if c and c.get("is_default"):
                         self.cred_picker.setCurrentIndex(i)
                         break
