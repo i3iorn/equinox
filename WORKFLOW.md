@@ -276,8 +276,8 @@ pytest -k "my_test" # Specific test
 
 ## Version & Release Info
 
-- **Current Version:** v0.4.7 (May 20, 2026)
-- **Latest Changelog:** [changelog/CHANGELOG_v0.4.7.md](changelog/CHANGELOG_v0.4.7.md)
+- **Current Version:** v0.4.8 (May 21, 2026)
+- **Latest Changelog:** [changelog/CHANGELOG_v0.4.8.md](changelog/CHANGELOG_v0.4.8.md)
 - **Release History:** [changelog/](changelog/)
 
 ---

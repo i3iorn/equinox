@@ -2,7 +2,7 @@
 Equinox - A local-first API testing tool
 """
 
-__version__ = "0.4.7"
+__version__ = "0.4.8"
 __author__ = "Björn Schrammel"
 
 from equinox.auth import APIKeyAuth, AuthStrategy, BasicAuth, BearerAuth
