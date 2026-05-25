@@ -24,7 +24,7 @@ Be respectful and inclusive. Report issues via GitHub security advisories.
 
 ### Prerequisites
 
-- Python 3.9+
+- Python 3.10+
 - Git
 - Virtual environment tool (venv, poetry, or conda)
 
@@ -80,8 +80,9 @@ pre-commit run --all-files
 # Full test suite with coverage
 pytest --cov=equinox --cov-report=html
 
-# Optional: Security scan
+# Security scans (blocking)
 bandit -r src/equinox
+python scripts/check_dependency_vulnerabilities.py
 ```
 
 Or run individual checks:
@@ -92,6 +93,7 @@ ruff format --check .     # Format check
 mypy src tests            # Type checking
 pytest                    # Tests (fast run)
 pytest -v --cov=equinox  # Tests with coverage (slower)
+python scripts/check_dependency_vulnerabilities.py  # Dependency CVE gate
 ```
 
 ### 4. Commit and Push
@@ -167,7 +169,7 @@ All changes involving user input or data handling must:
 
 ### Test Coverage
 
-- Minimum **85% coverage** (enforced by CI)
+- Minimum **87% coverage** (enforced by CI)
 - New features must have corresponding tests
 - Security/validation changes must have focused tests
 
@@ -257,6 +259,8 @@ When opening a PR, include:
    - [ ] Pre-commit passes (`pre-commit run --all-files`)
    - [ ] Type hints are correct (`mypy src tests`)
    - [ ] Security implications considered (secrets not logged, inputs validated)
+   - [ ] Dependency vulnerabilities pass (`python scripts/check_dependency_vulnerabilities.py`)
+   - [ ] Lockfile policy respected (`requirements-lock.txt` regenerated intentionally and committed when dependencies change)
    - [ ] Changelog/docs updated (if user-facing)
    - [ ] No breaking changes (or explicitly noted)
 
@@ -387,7 +391,7 @@ mypy src/equinox/core/my_module.py
 
 ```bash
 # Ensure you're using the same Python version
-python --version  # Should be 3.9+
+python --version  # Should be 3.10+
 
 # Run tests exactly as CI does
 pytest --cov=equinox --cov-report=term -v
