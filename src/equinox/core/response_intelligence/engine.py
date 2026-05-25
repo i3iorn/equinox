@@ -145,6 +145,15 @@ class AnalysisEngine:
                 continue
             try:
                 results = analyzer.analyze(ctx)
+                if not isinstance(results, list):
+                    raise TypeError(
+                        f"Analyzer returned {type(results).__name__}; expected list[Finding]"
+                    )
+                for item in results:
+                    if not isinstance(item, Finding):
+                        raise TypeError(
+                            f"Analyzer yielded {type(item).__name__}; expected Finding"
+                        )
                 findings.extend(results)
             except Exception as exc:
                 logger.warning(
@@ -153,7 +162,7 @@ class AnalysisEngine:
                 findings.append(
                     self._failure_finding(
                         analyzer.analyzer_id,
-                        f"Analyzer raised {type(exc).__name__}",
+                        f"Analyzer raised {type(exc).__name__}: {exc}",
                     )
                 )
 

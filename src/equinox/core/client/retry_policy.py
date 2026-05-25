@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 import threading
 import time
-from typing import Any, AbstractSet, Callable
+from typing import AbstractSet, Any, Callable
 
 from equinox.core.exceptions import RequestTimeoutError
 from equinox.core.request import Response

@@ -7,8 +7,7 @@ It can optionally log a security violation via an AuditLogger when the limit is 
 import logging
 import threading
 import time
-from typing import Any
-from typing import Protocol
+from typing import Any, Protocol
 
 from equinox.core.exceptions import RateLimitError
 

@@ -14,6 +14,8 @@ import logging
 import os
 from typing import Any
 
+from equinox.core.config.flags import is_os_keystore_enabled
+
 keyring: Any | None
 try:
     import keyring as _keyring  # type: ignore[import-not-found]
@@ -21,8 +23,6 @@ try:
     keyring = _keyring
 except Exception:  # pragma: no cover - missing optional dependency
     keyring = None
-
-from equinox.core.config.flags import is_os_keystore_enabled
 
 logger = logging.getLogger(__name__)
 

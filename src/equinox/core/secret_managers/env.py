@@ -93,9 +93,7 @@ class EnvironmentVariableManager(SecretManager):
         try:
             parsed = json.loads(value)
             if not isinstance(parsed, dict):
-                raise SecretManagerError(
-                    f"Secret '{secret_name}' must decode to a JSON object"
-                )
+                raise SecretManagerError(f"Secret '{secret_name}' must decode to a JSON object")
             return parsed
         except json.JSONDecodeError as exc:
             raise SecretManagerError(f"Secret '{secret_name}' is not valid JSON: {exc}") from exc

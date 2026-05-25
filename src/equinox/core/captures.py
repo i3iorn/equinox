@@ -264,7 +264,16 @@ class CaptureEngine:
         """
         captures: list[Capture] = []
         for d in raw:
-            variable = d.get("variable", "")
+            try:
+                variable = d.get("variable", "")
+            except AttributeError as exc:
+                logger.warning(
+                    "Invalid capture dict (expected dict with string keys): %s; skipping: %s",
+                    d,
+                    exc,
+                )
+                variable = ""
+
             if not variable:
                 continue
             captures.append(
