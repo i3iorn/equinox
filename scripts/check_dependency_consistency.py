@@ -120,7 +120,9 @@ def main() -> int:
     errors.extend(check_requirements_txt(requirements))
     errors.extend(check_requirements_lock(requirements_lock))
     if not is_git_tracked(root, "requirements-lock.txt"):
-        errors.append("requirements-lock.txt must be git-tracked (committed) for reproducible installs.")
+        errors.append(
+            "requirements-lock.txt must be git-tracked (committed) for reproducible installs."
+        )
 
     if errors:
         print("Dependency manifest consistency check FAILED:")

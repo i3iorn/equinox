@@ -69,7 +69,9 @@ def run_scan() -> int:
 
     payload_text = _extract_json_payload(result.stdout) or _extract_json_payload(result.stderr)
     if not payload_text:
-        print("Dependency vulnerability scan FAILED: pip-audit did not return parseable JSON output.")
+        print(
+            "Dependency vulnerability scan FAILED: pip-audit did not return parseable JSON output."
+        )
         if result.stdout.strip():
             print(result.stdout.strip())
         if result.stderr.strip():
@@ -103,7 +105,9 @@ def run_scan() -> int:
             print(result.stderr.strip())
         return 1
 
-    print("Dependency vulnerability scan PASSED: no known vulnerabilities in requirements-lock.txt.")
+    print(
+        "Dependency vulnerability scan PASSED: no known vulnerabilities in requirements-lock.txt."
+    )
     return 0
 
 
@@ -113,4 +117,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     sys.exit(main())
-
