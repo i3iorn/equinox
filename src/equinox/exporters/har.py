@@ -35,74 +35,136 @@ class HARExporter:
         response: Response,
         started_datetime: datetime | None = None,
     ) -> dict[str, Any]:
-        """Build a single HAR entry from *request* and *response*.
-
-        Sensitive header values are redacted before being embedded.
+        """Return a HAR entry representing a request/response pair.
 
         Args:
-            request:          The outgoing HTTP request.
-            response:         The received HTTP response.
-            started_datetime: When the request was sent (defaults to now).
+            request: Outgoing HTTP request.
+            response: Incoming HTTP response.
+            started_datetime: Timestamp when request was sent.
 
         Returns:
-            A HAR entry dict conforming to the HTTP Archive 1.2 spec.
+            HAR entry dictionary.
         """
-        safe_req_headers = redact_headers(request.headers or {})
-        safe_resp_headers = redact_headers(dict(response.headers) if response.headers else {})
-        resp_body = coerce_body_to_str(response.body) if response.body else ""
-        req_content_type = (request.headers or {}).get(
-            "Content-Type", "application/x-www-form-urlencoded"
-        )
-        elapsed_ms = int(response.elapsed * 1000) if response.elapsed else 0
+        HARExporter._validate_request(request)
+        HARExporter._validate_response(response)
+
+        safe_req_headers = HARExporter._safe_headers(request.headers)
+        safe_resp_headers = HARExporter._safe_headers(response.headers)
+
+        resp_body = HARExporter._safe_body(response.body)
+        req_content_type = HARExporter._request_content_type(request.headers)
+        elapsed_ms = HARExporter._elapsed_ms(response.elapsed)
 
         return {
             "startedDateTime": to_iso_z(started_datetime),
             "time": elapsed_ms,
-            "request": {
-                "method": request.method,
-                "url": request.url,
-                "httpVersion": "HTTP/1.1",
-                "headers": [{"name": k, "value": v} for k, v in safe_req_headers.items()],
-                "queryString": [{"name": k, "value": v} for k, v in (request.params or {}).items()],
-                "postData": (
-                    {"mimeType": req_content_type, "text": request.body or ""}
-                    if request.body
-                    else None
-                ),
-                "cookies": [],
-                "headersSize": sum(len(f"{k}: {v}\r\n") for k, v in safe_req_headers.items()),
-                "bodySize": len(request.body) if request.body else 0,
-            },
-            "response": {
-                "status": response.status_code,
-                "statusText": response.reason or "",
-                "httpVersion": "HTTP/1.1",
-                "headers": [{"name": k, "value": v} for k, v in safe_resp_headers.items()],
-                "cookies": [],
-                "content": {
-                    "size": len(response.body) if response.body else 0,
-                    "mimeType": (response.headers or {}).get(
-                        "Content-Type", "application/octet-stream"
-                    ),
-                    "text": resp_body,
-                },
-                "redirectURL": (
-                    (response.headers or {}).get("Location", "") if response.headers else ""
-                ),
-                "headersSize": sum(len(f"{k}: {v}\r\n") for k, v in safe_resp_headers.items()),
-                "bodySize": len(response.body) if response.body else 0,
-            },
+            "request": HARExporter._build_request_block(
+                request=request,
+                safe_headers=safe_req_headers,
+                req_content_type=req_content_type,
+            ),
+            "response": HARExporter._build_response_block(
+                response=response,
+                safe_headers=safe_resp_headers,
+                resp_body=resp_body,
+            ),
             "cache": {},
-            "timings": {
-                "blocked": -1,
-                "dns": -1,
-                "connect": -1,
-                "send": -1,
-                "wait": elapsed_ms,
-                "receive": -1,
-                "ssl": -1,
-            },
+            "timings": HARExporter._build_timings_block(elapsed_ms),
         }
+
+    @staticmethod
+    def _validate_request(request: Request) -> None:
+        if not isinstance(request, Request):
+            raise TypeError("request must be a Request instance")
+        if not isinstance(request.method, str) or not request.method:
+            raise ValueError("request.method must be a non-empty string")
+        if not isinstance(request.url, str) or not request.url:
+            raise ValueError("request.url must be a non-empty string")
+
+    @staticmethod
+    def _validate_response(response: Response) -> None:
+        if not isinstance(response, Response):
+            raise TypeError("response must be a Response instance")
+        if not isinstance(response.status_code, int):
+            raise ValueError("response.status_code must be an integer")
+
+    @staticmethod
+    def _safe_headers(headers: dict[str, str] | None) -> dict[str, str]:
+        return redact_headers(headers or {})
+
+    @staticmethod
+    def _safe_body(body: Any) -> str:
+        return coerce_body_to_str(body) if body else ""
+
+    @staticmethod
+    def _request_content_type(headers: dict[str, str] | None) -> str:
+        if not isinstance(headers, dict):
+            return "application/x-www-form-urlencoded"
+        return headers.get("Content-Type", "application/x-www-form-urlencoded")
+
+    @staticmethod
+    def _elapsed_ms(elapsed: float | None) -> int:
+        return int(elapsed * 1000) if isinstance(elapsed, (int, float)) else 0
+
+    @staticmethod
+    def _build_request_block(
+        request: Request,
+        safe_headers: dict[str, str],
+        req_content_type: str,
+    ) -> dict[str, Any]:
+        return {
+            "method": request.method,
+            "url": request.url,
+            "httpVersion": "HTTP/1.1",
+            "headers": [{"name": k, "value": v} for k, v in safe_headers.items()],
+            "queryString": [{"name": k, "value": v} for k, v in (request.params or {}).items()],
+            "postData": (
+                {"mimeType": req_content_type, "text": request.body or ""} if request.body else None
+            ),
+            "cookies": [],
+            "headersSize": HARExporter._headers_size(safe_headers),
+            "bodySize": len(request.body) if request.body else 0,
+        }
+
+    @staticmethod
+    def _build_response_block(
+        response: Response,
+        safe_headers: dict[str, str],
+        resp_body: str,
+    ) -> dict[str, Any]:
+        return {
+            "status": response.status_code,
+            "statusText": response.reason or "",
+            "httpVersion": "HTTP/1.1",
+            "headers": [{"name": k, "value": v} for k, v in safe_headers.items()],
+            "cookies": [],
+            "content": {
+                "size": len(response.body) if response.body else 0,
+                "mimeType": (response.headers or {}).get(
+                    "Content-Type", "application/octet-stream"
+                ),
+                "text": resp_body,
+            },
+            "redirectURL": (response.headers or {}).get("Location", ""),
+            "headersSize": HARExporter._headers_size(safe_headers),
+            "bodySize": len(response.body) if response.body else 0,
+        }
+
+    @staticmethod
+    def _build_timings_block(wait_ms: int) -> dict[str, int]:
+        return {
+            "blocked": -1,
+            "dns": -1,
+            "connect": -1,
+            "send": -1,
+            "wait": wait_ms,
+            "receive": -1,
+            "ssl": -1,
+        }
+
+    @staticmethod
+    def _headers_size(headers: dict[str, str]) -> int:
+        return sum(len(f"{k}: {v}\r\n") for k, v in headers.items())
 
     @staticmethod
     def create_har_archive(
