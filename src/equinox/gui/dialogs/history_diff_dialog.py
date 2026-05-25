@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import difflib
+from typing import Any
 
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QColor, QTextCharFormat
@@ -24,8 +25,8 @@ class HistoryDiffDialog(QDialog):
 
     def __init__(
         self,
-        entry_a: dict,
-        entry_b: dict,
+        entry_a: dict[str, Any],
+        entry_b: dict[str, Any],
         parent: QWidget | None = None,
     ) -> None:
         super().__init__(parent)
@@ -71,7 +72,7 @@ class HistoryDiffDialog(QDialog):
     # ── Formatters ────────────────────────────────────────────────────────────
 
     @staticmethod
-    def _format_request(entry: dict) -> str:
+    def _format_request(entry: dict[str, Any]) -> str:
         lines = [
             f"{entry.get('method', '?')} {entry.get('url', '?')}",
             f"Timestamp : {entry.get('executed_at', '?')}",
@@ -84,7 +85,7 @@ class HistoryDiffDialog(QDialog):
         return "\n".join(lines)
 
     @staticmethod
-    def _format_response(entry: dict) -> str:
+    def _format_response(entry: dict[str, Any]) -> str:
         lines = [
             f"Status  : {entry.get('status_code', '?')} {entry.get('reason', '')}",
             f"Elapsed : {int((entry.get('elapsed') or 0) * 1000)} ms",

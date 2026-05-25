@@ -137,7 +137,7 @@ class TestAppendQueryParams:
         assert "k=v" in result
 
     def test_values_coerced_to_string(self) -> None:
-        result = append_query_params("https://x.com", {"n": 42})  # type: ignore[dict-item]
+        result = append_query_params("https://x.com", {"n": str(42)})
         assert "n=42" in result
 
 

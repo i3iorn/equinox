@@ -1,7 +1,9 @@
+from pathlib import Path
+
 from equinox.storage.database import Database
 
 
-def test_named_placeholder_binding(tmp_path):
+def test_named_placeholder_binding(tmp_path: Path) -> None:
     db_path = tmp_path / "equinox_np.db"
     with Database(str(db_path)) as db:
         db.execute("CREATE TABLE test_np (id INTEGER PRIMARY KEY AUTOINCREMENT, a INTEGER)")
@@ -12,7 +14,7 @@ def test_named_placeholder_binding(tmp_path):
         assert row.get("a") == 42
 
 
-def test_named_placeholder_ignores_colons_inside_string_literals(tmp_path):
+def test_named_placeholder_ignores_colons_inside_string_literals(tmp_path: Path) -> None:
     db_path = tmp_path / "equinox_np_literals.db"
     with Database(str(db_path)) as db:
         row = db.fetchone(

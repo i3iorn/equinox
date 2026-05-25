@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from typing import Generator
+from typing import Any, Generator
 
 from PyQt6.QtCore import QModelIndex, QStringListModel, Qt, pyqtSignal
 from PyQt6.QtWidgets import (
@@ -237,7 +237,7 @@ class CheckableKeyValueTable(QTableWidget):
                 data[key] = value
         return data
 
-    def get_all_rows(self) -> list[dict]:
+    def get_all_rows(self) -> list[dict[str, Any]]:
         """Return all non-empty-key rows with their enabled flag."""
         return [
             {"key": key, "value": value, "enabled": enabled}
@@ -248,7 +248,7 @@ class CheckableKeyValueTable(QTableWidget):
         """Backward-compat alias for get_enabled_data."""
         return self.get_enabled_data()
 
-    def set_data(self, data: dict[str, str] | list[dict]) -> None:
+    def set_data(self, data: dict[str, str] | list[dict[str, Any]]) -> None:
         """Load rows.
 
         ``data`` can be:

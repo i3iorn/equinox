@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
 from equinox.gui.log_file_actions import (
     LogOpenResult,
     LogOpenStatus,
@@ -10,7 +12,7 @@ from equinox.gui.log_file_actions import (
 )
 
 
-def test_try_open_current_log_file_missing(monkeypatch) -> None:
+def test_try_open_current_log_file_missing(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr("equinox.gui.log_file_actions.get_log_file", lambda: None)
 
     result = try_open_current_log_file()
@@ -18,7 +20,9 @@ def test_try_open_current_log_file_missing(monkeypatch) -> None:
     assert result.status == LogOpenStatus.MISSING
 
 
-def test_try_open_current_log_file_rejects_non_log(monkeypatch, tmp_path: Path) -> None:
+def test_try_open_current_log_file_rejects_non_log(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
     bad = tmp_path / "not_a_log.txt"
     bad.write_text("x", encoding="utf-8")
     monkeypatch.setattr("equinox.gui.log_file_actions.get_log_file", lambda: bad)
@@ -29,7 +33,9 @@ def test_try_open_current_log_file_rejects_non_log(monkeypatch, tmp_path: Path) 
     assert result.resolved_path == bad.resolve()
 
 
-def test_try_open_current_log_file_opened(monkeypatch, tmp_path: Path) -> None:
+def test_try_open_current_log_file_opened(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
     log = tmp_path / "equinox.log"
     log.write_text("line", encoding="utf-8")
     monkeypatch.setattr("equinox.gui.log_file_actions.get_log_file", lambda: log)
@@ -48,7 +54,9 @@ def test_try_open_current_log_file_opened(monkeypatch, tmp_path: Path) -> None:
     assert opened["count"] == 1
 
 
-def test_try_open_current_log_file_open_failed(monkeypatch, tmp_path: Path) -> None:
+def test_try_open_current_log_file_open_failed(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
     log = tmp_path / "equinox.log"
     log.write_text("line", encoding="utf-8")
     monkeypatch.setattr("equinox.gui.log_file_actions.get_log_file", lambda: log)
@@ -64,7 +72,7 @@ def test_try_open_current_log_file_open_failed(monkeypatch, tmp_path: Path) -> N
     assert "no opener" in (result.error or "")
 
 
-def test_show_log_file_open_result_missing(monkeypatch) -> None:
+def test_show_log_file_open_result_missing(monkeypatch: pytest.MonkeyPatch) -> None:
     calls = []
 
     monkeypatch.setattr(
@@ -83,7 +91,9 @@ def test_show_log_file_open_result_missing(monkeypatch) -> None:
     assert calls[0][2] == "No log file yet."
 
 
-def test_show_log_file_open_result_open_failed(monkeypatch, tmp_path: Path) -> None:
+def test_show_log_file_open_result_open_failed(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
     calls = []
     log = tmp_path / "equinox.log"
     log.write_text("x", encoding="utf-8")

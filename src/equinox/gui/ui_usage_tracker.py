@@ -40,9 +40,9 @@ class UIUsageTracker(QObject):
         self._settings = settings or get_gui_settings()
         self._counts: dict[str, dict[str, Any]] = self._load_counts()
         self._dirty = False
-        self._bound_buttons: set = set()
-        self._bound_actions: set = set()
-        self._bound_tab_widgets: set = set()
+        self._bound_buttons: set[int] = set()
+        self._bound_actions: set[int] = set()
+        self._bound_tab_widgets: set[int] = set()
 
         self._flush_timer = QTimer(self)
         self._flush_timer.setInterval(_FLUSH_INTERVAL_MS)

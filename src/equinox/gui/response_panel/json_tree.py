@@ -113,7 +113,7 @@ class _JsonTreeBuilder:
             # Primitive value
             self._add_item(parent, "", self._serialize(value))
 
-    def _add_dict_items(self, parent: QTreeWidgetItem, obj: dict, depth: int) -> None:
+    def _add_dict_items(self, parent: QTreeWidgetItem, obj: dict[str, Any], depth: int) -> None:
         """Add dictionary items to tree.
 
         Args:
@@ -136,7 +136,7 @@ class _JsonTreeBuilder:
                 # Add leaf node
                 self._add_item(parent, str(key), self._serialize(val))
 
-    def _add_list_items(self, parent: QTreeWidgetItem, arr: list, depth: int) -> None:
+    def _add_list_items(self, parent: QTreeWidgetItem, arr: list[Any], depth: int) -> None:
         """Add array items to tree.
 
         Args:

@@ -1,21 +1,25 @@
 import os
 import sys
 import types
+from typing import Any, cast
+
+import pytest
 
 
-def test_os_keyring_integration_monkeypatched(monkeypatch):
+def test_os_keyring_integration_monkeypatched(monkeypatch: pytest.MonkeyPatch) -> None:
     # Create a fake in-memory keyring module
-    store = {}
+    store: dict[tuple[str, str], str] = {}
     fake = types.ModuleType("keyring")
 
-    def _get_password(service, account):
+    def _get_password(service: str, account: str) -> str | None:
         return store.get((service, account))
 
-    def _set_password(service, account, password):
+    def _set_password(service: str, account: str, password: str) -> None:
         store[(service, account)] = password
 
-    fake.get_password = _get_password
-    fake.set_password = _set_password
+    fake_obj = fake  # narrow module type for dynamic attribute assignment in tests
+    setattr(cast(Any, fake_obj), "get_password", _get_password)
+    setattr(cast(Any, fake_obj), "set_password", _set_password)
     sys.modules["keyring"] = fake
 
     # Enable OS keyring usage
