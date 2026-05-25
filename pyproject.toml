@@ -7,7 +7,7 @@ name = "equinox"
 version = "0.4.8"
 description = "A local-first API testing tool with GUI"
 readme = "README.md"
-requires-python = ">=3.9"
+requires-python = ">=3.10"
 license = {text = "MIT"}
 authors = [
     {name = "Equinox Team"}
@@ -22,7 +22,7 @@ dependencies = [
     "jsonpath-ng>=1.6.0,<1.7.0",
     "pyyaml>=6.0.0,<7.0.0",
     "python-dotenv>=1.0.0,<2.0.0",
-    "cryptography>=41.0.0,<43.0.0",
+    "cryptography>=46.0.6,<47.0.0",
     "certifi>=2023.0.0",
     "urlps>=0.5.1,<0.6.0",
     "websockets>=12.0,<13.0.0",
@@ -46,6 +46,7 @@ dev = [
     "mypy>=1.0.0",
     "bandit>=1.7.0",
     "safety>=2.3.0",
+    "pip-audit>=2.9.0",
     "pip-tools>=7.5.0,<8.0.0",
     "pre-commit>=3.0.0",
     "isort>=5.13.0,<6.0.0",
@@ -53,11 +54,11 @@ dev = [
 
 [tool.black]
 line-length = 100
-target-version = ['py39', 'py310', 'py311']
+target-version = ['py310', 'py311', 'py312']
 
 [tool.ruff]
 line-length = 100
-target-version = "py39"
+target-version = "py310"
 
 [tool.ruff.lint]
 select = [
@@ -114,7 +115,7 @@ fail_under = 87
 equinox = ["py.typed"]
 
 [tool.mypy]
-python_version = "3.9"
+python_version = "3.10"
 warn_return_any = true
 warn_unused_configs = true
 disallow_untyped_defs = true

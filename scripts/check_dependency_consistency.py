@@ -5,10 +5,11 @@ Rules:
 1) pyproject.toml is the only authoritative dependency manifest.
 2) setup.py must remain a thin compatibility shim (no install_requires/extras_require).
 3) requirements.txt must delegate to the generated lockfile and editable local install.
-4) requirements-lock.txt must exist.
+4) requirements-lock.txt must exist and be committed.
 """
 
 import re
+import subprocess
 import sys
 from pathlib import Path
 
@@ -77,6 +78,21 @@ def check_requirements_lock(lock_text: str) -> list[str]:
     return errors
 
 
+def is_git_tracked(root: Path, relative_path: str) -> bool:
+    """Return True when the path is tracked by git, or when git metadata is unavailable."""
+    if not (root / ".git").exists():
+        return True
+
+    result = subprocess.run(
+        ["git", "ls-files", "--error-unmatch", relative_path],
+        cwd=str(root),
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    return result.returncode == 0
+
+
 def check_pyproject(pyproject_text: str) -> list[str]:
     errors = []
     if "[project]" not in pyproject_text:
@@ -103,6 +119,8 @@ def main() -> int:
     errors.extend(check_setup_py(setup_py))
     errors.extend(check_requirements_txt(requirements))
     errors.extend(check_requirements_lock(requirements_lock))
+    if not is_git_tracked(root, "requirements-lock.txt"):
+        errors.append("requirements-lock.txt must be git-tracked (committed) for reproducible installs.")
 
     if errors:
         print("Dependency manifest consistency check FAILED:")
@@ -114,7 +132,7 @@ def main() -> int:
     print("- pyproject.toml is authoritative")
     print("- setup.py is a compatibility shim")
     print("- requirements.txt delegates to requirements-lock.txt and editable install")
-    print("- requirements-lock.txt exists")
+    print("- requirements-lock.txt exists and is git-tracked")
     return 0
 
 

@@ -33,24 +33,14 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -e ".[dev]"
-          pip install pip-audit
 
-      - name: Bandit — blocking (medium+ severity, JSON)
+      - name: Bandit - blocking (medium+ severity, JSON)
         run: |
           bandit -r src/equinox --severity-level=medium -f json -o bandit-report.json
           bandit -r src/equinox --severity-level=medium -f txt
 
-      - name: Safety — advisory only (network-dependent)
-        # Allow failure: Safety depends on an external advisory DB; network issues
-        # or DB unavailability must not block the build.
-        continue-on-error: true
-        run: safety check
-
-      - name: pip-audit — dependency vulnerability scan (advisory)
-        # Advisory only while findings are triaged. Promote to blocking once
-        # all known false positives are suppressed via .pip-audit-ignore.
-        continue-on-error: true
-        run: pip-audit --desc --format markdown
+      - name: Dependency vulnerabilities - blocking
+        run: python scripts/check_dependency_vulnerabilities.py
 
       - name: Upload Bandit report
         if: always()

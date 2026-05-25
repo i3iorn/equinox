@@ -46,6 +46,9 @@ jobs:
       - name: Verify requirements lockfile is current
         run: python scripts/manage_requirements_lock.py --check
 
+      - name: Block known dependency vulnerabilities
+        run: python scripts/check_dependency_vulnerabilities.py
+
       - name: Verify CI toolchain consistency
         run: python scripts/verify_ci_toolchain.py
 
@@ -91,7 +94,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python-version: ["3.9", "3.10", "3.11", "3.12"]
+        python-version: ["3.10", "3.11", "3.12"]
 
     steps:
       - uses: actions/checkout@v4
@@ -128,7 +131,7 @@ jobs:
             --cov-report=xml \
             --cov-report=html \
             --cov-report=term-missing \
-            --cov-fail-under=85
+            --cov-fail-under=87
         env:
           QT_QPA_PLATFORM: offscreen
           DISPLAY: ""
@@ -156,7 +159,7 @@ jobs:
   # security.yml workflow, so every PR gets a fast security gate.
   # ──────────────────────────────────────────────────────────────────────────
   security:
-    name: Security Scan (bandit)
+    name: Security Scan (bandit + dependencies)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -170,9 +173,12 @@ jobs:
       - name: Install security tools
         run: |
           python -m pip install --upgrade pip
-          pip install bandit
+          pip install -e ".[dev]"
 
-      - name: Bandit — blocking (medium+ severity)
+      - name: Dependency vulnerabilities - blocking
+        run: python scripts/check_dependency_vulnerabilities.py
+
+      - name: Bandit - blocking (medium+ severity)
         run: bandit -r src/equinox --severity-level=medium -f json -o bandit-ci.json
 
       - name: Upload Bandit report
