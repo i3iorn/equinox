@@ -1,6 +1,6 @@
 # Generated workflow:
 #   1) Update dependencies in pyproject.toml
-#   2) Regenerate requirements-lock.txt
+#   2) Regenerate committed requirements-lock.txt (intentional dependency updates only)
 #        py -3 scripts/manage_requirements_lock.py --write
 #   3) Install with:
 #        pip install -r requirements.txt
