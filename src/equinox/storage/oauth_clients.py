@@ -5,8 +5,12 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING, Any, Literal
 
-from equinox.core.auth_cipher import decrypt_auth_data, encrypt_auth_data
 from equinox.core.exceptions import DuplicateError, StorageError, ValidationError
+from equinox.storage.auth_cipher_storage import (
+    decrypt_auth_storage_value,
+    encrypt_auth_storage_value,
+    is_encrypted_value,
+)
 from equinox.storage.database import Database
 from equinox.storage.utils import require_str as _require_str
 from equinox.storage.utils import safe_json_dumps, safe_json_loads
@@ -50,7 +54,6 @@ class OAuthClientManager:
     MAX_SECRET_LEN = 2000
     MAX_SCOPE_LEN = 1000
     MAX_DESC_LEN = 1000
-    _ENC_PREFIX = "enc:"
 
     def __init__(self, db: Database) -> None:
         self.db = db
@@ -312,19 +315,19 @@ class OAuthClientManager:
     def _encrypt_client_secret(cls, secret: str) -> str:
         if not secret:
             return secret
-        if secret.startswith(cls._ENC_PREFIX):
+        if is_encrypted_value(secret):
             return secret
-        return encrypt_auth_data(secret)
+        return encrypt_auth_storage_value(secret)
 
     @classmethod
     def _decrypt_client_secret(cls, stored: str | None) -> str:
         if not stored:
             return ""
-        return decrypt_auth_data(stored)
+        return str(decrypt_auth_storage_value(stored, field_name="client_secret") or "")
 
     @classmethod
     def _is_legacy_plaintext_secret(cls, stored: str | None) -> bool:
-        return bool(stored and isinstance(stored, str) and not stored.startswith(cls._ENC_PREFIX))
+        return bool(stored and isinstance(stored, str) and not is_encrypted_value(stored))
 
     def _migrate_legacy_client_secret(self, client_id: int, plaintext_secret: str) -> None:
         encrypted = self._encrypt_client_secret(plaintext_secret)

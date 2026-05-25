@@ -25,7 +25,7 @@ Source is organized by cohesive packages aligned with functional domains:
 src/equinox/
   core/
     audit/            # Request/response audit logging
-    auth_cipher.py    # Column-level Fernet encryption for credentials
+    auth_cipher.py    # Compatibility facade for auth-data encryption/decryption
     assertions.py     # Post-response test rules (JSON path, regex, status)
     captures.py       # Extract response values into variables
     client/           # HTTP client with retry, rate-limit, concurrency control
@@ -51,6 +51,7 @@ src/equinox/
     intelligence_worker.py  # Background intelligence analysis
     window.py         # Main window and panel wiring
   storage/
+    auth_cipher_storage.py  # enc: prefix and auth/config column encoding helpers
     collections/      # Collection/request/folder CRUD
     history/          # Request/response history with search and indexing
     ui_usage_tracker.py  # UI interaction analytics (local only)
@@ -63,6 +64,7 @@ src/equinox/
   cli/                # Click-based CLI (rotate-secrets command)
   plugins/            # Plugin system for extending functionality
   security/           # Redaction, secure storage, keystore
+    auth_cipher.py    # Cryptographic primitives for auth-data encryption
 ```
 
 **Key Organizational Notes:**
@@ -70,7 +72,7 @@ src/equinox/
 - Each package has clear domain responsibility with minimal cross-dependencies
 - GUI is split into panels with shared widgets and dialogs
 - Storage layer handles both collections and history with separate managers
-- Security concerns centralized in `security/` and `core/auth_cipher.py`
+- Security concerns centralized in `security/`; auth-data storage wiring uses `storage/auth_cipher_storage.py` with `core/auth_cipher.py` as compatibility facade
 
 ## Requirements
 

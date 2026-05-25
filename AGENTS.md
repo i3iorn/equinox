@@ -108,10 +108,10 @@ Relative base URLs (e.g. `/`) are promoted to `https://{{BASE_URL}}` so requests
 ### Key Security Patterns
 
 1. **Input Validation** (`core/validation/` package): SQL/command/CRLF/path-traversal patterns blocked; URL scheme/length enforced; header/body size limits. The public façade is `Validator` (imported from `core/validation/__init__.py`). Internal validators are in sub-modules (`_url.py`, `_headers.py`, `_body.py`, `_params.py`, `_path.py`, `_env.py`, `_ssrf.py`, `_guards.py`, `_limits.py`, `_patterns.py`). Always call `Validator.validate_*()` before processing input.
-2. **Auth Encryption at Rest** (`core/auth_cipher.py`): All `auth_data` and `saved_credentials.config` columns are Fernet-encrypted (AES-256) at the `_serialize_auth`/`_deserialize_auth` boundary. Encrypted values carry an `enc:` prefix; legacy plaintext is read transparently (graceful migration). The key is stored at `~/.equinox/.key` (shared with `SecureStorage`).
+2. **Auth Encryption at Rest** (`core/auth_cipher.py`, `security/auth_cipher.py`, `storage/auth_cipher_storage.py`): `core/auth_cipher.py` is the compatibility facade; cryptographic primitives live in `security/auth_cipher.py`; storage prefix/column helpers live in `storage/auth_cipher_storage.py`. `auth_data` and `saved_credentials.config` values are Fernet-encrypted at the `_serialize_auth`/`_deserialize_auth` boundary with `enc:` prefix support and legacy plaintext fallback.
 3. **Database** (`storage/database.py`): Parameterized queries only — **no string formatting in SQL**. Thread-safe with `threading.Lock` (exposed as the `.lock` read-only property). WAL journal mode for concurrent reader/writer access. Use `db.transaction()` context manager for multi-statement atomic operations (e.g. batch imports).
 4. **HTTP** (`core/client/http_client.py`): SSL verification on by default, rate-limiting, timeout enforcement (0.1–300 s), max 10 redirects, configurable retry policy (`RetryPolicy`), concurrency control (`ConcurrencyGuard`).
-5. **OAuth2** (`auth/oauth2.py`): `to_dict()` includes `client_secret` and `token_timeout` for round-trip storage — the DB layer encrypts it via `auth_cipher`. Tokens auto-refresh 30 s before expiry.
+5. **OAuth2** (`auth/oauth2.py`): `to_dict()` includes `client_secret` and `token_timeout` for round-trip storage — the DB layer encrypts it via storage auth-cipher helpers. Tokens auto-refresh 30 s before expiry.
 
 ## Development Workflows
 
@@ -212,7 +212,7 @@ The package `__init__.py` re-exports all public functions so existing imports (`
 
 ### Auth serialization
 
-All auth classes implement `to_dict()` / `from_dict()`. `OAuth2Auth.to_dict()` includes `client_secret` and `token_timeout` (needed for storage round-trip). Display-only contexts should omit secrets manually. The `_serialize_auth()` / `_deserialize_auth()` boundary in `storage/collections/auth.py` encrypts all auth data via `core/auth_cipher.py` before writing to SQLite. Legacy plaintext rows are read transparently.
+All auth classes implement `to_dict()` / `from_dict()`. `OAuth2Auth.to_dict()` includes `client_secret` and `token_timeout` (needed for storage round-trip). Display-only contexts should omit secrets manually. The `_serialize_auth()` / `_deserialize_auth()` boundary in `storage/collections/auth.py` encrypts auth data via `storage/auth_cipher_storage.py` (cryptography delegated to `security/auth_cipher.py`). `core/auth_cipher.py` remains the compatibility facade.
 
 AWS SigV4 auth is available via `auth/aws_sigv4.py` (`AWSSigV4Auth`). Auth instances are constructed via `auth/factory.py`.
 
@@ -473,7 +473,9 @@ def run(self) -> None:
 | `core/io/` | I/O sub-package: `curl_parser.py` (`parse_curl`), `dotenv.py` (`parse_dotenv`), `multipart.py` |
 | `core/urls/` | URL package: `parsing.py` (low-level parse), `normalizer.py` (`expand_placeholders`, `normalize_url`, `normalized_parts`, `base_path`), `utils.py` helpers |
 | `core/secret_managers/` | Secret manager backends + registry (`get_secret_manager`, `register_manager`) |
-| `core/auth_cipher.py` | Column-level Fernet encryption for `auth_data` / `config` columns |
+| `core/auth_cipher.py` | Compatibility facade for auth-data encryption/decryption APIs |
+| `security/auth_cipher.py` | Cryptographic primitives (Fernet cache, encrypt/decrypt, UTF-8 decode guards) |
+| `storage/auth_cipher_storage.py` | Storage contract helpers (`enc:` prefix + auth/config column encode/decode) |
 | `core/assertions.py` | `evaluate_assertion(rule, response)` — post-response test rules |
 | `core/captures.py` | `CaptureEngine` — extract response values into session variables |
 | `core/scripts/` | Sandboxed Python script runner (pre/post request scripts) |

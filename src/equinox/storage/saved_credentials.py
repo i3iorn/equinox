@@ -12,8 +12,11 @@ from collections.abc import Mapping
 from typing import Any
 
 from equinox.auth import AUTH_TYPES
-from equinox.core.auth_cipher import decrypt_auth_data, encrypt_auth_data
 from equinox.core.exceptions import DuplicateError, SecurityError, StorageError, ValidationError
+from equinox.storage.auth_cipher_storage import (
+    decrypt_auth_storage_value,
+    encrypt_auth_storage_value,
+)
 from equinox.storage.database import Database
 from equinox.storage.utils import (
     MAX_DESCRIPTION_LENGTH,
@@ -342,7 +345,7 @@ class SavedCredentialsManager:
             json_str = safe_json_dumps(config, max_len=_MAX_CONFIG_JSON_LEN)
         except SecurityError as exc:
             raise ValidationError(f"Credential config too large: {exc}") from exc
-        return encrypt_auth_data(json_str)
+        return encrypt_auth_storage_value(json_str)
 
     @staticmethod
     def _decode(row: Any) -> dict[str, Any]:
@@ -351,7 +354,7 @@ class SavedCredentialsManager:
         d: dict[str, Any] = dict(row)
         raw_config = d.get("config") or "{}"
         try:
-            d["config"] = safe_json_loads(decrypt_auth_data(raw_config))
+            d["config"] = safe_json_loads(decrypt_auth_storage_value(raw_config))
         except SecurityError:
             # Decryption failures indicate key mismatch or tampering — propagate
             # rather than silently returning an empty config, which would mask a

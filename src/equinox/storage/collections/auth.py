@@ -5,8 +5,11 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING, Any
 
-from equinox.core.auth_cipher import decrypt_auth_data, encrypt_auth_data
 from equinox.core.exceptions import SecurityError, StorageError
+from equinox.storage.auth_cipher_storage import (
+    decrypt_auth_storage_value,
+    encrypt_auth_storage_value,
+)
 from equinox.storage.utils import safe_json_dumps, safe_json_loads
 
 if TYPE_CHECKING:
@@ -27,7 +30,8 @@ class CollectionAuthMixin:
     def _serialize_auth(auth: Any) -> tuple[str | None, str | None]:
         """Return (auth_type, encrypted_auth_data) from an auth strategy object or None.
 
-        The JSON blob is encrypted at rest via :func:`encrypt_auth_data`.
+        The JSON blob is encrypted at rest via
+        :func:`equinox.storage.auth_cipher_storage.encrypt_auth_storage_value`.
 
         Raises:
             StorageError: If the auth object cannot be serialized.
@@ -37,7 +41,7 @@ class CollectionAuthMixin:
         try:
             d = auth.to_dict()
             blob = safe_json_dumps(d, max_len=50_000)
-            return d.get("type"), encrypt_auth_data(blob)
+            return d.get("type"), encrypt_auth_storage_value(blob)
         except Exception as exc:
             raise StorageError(f"Failed to serialize auth ({type(auth).__name__}): {exc}") from exc
 
@@ -46,7 +50,8 @@ class CollectionAuthMixin:
         """Return an auth strategy object from DB columns, or None.
 
         Handles both encrypted (``enc:…``) and legacy plaintext JSON
-        transparently via :func:`decrypt_auth_data`.
+        transparently via
+        :func:`equinox.storage.auth_cipher_storage.decrypt_auth_storage_value`.
 
         Delegates the type→class dispatch to the unified
         :func:`~equinox.auth.auth_from_dict` registry so new auth
@@ -62,7 +67,7 @@ class CollectionAuthMixin:
             from equinox.core.exceptions import SecurityError as _SEC
 
             try:
-                raw = decrypt_auth_data(auth_data)
+                raw = decrypt_auth_storage_value(auth_data)
             except _SEC:
                 logger.exception("Auth decryption failed for auth_data column")
                 # Propagate so higher-level code (CLI/GUI) can surface a clear error
