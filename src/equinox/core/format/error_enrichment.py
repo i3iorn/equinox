@@ -116,7 +116,7 @@ def _is_proxy_connect_error(exc: Exception) -> bool:
     Follows both ``__cause__`` and ``__context__`` — ``raise exc from None``
     clears ``__cause__`` but leaves ``__context__`` intact.
     """
-    seen: set = set()
+    seen: set[int] = set()
     stack = [exc]
     while stack:
         e = stack.pop()

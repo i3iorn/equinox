@@ -304,7 +304,7 @@ class _HistorySearcher:
         if not jsonpath:
             return None
         try:
-            from jsonpath_ng import parse as _jp_parse
+            from jsonpath_ng import parse as _jp_parse  # type: ignore[import-untyped]
 
             return _jp_parse(jsonpath)
         except Exception as exc:

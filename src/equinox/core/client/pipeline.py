@@ -20,7 +20,7 @@ logger = logging.getLogger(__name__)
 try:
     from typing import Protocol, TypedDict
 except ImportError:  # pragma: no cover — Python < 3.8 safety net
-    from typing_extensions import Protocol, TypedDict  # type: ignore[assignment]
+    from typing_extensions import Protocol, TypedDict
 
 
 class _AuditLogger(Protocol):
@@ -216,9 +216,7 @@ class RequestPipeline:
                     },
                 )
                 result: _HandlerResult = handler_fn(error, request)
-                mapped_error = result.get("error")
-                if not isinstance(mapped_error, Exception):
-                    mapped_error = RequestError("Request failed")
+                mapped_error = result["error"]
                 self._emit_error(
                     request,
                     mapped_error,

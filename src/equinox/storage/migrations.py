@@ -26,7 +26,7 @@ Adding a migration
 import logging
 import sqlite3
 from dataclasses import dataclass
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from equinox.storage.database import Database
@@ -530,7 +530,7 @@ class MigrationRunner:
         current = self.version
         return [m for m in MIGRATIONS if m.version > current]
 
-    def history(self) -> list[dict]:
+    def history(self) -> list[dict[str, Any]]:
         """Return the log of applied migrations from the database."""
         with self._db.get_connection() as conn:
             try:
@@ -656,7 +656,7 @@ class MigrationRunner:
         content and future complex migrations with ``/* ... */`` annotations
         work without changes to the splitter logic.
         """
-        result: list = []
+        result: list[str] = []
         i = 0
         n = len(sql)
         in_string = False
@@ -695,7 +695,7 @@ class MigrationRunner:
         return "".join(result)
 
     @staticmethod
-    def _split_sql(sql: str) -> list:
+    def _split_sql(sql: str) -> list[str]:
         """Split a SQL script into individual non-empty statements.
 
         Respects single-quoted string literals so that semicolons inside
@@ -705,8 +705,8 @@ class MigrationRunner:
         before the split pass so they never cause a spurious statement boundary.
         """
         sql = MigrationRunner._strip_block_comments(sql)
-        statements: list = []
-        current: list = []
+        statements: list[str] = []
+        current: list[str] = []
         in_string = False
 
         i = 0

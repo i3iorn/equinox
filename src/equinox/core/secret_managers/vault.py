@@ -56,7 +56,7 @@ class VaultManager(SecretManager):
             SecretManagerError: If configuration is invalid
         """
         try:
-            import requests
+            import requests  # type: ignore[import-untyped]
         except ImportError:
             raise SecretManagerError(
                 "requests is required for Vault. Install with: pip install requests"
@@ -127,7 +127,7 @@ class VaultManager(SecretManager):
         # Check cache
         cached = self._get_from_cache(secret_name)
         if cached is not None:
-            return cached
+            return str(cached)
 
         try:
             import requests
@@ -205,7 +205,8 @@ class VaultManager(SecretManager):
             secret_data = data.get("data", {})
             if isinstance(secret_data, dict) and "data" in secret_data:
                 secret_data = secret_data["data"]
-
+            if not isinstance(secret_data, dict):
+                raise SecretManagerError(f"Secret '{secret_name}' is not a JSON object")
             return secret_data
 
         except SecretNotFoundError:

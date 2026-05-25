@@ -6,6 +6,7 @@ import logging
 from typing import Any
 
 from equinox.core.exceptions import StorageError, ValidationError
+from equinox.storage.database import Database
 from equinox.storage.utils import require_positive_int
 
 logger = logging.getLogger(__name__)
@@ -15,7 +16,7 @@ class CollectionOrderingMixin:
     """Mixin providing request ordering and move for CollectionManager."""
 
     # Provided by CollectionManager at composition time.
-    db: Any
+    db: Database
 
     def get_collection(self, collection_id: int) -> dict[str, Any] | None: ...
 
@@ -182,7 +183,7 @@ class CollectionOrderingMixin:
             case_clauses = " ".join("WHEN ? THEN ?" for _ in chunk)
             ids = [rid for rid, _ in chunk]
             placeholders = ", ".join("?" for _ in ids)
-            params: list = []
+            params: list[int] = []
             for rid, pos in chunk:
                 params.extend([rid, pos])
             params.extend(ids)

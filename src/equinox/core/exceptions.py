@@ -1,5 +1,7 @@
 """Exceptions for Equinox"""
 
+from typing import Any
+
 
 class EquinoxError(Exception):
     """Base exception for Equinox.
@@ -26,9 +28,9 @@ class EquinoxError(Exception):
     def __init__(
         self,
         message: str,
-        details: dict | None = None,
+        details: dict[str, Any] | None = None,
         hint_key: str | None = None,
-    ):
+    ) -> None:
         """Initialize exception.
 
         Args:

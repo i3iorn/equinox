@@ -12,11 +12,15 @@ from __future__ import annotations
 import base64
 import logging
 import os
+from typing import Any
 
+keyring: Any | None
 try:
-    import keyring  # type: ignore
+    import keyring as _keyring  # type: ignore[import-not-found]
+
+    keyring = _keyring
 except Exception:  # pragma: no cover - missing optional dependency
-    keyring = None  # type: ignore
+    keyring = None
 
 from equinox.core.config.flags import is_os_keystore_enabled
 
@@ -38,9 +42,12 @@ def get_from_os_store() -> bytes | None:
     """Return the 32-byte key from the OS key store if available."""
     if not _env_os_keystore_enabled() or not _os_keyring_available():
         return None
+    kr = keyring
+    if kr is None:
+        return None
     try:
         # keyring stores strings; encode/decode as base64 to preserve raw bytes
-        b64 = keyring.get_password(SERVICE, ACCOUNT)
+        b64 = kr.get_password(SERVICE, ACCOUNT)
         if not b64:
             return None
         return base64.b64decode(b64.encode("ascii"))
@@ -52,8 +59,11 @@ def get_from_os_store() -> bytes | None:
 def set_in_os_store(key: bytes) -> None:
     if not _env_os_keystore_enabled() or not _os_keyring_available():
         return
+    kr = keyring
+    if kr is None:
+        return
     try:
-        keyring.set_password(SERVICE, ACCOUNT, base64.b64encode(key).decode("ascii"))
+        kr.set_password(SERVICE, ACCOUNT, base64.b64encode(key).decode("ascii"))
     except Exception:
         logger.exception("Failed to store encryption key in OS keyring")
 

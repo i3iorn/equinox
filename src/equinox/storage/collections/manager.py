@@ -131,7 +131,7 @@ class CollectionManager(
         collection_id: int,
         *,
         name_override: str | None = None,
-    ) -> tuple:
+    ) -> tuple[Any, ...]:
         """Build the 21-element parameter tuple for :attr:`REQUEST_INSERT_SQL`.
 
         Args:

@@ -22,6 +22,7 @@ import logging
 import re
 import threading
 from dataclasses import dataclass
+from re import Match
 from typing import Any
 
 logger = logging.getLogger(__name__)
@@ -138,7 +139,7 @@ class CaptureEngine:
         # Tokenise: split on ".", then handle optional "[n]" suffix per token.
         # Each token matches: word_chars optionally followed by [digits].
         # _SEG is defined at class level to avoid recompilation on every call.
-        segments: list[tuple] = []
+        segments: list[tuple[str, int | None]] = []
         for part in path.split("."):
             m = CaptureEngine._SEG.match(part)
             if not m:
@@ -188,7 +189,7 @@ class CaptureEngine:
         value = response.headers.get(name.lower())
         if value is None:
             raise KeyError(f"Header {name!r} not found in response")
-        return value
+        return str(value)
 
     MAX_REGEX_PATTERN_LENGTH = 500
     _REGEX_TIMEOUT_SECONDS = 5.0
@@ -227,7 +228,7 @@ class CaptureEngine:
         text = response.text[:1_048_576] if len(response.text) > 1_048_576 else response.text
 
         # Run regex in a thread with a timeout to mitigate ReDoS
-        result_container: list[Any] = [None]  # [match_or_None]
+        result_container: list[Match[str] | None] = [None]  # [match_or_None]
         error_container: list[Any] = [None]
 
         def _search() -> None:
@@ -263,8 +264,6 @@ class CaptureEngine:
         """
         captures: list[Capture] = []
         for d in raw:
-            if not isinstance(d, dict):
-                continue
             variable = d.get("variable", "")
             if not variable:
                 continue

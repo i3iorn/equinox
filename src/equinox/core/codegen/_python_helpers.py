@@ -5,7 +5,7 @@ from equinox.core.request import Request
 from .utils import _REDACTED_KEY, _REDACTED_TOKEN, _auth_type_name
 
 
-def _inject_auth_into_headers(request: Request, headers: dict) -> None:
+def _inject_auth_into_headers(request: Request, headers: dict[str, str]) -> None:
     if not request.auth:
         return
     name = _auth_type_name(request.auth)
@@ -26,8 +26,8 @@ def _auth_kwarg_for_basic(request: Request) -> str | None:
     return None
 
 
-def _python_body_lines(request: Request) -> tuple:
-    extra: list = []
+def _python_body_lines(request: Request) -> tuple[list[str], str]:
+    extra: list[str] = []
     body_arg = ""
     if request.body:
         try:

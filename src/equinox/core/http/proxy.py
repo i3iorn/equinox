@@ -105,22 +105,23 @@ def check_proxy_reachable(proxy_url: str) -> None:
     try:
         _connect_non_blocking(sock, host, port, connect_timeout, proxy_url)
     except OSError as os_err:
-        errno_name = errno.errorcode.get(os_err.errno, "unknown")
+        err_no = os_err.errno
+        errno_name = errno.errorcode.get(err_no, "unknown") if err_no is not None else "unknown"
         logger.debug(
             "Proxy pre-flight OSError for %s:%s (errno %d = %s): %s",
             host,
             port,
-            os_err.errno,
+            err_no or -1,
             errno_name,
             os_err,
         )
-        if os_err.errno in _REFUSED:
-            _raise_refused(proxy_url, host, port, os_err.errno, errno_name)
+        if err_no is not None and err_no in _REFUSED:
+            _raise_refused(proxy_url, host, port, err_no, errno_name)
         logger.debug(
             "Proxy pre-flight socket error for %s:%s (errno %d = %s, will defer to httpx): %s",
             host,
             port,
-            os_err.errno,
+            err_no or -1,
             errno_name,
             os_err,
         )

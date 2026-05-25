@@ -36,10 +36,12 @@ _MAX_TOKEN_TIMEOUT: float = 300.0
 _LOCK_TIMEOUT: float = 5.0
 
 # Token snapshot — fields whose values are partially redacted for safe display.
-_REDACTABLE_TOKEN_FIELDS: frozenset = frozenset({"access_token", "refresh_token", "id_token"})
+_REDACTABLE_TOKEN_FIELDS: frozenset[str] = frozenset(
+    {"access_token", "refresh_token", "id_token"}
+)
 
 # Response headers excluded from the token-response snapshot (may contain secrets).
-_FILTERED_RESPONSE_HEADERS: frozenset = frozenset({"set-cookie"})
+_FILTERED_RESPONSE_HEADERS: frozenset[str] = frozenset({"set-cookie"})
 
 # Token preview parameters: show first N + "…" + last M chars when len > MIN.
 _TOKEN_REDACT_PREFIX_LEN: int = 8
@@ -57,11 +59,11 @@ _MAX_CONNECT_TIMEOUT: float = 5.0
 _RETRY_BACKOFF_BASE: int = 2
 
 # Markers that identify non-retryable "nothing is listening" errors.
-_CONNECTION_REFUSED_MARKERS: tuple = ("10061", "connection refused", "econnrefused")
+_CONNECTION_REFUSED_MARKERS: tuple[str, ...] = ("10061", "connection refused", "econnrefused")
 
 # OAuth2 token errors that indicate refresh_token grant cannot be used and the
 # client should retry with client_credentials when available.
-_REFRESH_GRANT_FALLBACK_ERRORS: frozenset = frozenset(
+_REFRESH_GRANT_FALLBACK_ERRORS: frozenset[str] = frozenset(
     {
         "invalid_grant",
         "unsupported_grant_type",
@@ -1122,7 +1124,7 @@ class OAuth2Auth(AuthStrategy):
                     )
                     return grant_fallback_response
 
-                status_code = "unknown"
+                status_code: int | str = "unknown"
                 token_response: dict[str, Any] | None = None
                 if status_exc.response is not None:
                     self._capture_token_response(status_exc.response)

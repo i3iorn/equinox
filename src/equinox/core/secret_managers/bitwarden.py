@@ -123,7 +123,7 @@ class BitwardenManager(SecretManager):
         # Check cache
         cached = self._get_from_cache(secret_name)
         if cached is not None:
-            return cached
+            return str(cached)
 
         secret_ref = mask_secret(secret_name, keep=4)
 
@@ -174,6 +174,10 @@ class BitwardenManager(SecretManager):
         cache_key = f"{secret_name}:dict"
         cached = self._get_from_cache(cache_key)
         if cached is not None:
+            if not isinstance(cached, dict):
+                raise SecretManagerError(
+                    f"Cached secret dict for '{mask_secret(secret_name, keep=4)}' is invalid"
+                )
             return cached
 
         secret_ref = mask_secret(secret_name, keep=4)
@@ -278,7 +282,10 @@ class BitwardenManager(SecretManager):
                     raise SecretNotFoundError(f"Item not found: {secret_ref}")
                 raise SecretManagerError(f"Failed to retrieve item: {result.stderr}")
 
-            return json.loads(result.stdout)
+            parsed = json.loads(result.stdout)
+            if not isinstance(parsed, dict):
+                raise SecretManagerError(f"Unexpected Bitwarden item payload for '{secret_ref}'")
+            return parsed
 
         except json.JSONDecodeError as exc:
             raise SecretManagerError(f"Invalid Bitwarden response: {exc}") from exc

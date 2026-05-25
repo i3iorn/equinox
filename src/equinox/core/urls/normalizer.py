@@ -87,7 +87,8 @@ def normalized_parts(url: str, variables: dict[str, str] | None = None) -> dict[
 
 def normalize_url(url: str, variables: dict[str, str] | None = None) -> str:
     """Return canonical normalized URL string."""
-    return normalized_parts(url, variables)["normalized_url"]
+    normalized = normalized_parts(url, variables).get("normalized_url")
+    return str(normalized)
 
 
 def base_path(normalized_url: str) -> str:

@@ -14,7 +14,7 @@ def first_present_header(headers: Mapping[str, str], keys: Iterable[str]) -> str
     return None
 
 
-def parse_cache_control(cache_control: str) -> list:
+def parse_cache_control(cache_control: str) -> list[str]:
     return [
         directive.strip() for directive in (cache_control or "").split(",") if directive.strip()
     ]

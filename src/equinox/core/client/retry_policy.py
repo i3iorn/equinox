@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 import threading
 import time
-from typing import AbstractSet, Callable
+from typing import Any, AbstractSet, Callable
 
 from equinox.core.exceptions import RequestTimeoutError
 from equinox.core.request import Response
@@ -76,7 +76,7 @@ class RetryPolicy:
         self._sleep: Callable[[float], None] = interruptible_sleep or time.sleep
         self._retry_state = threading.local()  # Per-thread retry tracking for UI feedback
 
-    def _get_retry_events(self) -> list:
+    def _get_retry_events(self) -> list[dict[str, Any]]:
         events = getattr(self._retry_state, "events", None)
         if events is None:
             events = []

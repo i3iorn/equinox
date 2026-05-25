@@ -239,7 +239,7 @@ class DuplicateJsonKeysAnalyzer(Analyzer):
         text = ctx.response.text
         duplicate_keys: set[str] = set()
 
-        def detect_duplicates(pairs: list) -> dict:
+        def detect_duplicates(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
             seen: dict[str, int] = {}
             for key, _value in pairs:
                 seen[key] = seen.get(key, 0) + 1
@@ -301,7 +301,7 @@ class RedirectLocationAnalyzer(Analyzer):
         return findings
 
 
-_DATE_PATTERNS: list[tuple[str, re.Pattern]] = [
+_DATE_PATTERNS: list[tuple[str, re.Pattern[str]]] = [
     ("ISO 8601", re.compile(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}")),
     ("ISO date only", re.compile(r'"\d{4}-\d{2}-\d{2}"')),
     ("Unix timestamp (s)", re.compile(r":\s*1[5-9]\d{8}(?:\.\d+)?\s*[,}\]]")),

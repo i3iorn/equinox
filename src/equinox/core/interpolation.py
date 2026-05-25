@@ -48,7 +48,7 @@ _TEXT_ENCODING: str = "utf-8"
 
 # Pattern for valid variable names — shared by key validation and OS env filtering.
 # Matches names that can appear inside {{...}} placeholders.
-_VARIABLE_NAME_RE: re.Pattern = re.compile(r"^[a-zA-Z0-9_-]+$")
+_VARIABLE_NAME_RE: re.Pattern[str] = re.compile(r"^[a-zA-Z0-9_-]+$")
 
 
 def _shift_months(base: date, delta_months: int) -> date:

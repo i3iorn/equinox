@@ -21,13 +21,13 @@ class URLComponents(NamedTuple):
 def _build_parser() -> Callable[[str], URLComponents]:
     """Return the best available URL parser as a single callable."""
     try:
-        import urlps  # type: ignore[import]
+        import urlps  # type: ignore[import-not-found]
 
-        _probe = urlps.parse("https://example.com")  # type: ignore[attr-defined]
+        _probe = urlps.parse("https://example.com")
         _ = _probe.scheme, _probe.netloc, _probe.path, _probe.query
 
         def _urlps_parse(url: str) -> URLComponents:
-            parsed = urlps.parse(url)  # type: ignore[attr-defined]
+            parsed = urlps.parse(url)
             return URLComponents(
                 scheme=parsed.scheme or "",
                 netloc=parsed.netloc or "",

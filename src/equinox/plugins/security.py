@@ -342,19 +342,19 @@ class SecureStorageProxy:
         self._sandbox = sandbox
         self._storage = storage
 
-    def fetchone(self, query: str, params: tuple = ()) -> Any:
+    def fetchone(self, query: str, params: tuple[Any, ...] = ()) -> Any:
         """Fetch one row with permission check."""
         self._sandbox.check_permission(Permission.STORAGE_READ)
         self._sandbox.check_storage_operation()
         return self._storage.fetchone(query, params)
 
-    def fetchall(self, query: str, params: tuple = ()) -> list[Any]:
+    def fetchall(self, query: str, params: tuple[Any, ...] = ()) -> list[Any]:
         """Fetch all rows with permission check."""
         self._sandbox.check_permission(Permission.STORAGE_READ)
         self._sandbox.check_storage_operation()
         return cast(list[Any], self._storage.fetchall(query, params))
 
-    def execute(self, query: str, params: tuple = ()) -> Any:
+    def execute(self, query: str, params: tuple[Any, ...] = ()) -> Any:
         """Execute query with permission check."""
         self._sandbox.check_permission(Permission.STORAGE_WRITE)
         self._sandbox.check_storage_operation()
@@ -474,7 +474,7 @@ def validate_plugin_file(plugin_path: Path) -> bool:
 
     import ast as _ast
 
-    violations: list = []
+    violations: list[str] = []
 
     for node in _ast.walk(tree):
         # Block dangerous imports

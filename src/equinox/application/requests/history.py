@@ -39,8 +39,6 @@ class RequestHistoryService:
         error: str | None = None,
     ) -> None:
         """Persist history without letting storage errors bubble into the GUI."""
-        if request is None:
-            return
         try:
             if response is not None:
                 self._history_manager.save_history(request, response)

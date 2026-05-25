@@ -32,7 +32,7 @@ def _validate_ast(source: str, filename: str) -> ast.Module:
         raise SyntaxError("Script is too deeply nested to parse safely") from exc
 
     # Names that are blocked when used as function calls
-    _BLOCKED_CALLS: frozenset = frozenset(
+    _BLOCKED_CALLS: frozenset[str] = frozenset(
         {
             "setattr",
             "delattr",

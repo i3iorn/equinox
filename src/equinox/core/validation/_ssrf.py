@@ -14,6 +14,7 @@ import socket
 import threading
 import time
 from collections import OrderedDict
+from typing import Any
 
 from equinox.core.config.flags import is_ssrf_allow_on_dns_failure_enabled
 from equinox.core.exceptions import ValidationError
@@ -131,7 +132,7 @@ class _SsrfGuard:
                 )
             return
 
-        future: concurrent.futures.Future[list] | None = None
+        future: concurrent.futures.Future[Any] | None = None
         try:
             has_private = False
             future = _DnsPool.get().submit(

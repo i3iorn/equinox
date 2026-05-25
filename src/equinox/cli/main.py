@@ -13,7 +13,7 @@ from equinox.security.secrets_password import rotate_all_secrets
 
 
 @click.group()
-def main():
+def main() -> None:
     """Equinox command-line helpers."""
     pass
 

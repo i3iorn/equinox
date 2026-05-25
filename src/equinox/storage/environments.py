@@ -52,7 +52,7 @@ class EnvironmentManager:
     def __init__(self, db: Database) -> None:
         self.db = db
 
-    def _validate_variables(self, variables: dict) -> dict[str, str]:
+    def _validate_variables(self, variables: dict[str, Any]) -> dict[str, str]:
         """Validate and return a sanitised copy of a variable dict.
 
         Raises:
@@ -125,7 +125,7 @@ class EnvironmentManager:
 
         return description.strip()
 
-    def _validate_secret_keys(self, secret_keys: list[str]) -> list[str]:
+    def _validate_secret_keys(self, secret_keys: list[str] | None) -> list[str]:
         """Validate and normalize secret_keys list.
 
         Args:

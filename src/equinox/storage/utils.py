@@ -48,14 +48,14 @@ def validate_variable_key(key: Any, max_length: int = MAX_VARIABLE_KEY_LENGTH) -
     Raises:
         ValidationError: If *key* is not a non-empty string or is too long.
     """
-    if not key or not isinstance(key, str):
+    if not isinstance(key, str):
         raise ValidationError("Variable key must be a non-empty string")
-    key = key.strip()
-    if not key:
+    normalized_key = key.strip()
+    if not normalized_key:
         raise ValidationError("Variable key cannot be empty or whitespace")
-    if len(key) > max_length:
+    if len(normalized_key) > max_length:
         raise ValidationError(f"Variable key too long (max {max_length} characters)")
-    return key
+    return normalized_key
 
 
 def validate_variable_value(value: Any, max_length: int = MAX_VARIABLE_VALUE_LENGTH) -> str:
@@ -90,14 +90,15 @@ def require_str(value: Any, field: str, max_len: int, required: bool = True) -> 
         value = ""
     if not isinstance(value, str):
         raise ValidationError(f"'{field}' must be a string")
-    if required and not value:
+    text_value = value
+    if required and not text_value:
         raise ValidationError(f"'{field}' must be a non-empty string")
-    value = value.strip()
-    if required and not value:
+    normalized_value = text_value.strip()
+    if required and not normalized_value:
         raise ValidationError(f"'{field}' cannot be empty or whitespace")
-    if len(value) > max_len:
+    if len(normalized_value) > max_len:
         raise ValidationError(f"'{field}' is too long (max {max_len} chars)")
-    return value
+    return normalized_value
 
 
 # ── JSON helpers ───────────────────────────────────────────────────────────

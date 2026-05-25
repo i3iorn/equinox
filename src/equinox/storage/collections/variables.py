@@ -6,6 +6,7 @@ import logging
 from typing import Any
 
 from equinox.core.exceptions import StorageError, ValidationError
+from equinox.storage.database import Database
 from equinox.storage.utils import (
     require_positive_int,
     validate_variable_key,
@@ -19,7 +20,7 @@ class CollectionVariablesMixin:
     """Mixin providing variable management for CollectionManager."""
 
     # Provided by CollectionManager at composition time.
-    db: Any
+    db: Database
     MAX_DESCRIPTION_LENGTH: int
 
     def get_collection(self, collection_id: int) -> dict[str, Any] | None: ...

@@ -2,7 +2,7 @@
 
 import logging
 from pathlib import Path
-from typing import Any, Callable, Dict
+from typing import Any, Callable
 
 from equinox.core.request import Request
 from equinox.importers._utils import normalize_path_variables, validate_import_file
@@ -74,7 +74,7 @@ class InsomniaImporter:
         logger.info("Created collection '%s' (id=%d)", workspace_name, col_id)
 
         # Build folder lookup: _id → resource dict
-        folders: dict[str, Dict] = {
+        folders: dict[str, dict[str, Any]] = {
             r["_id"]: r for r in resources if r.get("_type") == "request_group"
         }
 
@@ -86,9 +86,9 @@ class InsomniaImporter:
             parent_id = folder.get("parentId", "")
             # Stop recursing when we hit the workspace root
             if parent_id == workspace_id or parent_id not in folders:
-                return folder.get("name", "")
+                return str(folder.get("name", ""))
             parent_path = get_folder_path(parent_id)
-            name = folder.get("name", "")
+            name = str(folder.get("name", ""))
             return f"{parent_path}/{name}" if parent_path else name
 
         request_resources = [r for r in resources if r.get("_type") == "request"]
@@ -108,7 +108,7 @@ class InsomniaImporter:
         self,
         res: dict[str, Any],
         col_id: int,
-        folders: dict[str, Dict],
+        folders: dict[str, dict[str, Any]],
         workspace_id: str,
         get_folder_path: Callable[[str], str],
     ) -> None:

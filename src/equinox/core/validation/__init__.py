@@ -120,7 +120,7 @@ class Validator:
         return name
 
     @classmethod
-    def validate_cookie_value(cls, value: str) -> str:
+    def validate_cookie_value(cls, value: Any) -> str:
         """Validate a cookie value for display and storage."""
         if not isinstance(value, str):
             from equinox.core.exceptions import ValidationError
@@ -175,7 +175,7 @@ class Validator:
     # -- Display sanitization -------------------------------------------------
 
     @classmethod
-    def sanitize_for_display(cls, text: str, max_length: int = 1000) -> str:
+    def sanitize_for_display(cls, text: Any, max_length: int = 1000) -> str:
         if not isinstance(text, str):
             text = str(text)
         if len(text) > max_length:

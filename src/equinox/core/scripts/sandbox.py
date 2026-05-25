@@ -25,7 +25,7 @@ def _safe_import(
     raise ImportError(f"Module '{name}' is not allowed in scripts")
 
 
-_BLOCKED = frozenset(
+_BLOCKED: frozenset[str] = frozenset(
     {
         "open",
         "exec",
@@ -50,8 +50,8 @@ _BLOCKED = frozenset(
 )
 
 
-def get_safe_builtins() -> dict:
-    safe_builtins = {
+def get_safe_builtins() -> dict[str, Any]:
+    safe_builtins: dict[str, Any] = {
         name: getattr(builtins, name)
         for name in dir(builtins)
         if name not in _BLOCKED and not name.startswith("_")

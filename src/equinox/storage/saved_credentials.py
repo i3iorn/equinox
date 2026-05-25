@@ -8,6 +8,7 @@ Type lists and display labels are derived from the auth factory registry
 """
 
 import logging
+from collections.abc import Mapping
 from typing import Any
 
 from equinox.auth import AUTH_TYPES
@@ -25,7 +26,7 @@ from equinox.storage.utils import (
 logger = logging.getLogger(__name__)
 
 
-def _get_auth_types() -> tuple:
+def _get_auth_types() -> tuple[str, ...]:
     """Lazy accessor for canonical auth types (avoids circular import)."""
     from equinox.auth import get_auth_types
 
@@ -345,7 +346,9 @@ class SavedCredentialsManager:
 
     @staticmethod
     def _decode(row: Any) -> dict[str, Any]:
-        d: dict[str, Any] = dict(row)  # type: ignore[arg-type]
+        if not isinstance(row, Mapping):
+            raise StorageError("Failed to decode stored credential row: expected mapping")
+        d: dict[str, Any] = dict(row)
         raw_config = d.get("config") or "{}"
         try:
             d["config"] = safe_json_loads(decrypt_auth_data(raw_config))

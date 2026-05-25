@@ -32,7 +32,7 @@ _QUERY_KEY_RE = re.compile(r"^[A-Za-z0-9_.~-]+$")
 
 # Headers excluded from similarity scoring and suggestions (security-sensitive
 # or request-specific headers that are not meaningful for recommendations).
-IGNORED_HEADERS: frozenset = frozenset(
+IGNORED_HEADERS: frozenset[str] = frozenset(
     {
         "authorization",
         "cookie",

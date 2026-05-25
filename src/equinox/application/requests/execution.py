@@ -45,7 +45,7 @@ from equinox.core.interpolation import (
     collect_interpolation_variables_detailed,
 )
 from equinox.core.request import Request
-from equinox.core.request.types import AssertionRule, CaptureRule
+from equinox.core.request.types import AssertionRule, CaptureRule, MultipartField
 from equinox.core.scripts import ScriptRunner
 
 if TYPE_CHECKING:
@@ -145,10 +145,10 @@ def _build_request(
     url: str,
     headers: dict[str, str],
     params: dict[str, str],
-    params_list: list,
+    params_list: list[dict[str, Any]],
     body: str | None,
     effective_auth: Any | None,
-    multipart_data: list | None,
+    multipart_data: list[MultipartField] | None,
     path_params: dict[str, str],
     snapshot: RequestEditorSnapshot,
 ) -> Request:

@@ -19,7 +19,7 @@ logger = logging.getLogger(__name__)
 
 _SEVERITY_ORDER = {Severity.CRITICAL: 0, Severity.WARNING: 1, Severity.INFO: 2}
 
-_ANALYZER_MODULES: tuple = (
+_ANALYZER_MODULES: tuple[str, ...] = (
     # Security analyzers (split from monolithic security.py into focused modules)
     "equinox.core.response_intelligence.analyzers.headers",
     "equinox.core.response_intelligence.analyzers.cookies",
@@ -145,19 +145,6 @@ class AnalysisEngine:
                 continue
             try:
                 results = analyzer.analyze(ctx)
-                if not isinstance(results, list):
-                    logger.warning(
-                        "Analyzer %s returned non-list result (%s)",
-                        analyzer.analyzer_id,
-                        type(results).__name__,
-                    )
-                    findings.append(
-                        self._failure_finding(
-                            analyzer.analyzer_id,
-                            f"Analyzer returned invalid result type: {type(results).__name__}",
-                        )
-                    )
-                    continue
                 findings.extend(results)
             except Exception as exc:
                 logger.warning(

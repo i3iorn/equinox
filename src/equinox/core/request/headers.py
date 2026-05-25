@@ -14,10 +14,10 @@ __all__ = ["HeaderDict"]
 # token = 1*tchar
 # tchar = "!" / "#" / "$" / "%" / "&" / "'" / "*" / "+" / "-" / "." /
 #         "^" / "_" / "`" / "|" / "~" / DIGIT / ALPHA
-_HEADER_NAME_RE: re.Pattern = re.compile(r"^[!#$%&'*+\-.^_`|~0-9A-Za-z]+$")
+_HEADER_NAME_RE: re.Pattern[str] = re.compile(r"^[!#$%&'*+\-.^_`|~0-9A-Za-z]+$")
 
 
-class HeaderDict(dict):
+class HeaderDict(dict[str, str]):
     """Dictionary for HTTP headers with RFC-compliant case-insensitive lookup.
 
     Behavior:
@@ -74,7 +74,7 @@ class HeaderDict(dict):
 
     # ── Overrides that honour original case ───────────────────────────────────
 
-    def get(self, key: str, default: Any = None) -> Any:  # type: ignore[override]
+    def get(self, key: str, default: Any = None) -> Any:
         return super().get(key.lower(), default)
 
     def keys(self) -> Iterator[str]:  # type: ignore[override]

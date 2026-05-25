@@ -25,8 +25,13 @@ class PhpCurlGenerator:
             lines.append("curl_setopt($ch, CURLOPT_HTTPHEADER, $headers);")
 
         if request.body:
+            body_text = (
+                request.body.decode("utf-8", errors="replace")
+                if isinstance(request.body, bytes)
+                else request.body
+            )
             lines.append(
-                f"curl_setopt($ch, CURLOPT_POSTFIELDS, '{_escape_single_quoted(request.body)}');"
+                f"curl_setopt($ch, CURLOPT_POSTFIELDS, '{_escape_single_quoted(body_text)}');"
             )
 
         lines.append("")

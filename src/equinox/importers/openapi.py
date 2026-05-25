@@ -13,7 +13,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-import yaml
+import yaml  # type: ignore[import-untyped]
 
 from equinox.core.exceptions import SecurityError, ValidationError
 from equinox.core.request import Request
@@ -168,6 +168,8 @@ def _load_spec_file(file_path: Path) -> dict[str, Any]:
         raise
     except Exception as exc:
         raise ValidationError(f"Failed to read file: {exc}")
+    if not isinstance(spec_data, dict):
+        raise ValidationError("Spec root must be a JSON/YAML object")
     return spec_data
 
 

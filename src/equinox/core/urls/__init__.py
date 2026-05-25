@@ -20,7 +20,7 @@ _normalize_segment = _normalizer._normalize_segment
 def _sync_parser_aliases() -> None:
     """Keep parser aliases patchable at package root for compatibility tests."""
     _parser._parse_url = _parse_url
-    _normalizer._parse_url = _parse_url
+    setattr(_normalizer, "_parse_url", _parse_url)
 
 
 def expand_placeholders(url: str, variables: dict[str, str] | None = None) -> str:

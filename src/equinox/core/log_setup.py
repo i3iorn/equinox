@@ -20,7 +20,7 @@ import uuid
 from contextvars import ContextVar, Token
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, TextIO
 
 # ──────────────────────────────────────────────────────────────────────────────
 # Module constants
@@ -46,14 +46,14 @@ _FIELD_TRUNCATION_MARKER: str = "...[truncated]"
 _MAX_FIELD_VALUE_LEN: int = 512
 
 # Minimum fields that must survive the final safety-net slim-down.
-_SLIM_FIELDS: tuple = ("ts", "level", "logger", "msg")
+_SLIM_FIELDS: tuple[str, ...] = ("ts", "level", "logger", "msg")
 
 # Environment variable names for level overrides
 _ENV_FILE_LOG_LEVEL: str = "EQUINOX_LOG_LEVEL"
 _ENV_CONSOLE_LOG_LEVEL: str = "EQUINOX_CONSOLE_LOG_LEVEL"
 
 # Third-party loggers whose verbosity should be reduced to WARNING.
-_NOISY_LOGGERS: tuple = ("httpx", "httpcore", "urllib3", "charset_normalizer")
+_NOISY_LOGGERS: tuple[str, ...] = ("httpx", "httpcore", "urllib3", "charset_normalizer")
 
 # ──────────────────────────────────────────────────────────────────────────────
 # Application correlation ID state
@@ -100,7 +100,7 @@ def generate_request_id() -> str:
     return uuid.uuid4().hex[:_CORR_ID_HEX_LENGTH]
 
 
-def set_current_request_id(request_id: str) -> Token:
+def set_current_request_id(request_id: str) -> Token[str | None]:
     """Bind *request_id* to the current execution context and return a reset token."""
     if not isinstance(request_id, str) or not request_id.strip():
         raise ValueError("request_id must be a non-empty string")
@@ -112,7 +112,7 @@ def get_current_request_id() -> str | None:
     return _REQUEST_ID_CTX.get()
 
 
-def clear_current_request_id(token: Token | None = None) -> None:
+def clear_current_request_id(token: Token[str | None] | None = None) -> None:
     """Clear the context-bound request ID, optionally resetting to *token* state."""
     if token is not None:
         _REQUEST_ID_CTX.reset(token)
@@ -227,7 +227,7 @@ class JsonFormatter(logging.Formatter):
         "auth_type",
     }
 
-    def format(self, record: logging.LogRecord) -> str:  # type: ignore[override]
+    def format(self, record: logging.LogRecord) -> str:
         return _safe_serialize(self._build_log_doc(record))
 
     def _build_log_doc(self, record: logging.LogRecord) -> dict[str, Any]:
@@ -296,7 +296,7 @@ class ConsoleFormatter(logging.Formatter):
         super().__init__()
         self.supports_colour = getattr(sys.stderr, "isatty", lambda: False)()
 
-    def format(self, record: logging.LogRecord) -> str:  # type: ignore[override]
+    def format(self, record: logging.LogRecord) -> str:
         ts = _format_local_timestamp(record.created)
         lvl = record.levelname[:5]
         name = record.name.rsplit(".", 1)[-1]
@@ -377,7 +377,7 @@ def _make_file_handler(log_file: Path, level: int) -> logging.handlers.RotatingF
     return handler
 
 
-def _make_console_handler(level: int) -> logging.StreamHandler:
+def _make_console_handler(level: int) -> logging.StreamHandler[TextIO]:
     """Build a stderr console handler with human-readable output.
 
     Args:

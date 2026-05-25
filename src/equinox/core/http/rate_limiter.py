@@ -7,6 +7,7 @@ It can optionally log a security violation via an AuditLogger when the limit is 
 import logging
 import threading
 import time
+from typing import Any
 from typing import Protocol
 
 from equinox.core.exceptions import RateLimitError
@@ -39,7 +40,7 @@ class _AuditLoggerLike(Protocol):
     def log_security_violation(
         self,
         violation_type: str,
-        details: dict,
+        details: dict[str, Any],
         user: str | None = None,
     ) -> None: ...
 

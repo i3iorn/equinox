@@ -388,7 +388,7 @@ class PostmanImporter:
         self,
         url_data: dict[str, Any],
         col_variables: dict[str, str] | None = None,
-    ) -> tuple:
+    ) -> tuple[str, list[dict[str, Any]]]:
         """Build (base_url, params_list) from a Postman URL object.
 
         Query parameters are returned as a ``params_list`` — a list of
@@ -462,7 +462,7 @@ class PostmanImporter:
         mode = body_data.get("mode")
 
         if mode == "raw":
-            return body_data.get("raw", "")
+            return str(body_data.get("raw", ""))
 
         if mode == "urlencoded":
             params = []
@@ -484,7 +484,10 @@ class PostmanImporter:
             return None
 
         if mode == "graphql":
-            return body_data.get("graphql", {}).get("query", "")
+            graphql = body_data.get("graphql", {})
+            if not isinstance(graphql, dict):
+                return ""
+            return str(graphql.get("query", ""))
 
         return None
 

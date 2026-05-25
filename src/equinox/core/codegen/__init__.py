@@ -1,5 +1,5 @@
 import logging
-from typing import Optional, Union
+from typing import Protocol, Union
 
 from equinox.core.request import Request, Response
 from equinox.security import redact_url
@@ -14,7 +14,14 @@ from .ruby import RubyNetHttpGenerator
 
 logger = logging.getLogger(__name__)
 
-_GENERATORS = {
+
+class _GeneratorProtocol(Protocol):
+    def generate(self, response: Response) -> str: ...
+
+
+_GeneratorType = type[_GeneratorProtocol]
+
+_GENERATORS: dict[str, _GeneratorType] = {
     "Python (requests)": PythonRequestsGenerator,
     "Python (httpx)": PythonHttpxGenerator,
     "JavaScript (fetch)": JavaScriptFetchGenerator,
@@ -30,7 +37,7 @@ GENERATORS = _GENERATORS
 
 def generate_code(fmt: str, request_or_response: Union[Request, Response]) -> str:
     """Generate client code for the given response/request."""
-    gen_cls: Optional[type] = _GENERATORS.get(fmt)
+    gen_cls = _GENERATORS.get(fmt)
     if gen_cls is None:
         raise KeyError(fmt)
 

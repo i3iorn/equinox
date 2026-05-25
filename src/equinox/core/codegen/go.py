@@ -28,7 +28,12 @@ class GoHttpGenerator:
         lines.append("func main() {")
 
         if request.body:
-            safe = _escape_go_string(request.body)
+            body_text = (
+                request.body.decode("utf-8", errors="replace")
+                if isinstance(request.body, bytes)
+                else request.body
+            )
+            safe = _escape_go_string(body_text)
             lines.append(f'    body := strings.NewReader("{safe}")')
             lines.append("    req, _ := http.NewRequest(")
             lines.append(f'        "{request.method}",')

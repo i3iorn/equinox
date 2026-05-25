@@ -14,7 +14,7 @@ import logging
 import os
 from getpass import getpass
 from pathlib import Path
-from typing import Callable, cast
+from typing import Callable
 
 from cryptography.fernet import Fernet
 
@@ -199,7 +199,7 @@ def rotate_all_secrets(db_path: str, new_password: str | None = None) -> None:
                 return None
             if isinstance(value, str) and value.startswith(_ENC_PREFIX):
                 return value
-            token = cast(bytes, fernet.encrypt(value.encode("utf-8")))
+            token = fernet.encrypt(value.encode("utf-8"))
             return _ENC_PREFIX + token.decode("ascii")
 
         # Rotate oauth_clients.client_secret
@@ -234,7 +234,7 @@ def rotate_all_secrets(db_path: str, new_password: str | None = None) -> None:
         conn.execute("COMMIT")
     except Exception:
         try:
-            conn.execute("ROLLBACK")  # type: ignore
+            conn.execute("ROLLBACK")
         except Exception:
             pass
         raise

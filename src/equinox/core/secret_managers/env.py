@@ -64,7 +64,7 @@ class EnvironmentVariableManager(SecretManager):
         # Check cache first
         cached = self._get_from_cache(secret_name)
         if cached is not None:
-            return cached
+            return str(cached)
 
         env_var_name = f"{self.prefix}{secret_name}".upper()
         value = os.environ.get(env_var_name)
@@ -91,7 +91,12 @@ class EnvironmentVariableManager(SecretManager):
         """
         value = self.get_secret(secret_name)
         try:
-            return json.loads(value)
+            parsed = json.loads(value)
+            if not isinstance(parsed, dict):
+                raise SecretManagerError(
+                    f"Secret '{secret_name}' must decode to a JSON object"
+                )
+            return parsed
         except json.JSONDecodeError as exc:
             raise SecretManagerError(f"Secret '{secret_name}' is not valid JSON: {exc}") from exc
 

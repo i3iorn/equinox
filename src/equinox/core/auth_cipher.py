@@ -50,11 +50,13 @@ def _get_fernet() -> Fernet:
     first initialisation while keeping the hot path lock-free.
     """
     global _fernet
-    if _fernet is not None:
-        return _fernet
+    cached = _fernet
+    if cached is not None:
+        return cached
     with _fernet_lock:
-        if _fernet is not None:
-            return _fernet
+        cached = _fernet
+        if cached is not None:
+            return cached
         # Prefer master-password derived key if configured
         try:
             f = ensure_master_password_initialized()

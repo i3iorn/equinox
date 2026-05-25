@@ -17,7 +17,7 @@ _ELLIPSIS: str = "…"
 _DEFAULT_MASK_KEEP_CHARS: int = 8
 _DEFAULT_MAX_STRING_LEN: int = 200
 
-_SENSITIVE_KEY_PATTERNS: frozenset = frozenset(
+_SENSITIVE_KEY_PATTERNS: frozenset[str] = frozenset(
     {
         "client_secret",
         "client_password",
@@ -35,7 +35,7 @@ _SENSITIVE_KEY_PATTERNS: frozenset = frozenset(
     }
 )
 
-SENSITIVE_HEADER_NAMES: frozenset = frozenset(
+SENSITIVE_HEADER_NAMES: frozenset[str] = frozenset(
     {
         "authorization",
         "proxy-authorization",
@@ -53,7 +53,7 @@ SENSITIVE_HEADER_NAMES: frozenset = frozenset(
     }
 )
 
-SENSITIVE_PAYLOAD_KEYS: frozenset = _SENSITIVE_KEY_PATTERNS | frozenset(
+SENSITIVE_PAYLOAD_KEYS: frozenset[str] = _SENSITIVE_KEY_PATTERNS | frozenset(
     {
         "bearer",
         "authorization",
@@ -62,14 +62,14 @@ SENSITIVE_PAYLOAD_KEYS: frozenset = _SENSITIVE_KEY_PATTERNS | frozenset(
 )
 
 _SECRET_KEYS_PATTERN: str = "|".join(sorted(_SENSITIVE_KEY_PATTERNS))
-_BODY_SECRET_KEYS: re.Pattern = re.compile(
+_BODY_SECRET_KEYS: re.Pattern[str] = re.compile(
     rf"((?:{_SECRET_KEYS_PATTERN})=)([^&\s]+)", re.IGNORECASE
 )
-_JSON_SECRET_KEYS: re.Pattern = re.compile(
+_JSON_SECRET_KEYS: re.Pattern[str] = re.compile(
     rf'("(?:{_SECRET_KEYS_PATTERN})"\s*:\s*")([^\"]+)(")', re.IGNORECASE
 )
-_URL_CREDENTIALS: re.Pattern = re.compile(r"(https?://)([^@/:]+):([^@/]+)@", re.IGNORECASE)
-_URL_SECRET_PARAMS: re.Pattern = re.compile(
+_URL_CREDENTIALS: re.Pattern[str] = re.compile(r"(https?://)([^@/:]+):([^@/]+)@", re.IGNORECASE)
+_URL_SECRET_PARAMS: re.Pattern[str] = re.compile(
     rf"((?:\?|&)(?:{_SECRET_KEYS_PATTERN})=)([^&#]+)", re.IGNORECASE
 )
 

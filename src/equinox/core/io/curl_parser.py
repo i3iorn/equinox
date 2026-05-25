@@ -5,6 +5,7 @@ import logging
 import re
 import shlex
 from dataclasses import dataclass, field
+from typing import Any
 
 from equinox.core import urls
 from equinox.security import redact_url
@@ -179,7 +180,7 @@ def _initial_state() -> _ParserState:
     return _ParserState()
 
 
-def _finalize_parse_result(state: _ParserState) -> dict:
+def _finalize_parse_result(state: _ParserState) -> dict[str, Any]:
     """Build final parse result after token processing."""
     url: str | None = state.url
     if url is None:
@@ -206,7 +207,7 @@ def _finalize_parse_result(state: _ParserState) -> dict:
     }
 
 
-def parse_curl(curl_cmd: str) -> dict:
+def parse_curl(curl_cmd: str) -> dict[str, Any]:
     """Parse a cURL command string and return a dict suitable for building a Request.
 
     Supports:

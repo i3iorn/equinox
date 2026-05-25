@@ -79,7 +79,7 @@ def _terminate_process(p: multiprocessing.Process | None) -> None:
         pass
 
 
-def _close_queue(q: multiprocessing.Queue) -> None:
+def _close_queue(q: multiprocessing.Queue[tuple[str, Any]]) -> None:
     """Close *q* and drain its feeder thread to prevent resource leaks."""
     try:
         q.close()
@@ -161,7 +161,7 @@ class ScriptRunner:
         start_time = time.time()
 
         try:
-            q: multiprocessing.Queue = multiprocessing.Queue()
+            q: multiprocessing.Queue[tuple[str, Any]] = multiprocessing.Queue()
             p: multiprocessing.Process | None = None
         except Exception as e:
             return ScriptResult(

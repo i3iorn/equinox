@@ -8,7 +8,7 @@ logger = logging.getLogger(__name__)
 MAX_DOTENV_SIZE = 1 * 1024 * 1024
 
 
-def parse_dotenv(text: str) -> dict:
+def parse_dotenv(text: str) -> dict[str, str]:
     """Parse a .env file text and return {key: value}.
 
     Handles ``KEY=VALUE``, ``export KEY=VALUE``, quoted values,
@@ -19,7 +19,7 @@ def parse_dotenv(text: str) -> dict:
     """
     if len(text.encode("utf-8")) > MAX_DOTENV_SIZE:
         raise ValueError(f".env content exceeds maximum size ({MAX_DOTENV_SIZE} bytes)")
-    result = {}
+    result: dict[str, str] = {}
     for line in text.splitlines():
         line = line.strip()
         if not line or line.startswith("#"):

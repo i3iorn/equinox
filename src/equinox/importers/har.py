@@ -3,6 +3,7 @@
 import json
 import logging
 from pathlib import Path
+from typing import Any
 
 from equinox.core import urls
 from equinox.core.request import Request
@@ -121,13 +122,13 @@ class HARImporter:
 
     # ── Internal helpers ──────────────────────────────────────────────
 
-    def _entry_to_request(self, req_data: dict, collection_id: int) -> Request:
+    def _entry_to_request(self, req_data: dict[str, Any], collection_id: int) -> Request:
         """Convert a HAR request dict to a :class:`Request` object."""
         method = (req_data.get("method") or "GET").upper()
         url = req_data.get("url") or ""
 
         # Headers: list of {name, value}
-        headers = {}
+        headers: dict[str, str] = {}
         for h in req_data.get("headers") or []:
             name = h.get("name", "")
             value = h.get("value", "")
@@ -136,7 +137,7 @@ class HARImporter:
                 headers[name] = value
 
         # Query string: list of {name, value}
-        params = {}
+        params: dict[str, str] = {}
         for q in req_data.get("queryString") or []:
             k = q.get("name", "")
             v = q.get("value", "")
