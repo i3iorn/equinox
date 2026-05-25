@@ -170,10 +170,11 @@ equinox rotate-secrets --db-path ./equinox.db  # rotate plaintext secrets to enc
 pre-commit run --all-files  # Format, lint, type-check, security scan
 python scripts/run_affected_tests.py  # Fast changed-module test/coverage gate
 python scripts/manage_requirements_lock.py --check  # Validate lockfile consistency (no writes)
+python scripts/check_dependency_vulnerabilities.py  # Blocking dependency CVE gate
 pytest --no-cov             # Run tests (fast)
 ```
 
-Use `scripts/manage_requirements_lock.py --write` only when intentionally regenerating lock artifacts.
+`requirements-lock.txt` is a committed artifact. Use `scripts/manage_requirements_lock.py --write` only when intentionally regenerating lock artifacts.
 
 **Before opening a PR:**
 
@@ -308,7 +309,7 @@ body_bytes = raw_body.encode("utf-8") if isinstance(raw_body, str) else (raw_bod
 
 ### Python version compatibility
 
-`pyproject.toml` declares `requires-python >= 3.9`. Use `Optional[int]` or `"int | None"` (quoted) instead of bare `int | None` in runtime annotations — the latter requires Python 3.10+.
+`pyproject.toml` declares `requires-python >= 3.10`. Modern runtime annotations like `int | None` are supported; quote annotations only when needed for forward references.
 
 ### Syntax highlighting (centralized, package)
 
