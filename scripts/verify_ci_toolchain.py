@@ -42,9 +42,9 @@ def extract_ci_tools() -> Set[str]:
         # Extract tool invocations (common patterns)
         # Patterns: "tool --version", "tool --check", "tool -r", etc.
         patterns = [
-            r"^\s+- (black|isort|ruff|mypy|bandit|safety|pytest)(\s|$)",
-            r"(black|isort|ruff|mypy|bandit|safety|pytest)\s+--",
-            r"(python\s+)?(-m\s+)?(black|isort|ruff|mypy|bandit|safety|pytest)",
+            r"^\s+- (black|isort|ruff|mypy|bandit|safety|pip-audit|pytest)(\s|$)",
+            r"(black|isort|ruff|mypy|bandit|safety|pip-audit|pytest)\s+--",
+            r"(python\s+)?(-m\s+)?(black|isort|ruff|mypy|bandit|safety|pip-audit|pytest)",
         ]
 
         for pattern in patterns:
@@ -57,6 +57,10 @@ def extract_ci_tools() -> Set[str]:
                         tools.add(tool)
                 else:
                     tools.add(match)
+
+        # Map local CI scripts to their runtime tool dependencies.
+        if "scripts/check_dependency_vulnerabilities.py" in content:
+            tools.add("pip-audit")
 
     return tools
 
@@ -138,6 +142,7 @@ def main() -> int:
         "mypy": "mypy",
         "bandit": "bandit",
         "safety": "safety",
+        "pip-audit": "pip-audit",
         "pytest": "pytest",
     }
 
