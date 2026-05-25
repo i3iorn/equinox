@@ -67,4 +67,3 @@ def test_normalize_lock_text_removes_environment_specific_variance(lock_script: 
     assert "(pyproject.toml)" in normalized
     assert "C:/repo/pyproject.toml" not in normalized
     assert "C:\\repo\\pyproject.toml" not in normalized
-

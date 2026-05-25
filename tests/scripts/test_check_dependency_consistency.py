@@ -57,4 +57,3 @@ def test_is_git_tracked_returns_true_for_tracked_file(
     monkeypatch.setattr(consistency_script.subprocess, "run", fake_run)
 
     assert consistency_script.is_git_tracked(tmp_path, "requirements-lock.txt") is True
-

@@ -9,7 +9,9 @@ from pathlib import Path
 
 import pytest
 
-SCRIPT_PATH = Path(__file__).resolve().parents[2] / "scripts" / "check_dependency_vulnerabilities.py"
+SCRIPT_PATH = (
+    Path(__file__).resolve().parents[2] / "scripts" / "check_dependency_vulnerabilities.py"
+)
 
 
 @pytest.fixture(scope="module")
@@ -23,8 +25,8 @@ def vulnerability_script() -> object:
 
 
 def test_extract_json_payload_uses_last_json_line(vulnerability_script: object) -> None:
-    raw = "Found vulnerabilities\n{\"dependencies\": []}\n"
-    assert vulnerability_script._extract_json_payload(raw) == "{\"dependencies\": []}"
+    raw = 'Found vulnerabilities\n{"dependencies": []}\n'
+    assert vulnerability_script._extract_json_payload(raw) == '{"dependencies": []}'
 
 
 def test_parse_findings_formats_fix_versions(vulnerability_script: object) -> None:
@@ -108,7 +110,7 @@ def test_run_scan_fails_on_vulnerabilities(
                 '{"dependencies": ['
                 '{"name": "cryptography", "version": "42.0.8", "vulns": ['
                 '{"id": "CVE-2026-26007", "fix_versions": ["46.0.6"]}'
-                ']}]}'
+                "]}]}"
             ),
             stderr="Found vulnerabilities",
         )
@@ -119,4 +121,3 @@ def test_run_scan_fails_on_vulnerabilities(
     output = capsys.readouterr().out
     assert "known vulnerabilities detected" in output
     assert "cryptography==42.0.8: CVE-2026-26007" in output
-

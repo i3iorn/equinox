@@ -33,9 +33,7 @@ def test_try_open_current_log_file_rejects_non_log(
     assert result.resolved_path == bad.resolve()
 
 
-def test_try_open_current_log_file_opened(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
+def test_try_open_current_log_file_opened(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     log = tmp_path / "equinox.log"
     log.write_text("line", encoding="utf-8")
     monkeypatch.setattr("equinox.gui.log_file_actions.get_log_file", lambda: log)

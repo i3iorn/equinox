@@ -39,8 +39,13 @@ class TestURLValidation:
         with pytest.raises(ValidationError, match="hostname"):
             Validator.validate_resolved_url("https://")
 
-    def test_resolved_url_valid(self):
+    def test_resolved_url_valid(self, monkeypatch):
         """Valid fully resolved URL passes validate_resolved_url."""
+        def _public_dns(*_args, **_kwargs):
+            return [(2, 1, 6, "", ("93.184.216.34", 0))]
+
+        monkeypatch.setattr("equinox.core.validation._ssrf.socket.getaddrinfo", _public_dns)
+
         url = "https://api.example.com/v1/data"
         assert Validator.validate_resolved_url(url) == url
 

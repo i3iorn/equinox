@@ -166,7 +166,7 @@ class TestVariableGroups:
         group_id = var_mgr.create_group("Test", "Test")
 
         # Empty key
-        with pytest.raises(ValidationError, match="non-empty string"):
+        with pytest.raises(ValidationError, match="empty or whitespace"):
             var_mgr.add_variable(group_id, "", "value")
 
         # Key too long
@@ -250,7 +250,7 @@ class TestCollectionVariables:
     def test_add_collection_variable_validation(self, col_mgr, collection_id):
         """Test collection variable validation"""
         # Empty key
-        with pytest.raises(ValidationError, match="non-empty string"):
+        with pytest.raises(ValidationError, match="empty or whitespace"):
             col_mgr.add_variable(collection_id, "", "value")
 
         # Invalid collection ID
