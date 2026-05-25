@@ -70,6 +70,8 @@ Equinox follows a **strict service-boundary architecture** completed in v0.4.4â€
 
 ## Workflow at a Glance
 
+**Runtime baseline:** Python 3.10+
+
 ### For New Contributors
 
 ```bash
@@ -116,6 +118,7 @@ git push origin feature/my-feature
 - **Run locally:** `pytest --cov=equinox --cov-report=html`
 - **Security tests:** always test new validation/encryption code
 - **Fast local gate:** `python scripts/run_affected_tests.py` (changed modules only)
+- **Dependency vulnerabilities:** blocking via `python scripts/check_dependency_vulnerabilities.py`
 
 ---
 
@@ -191,7 +194,7 @@ GitHub Actions runs on every push:
 
 1. **Pre-commit hooks:** ruff format, type checking, security scan
 2. **Tests:** full suite with â‰¥ 87% coverage requirement
-3. **Security:** bandit checks for vulnerabilities
+3. **Security:** bandit + blocking dependency vulnerability scan (`scripts/check_dependency_vulnerabilities.py`)
 4. **Type checking:** mypy strict mode
 5. **Dependency lock check:** `scripts/manage_requirements_lock.py --check` (validate-only; no CI writes)
 
@@ -200,10 +203,13 @@ GitHub Actions runs on every push:
 pre-commit run --all-files
 python scripts/run_affected_tests.py
 python scripts/manage_requirements_lock.py --check
+python scripts/check_dependency_vulnerabilities.py
 pytest --cov=equinox --cov-report=term
 mypy src tests
 bandit -r src/equinox --severity-level=medium
 ```
+
+`requirements-lock.txt` is committed. Regenerate it intentionally with `python scripts/manage_requirements_lock.py --write` when dependency changes are made.
 
 ---
 
