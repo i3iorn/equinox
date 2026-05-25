@@ -2,6 +2,13 @@ repos:
   # ── Local project-specific checks ──────────────────────────────────────────
   - repo: local
     hooks:
+      - id: code-component-size
+        name: "Check: code component sizes are within limits"
+        entry: python scripts/check_code_component_size.py
+        language: python
+        pass_filenames: false
+        files: ^(src/equinox/.*\.py)$
+
       - id: dependency-manifest-consistency
         name: "Check: dependency manifest consistency"
         entry: python scripts/check_dependency_consistency.py
