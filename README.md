@@ -74,7 +74,7 @@ src/equinox/
 
 ## Requirements
 
-- Python 3.9+
+- Python 3.10+
 
 ## Installation
 
@@ -128,8 +128,10 @@ ruff format --check .
 mypy src tests
 pytest
 bandit -r src/equinox
-safety check
+python scripts/check_dependency_vulnerabilities.py
 ```
+
+Dependency vulnerabilities are a blocking gate in both pre-commit and CI via `scripts/check_dependency_vulnerabilities.py`.
 
 **Key development commands:**
 
@@ -161,12 +163,15 @@ mypy src tests
 # Run security scan
 bandit -r src/equinox
 
+# Run dependency vulnerability gate (blocking)
+python scripts/check_dependency_vulnerabilities.py
+
 # Lockfile maintenance
 python scripts/manage_requirements_lock.py --check
 python scripts/manage_requirements_lock.py --write
 ```
 
-`--check` validates lockfile consistency (no writes); `--write` regenerates lock artifacts when updates are intentional.
+`requirements-lock.txt` is a committed artifact. `--check` validates lockfile consistency (no writes), and `--write` regenerates it intentionally when dependency updates are made.
 
 ## Performance & Observability
 
