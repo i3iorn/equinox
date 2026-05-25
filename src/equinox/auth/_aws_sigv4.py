@@ -59,49 +59,116 @@ class AWSSigV4Auth(AuthStrategy):
     # ── AuthStrategy interface ────────────────────────────────────────────────
 
     def apply(self, request: Any, headers: dict[str, str]) -> None:
-        """Compute SigV4 signature and inject signing headers.
+        """Inject AWS SigV4 authentication headers into the request.
 
-        Sets:
-            ``Authorization``        — AWS4-HMAC-SHA256 Credential=…
-            ``x-amz-date``           — ISO-8601 date-time (UTC)
-            ``x-amz-security-token`` — (only when session_token is set)
+        Args:
+            request: Request-like object with `url`, `method`, and optional `body`.
+            headers: Mutable mapping of HTTP headers to update.
+
+        Raises:
+            AuthError: If required request fields are missing or invalid.
         """
-        url = getattr(request, "url", "") or ""
-        method = (getattr(request, "method", "GET") or "GET").upper()
-        logger.debug(
-            "Applying AWS SigV4 auth: method=%s url=%s region=%s service=%s",
-            method,
-            url,
-            self.region,
-            self.service,
-        )
-        now = datetime.now(timezone.utc)
-        amzdate = now.strftime("%Y%m%dT%H%M%SZ")
-        datestamp = now.strftime("%Y%m%d")
+        url = self._extract_url(request)
+        method = self._extract_method(request)
+        body_bytes = self._extract_body_bytes(request)
 
-        headers["x-amz-date"] = amzdate
-        if self.session_token:
-            headers["x-amz-security-token"] = self.session_token
+        timestamp = datetime.now(timezone.utc)
+        amz_date, date_stamp = self._format_timestamps(timestamp)
 
-        body = getattr(request, "body", None) or ""
-        body_bytes = body.encode("utf-8") if isinstance(body, str) else body
-
-        parsed = url_metadata(url)
-        canonical_uri = self._canonical_uri(str(parsed.get("path") or ""))
-        canonical_qs = self._canonical_query_string(str(parsed.get("query") or ""))
-
-        host = str(parsed.get("hostname") or "")
-        port = parsed.get("port")
-        if isinstance(port, int) and port not in (80, 443):
-            host = f"{host}:{port}"
-        headers["host"] = host  # lowercase — required by SigV4
+        self._set_basic_headers(headers, amz_date)
+        canonical_uri, canonical_qs, host_header = self._canonicalize_url_parts(url)
+        headers["host"] = host_header
 
         signed_headers, canonical_headers = self._canonical_headers(headers)
-
         payload_hash = hashlib.sha256(body_bytes).hexdigest()
         headers["x-amz-content-sha256"] = payload_hash
 
-        canonical_request = "\n".join(
+        canonical_request = self._build_canonical_request(
+            method=method,
+            canonical_uri=canonical_uri,
+            canonical_qs=canonical_qs,
+            canonical_headers=canonical_headers,
+            signed_headers=signed_headers,
+            payload_hash=payload_hash,
+        )
+
+        credential_scope = f"{date_stamp}/{self.region}/{self.service}/aws4_request"
+        string_to_sign = self._build_string_to_sign(
+            amz_date=amz_date,
+            credential_scope=credential_scope,
+            canonical_request=canonical_request,
+        )
+
+        signing_key = self._get_signing_key(date_stamp)
+        signature = hmac.new(
+            signing_key, string_to_sign.encode("utf-8"), hashlib.sha256
+        ).hexdigest()
+
+        headers["Authorization"] = (
+            f"AWS4-HMAC-SHA256 Credential={self.access_key}/{credential_scope}, "
+            f"SignedHeaders={signed_headers}, Signature={signature}"
+        )
+
+    def _extract_url(self, request: Any) -> str:
+        """Return validated request URL."""
+        url = getattr(request, "url", None)
+        if not isinstance(url, str) or not url:
+            raise AuthError("Request URL is missing or invalid")
+        return url
+
+    def _extract_method(self, request: Any) -> str:
+        """Return validated uppercase HTTP method."""
+        method = getattr(request, "method", "GET")
+        if not isinstance(method, str) or not method.strip():
+            raise AuthError("Request method is missing or invalid")
+        return method.upper()
+
+    def _extract_body_bytes(self, request: Any) -> bytes:
+        """Return request body as bytes, defaulting to empty bytes."""
+        body = getattr(request, "body", b"")
+        if isinstance(body, bytes):
+            return body
+        if isinstance(body, str):
+            return body.encode("utf-8")
+        raise AuthError("Request body must be str or bytes")
+
+    def _format_timestamps(self, ts: datetime) -> tuple[str, str]:
+        """Return (amz_date, date_stamp) strings."""
+        return ts.strftime("%Y%m%dT%H%M%SZ"), ts.strftime("%Y%m%d")
+
+    def _set_basic_headers(self, headers: dict[str, str], amz_date: str) -> None:
+        """Set x-amz-date and optional session token."""
+        headers["x-amz-date"] = amz_date
+        if self.session_token:
+            headers["x-amz-security-token"] = self.session_token
+
+    def _canonicalize_url_parts(self, url: str) -> tuple[str, str, str]:
+        """Return canonical_uri, canonical_query_string, host_header."""
+        parsed = url_metadata(url)
+
+        path = str(parsed.get("path") or "")
+        query = str(parsed.get("query") or "")
+        host = str(parsed.get("hostname") or "")
+
+        port = parsed.get("port")
+        if isinstance(port, int) and port not in (80, 443):
+            host = f"{host}:{port}"
+
+        canonical_uri = self._canonical_uri(path)
+        canonical_qs = self._canonical_query_string(query)
+        return canonical_uri, canonical_qs, host
+
+    def _build_canonical_request(
+        self,
+        method: str,
+        canonical_uri: str,
+        canonical_qs: str,
+        canonical_headers: str,
+        signed_headers: str,
+        payload_hash: str,
+    ) -> str:
+        """Return canonical request string."""
+        return "\n".join(
             [
                 method,
                 canonical_uri,
@@ -111,28 +178,6 @@ class AWSSigV4Auth(AuthStrategy):
                 payload_hash,
             ]
         )
-
-        credential_scope = "/".join([datestamp, self.region, self.service, "aws4_request"])
-        string_to_sign = "\n".join(
-            [
-                "AWS4-HMAC-SHA256",
-                amzdate,
-                credential_scope,
-                hashlib.sha256(canonical_request.encode("utf-8")).hexdigest(),
-            ]
-        )
-
-        signing_key = self._get_signing_key(datestamp)
-        signature = hmac.new(
-            signing_key, string_to_sign.encode("utf-8"), hashlib.sha256
-        ).hexdigest()
-
-        headers["Authorization"] = (
-            f"AWS4-HMAC-SHA256 Credential={self.access_key}/{credential_scope}, "
-            f"SignedHeaders={signed_headers}, "
-            f"Signature={signature}"
-        )
-        logger.debug("AWS SigV4 Authorization header applied (signed_headers=%s)", signed_headers)
 
     def to_dict(self) -> dict[str, Any]:
         d: dict[str, Any] = {
@@ -145,6 +190,23 @@ class AWSSigV4Auth(AuthStrategy):
         if self.session_token:
             d["session_token"] = self.session_token
         return d
+
+    def _build_string_to_sign(
+        self,
+        amz_date: str,
+        credential_scope: str,
+        canonical_request: str,
+    ) -> str:
+        """Return SigV4 string-to-sign."""
+        hashed_request = hashlib.sha256(canonical_request.encode("utf-8")).hexdigest()
+        return "\n".join(
+            [
+                "AWS4-HMAC-SHA256",
+                amz_date,
+                credential_scope,
+                hashed_request,
+            ]
+        )
 
     @classmethod
     def from_dict(cls, data: dict[str, Any], **kwargs: Any) -> AWSSigV4Auth:
