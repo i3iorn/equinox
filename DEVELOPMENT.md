@@ -139,6 +139,9 @@ black src/ tests/
 
 # Security scan
 bandit -r src/equinox --severity-level=medium
+
+# Dependency vulnerability scan (blocking)
+python scripts/check_dependency_vulnerabilities.py
 ```
 
 ### 5. Pre-commit Workflow
@@ -165,7 +168,7 @@ git commit -m "feat: my feature"
 - Detect private keys & large files
 - Type checking (mypy)
 - Security scan (bandit)
-- Custom checks (dependency consistency)
+- Custom checks (dependency consistency, committed lockfile freshness, dependency vulnerability scan)
 - Affected-test execution with coverage threshold enforcement (`run-affected-tests`)
 
 ### 6. Committing Changes
@@ -318,9 +321,14 @@ python scripts/manage_requirements_lock.py --check
 # Regenerate lockfile intentionally
 python scripts/manage_requirements_lock.py --write
 
+# Verify dependency vulnerabilities are resolved
+python scripts/check_dependency_vulnerabilities.py
+
 # Commit
 git commit -m "chore: update dependencies"
 ```
+
+`requirements-lock.txt` is committed. Use `--check` for validation and `--write` only for intentional regeneration.
 
 ---
 
@@ -382,8 +390,8 @@ GitHub Actions runs when you push:
 
 1. **Linting & Formatting:** ruff, black
 2. **Type Checking:** mypy
-3. **Security:** bandit
-4. **Tests:** pytest with coverage (≥ 85% required)
+3. **Security:** bandit + blocking dependency vulnerability scan (`scripts/check_dependency_vulnerabilities.py`)
+4. **Tests:** pytest with coverage (>= 87% required)
 5. **Code Coverage:** reported in PR
 
 **Local CI simulation:**
@@ -393,10 +401,11 @@ GitHub Actions runs when you push:
 pre-commit run --all-files
 pytest --cov=equinox --cov-report=term
 bandit -r src/equinox --severity-level=medium
+python scripts/check_dependency_vulnerabilities.py
 ```
 
 If CI fails and local passes:
-- Check Python version (CI uses 3.9+)
+- Check Python version (CI uses 3.10+)
 - Check for test isolation issues
 - Review CI logs for details
 
