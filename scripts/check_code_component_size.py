@@ -1,157 +1,177 @@
 import ast
+import json
 import os
 import subprocess
 import sys
+from concurrent.futures import ThreadPoolExecutor
+from dataclasses import dataclass
 from pathlib import Path
+from typing import List, Optional
 
-_LIMITS = {
-    "module": 1000,
-    "function": 60,
-    "class": 800,
+DEFAULT_LIMITS = {
+    "module": 500,
+    "function": 30,
+    "class": 200,
 }
 
+# ------------------------------------------------------------
+# Data structures
+# ------------------------------------------------------------
 
-def analyze_file(path: Path):
-    with path.open("r", encoding="utf-8-sig") as f:
-        source = f.read()
+@dataclass
+class FunctionInfo:
+    name: str
+    lineno: int
+    lines: int
+    parent: Optional[str] = None  # class name or None
 
+
+@dataclass
+class ClassInfo:
+    name: str
+    lineno: int
+    lines: int
+    methods: List[FunctionInfo]
+
+
+@dataclass
+class FileReport:
+    path: Path
+    module_lines: int
+    classes: List[ClassInfo]
+    functions: List[FunctionInfo]
+
+
+# ------------------------------------------------------------
+# Helpers
+# ------------------------------------------------------------
+
+def safe_len(node):
+    """Return number of lines for an AST node, safely."""
+    if hasattr(node, "end_lineno") and node.end_lineno:
+        return node.end_lineno - node.lineno + 1
+    return 0
+
+
+def analyze_file(path: Path) -> FileReport:
+    source = path.read_text(encoding="utf-8-sig")
     tree = ast.parse(source)
     module_lines = len(source.splitlines())
 
     classes = []
     functions = []
 
-    if "test" not in path.as_posix():
-        for node in tree.body:
-            if isinstance(node, ast.ClassDef):
-                class_info = {
-                    "name": node.name,
-                    "lineno": node.lineno,
-                    "lines": node.end_lineno - node.lineno + 1,
-                    "methods": [],
-                }
+    # Skip tests
+    if "test" in path.as_posix():
+        return FileReport(path, module_lines, classes, functions)
 
-                for item in node.body:
-                    if isinstance(item, ast.FunctionDef):
-                        class_info["methods"].append(
-                            {
-                                "name": item.name,
-                                "lines": item.end_lineno - item.lineno + 1,
-                                "lineno": item.lineno,
-                            }
-                        )
+    for node in ast.walk(tree):
+        if isinstance(node, ast.ClassDef):
+            cls = ClassInfo(
+                name=node.name,
+                lineno=node.lineno,
+                lines=safe_len(node),
+                methods=[],
+            )
+            classes.append(cls)
 
-                classes.append(class_info)
+        elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            parent = getattr(node, "parent_class", None)
+            fn = FunctionInfo(
+                name=node.name,
+                lineno=node.lineno,
+                lines=safe_len(node),
+                parent=parent,
+            )
+            functions.append(fn)
 
-            elif isinstance(node, ast.FunctionDef):
-                functions.append(
-                    {
-                        "module": Path(path).stem,
-                        "name": node.name,
-                        "lines": node.end_lineno - node.lineno + 1,
-                        "lineno": node.lineno,
-                    }
-                )
+    # Attach methods to classes
+    class_map = {c.name: c for c in classes}
+    for fn in functions:
+        if fn.parent in class_map:
+            class_map[fn.parent].methods.append(fn)
 
-    return {
-        "module": path,
-        "module_lines": module_lines,
-        "classes": classes,
-        "functions": functions,
-    }
+    # Keep only top-level functions
+    top_level_functions = [f for f in functions if f.parent is None]
+
+    return FileReport(path, module_lines, classes, top_level_functions)
+
+
+def annotate_parents(tree):
+    """Annotate function nodes with parent class names."""
+    for node in ast.walk(tree):
+        for child in ast.iter_child_nodes(node):
+            if isinstance(node, ast.ClassDef) and isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                child.parent_class = node.name
+            annotate_parents(child)
 
 
 def get_staged_python_files():
-    """Return staged .py files."""
     result = subprocess.run(
         ["git", "diff", "--cached", "--name-only", "--diff-filter=ACM"],
         capture_output=True,
         text=True,
     )
-    files = [Path(f) for f in result.stdout.splitlines() if f.endswith(".py")]
-    return [f for f in files if f.exists()]
+    return [Path(f) for f in result.stdout.splitlines() if f.endswith(".py") and Path(f).exists()]
 
 
 def get_all_python_files():
     return list(Path("./src/equinox").rglob("*.py"))
 
 
-def main():
-    # Priority: CLI flag > environment variable > default (staged only)
-    mode = "staged"
+# ------------------------------------------------------------
+# Main
+# ------------------------------------------------------------
 
+def main():
+    # Determine mode
+    mode = os.getenv("SIZE_CHECK_MODE", "staged")
     if "--all" in sys.argv:
         mode = "all"
     elif "--staged" in sys.argv:
         mode = "staged"
-    else:
-        env_mode = os.getenv("SIZE_CHECK_MODE")
-        if env_mode in ("all", "staged"):
-            mode = env_mode
 
-    if mode == "all":
-        files = get_all_python_files()
-        print("Checking ALL Python files\n")
-    else:
-        files = get_staged_python_files()
-        print("Checking STAGED Python files\n")
-
+    files = get_all_python_files() if mode == "all" else get_staged_python_files()
     if not files:
         return 0
 
+    print(f"Checking {mode.upper()} Python files\n")
+
+    # Parallel analysis
+    with ThreadPoolExecutor() as pool:
+        reports = list(pool.map(analyze_file, files))
+
     violations = []
 
-    for path in files:
-        report = analyze_file(path)
+    for report in reports:
+        path = report.path
 
-        # Module-level
-        if report["module_lines"] > _LIMITS["module"]:
-            over = (report["module_lines"] - _LIMITS["module"]) / _LIMITS["module"] * 100
-            violations.append(
-                (
-                    over,
-                    f"{path}:1: Module too large - {report['module_lines']} lines ({over:.1f}% over)",
-                )
-            )
+        # Module
+        if report.module_lines > DEFAULT_LIMITS["module"]:
+            over = (report.module_lines - DEFAULT_LIMITS["module"]) / DEFAULT_LIMITS["module"] * 100
+            violations.append((over, f"{path}:1: Module too large ({report.module_lines} lines, {over:.1f}% over)"))
 
-        # Classes + methods
-        for cls in report["classes"]:
-            if cls["lines"] > _LIMITS["class"]:
-                over = (cls["lines"] - _LIMITS["class"]) / _LIMITS["class"] * 100
-                violations.append(
-                    (
-                        over,
-                        f"{path}:{cls['lineno']}: Class too large: {cls['name']} - {cls['lines']} lines ({over:.1f}% over)",
-                    )
-                )
+        # Classes
+        for cls in report.classes:
+            if cls.lines > DEFAULT_LIMITS["class"]:
+                over = (cls.lines - DEFAULT_LIMITS["class"]) / DEFAULT_LIMITS["class"] * 100
+                violations.append((over, f"{path}:{cls.lineno}: Class '{cls.name}' too large ({cls.lines} lines, {over:.1f}% over)"))
 
-            for m in cls["methods"]:
-                if m["lines"] > _LIMITS["function"]:
-                    over = (m["lines"] - _LIMITS["function"]) / _LIMITS["function"] * 100
-                    violations.append(
-                        (
-                            over,
-                            f"{path}:{m['lineno']}: Method too large: {cls['name']}:{m['name']} - {m['lines']} lines ({over:.1f}% over)",
-                        )
-                    )
+            for m in cls.methods:
+                if m.lines > DEFAULT_LIMITS["function"]:
+                    over = (m.lines - DEFAULT_LIMITS["function"]) / DEFAULT_LIMITS["function"] * 100
+                    violations.append((over, f"{path}:{m.lineno}: Method '{cls.name}.{m.name}' too large ({m.lines} lines, {over:.1f}% over)"))
 
         # Top-level functions
-        for fn in report["functions"]:
-            if fn["lines"] > _LIMITS["function"]:
-                over = (fn["lines"] - _LIMITS["function"]) / _LIMITS["function"] * 100
-                violations.append(
-                    (
-                        over,
-                        f"{path}:{fn['lineno']}: Function too large: {fn['module']}:{fn['name']} - {fn['lines']} lines ({over:.1f}% over)",
-                    )
-                )
+        for fn in report.functions:
+            if fn.lines > DEFAULT_LIMITS["function"]:
+                over = (fn.lines - DEFAULT_LIMITS["function"]) / DEFAULT_LIMITS["function"] * 100
+                violations.append((over, f"{path}:{fn.lineno}: Function '{fn.name}' too large ({fn.lines} lines, {over:.1f}% over)"))
 
-    # Sort by percentage overage (descending)
     if violations:
-        print("\nSize violations (sorted by % over):\n")
-        for over, msg in sorted(violations, key=lambda x: x[0], reverse=True):
+        print("\nSize violations:\n")
+        for _, msg in sorted(violations, key=lambda x: x[0], reverse=True):
             print(msg)
-
         print("\nCommit blocked due to size violations.")
         return 1
 
