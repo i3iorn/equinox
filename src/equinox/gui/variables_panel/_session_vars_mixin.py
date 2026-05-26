@@ -16,9 +16,9 @@ from PyQt6.QtWidgets import (
     QMessageBox,
     QPushButton,
     QSizePolicy,
-    QTabWidget,
     QTableWidget,
     QTableWidgetItem,
+    QTabWidget,
     QVBoxLayout,
 )
 
@@ -45,9 +45,7 @@ class _SessionVarsMixin:
         self._session_group = QGroupBox("Session Variables")
         self._session_group.setCheckable(True)
         self._session_group.setChecked(True)
-        self._session_group.setSizePolicy(
-            QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Maximum
-        )
+        self._session_group.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Maximum)
         session_layout = QVBoxLayout(self._session_group)
         session_layout.setContentsMargins(4, 4, 4, 4)
         session_layout.setSpacing(4)
@@ -98,9 +96,7 @@ class _SessionVarsMixin:
         self._session_table.customContextMenuRequested.connect(self._show_session_context_menu)
         self._session_table.itemSelectionChanged.connect(self._on_session_selection)
         self._session_table.verticalHeader().setVisible(False)
-        self._session_table.setSizePolicy(
-            QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Maximum
-        )
+        self._session_table.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Maximum)
         session_layout.addWidget(self._session_table)
 
         self._session_group.toggled.connect(self._on_session_group_toggled)
@@ -411,4 +407,3 @@ class _SessionVarsMixin:
             )
         except Exception as exc:
             logger.debug("Failed to update tab badge: %s", exc)
-

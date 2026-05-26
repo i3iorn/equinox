@@ -1,5 +1,8 @@
 """Context-menu usage-tracking helpers for VariablesPanel."""
 
+# Ignore [attr-defined] errors as this will be mixed into a QWidget subclass that has the necessary attributes.
+# mypy: disable-error-code="attr-defined"
+
 from __future__ import annotations
 
 import logging
@@ -84,4 +87,3 @@ class _ContextMenuMixin:
 
         safe.sort(key=lambda row: (row[0], row[1]))
         return [row[2] for row in safe] + [row[1] for row in destructive]
-

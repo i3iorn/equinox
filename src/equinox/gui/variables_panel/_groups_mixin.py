@@ -26,7 +26,7 @@ from PyQt6.QtWidgets import (
 
 from equinox.core.interpolation import VariableInterpolator
 
-from ..ui_common import confirm_yes_no, configure_splitter_persistence
+from ..ui_common import configure_splitter_persistence, confirm_yes_no
 from .variable_dialog import VariableDialog
 
 logger = logging.getLogger(__name__)
@@ -177,9 +177,7 @@ class _GroupsMixin:
 
                 raw = var.get("value") or ""
                 try:
-                    interpolated = (
-                        VariableInterpolator.interpolate(raw, interp_vars) if raw else ""
-                    )
+                    interpolated = VariableInterpolator.interpolate(raw, interp_vars) if raw else ""
                 except Exception:
                     interpolated = raw
                 if interpolated != raw:
@@ -243,9 +241,7 @@ class _GroupsMixin:
             self.refresh_groups()
             self.variables_changed.emit()
         except Exception as exc:
-            logger.error(
-                "Failed to delete group %s: %s", self.current_group_id, exc, exc_info=True
-            )
+            logger.error("Failed to delete group %s: %s", self.current_group_id, exc, exc_info=True)
             QMessageBox.critical(self, "Error", f"Failed to delete group: {exc}")
 
     def _show_group_context_menu(self, position: Any) -> None:
@@ -354,4 +350,3 @@ class _GroupsMixin:
         except Exception as exc:
             logger.error("Failed to remove variable %r: %s", key, exc, exc_info=True)
             QMessageBox.critical(self, "Error", f"Failed to remove variable: {exc}")
-

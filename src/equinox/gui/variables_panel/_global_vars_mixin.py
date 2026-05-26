@@ -40,9 +40,7 @@ class _GlobalVarsMixin:
         Returns the constructed ``QGroupBox``.
         """
         self._global_group = QGroupBox("Global Variables")
-        self._global_group.setSizePolicy(
-            QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Maximum
-        )
+        self._global_group.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Maximum)
         global_layout = QVBoxLayout(self._global_group)
         global_layout.setContentsMargins(4, 4, 4, 4)
         global_layout.setSpacing(4)
@@ -85,9 +83,7 @@ class _GlobalVarsMixin:
         self._global_table.itemSelectionChanged.connect(self._on_global_selection)
         self._global_table.itemDoubleClicked.connect(self._edit_global_var)
         self._global_table.verticalHeader().setVisible(False)
-        self._global_table.setSizePolicy(
-            QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Maximum
-        )
+        self._global_table.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Maximum)
         global_layout.addWidget(self._global_table)
 
         return self._global_group
@@ -200,4 +196,3 @@ class _GlobalVarsMixin:
         except Exception as exc:
             logger.error("Failed to delete global variable %r: %s", key, exc, exc_info=True)
             QMessageBox.critical(self, "Error", f"Failed to delete global variable: {exc}")
-

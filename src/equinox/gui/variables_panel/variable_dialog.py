@@ -55,4 +55,3 @@ class VariableDialog(QDialog):
             self.value_input.text(),
             self.description_input.toPlainText().strip(),
         )
-

@@ -79,9 +79,7 @@ class VariablesPanel(
         try:
             rp = getattr(self.window(), "request_panel", None)
             session_vars = rp.get_session_vars() if rp is not None else {}
-            collection_id = getattr(
-                getattr(rp, "current_request", None), "collection_id", None
-            )
+            collection_id = getattr(getattr(rp, "current_request", None), "collection_id", None)
             interp_vars, _sources = collect_interpolation_variables_detailed(
                 self.db,
                 collection_id=collection_id,
@@ -95,5 +93,3 @@ class VariablesPanel(
         except Exception as exc:
             logger.debug("Tooltip: failed to build interpolation context: %s", exc)
             return {}
-
-

@@ -1,4 +1,5 @@
-﻿"""Variable groups management panel."""
+"""Variable groups management panel."""
+
 from .panel import VariablesPanel
 from .variable_dialog import VariableDialog
 
