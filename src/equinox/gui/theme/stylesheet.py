@@ -11,7 +11,7 @@ def build_stylesheet(base_pt: int, colors: dict[str, str]) -> str:
     """Generate the application-wide stylesheet string."""
     c = colors
     sm = get_small_text_size(base_pt)
-    me = int(sm*1.2)
+    me = int(sm * 1.2)
 
     stylesheet_path = Path(__file__).parent / "stylesheet.qss"
     stylesheet = stylesheet_path.read_text()

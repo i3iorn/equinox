@@ -22,22 +22,61 @@ from equinox.core.exceptions import SecurityError
 logger = logging.getLogger(__name__)
 audit_logger = get_audit_logger()
 
-_DANGEROUS_MODULES = frozenset({
-    "subprocess", "shutil", "ctypes", "multiprocessing", "signal",
-    "resource", "pty", "fcntl", "termios", "importlib", "code",
-    "codeop", "dis", "inspect", "gc", "_thread", "socket", "http",
-    "xmlrpc", "pickle", "shelve", "marshal", "builtins", "io",
-    "webbrowser", "zipimport", "runpy",
-})
+_DANGEROUS_MODULES = frozenset(
+    {
+        "subprocess",
+        "shutil",
+        "ctypes",
+        "multiprocessing",
+        "signal",
+        "resource",
+        "pty",
+        "fcntl",
+        "termios",
+        "importlib",
+        "code",
+        "codeop",
+        "dis",
+        "inspect",
+        "gc",
+        "_thread",
+        "socket",
+        "http",
+        "xmlrpc",
+        "pickle",
+        "shelve",
+        "marshal",
+        "builtins",
+        "io",
+        "webbrowser",
+        "zipimport",
+        "runpy",
+    }
+)
 
-_OS_FORBIDDEN = frozenset({
-    "system", "popen", "exec", "execv", "execve",
-    "spawn", "spawnl", "spawnle", "fork",
-})
+_OS_FORBIDDEN = frozenset(
+    {
+        "system",
+        "popen",
+        "exec",
+        "execv",
+        "execve",
+        "spawn",
+        "spawnl",
+        "spawnle",
+        "fork",
+    }
+)
 
-_DANGEROUS_FUNCTIONS = frozenset({
-    "eval", "exec", "compile", "__import__", "breakpoint",
-})
+_DANGEROUS_FUNCTIONS = frozenset(
+    {
+        "eval",
+        "exec",
+        "compile",
+        "__import__",
+        "breakpoint",
+    }
+)
 
 
 class Permission(Enum):

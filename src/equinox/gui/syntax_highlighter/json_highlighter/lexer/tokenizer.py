@@ -62,7 +62,9 @@ class JsonLexer:
 
         return state
 
-    def _lex_normal(self, text: str, index: int, state: State, opened: bool, start: int) -> tuple[int, State, Optional[Token], bool, int]:
+    def _lex_normal(
+        self, text: str, index: int, state: State, opened: bool, start: int
+    ) -> tuple[int, State, Optional[Token], bool, int]:
         ch = text[index]
 
         if ch.isspace():
@@ -96,7 +98,9 @@ class JsonLexer:
 
         return index + 1, state, Token("ERROR", index, index + 1, ch), opened, start
 
-    def _lex_string(self, text: str, index: int, start:int , opened: bool) -> tuple[int, Token, State, bool]:
+    def _lex_string(
+        self, text: str, index: int, start: int, opened: bool
+    ) -> tuple[int, Token, State, bool]:
         length = len(text)
         while index < length:
             c = text[index]

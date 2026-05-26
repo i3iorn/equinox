@@ -188,8 +188,9 @@ class CollectionAuthMixin:
         # Single UNION query: fetch all matching folder rows + the collection row.
         if ancestors:
             placeholders = ",".join("?" * len(ancestors))
-            query = (
-                f"SELECT 'folder' AS source, path, auth_type, auth_data "
+            # placeholders is solely "?,?,..." — no user data in the SQL string.
+            query = (  # nosec B608
+                f"SELECT 'folder' AS source, path, auth_type, auth_data "  # nosec B608
                 f"FROM collection_folders "
                 f"WHERE collection_id=? AND path IN ({placeholders}) "
                 f"AND auth_type IS NOT NULL "

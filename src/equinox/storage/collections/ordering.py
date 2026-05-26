@@ -187,8 +187,9 @@ class CollectionOrderingMixin:
             for rid, pos in chunk:
                 params.extend([rid, pos])
             params.extend(ids)
-            self.db.execute(
-                f"UPDATE requests SET sort_order = CASE id {case_clauses} END "
+            # case_clauses and placeholders are purely "WHEN ? THEN ?" / "?,..." strings.
+            self.db.execute(  # nosec B608
+                f"UPDATE requests SET sort_order = CASE id {case_clauses} END "  # nosec B608
                 f"WHERE id IN ({placeholders})",
                 tuple(params),
             )

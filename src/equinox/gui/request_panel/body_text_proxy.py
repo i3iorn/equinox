@@ -269,7 +269,7 @@ class BodyTextProxy:
         """
         if self._widget is not None:
             try:
-                return self._widget.toPlainText() # type: ignore[no-any-return]
+                return self._widget.toPlainText()  # type: ignore[no-any-return]
             except RuntimeError as e:
                 logger.debug("BodyTextProxy: RuntimeError in toPlainText: %s", e)
                 self._invalidate()

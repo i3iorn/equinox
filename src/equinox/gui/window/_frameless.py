@@ -162,7 +162,7 @@ class _FramelessMixin:
             return False
         if not isinstance(watched, QWidget):
             return False
-        if watched.window() is not self: # type: ignore[comparison-overlap]
+        if watched.window() is not self:  # type: ignore[comparison-overlap]
             return False
 
         if event.type() == QEvent.Type.MouseMove:

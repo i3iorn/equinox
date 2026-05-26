@@ -116,7 +116,8 @@ class _HistorySearcher:
         limit: int,
         offset: int,
     ) -> list[dict[str, Any]]:
-        sql = f"SELECT * FROM history {where_clause} " "ORDER BY executed_at DESC LIMIT ? OFFSET ?"
+        # where_clause is built solely from hardcoded SQL fragments; user values are in params.
+        sql = f"SELECT * FROM history {where_clause} " "ORDER BY executed_at DESC LIMIT ? OFFSET ?"  # nosec B608
         rows = self._db.fetchall(sql, tuple(params_list) + (limit, offset))
         return [self._serializer.decode_row(dict(row), row_id=row["id"]) for row in rows]
 
@@ -139,8 +140,9 @@ class _HistorySearcher:
         result: list[dict[str, Any]] = []
         cursor_offset = offset
         batch_size = max(limit * 4, 200)
-        sql_template = (
-            f"SELECT * FROM history {where_clause} " "ORDER BY executed_at DESC LIMIT ? OFFSET ?"
+        # where_clause is built solely from hardcoded SQL fragments; user values are in params.
+        sql_template = (  # nosec B608
+            f"SELECT * FROM history {where_clause} " "ORDER BY executed_at DESC LIMIT ? OFFSET ?"  # nosec B608
         )
 
         while len(result) < limit:
