@@ -90,7 +90,7 @@ httpx==0.28.1
     # via
     #   equinox (pyproject.toml)
     #   safety
-hypothesis==6.152.9
+hypothesis==6.153.0
     # via equinox (pyproject.toml)
 identify==2.6.19
     # via pre-commit
