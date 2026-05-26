@@ -25,6 +25,7 @@ def analyze_file(path: Path):
         if isinstance(node, ast.ClassDef):
             class_info = {
                 "name": node.name,
+                "lineno": node.lineno,
                 "lines": node.end_lineno - node.lineno + 1,
                 "methods": [],
             }
@@ -35,6 +36,7 @@ def analyze_file(path: Path):
                         {
                             "name": item.name,
                             "lines": item.end_lineno - item.lineno + 1,
+                            "lineno": item.lineno,
                         }
                     )
 
@@ -46,6 +48,7 @@ def analyze_file(path: Path):
                     "module": Path(path).stem,
                     "name": node.name,
                     "lines": node.end_lineno - node.lineno + 1,
+                    "lineno": node.lineno
                 }
             )
 
@@ -95,35 +98,64 @@ def main():
     if not files:
         return 0
 
-    violations = False
+    violations = []
 
     for path in files:
         report = analyze_file(path)
 
+        # Module-level
         if report["module_lines"] > _LIMITS["module"]:
-            print(f"\nModule too large: {path} - {report['module_lines']} lines")
-            violations = True
+            over = (report["module_lines"] - _LIMITS["module"]) / _LIMITS["module"] * 100
+            violations.append(
+                (
+                    over,
+                    f"{path}:1: Module too large - {report['module_lines']} lines ({over:.1f}% over)",
+                )
+            )
 
+        # Classes + methods
         for cls in report["classes"]:
             if cls["lines"] > _LIMITS["classes"]:
-                print(f"Class too large: {cls['name']} - {cls['lines']} lines")
-                violations = True
+                over = (cls["lines"] - _LIMITS["classes"]) / _LIMITS["classes"] * 100
+                violations.append(
+                    (
+                        over,
+                        f"{path}:{cls['lineno']}: Class too large: {cls['name']} - {cls['lines']} lines ({over:.1f}% over)",
+                    )
+                )
 
             for m in cls["methods"]:
                 if m["lines"] > _LIMITS["function"]:
-                    print(f"Method too large: {cls['name']}:{m['name']} - {m['lines']} lines")
-                    violations = True
+                    over = (m["lines"] - _LIMITS["function"]) / _LIMITS["function"] * 100
+                    violations.append(
+                        (
+                            over,
+                            f"{path}:{m['lineno']}: Method too large: {cls['name']}:{m['name']} - {m['lines']} lines ({over:.1f}% over)",
+                        )
+                    )
 
+        # Top-level functions
         for fn in report["functions"]:
             if fn["lines"] > _LIMITS["function"]:
-                print(f"Function too large: {fn['module']}:{fn['name']} - {fn['lines']} lines")
-                violations = True
+                over = (fn["lines"] - _LIMITS["function"]) / _LIMITS["function"] * 100
+                violations.append(
+                    (
+                        over,
+                        f"{path}:{fn['lineno']}: Function too large: {fn['module']}:{fn['name']} - {fn['lines']} lines ({over:.1f}% over)",
+                    )
+                )
 
+    # Sort by percentage overage (descending)
     if violations:
+        print("\nSize violations (sorted by % over):\n")
+        for over, msg in sorted(violations, key=lambda x: x[0], reverse=True):
+            print(msg)
+
         print("\nCommit blocked due to size violations.")
         return 1
 
     return 0
+
 
 
 if __name__ == "__main__":
