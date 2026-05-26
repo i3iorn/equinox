@@ -165,49 +165,81 @@ def _discover_test_files(repo_root: Path) -> Tuple[Path, ...]:
 
 
 def _test_relevance_score(
-    source_path: Path, test_path: Path, test_text: str, repo_root: Path
-) -> int:
+    source_path: Path,
+    test_path: Path,
+    test_text: str,
+    repo_root: Path,
+    debug: bool,
+) -> Tuple[int, List[str]]:
     score = 0
+    reasons: List[str] = []
+
     direct_candidate = _direct_test_candidate(source_path, repo_root)
     if direct_candidate is not None and test_path.resolve() == direct_candidate:
-        return 100
+        if debug:
+            print(f"[affected-tests] direct match: {test_path.name} ← {source_path.name}")
+        return 100, ["direct"]
 
     prefixes = _module_prefixes(source_path, repo_root)
     if any(prefix in test_text for prefix in prefixes):
         score += 4
+        reasons.append("module-prefix")
 
     tokens = _significant_tokens(source_path, repo_root)
-    test_haystack = " ".join([test_path.stem.lower(), test_path.as_posix().lower()])
-    if any(token in test_haystack for token in tokens):
+    haystack = f"{test_path.stem.lower()} {test_path.as_posix().lower()}"
+    if any(token in haystack for token in tokens):
         score += 2
+        reasons.append("token-match")
 
     if test_path.parent.name == source_path.parent.name:
         score += 1
+        reasons.append("same-directory")
 
-    return score
+    if debug and score > 0:
+        print(
+            f"[affected-tests] score={score:2d} for {test_path.name} "
+            f"← {source_path.name} ({', '.join(reasons)})"
+        )
+
+    return score, reasons
 
 
 def _select_related_tests(
     repo_root: Path,
     source_files: Sequence[Path],
     all_test_files: Sequence[Path],
+    debug: bool,
 ) -> Tuple[Path, ...]:
     if not source_files:
         return tuple()
 
-    cached_test_text: Dict[Path, str] = {path: _read_text(path) for path in all_test_files}
+    cached_test_text = {path: _read_text(path) for path in all_test_files}
     selected: Dict[Path, None] = {}
 
     for source_path in source_files:
+        if debug:
+            print(f"[affected-tests] analyzing source: {source_path.name}")
+
+        matched_count = 0
+
         for test_path in all_test_files:
-            score = _test_relevance_score(
+            score, reasons = _test_relevance_score(
                 source_path,
                 test_path,
                 cached_test_text[test_path],
                 repo_root,
+                debug=debug,
             )
+
             if score >= 4:
                 selected.setdefault(test_path, None)
+                matched_count += 1
+
+        if debug:
+            print(f"[affected-tests] → matched {matched_count} tests for {source_path.name}")
+
+    if debug:
+        print(f"[affected-tests] total selected tests: {len(selected)}")
 
     return tuple(sorted(selected.keys()))
 
@@ -225,7 +257,7 @@ def _coverage_targets(
     return tuple(sorted(targets.keys()))
 
 
-def build_plan(repo_root: Path, changed_files: Sequence[Path]) -> TestRunPlan:
+def build_plan(repo_root: Path, changed_files: Sequence[Path], debug: bool = False) -> TestRunPlan:
     fail_under, omit_patterns = _load_coverage_settings(repo_root)
 
     source_files: List[Path] = []
@@ -236,7 +268,9 @@ def build_plan(repo_root: Path, changed_files: Sequence[Path]) -> TestRunPlan:
         elif _is_test_file(path, repo_root):
             staged_test_files.append(path.resolve())
 
-    selected_tests = _select_related_tests(repo_root, source_files, _discover_test_files(repo_root))
+    selected_tests = _select_related_tests(
+        repo_root, source_files, _discover_test_files(repo_root), debug
+    )
     coverage_targets = _coverage_targets(repo_root, source_files, omit_patterns)
 
     return TestRunPlan(
@@ -301,7 +335,7 @@ def _emit_failed_command(
     return result.returncode or 1
 
 
-def run_plan(repo_root: Path, plan: TestRunPlan) -> int:
+def run_plan(repo_root: Path, plan: TestRunPlan, debug: bool = False) -> int:
     selected_tests = plan.selected_test_files
     if not selected_tests:
         if plan.source_files:
@@ -311,6 +345,10 @@ def run_plan(repo_root: Path, plan: TestRunPlan) -> int:
             )
             return 1
         return 0
+
+    if not debug:
+        total = len(selected_tests)
+        print(f"[affected-tests] selected {total} test(s) to run")
 
     relative_tests = [path.relative_to(repo_root).as_posix() for path in selected_tests]
     relative_targets = [path.relative_to(repo_root).as_posix() for path in plan.coverage_targets]
@@ -365,6 +403,12 @@ def _parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
         nargs="*",
         help="Changed file paths. When omitted, the script inspects staged git changes.",
     )
+    parser.add_argument(
+        "--debug",
+        action="store_true",
+        help="Print detailed test matching diagnostics",
+    )
+
     return parser.parse_args(argv)
 
 
@@ -377,8 +421,8 @@ def main(argv: Optional[Sequence[str]] = None, repo_root: Optional[Path] = None)
     else:
         changed_files = _staged_files(root)
 
-    plan = build_plan(root, changed_files)
-    return run_plan(root, plan)
+    plan = build_plan(root, changed_files, debug=args.debug)
+    return run_plan(root, plan, debug=args.debug)
 
 
 if __name__ == "__main__":
