@@ -47,7 +47,7 @@ class TestAWSSigV4Coverage:
         req = MagicMock()
         req.url = "https://s3.amazonaws.com:8443/bucket/key"
         req.method = "GET"
-        req.body = None
+        req.body = b""
         headers: Dict[str, str] = {}
         auth.apply(req, headers)
         assert "8443" in headers["host"]

@@ -57,7 +57,7 @@ class TestBuildPlan:
         unrelated = tmp_path / "tests" / "core" / "test_unrelated.py"
         unrelated.write_text("def test_unrelated():\n    assert True\n", encoding="utf-8")
 
-        plan = affected_tests.build_plan(tmp_path, [source, staged_test])
+        plan = affected_tests.build_plan(tmp_path, [source, staged_test], False)
 
         assert plan.source_files == (source.resolve(),)
         assert plan.staged_test_files == (staged_test.resolve(),)
@@ -162,7 +162,7 @@ class TestRunPlan:
         assert calls[1][4] is True and calls[1][5] is True
         assert calls[0][2]["PYTHONPATH"].startswith(str((tmp_path / "src").resolve()))
         assert calls[0][2]["COVERAGE_FILE"].startswith(str(tmp_path))
-        assert capsys.readouterr().out == ""
+        assert capsys.readouterr().out == "[affected-tests] selected 1 test(s) to run\n"
 
     def test_skips_coverage_when_all_targets_are_omitted(
         self,
@@ -199,7 +199,7 @@ class TestRunPlan:
         assert calls[0][0][:3] == [affected_tests.sys.executable, "-m", "pytest"]
         assert calls[0][3] is False
         assert calls[0][4] is True and calls[0][5] is True
-        assert capsys.readouterr().out == ""
+        assert capsys.readouterr().out == "[affected-tests] selected 1 test(s) to run\n"
 
     def test_prints_formatted_output_on_test_failure(
         self,

@@ -41,6 +41,7 @@ class TestURLValidation:
 
     def test_resolved_url_valid(self, monkeypatch):
         """Valid fully resolved URL passes validate_resolved_url."""
+
         def _public_dns(*_args, **_kwargs):
             return [(2, 1, 6, "", ("93.184.216.34", 0))]
 
