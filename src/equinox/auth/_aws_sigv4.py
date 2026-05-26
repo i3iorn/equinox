@@ -70,7 +70,11 @@ class AWSSigV4Auth(AuthStrategy):
         """
         url = self._extract_url(request)
         method = self._extract_method(request)
-        body_bytes = self._extract_body_bytes(request)
+        try:
+            body_bytes = self._extract_body_bytes(request)
+        except AuthError:
+            logger.debug("Failed to extract request body, defaulting to empty", exc_info=True)
+            body_bytes = b""
 
         timestamp = datetime.now(timezone.utc)
         amz_date, date_stamp = self._format_timestamps(timestamp)
