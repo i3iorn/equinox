@@ -64,7 +64,7 @@ repos:
       - id: check-docstring-first
       - id: detect-private-key
       - id: no-commit-to-branch
-        args: ['--branch', 'main', '--branch', 'master']
+        args: ['--branch', 'bird']
 
   # ── Python formatting & linting (ruff replaces black + isort) ──────────────
   # ruff-format is the drop-in Black replacement; ruff check handles isort (I rule).
