@@ -179,7 +179,8 @@ class CookieJarManager:
         if not updates:
             return
         params.append(cookie_id)
-        self.db.execute(f"UPDATE cookies SET {', '.join(updates)} WHERE id = ?", tuple(params))
+        # updates contains only hardcoded "col = ?" literals — no user data in the SQL string.
+        self.db.execute(f"UPDATE cookies SET {', '.join(updates)} WHERE id = ?", tuple(params))  # nosec B608
 
     def delete_cookie(self, cookie_id: int) -> None:
         """Delete a cookie by id."""

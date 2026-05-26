@@ -183,8 +183,9 @@ class SavedCredentialsManager:
         updates.append("updated_at = CURRENT_TIMESTAMP")
         params.append(cred_id)
         try:
+            # updates contains only hardcoded "col = ?" literals — no user data in the SQL string.
             self.db.execute(
-                f"UPDATE saved_credentials SET {', '.join(updates)} WHERE id = ?",
+                f"UPDATE saved_credentials SET {', '.join(updates)} WHERE id = ?",  # nosec B608
                 tuple(params),
             )
             logger.info("Updated saved credential id=%d", cred_id)

@@ -215,8 +215,9 @@ class OAuthClientManager:
         updates.append("updated_at = CURRENT_TIMESTAMP")
         params.append(client_id)
         try:
+            # updates contains only hardcoded "col = ?" literals — no user data in the SQL string.
             self.db.execute(
-                f"UPDATE oauth_clients SET {', '.join(updates)} WHERE id = ?",
+                f"UPDATE oauth_clients SET {', '.join(updates)} WHERE id = ?",  # nosec B608
                 tuple(params),
             )
             logger.info("Updated OAuth2 client id=%d", client_id)

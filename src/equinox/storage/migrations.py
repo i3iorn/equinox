@@ -535,8 +535,8 @@ class MigrationRunner:
         with self._db.get_connection() as conn:
             try:
                 rows = conn.execute(
-                    f"SELECT version, description, applied_at "  # noqa: S608
-                    f"FROM {self.VERSION_TABLE} ORDER BY version"
+                    f"SELECT version, description, applied_at "  # nosec B608
+                    f"FROM {self.VERSION_TABLE} ORDER BY version"  # nosec B608
                 ).fetchall()
                 return [dict(row) for row in rows]
             except sqlite3.OperationalError:
@@ -560,7 +560,7 @@ class MigrationRunner:
     def _read_version(self, conn: sqlite3.Connection) -> int:
         try:
             row = conn.execute(
-                f"SELECT MAX(version) FROM {self.VERSION_TABLE}"  # noqa: S608
+                f"SELECT MAX(version) FROM {self.VERSION_TABLE}"  # nosec B608
             ).fetchone()
             return int(row[0]) if row and row[0] is not None else 0
         except sqlite3.OperationalError:
@@ -580,7 +580,7 @@ class MigrationRunner:
                     logger.debug("Migration v%d executing statement %d", migration.version, i)
                     self._execute_stmt(conn, stmt)
                 conn.execute(
-                    f"INSERT INTO {self.VERSION_TABLE} (version, description) VALUES (?, ?)",
+                    f"INSERT INTO {self.VERSION_TABLE} (version, description) VALUES (?, ?)",  # nosec B608
                     (migration.version, migration.description),
                 )
                 conn.execute("COMMIT")
