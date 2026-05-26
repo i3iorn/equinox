@@ -6,7 +6,7 @@ repos:
         name: "Check: code component sizes are within limits"
         entry: python scripts/check_code_component_size.py
         language: python
-        pass_filenames: false
+        pass_filenames: true
         files: ^(src/equinox/.*\.py)$
 
       - id: dependency-manifest-consistency
@@ -44,7 +44,7 @@ repos:
         name: "Check: mypy strict (CI-aligned)"
         entry: python -m mypy --strict src
         language: system
-        pass_filenames: false
+        pass_filenames: true
         stages: [pre-commit]
         files: ^(src/equinox/.*\.py|tests/.*\.py|pyproject\.toml)$
 
