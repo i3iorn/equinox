@@ -42,11 +42,11 @@ repos:
 
       - id: mypy-strict
         name: "Check: mypy strict (CI-aligned)"
-        entry: python -m mypy --strict src
+        entry: python -m mypy --strict
         language: system
         pass_filenames: true
         stages: [pre-commit]
-        files: ^(src/equinox/.*\.py|tests/.*\.py|pyproject\.toml)$
+        files: ^(src/equinox/.*\.py|tests/.*\.py)$
 
   # ── General file hygiene ────────────────────────────────────────────────────
   - repo: https://github.com/pre-commit/pre-commit-hooks
