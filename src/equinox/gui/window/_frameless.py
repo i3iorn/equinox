@@ -85,7 +85,7 @@ class _FramelessMixin:
             self._win_max_btn.setText("□")
             self._win_max_btn.setToolTip("Maximize")
 
-    def changeEvent(self, event: QEvent) -> None:  # type: ignore[override]
+    def changeEvent(self, event: QEvent) -> None:
         if event.type() == QEvent.Type.WindowStateChange:
             self._sync_window_controls()
             if not self._can_resize_frameless():
@@ -162,7 +162,7 @@ class _FramelessMixin:
             return False
         if not isinstance(watched, QWidget):
             return False
-        if watched.window() is not self:
+        if watched.window() is not self: # type: ignore[comparison-overlap]
             return False
 
         if event.type() == QEvent.Type.MouseMove:
@@ -195,7 +195,7 @@ class _FramelessMixin:
 
     # ── Qt event overrides ────────────────────────────────────────────────────
 
-    def eventFilter(self, watched: QObject, event: QEvent) -> bool:  # type: ignore[override]
+    def eventFilter(self, watched: QObject, event: QEvent) -> bool:
         """Enable dragging the frameless window from empty menu-bar/title area."""
         if self._handle_frameless_resize_event(watched, event):
             return True
@@ -238,7 +238,7 @@ class _FramelessMixin:
 
         return bool(QMainWindow.eventFilter(self._main_window(), watched, event))
 
-    def mousePressEvent(self, event: QMouseEvent) -> None:  # type: ignore[override]
+    def mousePressEvent(self, event: QMouseEvent) -> None:
         if (
             event.button() == Qt.MouseButton.LeftButton
             and self._can_resize_frameless()
@@ -253,16 +253,16 @@ class _FramelessMixin:
                     return
         QMainWindow.mousePressEvent(self._main_window(), event)
 
-    def mouseMoveEvent(self, event: QMouseEvent) -> None:  # type: ignore[override]
+    def mouseMoveEvent(self, event: QMouseEvent) -> None:
         self._update_resize_cursor(event.position().toPoint())
         QMainWindow.mouseMoveEvent(self._main_window(), event)
 
-    def mouseReleaseEvent(self, event: QMouseEvent) -> None:  # type: ignore[override]
+    def mouseReleaseEvent(self, event: QMouseEvent) -> None:
         self._resize_active = False
         self._update_resize_cursor(event.position().toPoint())
         QMainWindow.mouseReleaseEvent(self._main_window(), event)
 
-    def leaveEvent(self, event: QEvent) -> None:  # type: ignore[override]
+    def leaveEvent(self, event: QEvent) -> None:
         if not self._resize_active:
             self.setCursor(Qt.CursorShape.ArrowCursor)
         QMainWindow.leaveEvent(self._main_window(), event)
