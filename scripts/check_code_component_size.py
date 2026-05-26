@@ -1,5 +1,4 @@
 import ast
-import json
 import os
 import subprocess
 import sys
@@ -17,6 +16,7 @@ DEFAULT_LIMITS = {
 # ------------------------------------------------------------
 # Data structures
 # ------------------------------------------------------------
+
 
 @dataclass
 class FunctionInfo:
@@ -45,6 +45,7 @@ class FileReport:
 # ------------------------------------------------------------
 # Helpers
 # ------------------------------------------------------------
+
 
 def safe_len(node):
     """Return number of lines for an AST node, safely."""
@@ -101,7 +102,9 @@ def annotate_parents(tree):
     """Annotate function nodes with parent class names."""
     for node in ast.walk(tree):
         for child in ast.iter_child_nodes(node):
-            if isinstance(node, ast.ClassDef) and isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            if isinstance(node, ast.ClassDef) and isinstance(
+                child, (ast.FunctionDef, ast.AsyncFunctionDef)
+            ):
                 child.parent_class = node.name
             annotate_parents(child)
 
@@ -123,6 +126,7 @@ def get_all_python_files():
 # Main
 # ------------------------------------------------------------
 
+
 def main():
     # Determine mode
     mode = os.getenv("SIZE_CHECK_MODE", "staged")
@@ -130,6 +134,21 @@ def main():
         mode = "all"
     elif "--staged" in sys.argv:
         mode = "staged"
+
+    # Priority: CLI flag > environment variable > default (no limit)
+    limit = None
+    for arg in sys.argv:
+        if arg.startswith("--limit="):
+            try:
+                limit = int(arg.split("=", 1)[1])
+            except ValueError:
+                print("Invalid --limit value; must be an integer.")
+                return 1
+
+    if limit is None:
+        env_limit = os.getenv("SIZE_CHECK_LIMIT")
+        if env_limit and env_limit.isdigit():
+            limit = int(env_limit)
 
     files = get_all_python_files() if mode == "all" else get_staged_python_files()
     if not files:
@@ -149,29 +168,59 @@ def main():
         # Module
         if report.module_lines > DEFAULT_LIMITS["module"]:
             over = (report.module_lines - DEFAULT_LIMITS["module"]) / DEFAULT_LIMITS["module"] * 100
-            violations.append((over, f"{path}:1: Module too large ({report.module_lines} lines, {over:.1f}% over)"))
+            violations.append(
+                (
+                    over,
+                    f"{path}:1: Module too large ({report.module_lines} lines, {over:.1f}% over)",
+                )
+            )
 
         # Classes
         for cls in report.classes:
             if cls.lines > DEFAULT_LIMITS["class"]:
                 over = (cls.lines - DEFAULT_LIMITS["class"]) / DEFAULT_LIMITS["class"] * 100
-                violations.append((over, f"{path}:{cls.lineno}: Class '{cls.name}' too large ({cls.lines} lines, {over:.1f}% over)"))
+                violations.append(
+                    (
+                        over,
+                        f"{path}:{cls.lineno}: Class '{cls.name}' too large ({cls.lines} lines, {over:.1f}% over)",
+                    )
+                )
 
             for m in cls.methods:
                 if m.lines > DEFAULT_LIMITS["function"]:
                     over = (m.lines - DEFAULT_LIMITS["function"]) / DEFAULT_LIMITS["function"] * 100
-                    violations.append((over, f"{path}:{m.lineno}: Method '{cls.name}.{m.name}' too large ({m.lines} lines, {over:.1f}% over)"))
+                    violations.append(
+                        (
+                            over,
+                            f"{path}:{m.lineno}: Method '{cls.name}.{m.name}' too large ({m.lines} lines, {over:.1f}% over)",
+                        )
+                    )
 
         # Top-level functions
         for fn in report.functions:
             if fn.lines > DEFAULT_LIMITS["function"]:
                 over = (fn.lines - DEFAULT_LIMITS["function"]) / DEFAULT_LIMITS["function"] * 100
-                violations.append((over, f"{path}:{fn.lineno}: Function '{fn.name}' too large ({fn.lines} lines, {over:.1f}% over)"))
+                violations.append(
+                    (
+                        over,
+                        f"{path}:{fn.lineno}: Function '{fn.name}' too large ({fn.lines} lines, {over:.1f}% over)",
+                    )
+                )
 
     if violations:
-        print("\nSize violations:\n")
-        for _, msg in sorted(violations, key=lambda x: x[0], reverse=True):
+        print("\nSize violations (sorted by % over):\n")
+
+        sorted_violations = sorted(violations, key=lambda x: x[0], reverse=True)
+
+        if limit is not None and limit > 0:
+            sorted_violations = sorted_violations[:limit]
+
+        for over, msg in sorted_violations:
             print(msg)
+
+        if limit is not None and limit > 0 and len(violations) > limit:
+            print(f"\n(Showing top {limit} of {len(violations)} violations)")
+
         print("\nCommit blocked due to size violations.")
         return 1
 
