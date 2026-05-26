@@ -24,7 +24,6 @@ from equinox.security.secrets_password import ensure_master_password_initialized
 from equinox.storage.auth_cipher_storage import (
     add_encryption_prefix,
     is_encrypted_value,
-    is_nonempty_string,
     strip_encryption_prefix,
 )
 
@@ -47,7 +46,7 @@ def encrypt_auth_data(plaintext_json: str) -> str:
 
 def decrypt_auth_data(stored: str | None, field_name: str = "auth_data") -> str | None:
     """Decrypt auth/config column value with plaintext legacy fallback."""
-    if not is_nonempty_string(stored):
+    if stored is None or stored == "":
         return stored
 
     if not is_encrypted_value(stored):

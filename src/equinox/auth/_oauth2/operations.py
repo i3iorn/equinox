@@ -8,7 +8,7 @@ import time
 import uuid
 from datetime import timedelta
 from threading import Lock
-from typing import Any, Literal
+from typing import Any, Literal, cast
 
 import httpx
 
@@ -313,7 +313,10 @@ def _run_auth_mode_fallback(
     verify_ssl: bool | None,
 ) -> httpx.Response | None:
     try:
-        response = auth._execute_token_post(grant_data, proxy=proxy, verify_ssl=verify_ssl)
+        response = cast(
+            httpx.Response,
+            auth._execute_token_post(grant_data, proxy=proxy, verify_ssl=verify_ssl),
+        )
         logger.info(
             "Token request succeeded after auth-mode fallback",
             extra={"token_url": redact_url(auth.token_url), "token_auth": alternate_mode},
@@ -365,7 +368,10 @@ def try_client_credentials_fallback(
         oauth_error,
         extra={"token_url": redact_url(auth.token_url), "status_code": status_code},
     )
-    return auth._execute_token_post(fallback_grant, proxy=proxy, verify_ssl=verify_ssl)
+    return cast(
+        httpx.Response,
+        auth._execute_token_post(fallback_grant, proxy=proxy, verify_ssl=verify_ssl),
+    )
 
 
 def post_token_request(
@@ -433,7 +439,10 @@ def _attempt_token_request(
     proxy: str | None,
     verify_ssl: bool | None,
 ) -> httpx.Response:
-    response = auth._execute_token_post(grant_data, proxy=proxy, verify_ssl=verify_ssl)
+    response = cast(
+        httpx.Response,
+        auth._execute_token_post(grant_data, proxy=proxy, verify_ssl=verify_ssl),
+    )
     logger.info(
         "Token request succeeded on attempt %d/%d",
         attempts_made,

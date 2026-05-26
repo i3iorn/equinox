@@ -5,6 +5,8 @@ GUI launching, and other operations without requiring all dependencies upfront.
 It is intentionally designed so that PyQt is not required for CLI-only operations.
 """
 
+# mypy: disable-error-code=untyped-decorator
+
 from __future__ import annotations
 
 import click

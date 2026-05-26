@@ -217,7 +217,7 @@ class OAuth2Auth(AuthStrategy):
     @property
     def verify_ssl(self) -> bool:
         """Whether TLS certificate verification is enabled for token requests."""
-        return self._verify_ssl
+        return bool(self._verify_ssl)
 
     def _needs_refresh(self) -> bool:
         """Return True when token is missing, expired, or about to expire."""

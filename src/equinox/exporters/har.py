@@ -90,17 +90,24 @@ class HARExporter:
 
     @staticmethod
     def _safe_headers(headers: dict[str, str] | None) -> dict[str, str]:
-        return redact_headers(headers or {})
+        redacted = redact_headers(headers or {})
+        return {str(key): "" if value is None else str(value) for key, value in redacted.items()}
 
     @staticmethod
     def _safe_body(body: Any) -> str:
-        return coerce_body_to_str(body) if body else ""
+        if not body:
+            return ""
+        coerced = coerce_body_to_str(body)
+        return coerced if coerced is not None else ""
 
     @staticmethod
     def _request_content_type(headers: dict[str, str] | None) -> str:
         if not isinstance(headers, dict):
             return "application/x-www-form-urlencoded"
-        return headers.get("Content-Type", "application/x-www-form-urlencoded")
+        value = headers.get("Content-Type")
+        if isinstance(value, str) and value:
+            return value
+        return "application/x-www-form-urlencoded"
 
     @staticmethod
     def _elapsed_ms(elapsed: float | None) -> int:

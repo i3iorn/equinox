@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 import threading
 from pathlib import Path
-from typing import Callable
+from typing import Callable, cast
 
 from cryptography.fernet import Fernet, InvalidToken
 
@@ -65,7 +65,7 @@ def encrypt_utf8(
 ) -> str:
     """Encrypt a UTF-8 plaintext string and return ASCII Fernet token text."""
     f = get_fernet(master_password_loader=master_password_loader)
-    token = f.encrypt(plaintext.encode("utf-8"))
+    token = cast(bytes, f.encrypt(plaintext.encode("utf-8")))
     return token.decode("ascii")
 
 
@@ -77,7 +77,7 @@ def decrypt_token_to_bytes(
     """Decrypt ASCII ciphertext and return raw plaintext bytes."""
     f = get_fernet(master_password_loader=master_password_loader)
     try:
-        return f.decrypt(ciphertext.encode("ascii"))
+        return cast(bytes, f.decrypt(ciphertext.encode("ascii")))
     except InvalidToken as exc:
         logger.error(
             "Failed to decrypt %s: ciphertext is invalid or corrupted",

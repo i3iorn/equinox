@@ -46,7 +46,7 @@ def encrypt_auth_storage_value(plaintext: str) -> str:
 
 def decrypt_auth_storage_value(stored: str | None, field_name: str = "auth_data") -> str | None:
     """Decode auth/config column value with plaintext legacy fallback."""
-    if not is_nonempty_string(stored):
+    if stored is None or stored == "":
         return stored
 
     if not is_encrypted_value(stored):
