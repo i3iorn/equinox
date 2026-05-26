@@ -1,5 +1,5 @@
+#!/usr/bin/env python3
 import ast
-import os
 import subprocess
 import sys
 from pathlib import Path
@@ -45,7 +45,7 @@ def analyze_file(path: Path):
         elif isinstance(node, ast.FunctionDef):
             functions.append(
                 {
-                    "module": Path(path).stem,
+                    "module": path.stem,
                     "name": node.name,
                     "lines": node.end_lineno - node.lineno + 1,
                     "lineno": node.lineno,
@@ -61,7 +61,7 @@ def analyze_file(path: Path):
 
 
 def get_staged_python_files():
-    """Return staged .py files."""
+    """Fallback when run manually without filenames."""
     result = subprocess.run(
         ["git", "diff", "--cached", "--name-only", "--diff-filter=ACM"],
         capture_output=True,
@@ -71,29 +71,65 @@ def get_staged_python_files():
     return [f for f in files if f.exists()]
 
 
-def get_all_python_files():
-    return list(Path("./src/equinox").rglob("*.py"))
+def check_size_report(path: Path, report: dict):
+    violations = []
+
+    # Module-level
+    if report["module_lines"] > _LIMITS["module"]:
+        over = (report["module_lines"] - _LIMITS["module"]) / _LIMITS["module"] * 100
+        violations.append(
+            (
+                over,
+                f"{path}:1: Module too large - {report['module_lines']} lines ({over:.1f}% over)",
+            )
+        )
+
+    # Classes + methods
+    for cls in report["classes"]:
+        if cls["lines"] > _LIMITS["class"]:
+            over = (cls["lines"] - _LIMITS["class"]) / _LIMITS["class"] * 100
+            violations.append(
+                (
+                    over,
+                    f"{path}:{cls['lineno']}: Class too large: {cls['name']} - {cls['lines']} lines ({over:.1f}% over)",
+                )
+            )
+
+        for m in cls["methods"]:
+            if m["lines"] > _LIMITS["function"]:
+                over = (m["lines"] - _LIMITS["function"]) / _LIMITS["function"] * 100
+                violations.append(
+                    (
+                        over,
+                        f"{path}:{m['lineno']}: Method too large: {cls['name']}:{m['name']} - {m['lines']} lines ({over:.1f}% over)",
+                    )
+                )
+
+    # Top-level functions
+    for fn in report["functions"]:
+        if fn["lines"] > _LIMITS["function"]:
+            over = (fn["lines"] - _LIMITS["function"]) / _LIMITS["function"] * 100
+            violations.append(
+                (
+                    over,
+                    f"{path}:{fn['lineno']}: Function too large: {fn['module']}:{fn['name']} - {fn['lines']} lines ({over:.1f}% over)",
+                )
+            )
+
+    return violations
 
 
 def main():
-    # Priority: CLI flag > environment variable > default (staged only)
-    mode = "staged"
+    # Pre-commit passes filenames as arguments
+    cli_files = [Path(f) for f in sys.argv[1:] if f.endswith(".py")]
 
-    if "--all" in sys.argv:
-        mode = "all"
-    elif "--staged" in sys.argv:
-        mode = "staged"
+    if cli_files:
+        files = [f for f in cli_files if f.exists()]
+        print("Checking Python files from pre-commit\n")
     else:
-        env_mode = os.getenv("SIZE_CHECK_MODE")
-        if env_mode in ("all", "staged"):
-            mode = env_mode
-
-    if mode == "all":
-        files = get_all_python_files()
-        print("Checking ALL Python files\n")
-    else:
+        # Manual fallback
         files = get_staged_python_files()
-        print("Checking STAGED Python files\n")
+        print("Checking STAGED Python files (no filenames passed)\n")
 
     if not files:
         return 0
@@ -102,50 +138,8 @@ def main():
 
     for path in files:
         report = analyze_file(path)
+        violations.extend(check_size_report(path, report))
 
-        # Module-level
-        if report["module_lines"] > _LIMITS["module"]:
-            over = (report["module_lines"] - _LIMITS["module"]) / _LIMITS["module"] * 100
-            violations.append(
-                (
-                    over,
-                    f"{path}:1: Module too large - {report['module_lines']} lines ({over:.1f}% over)",
-                )
-            )
-
-        # Classes + methods
-        for cls in report["classes"]:
-            if cls["lines"] > _LIMITS["class"]:
-                over = (cls["lines"] - _LIMITS["class"]) / _LIMITS["class"] * 100
-                violations.append(
-                    (
-                        over,
-                        f"{path}:{cls['lineno']}: Class too large: {cls['name']} - {cls['lines']} lines ({over:.1f}% over)",
-                    )
-                )
-
-            for m in cls["methods"]:
-                if m["lines"] > _LIMITS["function"]:
-                    over = (m["lines"] - _LIMITS["function"]) / _LIMITS["function"] * 100
-                    violations.append(
-                        (
-                            over,
-                            f"{path}:{m['lineno']}: Method too large: {cls['name']}:{m['name']} - {m['lines']} lines ({over:.1f}% over)",
-                        )
-                    )
-
-        # Top-level functions
-        for fn in report["functions"]:
-            if fn["lines"] > _LIMITS["function"]:
-                over = (fn["lines"] - _LIMITS["function"]) / _LIMITS["function"] * 100
-                violations.append(
-                    (
-                        over,
-                        f"{path}:{fn['lineno']}: Function too large: {fn['module']}:{fn['name']} - {fn['lines']} lines ({over:.1f}% over)",
-                    )
-                )
-
-    # Sort by percentage overage (descending)
     if violations:
         print("\nSize violations (sorted by % over):\n")
         for over, msg in sorted(violations, key=lambda x: x[0], reverse=True):
@@ -153,7 +147,6 @@ def main():
 
         print("\nCommit blocked due to size violations.")
         return 1
-
     return 0
 
 

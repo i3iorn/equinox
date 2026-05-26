@@ -6,8 +6,8 @@ repos:
         name: "Check: code component sizes are within limits"
         entry: python scripts/check_code_component_size.py
         language: python
-        pass_filenames: false
-        files: ^(src/equinox/.*\.py)$
+        types: [python]
+        pass_filenames: true
 
       - id: dependency-manifest-consistency
         name: "Check: dependency manifest consistency"
