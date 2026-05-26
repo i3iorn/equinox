@@ -132,14 +132,30 @@ class OAuthClientsDialog(OAuthConnectionTestMixin, ListFormDialogMixin, QDialog)
         return left
 
     def _build_right_panel(self) -> QWidget:
-        """Inline edit form with Test / Set-as-Default / Save actions."""
-        right = QWidget()
-        rl = QVBoxLayout(right)
-        rl.setContentsMargins(4, 0, 0, 0)
+        """Build the right‑side OAuth client editor panel."""
+        panel = QWidget()
+        layout = QVBoxLayout(panel)
+        layout.setContentsMargins(4, 0, 0, 0)
 
+        layout.addWidget(self._build_form_header())
+        layout.addLayout(self._build_form_fields())
+        layout.addWidget(self._build_separator())
+        layout.addLayout(self._build_action_buttons())
+        layout.addWidget(self._build_status_label())
+        layout.addStretch()
+
+        self._collect_form_widgets()
+        self._wire_dirty_tracking()
+
+        return panel
+
+    def _build_form_header(self) -> QLabel:
+        """Create the form header label."""
         self.form_header = QLabel(_FORM_HEADER_IDLE)
-        rl.addWidget(self.form_header)
+        return self.form_header
 
+    def _build_form_fields(self) -> QFormLayout:
+        """Create the OAuth client configuration form."""
         form = QFormLayout()
         form.setLabelAlignment(Qt.AlignmentFlag.AlignRight)
         form.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.ExpandingFieldsGrow)
@@ -197,38 +213,46 @@ class OAuthClientsDialog(OAuthConnectionTestMixin, ListFormDialogMixin, QDialog)
         )
         info.setWordWrap(True)
         form.addRow("", info)
-        rl.addLayout(form)
 
-        # ── Action buttons ────────────────────────────────────────────
+        return form
+
+    def _build_separator(self) -> QFrame:
+        """Create a horizontal separator line."""
         sep = QFrame()
         sep.setFrameShape(QFrame.Shape.HLine)
-        rl.addWidget(sep)
+        return sep
 
-        act_row = QHBoxLayout()
+    def _build_action_buttons(self) -> QHBoxLayout:
+        """Create the Test / View / Default / Save button row."""
+        row = QHBoxLayout()
+
         self.test_btn = QPushButton("🔌  Test Connection")
         self.view_response_btn = QPushButton("View Response…")
         self.view_response_btn.setEnabled(False)
         self.default_btn = QPushButton("★  Set as Default")
         self.save_btn = QPushButton("💾  Save")
 
-        for b in (self.test_btn, self.view_response_btn, self.default_btn, self.save_btn):
-            b.setEnabled(False)
-            act_row.addWidget(b)
-        act_row.addStretch()
-        rl.addLayout(act_row)
+        for btn in (self.test_btn, self.view_response_btn, self.default_btn, self.save_btn):
+            btn.setEnabled(False)
+            row.addWidget(btn)
+
+        row.addStretch()
 
         self.test_btn.clicked.connect(self._test_client)
         self.view_response_btn.clicked.connect(self._view_test_response)
         self.default_btn.clicked.connect(self._set_default)
         self.save_btn.clicked.connect(self._save_client)
 
+        return row
+
+    def _build_status_label(self) -> QLabel:
+        """Create the status message label."""
         self.status_label = QLabel("")
         self.status_label.setWordWrap(True)
-        rl.addWidget(self.status_label)
-        rl.addStretch()
+        return self.status_label
 
-        # ── Shared widget collections ─────────────────────────────────
-        # QLineEdit fields — used for blockSignals and dirty-signal wiring.
+    def _collect_form_widgets(self) -> None:
+        """Collect editable widgets for enable/disable and dirty tracking."""
         self._line_fields = (
             self.f_name,
             self.f_description,
@@ -237,7 +261,7 @@ class OAuthClientsDialog(OAuthConnectionTestMixin, ListFormDialogMixin, QDialog)
             self.f_client_secret,
             self.f_scope,
         )
-        # All editable widgets + action buttons — used by _set_form_enabled.
+
         self._all_form_widgets = (
             *self._line_fields,
             self.f_grant_type,
@@ -249,15 +273,15 @@ class OAuthClientsDialog(OAuthConnectionTestMixin, ListFormDialogMixin, QDialog)
             self.save_btn,
         )
 
-        # Wire dirty-tracking signals
+    def _wire_dirty_tracking(self) -> None:
+        """Connect all form widgets to the dirty‑tracking handler."""
         for w in self._line_fields:
             w.textChanged.connect(self._mark_dirty)
+
         self.f_grant_type.currentIndexChanged.connect(self._mark_dirty)
         self.f_token_auth.currentIndexChanged.connect(self._mark_dirty)
         self.f_verify_ssl.stateChanged.connect(self._mark_dirty)
         self.f_extra.textChanged.connect(self._mark_dirty)
-
-        return right
 
     # ── List management (ListFormDialogMixin template methods) ────────
 
