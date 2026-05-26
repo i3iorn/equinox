@@ -49,7 +49,7 @@ class ReadOnlyText(QTextEdit):
         # Disable undo/redo to avoid allocating history for large bodies
         self.setUndoRedoEnabled(_UNDO_REDO_ENABLED)
 
-    def set_code(self, text: str) -> None:
+    def set_code(self, text: object | None) -> None:
         """Set editor content with batched updates.
 
         Replaces entire document content while batching signals to prevent

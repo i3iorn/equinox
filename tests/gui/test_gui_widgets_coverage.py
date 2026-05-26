@@ -313,7 +313,7 @@ class TestJsonBodyEditor:
 
 class TestSearchBar:
     def _make_bar(self):
-        from equinox.gui.response_panel.search_bar import SearchBar
+        from equinox.gui.response_panel.search import SearchBar
 
         target = QTextEdit()
         target.setPlainText("Hello World\nThis is a test\nHello again")
@@ -429,7 +429,7 @@ class TestSearchBar:
         assert bar._json_obj is None
 
     def test_jsonpath_search_with_json(self):
-        from equinox.gui.response_panel.search_bar import SearchBar
+        from equinox.gui.response_panel.search import SearchBar
 
         target = QTextEdit()
         target.setPlainText('{"users": [{"name": "Alice"}]}')

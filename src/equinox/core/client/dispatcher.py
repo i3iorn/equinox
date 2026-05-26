@@ -385,7 +385,7 @@ class HttpxDispatcher:
 
         # Route auth headers through the redirect-safe adapter instead of
         # embedding them directly — httpx strips plain headers on redirects.
-        httpx_auth: _RedirectSafeAuth | None = None
+        httpx_auth: httpx.Auth | None = None
         # Make a copy of headers before popping auth headers for sent_headers
         sent_headers = dict(headers)
         if auth_headers:

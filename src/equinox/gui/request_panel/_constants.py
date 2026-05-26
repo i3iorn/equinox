@@ -94,3 +94,32 @@ SAVE_DIALOG_MIN_WIDTH = 420
 
 # URL preview length in auto-generated request name
 SAVE_DIALOG_URL_PREVIEW_LEN = 50
+_KEY_POLICY_PROFILE = "request/policy_profile"
+_KEY_ACTIVE_TAB = "request/active_tab"
+_POLICY_STRICT = "Strict"
+_POLICY_BALANCED = "Balanced"
+_POLICY_PERMISSIVE = "Permissive"
+_HEADER_PRESETS = [
+    ("Content-Type: application/json", "Content-Type", "application/json"),
+    ("Content-Type: application/xml", "Content-Type", "application/xml"),
+    (
+        "Content-Type: application/x-www-form-urlencoded",
+        "Content-Type",
+        "application/x-www-form-urlencoded",
+    ),
+    ("Content-Type: multipart/form-data", "Content-Type", "multipart/form-data"),
+    ("Content-Type: text/plain", "Content-Type", "text/plain"),
+    None,
+    ("Accept: application/json", "Accept", "application/json"),
+    ("Accept: application/xml", "Accept", "application/xml"),
+    ("Accept: */*", "Accept", "*/*"),
+    None,
+    ("Authorization: Bearer …", "Authorization", "Bearer "),
+    ("X-API-Key: …", "X-API-Key", ""),
+    None,
+    ("Cache-Control: no-cache", "Cache-Control", "no-cache"),
+    ("User-Agent: Equinox/1.0", "User-Agent", "Equinox/1.0"),
+]
+_SCRIPTS_CHEAT_TEXT = (
+    "<h3>Pre/Post Scripts</h3>" "<p>Use Python helpers to mutate the request/response context.</p>"
+)

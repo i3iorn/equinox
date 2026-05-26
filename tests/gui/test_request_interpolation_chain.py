@@ -2,14 +2,14 @@
 
 from types import SimpleNamespace
 
-import equinox.gui.request_panel.mixins._send_mixin as send_mixin_mod
 from equinox.application.requests import (
     collect_unresolved_placeholders,
     interpolate_request_fields,
     resolve_path_params,
 )
 from equinox.application.requests.models import PreparationIssue, SendOrchestratorResult
-from equinox.gui.request_panel.mixins._send_mixin import _RequestSendMixin
+from equinox.gui.request_panel._mixins import _RequestSendMixin
+from equinox.gui.request_panel._mixins import send_mixin as send_mixin_mod
 
 
 def test_resolve_path_params_supports_chained_values() -> None:

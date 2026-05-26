@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from typing import Any
+from typing import Any, cast
 
 from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import (
@@ -20,6 +20,7 @@ from PyQt6.QtWidgets import (
     QTableWidgetItem,
     QTabWidget,
     QVBoxLayout,
+    QWidget,
 )
 
 from equinox.core.exceptions import ValidationError
@@ -35,6 +36,11 @@ _SESSION_TABLE_MIN_VISIBLE_ROWS = 1
 
 class _SessionVarsMixin:
     """Mixin providing the Session Variables section UI and logic."""
+
+    clear_session_requested: Any
+    _session_var_count: int
+    _ordered_context_actions: Any
+    _run_context_action: Any
 
     def _build_session_vars_section(self) -> QGroupBox:
         """Construct the Session Variables group box and wire all signals.
@@ -84,18 +90,18 @@ class _SessionVarsMixin:
         self._session_table = QTableWidget()
         self._session_table.setColumnCount(2)
         self._session_table.setHorizontalHeaderLabels(["Variable", "Value"])
-        self._session_table.horizontalHeader().setSectionResizeMode(
-            0, QHeaderView.ResizeMode.ResizeToContents
-        )
-        self._session_table.horizontalHeader().setSectionResizeMode(
-            1, QHeaderView.ResizeMode.Stretch
-        )
+        h_header = self._session_table.horizontalHeader()
+        if h_header is not None:
+            h_header.setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
+            h_header.setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
         self._session_table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
         self._session_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
         self._session_table.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self._session_table.customContextMenuRequested.connect(self._show_session_context_menu)
         self._session_table.itemSelectionChanged.connect(self._on_session_selection)
-        self._session_table.verticalHeader().setVisible(False)
+        v_header = self._session_table.verticalHeader()
+        if v_header is not None:
+            v_header.setVisible(False)
         self._session_table.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Maximum)
         session_layout.addWidget(self._session_table)
 
@@ -106,9 +112,11 @@ class _SessionVarsMixin:
 
     def _session_table_target_height(self) -> int:
         """Return a compact, content-based height for the session variables table."""
-        header_h = self._session_table.horizontalHeader().height()
+        h_header = self._session_table.horizontalHeader()
+        v_header = self._session_table.verticalHeader()
+        header_h = h_header.height() if h_header is not None else 0
         frame_h = self._session_table.frameWidth() * 2
-        row_h = self._session_table.verticalHeader().defaultSectionSize()
+        row_h = v_header.defaultSectionSize() if v_header is not None else 0
         visible_rows = max(
             _SESSION_TABLE_MIN_VISIBLE_ROWS,
             min(self._session_var_count, _SESSION_TABLE_MAX_VISIBLE_ROWS),
@@ -188,16 +196,17 @@ class _SessionVarsMixin:
 
     def _resolve_request_panel(self) -> Any:
         """Return the nearest ``RequestPanel`` host via widget ancestry."""
-        host = self.window()
+        widget_self = cast(QWidget, cast(object, self))
+        host = widget_self.window()
         rp = getattr(host, "request_panel", None)
         if rp is not None:
             return rp
-        host = self.parent()
-        while host is not None:
-            rp = getattr(host, "request_panel", None)
+        host_obj: Any = widget_self.parent()
+        while host_obj is not None:
+            rp = getattr(host_obj, "request_panel", None)
             if rp is not None:
                 return rp
-            host = host.parent()
+            host_obj = host_obj.parent()
         return None
 
     def _publish_session_var(self, rp: Any, key: str, value: str) -> bool:
@@ -234,20 +243,21 @@ class _SessionVarsMixin:
 
     def _add_session_var(self) -> None:
         """Prompt for a custom session variable and publish it to RequestPanel."""
-        key, ok = QInputDialog.getText(self, "Add Session Variable", "Variable name:")
+        widget_self = cast(QWidget, cast(object, self))
+        key, ok = QInputDialog.getText(widget_self, "Add Session Variable", "Variable name:")
         if not ok:
             return
         key = key.strip()
         if not key:
-            QMessageBox.warning(self, "Error", "Variable name is required")
+            QMessageBox.warning(widget_self, "Error", "Variable name is required")
             return
-        value, ok = QInputDialog.getText(self, "Add Session Variable", "Value:")
+        value, ok = QInputDialog.getText(widget_self, "Add Session Variable", "Value:")
         if not ok:
             return
         try:
             key = Validator.validate_variable_name(key)
         except ValidationError as exc:
-            QMessageBox.warning(self, "Invalid Variable Name", str(exc))
+            QMessageBox.warning(widget_self, "Invalid Variable Name", str(exc))
             return
         rp = self._resolve_request_panel()
         if rp is not None and self._publish_session_var(rp, key, value):
@@ -359,7 +369,13 @@ class _SessionVarsMixin:
                     "variables_session", aid, cb
                 ),
             )
-        menu.exec(self._session_table.viewport().mapToGlobal(position))
+        viewport = self._session_table.viewport()
+        if viewport is None:
+            return
+        global_pos = viewport.mapToGlobal(position)
+        if hasattr(global_pos, "toPoint"):
+            global_pos = global_pos.toPoint()
+        menu.exec(global_pos)
 
     def _copy_session_key_at_row(self, row: int) -> None:
         clipboard = QApplication.clipboard()
@@ -374,8 +390,9 @@ class _SessionVarsMixin:
         if not (vi and clipboard and ki):
             return
         if self._is_secret_like(ki.text()):
+            widget_self = cast(QWidget, cast(object, self))
             if not confirm_yes_no(
-                self,
+                widget_self,
                 "Copy Secret Value",
                 f"Copy the secret value for '{ki.text()}' to the clipboard?",
             ):
@@ -391,12 +408,13 @@ class _SessionVarsMixin:
     def _update_tab_badge(self) -> None:
         """Update the Variables tab title to show a session variable count badge."""
         try:
-            tab_widget = self.parent()
-            while tab_widget and not isinstance(tab_widget, QTabWidget):
+            widget_self = cast(QWidget, cast(object, self))
+            tab_widget: Any = widget_self.parent()
+            while tab_widget is not None and not isinstance(tab_widget, QTabWidget):
                 tab_widget = tab_widget.parent()
             if not isinstance(tab_widget, QTabWidget):
                 return
-            idx = tab_widget.indexOf(self)
+            idx = tab_widget.indexOf(widget_self)
             if idx < 0:
                 return
             tab_widget.setTabText(

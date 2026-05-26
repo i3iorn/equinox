@@ -54,13 +54,13 @@ class KeyValueTable(QTableWidget):
         super().__init__(parent)
         self.setColumnCount(self._COL_COUNT)
         self.setHorizontalHeaderLabels(["Key", "Value"])
-        self.horizontalHeader().setSectionResizeMode(
-            self._COL_KEY, QHeaderView.ResizeMode.Interactive
-        )  # type: ignore[union-attr]
-        self.horizontalHeader().setSectionResizeMode(
-            self._COL_VALUE, QHeaderView.ResizeMode.Stretch
-        )  # type: ignore[union-attr]
-        self.verticalHeader().setVisible(False)  # type: ignore[union-attr]
+        header = self.horizontalHeader()
+        if header is not None:
+            header.setSectionResizeMode(self._COL_KEY, QHeaderView.ResizeMode.Interactive)
+            header.setSectionResizeMode(self._COL_VALUE, QHeaderView.ResizeMode.Stretch)
+        v_header = self.verticalHeader()
+        if v_header is not None:
+            v_header.setVisible(False)
         self.setAlternatingRowColors(True)
         self.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
         self._add_empty_row()

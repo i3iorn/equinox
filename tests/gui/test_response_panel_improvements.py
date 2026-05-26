@@ -8,7 +8,7 @@ from equinox.gui.response_panel import ResponsePanel
 from equinox.gui.response_panel._formatting import parse_cookies
 from equinox.gui.response_panel.intelligence_panel import _AUDIT_MAX_LINES, IntelligencePanel
 from equinox.gui.response_panel.pretty_print import PrettyPrintRunnable
-from equinox.gui.response_panel.search_bar import SearchBar
+from equinox.gui.response_panel.search import SearchBar
 
 
 @pytest.fixture(autouse=True)

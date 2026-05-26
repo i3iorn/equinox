@@ -71,13 +71,15 @@ ignore = [
     "E501",  # Line too long (handled by line-length)
 ]
 
+[tool.ruff.lint.pydocstyle]
+convention = "google"
+
 [tool.ruff.lint.isort]
 known-first-party = ["equinox"]
 
 [tool.ruff.lint.per-file-ignores]
 "tests/**/*.py" = ["E402", "F841", "E741", "E722"]
 "scripts/benchmark_history_search.py" = ["E402"]
-
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

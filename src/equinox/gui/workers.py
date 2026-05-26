@@ -52,10 +52,10 @@ _P99: float = 0.99
 # ── Private helpers ───────────────────────────────────────────────────────────
 
 
-def _percentile(sorted_times: list, p: float) -> float:
+def _percentile(sorted_times: list[float], p: float) -> float:
     """Return the *p*-th percentile value from a pre-sorted sequence of timings."""
     n = len(sorted_times)
-    return sorted_times[max(0, int(n * p) - 1)]
+    return float(sorted_times[max(0, int(n * p) - 1)])
 
 
 def _build_client(
@@ -146,7 +146,7 @@ class OAuthTokenTester(QThread):
         secret: str,
         scope: str,
         grant_type: str,
-        extra_params: dict,
+        extra_params: dict[str, Any],
         token_auth: str = "body",
         parent=None,
     ):
@@ -182,7 +182,7 @@ class OAuthTokenTester(QThread):
             data = {
                 "grant_type": self.grant_type,
             }
-            headers: dict = {}
+            headers: dict[str, str] = {}
 
             if self.token_auth == "basic":
                 # RFC 6749 §2.3.1 — credentials in HTTP Basic Authorization header.
@@ -237,7 +237,7 @@ class OAuthTokenTester(QThread):
                 self.done.emit(False, redact_body(str(exc)), self._last_response)
 
     @staticmethod
-    def _snapshot_response(resp) -> dict:
+    def _snapshot_response(resp: Any) -> dict[str, Any]:
         try:
             headers = {
                 k: v for k, v in resp.headers.items() if k.lower() not in {"set-cookie", "cookie"}
@@ -406,7 +406,7 @@ class BenchmarkWorker(QThread):
         self._cancel_event.set()
 
     def run(self) -> None:
-        times: list = []
+        times: list[float] = []
         errors = 0
 
         # Create the client once so the underlying connection pool is reused
@@ -445,9 +445,9 @@ class BenchmarkDialog(QDialog):
         self._cookie_manager = cookie_manager
         self.setWindowTitle("Benchmark")
         self.setMinimumSize(420, 340)
-        self._times: list = []
+        self._times: list[float] = []
         self._errors: int = 0
-        self._stats: dict = {}  # populated by _on_finished; read by _export_results
+        self._stats: dict[str, Any] = {}  # populated by _on_finished; read by _export_results
         self._worker: BenchmarkWorker | None = None
         self._was_cancelled = False  # set by _cancel(); read by _on_finished()
         self._init_ui()
@@ -499,7 +499,7 @@ class BenchmarkDialog(QDialog):
     # ── Private helpers ───────────────────────────────────────────────────────
 
     @staticmethod
-    def _compute_stats(times: list, errors: int) -> dict:
+    def _compute_stats(times: list[float], errors: int) -> dict[str, Any]:
         """Return a stats dict computed from raw benchmark timings.
 
         All ``*_ms`` values are rounded to 3 decimal places.
@@ -561,7 +561,7 @@ class BenchmarkDialog(QDialog):
     def _on_progress(self, value: int) -> None:
         self._progress.setValue(value)
 
-    def _on_finished(self, times: list, errors: int) -> None:
+    def _on_finished(self, times: list[float], errors: int) -> None:
         self._run_btn.setEnabled(True)
         self._cancel_btn.setEnabled(False)
         self._progress.setVisible(False)

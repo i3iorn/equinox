@@ -108,7 +108,9 @@ class RegexHighlighterBase(QSyntaxHighlighter):
         """
         return []
 
-    def highlightBlock(self, text: str) -> None:  # noqa: N802
+    def highlightBlock(self, text: str | None) -> None:  # noqa: N802
+        if text is None:
+            return
         # Apply language-specific rules.
         for rule in self._rules:
             for match in rule.pattern.finditer(text):

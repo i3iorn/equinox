@@ -679,83 +679,111 @@ class RequestBodyMixin:
             logger.debug("Error during body highlight", exc_info=True)
 
     def _body_navigate(self, *, forward: bool) -> None:
-        """Move the body-editor cursor to the next or previous search match.
-
-        Handles plain-text, regex, and JSONPath search modes with wrap-around.
-        *forward=True* → next match; *forward=False* → previous match.
-        """
+        """Move the body-editor cursor to the next or previous search match."""
         try:
-            term_input = getattr(self, "_body_search_input", None)
-            if term_input is None:
-                return
-            term = term_input.text()
+            term = self._get_search_term()
             if not term:
                 return
+
             target, doc_text = self._body_editor_target()
-
-            # ── JSONPath ──────────────────────────────────────────────
-            # Navigate to the first (forward) or last (backward) match.
-            if getattr(self, "_body_jsonpath_cb", None) and self._body_jsonpath_cb.isChecked():
-                positions = self._find_jsonpath_positions(term)
-                if positions and target is not None:
-                    start, length = positions[0] if forward else positions[-1]
-                    self._select_range(target, start, start + length)
-                return
-
-            # ── Regex ─────────────────────────────────────────────────
-            if getattr(self, "_body_regex_cb", None) and self._body_regex_cb.isChecked():
-                if not term:
-                    return
-                if target is None:
-                    return
-                cur_pos = target.textCursor().position()
-                if forward:
-                    # search from cursor to end of document, then wrap
-                    m = re.search(term, doc_text[cur_pos:], self._re_flags)
-                    if m:
-                        start, end = cur_pos + m.start(), cur_pos + m.end()
-                    else:
-                        m = re.search(term, doc_text, self._re_flags)
-                        if not m:
-                            return
-                        start, end = m.start(), m.end()
-                else:
-                    matches = [
-                        m
-                        for m in re.finditer(term, doc_text, self._re_flags)
-                        if m.start() < cur_pos
-                    ]
-                    if not matches:
-                        matches = list(re.finditer(term, doc_text, self._re_flags))
-                    if not matches:
-                        return
-                    m = matches[-1]
-                    start, end = m.start(), m.end()
-                self._select_range(target, start, end)
-                return
-
-            # ── Plain text via Qt (native wrap-around) ────────────────
             if target is None:
                 return
-            if forward:
-                found = target.find(term)
-                if not found:
-                    cur = target.textCursor()
-                    cur.movePosition(QTextCursor.MoveOperation.Start)
-                    target.setTextCursor(cur)
-                    target.find(term)
-            else:
-                found = target.find(term, QTextDocument.FindFlag.FindBackward)
-                if not found:
-                    cur = target.textCursor()
-                    cur.movePosition(QTextCursor.MoveOperation.End)
-                    target.setTextCursor(cur)
-                    target.find(term, QTextDocument.FindFlag.FindBackward)
+
+            if self._is_jsonpath_mode():
+                self._navigate_jsonpath(term, target, forward)
+                return
+
+            if self._is_regex_mode():
+                self._navigate_regex(term, target, doc_text, forward)
+                return
+
+            self._navigate_plain_text(term, target, forward)
+
         except RuntimeError:
             direction = "next" if forward else "prev"
             logger.debug("Body editor unavailable during find %s", direction, exc_info=True)
         except Exception:
             logger.debug("Error during body navigate", exc_info=True)
+
+    def _get_search_term(self) -> str:
+        term_input = getattr(self, "_body_search_input", None)
+        if term_input is None:
+            return ""
+        try:
+            return term_input.text() or ""
+        except Exception:
+            return ""
+
+    def _is_jsonpath_mode(self) -> bool:
+        cb = getattr(self, "_body_jsonpath_cb", None)
+        return bool(cb and cb.isChecked())
+
+    def _is_regex_mode(self) -> bool:
+        cb = getattr(self, "_body_regex_cb", None)
+        return bool(cb and cb.isChecked())
+
+    def _navigate_jsonpath(self, term: str, target, forward: bool) -> None:
+        positions = self._find_jsonpath_positions(term)
+        if not positions:
+            return
+
+        start, length = positions[0] if forward else positions[-1]
+        self._select_range(target, start, start + length)
+
+    def _navigate_regex(self, term: str, target, doc_text: str, forward: bool) -> None:
+        cur_pos = target.textCursor().position()
+
+        if forward:
+            start, end = self._regex_next(term, doc_text, cur_pos)
+        else:
+            start, end = self._regex_prev(term, doc_text, cur_pos)
+
+        if start is not None:
+            self._select_range(target, start, end)
+
+    def _regex_next(self, term: str, doc_text: str, cur_pos: int):
+        m = re.search(term, doc_text[cur_pos:], self._re_flags)
+        if m:
+            return cur_pos + m.start(), cur_pos + m.end()
+
+        # wrap-around
+        m = re.search(term, doc_text, self._re_flags)
+        if m:
+            return m.start(), m.end()
+
+        return None, None
+
+    def _regex_prev(self, term: str, doc_text: str, cur_pos: int):
+        matches = [m for m in re.finditer(term, doc_text, self._re_flags) if m.start() < cur_pos]
+
+        if not matches:
+            matches = list(re.finditer(term, doc_text, self._re_flags))
+
+        if not matches:
+            return None, None
+
+        m = matches[-1]
+        return m.start(), m.end()
+
+    def _navigate_plain_text(self, term: str, target, forward: bool) -> None:
+        if forward:
+            if not target.find(term):
+                self._wrap_to_start(target)
+                target.find(term)
+        else:
+            if not target.find(term, QTextDocument.FindFlag.FindBackward):
+                self._wrap_to_end(target)
+                target.find(term, QTextDocument.FindFlag.FindBackward)
+
+    def _wrap_to_start(self, target) -> None:
+        cur = target.textCursor()
+        cur.movePosition(QTextCursor.MoveOperation.Start)
+        target.setTextCursor(cur)
+
+    def _wrap_to_end(self, target) -> None:
+        cur = target.textCursor()
+        cur.movePosition(QTextCursor.MoveOperation.End)
+        target.setTextCursor(cur)
 
     def _body_find_next(self) -> None:
         self._body_navigate(forward=True)
@@ -839,23 +867,49 @@ class RequestBodyMixin:
     # ── Load / detect / clear ──────────────────────────────────────────
 
     def load_request(self, request: Request) -> None:
-        # Update internal state first so tests and callers can inspect
-        # request metadata and auth even if some GUI widgets are unavailable.
+        """Load a Request into internal state and UI widgets (best-effort in headless/test envs)."""
+        self._set_request_state(request)
+        self._resolve_auth_for_request()
+        self._load_core_request_fields(request)
+        self._load_body_and_multipart(request)
+        self._load_auth_and_rules(request)
+        self._load_scripts(request)
+        self._load_certificates(request)
+        self._load_settings(request)
+        self._clear_script_results()
+        self._load_notes(request)
+        self._load_path_params(request)
+        self._final_housekeeping()
+
+    # ─────────────────────────────────────────────────────────────
+    # Internal state & auth
+    # ─────────────────────────────────────────────────────────────
+
+    def _set_request_state(self, request: Request) -> None:
+        """Set internal request-related state before touching the UI."""
         self._auth = getattr(request, "auth", None)
         self.current_request = request
 
-        # Resolve inherited auth when request has no own auth.
+    def _resolve_auth_for_request(self) -> None:
+        """Resolve inherited auth if needed, without failing the load."""
         if self._auth is None:
             try:
                 self._resolve_inherited_auth()
             except Exception:
-                logger.debug("Failed to resolve inherited auth during load_request", exc_info=True)
+                logger.debug(
+                    "Failed to resolve inherited auth during load_request",
+                    exc_info=True,
+                )
         else:
             self._inherited_auth = None
             self._inherited_auth_source = None
 
-        # ── Populate UI widgets (best-effort in headless/test envs) ──
+    # ─────────────────────────────────────────────────────────────
+    # Core request fields (URL, method, headers, params)
+    # ─────────────────────────────────────────────────────────────
 
+    def _load_core_request_fields(self, request: Request) -> None:
+        """Populate URL, method, headers, and query params."""
         self._try_ui(self.url_input.setText, request.url)
 
         def _set_method() -> None:
@@ -867,79 +921,136 @@ class RequestBodyMixin:
 
         self._try_ui(self.headers_table.set_data, request.headers or {})
 
-        pl = getattr(request, "params_list", None)
-        self._try_ui(self.params_table.set_data, pl if pl else (request.params or {}))
+        params_list = getattr(request, "params_list", None)
+        params_source = params_list if params_list else (request.params or {})
+        self._try_ui(self.params_table.set_data, params_source)
 
-        # Body / multipart
-        mp_data = getattr(request, "multipart_data", None)
-        if mp_data:
+    # ─────────────────────────────────────────────────────────────
+    # Body / multipart
+    # ─────────────────────────────────────────────────────────────
 
-            def _load_mp() -> None:
-                self._set_multipart_data(mp_data)
-                self.body_type_combo.setCurrentText("multipart/form-data")
-                self.body_text.clear()
+    def _load_body_and_multipart(self, request: Request) -> None:
+        """Populate body and multipart widgets based on request content."""
+        multipart_data = getattr(request, "multipart_data", None)
+        if multipart_data:
+            self._load_multipart_body(multipart_data)
+            return
 
-            self._try_ui(_load_mp)
-        elif request.body:
+        if request.body:
+            self._load_plain_body(request)
+            return
 
-            def _load_body() -> None:
-                body_text = request.body if isinstance(request.body, str) else ""
-                self.body_text.setPlainText(body_text)
-                self._multipart_table.setRowCount(0)
-                detected = self._detect_body_type(body_text, request.headers)
-                self.body_type_combo.setCurrentText(detected)
+        self._clear_body_widgets()
 
-            self._try_ui(_load_body)
-        else:
+    def _load_multipart_body(self, multipart_data: Any) -> None:
+        def _load_mp() -> None:
+            self._set_multipart_data(multipart_data)
+            self.body_type_combo.setCurrentText("multipart/form-data")
+            self.body_text.clear()
 
-            def _clear_body() -> None:
-                self.body_text.clear()
-                self._multipart_table.setRowCount(0)
-                self.body_type_combo.setCurrentText("none")
+        self._try_ui(_load_mp)
 
-            self._try_ui(_clear_body)
+    def _load_plain_body(self, request: Request) -> None:
+        def _load_body() -> None:
+            body_text = request.body if isinstance(request.body, str) else ""
+            self.body_text.setPlainText(body_text)
+            self._multipart_table.setRowCount(0)
+            detected = self._detect_body_type(body_text, request.headers)
+            self.body_type_combo.setCurrentText(detected)
 
+        self._try_ui(_load_body)
+
+    def _clear_body_widgets(self) -> None:
+        def _clear_body() -> None:
+            self.body_text.clear()
+            self._multipart_table.setRowCount(0)
+            self.body_type_combo.setCurrentText("none")
+
+        self._try_ui(_clear_body)
+
+    # ─────────────────────────────────────────────────────────────
+    # Auth, captures, assertions
+    # ─────────────────────────────────────────────────────────────
+
+    def _load_auth_and_rules(self, request: Request) -> None:
+        """Load auth display, captures, and assertions."""
         self._try_ui(self._update_auth_display, self._auth)
         self._try_ui(self._set_captures, getattr(request, "captures", None) or [])
         self._try_ui(self._set_assertions, getattr(request, "assertions", None) or [])
 
-        def _load_scripts() -> None:
+    # ─────────────────────────────────────────────────────────────
+    # Scripts
+    # ─────────────────────────────────────────────────────────────
+
+    def _load_scripts(self, request: Request) -> None:
+        def _load_scripts_inner() -> None:
             self.pre_script_editor.setPlainText(getattr(request, "pre_script", "") or "")
             self.post_script_editor.setPlainText(getattr(request, "post_script", "") or "")
 
-        self._try_ui(_load_scripts)
+        self._try_ui(_load_scripts_inner)
 
+    # ─────────────────────────────────────────────────────────────
+    # Certificates
+    # ─────────────────────────────────────────────────────────────
+
+    def _load_certificates(self, request: Request) -> None:
         def _load_certs() -> None:
             self.cert_path_input.setText(getattr(request, "cert_path", "") or "")
             self.cert_key_input.setText(getattr(request, "cert_key_path", "") or "")
 
         self._try_ui(_load_certs)
 
-        def _load_settings() -> None:
-            self.timeout_spin.setValue(
-                getattr(request, "timeout", DEFAULT_TIMEOUT) or DEFAULT_TIMEOUT
-            )
+    # ─────────────────────────────────────────────────────────────
+    # Settings
+    # ─────────────────────────────────────────────────────────────
+
+    def _load_settings(self, request: Request) -> None:
+        def _load_settings_inner() -> None:
+            timeout = getattr(request, "timeout", DEFAULT_TIMEOUT) or DEFAULT_TIMEOUT
+            self.timeout_spin.setValue(timeout)
             self.verify_ssl_check.setChecked(bool(getattr(request, "verify_ssl", True)))
             self.follow_redirects_check.setChecked(bool(getattr(request, "follow_redirects", True)))
 
-        self._try_ui(_load_settings)
+        self._try_ui(_load_settings_inner)
 
-        def _clear_script_results() -> None:
+    # ─────────────────────────────────────────────────────────────
+    # Script results
+    # ─────────────────────────────────────────────────────────────
+
+    def _clear_script_results(self) -> None:
+        def _clear_script_results_inner() -> None:
             self.pre_script_result.setText("")
             self.post_script_result.setText("")
 
-        self._try_ui(_clear_script_results)
+        self._try_ui(_clear_script_results_inner)
 
-        self._try_ui(self.notes_editor.setPlainText, getattr(request, "description", "") or "")
+    # ─────────────────────────────────────────────────────────────
+    # Notes
+    # ─────────────────────────────────────────────────────────────
 
-        def _load_path_params() -> None:
+    def _load_notes(self, request: Request) -> None:
+        self._try_ui(
+            self.notes_editor.setPlainText,
+            getattr(request, "description", "") or "",
+        )
+
+    # ─────────────────────────────────────────────────────────────
+    # Path params
+    # ─────────────────────────────────────────────────────────────
+
+    def _load_path_params(self, request: Request) -> None:
+        def _load_path_params_inner() -> None:
             self.path_params_table.set_data(getattr(request, "path_params", None) or {})
             self.path_params_table.update_from_url(request.url)
             self._path_params_widget.setVisible(self.path_params_table.rowCount() > 0)
 
-        self._try_ui(_load_path_params)
+        self._try_ui(_load_path_params_inner)
 
-        # Final housekeeping
+    # ─────────────────────────────────────────────────────────────
+    # Final housekeeping
+    # ─────────────────────────────────────────────────────────────
+
+    def _final_housekeeping(self) -> None:
         def _housekeeping() -> None:
             self._clear_dirty()
             self._update_tab_labels()

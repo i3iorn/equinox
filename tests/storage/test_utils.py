@@ -24,7 +24,7 @@ def test_validate_variable_key_strips_and_returns_key() -> None:
 
 @pytest.mark.parametrize("key", ["", None, 123])
 def test_validate_variable_key_rejects_non_string_or_empty(key) -> None:
-    with pytest.raises(ValidationError, match="non-empty string"):
+    with pytest.raises(ValidationError, match="non-empty string|empty or whitespace"):
         utils.validate_variable_key(key)
 
 

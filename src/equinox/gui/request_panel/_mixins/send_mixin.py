@@ -42,9 +42,7 @@ from equinox.gui.request_panel._constants import (
     STATUS_DURATION_SHORT,
     WORKER_WAIT_MS,
 )
-from equinox.gui.request_panel.mixins._helpers import (
-    notify_log_panel,
-)
+from equinox.gui.request_panel._mixins.helpers import notify_log_panel
 from equinox.gui.workers import RequestWorker
 
 logger = logging.getLogger(__name__)

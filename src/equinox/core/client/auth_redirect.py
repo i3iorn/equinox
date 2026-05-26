@@ -15,7 +15,7 @@ from equinox.security import redact_url
 logger = logging.getLogger(__name__)
 
 
-class _RedirectSafeAuth:
+class _RedirectSafeAuth(httpx.Auth):
     """httpx ``Auth`` adapter that re-injects auth headers on every request leg.
 
     httpx strips ``Authorization`` (and ``Cookie``) headers when following

@@ -45,9 +45,9 @@ def test_gui_boundary_modules_do_not_import_raw_storage_managers() -> None:
     root = _repo_root() / "src" / "equinox"
     guarded_modules = [
         root / "gui" / "request_panel" / "panel.py",
-        root / "gui" / "request_panel" / "save_flow_mixin.py",
-        root / "gui" / "request_panel" / "autosave_mixin.py",
-        root / "gui" / "request_panel" / "mixins" / "_send_mixin.py",
+        root / "gui" / "request_panel" / "_mixins" / "save_flow_mixin.py",
+        root / "gui" / "request_panel" / "_mixins" / "autosave_mixin.py",
+        root / "gui" / "request_panel" / "_mixins" / "send_mixin.py",
         root / "gui" / "collection_panel" / "actions.py",
         root / "gui" / "history_panel.py",
         root / "gui" / "window" / "_history.py",

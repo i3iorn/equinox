@@ -6,7 +6,7 @@ pytest.importorskip("pytestqt")
 
 from PyQt6.QtWidgets import QTextEdit
 
-from equinox.gui.response_panel.search_bar import SearchBar
+from equinox.gui.response_panel.search import SearchBar
 
 
 def test_search_streaming_partial_results(qtbot):

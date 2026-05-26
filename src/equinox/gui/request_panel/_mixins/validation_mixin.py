@@ -165,79 +165,13 @@ class _RequestValidationMixin:
             self._headers_valid = False
             logger.debug("Headers validation failed: %s", str(e))
 
-    def _validate_body(self) -> None:
-        """Validate JSON body if Content-Type is JSON."""
-        body_text = self.body_text.toPlainText().strip()
+    def _mark_valid(self, state: Optional[str]) -> None:
+        """Mark the body field as valid or neutral."""
+        self._set_field_valid(self.body_text, state)
 
-        body_type = ""
-        try:
-            body_type = self.body_type_combo.currentText().lower()
-        except Exception:
-            body_type = ""
-
-        is_json_mode = "json" in body_type
-        is_graphql_mode = "graphql" in body_type
-
-        # Non-JSON body modes are always considered valid here.
-        if not is_json_mode and not is_graphql_mode:
-            self._set_field_valid(self.body_text, None)
-            self._body_valid = True
-            return
-
-        # GraphQL variables are JSON; validate the variables editor directly.
-        if is_graphql_mode:
-            gql_vars = ""
-            try:
-                gql_vars = self._gql_vars.toPlainText().strip()
-            except Exception:
-                gql_vars = ""
-            if not gql_vars:
-                self._set_field_valid(self.body_text, None)
-                self._body_valid = True
-                return
-            if len(gql_vars) > _MAX_SYNC_JSON_VALIDATE_BYTES:
-                self._set_field_valid(self.body_text, None)
-                self._body_valid = True
-                logger.warning(
-                    "request_panel.validation.graphql_vars_skip_large op=validate_body size=%d",
-                    len(gql_vars),
-                )
-                return
-            try:
-                json.loads(gql_vars)
-                self._set_field_valid(self.body_text, "valid")
-                self._body_valid = True
-                logger.debug("GraphQL variables JSON validation passed")
-            except json.JSONDecodeError as e:
-                msg = f"Invalid GraphQL variables JSON at line {e.lineno}, col {e.colno}: {e.msg}"
-                self._set_field_valid(self.body_text, "error", msg)
-                self._body_valid = False
-                logger.debug("GraphQL variables JSON validation failed: %s", msg)
-            return
-
-        # JSON body mode: validate regardless of Content-Type header.
-        if not body_text:
-            self._set_field_valid(self.body_text, None)
-            self._body_valid = True
-            return
-        if len(body_text) > _MAX_SYNC_JSON_VALIDATE_BYTES:
-            self._set_field_valid(self.body_text, None)
-            self._body_valid = True
-            logger.warning(
-                "request_panel.validation.json_skip_large op=validate_body size=%d",
-                len(body_text),
-            )
-            return
-        try:
-            json.loads(body_text)
-            self._set_field_valid(self.body_text, "valid")
-            self._body_valid = True
-            logger.debug("JSON body validation passed")
-        except json.JSONDecodeError as e:
-            msg = f"Invalid JSON at line {e.lineno}, col {e.colno}: {e.msg}"
-            self._set_field_valid(self.body_text, "error", msg)
-            self._body_valid = False
-            logger.debug("JSON body validation failed: %s", msg)
+    def _mark_invalid(self, message: str) -> None:
+        """Mark the body field as invalid with an error message."""
+        self._set_field_valid(self.body_text, "error", message)
 
     def _set_field_valid(self, field: QWidget, status: Optional[str], message: str = "") -> None:
         """Display validation status on field with visual feedback.
@@ -286,3 +220,197 @@ class _RequestValidationMixin:
 
         # All critical checks passed
         self.send_button.setEnabled(True)
+
+    # --- Helper functions should be static ---
+
+    @staticmethod
+    def _safe_text(widget) -> str:
+        try:
+            return widget.toPlainText().strip()
+        except Exception:
+            return ""
+
+    @staticmethod
+    def _safe_body_type(self_ref) -> str:
+        try:
+            return self_ref.body_type_combo.currentText().lower()
+        except Exception:
+            return ""
+
+    @staticmethod
+    def _is_json_mode(body_type: str) -> bool:
+        return "json" in body_type
+
+    @staticmethod
+    def _is_graphql_mode(body_type: str) -> bool:
+        return "graphql" in body_type
+
+    # --- Fix validate_body to call methods correctly ---
+
+    def _validate_body(self) -> None:
+        body_text = self._safe_text(self.body_text)
+        body_type = self._safe_body_type(self)
+
+        if not self._is_json_mode(body_type) and not self._is_graphql_mode(body_type):
+            self._mark_valid(None)
+            self._body_valid = True
+            return
+
+        if self._is_graphql_mode(body_type):
+            self._body_valid = self._validate_graphql_variables()
+            return
+
+        self._body_valid = self._validate_json_body(body_text)
+
+    # --- Fix GraphQL validation ---
+
+    def _validate_graphql_variables(self) -> bool:
+        gql_vars = self._safe_text(self._gql_vars)
+
+        if not gql_vars:
+            self._mark_valid(None)
+            return True
+
+        if len(gql_vars) > _MAX_SYNC_JSON_VALIDATE_BYTES:
+            logger.warning(
+                "request_panel.validation.graphql_vars_skip_large op=validate_body size=%d",
+                len(gql_vars),
+            )
+            self._mark_valid(None)
+            return True
+
+        try:
+            json.loads(gql_vars)
+            self._mark_valid("valid")
+            logger.debug("GraphQL variables JSON validation passed")
+            return True
+
+        except json.JSONDecodeError as exc:
+            msg = f"Invalid GraphQL variables JSON at line {exc.lineno}, col {exc.colno}: {exc.msg}"
+            self._mark_invalid(msg)
+            logger.debug("GraphQL variables JSON validation failed: %s", msg)
+            return False
+
+    # --- Fix JSON validation ---
+
+    def _validate_json_body(self, body_text: str) -> bool:
+        if not body_text:
+            self._mark_valid(None)
+            return True
+
+        if len(body_text) > _MAX_SYNC_JSON_VALIDATE_BYTES:
+            logger.warning(
+                "request_panel.validation.json_skip_large op=validate_body size=%d",
+                len(body_text),
+            )
+            self._mark_valid(None)
+            return True
+
+        try:
+            json.loads(body_text)
+            self._mark_valid("valid")
+            logger.debug("JSON body validation passed")
+            return True
+
+        except json.JSONDecodeError as exc:
+            msg = f"Invalid JSON at line {exc.lineno}, col {exc.colno}: {exc.msg}"
+            self._mark_invalid(msg)
+            logger.debug("JSON body validation failed: %s", msg)
+            return False
+
+    # --- Helper functions should be static ---
+
+    @staticmethod
+    def _safe_text(widget) -> str:
+        try:
+            return widget.toPlainText().strip()
+        except Exception:
+            return ""
+
+    @staticmethod
+    def _safe_body_type(self_ref) -> str:
+        try:
+            return self_ref.body_type_combo.currentText().lower()
+        except Exception:
+            return ""
+
+    @staticmethod
+    def _is_json_mode(body_type: str) -> bool:
+        return "json" in body_type
+
+    @staticmethod
+    def _is_graphql_mode(body_type: str) -> bool:
+        return "graphql" in body_type
+
+    # --- Fix validate_body to call methods correctly ---
+
+    def _validate_body(self) -> None:
+        body_text = self._safe_text(self.body_text)
+        body_type = self._safe_body_type(self)
+
+        if not self._is_json_mode(body_type) and not self._is_graphql_mode(body_type):
+            self._mark_valid(None)
+            self._body_valid = True
+            return
+
+        if self._is_graphql_mode(body_type):
+            self._body_valid = self._validate_graphql_variables()
+            return
+
+        self._body_valid = self._validate_json_body(body_text)
+
+    # --- Fix GraphQL validation ---
+
+    def _validate_graphql_variables(self) -> bool:
+        gql_vars = self._safe_text(self._gql_vars)
+
+        if not gql_vars:
+            self._mark_valid(None)
+            return True
+
+        if len(gql_vars) > _MAX_SYNC_JSON_VALIDATE_BYTES:
+            logger.warning(
+                "request_panel.validation.graphql_vars_skip_large op=validate_body size=%d",
+                len(gql_vars),
+            )
+            self._mark_valid(None)
+            return True
+
+        try:
+            json.loads(gql_vars)
+            self._mark_valid("valid")
+            logger.debug("GraphQL variables JSON validation passed")
+            return True
+
+        except json.JSONDecodeError as exc:
+            msg = f"Invalid GraphQL variables JSON at line {exc.lineno}, col {exc.colno}: {exc.msg}"
+            self._mark_invalid(msg)
+            logger.debug("GraphQL variables JSON validation failed: %s", msg)
+            return False
+
+    # --- Fix JSON validation ---
+
+    def _validate_json_body(self, body_text: str) -> bool:
+        if not body_text:
+            self._mark_valid(None)
+            return True
+
+        if len(body_text) > _MAX_SYNC_JSON_VALIDATE_BYTES:
+            logger.warning(
+                "request_panel.validation.json_skip_large op=validate_body size=%d",
+                len(body_text),
+            )
+            self._mark_valid(None)
+            return True
+
+        try:
+            json.loads(body_text)
+            self._mark_valid("valid")
+            logger.debug("JSON body validation passed")
+            return True
+
+        except json.JSONDecodeError as exc:
+            msg = f"Invalid JSON at line {exc.lineno}, col {exc.colno}: {exc.msg}"
+            self._mark_invalid(msg)
+            logger.debug("JSON body validation failed: %s", msg)
+            return False

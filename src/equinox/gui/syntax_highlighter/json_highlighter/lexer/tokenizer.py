@@ -54,11 +54,11 @@ class JsonLexer:
                 state = State.NORMAL
                 continue
 
-            index, state, tok, string_opened, string_start = self._lex_normal(
+            index, state, normal_tok, string_opened, string_start = self._lex_normal(
                 text, index, state, string_opened, string_start
             )
-            if tok is not None:
-                yield tok
+            if normal_tok is not None:
+                yield normal_tok
 
         return state
 

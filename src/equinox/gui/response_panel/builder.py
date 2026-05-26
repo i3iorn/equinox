@@ -31,7 +31,7 @@ from equinox.gui.response_panel.header_table import HeaderTable
 from equinox.gui.response_panel.intelligence_panel import IntelligencePanel
 from equinox.gui.response_panel.json_tree import JsonTree
 from equinox.gui.response_panel.read_only_text import ReadOnlyText
-from equinox.gui.response_panel.search_bar import SearchBar
+from equinox.gui.response_panel.search import SearchBar
 from equinox.gui.theme import get_mono_font
 
 # Layout spacing constants

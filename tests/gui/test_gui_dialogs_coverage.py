@@ -536,32 +536,32 @@ class TestSaveRequestDialog:
         return [{"id": 1, "name": "My Requests"}]
 
     def test_instantiate(self, db):
-        from equinox.gui.request_panel.save_dialog import SaveRequestDialog
+        from equinox.gui.dialogs.save_dialog import SaveRequestDialog
 
         dlg = SaveRequestDialog(self._collections(), "GET", "https://example.com/api")
         assert dlg is not None
 
     def test_default_collection_created(self, db):
-        from equinox.gui.request_panel.save_dialog import SaveRequestDialog
+        from equinox.gui.dialogs.save_dialog import SaveRequestDialog
 
         dlg = SaveRequestDialog(self._collections(), "POST", "https://api.example.com/users")
         # Collection combo should have at least one entry
         assert dlg._col_combo.count() >= 1
 
     def test_name_placeholder(self, db):
-        from equinox.gui.request_panel.save_dialog import SaveRequestDialog
+        from equinox.gui.dialogs.save_dialog import SaveRequestDialog
 
         dlg = SaveRequestDialog(self._collections(), "GET", "https://example.com/api/test")
         assert "GET" in dlg._name_input.placeholderText()
 
     def test_folder_input_empty_default(self, db):
-        from equinox.gui.request_panel.save_dialog import SaveRequestDialog
+        from equinox.gui.dialogs.save_dialog import SaveRequestDialog
 
         dlg = SaveRequestDialog(self._collections(), "GET", "https://example.com")
         assert dlg._folder_input.text() == ""
 
     def test_folder_input_pre_filled(self, db):
-        from equinox.gui.request_panel.save_dialog import SaveRequestDialog
+        from equinox.gui.dialogs.save_dialog import SaveRequestDialog
 
         dlg = SaveRequestDialog(
             self._collections(), "GET", "https://example.com", current_folder="Auth/OAuth"
@@ -569,7 +569,7 @@ class TestSaveRequestDialog:
         assert dlg._folder_input.text() == "Auth/OAuth"
 
     def test_result_properties(self, db):
-        from equinox.gui.request_panel.save_dialog import SaveRequestDialog
+        from equinox.gui.dialogs.save_dialog import SaveRequestDialog
 
         dlg = SaveRequestDialog(self._collections(), "GET", "https://example.com")
         dlg._name_input.setText("My Test Request")
@@ -577,7 +577,7 @@ class TestSaveRequestDialog:
         assert dlg._col_combo.currentData() is not None
 
     def test_with_existing_collection(self, db):
-        from equinox.gui.request_panel.save_dialog import SaveRequestDialog
+        from equinox.gui.dialogs.save_dialog import SaveRequestDialog
 
         dlg = SaveRequestDialog(
             [

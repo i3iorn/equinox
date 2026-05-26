@@ -587,8 +587,9 @@ class SearchBar(QWidget):
         run_async = len(cfg.doc_text) >= _ASYNC_MIN_DOC_CHARS
         if run_async:
             try:
-                self._thread_pool.start(runnable)
-                return
+                if self._thread_pool is not None:
+                    self._thread_pool.start(runnable)
+                    return
             except Exception:
                 logger.exception("Failed to dispatch async search job; falling back to sync")
 
@@ -737,6 +738,9 @@ class SearchBar(QWidget):
         end_idx = min(len(self._offsets), self._current_idx + radius + 1)
 
         doc = self._target.document()
+        if doc is None:
+            self._target.setExtraSelections([])
+            return
         try:
             max_pos = max(0, doc.characterCount() - 1)
         except Exception:
@@ -765,10 +769,7 @@ class SearchBar(QWidget):
         cur.setPosition(s)
         cur.setPosition(e, QTextCursor.MoveMode.KeepAnchor)
         self._target.setTextCursor(cur)
-        try:
-            self._target.centerCursor()
-        except Exception:
-            self._target.ensureCursorVisible()
+        self._target.ensureCursorVisible()
 
     def _find_next(self) -> None:
         if not self._offsets:

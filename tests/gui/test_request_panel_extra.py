@@ -5,6 +5,9 @@ import pytest
 from PyQt6.QtCore import QCoreApplication
 from PyQt6.QtWidgets import QApplication
 
+from equinox.gui.request_panel._mixins.autosave_mixin import RequestAutosaveMixin
+from equinox.gui.request_panel._mixins.save_flow_mixin import RequestSaveFlowMixin
+
 
 def ensure_qapp():
     app = QApplication.instance()
@@ -229,7 +232,6 @@ def test_refresh_url_completer_uses_request_history_service(tmp_db_path):
 
 def test_autosave_current_routes_through_request_persistence() -> None:
     from equinox.core.request import Request
-    from equinox.gui.request_panel.autosave_mixin import RequestAutosaveMixin
 
     class _Panel(RequestAutosaveMixin):
         def __init__(self) -> None:
@@ -275,7 +277,6 @@ def test_save_updates_existing_request_when_collection_unchanged(tmp_db_path, mo
     from PyQt6.QtWidgets import QDialog
 
     from equinox.core.request import Request
-    from equinox.gui.request_panel.save_flow_mixin import RequestSaveFlowMixin
 
     # Create a minimal mock panel with only the save-flow behavior
     class _MockPanel(RequestSaveFlowMixin):
@@ -341,7 +342,7 @@ def test_save_updates_existing_request_when_collection_unchanged(tmp_db_path, mo
             return "Items", 7, "Default", ""
 
     monkeypatch.setattr(
-        "equinox.gui.request_panel.save_flow_mixin.SaveRequestDialog",
+        "equinox.gui.request_panel._mixins.save_flow_mixin.SaveRequestDialog",
         _FakeDialog,
     )
     mock_panel._request_persistence.list_save_collections.return_value = [
@@ -373,7 +374,6 @@ def test_save_calls_save_request_when_collection_changes(tmp_db_path, monkeypatc
     from PyQt6.QtWidgets import QDialog
 
     from equinox.core.request import Request
-    from equinox.gui.request_panel.save_flow_mixin import RequestSaveFlowMixin
 
     class _MockPanel(RequestSaveFlowMixin):
         def __init__(self):
@@ -437,7 +437,7 @@ def test_save_calls_save_request_when_collection_changes(tmp_db_path, monkeypatc
             return "Create User", 99, "Other", ""
 
     monkeypatch.setattr(
-        "equinox.gui.request_panel.save_flow_mixin.SaveRequestDialog",
+        "equinox.gui.request_panel._mixins.save_flow_mixin.SaveRequestDialog",
         _FakeDialog,
     )
     mock_panel._request_persistence.list_save_collections.return_value = [
