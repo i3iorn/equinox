@@ -38,7 +38,7 @@ class LogOpenResult:
 def open_path_in_os(path: Path) -> None:
     """Open *path* using the platform default application."""
     if sys.platform == "win32":
-        os.startfile(str(path))  # type: ignore[attr-defined]
+        os.startfile(str(path))
     elif sys.platform == "darwin":
         subprocess.Popen(["open", str(path)])  # noqa: S603
     else:
