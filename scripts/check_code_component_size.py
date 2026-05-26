@@ -21,36 +21,37 @@ def analyze_file(path: Path):
     classes = []
     functions = []
 
-    for node in tree.body:
-        if isinstance(node, ast.ClassDef):
-            class_info = {
-                "name": node.name,
-                "lineno": node.lineno,
-                "lines": node.end_lineno - node.lineno + 1,
-                "methods": [],
-            }
-
-            for item in node.body:
-                if isinstance(item, ast.FunctionDef):
-                    class_info["methods"].append(
-                        {
-                            "name": item.name,
-                            "lines": item.end_lineno - item.lineno + 1,
-                            "lineno": item.lineno,
-                        }
-                    )
-
-            classes.append(class_info)
-
-        elif isinstance(node, ast.FunctionDef):
-            functions.append(
-                {
-                    "module": Path(path).stem,
+    if "test" not in path.as_posix():
+        for node in tree.body:
+            if isinstance(node, ast.ClassDef):
+                class_info = {
                     "name": node.name,
-                    "lines": node.end_lineno - node.lineno + 1,
                     "lineno": node.lineno,
+                    "lines": node.end_lineno - node.lineno + 1,
+                    "methods": [],
                 }
-            )
+
+                for item in node.body:
+                    if isinstance(item, ast.FunctionDef):
+                        class_info["methods"].append(
+                            {
+                                "name": item.name,
+                                "lines": item.end_lineno - item.lineno + 1,
+                                "lineno": item.lineno,
+                            }
+                        )
+
+                classes.append(class_info)
+
+            elif isinstance(node, ast.FunctionDef):
+                functions.append(
+                    {
+                        "module": Path(path).stem,
+                        "name": node.name,
+                        "lines": node.end_lineno - node.lineno + 1,
+                        "lineno": node.lineno,
+                    }
+                )
 
     return {
         "module": path,
