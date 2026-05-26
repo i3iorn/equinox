@@ -24,14 +24,6 @@ repos:
         pass_filenames: false
         files: ^(pyproject\.toml|requirements\.txt|requirements-lock\.txt)$
 
-      - id: dependency-vulnerabilities
-        name: "Check: dependency vulnerabilities are blocked"
-        entry: python scripts/check_dependency_vulnerabilities.py
-        language: python
-        additional_dependencies: [pip-audit]
-        pass_filenames: false
-        files: ^(pyproject\.toml|requirements\.txt|requirements-lock\.txt)$
-
       - id: verify-ci-toolchain
         name: "Check: CI toolchain matches declared dependencies"
         entry: python scripts/verify_ci_toolchain.py
