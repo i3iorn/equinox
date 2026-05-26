@@ -48,7 +48,7 @@ def analyze_file(path: Path):
                     "module": Path(path).stem,
                     "name": node.name,
                     "lines": node.end_lineno - node.lineno + 1,
-                    "lineno": node.lineno
+                    "lineno": node.lineno,
                 }
             )
 
@@ -155,7 +155,6 @@ def main():
         return 1
 
     return 0
-
 
 
 if __name__ == "__main__":
