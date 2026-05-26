@@ -174,48 +174,44 @@ def main():
         report = analyze_file(path)
 
         # Module-level
-        if report["module_lines"] > DEFAULT_LIMITS["module"]:
-            over = (
-                (report["module_lines"] - DEFAULT_LIMITS["module"]) / DEFAULT_LIMITS["module"] * 100
-            )
+        if report.module_lines > DEFAULT_LIMITS["module"]:
+            over = (report.module_lines - DEFAULT_LIMITS["module"]) / DEFAULT_LIMITS["module"] * 100
             violations.append(
                 (
                     over,
-                    f"{path}:1: Module too large - {report['module_lines']} lines ({over:.1f}% over)",
+                    f"{path}:1: Module too large - {report.module_lines} lines ({over:.1f}% over)",
                 )
             )
 
         # Classes + methods
-        for cls in report["classes"]:
-            if cls["lines"] > DEFAULT_LIMITS["class"]:
-                over = (cls["lines"] - DEFAULT_LIMITS["class"]) / DEFAULT_LIMITS["class"] * 100
+        for cls in report.classes:
+            if cls.lines > DEFAULT_LIMITS["class"]:
+                over = (cls.lines - DEFAULT_LIMITS["class"]) / DEFAULT_LIMITS["class"] * 100
                 violations.append(
                     (
                         over,
-                        f"{path}:{cls['lineno']}: Class too large: {cls['name']} - {cls['lines']} lines ({over:.1f}% over)",
+                        f"{path}:{cls.lineno}: Class too large: {cls.name} - {cls.lines} lines ({over:.1f}% over)",
                     )
                 )
 
-            for m in cls["methods"]:
-                if m["lines"] > DEFAULT_LIMITS["function"]:
-                    over = (
-                        (m["lines"] - DEFAULT_LIMITS["function"]) / DEFAULT_LIMITS["function"] * 100
-                    )
+            for m in cls.methods:
+                if m.lines > DEFAULT_LIMITS["function"]:
+                    over = (m.lines - DEFAULT_LIMITS["function"]) / DEFAULT_LIMITS["function"] * 100
                     violations.append(
                         (
                             over,
-                            f"{path}:{m['lineno']}: Method too large: {cls['name']}:{m['name']} - {m['lines']} lines ({over:.1f}% over)",
+                            f"{path}:{m.lineno} Method too large: {cls.name}:{m.name} - {m.lines} lines ({over:.1f}% over)",
                         )
                     )
 
         # Top-level functions
-        for fn in report["functions"]:
-            if fn["lines"] > DEFAULT_LIMITS["function"]:
-                over = (fn["lines"] - DEFAULT_LIMITS["function"]) / DEFAULT_LIMITS["function"] * 100
+        for fn in report.functions:
+            if fn.lines > DEFAULT_LIMITS["function"]:
+                over = (fn.lines - DEFAULT_LIMITS["function"]) / DEFAULT_LIMITS["function"] * 100
                 violations.append(
                     (
                         over,
-                        f"{path}:{fn['lineno']}: Function too large: {fn['module']}:{fn['name']} - {fn['lines']} lines ({over:.1f}% over)",
+                        f"{path}:{fn.lineno} Function too large: {fn.parent}:{fn.name} - {fn.lines} lines ({over:.1f}% over)",
                     )
                 )
 
@@ -231,7 +227,7 @@ def main():
         for _, msg in sorted_violations:
             print(msg)
 
-        if limit is not None and limit > 0 and len(violations) > limit:
+        if limit is not None and 0 < limit < len(violations):
             print(f"\n(Showing top {limit} of {len(violations)} violations)")
 
         print("\nCommit blocked due to size violations.")
