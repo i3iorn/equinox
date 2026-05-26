@@ -15,8 +15,10 @@ from equinox.security.auth_cipher import (
     decode_utf8,
     decrypt_token_to_bytes,
     encrypt_utf8,
-    get_or_create_key as _get_or_create_key,
     reset_fernet_cache,
+)
+from equinox.security.auth_cipher import (
+    get_or_create_key as _get_or_create_key,
 )
 from equinox.security.secrets_password import ensure_master_password_initialized
 from equinox.storage.auth_cipher_storage import (

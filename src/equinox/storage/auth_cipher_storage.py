@@ -60,4 +60,3 @@ def decrypt_auth_storage_value(stored: str | None, field_name: str = "auth_data"
         master_password_loader=ensure_master_password_initialized,
     )
     return decode_utf8(plaintext_bytes, field_name)
-

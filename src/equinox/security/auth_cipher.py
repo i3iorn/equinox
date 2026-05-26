@@ -132,4 +132,3 @@ def reset_fernet_cache() -> None:
     """Clear cached Fernet instance (used by tests)."""
     global _fernet
     _fernet = None
-
