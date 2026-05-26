@@ -7,7 +7,7 @@ from pathlib import Path
 _LIMITS = {
     "module": 1000,
     "function": 60,
-    "classes": 800,
+    "class": 800,
 }
 
 
@@ -115,8 +115,8 @@ def main():
 
         # Classes + methods
         for cls in report["classes"]:
-            if cls["lines"] > _LIMITS["classes"]:
-                over = (cls["lines"] - _LIMITS["classes"]) / _LIMITS["classes"] * 100
+            if cls["lines"] > _LIMITS["class"]:
+                over = (cls["lines"] - _LIMITS["class"]) / _LIMITS["class"] * 100
                 violations.append(
                     (
                         over,

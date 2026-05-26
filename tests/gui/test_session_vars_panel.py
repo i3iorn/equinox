@@ -128,7 +128,7 @@ class TestVariablesPanelRefresh:
         vp = variables_panel
         vp.refresh_session_vars({"BASE_URL": "https://api.test", "TOKEN": "abc"})
         clipboard_text = []
-        with patch("equinox.gui.variables_panel.QApplication.clipboard") as mock_cb:
+        with patch("equinox.gui.variables_panel._session_vars_mixin.QApplication.clipboard") as mock_cb:
             mock_clip = MagicMock()
             mock_cb.return_value = mock_clip
             mock_clip.setText = lambda t: clipboard_text.append(t)
@@ -164,7 +164,7 @@ class TestVariablesPanelRefresh:
         parent = vp._test_parent_ref
         parent.request_panel = rp
 
-        with patch("equinox.gui.variables_panel.QInputDialog.getText") as mock_get_text:
+        with patch("equinox.gui.variables_panel._session_vars_mixin.QInputDialog.getText") as mock_get_text:
             mock_get_text.side_effect = [("TOKEN", True), ("abc123", True)]
             vp._add_session_var()
 
@@ -176,7 +176,7 @@ class TestVariablesPanelRefresh:
         vp = variables_panel
         vp.refresh_session_vars({"A": "1"})
 
-        with patch("equinox.gui.variables_panel.QInputDialog.getText") as mock_get_text:
+        with patch("equinox.gui.variables_panel._session_vars_mixin.QInputDialog.getText") as mock_get_text:
             mock_get_text.side_effect = [("B", True), ("2", True)]
             vp._add_session_var()
 
@@ -190,8 +190,8 @@ class TestVariablesPanelRefresh:
         """Invalid names are rejected before value prompt is shown."""
         vp = variables_panel
         with (
-            patch("equinox.gui.variables_panel.QInputDialog.getText") as mock_get_text,
-            patch("equinox.gui.variables_panel.QMessageBox.warning") as mock_warn,
+            patch("equinox.gui.variables_panel._session_vars_mixin.QInputDialog.getText") as mock_get_text,
+            patch("equinox.gui.variables_panel._session_vars_mixin.QMessageBox.warning") as mock_warn,
         ):
             mock_get_text.return_value = ("bad key", True)
             vp._add_session_var()
