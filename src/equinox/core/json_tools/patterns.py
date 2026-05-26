@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import re
-from typing import NamedTuple
 
 # Number: -?(0|[1-9]\d*)(.\d+)?([eE][+-]?\d+)?
 NUMBER_RE = re.compile(r"-?(?:0|[1-9]\d*)(?:\.\d+)?(?:[eE][+-]?\d+)?")
@@ -24,12 +23,3 @@ JSON_ESCAPE_CHARS: frozenset[str] = frozenset(r'"\\/bfnrt')
 
 # Control character threshold — characters below this are errors in JSON strings
 CONTROL_CHAR_THRESHOLD: int = 0x20
-
-
-class Token(NamedTuple):
-    """Immutable lexer token."""
-
-    type: str
-    start: int
-    end: int
-    value: str

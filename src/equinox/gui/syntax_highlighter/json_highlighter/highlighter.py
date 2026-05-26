@@ -4,7 +4,9 @@ from typing import List, Optional
 
 from PyQt6.QtGui import QSyntaxHighlighter, QTextDocument
 
-from ..lexer import JsonLexer, State, Token
+from equinox.core.json_tools.lexer import JsonLexer
+from equinox.core.json_tools.tokens import Token
+
 from .formats import _VARIABLE_FMT, _VARIABLE_PATTERN, build_token_formats
 
 
@@ -19,41 +21,31 @@ def _is_key(tokens: List[Token], index: int) -> bool:
 
 
 class JsonHighlighter(QSyntaxHighlighter):
-    """JSON/JSONC syntax highlighter using streaming lexer."""
+    """JSON/JSONC syntax highlighter using the new lexer."""
 
     def __init__(self, document: QTextDocument) -> None:
         super().__init__(document)
-        self.lexer = JsonLexer()
+        self.lexer = JsonLexer(allow_comments=True, detect_timestamps=True)
         self.formats = build_token_formats()
 
     def highlightBlock(self, text: Optional[str]) -> None:  # noqa: N802
         text = text or ""
+
+        # Retrieve previous block state
         prev_state = self.previousBlockState()
+        state = prev_state if prev_state != -1 else "NORMAL"
 
-        try:
-            initial_state = State(prev_state) if prev_state != -1 else State.NORMAL
-        except ValueError:
-            initial_state = State.NORMAL
+        # Lex this line
+        tokens, next_state = self.lexer.tokenize_line(text, str(state))
 
-        tokens, final_state = self._lex_line(text, initial_state)
+        # Apply syntax highlighting
         self._apply_token_formats(tokens)
         self._apply_variable_highlighting(text)
-        self.setCurrentBlockState(final_state.value)
 
-    def _lex_line(self, text: str, state: State) -> tuple[list[Token], State]:
-        """Lex a single line into tokens and final state."""
-        gen = self.lexer.tokenize_line(text, state)
-        tokens: list[Token] = []
-        final_state = state
-        try:
-            while True:
-                tokens.append(next(gen))
-        except StopIteration as exc:
-            if exc.value is not None:
-                final_state = exc.value
-        return tokens, final_state
+        # Store next state for the next line
+        self.setCurrentBlockState({"NORMAL": 0, "STRING": 1, "COMMENT_BLOCK": 2}[next_state])
 
-    def _apply_token_formats(self, tokens: list[Token]) -> None:
+    def _apply_token_formats(self, tokens: List[Token]) -> None:
         """Apply syntax formats for all tokens."""
         for index, tok in enumerate(tokens):
             token_type = "KEY" if _is_key(tokens, index) else tok.type

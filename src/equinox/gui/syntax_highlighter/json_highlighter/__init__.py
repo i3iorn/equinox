@@ -1,5 +1,3 @@
-from .highlighter.json_highlighter import JsonHighlighter
-from .lexer.states import State
-from .lexer.tokenizer import JsonLexer
+from .highlighter import JsonHighlighter
 
-__all__ = ["JsonHighlighter", "JsonLexer", "State"]
+__all__ = ["JsonHighlighter"]
