@@ -151,9 +151,7 @@ class AnalysisEngine:
                     )
                 for item in results:
                     if not isinstance(item, Finding):
-                        raise TypeError(
-                            f"Analyzer yielded {type(item).__name__}; expected Finding"
-                        )
+                        raise TypeError(f"Analyzer yielded {type(item).__name__}; expected Finding")
                 findings.extend(results)
             except Exception as exc:
                 logger.warning(
