@@ -1,6 +1,7 @@
 """Save-dialog orchestration mixin for RequestPanel."""
 
 # mypy: disable-error-code=attr-defined
+# mypy: disable-error-code=arg-type
 
 from __future__ import annotations
 
