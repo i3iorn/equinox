@@ -44,7 +44,8 @@ class CopyableMessageBox(QMessageBox):
         self._copy_text = copy_text if copy_text is not None else text
         self._copy_btn: QPushButton = self.addButton(
             self._COPY_LABEL, QMessageBox.ButtonRole.ActionRole
-        )
+        ) # type: ignore[assignment]
+
         # Single reusable timer so repeated Copy clicks just restart the countdown.
         self._reset_timer = QTimer(self)
         self._reset_timer.setSingleShot(True)
@@ -104,7 +105,7 @@ class CopyableMessageBox(QMessageBox):
         title: str,
         text: str,
         copy_text: str | None = None,
-    ) -> int:
+    ) -> int: # type: ignore[override]
         """Show a *Critical* dialog with OK + Copy buttons."""
         return cls._show(QMessageBox.Icon.Critical, parent, title, text, copy_text)
 
@@ -115,7 +116,7 @@ class CopyableMessageBox(QMessageBox):
         title: str,
         text: str,
         copy_text: str | None = None,
-    ) -> int:
+    ) -> int: # type: ignore[override]
         """Show a *Warning* dialog with OK + Copy buttons."""
         return cls._show(QMessageBox.Icon.Warning, parent, title, text, copy_text)
 
@@ -126,6 +127,6 @@ class CopyableMessageBox(QMessageBox):
         title: str,
         text: str,
         copy_text: str | None = None,
-    ) -> int:
+    ) -> int: # type: ignore[override]
         """Show an *Information* dialog with OK + Copy buttons."""
         return cls._show(QMessageBox.Icon.Information, parent, title, text, copy_text)
