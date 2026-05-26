@@ -1,9 +1,9 @@
 """Collections management panel"""
 
 import logging
-from typing import Tuple
+from typing import Tuple, List, Optional, Dict, Any
 
-from PyQt6.QtCore import Qt, QTimer, pyqtSignal
+from PyQt6.QtCore import Qt, QTimer, pyqtSignal, QPoint
 from PyQt6.QtGui import QAction, QColor, QKeySequence, QShortcut
 from PyQt6.QtWidgets import (
     QCheckBox,
@@ -594,22 +594,87 @@ class CollectionsPanel(_CollectionsActionsMixin, QWidget):
 
     # ── Context menu (#6: Rename, Duplicate, Run) ─────────────────────
 
-    def _show_context_menu(self, position):
-        item = self.tree.itemAt(position)
-        if not item:
-            return
-        data = item.data(0, Qt.ItemDataRole.UserRole)
-        if not data:
-            return
+        # ----------------------------------------------------------------------
+        # Public Entry Point
+        # ----------------------------------------------------------------------
+        def _show_context_menu(self, position: QPoint) -> None:
+            """Render a context menu for the item at the given position."""
+            item = self._safe_item_lookup(position)
+            if item is None:
+                return
 
-        menu = QMenu()
+            data = self._safe_item_data(item)
+            if data is None:
+                return
 
-        if data["type"] == "collection":
+            menu = QMenu()
+
+            handlers = {
+                "collection": self._build_collection_menu,
+                "folder": self._build_folder_menu,
+                "request": self._build_request_menu,
+            }
+
+            handler = handlers.get(data.get("type"))
+            if handler is None:
+                logger.debug("Unknown item type in context menu: %r", data.get("type"))
+                return
+
+            handler(menu, item, data)
+            menu.exec(self.tree.viewport().mapToGlobal(position))
+
+        # ----------------------------------------------------------------------
+        # Safe Access Helpers
+        # ----------------------------------------------------------------------
+        def _safe_item_lookup(self, position: QPoint) -> Optional[QTreeWidgetItem]:
+            """Return the tree item at the given position, or None if invalid."""
+            item = self.tree.itemAt(position)
+            if not isinstance(item, QTreeWidgetItem):
+                return None
+            return item
+
+        def _safe_item_data(self, item: QTreeWidgetItem) -> Optional[Dict[str, Any]]:
+            """Return validated item data."""
+            data = item.data(0, Qt.ItemDataRole.UserRole)
+            if not isinstance(data, dict):
+                return None
+            return data
+
+        # ----------------------------------------------------------------------
+        # Collection Menu
+        # ----------------------------------------------------------------------
+        def _build_collection_menu(
+            self, menu: QMenu, item: QTreeWidgetItem, data: Dict[str, Any]
+        ) -> None:
             col_id = data.get("id")
             if not isinstance(col_id, int):
-                logger.debug("CollectionsPanel: invalid collection id for context menu: %r", col_id)
+                logger.debug("Invalid collection id: %r", col_id)
                 return
-            create_specs = [
+
+            self._add_collection_create_actions(menu, col_id)
+            menu.addSeparator()
+
+            self._add_collection_manage_actions(menu, col_id, item)
+            menu.addSeparator()
+
+            self._add_sort_menu(menu, col_id, None, "collections_collection_sort")
+            menu.addSeparator()
+
+            self._add_delete_actions(
+                menu,
+                "collections_collection",
+                [
+                    (
+                        "delete_collection",
+                        "Delete Collection",
+                        lambda: self._delete_collection(col_id),
+                        True,
+                    )
+                ],
+            )
+
+        def _add_collection_create_actions(self, menu: QMenu, col_id: int) -> None:
+            specs = [
                 (
                     "new_request",
                     "New Request…",
@@ -623,12 +688,15 @@ class CollectionsPanel(_CollectionsActionsMixin, QWidget):
                     False,
                 ),
             ]
-            self._add_ranked_context_actions(menu, "collections_collection", create_specs)
-            menu.addSeparator()
+            self._add_ranked_context_actions(menu, "collections_collection", specs)
 
-            manage_specs = []
-            if isinstance(col_id, int) and col_id > 0:
-                manage_specs.append(
+        def _add_collection_manage_actions(
+            self, menu: QMenu, col_id: int, item: QTreeWidgetItem
+        ) -> None:
+            specs = []
+
+            if col_id > 0:
+                specs.append(
                     (
                         "show_api_spec",
                         "Show API Spec…",
@@ -637,11 +705,9 @@ class CollectionsPanel(_CollectionsActionsMixin, QWidget):
                     )
                 )
             else:
-                logger.debug(
-                    "CollectionsPanel: skipping Show API Spec action for invalid collection id: %r",
-                    col_id,
-                )
-            manage_specs.extend(
+                logger.debug("Skipping Show API Spec for invalid collection id: %r", col_id)
+
+            specs.extend(
                 [
                     ("rename", "Rename…", lambda: self._rename_collection(col_id, item), False),
                     (
@@ -659,49 +725,46 @@ class CollectionsPanel(_CollectionsActionsMixin, QWidget):
                     ),
                 ]
             )
-            self._add_ranked_context_actions(menu, "collections_collection", manage_specs)
-            menu.addSeparator()
 
-            sort_menu = menu.addMenu("Sort Requests")
-            if sort_menu is not None:
-                sort_specs = [
-                    (
-                        "sort_alpha",
-                        "Sort A → Z",
-                        lambda: self._sort_group(col_id, None, "alpha"),
-                        False,
-                    ),
-                    (
-                        "sort_method",
-                        "Sort by Method",
-                        lambda: self._sort_group(col_id, None, "method"),
-                        False,
-                    ),
-                ]
-                self._add_ranked_context_actions(
-                    sort_menu, "collections_collection_sort", sort_specs
-                )
-            menu.addSeparator()
+            self._add_ranked_context_actions(menu, "collections_collection", specs)
 
-            delete_specs = [
-                (
-                    "delete_collection",
-                    "Delete Collection",
-                    lambda: self._delete_collection(col_id),
-                    True,
-                ),
-            ]
-            self._add_ranked_context_actions(menu, "collections_collection", delete_specs)
-
-        elif data["type"] == "folder":
+        # ----------------------------------------------------------------------
+        # Folder Menu
+        # ----------------------------------------------------------------------
+        def _build_folder_menu(
+            self, menu: QMenu, item: QTreeWidgetItem, data: Dict[str, Any]
+        ) -> None:
             col_id = self._col_id_for_item(item)
-            folder_path = data["path"]
+            folder_path = data.get("path")
+
             if not isinstance(col_id, int):
-                logger.debug(
-                    "CollectionsPanel: invalid folder collection id for context menu: %r", col_id
-                )
+                logger.debug("Invalid folder collection id: %r", col_id)
                 return
-            create_specs = [
+
+            self._add_folder_create_actions(menu, col_id, folder_path)
+            menu.addSeparator()
+
+            self._add_sort_menu(menu, col_id, folder_path, "collections_folder_sort")
+            menu.addSeparator()
+
+            self._add_folder_manage_actions(menu, col_id, folder_path, item)
+            menu.addSeparator()
+
+            self._add_delete_actions(
+                menu,
+                "collections_folder",
+                [
+                    (
+                        "delete_folder",
+                        "Delete Folder…",
+                        lambda: self._delete_folder(col_id, folder_path),
+                        True,
+                    )
+                ],
+            )
+
+        def _add_folder_create_actions(self, menu: QMenu, col_id: int, folder_path: str) -> None:
+            specs = [
                 (
                     "new_request_here",
                     "New Request Here…",
@@ -715,38 +778,22 @@ class CollectionsPanel(_CollectionsActionsMixin, QWidget):
                     False,
                 ),
             ]
-            self._add_ranked_context_actions(menu, "collections_folder", create_specs)
-            menu.addSeparator()
+            self._add_ranked_context_actions(menu, "collections_folder", specs)
 
-            sort_menu = menu.addMenu("Sort Requests")
-            if sort_menu is not None:
-                sort_specs = [
-                    (
-                        "sort_alpha",
-                        "Sort A → Z",
-                        lambda c=col_id, f=folder_path: self._sort_group(c, f, "alpha"),
-                        False,
-                    ),
-                    (
-                        "sort_method",
-                        "Sort by Method",
-                        lambda c=col_id, f=folder_path: self._sort_group(c, f, "method"),
-                        False,
-                    ),
-                ]
-                self._add_ranked_context_actions(sort_menu, "collections_folder_sort", sort_specs)
-
-            manage_specs = [
+        def _add_folder_manage_actions(
+            self, menu: QMenu, col_id: int, folder_path: str, item: QTreeWidgetItem
+        ) -> None:
+            specs = [
                 (
                     "set_auth",
                     "Set Auth…",
-                    lambda c=col_id, f=folder_path: self._set_folder_auth(c, f),
+                    lambda: self._set_folder_auth(col_id, folder_path),
                     False,
                 ),
                 (
                     "clear_auth",
                     "Clear Auth",
-                    lambda c=col_id, f=folder_path: self._clear_folder_auth(c, f),
+                    lambda: self._clear_folder_auth(col_id, folder_path),
                     False,
                 ),
                 (
@@ -756,31 +803,42 @@ class CollectionsPanel(_CollectionsActionsMixin, QWidget):
                     False,
                 ),
             ]
-            self._add_ranked_context_actions(menu, "collections_folder", manage_specs)
-            menu.addSeparator()
+            self._add_ranked_context_actions(menu, "collections_folder", specs)
 
-            delete_specs = [
-                (
-                    "delete_folder",
-                    "Delete Folder…",
-                    lambda: self._delete_folder(col_id, folder_path),
-                    True,
-                ),
-            ]
-            self._add_ranked_context_actions(menu, "collections_folder", delete_specs)
-
-        elif data["type"] == "request":
-            run_specs = [
-                ("open_in_editor", "Open in Editor", lambda: self._load_request(data["id"]), False),
-                ("run_now", "▶  Run Now", lambda: self._run_request(data["id"]), False),
-            ]
-            self._add_ranked_context_actions(menu, "collections_request", run_specs)
-            menu.addSeparator()
-
+        # ----------------------------------------------------------------------
+        # Request Menu
+        # ----------------------------------------------------------------------
+        def _build_request_menu(
+            self, menu: QMenu, item: QTreeWidgetItem, data: Dict[str, Any]
+        ) -> None:
             req_id = data.get("id")
-            manage_specs = []
+
+            self._add_request_run_actions(menu, req_id)
+            menu.addSeparator()
+
+            self._add_request_manage_actions(menu, req_id, item)
+            menu.addSeparator()
+
+            self._add_delete_actions(
+                menu,
+                "collections_request",
+                [("delete_request", "Delete Request", lambda: self._delete_request(req_id), True)],
+            )
+
+        def _add_request_run_actions(self, menu: QMenu, req_id: int) -> None:
+            specs = [
+                ("open_in_editor", "Open in Editor", lambda: self._load_request(req_id), False),
+                ("run_now", "▶  Run Now", lambda: self._run_request(req_id), False),
+            ]
+            self._add_ranked_context_actions(menu, "collections_request", specs)
+
+        def _add_request_manage_actions(
+            self, menu: QMenu, req_id: int, item: QTreeWidgetItem
+        ) -> None:
+            specs = []
+
             if isinstance(req_id, int) and req_id > 0:
-                manage_specs.append(
+                specs.append(
                     (
                         "show_api_spec",
                         "Show API Spec…",
@@ -789,36 +847,61 @@ class CollectionsPanel(_CollectionsActionsMixin, QWidget):
                     )
                 )
             else:
-                logger.debug(
-                    "CollectionsPanel: skipping Show API Spec action for invalid request id: %r",
-                    req_id,
-                )
-            manage_specs.extend(
+                logger.debug("Skipping Show API Spec for invalid request id: %r", req_id)
+
+            specs.extend(
                 [
-                    ("rename", "Rename…", lambda: self._rename_request(data["id"], item), False),
-                    ("duplicate", "Duplicate", lambda: self._duplicate_request(data["id"]), False),
+                    ("rename", "Rename…", lambda: self._rename_request(req_id, item), False),
+                    ("duplicate", "Duplicate", lambda: self._duplicate_request(req_id), False),
                     (
                         "move_to_folder",
                         "Move to Folder…",
-                        lambda: self._move_to_folder(data["id"]),
+                        lambda: self._move_to_folder(req_id),
                         False,
                     ),
                 ]
             )
-            self._add_ranked_context_actions(menu, "collections_request", manage_specs)
-            menu.addSeparator()
 
-            delete_specs = [
+            self._add_ranked_context_actions(menu, "collections_request", specs)
+
+        # ----------------------------------------------------------------------
+        # Shared Helpers
+        # ----------------------------------------------------------------------
+        def _add_sort_menu(
+            self,
+            menu: QMenu,
+            col_id: int,
+            folder_path: Optional[str],
+            ranking_key: str,
+        ) -> None:
+            sort_menu = menu.addMenu("Sort Requests")
+            if sort_menu is None:
+                return
+
+            specs = [
                 (
-                    "delete_request",
-                    "Delete Request",
-                    lambda: self._delete_request(data["id"]),
-                    True,
+                    "sort_alpha",
+                    "Sort A → Z",
+                    lambda: self._sort_group(col_id, folder_path, "alpha"),
+                    False,
+                ),
+                (
+                    "sort_method",
+                    "Sort by Method",
+                    lambda: self._sort_group(col_id, folder_path, "method"),
+                    False,
                 ),
             ]
-            self._add_ranked_context_actions(menu, "collections_request", delete_specs)
 
-        menu.exec(self.tree.viewport().mapToGlobal(position))
+            self._add_ranked_context_actions(sort_menu, ranking_key, specs)
+
+        def _add_delete_actions(
+            self,
+            menu: QMenu,
+            ranking_key: str,
+            specs: List[tuple],
+        ) -> None:
+            self._add_ranked_context_actions(menu, ranking_key, specs)
 
     def _context_action_usage_count(self, context: str, action_id: str) -> int:
         tracker = getattr(self.window(), "_ui_usage_tracker", None)
