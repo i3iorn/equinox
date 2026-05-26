@@ -2,7 +2,6 @@ import ast
 import os
 import subprocess
 import sys
-from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from pathlib import Path
 from typing import List, Optional
@@ -128,14 +127,18 @@ def get_all_python_files():
 
 
 def main():
-    # Determine mode
+    # Extract filenames passed by pre-commit (positional args)
+    cli_files = [Path(a) for a in sys.argv[1:] if not a.startswith("-")]
+
+    # Priority: explicit filenames > CLI mode flags > env > default
     mode = os.getenv("SIZE_CHECK_MODE", "staged")
+
     if "--all" in sys.argv:
         mode = "all"
     elif "--staged" in sys.argv:
         mode = "staged"
 
-    # Priority: CLI flag > environment variable > default (no limit)
+    # Parse --limit=N
     limit = None
     for arg in sys.argv:
         if arg.startswith("--limit="):
@@ -150,63 +153,73 @@ def main():
         if env_limit and env_limit.isdigit():
             limit = int(env_limit)
 
-    files = get_all_python_files() if mode == "all" else get_staged_python_files()
+    # Determine file list
+    if cli_files:
+        # Pre-commit passes explicit filenames
+        files = [f for f in cli_files if f.suffix == ".py" and f.exists()]
+        print("Checking pre-commit provided files\n")
+    elif mode == "all":
+        files = get_all_python_files()
+        print("Checking ALL Python files\n")
+    else:
+        files = get_staged_python_files()
+        print("Checking STAGED Python files\n")
+
     if not files:
         return 0
 
-    print(f"Checking {mode.upper()} Python files\n")
-
-    # Parallel analysis
-    with ThreadPoolExecutor() as pool:
-        reports = list(pool.map(analyze_file, files))
-
+    # Analyze files
     violations = []
+    for path in files:
+        report = analyze_file(path)
 
-    for report in reports:
-        path = report.path
-
-        # Module
-        if report.module_lines > DEFAULT_LIMITS["module"]:
-            over = (report.module_lines - DEFAULT_LIMITS["module"]) / DEFAULT_LIMITS["module"] * 100
+        # Module-level
+        if report["module_lines"] > DEFAULT_LIMITS["module"]:
+            over = (
+                (report["module_lines"] - DEFAULT_LIMITS["module"]) / DEFAULT_LIMITS["module"] * 100
+            )
             violations.append(
                 (
                     over,
-                    f"{path}:1: Module too large ({report.module_lines} lines, {over:.1f}% over)",
+                    f"{path}:1: Module too large - {report['module_lines']} lines ({over:.1f}% over)",
                 )
             )
 
-        # Classes
-        for cls in report.classes:
-            if cls.lines > DEFAULT_LIMITS["class"]:
-                over = (cls.lines - DEFAULT_LIMITS["class"]) / DEFAULT_LIMITS["class"] * 100
+        # Classes + methods
+        for cls in report["classes"]:
+            if cls["lines"] > DEFAULT_LIMITS["class"]:
+                over = (cls["lines"] - DEFAULT_LIMITS["class"]) / DEFAULT_LIMITS["class"] * 100
                 violations.append(
                     (
                         over,
-                        f"{path}:{cls.lineno}: Class '{cls.name}' too large ({cls.lines} lines, {over:.1f}% over)",
+                        f"{path}:{cls['lineno']}: Class too large: {cls['name']} - {cls['lines']} lines ({over:.1f}% over)",
                     )
                 )
 
-            for m in cls.methods:
-                if m.lines > DEFAULT_LIMITS["function"]:
-                    over = (m.lines - DEFAULT_LIMITS["function"]) / DEFAULT_LIMITS["function"] * 100
+            for m in cls["methods"]:
+                if m["lines"] > DEFAULT_LIMITS["function"]:
+                    over = (
+                        (m["lines"] - DEFAULT_LIMITS["function"]) / DEFAULT_LIMITS["function"] * 100
+                    )
                     violations.append(
                         (
                             over,
-                            f"{path}:{m.lineno}: Method '{cls.name}.{m.name}' too large ({m.lines} lines, {over:.1f}% over)",
+                            f"{path}:{m['lineno']}: Method too large: {cls['name']}:{m['name']} - {m['lines']} lines ({over:.1f}% over)",
                         )
                     )
 
         # Top-level functions
-        for fn in report.functions:
-            if fn.lines > DEFAULT_LIMITS["function"]:
-                over = (fn.lines - DEFAULT_LIMITS["function"]) / DEFAULT_LIMITS["function"] * 100
+        for fn in report["functions"]:
+            if fn["lines"] > DEFAULT_LIMITS["function"]:
+                over = (fn["lines"] - DEFAULT_LIMITS["function"]) / DEFAULT_LIMITS["function"] * 100
                 violations.append(
                     (
                         over,
-                        f"{path}:{fn.lineno}: Function '{fn.name}' too large ({fn.lines} lines, {over:.1f}% over)",
+                        f"{path}:{fn['lineno']}: Function too large: {fn['module']}:{fn['name']} - {fn['lines']} lines ({over:.1f}% over)",
                     )
                 )
 
+    # Sort and apply limit
     if violations:
         print("\nSize violations (sorted by % over):\n")
 
@@ -215,7 +228,7 @@ def main():
         if limit is not None and limit > 0:
             sorted_violations = sorted_violations[:limit]
 
-        for over, msg in sorted_violations:
+        for _, msg in sorted_violations:
             print(msg)
 
         if limit is not None and limit > 0 and len(violations) > limit:
