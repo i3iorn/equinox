@@ -19,7 +19,7 @@ def system_is_dark(app: QApplication | None = None) -> bool:
                 r"Software\Microsoft\Windows\CurrentVersion\Themes\Personalize",
             ) as key:
                 value, _ = winreg.QueryValueEx(key, "AppsUseLightTheme")
-            return value == 0
+            return bool(value == 0)
         except Exception:
             pass
 
