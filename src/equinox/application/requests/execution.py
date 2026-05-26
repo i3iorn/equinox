@@ -23,7 +23,7 @@ This module must never import Qt types.
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, Any, Optional, Tuple, cast, Dict
 
 from equinox.application.requests._assembly import (
     apply_default_headers,
@@ -180,42 +180,105 @@ def _build_request(
     )
 
 
-# ── Public service entry point ────────────────────────────────────────────────
-
-
 def prepare_send(
     snapshot: RequestEditorSnapshot,
     db: Any,
-    collection_manager: Any | None,
-    own_auth: Any | None,
-    inherited_auth: Any | None,
-    inherited_auth_source: str | None,
+    collection_manager: Optional[Any],
+    own_auth: Optional[Any],
+    inherited_auth: Optional[Any],
+    inherited_auth_source: Optional[str],
     policy_profile: str,
 ) -> SendOrchestratorResult:
-    """Prepare a snapshot for HTTP dispatch.
+    """Prepare a snapshot for HTTP dispatch using strict, testable steps."""
 
-    This is the single send service entry point.  It is Qt-free and accepts
-    only plain Python types so it can be unit-tested without a display server.
-
-    Args:
-        snapshot: Editor state snapshot built by the GUI.
-        db: ``Database`` instance for variable resolution.
-        collection_manager: ``CollectionManager`` for auth hierarchy resolution.
-            May be ``None`` when there is no active collection context.
-        own_auth: The request's own ``AuthStrategy``, or ``None``.
-        inherited_auth: Cached inherited auth from the GUI, or ``None``.
-        inherited_auth_source: Source label for ``inherited_auth``, or ``None``.
-        policy_profile: Active security policy (``"balanced"`` / ``"strict"``).
-
-    Returns:
-        ``SendOrchestratorResult`` — either ``ready`` with a ``SendReadyPackage``
-        or non-empty ``blocking_issues`` that the GUI must present and abort on.
-    """
     url = snapshot.url
 
-    # ── 1. Collect interpolation variables ──────────────────────────────────
+    variables, variable_sources = _step_collect_variables(snapshot, db)
+    if isinstance(variables, SendOrchestratorResult):
+        return variables  # early error
+
+    effective_auth, resolved_source, is_auth_inherited = _step_resolve_auth(
+        snapshot,
+        own_auth,
+        inherited_auth,
+        inherited_auth_source,
+        collection_manager,
+    )
+
+    body_data = _step_assemble_body(snapshot)
+    if isinstance(body_data, SendOrchestratorResult):
+        return body_data
+
+    (
+        method,
+        headers,
+        params,
+        params_list,
+        body,
+        multipart_data,
+        path_params,
+    ) = body_data
+
+    variables, pre_script_result = _step_run_pre_script(
+        snapshot,
+        method,
+        url,
+        headers,
+        params,
+        body,
+        variables,
+        policy_profile,
+    )
+
+    interpolation_result = _step_interpolate_fields(
+        url, headers, params, body, path_params, variables, variable_sources
+    )
+    if isinstance(interpolation_result, SendOrchestratorResult):
+        return interpolation_result
+
+    url, headers, params, body, path_params = interpolation_result
+
+    auth_result = _step_interpolate_auth(effective_auth, variables)
+    if isinstance(auth_result, SendOrchestratorResult):
+        return auth_result
+
+    effective_auth = auth_result
+
+    request_result = _step_build_request(
+        snapshot,
+        method,
+        url,
+        headers,
+        params,
+        params_list,
+        body,
+        effective_auth,
+        multipart_data,
+        path_params,
+    )
+    if isinstance(request_result, SendOrchestratorResult):
+        return request_result
+
+    request = request_result
+
+    return SendOrchestratorResult(
+        package=SendReadyPackage(
+            request=request,
+            variables=variables,
+            variable_sources=variable_sources,
+            pre_script_result=pre_script_result,
+            inherited_auth_source=resolved_source,
+            is_auth_inherited=is_auth_inherited,
+        )
+    )
+
+
+def _step_collect_variables(
+    snapshot: RequestEditorSnapshot,
+    db: Any,
+) -> Tuple[Dict[str, Any], Dict[str, str]] | SendOrchestratorResult:
     try:
-        variables, variable_sources = collect_interpolation_variables_detailed(
+        return collect_interpolation_variables_detailed(
             db,
             collection_id=snapshot.collection_id,
             session_vars=snapshot.session_vars,
@@ -231,8 +294,15 @@ def prepare_send(
                 ),
             )
         )
+    
 
-    # ── 2. Resolve effective auth ────────────────────────────────────────────
+def _step_resolve_auth(
+    snapshot: RequestEditorSnapshot,
+    own_auth: Any,
+    inherited_auth: Any,
+    inherited_auth_source: Optional[str],
+    collection_manager: Optional[Any],
+) -> Tuple[Any, str, bool]:
     effective_auth, resolved_source = _resolve_send_auth(
         own_auth=own_auth,
         inherited_auth=inherited_auth,
@@ -242,13 +312,20 @@ def prepare_send(
         collection_manager=collection_manager,
     )
     is_auth_inherited = own_auth is None and effective_auth is not None
+    return effective_auth, resolved_source, is_auth_inherited
 
-    # ── 3. Assemble body ─────────────────────────────────────────────────────
+
+def _step_assemble_body(
+    snapshot: RequestEditorSnapshot,
+) -> Tuple[
+    str, Dict[str, str], Dict[str, Any], list, str, list, Dict[str, Any]
+] | SendOrchestratorResult:
     try:
         method = snapshot.method
         headers = dict(snapshot.headers)
         params = dict(snapshot.params)
         params_list = list(snapshot.params_list)
+
         body, multipart_data = assemble_body(
             snapshot.body_type,
             (snapshot.body or "").strip(),
@@ -256,8 +333,20 @@ def prepare_send(
             snapshot.graphql_variables.strip(),
             list(snapshot.multipart_data),
         )
+
         path_params = dict(snapshot.path_params)
         headers = inject_content_type(body, snapshot.body_type, headers)
+
+        return (
+            method,
+            headers,
+            params,
+            params_list,
+            body,
+            multipart_data,
+            path_params,
+        )
+
     except ValueError as exc:
         return SendOrchestratorResult(
             blocking_issues=(
@@ -269,9 +358,19 @@ def prepare_send(
                 ),
             )
         )
+    
 
-    # ── 4. Run pre-script ────────────────────────────────────────────────────
-    variables, pre_script_result = _run_pre_script(
+def _step_run_pre_script(
+    snapshot: RequestEditorSnapshot,
+    method: str,
+    url: str,
+    headers: Dict[str, str],
+    params: Dict[str, Any],
+    body: str,
+    variables: Dict[str, Any],
+    policy_profile: str,
+) -> Tuple[Dict[str, Any], Any]:
+    return _run_pre_script(
         pre_script=snapshot.pre_script,
         method=method,
         url=url,
@@ -283,7 +382,17 @@ def prepare_send(
         policy_profile=policy_profile,
     )
 
-    # ── 5. Interpolate all request fields ────────────────────────────────────
+
+def _step_interpolate_fields(
+    url: str,
+    headers: Dict[str, str],
+    params: Dict[str, Any],
+    body: str,
+    path_params: Dict[str, Any],
+    variables: Dict[str, Any],
+    variable_sources: Dict[str, str],
+) -> Tuple[str, Dict[str, str], Dict[str, Any], str, Dict[str, Any]] | SendOrchestratorResult:
+
     try:
         url, headers, params, body, path_params = interpolate_request_fields(
             url, headers, params, body, path_params, variables
@@ -302,43 +411,48 @@ def prepare_send(
 
     if path_params:
         from equinox.core.urls import expand_placeholders
-
         url = expand_placeholders(url, path_params)
         logger.debug("URL expanded with path_params: %s", url[:100])
 
-    # ── 6. Check for unresolved placeholders ─────────────────────────────────
     unresolved = collect_unresolved_placeholders(url, headers, params, body, path_params)
     if unresolved:
-        unresolved_details = []
-        for name in unresolved:
-            value = variables.get(name)
-            unresolved_details.append(
-                f"{name}(source={variable_sources.get(name, 'missing')}, "
-                f"value_type={type(value).__name__ if value is not None else 'missing'}, "
-                f"value_is_template={bool(isinstance(value, str) and VariableInterpolator.has_variables(value))})"
-            )
-        logger.warning(
-            "Unresolved placeholders before dispatch: %s (available_keys=%s)",
-            unresolved_details,
-            sorted(str(k) for k in variables.keys()),
-        )
+        details = _format_unresolved(unresolved, variables, variable_sources)
         return SendOrchestratorResult(
             blocking_issues=(
                 PreparationIssue(
                     code="variables.unresolved",
-                    message=(
-                        "Failed to expand variables:\n"
-                        f"Unresolved placeholders: {', '.join(unresolved_details)}"
-                    ),
+                    message=f"Failed to expand variables:\nUnresolved placeholders: {', '.join(details)}",
                     severity="error",
                     field_name="url",
                 ),
             )
         )
 
-    # ── 7. Interpolate auth fields ───────────────────────────────────────────
+    return url, headers, params, body, path_params
+
+
+def _format_unresolved(
+    unresolved: set[str],
+    variables: Dict[str, Any],
+    variable_sources: Dict[str, str],
+) -> list[str]:
+    details = []
+    for name in unresolved:
+        value = variables.get(name)
+        details.append(
+            f"{name}(source={variable_sources.get(name, 'missing')}, "
+            f"value_type={type(value).__name__ if value is not None else 'missing'}, "
+            f"value_is_template={bool(isinstance(value, str) and VariableInterpolator.has_variables(value))})"
+        )
+    return details
+
+
+def _step_interpolate_auth(
+    effective_auth: Any,
+    variables: Dict[str, Any],
+) -> Any | SendOrchestratorResult:
     try:
-        effective_auth = interpolate_auth(
+        return interpolate_auth(
             effective_auth,
             lambda s: VariableInterpolator.interpolate(s, variables),
         )
@@ -355,7 +469,19 @@ def prepare_send(
             )
         )
 
-    # ── 8. Construct transport-ready Request ─────────────────────────────────
+
+def _step_build_request(
+    snapshot: RequestEditorSnapshot,
+    method: str,
+    url: str,
+    headers: Dict[str, str],
+    params: Dict[str, Any],
+    params_list: list,
+    body: str,
+    effective_auth: Any,
+    multipart_data: list,
+    path_params: Dict[str, Any],
+) -> Any | SendOrchestratorResult:
     try:
         request = _build_request(
             method=method,
@@ -370,6 +496,8 @@ def prepare_send(
             snapshot=snapshot,
         )
         apply_default_headers(request)
+        return request
+
     except Exception as exc:
         logger.error("Request construction failed: %s", exc, exc_info=True)
         return SendOrchestratorResult(
@@ -381,14 +509,3 @@ def prepare_send(
                 ),
             )
         )
-
-    return SendOrchestratorResult(
-        package=SendReadyPackage(
-            request=request,
-            variables=variables,
-            variable_sources=variable_sources,
-            pre_script_result=pre_script_result,
-            inherited_auth_source=resolved_source,
-            is_auth_inherited=is_auth_inherited,
-        )
-    )
