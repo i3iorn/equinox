@@ -14,7 +14,7 @@ The proxy:
 from __future__ import annotations
 
 import logging
-from typing import Any, Callable
+from typing import Any, Callable, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -225,7 +225,7 @@ class BodyTextProxy:
 
     # ── Primary text interface ────────────────────────────────────────
 
-    def setPlainText(self, text: str) -> None:
+    def setPlainText(self, text: Optional[str]) -> None:
         """Set editor content.
 
         Uses widget if available, otherwise falls back to in-memory buffer.
@@ -269,7 +269,7 @@ class BodyTextProxy:
         """
         if self._widget is not None:
             try:
-                return self._widget.toPlainText()
+                return self._widget.toPlainText() # type: ignore[no-any-return]
             except RuntimeError as e:
                 logger.debug("BodyTextProxy: RuntimeError in toPlainText: %s", e)
                 self._invalidate()
