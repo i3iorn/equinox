@@ -14,6 +14,7 @@ from PyQt6.QtWidgets import (
     QDialogButtonBox,
     QHeaderView,
     QLabel,
+    QMenu,
     QMessageBox,
     QPlainTextEdit,
     QTableWidget,
@@ -57,19 +58,31 @@ class _MenuMixin:
     """Menu bar construction, command palette, and top-level action handlers."""
 
     def _create_menu_bar(self) -> None:
+        """Initialize the application menu bar."""
         menubar = self.menuBar()
         if menubar is None:
             return
 
-        # File menu
-        file_menu = menubar.addMenu("&File")
+        menubar.addMenu(self._build_file_menu())
+        menubar.addMenu(self._build_view_menu())
+        menubar.addMenu(self._build_collections_menu())
+        menubar.addMenu(self._build_environment_menu())
+        menubar.addMenu(self._build_help_menu())
+
+        self._add_window_controls_to_menu_bar(menubar)
+        menubar.installEventFilter(self)
+
+    def _build_file_menu(self) -> QMenu:
+        """Create the File menu."""
+        menu = QMenu("&File", self)
+
         new_req = QAction("&New Request", self)
         new_req.setShortcut("Ctrl+N")
         new_req.triggered.connect(self._new_request)
-        file_menu.addAction(new_req)
-        file_menu.addSeparator()
+        menu.addAction(new_req)
+        menu.addSeparator()
 
-        import_menu = file_menu.addMenu("&Import")
+        import_menu = menu.addMenu("&Import")
         for label, slot in [
             ("Postman Collection…", self._import_postman),
             ("OpenAPI/Swagger Spec…", self._import_openapi),
@@ -80,14 +93,19 @@ class _MenuMixin:
             act.triggered.connect(slot)
             import_menu.addAction(act)
 
-        file_menu.addSeparator()
+        menu.addSeparator()
+
         exit_act = QAction("E&xit", self)
         exit_act.setShortcut("Ctrl+Q")
         exit_act.triggered.connect(self.close)
-        file_menu.addAction(exit_act)
+        menu.addAction(exit_act)
 
-        # View menu
-        view_menu = menubar.addMenu("&View")
+        return menu
+
+    def _build_view_menu(self) -> QMenu:
+        """Create the View menu with zoom, theme, palette, and preferences."""
+        menu = QMenu("&View", self)
+
         for label, shortcut, slot in [
             ("Zoom &In", "Ctrl+=", self._zoom_in),
             ("Zoom &Out", "Ctrl+-", self._zoom_out),
@@ -96,99 +114,133 @@ class _MenuMixin:
             act = QAction(label, self)
             act.setShortcut(QKeySequence(shortcut))
             act.triggered.connect(slot)
-            view_menu.addAction(act)
-        view_menu.addSeparator()
+            menu.addAction(act)
 
-        from equinox.gui.theme import THEME_LABELS, THEME_MODES, get_theme_mode
+        menu.addSeparator()
+        menu.addMenu(self._build_theme_menu())
+        menu.addSeparator()
 
-        theme_menu = view_menu.addMenu("&Theme")
-        self._theme_actions: dict = {}
-        for mode in THEME_MODES:
-            a = QAction(THEME_LABELS[mode], self)
-            a.setCheckable(True)
-            a.setChecked(mode == get_theme_mode())
-            a.triggered.connect(lambda checked, m=mode: self._set_theme(m))
-            theme_menu.addAction(a)
-            self._theme_actions[mode] = a
-
-        view_menu.addSeparator()
         cmd_palette = QAction("Command &Palette…", self)
         cmd_palette.setShortcut(QKeySequence("Ctrl+K"))
         cmd_palette.triggered.connect(self._open_command_palette)
-        view_menu.addAction(cmd_palette)
+        menu.addAction(cmd_palette)
 
-        view_menu.addSeparator()
+        menu.addSeparator()
+
         prefs_act = QAction("&Preferences…", self)
         prefs_act.setShortcut("Ctrl+,")
         prefs_act.triggered.connect(self._open_preferences)
-        view_menu.addAction(prefs_act)
+        menu.addAction(prefs_act)
 
-        # Collections menu
-        col_menu = menubar.addMenu("&Collections")
+        return menu
+
+    def _build_theme_menu(self) -> QMenu:
+        """Create the theme selection submenu."""
+        from equinox.gui.theme import THEME_LABELS, THEME_MODES, get_theme_mode
+
+        menu = QMenu("&Theme", self)
+        self._theme_actions = {}
+
+        current = get_theme_mode()
+        for mode in THEME_MODES:
+            act = QAction(THEME_LABELS[mode], self)
+            act.setCheckable(True)
+            act.setChecked(mode == current)
+            act.triggered.connect(lambda checked, m=mode: self._set_theme(m))
+            menu.addAction(act)
+            self._theme_actions[mode] = act
+
+        return menu
+
+    def _build_collections_menu(self) -> QMenu:
+        """Create the Collections menu."""
+        menu = QMenu("&Collections", self)
+
         new_col = QAction("New &Collection", self)
         new_col.triggered.connect(
             lambda: self.collections_panel.create_collection() if self.collections_panel else None
         )
-        col_menu.addAction(new_col)
+        menu.addAction(new_col)
+
         refresh_act = QAction("&Refresh", self)
         refresh_act.setShortcut("F5")
         refresh_act.triggered.connect(
             lambda: self.collections_panel.refresh() if self.collections_panel else None
         )
-        col_menu.addAction(refresh_act)
-        col_menu.addSeparator()
-        export_menu = col_menu.addMenu("&Export")
+        menu.addAction(refresh_act)
+
+        menu.addSeparator()
+
+        export_menu = menu.addMenu("&Export")
         for label, fmt in [
             ("Postman Format…", "postman"),
             ("OpenAPI Format…", "openapi"),
             ("Insomnia Format…", "insomnia"),
         ]:
-            a = QAction(label, self)
-            a.triggered.connect(lambda checked, f=fmt: self._export_collection(f))
-            export_menu.addAction(a)
+            act = QAction(label, self)
+            act.triggered.connect(lambda checked, f=fmt: self._export_collection(f))
+            export_menu.addAction(act)
 
-        # Environment menu
-        env_menu = menubar.addMenu("E&nvironment")
+        return menu
+
+    def _build_environment_menu(self) -> QMenu:
+        """Create the Environment menu."""
+        menu = QMenu("E&nvironment", self)
+
         manage_env = QAction("&Manage Environments…", self)
         manage_env.triggered.connect(self._manage_environments)
-        env_menu.addAction(manage_env)
+        menu.addAction(manage_env)
+
         manage_creds = QAction("Manage &Saved Credentials…", self)
         manage_creds.triggered.connect(self._manage_oauth_clients)
-        env_menu.addAction(manage_creds)
+        menu.addAction(manage_creds)
+
         manage_secrets = QAction("Manage &Secret Managers…", self)
         manage_secrets.triggered.connect(self._manage_secret_managers)
-        env_menu.addAction(manage_secrets)
+        menu.addAction(manage_secrets)
 
-        # Help menu
-        help_menu = menubar.addMenu("&Help")
+        return menu
+
+    def _build_help_menu(self) -> QMenu:
+        """Create the Help menu."""
+        menu = QMenu("&Help", self)
+
         shortcuts_act = QAction("&Keyboard Shortcuts…", self)
         shortcuts_act.setShortcut(QKeySequence("F1"))
         shortcuts_act.triggered.connect(self._show_shortcuts_dialog)
-        help_menu.addAction(shortcuts_act)
-        help_menu.addSeparator()
+        menu.addAction(shortcuts_act)
+
+        menu.addSeparator()
+
         log_act = QAction("&View Log File…", self)
         log_act.triggered.connect(self._open_log_file)
-        help_menu.addAction(log_act)
-        help_menu.addSeparator()
+        menu.addAction(log_act)
+
+        menu.addSeparator()
+
         about_act = QAction("&About", self)
         about_act.triggered.connect(self._show_about)
-        help_menu.addAction(about_act)
-        help_menu.addSeparator()
+        menu.addAction(about_act)
+
+        menu.addSeparator()
+
         setup_act = QAction("Run Setup Wizard…", self)
         setup_act.triggered.connect(self._run_setup_wizard)
-        help_menu.addAction(setup_act)
-        help_menu.addSeparator()
+        menu.addAction(setup_act)
+
+        menu.addSeparator()
+
         usage_act = QAction("UI Usage Snapshot…", self)
         usage_act.setObjectName("help_ui_usage_snapshot")
         usage_act.triggered.connect(self._show_ui_usage_snapshot)
-        help_menu.addAction(usage_act)
+        menu.addAction(usage_act)
+
         reset_usage_act = QAction("Reset UI Usage Data", self)
         reset_usage_act.setObjectName("help_ui_usage_reset")
         reset_usage_act.triggered.connect(self._reset_ui_usage_data)
-        help_menu.addAction(reset_usage_act)
+        menu.addAction(reset_usage_act)
 
-        self._add_window_controls_to_menu_bar(menubar)
-        menubar.installEventFilter(self)
+        return menu
 
     def setWindowTitle(self, title: str) -> None:  # type: ignore[override]
         """Keep the menu-bar title label synchronized with the window title."""
