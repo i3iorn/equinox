@@ -8,9 +8,9 @@ from pathlib import Path
 from typing import List, Optional
 
 DEFAULT_LIMITS = {
-    "module": 500,
-    "function": 30,
-    "class": 200,
+    "module": 1000,
+    "function": 60,
+    "class": 400,
 }
 
 # ------------------------------------------------------------
