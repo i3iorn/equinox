@@ -70,45 +70,69 @@ class HistoryPanel(QWidget):
     # ── UI construction ───────────────────────────────────────────────────────
 
     def _init_ui(self) -> None:
+        """Initialize the full UI layout."""
         layout = create_panel_layout(self)
 
+        layout.addLayout(self._build_toolbar())
+        layout.addLayout(self._build_search_row())
+        layout.addWidget(self._build_advanced_toggle())
+        layout.addWidget(self._build_advanced_filters())
+        layout.addWidget(self._build_filter_error_label())
+        layout.addWidget(self._build_list_widget())
+        layout.addLayout(self._build_bottom_buttons())
+        layout.addWidget(self._build_stats_label())
+
+        self.list_widget.itemSelectionChanged.connect(self._on_selection_changed)
+
+    def _build_toolbar(self) -> QHBoxLayout:
+        """Create the top toolbar with refresh, clear, delete, compare, cleanup, and auto‑refresh."""
         toolbar = QHBoxLayout()
+
         self.refresh_btn = QPushButton("Refresh")
         self.refresh_btn.clicked.connect(self.refresh)
+
         self.clear_btn = QPushButton("Clear All")
         self.clear_btn.clicked.connect(self._clear_history)
+
         self.delete_sel_btn = QPushButton("Delete Selected")
         self.delete_sel_btn.setEnabled(False)
         self.delete_sel_btn.clicked.connect(self._delete_selected)
+
         self.compare_btn = QPushButton("Compare 2 Selected")
         self.compare_btn.setEnabled(False)
         self.compare_btn.setToolTip("Open a side-by-side diff of two selected history entries")
         self.compare_btn.clicked.connect(self._compare_selected)
 
-        self.auto_refresh_checkbox = QCheckBox("Auto-refresh")
-        self.auto_refresh_checkbox.setChecked(self.auto_refresh_enabled)
-        self.auto_refresh_checkbox.stateChanged.connect(self._toggle_auto_refresh)
-
         self.cleanup_btn = QPushButton("Clean up…")
         self.cleanup_btn.setToolTip("Delete history entries older than N days")
         self.cleanup_btn.clicked.connect(self._cleanup_history)
 
-        toolbar.addWidget(self.refresh_btn)
-        toolbar.addWidget(self.clear_btn)
-        toolbar.addWidget(self.delete_sel_btn)
-        toolbar.addWidget(self.compare_btn)
-        toolbar.addWidget(self.cleanup_btn)
-        toolbar.addWidget(self.auto_refresh_checkbox)
-        toolbar.addStretch()
-        layout.addLayout(toolbar)
+        self.auto_refresh_checkbox = QCheckBox("Auto-refresh")
+        self.auto_refresh_checkbox.setChecked(self.auto_refresh_enabled)
+        self.auto_refresh_checkbox.stateChanged.connect(self._toggle_auto_refresh)
 
-        # ── Search / filter row ───────────────────────────────────────
-        search_row = QHBoxLayout()
-        search_row.setSpacing(4)
+        for widget in (
+            self.refresh_btn,
+            self.clear_btn,
+            self.delete_sel_btn,
+            self.compare_btn,
+            self.cleanup_btn,
+            self.auto_refresh_checkbox,
+        ):
+            toolbar.addWidget(widget)
+
+        toolbar.addStretch()
+        return toolbar
+
+    def _build_search_row(self) -> QHBoxLayout:
+        """Create the search and basic filter row."""
+        row = QHBoxLayout()
+        row.setSpacing(4)
+
         self.search_input = QLineEdit()
         self.search_input.setPlaceholderText("Search URL or body…")
-        self.search_input.textChanged.connect(self._on_search_changed)
         self.search_input.setClearButtonEnabled(True)
+        self.search_input.textChanged.connect(self._on_search_changed)
 
         self.method_filter = QComboBox()
         self.method_filter.addItems(["All Methods", "GET", "POST", "PUT", "PATCH", "DELETE"])
@@ -118,120 +142,132 @@ class HistoryPanel(QWidget):
         self.status_filter.addItems(["All Status", "2xx", "3xx", "4xx", "5xx", "Errors"])
         self.status_filter.currentTextChanged.connect(self._apply_filters)
 
-        search_row.addWidget(self.search_input, 2)
-        search_row.addWidget(self.method_filter)
-        search_row.addWidget(self.status_filter)
-        layout.addLayout(search_row)
+        row.addWidget(self.search_input, 2)
+        row.addWidget(self.method_filter)
+        row.addWidget(self.status_filter)
 
         self._search_timer = QTimer(self)
         self._search_timer.setSingleShot(True)
         self._search_timer.timeout.connect(self._apply_filters)
 
-        # ── Advanced filters (collapsible) ────────────────────────────
+        return row
+
+    def _build_advanced_toggle(self) -> QPushButton:
+        """Create the toggle button for advanced filters."""
         self.advanced_toggle = QPushButton("▶ Advanced Filters")
         self.advanced_toggle.setCheckable(True)
         self.advanced_toggle.setFlat(True)
         self.advanced_toggle.toggled.connect(self._toggle_advanced_filters)
-        layout.addWidget(self.advanced_toggle)
+        return self.advanced_toggle
 
+    def _build_advanced_filters(self) -> QGroupBox:
+        """Create the collapsible advanced filter section."""
         self.advanced_group = QGroupBox()
         self.advanced_group.setVisible(False)
-        adv_layout = QGridLayout(self.advanced_group)
-        adv_layout.setContentsMargins(4, 4, 4, 4)
-        adv_layout.setSpacing(4)
 
-        # Row 0: Body regex
-        adv_layout.addWidget(QLabel("Body regex:"), 0, 0)
+        layout = QGridLayout(self.advanced_group)
+        layout.setContentsMargins(4, 4, 4, 4)
+        layout.setSpacing(4)
+
+        # Body regex
+        layout.addWidget(QLabel("Body regex:"), 0, 0)
         self.regex_input = QLineEdit()
         self.regex_input.setPlaceholderText("e.g. error.*timeout")
         self.regex_input.setClearButtonEnabled(True)
         self.regex_input.textChanged.connect(self._on_search_changed)
-        adv_layout.addWidget(self.regex_input, 0, 1, 1, 3)
+        layout.addWidget(self.regex_input, 0, 1, 1, 3)
 
-        # Row 1: JSONPath
-        adv_layout.addWidget(QLabel("JSONPath:"), 1, 0)
+        # JSONPath
+        layout.addWidget(QLabel("JSONPath:"), 1, 0)
         self.jsonpath_input = QLineEdit()
         self.jsonpath_input.setPlaceholderText("e.g. $.data[*].id")
         self.jsonpath_input.setClearButtonEnabled(True)
         self.jsonpath_input.textChanged.connect(self._on_search_changed)
-        adv_layout.addWidget(self.jsonpath_input, 1, 1)
+        layout.addWidget(self.jsonpath_input, 1, 1)
 
-        adv_layout.addWidget(QLabel("= value:"), 1, 2)
+        layout.addWidget(QLabel("= value:"), 1, 2)
         self.jsonpath_value_input = QLineEdit()
         self.jsonpath_value_input.setPlaceholderText("(optional)")
         self.jsonpath_value_input.setClearButtonEnabled(True)
         self.jsonpath_value_input.textChanged.connect(self._on_search_changed)
-        adv_layout.addWidget(self.jsonpath_value_input, 1, 3)
+        layout.addWidget(self.jsonpath_value_input, 1, 3)
 
-        # Row 2: Content-Type and Header
-        adv_layout.addWidget(QLabel("Content-Type:"), 2, 0)
+        # Content-Type / Header
+        layout.addWidget(QLabel("Content-Type:"), 2, 0)
         self.content_type_input = QLineEdit()
         self.content_type_input.setPlaceholderText("e.g. json")
         self.content_type_input.setClearButtonEnabled(True)
         self.content_type_input.textChanged.connect(self._on_search_changed)
-        adv_layout.addWidget(self.content_type_input, 2, 1)
+        layout.addWidget(self.content_type_input, 2, 1)
 
-        adv_layout.addWidget(QLabel("Header:"), 2, 2)
+        layout.addWidget(QLabel("Header:"), 2, 2)
         self.header_input = QLineEdit()
         self.header_input.setPlaceholderText("Name: value")
         self.header_input.setClearButtonEnabled(True)
         self.header_input.textChanged.connect(self._on_search_changed)
-        adv_layout.addWidget(self.header_input, 2, 3)
+        layout.addWidget(self.header_input, 2, 3)
 
-        # Row 3: Elapsed time range
-        adv_layout.addWidget(QLabel("Time (s):"), 3, 0)
+        # Time range
+        layout.addWidget(QLabel("Time (s):"), 3, 0)
         time_row = QHBoxLayout()
+
         self.min_elapsed_spin = QDoubleSpinBox()
         self.min_elapsed_spin.setRange(0.0, 999.0)
         self.min_elapsed_spin.setDecimals(3)
         self.min_elapsed_spin.setSpecialValueText("min")
-        self.min_elapsed_spin.setValue(0.0)
         self.min_elapsed_spin.valueChanged.connect(self._apply_filters)
 
         self.max_elapsed_spin = QDoubleSpinBox()
         self.max_elapsed_spin.setRange(0.0, 999.0)
         self.max_elapsed_spin.setDecimals(3)
         self.max_elapsed_spin.setSpecialValueText("max")
-        self.max_elapsed_spin.setValue(0.0)
         self.max_elapsed_spin.valueChanged.connect(self._apply_filters)
 
         time_row.addWidget(self.min_elapsed_spin)
         time_row.addWidget(QLabel("–"))
         time_row.addWidget(self.max_elapsed_spin)
-        adv_layout.addLayout(time_row, 3, 1, 1, 3)
 
-        layout.addWidget(self.advanced_group)
+        layout.addLayout(time_row, 3, 1, 1, 3)
 
-        # Validation label (for regex / JSONPath errors)
+        return self.advanced_group
+
+    def _build_filter_error_label(self) -> QLabel:
+        """Create the label used to display filter validation errors."""
         self.filter_error_label = QLabel()
         self.filter_error_label.setVisible(False)
-        layout.addWidget(self.filter_error_label)
+        return self.filter_error_label
 
+    def _build_list_widget(self) -> QListWidget:
+        """Create the main history list widget."""
         self.list_widget = QListWidget()
         self.list_widget.setSelectionMode(QListWidget.SelectionMode.ExtendedSelection)
         self.list_widget.itemDoubleClicked.connect(self._on_item_double_clicked)
         self.list_widget.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.list_widget.customContextMenuRequested.connect(self._show_context_menu)
-        layout.addWidget(self.list_widget)
+        return self.list_widget
 
-        # Replay / Open buttons beneath the list
-        btn_row = QHBoxLayout()
+    def _build_bottom_buttons(self) -> QHBoxLayout:
+        """Create the row with Open and Replay buttons."""
+        row = QHBoxLayout()
+
         self.open_btn = QPushButton("Open in Editor")
-        self.replay_btn = QPushButton("▶  Replay")
-        self.replay_btn.setToolTip("Re-send this request immediately")
         self.open_btn.setEnabled(False)
-        self.replay_btn.setEnabled(False)
         self.open_btn.clicked.connect(self._open_selected)
+
+        self.replay_btn = QPushButton("▶  Replay")
+        self.replay_btn.setEnabled(False)
+        self.replay_btn.setToolTip("Re-send this request immediately")
         self.replay_btn.clicked.connect(self._replay_selected)
-        btn_row.addWidget(self.open_btn)
-        btn_row.addWidget(self.replay_btn)
-        btn_row.addStretch()
-        layout.addLayout(btn_row)
 
+        row.addWidget(self.open_btn)
+        row.addWidget(self.replay_btn)
+        row.addStretch()
+        return row
+
+    def _build_stats_label(self) -> QLabel:
+        """Create the muted stats label."""
         self.stats_label = create_muted_label()
-        layout.addWidget(self.stats_label)
-
-        self.list_widget.itemSelectionChanged.connect(self._on_selection_changed)
+        return self.stats_label
 
     # ── Auto-refresh ──────────────────────────────────────────────────────────
 
