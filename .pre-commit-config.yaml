@@ -21,6 +21,7 @@ repos:
         entry: python scripts/manage_requirements_lock.py --check
         language: python
         additional_dependencies: [pip-tools]
+        stages: [pre-push]
         pass_filenames: false
         files: ^(pyproject\.toml|requirements\.txt|requirements-lock\.txt)$
 
@@ -37,7 +38,7 @@ repos:
         entry: python scripts/run_affected_tests.py
         language: system
         pass_filenames: true
-        stages: [pre-commit]
+        stages: [pre-push]
         files: ^(src/equinox/.*\.py|tests/.*\.py|pyproject\.toml)$
 
       - id: mypy-strict
@@ -45,7 +46,7 @@ repos:
         entry: python -m mypy --strict src
         language: system
         pass_filenames: false
-        stages: [pre-commit]
+        stages: [pre-push]
         files: ^(src/equinox/.*\.py|tests/.*\.py|pyproject\.toml)$
 
   # ── General file hygiene ────────────────────────────────────────────────────
@@ -62,6 +63,10 @@ repos:
         args: ['--maxkb=1000']
       - id: check-case-conflict
       - id: check-docstring-first
+      - id: check-ast
+      - id: debug-statements
+      - id: check-symlinks
+      - id: mixed-line-ending
       - id: detect-private-key
       - id: no-commit-to-branch
         args: ['--branch', 'main', '--branch', 'master']
@@ -81,6 +86,15 @@ repos:
     rev: 1.7.9
     hooks:
       - id: bandit
+        name: "Bandit (changed files, fast)"
+        args: [--severity-level=medium, -q, -s, "B102,B113,B318,B608"]
+        stages: [pre-commit]
+        files: ^src/equinox/.*\.py$
+        exclude: ^tests/
+
+      - id: bandit
+        name: "Bandit (full scan, pre-push)"
         args: [-r, src/equinox, --severity-level=medium, -q, -s, "B102,B113,B318,B608"]
         pass_filenames: false
+        stages: [pre-push]
         exclude: ^tests/
