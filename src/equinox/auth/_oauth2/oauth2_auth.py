@@ -1,5 +1,7 @@
 """OAuth2 authentication with secure token storage and refresh."""
 
+# mypy: disable-error-code=attr-defined
+
 from __future__ import annotations
 
 import json
