@@ -23,7 +23,7 @@ This module must never import Qt types.
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING, Any, Optional, Tuple, cast, Dict
+from typing import TYPE_CHECKING, Any, Dict, Optional, Tuple, cast
 
 from equinox.application.requests._assembly import (
     apply_default_headers,
@@ -169,8 +169,8 @@ def _build_request(
         collection_id=snapshot.collection_id,
         folder=snapshot.folder,
         id=snapshot.request_id,
-        captures=list(cast(tuple[CaptureRule, ...], snapshot.captures)),
-        assertions=list(cast(tuple[AssertionRule, ...], snapshot.assertions)),
+        captures=list(cast(tuple[CaptureRule, ...], cast(object, snapshot.captures))),
+        assertions=list(cast(tuple[AssertionRule, ...], cast(object, snapshot.assertions))),
         multipart_data=multipart_data,
         pre_script=snapshot.pre_script,
         post_script=snapshot.post_script,
@@ -193,9 +193,10 @@ def prepare_send(
 
     url = snapshot.url
 
-    variables, variable_sources = _step_collect_variables(snapshot, db)
-    if isinstance(variables, SendOrchestratorResult):
-        return variables  # early error
+    variable_result = _step_collect_variables(snapshot, db)
+    if isinstance(variable_result, SendOrchestratorResult):
+        return variable_result
+    variables, variable_sources = variable_result
 
     effective_auth, resolved_source, is_auth_inherited = _step_resolve_auth(
         snapshot,
@@ -294,15 +295,15 @@ def _step_collect_variables(
                 ),
             )
         )
-    
+
 
 def _step_resolve_auth(
     snapshot: RequestEditorSnapshot,
-    own_auth: Any,
-    inherited_auth: Any,
+    own_auth: Any | None,
+    inherited_auth: Any | None,
     inherited_auth_source: Optional[str],
     collection_manager: Optional[Any],
-) -> Tuple[Any, str, bool]:
+) -> Tuple[Any | None, str | None, bool]:
     effective_auth, resolved_source = _resolve_send_auth(
         own_auth=own_auth,
         inherited_auth=inherited_auth,
@@ -311,15 +312,24 @@ def _step_resolve_auth(
         folder=snapshot.folder,
         collection_manager=collection_manager,
     )
-    is_auth_inherited = own_auth is None and effective_auth is not None
+    is_auth_inherited = bool(own_auth is None and effective_auth is not None)
     return effective_auth, resolved_source, is_auth_inherited
 
 
 def _step_assemble_body(
     snapshot: RequestEditorSnapshot,
-) -> Tuple[
-    str, Dict[str, str], Dict[str, Any], list, str, list, Dict[str, Any]
-] | SendOrchestratorResult:
+) -> (
+    Tuple[
+        str,
+        Dict[str, str],
+        Dict[str, str],
+        list[dict[str, Any]],
+        str | None,
+        list[Any] | None,
+        Dict[str, str],
+    ]
+    | SendOrchestratorResult
+):
     try:
         method = snapshot.method
         headers = dict(snapshot.headers)
@@ -358,7 +368,7 @@ def _step_assemble_body(
                 ),
             )
         )
-    
+
 
 def _step_run_pre_script(
     snapshot: RequestEditorSnapshot,
@@ -366,7 +376,7 @@ def _step_run_pre_script(
     url: str,
     headers: Dict[str, str],
     params: Dict[str, Any],
-    body: str,
+    body: str | None,
     variables: Dict[str, Any],
     policy_profile: str,
 ) -> Tuple[Dict[str, Any], Any]:
@@ -387,12 +397,20 @@ def _step_interpolate_fields(
     url: str,
     headers: Dict[str, str],
     params: Dict[str, Any],
-    body: str,
+    body: str | None,
     path_params: Dict[str, Any],
     variables: Dict[str, Any],
     variable_sources: Dict[str, str],
-) -> Tuple[str, Dict[str, str], Dict[str, Any], str, Dict[str, Any]] | SendOrchestratorResult:
-
+) -> (
+    Tuple[
+        str,
+        Dict[str, str],
+        Dict[str, str],
+        str | None,
+        Dict[str, str],
+    ]
+    | SendOrchestratorResult
+):
     try:
         url, headers, params, body, path_params = interpolate_request_fields(
             url, headers, params, body, path_params, variables
@@ -411,12 +429,13 @@ def _step_interpolate_fields(
 
     if path_params:
         from equinox.core.urls import expand_placeholders
+
         url = expand_placeholders(url, path_params)
         logger.debug("URL expanded with path_params: %s", url[:100])
 
     unresolved = collect_unresolved_placeholders(url, headers, params, body, path_params)
     if unresolved:
-        details = _format_unresolved(unresolved, variables, variable_sources)
+        details = _format_unresolved(set(unresolved), variables, variable_sources)
         return SendOrchestratorResult(
             blocking_issues=(
                 PreparationIssue(
@@ -475,12 +494,12 @@ def _step_build_request(
     method: str,
     url: str,
     headers: Dict[str, str],
-    params: Dict[str, Any],
-    params_list: list,
-    body: str,
+    params: Dict[str, str],
+    params_list: list[dict[str, Any]],
+    body: str | None,
     effective_auth: Any,
-    multipart_data: list,
-    path_params: Dict[str, Any],
+    multipart_data: list[Any] | None,
+    path_params: Dict[str, str],
 ) -> Any | SendOrchestratorResult:
     try:
         request = _build_request(
