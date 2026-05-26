@@ -22,6 +22,23 @@ from equinox.core.exceptions import SecurityError
 logger = logging.getLogger(__name__)
 audit_logger = get_audit_logger()
 
+_DANGEROUS_MODULES = frozenset({
+    "subprocess", "shutil", "ctypes", "multiprocessing", "signal",
+    "resource", "pty", "fcntl", "termios", "importlib", "code",
+    "codeop", "dis", "inspect", "gc", "_thread", "socket", "http",
+    "xmlrpc", "pickle", "shelve", "marshal", "builtins", "io",
+    "webbrowser", "zipimport", "runpy",
+})
+
+_OS_FORBIDDEN = frozenset({
+    "system", "popen", "exec", "execv", "execve",
+    "spawn", "spawnl", "spawnle", "fork",
+})
+
+_DANGEROUS_FUNCTIONS = frozenset({
+    "eval", "exec", "compile", "__import__", "breakpoint",
+})
+
 
 class Permission(Enum):
     """Plugin permissions."""
@@ -407,119 +424,90 @@ def validate_plugin_file(plugin_path: Path) -> bool:
     Raises:
         SecurityError: If validation fails
     """
-    # Check file exists
+    _ensure_file_exists(plugin_path)
+    _ensure_valid_extension(plugin_path)
+    _ensure_valid_size(plugin_path)
+    tree = _parse_plugin_ast(plugin_path)
+    _validate_ast_security(plugin_path, tree)
+    return True
+
+
+def _ensure_file_exists(plugin_path: Path) -> None:
     if not plugin_path.exists():
         raise SecurityError(f"Plugin file not found: {plugin_path}")
 
-    # Check file extension
+
+def _ensure_valid_extension(plugin_path: Path) -> None:
     if plugin_path.suffix != ".py":
         raise SecurityError(f"Invalid plugin file type: {plugin_path.suffix}")
 
-    # Check file size (max 1MB for plugin)
+
+def _ensure_valid_size(plugin_path: Path) -> None:
     size = plugin_path.stat().st_size
     if size > 1024 * 1024:
         raise SecurityError(f"Plugin file too large: {size} bytes")
 
-    # Check for suspicious imports via AST analysis
+
+def _parse_plugin_ast(plugin_path: Path) -> "ast.AST":
     try:
         content = plugin_path.read_text(encoding="utf-8")
-        tree = __import__("ast").parse(content, str(plugin_path))
+        return ast.parse(content, str(plugin_path))
     except SyntaxError as e:
         raise SecurityError(f"Plugin has syntax errors: {e}")
     except Exception as e:
         raise SecurityError(f"Failed to read plugin file: {e}")
 
-    _DANGEROUS_MODULES = frozenset(
-        {
-            "subprocess",
-            "shutil",
-            "ctypes",
-            "multiprocessing",
-            "signal",
-            "resource",
-            "pty",
-            "fcntl",
-            "termios",
-            # Additional modules that can bypass in-process policy restrictions:
-            "importlib",  # dynamic import bypasses AST checks
-            "code",  # interactive interpreter
-            "codeop",  # compile helpers
-            "dis",  # bytecode disassembly / introspection
-            "inspect",  # frame/source introspection
-            "gc",  # garbage collector — gc.get_objects() leaks all live objects
-            "_thread",  # low-level thread API
-            "socket",  # raw network access outside HTTP proxy
-            "http",  # direct HTTP client/server
-            "xmlrpc",  # XML-RPC client/server
-            "pickle",  # arbitrary code execution via deserialization
-            "shelve",  # uses pickle internally
-            "marshal",  # bytecode (de)serialization
-            "builtins",  # full builtins access
-            "io",  # raw file I/O bypasses sandbox file checks
-            "webbrowser",  # can open arbitrary URLs / commands
-            "zipimport",  # import from zips — bypass AST validation
-            "runpy",  # run modules — bypass AST validation
-        }
-    )
 
-    _DANGEROUS_FUNCTIONS = frozenset(
-        {
-            "eval",
-            "exec",
-            "compile",
-            "__import__",
-            "breakpoint",
-        }
-    )
-
-    import ast as _ast
-
-    violations: list[str] = []
-
-    for node in _ast.walk(tree):
-        # Block dangerous imports
-        if isinstance(node, (_ast.Import, _ast.ImportFrom)):
-            if isinstance(node, _ast.ImportFrom) and node.module:
-                top = node.module.split(".")[0]
-                if top in _DANGEROUS_MODULES:
-                    violations.append(f"Forbidden import: {node.module} (line {node.lineno})")
-            if isinstance(node, _ast.Import):
-                for alias in node.names:
-                    top = alias.name.split(".")[0]
-                    if top in _DANGEROUS_MODULES:
-                        violations.append(f"Forbidden import: {alias.name} (line {node.lineno})")
-
-        # Block os.system / os.popen etc.
-        if isinstance(node, _ast.Attribute):
-            if isinstance(node.value, _ast.Name) and node.value.id == "os":
-                if node.attr in (
-                    "system",
-                    "popen",
-                    "exec",
-                    "execv",
-                    "execve",
-                    "spawn",
-                    "spawnl",
-                    "spawnle",
-                    "fork",
-                ):
-                    violations.append(f"Forbidden call: os.{node.attr} (line {node.lineno})")
-
-        # Block bare eval/exec/compile calls
-        if isinstance(node, _ast.Call):
-            func = node.func
-            if isinstance(func, _ast.Name) and func.id in _DANGEROUS_FUNCTIONS:
-                violations.append(f"Forbidden function: {func.id}() (line {node.lineno})")
+def _validate_ast_security(plugin_path: Path, tree: "ast.AST") -> None:
+    violations = []
+    violations.extend(_find_dangerous_imports(tree))
+    violations.extend(_find_dangerous_os_calls(tree))
+    violations.extend(_find_dangerous_functions(tree))
 
     if violations:
-        detail = "; ".join(violations[:5])
         audit_logger.log_security_violation(
             "plugin_validation",
             {"plugin": str(plugin_path), "violations": violations},
         )
+        detail = "; ".join(violations[:5])
         raise SecurityError(f"Plugin failed security validation: {detail}")
 
-    return True
+
+def _find_dangerous_imports(tree: "ast.AST") -> list[str]:
+    violations = []
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            for alias in node.names:
+                top = alias.name.split(".")[0]
+                if top in _DANGEROUS_MODULES:
+                    violations.append(f"Forbidden import: {alias.name} (line {node.lineno})")
+
+        if isinstance(node, ast.ImportFrom) and node.module:
+            top = node.module.split(".")[0]
+            if top in _DANGEROUS_MODULES:
+                violations.append(f"Forbidden import: {node.module} (line {node.lineno})")
+
+    return violations
+
+
+def _find_dangerous_os_calls(tree: "ast.AST") -> list[str]:
+    violations = []
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Attribute):
+            if isinstance(node.value, ast.Name) and node.value.id == "os":
+                if node.attr in _OS_FORBIDDEN:
+                    violations.append(f"Forbidden call: os.{node.attr} (line {node.lineno})")
+    return violations
+
+
+def _find_dangerous_functions(tree: "ast.AST") -> list[str]:
+    violations = []
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Call):
+            func = node.func
+            if isinstance(func, ast.Name) and func.id in _DANGEROUS_FUNCTIONS:
+                violations.append(f"Forbidden function: {func.id}() (line {node.lineno})")
+    return violations
 
 
 def _is_within(root: Path, candidate: Path) -> bool:
