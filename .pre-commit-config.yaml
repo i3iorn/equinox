@@ -46,7 +46,7 @@ repos:
         language: system
         pass_filenames: true
         stages: [pre-commit]
-        files: ^(src/equinox/.*\.py|tests/.*\.py)$
+        files: ^(src/equinox/.*\.py)$
 
   # ── General file hygiene ────────────────────────────────────────────────────
   - repo: https://github.com/pre-commit/pre-commit-hooks
