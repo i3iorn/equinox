@@ -129,7 +129,7 @@ QTabBar::tab {
     border: 1px solid transparent;
     margin-right: 4px;
     color: {FG_MUTED};
-    font-size: {int(sm * 1.2)}pt;
+    font-size: {ME}pt;
     background: transparent;
     border-radius: 4px;
 }
@@ -186,7 +186,7 @@ QHeaderView::section {
     border-bottom: 1px solid {BORDER};
     padding: 4px 8px;
     font-weight: bold;
-    font-size: {sm}pt;
+    font-size: {SM}pt;
     color: {FG_MUTED};
 }
 QTreeWidget, QListWidget {
@@ -258,7 +258,7 @@ QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal {
 QStatusBar {
     background: {BG_ALT};
     border-top: 1px solid {BORDER};
-    font-size: {sm}pt;
+    font-size: {SM}pt;
     color: {FG_MUTED};
 }
 QMenuBar {
@@ -311,12 +311,12 @@ QGroupBox::title {
 }
 QCheckBox {
     spacing: 6px;
-    font-size: {sm}pt;
+    font-size: {SM}pt;
     color: {FG};
 }
 QRadioButton {
     spacing: 6px;
-    font-size: {sm}pt;
+    font-size: {SM}pt;
     color: {FG};
 }
 QToolTip {
@@ -324,14 +324,14 @@ QToolTip {
     color: {BG};
     border: none;
     padding: 4px 8px;
-    font-size: {sm}pt;
+    font-size: {SM}pt;
 }
 QFormLayout QLabel {
     color: {FG_MUTED};
 }
 QLabel#mutedLabel {
     color: {FG_MUTED};
-    font-size: {sm}pt;
+    font-size: {SM}pt;
 }
 
 /* -- Intelligence panel -- */
@@ -344,7 +344,7 @@ QLabel#intelSummary {
 }
 QLabel#intelCategory {
     color: {FG_MUTED};
-    font-size: {sm}pt;
+    font-size: {SM}pt;
     font-weight: bold;
 }
 QFrame#intelCard {
@@ -360,7 +360,7 @@ QLabel#intelTitle, QLabel#intelDescription {
 QLabel#intelRecommendation {
     color: {FG_MUTED};
     background: transparent;
-    font-size: {sm}pt;
+    font-size: {SM}pt;
 }
 QLabel#intelSeverityIcon {
     font-weight: bold;
@@ -379,7 +379,7 @@ QLabel#intelSeverityBadge {
     border: 1px solid {BORDER};
     border-radius: 9px;
     padding: 0 6px;
-    font-size: {sm}pt;
+    font-size: {SM}pt;
     color: {FG_MUTED};
     background: transparent;
 }

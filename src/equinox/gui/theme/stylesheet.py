@@ -11,6 +11,7 @@ def build_stylesheet(base_pt: int, colors: dict[str, str]) -> str:
     """Generate the application-wide stylesheet string."""
     c = colors
     sm = get_small_text_size(base_pt)
+    me = int(sm*1.2)
 
     stylesheet_path = Path(__file__).parent / "stylesheet.qss"
     stylesheet = stylesheet_path.read_text()
@@ -32,9 +33,12 @@ def build_stylesheet(base_pt: int, colors: dict[str, str]) -> str:
     ]
 
     for name in variables_used:
-        pattern = "{"+name+"}"
+        pattern = "{" + name + "}"
         stylesheet = stylesheet.replace(pattern, c[name])
 
-    print(stylesheet)
+    stylesheet.format(
+        SM=sm,
+        ME=me,
+    )
 
-    return  stylesheet
+    return stylesheet
