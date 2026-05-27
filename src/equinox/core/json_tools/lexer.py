@@ -72,13 +72,29 @@ class JsonLexer:
     deterministic, side-effect free, and suitable for streaming or line-by-line use.
     """
 
-    def __init__(self, config: JsonLexerConfig | None = None) -> None:
+    def __init__(
+        self,
+        config: JsonLexerConfig | None = None,
+        *,
+        allow_comments: bool | None = None,
+        detect_timestamps: bool | None = None,
+    ) -> None:
         """Initialize the lexer with the given configuration.
 
         Args:
             config: Optional JsonLexerConfig. If omitted, secure defaults are used.
         """
-        self._config: JsonLexerConfig = config or JsonLexerConfig()
+        base_config = config or JsonLexerConfig()
+        resolved_allow_comments = (
+            base_config.allow_comments if allow_comments is None else allow_comments
+        )
+        resolved_detect_timestamps = (
+            base_config.detect_timestamps if detect_timestamps is None else detect_timestamps
+        )
+        self._config = JsonLexerConfig(
+            allow_comments=resolved_allow_comments,
+            detect_timestamps=resolved_detect_timestamps,
+        )
 
     # ------------------------------------------------------------
     # PUBLIC API #1: Full-document streaming
@@ -106,6 +122,9 @@ class JsonLexer:
             index, state, token, string_start = self._step(text, index, state, string_start)
             if token is not None:
                 yield token
+        eof_token = self._finalize_document_state(length, state, string_start)
+        if eof_token is not None:
+            yield eof_token
 
     # ------------------------------------------------------------
     # PUBLIC API #2: Line-by-line tokenization
@@ -204,12 +223,22 @@ class JsonLexer:
             return state
 
         if isinstance(state, str):
-            try:
-                return LexerState.from_string(state)
-            except KeyError as exc:
-                raise InvalidLexerStateError(f"Unrecognized lexer state: {state!r}") from exc
+            return LexerState.from_string(state)
 
         raise InvalidLexerStateError(f"Invalid lexer state type: {type(state)!r}")
+
+    @staticmethod
+    def _finalize_document_state(
+        length: int,
+        state: LexerState,
+        string_start: int,
+    ) -> Token | None:
+        """Return an EOF error token when the final lexer state is incomplete."""
+        if state == LexerState.STRING:
+            return Token("ERROR_STRING", string_start, length, "")
+        if state == LexerState.COMMENT_BLOCK:
+            return Token("ERROR_COMMENT", string_start, length, "")
+        return None
 
     # ------------------------------------------------------------
     # INTERNAL: One lexing step (delegates by mode)
