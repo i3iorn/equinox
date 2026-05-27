@@ -36,6 +36,7 @@ certifi==2026.5.20
     #   httpcore
     #   httpx
     #   requests
+    #   safety
 cffi==2.0.0
     # via cryptography
 cfgv==3.5.0
@@ -57,7 +58,7 @@ colorama==0.4.6
     #   click
     #   pytest
     #   tqdm
-coverage[toml]==7.14.0
+coverage[toml]==7.14.1
     # via pytest-cov
 cryptography==46.0.7
     # via
@@ -90,7 +91,7 @@ httpx==0.28.1
     # via
     #   equinox (pyproject.toml)
     #   safety
-hypothesis==6.153.0
+hypothesis==6.153.2
     # via equinox (pyproject.toml)
 identify==2.6.19
     # via pre-commit
@@ -107,7 +108,7 @@ jinja2==3.1.6
     # via safety
 joblib==1.5.3
     # via nltk
-joserfc==1.6.7
+joserfc==1.6.8
     # via authlib
 jsonpath-ng==1.6.1
     # via equinox (pyproject.toml)
@@ -220,7 +221,7 @@ pytest==9.0.3
     #   pytest-benchmark
     #   pytest-cov
     #   pytest-mock
-pytest-asyncio==1.3.0
+pytest-asyncio==1.4.0
     # via equinox (pyproject.toml)
 pytest-benchmark==5.2.3
     # via equinox (pyproject.toml)
@@ -249,7 +250,6 @@ requests==2.34.2
     # via
     #   cachecontrol
     #   pip-audit
-    #   safety
 rich==15.0.0
     # via
     #   bandit
@@ -265,7 +265,7 @@ ruamel-yaml==0.19.1
     #   safety-schemas
 ruff==0.15.14
     # via equinox (pyproject.toml)
-safety==3.7.0
+safety==3.8.0
     # via equinox (pyproject.toml)
 safety-schemas==0.0.16
     # via safety
@@ -287,6 +287,8 @@ tomlkit==0.15.0
     # via safety
 tqdm==4.67.3
     # via nltk
+truststore==0.10.4
+    # via safety
 typer==0.25.1
     # via safety
 typing-extensions==4.15.0
