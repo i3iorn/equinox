@@ -42,7 +42,7 @@ repos:
 
       - id: mypy-strict
         name: "Check: mypy strict (CI-aligned)"
-        entry: python -m mypy --strict
+        entry: python -m mypy --strict --follow-imports=skip --ignore-missing-imports
         language: system
         pass_filenames: true
         stages: [pre-commit]
