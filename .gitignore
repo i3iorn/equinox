@@ -83,3 +83,4 @@ plugins/*/
 *.bak
 .cache/
 .aider*
+/.claude/agent-memory/clean-code-refactorer/MEMORY.md
