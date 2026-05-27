@@ -3,22 +3,19 @@
 Provides a consistent left-aligned label with standard Add / Remove /
 Enable All / Disable All actions and optional presets or file-browse support.
 """
-
 from __future__ import annotations
 
 import re
 from collections.abc import Sequence
-from typing import Optional, Protocol, Tuple
+from typing import Protocol
 
 from PyQt6.QtCore import pyqtSignal
-from PyQt6.QtWidgets import (
-    QHBoxLayout,
-    QLabel,
-    QMenu,
-    QPushButton,
-    QToolButton,
-    QWidget,
-)
+from PyQt6.QtWidgets import QHBoxLayout
+from PyQt6.QtWidgets import QLabel
+from PyQt6.QtWidgets import QMenu
+from PyQt6.QtWidgets import QPushButton
+from PyQt6.QtWidgets import QToolButton
+from PyQt6.QtWidgets import QWidget
 
 _BUTTON_CONFIG = {
     "add": ("+ Add", 64, None),
@@ -50,12 +47,12 @@ class TabToolbar(QWidget):
 
     def __init__(
         self,
-        label: Optional[str] = None,
+        label: str | None = None,
         *,
-        presets: Optional[Sequence[Optional[Tuple[str, str, str]]]] = None,
-        preset_context: Optional[str] = None,
+        presets: Sequence[tuple[str, str, str] | None] | None = None,
+        preset_context: str | None = None,
         include_file_btn: bool = False,
-        parent: Optional[QWidget] = None,
+        parent: QWidget | None = None,
     ) -> None:
         super().__init__(parent)
         self._presets = presets or []
@@ -77,7 +74,7 @@ class TabToolbar(QWidget):
             self._add_file_button(layout)
 
     @staticmethod
-    def _validate_presets(presets: Optional[Sequence[Optional[Tuple[str, str, str]]]]) -> None:
+    def _validate_presets(presets: Sequence[tuple[str, str, str] | None] | None) -> None:
         """Validate preset structure for predictable menu rendering."""
         for index, preset in enumerate(presets or []):
             if preset is None:
@@ -88,7 +85,7 @@ class TabToolbar(QWidget):
                 or not all(isinstance(value, str) for value in preset)
             ):
                 raise ValueError(
-                    f"Preset {index} must be None or a tuple of 3 strings (display, key, value)"
+                    f"Preset {index} must be None or a tuple of 3 strings (display, key, value)",
                 )
 
     @staticmethod
@@ -166,7 +163,7 @@ class TabToolbar(QWidget):
                     category="preset",
                     context=self._preset_context,
                     element_id=self._preset_usage_key(key, value),
-                )
+                ),
             )
         except Exception:
             return 0
@@ -217,7 +214,7 @@ class TabToolbar(QWidget):
                         display,
                         key,
                         value,
-                    )
+                    ),
                 )
             ranked.sort(key=lambda item: (item[0], item[1]))
             for _, _, display, key, value in ranked:

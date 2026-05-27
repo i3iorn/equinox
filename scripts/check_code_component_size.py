@@ -4,7 +4,6 @@ import subprocess
 import sys
 from dataclasses import dataclass
 from pathlib import Path
-from typing import List, Optional
 
 DEFAULT_LIMITS = {
     "module": 1000,
@@ -22,7 +21,7 @@ class FunctionInfo:
     name: str
     lineno: int
     lines: int
-    parent: Optional[str] = None  # class name or None
+    parent: str | None = None  # class name or None
 
 
 @dataclass
@@ -30,15 +29,15 @@ class ClassInfo:
     name: str
     lineno: int
     lines: int
-    methods: List[FunctionInfo]
+    methods: list[FunctionInfo]
 
 
 @dataclass
 class FileReport:
     path: Path
     module_lines: int
-    classes: List[ClassInfo]
-    functions: List[FunctionInfo]
+    classes: list[ClassInfo]
+    functions: list[FunctionInfo]
 
 
 # ------------------------------------------------------------
@@ -102,7 +101,7 @@ def annotate_parents(tree):
     for node in ast.walk(tree):
         for child in ast.iter_child_nodes(node):
             if isinstance(node, ast.ClassDef) and isinstance(
-                child, (ast.FunctionDef, ast.AsyncFunctionDef)
+                child, (ast.FunctionDef, ast.AsyncFunctionDef),
             ):
                 child.parent_class = node.name
             annotate_parents(child)
@@ -180,7 +179,7 @@ def main():
                 (
                     over,
                     f"{path}:1: Module too large - {report.module_lines} lines ({over:.1f}% over)",
-                )
+                ),
             )
 
         # Classes + methods
@@ -191,7 +190,7 @@ def main():
                     (
                         over,
                         f"{path}:{cls.lineno}: Class too large: {cls.name} - {cls.lines} lines ({over:.1f}% over)",
-                    )
+                    ),
                 )
 
             for m in cls.methods:
@@ -201,7 +200,7 @@ def main():
                         (
                             over,
                             f"{path}:{m.lineno} Method too large: {cls.name}:{m.name} - {m.lines} lines ({over:.1f}% over)",
-                        )
+                        ),
                     )
 
         # Top-level functions
@@ -212,7 +211,7 @@ def main():
                     (
                         over,
                         f"{path}:{fn.lineno} Function too large: {fn.parent}:{fn.name} - {fn.lines} lines ({over:.1f}% over)",
-                    )
+                    ),
                 )
 
     # Sort and apply limit
