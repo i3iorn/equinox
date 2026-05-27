@@ -1,22 +1,30 @@
 from __future__ import annotations
 
-from PyQt6.QtWidgets import (
-    QCheckBox,
-    QComboBox,
-    QDoubleSpinBox,
-    QFormLayout,
-    QGroupBox,
-    QHBoxLayout,
-    QLabel,
-    QLineEdit,
-    QPushButton,
-    QVBoxLayout,
-    QWidget,
-)
+from typing import TYPE_CHECKING
+
+from PyQt6.QtWidgets import QCheckBox
+from PyQt6.QtWidgets import QComboBox
+from PyQt6.QtWidgets import QDoubleSpinBox
+from PyQt6.QtWidgets import QFormLayout
+from PyQt6.QtWidgets import QGroupBox
+from PyQt6.QtWidgets import QHBoxLayout
+from PyQt6.QtWidgets import QLabel
+from PyQt6.QtWidgets import QLineEdit
+from PyQt6.QtWidgets import QPushButton
+from PyQt6.QtWidgets import QVBoxLayout
+from PyQt6.QtWidgets import QWidget
 
 
 class SettingsTabMixin:
     """Mixin providing UI-building helpers for the settings tab."""
+
+    _policy_profile: str
+
+    if TYPE_CHECKING:
+
+        def _on_policy_profile_changed(self, profile: str) -> None: ...
+        def _browse_cert(self) -> None: ...
+        def _browse_cert_key(self) -> None: ...
 
     # -----------------------------
     # Public entry point

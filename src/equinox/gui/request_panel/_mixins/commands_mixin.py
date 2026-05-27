@@ -1,26 +1,24 @@
 """User-command and shortcut mixin for RequestPanel."""
-
 # mypy: disable-error-code=arg-type
-
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING, Any
-
-from PyQt6.QtCore import QObject, Qt
-from PyQt6.QtGui import QKeySequence, QShortcut
-from PyQt6.QtWidgets import (
-    QApplication,
-    QCheckBox,
-    QComboBox,
-    QInputDialog,
-    QLineEdit,
-    QMessageBox,
-    QWidget,
-)
+from typing import Any
+from typing import TYPE_CHECKING
 
 from equinox.core.request import Request
 from equinox.gui.workers import BenchmarkDialog
+from PyQt6.QtCore import QObject
+from PyQt6.QtCore import Qt
+from PyQt6.QtGui import QKeySequence
+from PyQt6.QtGui import QShortcut
+from PyQt6.QtWidgets import QApplication
+from PyQt6.QtWidgets import QCheckBox
+from PyQt6.QtWidgets import QComboBox
+from PyQt6.QtWidgets import QInputDialog
+from PyQt6.QtWidgets import QLineEdit
+from PyQt6.QtWidgets import QMessageBox
+from PyQt6.QtWidgets import QWidget
 
 logger = logging.getLogger(__name__)
 
@@ -45,11 +43,12 @@ class RequestCommandsMixin:
     if TYPE_CHECKING:
 
         def _send_request(self) -> None: ...
-        def _save_request(self) -> None: ...
+        def _save_request(self) -> bool: ...
         def _format_json_body(self) -> None: ...
-        def _detect_body_type(self, body_text: str, headers: dict[str, str]) -> str: ...
+        @staticmethod
+        def _detect_body_type(body_text: str, headers: dict[str, str] | None = None) -> str: ...
         def _mark_dirty(self) -> None: ...
-        def _status_message(self, message: str) -> None: ...
+        def _status_message(self, message: str, timeout_ms: int = ...) -> None: ...
         def _update_tab_labels(self, *_args: Any) -> None: ...
 
     def _as_qobject(self) -> QObject:
@@ -137,7 +136,7 @@ class RequestCommandsMixin:
         except Exception as exc:
             logger.warning("Failed to parse cURL command (len=%d): %s", len(text), exc)
             QMessageBox.warning(
-                self._as_qwidget(), "Parse Error", f"Could not parse cURL command:\n{exc}"
+                self._as_qwidget(), "Parse Error", f"Could not parse cURL command:\n{exc}",
             )
             return
 
@@ -172,7 +171,7 @@ class RequestCommandsMixin:
         url = self.url_input.text().strip()
         if not url:
             QMessageBox.warning(
-                self._as_qwidget(), "No Request", "Enter a URL before running a benchmark."
+                self._as_qwidget(), "No Request", "Enter a URL before running a benchmark.",
             )
             return
 

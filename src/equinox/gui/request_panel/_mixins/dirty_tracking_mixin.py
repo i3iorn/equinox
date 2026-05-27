@@ -1,12 +1,9 @@
 """Dirty-state signal wiring mixin for RequestPanel."""
-
 from __future__ import annotations
 
 import logging
 from collections.abc import Callable
 from typing import Any
-
-from PyQt6.QtCore import pyqtSignal
 
 DIRTY_SIGNAL_BINDINGS: list[tuple[str, str, str]] = [
     ("url_input.textChanged", "_mark_dirty", "url_input.textChanged"),
@@ -100,7 +97,7 @@ class DirtyTrackingMixin:
 
     def _safe_connect(
         self,
-        get_signal: Callable[[], pyqtSignal],
+        get_signal: Callable[[], Any],
         slot: Callable[..., Any],
         name: str,
     ) -> bool:
@@ -131,14 +128,14 @@ class DirtyTrackingMixin:
 
     def _dirty_signal_bindings(
         self,
-    ) -> list[tuple[Callable[[], pyqtSignal], Callable[..., Any], str]]:
+    ) -> list[tuple[Callable[[], Any], Callable[..., Any], str]]:
         return [
             (self._resolve_signal(path), getattr(self, slot), name)
             for path, slot, name in DIRTY_SIGNAL_BINDINGS
         ]
 
-    def _resolve_signal(self, dotted: str) -> Callable[[], pyqtSignal]:
-        def getter() -> pyqtSignal:
+    def _resolve_signal(self, dotted: str) -> Callable[[], Any]:
+        def getter() -> Any:
             obj_path, signal_name = dotted.rsplit(".", 1)
             obj = self
             for part in obj_path.split("."):

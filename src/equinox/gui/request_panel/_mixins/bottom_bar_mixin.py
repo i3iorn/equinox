@@ -1,25 +1,34 @@
 from __future__ import annotations
 
-from typing import Callable, Tuple
-
-from PyQt6.QtCore import pyqtSignal
-from PyQt6.QtGui import QAction
-from PyQt6.QtWidgets import (
-    QHBoxLayout,
-    QLabel,
-    QMenu,
-    QPushButton,
-    QToolButton,
-)
+from collections.abc import Callable
+from typing import Any
+from typing import cast
+from typing import TYPE_CHECKING
 
 from equinox.gui.request_panel._constants import SEND_BTN_WIDTH
+from PyQt6.QtCore import QObject
+from PyQt6.QtGui import QAction
+from PyQt6.QtWidgets import QHBoxLayout
+from PyQt6.QtWidgets import QLabel
+from PyQt6.QtWidgets import QMenu
+from PyQt6.QtWidgets import QPushButton
+from PyQt6.QtWidgets import QToolButton
 
 
 class BottomBarMixin:
     """Mixin providing a deterministic, testable bottom toolbar builder."""
 
-    # The parent class must define this signal.
-    session_vars_changed: pyqtSignal
+    session_vars_changed: Any
+
+    if TYPE_CHECKING:
+
+        def _save_request(self) -> bool: ...
+        def _import_from_curl(self) -> None: ...
+        def _open_benchmark(self) -> None: ...
+        def clear_session_vars(self) -> None: ...
+
+    def _as_qobject(self) -> QObject:
+        return cast(QObject, cast(object, self))
 
     # -----------------------------
     # Public API
@@ -120,10 +129,10 @@ class BottomBarMixin:
         text: str,
         object_name: str,
         usage_id: str,
-        handler: Callable,
+        handler: Callable[[], None],
         is_destructive: bool,
-    ) -> Tuple[QAction, bool]:
-        action = QAction(text, self)
+    ) -> tuple[QAction, bool]:
+        action = QAction(text, self._as_qobject())
         action.setObjectName(object_name)
         action.setProperty("usage_track_id", usage_id)
         action.triggered.connect(handler)
@@ -157,7 +166,7 @@ class BottomBarMixin:
     # Reactive Updates
     # -----------------------------
     def _connect_session_var_updates(self, label: QLabel) -> None:
-        def update_label(session_vars: dict) -> None:
+        def update_label(session_vars: dict[str, Any]) -> None:
             count = len(session_vars)
             label.setText(f"Session vars: {count}")
 

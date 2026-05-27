@@ -5,38 +5,36 @@ Each mixin encapsulates a single area of UI construction.
 This keeps QWidget creation out of the main panel class and
 supports clean architecture, testability, and readability.
 """
-
 from __future__ import annotations
 
-from PyQt6.QtCore import Qt
-from PyQt6.QtWidgets import (
-    QCheckBox,
-    QComboBox,
-    QGroupBox,
-    QHBoxLayout,
-    QHeaderView,
-    QLabel,
-    QLineEdit,
-    QPlainTextEdit,
-    QPushButton,
-    QSplitter,
-    QTableWidget,
-    QTabWidget,
-    QToolButton,
-    QVBoxLayout,
-    QWidget,
-)
+from typing import Any
+from typing import cast
 
-from equinox.gui.request_panel._constants import (
-    CANCEL_BTN_WIDTH,
-    FMT_JSON_BTN_WIDTH,
-    METHOD_COMBO_WIDTH,
-    SEND_BTN_WIDTH,
-)
-from equinox.gui.request_panel.body_text_proxy import BodyTextProxy
-from equinox.gui.request_panel.toolbar import TabToolbar
+from equinox.gui.request_panel._constants import CANCEL_BTN_WIDTH
+from equinox.gui.request_panel._constants import FMT_JSON_BTN_WIDTH
+from equinox.gui.request_panel._constants import METHOD_COMBO_WIDTH
+from equinox.gui.request_panel._constants import SEND_BTN_WIDTH
 from equinox.gui.theme import get_mono_font
-from equinox.gui.widgets import JsonBodyEditor, UrlLineEdit
+from equinox.gui.widgets import JsonBodyEditor
+from equinox.gui.widgets import TabToolbar
+from equinox.gui.widgets import TextEditorProxy
+from equinox.gui.widgets import UrlLineEdit
+from PyQt6.QtCore import Qt
+from PyQt6.QtWidgets import QCheckBox
+from PyQt6.QtWidgets import QComboBox
+from PyQt6.QtWidgets import QGroupBox
+from PyQt6.QtWidgets import QHBoxLayout
+from PyQt6.QtWidgets import QHeaderView
+from PyQt6.QtWidgets import QLabel
+from PyQt6.QtWidgets import QLineEdit
+from PyQt6.QtWidgets import QPlainTextEdit
+from PyQt6.QtWidgets import QPushButton
+from PyQt6.QtWidgets import QSplitter
+from PyQt6.QtWidgets import QTableWidget
+from PyQt6.QtWidgets import QTabWidget
+from PyQt6.QtWidgets import QToolButton
+from PyQt6.QtWidgets import QVBoxLayout
+from PyQt6.QtWidgets import QWidget
 
 from ...ui_common import configure_tab_persistence
 
@@ -48,7 +46,7 @@ from ...ui_common import configure_tab_persistence
 class RequestPanelOrchestrationMixin:
     """High‑level layout assembly for the RequestPanel."""
 
-    def build_request_panel_ui(self) -> None:
+    def build_request_panel_ui(self: Any) -> None:
         """Build the full request panel UI tree."""
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
@@ -106,7 +104,7 @@ class RequestPanelOrchestrationMixin:
 
         self._sync_editor_state_ui()
 
-    def configure_tab_metadata(self) -> None:
+    def configure_tab_metadata(self: Any) -> None:
         """Attach stable tooltips to request tabs for faster discovery."""
         tab_tooltips = {
             "Headers": "Request headers sent with the call",
@@ -135,7 +133,10 @@ class RequestPanelOrchestrationMixin:
 class URLBarMixin:
     """Builds the method/URL/send/cancel row."""
 
-    def build_url_bar(self) -> QHBoxLayout:
+    url_input: UrlLineEdit
+    _url_fix_suggestion: str | None
+
+    def build_url_bar(self: Any) -> QHBoxLayout:
         row = QHBoxLayout()
         row.setSpacing(4)
 
@@ -147,7 +148,7 @@ class URLBarMixin:
 
         self.url_input = UrlLineEdit()
         self.url_input.setPlaceholderText(
-            "https://api.example.com/v1/resource  ·  {{VAR}} for variables  ·  Ctrl+N = new"
+            "https://api.example.com/v1/resource  ·  {{VAR}} for variables  ·  Ctrl+N = new",
         )
         self.url_input.returnPressed.connect(self._send_request)
 
@@ -191,7 +192,7 @@ class URLBarMixin:
 class BodyTabMixin:
     """Builds the Body tab container."""
 
-    def build_body_tab(self) -> QWidget:
+    def build_body_tab(self: Any) -> QWidget:
         widget = QWidget()
         layout = QVBoxLayout(widget)
         layout.setContentsMargins(0, 4, 0, 0)
@@ -213,7 +214,7 @@ class BodyTabMixin:
 class BodyTypeBarMixin:
     """Builds the body type selector row."""
 
-    def build_body_type_bar(self) -> QHBoxLayout:
+    def build_body_type_bar(self: Any) -> QHBoxLayout:
         row = QHBoxLayout()
 
         self.body_type_combo = QComboBox()
@@ -226,7 +227,7 @@ class BodyTypeBarMixin:
                 "form-urlencoded",
                 "multipart/form-data",
                 "GraphQL",
-            ]
+            ],
         )
         self.body_type_combo.currentIndexChanged.connect(self._on_body_type_changed)
 
@@ -253,7 +254,7 @@ class BodyTypeBarMixin:
 class BodySearchBarMixin:
     """Builds the inline body-search controls."""
 
-    def build_body_search_bar(self) -> QHBoxLayout:
+    def build_body_search_bar(self: Any) -> QHBoxLayout:
         self._body_search_input = QLineEdit()
         self._body_search_input.setPlaceholderText("Find in body…")
         self._body_search_input.setFixedHeight(26)
@@ -307,9 +308,9 @@ class BodySearchBarMixin:
 class BodyEditorMixin:
     """Creates the JSON body editor and proxy."""
 
-    def build_body_editor(self, layout: QVBoxLayout) -> None:
-        real_editor = JsonBodyEditor(self)
-        proxy = BodyTextProxy(self, real_editor)
+    def build_body_editor(self: Any, layout: QVBoxLayout) -> None:
+        real_editor = JsonBodyEditor(cast(QWidget, cast(object, self)))
+        proxy = TextEditorProxy(self, real_editor)
 
         layout.addWidget(real_editor, 1)
 
@@ -326,8 +327,12 @@ class BodyEditorMixin:
 class MultipartMixin:
     """Builds the multipart form-data section."""
 
-    def build_multipart_section(self, layout: QVBoxLayout) -> None:
-        self._mp_toolbar = TabToolbar("", include_file_btn=True, parent=self)
+    def build_multipart_section(self: Any, layout: QVBoxLayout) -> None:
+        self._mp_toolbar = TabToolbar(
+            "",
+            include_file_btn=True,
+            parent=cast(QWidget, cast(object, self)),
+        )
         self._mp_toolbar.add_clicked.connect(self._multipart_add_row)
         self._mp_toolbar.remove_clicked.connect(self._multipart_remove_row)
         self._mp_toolbar.file_browse_clicked.connect(self._multipart_browse_file)
@@ -338,12 +343,14 @@ class MultipartMixin:
         self._multipart_table.setHorizontalHeaderLabels(["Key", "Type", "Value / File Path"])
 
         header = self._multipart_table.horizontalHeader()
-        header.setSectionResizeMode(0, QHeaderView.ResizeMode.Interactive)
-        header.setSectionResizeMode(1, QHeaderView.ResizeMode.ResizeToContents)
-        header.setSectionResizeMode(2, QHeaderView.ResizeMode.Stretch)
-
-        self._multipart_table.horizontalHeader().setDefaultSectionSize(140)
-        self._multipart_table.verticalHeader().setVisible(False)
+        if header is not None:
+            header.setSectionResizeMode(0, QHeaderView.ResizeMode.Interactive)
+            header.setSectionResizeMode(1, QHeaderView.ResizeMode.ResizeToContents)
+            header.setSectionResizeMode(2, QHeaderView.ResizeMode.Stretch)
+            header.setDefaultSectionSize(140)
+        v_header = self._multipart_table.verticalHeader()
+        if v_header is not None:
+            v_header.setVisible(False)
         self._multipart_table.setAlternatingRowColors(True)
         self._multipart_table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
         self._multipart_table.setVisible(False)
@@ -359,7 +366,7 @@ class MultipartMixin:
 class GraphQLMixin:
     """Builds the GraphQL query + variables editor."""
 
-    def build_graphql_section(self, layout: QVBoxLayout) -> None:
+    def build_graphql_section(self: Any, layout: QVBoxLayout) -> None:
         self._gql_widget = QWidget()
         self._gql_widget.setVisible(False)
         layout.addWidget(self._gql_widget, 1)
@@ -404,7 +411,7 @@ class GraphQLMixin:
 class NotesTabMixin:
     """Builds the free-form notes tab."""
 
-    def build_notes_tab(self) -> QWidget:
+    def build_notes_tab(self: Any) -> QWidget:
         widget = QWidget()
         layout = QVBoxLayout(widget)
         layout.setContentsMargins(4, 6, 4, 4)
@@ -413,7 +420,7 @@ class NotesTabMixin:
 
         self.notes_editor = QPlainTextEdit()
         self.notes_editor.setPlaceholderText(
-            "Add notes, cURL examples, API docs links, or any context about this request…"
+            "Add notes, cURL examples, API docs links, or any context about this request…",
         )
 
         layout.addWidget(self.notes_editor, 1)

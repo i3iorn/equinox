@@ -1,20 +1,18 @@
 """Scripts-tab UI builder helpers for RequestPanel."""
-
 from __future__ import annotations
 
-from PyQt6.QtCore import Qt
-from PyQt6.QtWidgets import (
-    QGroupBox,
-    QLabel,
-    QPlainTextEdit,
-    QPushButton,
-    QSplitter,
-    QVBoxLayout,
-    QWidget,
-)
+from typing import Any
 
 from equinox.gui.syntax_highlighter.python_highlighter import PythonHighlighter
 from equinox.gui.theme import get_mono_font
+from PyQt6.QtCore import Qt
+from PyQt6.QtWidgets import QGroupBox
+from PyQt6.QtWidgets import QLabel
+from PyQt6.QtWidgets import QPlainTextEdit
+from PyQt6.QtWidgets import QPushButton
+from PyQt6.QtWidgets import QSplitter
+from PyQt6.QtWidgets import QVBoxLayout
+from PyQt6.QtWidgets import QWidget
 
 
 def build_script_section(
@@ -38,7 +36,7 @@ def build_script_section(
     return group, editor, result_label
 
 
-def create_scripts_tab(panel: object, cheat_text: str) -> QWidget:
+def create_scripts_tab(panel: Any, cheat_text: str) -> QWidget:
     """Build scripts tab with pre/post editors, syntax highlighting and cheatsheet."""
     widget = QWidget()
     layout = QVBoxLayout(widget)
@@ -83,13 +81,12 @@ def create_scripts_tab(panel: object, cheat_text: str) -> QWidget:
     cheat_label.setWordWrap(True)
     cheat_label.setContentsMargins(8, 2, 8, 4)
     layout.addWidget(cheat_label)
-    cheat_toggle.toggled.connect(
-        lambda checked: (
-            cheat_label.setVisible(checked),
-            cheat_toggle.setText(
-                "▼ Available variables & modules" if checked else "▶ Available variables & modules"
-            ),
+    def _toggle_cheatsheet(checked: bool) -> None:
+        cheat_label.setVisible(checked)
+        cheat_toggle.setText(
+            "▼ Available variables & modules" if checked else "▶ Available variables & modules",
         )
-    )
+
+    cheat_toggle.toggled.connect(_toggle_cheatsheet)
 
     return widget

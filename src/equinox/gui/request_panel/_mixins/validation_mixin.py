@@ -1,18 +1,20 @@
-"""Real-time validation for request fields in RequestPanel.
-
-Provides inline validation feedback as users type in URL, headers, and body fields.
-Shows validation status with visual indicators and prevents send if critical errors exist.
-"""
+"""Real-time validation helpers for request-panel editor fields."""
+from __future__ import annotations
 
 import json
 import logging
-from typing import Any, Optional, Tuple
-
-from PyQt6.QtCore import QTimer
-from PyQt6.QtWidgets import QComboBox, QLineEdit, QPlainTextEdit, QPushButton, QWidget
+from typing import Any
+from typing import cast
 
 from equinox.core.exceptions import ValidationError
 from equinox.core.validation import Validator
+from PyQt6.QtCore import QObject
+from PyQt6.QtCore import QTimer
+from PyQt6.QtWidgets import QComboBox
+from PyQt6.QtWidgets import QLineEdit
+from PyQt6.QtWidgets import QPlainTextEdit
+from PyQt6.QtWidgets import QPushButton
+from PyQt6.QtWidgets import QWidget
 
 logger = logging.getLogger(__name__)
 
@@ -20,6 +22,8 @@ _MAX_SYNC_JSON_VALIDATE_BYTES = 5_000_000
 
 
 class _RequestValidationMixin:
+    """Provide debounced inline validation for request input widgets."""
+
     url_input: QLineEdit
     headers_table: Any
     body_text: QPlainTextEdit
@@ -31,30 +35,17 @@ class _RequestValidationMixin:
     _headers_valid: bool
     _body_valid: bool
 
-    """Real-time validation for request input fields.
-
-    Provides:
-    - URL validation (scheme, length, format)
-    - Headers validation (CRLF prevention, size limits)
-    - JSON body validation (syntax checking)
-    - Visual feedback (green/red borders, tooltips)
-    - Send button enabling/disabling based on validation state
-    """
-
     def _init_validation(self) -> None:
         """Set up validation signal handlers for all input fields."""
-        # Debounce timer to avoid validating on every keystroke
-        self._validation_timer = QTimer(self)
-        self._validation_timer.setInterval(300)  # 300ms debounce
+        self._validation_timer = QTimer(cast(QObject, cast(object, self)))
+        self._validation_timer.setInterval(300)
         self._validation_timer.timeout.connect(self._run_validation_checks)
         self._validation_timer.setSingleShot(True)
 
-        # Track validation state
         self._url_valid = True
         self._headers_valid = True
         self._body_valid = True
 
-        # Connect field changes to trigger validation
         self.url_input.textChanged.connect(self._schedule_validation)
         self.headers_table.itemChanged.connect(self._schedule_validation)
         self.body_text.textChanged.connect(self._schedule_validation)
@@ -77,7 +68,6 @@ class _RequestValidationMixin:
         """Validate URL and show inline feedback."""
         url_text = self.url_input.text().strip()
 
-        # Empty is OK (user hasn't entered anything yet)
         if not url_text:
             self._set_field_valid(self.url_input, None)
             if hasattr(self, "_set_url_validation_hint"):
@@ -87,12 +77,11 @@ class _RequestValidationMixin:
             self._url_valid = True
             return
 
-        # Skip validation if URL contains unresolved variables
         if "{{" in url_text and "}}" in url_text:
-            self._set_field_valid(self.url_input, None)  # Don't validate templates
+            self._set_field_valid(self.url_input, None)
             if hasattr(self, "_set_url_validation_hint"):
                 self._set_url_validation_hint(
-                    "URL contains template variables; resolved at send time."
+                    "URL contains template variables; resolved at send time.",
                 )
             if hasattr(self, "_set_url_fix_suggestion"):
                 self._set_url_fix_suggestion(None)
@@ -108,8 +97,8 @@ class _RequestValidationMixin:
                 self._set_url_fix_suggestion(None)
             self._url_valid = True
             logger.debug("URL validation passed: %s", url_text[:50])
-        except ValidationError as e:
-            err_msg = str(e)
+        except ValidationError as exc:
+            err_msg = str(exc)
             self._set_field_valid(self.url_input, "error", err_msg)
             if hasattr(self, "_set_url_validation_hint"):
                 self._set_url_validation_hint(err_msg, is_error=True)
@@ -121,10 +110,10 @@ class _RequestValidationMixin:
                     fixed_url, reason = fix
                     self._set_url_fix_suggestion(fixed_url, reason)
             self._url_valid = False
-            logger.debug("URL validation failed: %s", str(e))
+            logger.debug("URL validation failed: %s", err_msg)
 
     @staticmethod
-    def _suggest_url_fix(url_text: str) -> Optional[Tuple[str, str]]:
+    def _suggest_url_fix(url_text: str) -> tuple[str, str] | None:
         """Return a safe URL correction suggestion, if one is obvious."""
         text = (url_text or "").strip()
         if not text:
@@ -149,7 +138,6 @@ class _RequestValidationMixin:
     def _validate_headers(self) -> None:
         """Validate headers and show inline feedback."""
         try:
-            # Get all headers from table
             headers_dict = self.headers_table.get_data() or {}
             if not headers_dict:
                 self._set_field_valid(self.headers_table, None)
@@ -160,12 +148,12 @@ class _RequestValidationMixin:
             self._set_field_valid(self.headers_table, "valid")
             self._headers_valid = True
             logger.debug("Headers validation passed")
-        except (ValidationError, ValueError) as e:
-            self._set_field_valid(self.headers_table, "error", str(e))
+        except (ValidationError, ValueError) as exc:
+            self._set_field_valid(self.headers_table, "error", str(exc))
             self._headers_valid = False
-            logger.debug("Headers validation failed: %s", str(e))
+            logger.debug("Headers validation failed: %s", str(exc))
 
-    def _mark_valid(self, state: Optional[str]) -> None:
+    def _mark_valid(self, state: str | None) -> None:
         """Mark the body field as valid or neutral."""
         self._set_field_valid(self.body_text, state)
 
@@ -173,7 +161,7 @@ class _RequestValidationMixin:
         """Mark the body field as invalid with an error message."""
         self._set_field_valid(self.body_text, "error", message)
 
-    def _set_field_valid(self, field: QWidget, status: Optional[str], message: str = "") -> None:
+    def _set_field_valid(self, field: QWidget, status: str | None, message: str = "") -> None:
         """Display validation status on field with visual feedback.
 
         Args:
@@ -182,7 +170,7 @@ class _RequestValidationMixin:
             message: Tooltip message for error details
         """
         field.setObjectName(
-            "field-valid" if status == "valid" else "field-error" if status == "error" else ""
+            "field-valid" if status == "valid" else "field-error" if status == "error" else "",
         )
         if status == "valid":
             field.setToolTip("✓ Valid input")
@@ -195,7 +183,6 @@ class _RequestValidationMixin:
         """Enable/disable Send button based on validation state."""
         url_text = self.url_input.text().strip()
 
-        # Disable send if URL is empty or invalid
         if not url_text:
             self.send_button.setEnabled(False)
             return
@@ -204,36 +191,31 @@ class _RequestValidationMixin:
             self.send_button.setEnabled(False)
             return
 
-        # If there are validation errors in headers or body, warn but allow send
-        # (server errors are more informative than client lockout)
         if not self._headers_valid or not self._body_valid:
             logger.debug(
                 "request_panel.validation.send_gate headers_valid=%s body_valid=%s",
                 self._headers_valid,
                 self._body_valid,
             )
-            # Actually, let's disable if body is invalid (syntactic error)
             if not self._body_valid:
                 self.send_button.setEnabled(False)
                 return
-            # But allow headers issues (server will error anyway)
 
-        # All critical checks passed
         self.send_button.setEnabled(True)
 
-    # --- Helper functions should be static ---
-
     @staticmethod
-    def _safe_text(widget) -> str:
+    def _safe_text(widget: Any) -> str:
         try:
-            return widget.toPlainText().strip()
+            value = widget.toPlainText()
+            return value.strip() if isinstance(value, str) else ""
         except Exception:
             return ""
 
     @staticmethod
-    def _safe_body_type(self_ref) -> str:
+    def _safe_body_type(self_ref: Any) -> str:
         try:
-            return self_ref.body_type_combo.currentText().lower()
+            value = self_ref.body_type_combo.currentText()
+            return value.lower() if isinstance(value, str) else ""
         except Exception:
             return ""
 
@@ -245,9 +227,8 @@ class _RequestValidationMixin:
     def _is_graphql_mode(body_type: str) -> bool:
         return "graphql" in body_type
 
-    # --- Fix validate_body to call methods correctly ---
-
     def _validate_body(self) -> None:
+        """Validate the active request body payload."""
         body_text = self._safe_text(self.body_text)
         body_type = self._safe_body_type(self)
 
@@ -262,9 +243,8 @@ class _RequestValidationMixin:
 
         self._body_valid = self._validate_json_body(body_text)
 
-    # --- Fix GraphQL validation ---
-
     def _validate_graphql_variables(self) -> bool:
+        """Validate GraphQL variables when the editor is in GraphQL mode."""
         gql_vars = self._safe_text(self._gql_vars)
 
         if not gql_vars:
@@ -291,106 +271,8 @@ class _RequestValidationMixin:
             logger.debug("GraphQL variables JSON validation failed: %s", msg)
             return False
 
-    # --- Fix JSON validation ---
-
     def _validate_json_body(self, body_text: str) -> bool:
-        if not body_text:
-            self._mark_valid(None)
-            return True
-
-        if len(body_text) > _MAX_SYNC_JSON_VALIDATE_BYTES:
-            logger.warning(
-                "request_panel.validation.json_skip_large op=validate_body size=%d",
-                len(body_text),
-            )
-            self._mark_valid(None)
-            return True
-
-        try:
-            json.loads(body_text)
-            self._mark_valid("valid")
-            logger.debug("JSON body validation passed")
-            return True
-
-        except json.JSONDecodeError as exc:
-            msg = f"Invalid JSON at line {exc.lineno}, col {exc.colno}: {exc.msg}"
-            self._mark_invalid(msg)
-            logger.debug("JSON body validation failed: %s", msg)
-            return False
-
-    # --- Helper functions should be static ---
-
-    @staticmethod
-    def _safe_text(widget) -> str:
-        try:
-            return widget.toPlainText().strip()
-        except Exception:
-            return ""
-
-    @staticmethod
-    def _safe_body_type(self_ref) -> str:
-        try:
-            return self_ref.body_type_combo.currentText().lower()
-        except Exception:
-            return ""
-
-    @staticmethod
-    def _is_json_mode(body_type: str) -> bool:
-        return "json" in body_type
-
-    @staticmethod
-    def _is_graphql_mode(body_type: str) -> bool:
-        return "graphql" in body_type
-
-    # --- Fix validate_body to call methods correctly ---
-
-    def _validate_body(self) -> None:
-        body_text = self._safe_text(self.body_text)
-        body_type = self._safe_body_type(self)
-
-        if not self._is_json_mode(body_type) and not self._is_graphql_mode(body_type):
-            self._mark_valid(None)
-            self._body_valid = True
-            return
-
-        if self._is_graphql_mode(body_type):
-            self._body_valid = self._validate_graphql_variables()
-            return
-
-        self._body_valid = self._validate_json_body(body_text)
-
-    # --- Fix GraphQL validation ---
-
-    def _validate_graphql_variables(self) -> bool:
-        gql_vars = self._safe_text(self._gql_vars)
-
-        if not gql_vars:
-            self._mark_valid(None)
-            return True
-
-        if len(gql_vars) > _MAX_SYNC_JSON_VALIDATE_BYTES:
-            logger.warning(
-                "request_panel.validation.graphql_vars_skip_large op=validate_body size=%d",
-                len(gql_vars),
-            )
-            self._mark_valid(None)
-            return True
-
-        try:
-            json.loads(gql_vars)
-            self._mark_valid("valid")
-            logger.debug("GraphQL variables JSON validation passed")
-            return True
-
-        except json.JSONDecodeError as exc:
-            msg = f"Invalid GraphQL variables JSON at line {exc.lineno}, col {exc.colno}: {exc.msg}"
-            self._mark_invalid(msg)
-            logger.debug("GraphQL variables JSON validation failed: %s", msg)
-            return False
-
-    # --- Fix JSON validation ---
-
-    def _validate_json_body(self, body_text: str) -> bool:
+        """Validate JSON body content when the editor is in JSON mode."""
         if not body_text:
             self._mark_valid(None)
             return True

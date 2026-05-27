@@ -2,11 +2,13 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from typing import Any, Optional
-
-from PyQt6.QtWidgets import QDialog, QMessageBox
+from typing import Any
+from typing import cast
 
 from equinox.gui.dialogs.save_dialog import SaveRequestDialog
+from PyQt6.QtWidgets import QDialog
+from PyQt6.QtWidgets import QMessageBox
+from PyQt6.QtWidgets import QWidget
 
 logger = logging.getLogger(__name__)
 
@@ -47,9 +49,12 @@ class RequestSaveFlowMixin:
     _request_persistence: Any
 
     def _build_request_editor_snapshot(self) -> Any: ...
-    def _build_request_from_editor(self, name: str, collection_id: int, folder: str) -> Any: ...
+    def _build_request_from_editor(self, **overrides: Any) -> Any: ...
     def _clear_dirty(self) -> None: ...
-    def _status_message(self, message: str) -> None: ...
+    def _status_message(self, message: str, timeout_ms: int = ...) -> None: ...
+
+    def _as_qwidget(self) -> QWidget:
+        return cast(QWidget, cast(object, self))
 
     # ============================================================
     # Public Orchestration Method
@@ -60,7 +65,7 @@ class RequestSaveFlowMixin:
         snapshot = self._build_request_editor_snapshot()
 
         if not _is_valid_url(snapshot.url):
-            QMessageBox.warning(self, "Missing URL", "Please enter a URL before saving.")
+            QMessageBox.warning(self._as_qwidget(), "Missing URL", "Please enter a URL before saving.")
             return False
 
         logger.debug(
@@ -78,7 +83,7 @@ class RequestSaveFlowMixin:
 
         except SaveRequestError as exc:
             logger.error("Failed to save request", exc_info=True)
-            QMessageBox.critical(self, "Save Failed", str(exc))
+            QMessageBox.critical(self._as_qwidget(), "Save Failed", str(exc))
             return False
 
 
@@ -87,7 +92,7 @@ class RequestSaveFlowMixin:
 # ============================================================
 
 
-def _is_valid_url(url: Optional[str]) -> bool:
+def _is_valid_url(url: str | None) -> bool:
     """Return True only if URL is a non-empty string."""
     return isinstance(url, str) and url.strip() != ""
 
@@ -97,7 +102,7 @@ def _is_valid_url(url: Optional[str]) -> bool:
 # ============================================================
 
 
-def _open_save_dialog(self, snapshot) -> SaveDialogResult:
+def _open_save_dialog(self: RequestSaveFlowMixin, snapshot: Any) -> SaveDialogResult:
     """Open the save dialog and return validated user input."""
     collections = self._request_persistence.list_save_collections()
 
@@ -106,7 +111,7 @@ def _open_save_dialog(self, snapshot) -> SaveDialogResult:
         snapshot.method,
         snapshot.url,
         snapshot.folder or "",
-        parent=self,
+        parent=self._as_qwidget(),
     )
 
     logger.debug("request_panel.save_dialog_created op=save_request")
@@ -137,7 +142,7 @@ def _open_save_dialog(self, snapshot) -> SaveDialogResult:
 # ============================================================
 
 
-def _build_request_object(self, dialog_result: SaveDialogResult):
+def _build_request_object(self: RequestSaveFlowMixin, dialog_result: SaveDialogResult) -> Any:
     """Build a request object from the editor state and dialog values."""
     try:
         return self._build_request_from_editor(
@@ -154,7 +159,12 @@ def _build_request_object(self, dialog_result: SaveDialogResult):
 # ============================================================
 
 
-def _persist_request(self, snapshot, dialog_result: SaveDialogResult, request):
+def _persist_request(
+    self: RequestSaveFlowMixin,
+    snapshot: Any,
+    dialog_result: SaveDialogResult,
+    request: Any,
+) -> Any:
     """Persist the request using the persistence layer."""
     try:
         return self._request_persistence.save_request_from_dialog(
@@ -174,11 +184,11 @@ def _persist_request(self, snapshot, dialog_result: SaveDialogResult, request):
 
 
 def _finalize_save(
-    self,
-    snapshot,
+    self: RequestSaveFlowMixin,
+    snapshot: Any,
     dialog_result: SaveDialogResult,
-    save_result,
-    request,
+    save_result: Any,
+    request: Any,
 ) -> None:
     """Update UI, logs, and internal state after a successful save."""
     req_id = save_result.request_id
@@ -207,11 +217,11 @@ def _finalize_save(
     _refresh_collections_panel(self)
 
 
-def _refresh_collections_panel(self) -> None:
+def _refresh_collections_panel(self: RequestSaveFlowMixin) -> None:
     """Refresh the collections panel safely."""
     try:
-        win = self.window()
-        if hasattr(win, "collections_panel"):
+        win = self._as_qwidget().window()
+        if win is not None and hasattr(win, "collections_panel"):
             win.collections_panel.refresh()
     except Exception:
         logger.debug("Failed to refresh collections panel after save", exc_info=True)
