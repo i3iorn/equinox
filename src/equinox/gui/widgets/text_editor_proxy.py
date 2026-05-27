@@ -4,7 +4,6 @@ Falls back to an in-memory buffer when the wrapped C++ widget becomes
 unavailable, which keeps higher-level GUI code working in tests and teardown
 paths.
 """
-
 from __future__ import annotations
 
 import logging
@@ -178,7 +177,7 @@ class TextEditorProxy:
                 self._widget = None
         raise AttributeError(
             f"'{type(self).__name__}' has no attribute '{name}' "
-            "(underlying widget is unavailable)"
+            "(underlying widget is unavailable)",
         )
 
     def __bool__(self) -> bool:

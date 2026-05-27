@@ -1,5 +1,4 @@
 """GUI logging helpers for consistent event tracing."""
-
 from __future__ import annotations
 
 import json
@@ -12,7 +11,7 @@ logger = logging.getLogger("equinox.gui")
 
 
 def log_gui_event(
-    event: str, payload: dict[str, Any] | None = None, level: int = logging.INFO
+    event: str, payload: dict[str, Any] | None = None, level: int = logging.INFO,
 ) -> None:
     """Log a GUI event as a structured JSON payload.
 

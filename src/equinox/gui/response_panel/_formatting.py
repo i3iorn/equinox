@@ -9,7 +9,6 @@ testability, and separation of concerns. Handles:
 
 Security: Uses defusedxml when available to prevent XXE attacks.
 """
-
 from __future__ import annotations
 
 import http.cookies as _hc
@@ -34,7 +33,7 @@ except ImportError:
     _HAS_DEFUSEDXML = False
     logger.warning(
         "defusedxml not available; XML parsing will use standard library. "
-        "For production use, install defusedxml: pip install defusedxml"
+        "For production use, install defusedxml: pip install defusedxml",
     )
 
 
