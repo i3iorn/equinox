@@ -102,7 +102,7 @@ repos:
     rev: v0.15.14
     hooks:
       - id: ruff
-        args: [--fix, --exit-zero-on-fix]
+        args: [--fix, --exit-zero]
       - id: ruff-format
 
   - repo: https://github.com/asottile/reorder-python-imports
