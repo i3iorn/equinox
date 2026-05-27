@@ -65,7 +65,15 @@ def main():
     for t in tests:
         print("  -", t.relative_to(REPO_ROOT))
 
-    cmd = [sys.executable, "-m", "pytest"] + [str(t.relative_to(REPO_ROOT)) for t in tests]
+    # Run coverage only on the selected tests, not the whole project
+    test_paths = [str(t.relative_to(REPO_ROOT)) for t in tests]
+    cmd = [
+        sys.executable,
+        "-m",
+        "pytest",
+        "--cov",
+        "--cov-report=term-missing",
+    ] + test_paths
 
     result = subprocess.run(cmd, cwd=REPO_ROOT)
     return result.returncode
