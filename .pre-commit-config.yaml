@@ -46,7 +46,7 @@ repos:
         entry: python -m mypy --strict src
         language: system
         pass_filenames: false
-        stages: [pre-push]
+        stages: [pre-commit, pre-push]
         files: ^(src/equinox/.*\.py|tests/.*\.py|pyproject\.toml)$
 
   # ── General file hygiene ────────────────────────────────────────────────────
