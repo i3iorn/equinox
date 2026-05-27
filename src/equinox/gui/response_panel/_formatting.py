@@ -25,11 +25,11 @@ logger = logging.getLogger(__name__)
 # Security: Use defusedxml to prevent XXE attacks (XML external entity injection)
 # If defusedxml is not available, fall back to standard library with warnings
 try:
-    import defusedxml.minidom as _SAFE_MINIDOM  # type: ignore
+    import defusedxml.minidom as _SAFE_MINIDOM
 
     _HAS_DEFUSEDXML = True
 except ImportError:
-    import xml.dom.minidom as _SAFE_MINIDOM  # type: ignore
+    import xml.dom.minidom as _SAFE_MINIDOM
 
     _HAS_DEFUSEDXML = False
     logger.warning(
@@ -80,7 +80,7 @@ def pretty_print_body(response: Response) -> str:
         return _pretty_print_xml(response.text)
 
     # Return raw text as fallback
-    return response.text
+    return str(response.text)
 
 
 def _pretty_print_xml(text: str) -> str:
@@ -97,7 +97,7 @@ def _pretty_print_xml(text: str) -> str:
     """
     try:
         parsed = _SAFE_MINIDOM.parseString(text.encode("utf-8"))
-        return parsed.toprettyxml(indent="  ")
+        return str(parsed.toprettyxml(indent="  "))
     except Exception as e:
         logger.debug("XML pretty-print failed: %s", e)
         return text
