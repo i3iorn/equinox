@@ -4,10 +4,11 @@ from typing import List, Optional
 
 from PyQt6.QtGui import QSyntaxHighlighter, QTextDocument
 
-from equinox.core.json_tools.lexer import JsonLexer
+from equinox.core.json_tools.lexer import JsonLexer, JsonLexerConfig
 from equinox.core.json_tools.tokens import Token
 
-from .formats import _VARIABLE_FMT, _VARIABLE_PATTERN, build_token_formats
+from ..base import _VARIABLE_FMT, _VARIABLE_PATTERN
+from .formats import build_token_formats
 
 
 def _is_key(tokens: List[Token], index: int) -> bool:
@@ -25,7 +26,7 @@ class JsonHighlighter(QSyntaxHighlighter):
 
     def __init__(self, document: QTextDocument) -> None:
         super().__init__(document)
-        self.lexer = JsonLexer(allow_comments=True, detect_timestamps=True)
+        self.lexer = JsonLexer(JsonLexerConfig(allow_comments=True, detect_timestamps=True))
         self.formats = build_token_formats()
 
     def highlightBlock(self, text: Optional[str]) -> None:  # noqa: N802
@@ -36,14 +37,14 @@ class JsonHighlighter(QSyntaxHighlighter):
         state = prev_state if prev_state != -1 else "NORMAL"
 
         # Lex this line
-        tokens, next_state = self.lexer.tokenize_line(text, str(state))
+        tokens, next_state = self.lexer.tokenize_line(text, state)
 
         # Apply syntax highlighting
         self._apply_token_formats(tokens)
         self._apply_variable_highlighting(text)
 
         # Store next state for the next line
-        self.setCurrentBlockState({"NORMAL": 0, "STRING": 1, "COMMENT_BLOCK": 2}[next_state])
+        self.setCurrentBlockState({"NORMAL": 0, "STRING": 1, "COMMENT_BLOCK": 2}[next_state.value])
 
     def _apply_token_formats(self, tokens: List[Token]) -> None:
         """Apply syntax formats for all tokens."""

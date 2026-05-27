@@ -51,6 +51,29 @@ class LexerState(str, Enum):
         except KeyError as exc:
             raise InvalidLexerStateError(f"Unrecognized lexer state: {state_str!r}") from exc
 
+    @classmethod
+    def from_int(cls, state_int: int) -> LexerState:
+        """Convert an integer to a LexerState enum member.
+
+        This is used for compatibility with QSyntaxHighlighter block states.
+
+        Args:
+            state_int: The integer representation of the state (0, 1, 2).
+        """
+        try:
+            if state_int == 0:
+                return cls.NORMAL
+            elif state_int == 1:
+                return cls.STRING
+            elif state_int == 2:
+                return cls.COMMENT_BLOCK
+            else:
+                raise InvalidLexerStateError(f"Unrecognized lexer state: {state_int}")
+        except ValueError as exc:
+            raise InvalidLexerStateError(
+                f"Unrecognized lexer state integer: {state_int!r}"
+            ) from exc
+
 
 @dataclass(frozen=True)
 class JsonLexerConfig:
@@ -156,7 +179,9 @@ class JsonLexer:
     # ------------------------------------------------------------
     # PUBLIC API #3: Single-line lexing (used by QSyntaxHighlighter)
     # ------------------------------------------------------------
-    def tokenize_line(self, text: str, state: LexerState | str) -> Tuple[List[Token], LexerState]:
+    def tokenize_line(
+        self, text: str, state: LexerState | str | int
+    ) -> Tuple[List[Token], LexerState]:
         """Tokenize a single line of text given an initial lexer state.
 
         Args:
@@ -207,7 +232,7 @@ class JsonLexer:
             raise TypeError("text must be a string")
 
     @staticmethod
-    def _normalize_state(state: LexerState | str) -> LexerState:
+    def _normalize_state(state: LexerState | str | int) -> LexerState:
         """Normalize a state value into a LexerState enum.
 
         Args:
@@ -224,6 +249,9 @@ class JsonLexer:
 
         if isinstance(state, str):
             return LexerState.from_string(state)
+
+        if isinstance(state, int):
+            return LexerState.from_int(state)
 
         raise InvalidLexerStateError(f"Invalid lexer state type: {type(state)!r}")
 

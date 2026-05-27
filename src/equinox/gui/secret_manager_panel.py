@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 import logging
 from pathlib import Path
 from typing import Any
@@ -21,6 +20,7 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
+from equinox.core.json_tools import safe_json_dumps
 from equinox.core.secret_managers import SecretManagerProfile, test_secret_manager_connection
 from equinox.gui.dialogs.secret_manager_config_dialog import SecretManagerConfigDialog
 from equinox.gui.secret_manager_feedback import (
@@ -77,63 +77,73 @@ class SecretManagerSettingsPanel(QWidget):
         """Initialize the UI."""
         layout = QVBoxLayout(self)
 
-        # Configuration selection
-        config_layout = QHBoxLayout()
-        config_layout.addWidget(QLabel("Saved Configuration:"))
+        self._build_config_selector(layout)
+        self._build_config_display(layout)
+        self._build_browser_section(layout)
+        self._build_action_buttons(layout)
+
+        layout.addStretch()
+
+    def _build_config_selector(self, parent_layout: QVBoxLayout) -> None:
+        """Build the configuration selection row."""
+        row = QHBoxLayout()
+        row.addWidget(QLabel("Saved Configuration:"))
 
         self.config_combo = QComboBox()
         self.config_combo.currentTextChanged.connect(self._on_config_selected)
-        config_layout.addWidget(self.config_combo)
+        row.addWidget(self.config_combo)
 
         new_btn = QPushButton("New")
         new_btn.clicked.connect(self._create_new_config)
-        config_layout.addWidget(new_btn)
+        row.addWidget(new_btn)
 
         delete_btn = QPushButton("Delete")
         delete_btn.clicked.connect(self._delete_current_config)
-        config_layout.addWidget(delete_btn)
+        row.addWidget(delete_btn)
 
-        layout.addLayout(config_layout)
+        parent_layout.addLayout(row)
 
-        # Configuration display
-        config_group = QGroupBox("Current Configuration")
-        config_form = QFormLayout(config_group)
+    def _build_config_display(self, parent_layout: QVBoxLayout) -> None:
+        """Build the configuration details display."""
+        group = QGroupBox("Current Configuration")
+        form = QFormLayout(group)
 
         self.config_display = QTextEdit()
         self.config_display.setReadOnly(True)
         self.config_display.setMaximumHeight(100)
-        config_form.addRow("Details:", self.config_display)
 
-        layout.addWidget(config_group)
+        form.addRow("Details:", self.config_display)
+        parent_layout.addWidget(group)
 
-        # Secret browser area
-        browser_group = QGroupBox("Secret Browser")
-        browser_layout = QVBoxLayout(browser_group)
+    def _build_browser_section(self, parent_layout: QVBoxLayout) -> None:
+        """Build the secret browser container."""
+        group = QGroupBox("Secret Browser")
+        layout = QVBoxLayout(group)
 
-        browser_info = QLabel(
+        info = QLabel(
             "Use the browser below to search for and retrieve secrets from the configured manager."
         )
-        browser_layout.addWidget(browser_info)
+        layout.addWidget(info)
 
         self.browser_placeholder = QLabel("No configuration selected")
         self.browser_placeholder.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        browser_layout.addWidget(self.browser_placeholder)
+        layout.addWidget(self.browser_placeholder)
 
-        layout.addWidget(browser_group)
+        parent_layout.addWidget(group)
 
-        # Status/buttons
-        button_layout = QHBoxLayout()
+    def _build_action_buttons(self, parent_layout: QVBoxLayout) -> None:
+        """Build the bottom action buttons."""
+        row = QHBoxLayout()
 
         test_btn = QPushButton("Test Connection")
         test_btn.clicked.connect(self._test_connection)
-        button_layout.addWidget(test_btn)
+        row.addWidget(test_btn)
 
-        clear_cache_btn = QPushButton("Clear Cache")
-        clear_cache_btn.clicked.connect(self._clear_cache)
-        button_layout.addWidget(clear_cache_btn)
+        clear_btn = QPushButton("Clear Cache")
+        clear_btn.clicked.connect(self._clear_cache)
+        row.addWidget(clear_btn)
 
-        layout.addLayout(button_layout)
-        layout.addStretch()
+        parent_layout.addLayout(row)
 
     def _load_configurations(self) -> None:
         """Load saved configurations from storage and populate the selector."""
@@ -263,7 +273,7 @@ Cache TTL: {profile.cache_ttl}s
 {warning_text}
 
 Configuration:
-{json.dumps(safe_config, indent=2)}
+{safe_json_dumps(safe_config, indent=2)}
 """
         self.config_display.setText(display_text)
 

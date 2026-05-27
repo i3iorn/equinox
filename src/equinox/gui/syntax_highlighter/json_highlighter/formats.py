@@ -4,10 +4,10 @@ from typing import Dict
 
 from PyQt6.QtGui import QTextCharFormat
 
-from equinox.gui.syntax_highlighter.base import _VARIABLE_FMT, _VARIABLE_PATTERN, _make_format
+from equinox.gui.syntax_highlighter.base import _make_format
 from equinox.gui.theme import Colors
 
-__all__ = ["build_token_formats", "_VARIABLE_FMT", "_VARIABLE_PATTERN"]
+__all__ = ["build_token_formats"]
 
 
 _FORMAT_MAP: dict[str, str] = {

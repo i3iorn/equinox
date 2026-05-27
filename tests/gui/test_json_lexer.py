@@ -1,10 +1,11 @@
-from equinox.gui.syntax_highlighter.json_highlighter import JsonLexer, State
+from equinox.core.json_tools import JsonLexerConfig
+from equinox.gui.syntax_highlighter.json_highlighter import JsonLexer, LexerState
 
 
 def test_timestamp_tokenized() -> None:
-    lexer = JsonLexer(enable_comments=False, enable_timestamps=True)
+    lexer = JsonLexer(JsonLexerConfig(allow_comments=False, detect_timestamps=True))
     line = '"2026-03-24T20:16:59.114824"\n'
-    tokens = list(lexer.tokenize_line(line, State.NORMAL))
+    tokens, normalized_state = list(lexer.tokenize_line(line, LexerState.NORMAL))
 
     # Expect a TIMESTAMP token spanning the quoted string
     types = [t.type for t in tokens]
