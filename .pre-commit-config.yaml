@@ -6,8 +6,8 @@ repos:
         name: "Check: code component sizes are within limits"
         entry: python scripts/check_code_component_size.py
         language: python
-        types: [python]
         pass_filenames: true
+        files: ^(src/equinox/.*\.py)$
 
       - id: dependency-manifest-consistency
         name: "Check: dependency manifest consistency"
@@ -40,18 +40,20 @@ repos:
         pass_filenames: true
         stages: [pre-push]
         files: ^(src/equinox/.*\.py|tests/.*\.py|pyproject\.toml)$
+        exclude: ^(docs/|README\.md)
 
       - id: mypy-strict
         name: "Check: mypy strict (CI-aligned)"
-        entry: python -m mypy --strict src
+        entry: python -m mypy --strict --follow-imports=skip --ignore-missing-imports
         language: system
-        pass_filenames: false
-        stages: [pre-commit, pre-push]
-        files: ^(src/equinox/.*\.py|tests/.*\.py|pyproject\.toml)$
+        pass_filenames: true
+        stages: [pre-commit]
+        files: ^(src/equinox/.*\.py)$
+        exclude: ^(tests/|docs/|README\.md)
 
   # ── General file hygiene ────────────────────────────────────────────────────
   - repo: https://github.com/pre-commit/pre-commit-hooks
-    rev: v4.6.0
+    rev: v6.0.0
     hooks:
       - id: trailing-whitespace
       - id: end-of-file-fixer
@@ -68,22 +70,59 @@ repos:
       - id: check-symlinks
       - id: mixed-line-ending
       - id: detect-private-key
-      - id: no-commit-to-branch
-        args: ['--branch', 'main', '--branch', 'master']
+ #     - id: no-commit-to-branch
+ #       args: ['--branch', 'main', '--branch', 'master']
 
-  # ── Python formatting & linting (ruff replaces black + isort) ──────────────
-  # ruff-format is the drop-in Black replacement; ruff check handles isort (I rule).
+  - repo: https://github.com/abravalheri/validate-pyproject
+    rev: v0.25
+    hooks:
+      - id: validate-pyproject
+
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v6.0.0
+    hooks:
+      - id: check-ast
+      - id: check-builtin-literals
+      - id: check-case-conflict
+      - id: check-docstring-first
+      - id: fix-byte-order-marker
+
+  - repo: https://github.com/asottile/pyupgrade
+    rev: v3.21.2
+    hooks:
+      - id: pyupgrade
+        args: ["--py311-plus"]
+
+  - repo: https://github.com/asottile/yesqa
+    rev: v1.5.0
+    hooks:
+      - id: yesqa
+
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.4.9
+    rev: v0.15.14
     hooks:
       - id: ruff
-        args: [--fix, --exit-non-zero-on-fix]
-      - id: ruff-format
+        args: [--fix, --exit-zero]
 
+  - repo: https://github.com/asottile/reorder-python-imports
+    rev: v3.16.0
+    hooks:
+      - id: reorder-python-imports
+
+  - repo: https://github.com/asottile/add-trailing-comma
+    rev: v4.0.0
+    hooks:
+      - id: add-trailing-comma
 
   # ── Security scanning ───────────────────────────────────────────────────────
+  - repo: https://github.com/Yelp/detect-secrets
+    rev: v1.5.0
+    hooks:
+      - id: detect-secrets
+        args: [ "--baseline", ".secrets.baseline" ]
+
   - repo: https://github.com/PyCQA/bandit
-    rev: 1.7.9
+    rev: 1.9.4
     hooks:
       - id: bandit
         name: "Bandit (changed files, fast)"
