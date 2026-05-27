@@ -7,12 +7,13 @@ triggering the GUI package chain (which would create a circular import).
 ``gui/request_panel/builder.py`` re-exports these symbols for backward
 compatibility with existing call sites.
 """
-
 from __future__ import annotations
 
 import json as _json
 import logging
-from typing import TYPE_CHECKING, Any, Callable, Optional, Union
+from collections.abc import Callable
+from typing import Any
+from typing import TYPE_CHECKING
 from uuid import uuid4
 
 from equinox.versioning import get_app_version
@@ -24,7 +25,7 @@ logger = logging.getLogger(__name__)
 
 # ── System default headers ────────────────────────────────────────────────────
 
-_SYSTEM_DEFAULTS: dict[str, Union[str, Callable[[], str]]] = {
+_SYSTEM_DEFAULTS: dict[str, str | Callable[[], str]] = {
     "X-Request-ID": lambda: str(uuid4()),
     "User-Agent": "Equinox API testing v" + get_app_version(),
     "Accept-Language": "en-US,en;q=0.5",
@@ -51,6 +52,16 @@ _CONTENT_TYPE_MAP: dict[str, str] = {
     "GraphQL": "application/json",
 }
 
+_CT_DETECT_ORDER: tuple[tuple[str, str], ...] = (
+    ("json", "raw (JSON)"),
+    ("xml", "raw (XML)"),
+    ("urlencoded", "form-urlencoded"),
+    ("text", "raw (text)"),
+)
+
+_FORM_INVALID_CHARS = frozenset(" \t\n\r/\\")
+_DEFAULT_BODY_TYPE = "raw (text)"
+
 # Security: maximum body size accepted (100 MB)
 _MAX_BODY_SIZE = 100_000_000
 
@@ -64,7 +75,7 @@ def assemble_body(
     gql_query: str,
     gql_vars: str,
     multipart_rows: list[dict[str, str]],
-) -> tuple[Optional[str], Optional[list[Any]]]:
+) -> tuple[str | None, list[Any] | None]:
     """Assemble request body from editor state.
 
     Returns ``(body, multipart_data)``.  Exactly one of the two will be set
@@ -127,3 +138,50 @@ def inject_content_type(
     if ct is None:
         return headers
     return {**headers, "Content-Type": ct}
+
+
+def detect_body_type(body: str, headers: dict[str, str] | None = None) -> str:
+    """Detect a request-body type from headers first, then content."""
+    content_type = next(
+        (value for key, value in (headers or {}).items() if key.lower() == "content-type"),
+        "",
+    ).lower()
+    if content_type:
+        for token, label in _CT_DETECT_ORDER:
+            if token in content_type:
+                return label
+    return _detect_body_type_from_content(body)
+
+
+def _detect_body_type_from_content(body: str) -> str:
+    """Detect a request-body type from body content heuristics."""
+    stripped = body.strip()
+    if stripped.startswith(("{", "[")) and _is_valid_json(stripped):
+        return "raw (JSON)"
+    if stripped.startswith("<") and ">" in stripped:
+        return "raw (XML)"
+    if _is_form_urlencoded(stripped):
+        return "form-urlencoded"
+    return _DEFAULT_BODY_TYPE
+
+
+def _is_valid_json(text: str) -> bool:
+    """Return ``True`` when *text* is valid JSON within the size limit."""
+    try:
+        if len(text) > _MAX_BODY_SIZE:
+            logger.debug("JSON text exceeds maximum size; skipping validation")
+            return False
+        _json.loads(text)
+        return True
+    except (ValueError, _json.JSONDecodeError):
+        return False
+
+
+def _is_form_urlencoded(text: str) -> bool:
+    """Return ``True`` when *text* looks like form-urlencoded data."""
+    if "=" not in text:
+        return False
+    key_part = text.split("=", 1)[0]
+    if not key_part:
+        return False
+    return not any(char in key_part for char in _FORM_INVALID_CHARS)
