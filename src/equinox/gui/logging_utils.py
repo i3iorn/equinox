@@ -26,3 +26,13 @@ def log_gui_event(
         "payload": payload or {},
     }
     logger.log(level, json.dumps(data, ensure_ascii=False), extra=data)
+
+
+def notify_log_panel(log_panel: Any, method: str, *args: Any) -> None:
+    """Invoke a logging-panel method safely when the panel is available."""
+    if log_panel is None:
+        return
+    try:
+        getattr(log_panel, method)(*args)
+    except Exception:
+        logger.debug("Failed to call log_panel.%s", method, exc_info=True)
