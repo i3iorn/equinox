@@ -8,6 +8,7 @@ from typing import cast
 
 from equinox.core.exceptions import ValidationError
 from equinox.core.validation import Validator
+from equinox.security import redact_url
 from PyQt6.QtCore import QObject
 from PyQt6.QtCore import QTimer
 from PyQt6.QtWidgets import QComboBox
@@ -96,7 +97,7 @@ class _RequestValidationMixin:
             if hasattr(self, "_set_url_fix_suggestion"):
                 self._set_url_fix_suggestion(None)
             self._url_valid = True
-            logger.debug("URL validation passed: %s", url_text[:50])
+            logger.debug("URL validation passed: %s", redact_url(url_text)[:50])
         except ValidationError as exc:
             err_msg = str(exc)
             self._set_field_valid(self.url_input, "error", err_msg)
