@@ -1,11 +1,13 @@
 """QMessageBox subclass with a built-in *Copy* button."""
-
 from __future__ import annotations
 
 import logging
 
 from PyQt6.QtCore import QTimer
-from PyQt6.QtWidgets import QApplication, QMessageBox, QPushButton, QWidget
+from PyQt6.QtWidgets import QApplication
+from PyQt6.QtWidgets import QMessageBox
+from PyQt6.QtWidgets import QPushButton
+from PyQt6.QtWidgets import QWidget
 
 logger = logging.getLogger(__name__)
 
@@ -43,7 +45,7 @@ class CopyableMessageBox(QMessageBox):
         # not "fall back to the visible message".
         self._copy_text = copy_text if copy_text is not None else text
         self._copy_btn: QPushButton = self.addButton(
-            self._COPY_LABEL, QMessageBox.ButtonRole.ActionRole
+            self._COPY_LABEL, QMessageBox.ButtonRole.ActionRole,
         )  # type: ignore[assignment]
 
         # Single reusable timer so repeated Copy clicks just restart the countdown.
@@ -99,34 +101,34 @@ class CopyableMessageBox(QMessageBox):
     # ── Convenience class methods (mirror QMessageBox API) ────────────
 
     @classmethod
-    def critical(
+    def critical( # type: ignore[override]
         cls,
         parent: QWidget | None,
         title: str,
         text: str,
         copy_text: str | None = None,
-    ) -> int:  # type: ignore[override]
+    ) -> int:
         """Show a *Critical* dialog with OK + Copy buttons."""
         return cls._show(QMessageBox.Icon.Critical, parent, title, text, copy_text)
 
     @classmethod
-    def warning(
+    def warning( # type: ignore[override]
         cls,
         parent: QWidget | None,
         title: str,
         text: str,
         copy_text: str | None = None,
-    ) -> int:  # type: ignore[override]
+    ) -> int:
         """Show a *Warning* dialog with OK + Copy buttons."""
         return cls._show(QMessageBox.Icon.Warning, parent, title, text, copy_text)
 
     @classmethod
-    def information(
+    def information( # type: ignore[override]
         cls,
         parent: QWidget | None,
         title: str,
         text: str,
         copy_text: str | None = None,
-    ) -> int:  # type: ignore[override]
+    ) -> int:
         """Show an *Information* dialog with OK + Copy buttons."""
         return cls._show(QMessageBox.Icon.Information, parent, title, text, copy_text)
