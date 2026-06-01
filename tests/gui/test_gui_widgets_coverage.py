@@ -1,8 +1,9 @@
 """Coverage-boosting tests for GUI widgets."""
-
-from PyQt6.QtCore import QCoreApplication, Qt
+from PyQt6.QtCore import QCoreApplication
+from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QKeyEvent
-from PyQt6.QtWidgets import QApplication, QTextEdit
+from PyQt6.QtWidgets import QApplication
+from PyQt6.QtWidgets import QTextEdit
 
 _APP = QApplication.instance() or QApplication([])
 
@@ -278,7 +279,7 @@ class TestJsonBodyEditor:
         ed = JsonBodyEditor()
         ed.setPlainText("")
         ev = QKeyEvent(
-            QKeyEvent.Type.KeyPress, Qt.Key.Key_BraceLeft, Qt.KeyboardModifier.NoModifier, "{"
+            QKeyEvent.Type.KeyPress, Qt.Key.Key_BraceLeft, Qt.KeyboardModifier.NoModifier, "{",
         )
         ed.keyPressEvent(ev)
         text = ed.toPlainText()
@@ -313,7 +314,7 @@ class TestJsonBodyEditor:
 
 class TestSearchBar:
     def _make_bar(self):
-        from equinox.gui.response_panel.search_bar import SearchBar
+        from equinox.gui.response_panel.search import SearchBar
 
         target = QTextEdit()
         target.setPlainText("Hello World\nThis is a test\nHello again")
@@ -429,7 +430,7 @@ class TestSearchBar:
         assert bar._json_obj is None
 
     def test_jsonpath_search_with_json(self):
-        from equinox.gui.response_panel.search_bar import SearchBar
+        from equinox.gui.response_panel.search import SearchBar
 
         target = QTextEdit()
         target.setPlainText('{"users": [{"name": "Alice"}]}')
