@@ -8,7 +8,7 @@ from pathlib import Path
 DEFAULT_LIMITS = {
     "module": 1000,
     "function": 60,
-    "class": 400,
+    "class": 500,
 }
 
 # ------------------------------------------------------------
