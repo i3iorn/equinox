@@ -9,7 +9,6 @@ testability, and separation of concerns. Handles:
 
 Security: Uses defusedxml when available to prevent XXE attacks.
 """
-
 from __future__ import annotations
 
 import http.cookies as _hc
@@ -17,6 +16,7 @@ import json
 import logging
 from collections.abc import Iterable
 from typing import Any
+from typing import cast
 
 from equinox.core.request import Response
 
@@ -25,16 +25,16 @@ logger = logging.getLogger(__name__)
 # Security: Use defusedxml to prevent XXE attacks (XML external entity injection)
 # If defusedxml is not available, fall back to standard library with warnings
 try:
-    import defusedxml.minidom as _SAFE_MINIDOM  # type: ignore
+    import defusedxml.minidom as _SAFE_MINIDOM
 
     _HAS_DEFUSEDXML = True
 except ImportError:
-    import xml.dom.minidom as _SAFE_MINIDOM  # type: ignore
+    import xml.dom.minidom as _SAFE_MINIDOM
 
     _HAS_DEFUSEDXML = False
     logger.warning(
         "defusedxml not available; XML parsing will use standard library. "
-        "For production use, install defusedxml: pip install defusedxml"
+        "For production use, install defusedxml: pip install defusedxml",
     )
 
 
@@ -80,7 +80,7 @@ def pretty_print_body(response: Response) -> str:
         return _pretty_print_xml(response.text)
 
     # Return raw text as fallback
-    return response.text
+    return str(response.text)
 
 
 def _pretty_print_xml(text: str) -> str:
@@ -97,7 +97,7 @@ def _pretty_print_xml(text: str) -> str:
     """
     try:
         parsed = _SAFE_MINIDOM.parseString(text.encode("utf-8"))
-        return parsed.toprettyxml(indent="  ")
+        return cast(str, parsed.toprettyxml(indent="  "))
     except Exception as e:
         logger.debug("XML pretty-print failed: %s", e)
         return text
