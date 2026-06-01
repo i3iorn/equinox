@@ -5,9 +5,9 @@ import logging
 from typing import Any
 from typing import TYPE_CHECKING
 
+from equinox.application.requests._assembly import assemble_body
 from equinox.core.request import Request
 from equinox.gui.request_panel._constants import STATUS_DURATION_LONG
-from equinox.gui.request_panel.builder import assemble_body
 
 logger = logging.getLogger(__name__)
 
