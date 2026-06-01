@@ -1,29 +1,35 @@
 """Menu bar, command palette, and dialogs mixin for MainWindow."""
-
 # mypy: disable-error-code=attr-defined
-
 from __future__ import annotations
 
 import logging
 import os
+from collections.abc import Callable
+from typing import cast
+from typing import TYPE_CHECKING
+from typing import TypedDict
 
-from PyQt6.QtCore import QTimer
-from PyQt6.QtGui import QAction, QKeySequence
-from PyQt6.QtWidgets import (
-    QDialog,
-    QDialogButtonBox,
-    QHeaderView,
-    QLabel,
-    QMenu,
-    QMessageBox,
-    QPlainTextEdit,
-    QTableWidget,
-    QTableWidgetItem,
-    QVBoxLayout,
-)
-
-from equinox.gui.log_file_actions import show_log_file_open_result, try_open_current_log_file
+from equinox.gui.log_file_actions import show_log_file_open_result
+from equinox.gui.log_file_actions import try_open_current_log_file
 from equinox.gui.logging_utils import log_gui_event
+from PyQt6.QtCore import QTimer
+from PyQt6.QtGui import QAction
+from PyQt6.QtGui import QKeySequence
+from PyQt6.QtWidgets import QDialog
+from PyQt6.QtWidgets import QDialogButtonBox
+from PyQt6.QtWidgets import QHeaderView
+from PyQt6.QtWidgets import QLabel
+from PyQt6.QtWidgets import QMenu
+from PyQt6.QtWidgets import QMenuBar
+from PyQt6.QtWidgets import QMessageBox
+from PyQt6.QtWidgets import QPlainTextEdit
+from PyQt6.QtWidgets import QTableWidget
+from PyQt6.QtWidgets import QTableWidgetItem
+from PyQt6.QtWidgets import QVBoxLayout
+from PyQt6.QtWidgets import QWidget
+
+if TYPE_CHECKING:
+    from equinox.gui.ui_usage_tracker import UIUsageTracker
 
 logger = logging.getLogger(__name__)
 
@@ -31,7 +37,7 @@ _KEY_INTEL_DISABLED = "intelligence/disabled_analyzers"
 _KEY_SETUP_DONE = "onboarding/setup_wizard_completed"
 
 # Keyboard shortcut table
-_KEYBOARD_SHORTCUTS: list = [
+_KEYBOARD_SHORTCUTS: list[tuple[str, str]] = [
     ("Ctrl+N", "New request (clear editor)"),
     ("Ctrl+L", "Focus URL field"),
     ("Ctrl+Return", "Send request"),
@@ -54,8 +60,28 @@ _KEYBOARD_SHORTCUTS: list = [
 ]
 
 
-class _MenuMixin:
+class _CommandPaletteItem(TypedDict):
+    """Typed payload for command-palette entries."""
+
+    id: str
+    label: str
+    callback: Callable[[], None]
+    shortcut: str
+
+
+def _require_menu(menu: QMenu | None, label: str) -> QMenu:
+    """Return a submenu and fail fast when Qt returns None."""
+    if menu is None:
+        raise RuntimeError(f"Failed to create menu: {label}")
+    return menu
+
+
+class _MenuMixin(QWidget):
     """Menu bar construction, command palette, and top-level action handlers."""
+
+    def _as_qwidget(self) -> QWidget:
+        """Return this mixin host as a QWidget for Qt parent arguments."""
+        return cast(QWidget, self)
 
     def _create_menu_bar(self) -> None:
         """Initialize the application menu bar."""
@@ -90,8 +116,9 @@ class _MenuMixin:
             ("Insomnia Collection…", self._import_insomnia),
         ]:
             act = QAction(label, self)
-            act.triggered.connect(slot)
-            import_menu.addAction(act)
+            if act is not None and import_menu is not None:
+                act.triggered.connect(slot)
+                import_menu.addAction(act)
 
         menu.addSeparator()
 
@@ -104,14 +131,15 @@ class _MenuMixin:
 
     def _build_view_menu(self) -> QMenu:
         """Create the View menu with zoom, theme, palette, and preferences."""
-        menu = QMenu("&View", self)
+        owner = self._as_qwidget()
+        menu = QMenu("&View", owner)
 
         for label, shortcut, slot in [
             ("Zoom &In", "Ctrl+=", self._zoom_in),
             ("Zoom &Out", "Ctrl+-", self._zoom_out),
             ("&Reset Zoom", "Ctrl+0", self._zoom_reset),
         ]:
-            act = QAction(label, self)
+            act = QAction(label, owner)
             act.setShortcut(QKeySequence(shortcut))
             act.triggered.connect(slot)
             menu.addAction(act)
@@ -138,12 +166,13 @@ class _MenuMixin:
         """Create the theme selection submenu."""
         from equinox.gui.theme import THEME_LABELS, THEME_MODES, get_theme_mode
 
-        menu = QMenu("&Theme", self)
+        owner = self._as_qwidget()
+        menu = QMenu("&Theme", owner)
         self._theme_actions = {}
 
         current = get_theme_mode()
         for mode in THEME_MODES:
-            act = QAction(THEME_LABELS[mode], self)
+            act = QAction(str(THEME_LABELS[mode]), owner)
             act.setCheckable(True)
             act.setChecked(mode == current)
             act.triggered.connect(lambda checked, m=mode: self._set_theme(m))
@@ -158,14 +187,14 @@ class _MenuMixin:
 
         new_col = QAction("New &Collection", self)
         new_col.triggered.connect(
-            lambda: self.collections_panel.create_collection() if self.collections_panel else None
+            lambda: self.collections_panel.create_collection() if self.collections_panel else None,
         )
         menu.addAction(new_col)
 
         refresh_act = QAction("&Refresh", self)
         refresh_act.setShortcut("F5")
         refresh_act.triggered.connect(
-            lambda: self.collections_panel.refresh() if self.collections_panel else None
+            lambda: self.collections_panel.refresh() if self.collections_panel else None,
         )
         menu.addAction(refresh_act)
 
@@ -178,8 +207,9 @@ class _MenuMixin:
             ("Insomnia Format…", "insomnia"),
         ]:
             act = QAction(label, self)
-            act.triggered.connect(lambda checked, f=fmt: self._export_collection(f))
-            export_menu.addAction(act)
+            if act is not None and export_menu is not None:
+                act.triggered.connect(lambda checked, f=fmt: self._export_collection(f))
+                export_menu.addAction(act)
 
         return menu
 
@@ -248,7 +278,7 @@ class _MenuMixin:
         if hasattr(self, "_menu_title_label"):
             self._menu_title_label.setText(title)
 
-    def _add_window_controls_to_menu_bar(self, menubar) -> None:
+    def _add_window_controls_to_menu_bar(self, menubar: QMenuBar) -> None:
         """Attach frameless-window controls to the right side of the menu bar."""
         from PyQt6.QtCore import Qt
         from PyQt6.QtWidgets import QHBoxLayout, QToolButton, QWidget
@@ -265,8 +295,9 @@ class _MenuMixin:
         title_layout.addWidget(self._menu_title_label)
 
         menubar.setCornerWidget(title_container, Qt.Corner.TopLeftCorner)
-        title_container.installEventFilter(self)
-        self._menu_title_label.installEventFilter(self)
+        owner = self._as_qwidget()
+        title_container.installEventFilter(owner)
+        self._menu_title_label.installEventFilter(owner)
         self._drag_handles.update({menubar, title_container, self._menu_title_label})
 
         container = QWidget(menubar)
@@ -298,7 +329,7 @@ class _MenuMixin:
     def _open_preferences(self) -> None:
         from equinox.gui.dialogs.preferences_dialog import PreferencesDialog
 
-        PreferencesDialog(self).exec()
+        PreferencesDialog(self._as_qwidget()).exec()
         self._sync_theme_checks()
 
     def _maybe_run_setup_wizard(self) -> None:
@@ -313,7 +344,7 @@ class _MenuMixin:
         """Open setup wizard and apply selected onboarding choices."""
         from equinox.gui.dialogs.setup_wizard_dialog import SetupWizardDialog
 
-        dlg = SetupWizardDialog(self)
+        dlg = SetupWizardDialog(self._as_qwidget())
         if dlg.exec() != dlg.DialogCode.Accepted:
             if mark_complete_on_cancel:
                 self._settings.setValue(_KEY_SETUP_DONE, True)
@@ -332,86 +363,92 @@ class _MenuMixin:
         if data.get("open_saved_credentials"):
             QTimer.singleShot(0, self._manage_oauth_clients)
 
-    def _command_palette_items(self) -> list:
+    def _command_palette_items(self) -> list[_CommandPaletteItem]:
         """Return command palette entries with stable IDs and callbacks."""
-        commands = [
-            {
-                "id": "new_request",
-                "label": "New Request",
-                "shortcut": "Ctrl+N",
-                "callback": self._new_request,
-            },
-            {
-                "id": "send_request",
-                "label": "Send Request",
-                "shortcut": "Ctrl+Enter",
-                "callback": self.request_panel.send,
-            },
-            {
-                "id": "save_request",
-                "label": "Save Request",
-                "shortcut": "Ctrl+S",
-                "callback": self.request_panel.save_current_request,
-            },
-            {
-                "id": "focus_url",
-                "label": "Focus URL",
-                "shortcut": "Ctrl+L",
-                "callback": self.request_panel._focus_url_input,
-            },
-            {"id": "import_postman", "label": "Import Postman", "callback": self._import_postman},
-            {"id": "import_openapi", "label": "Import OpenAPI", "callback": self._import_openapi},
-            {"id": "import_har", "label": "Import HAR", "callback": self._import_har},
-            {
-                "id": "import_insomnia",
-                "label": "Import Insomnia",
-                "callback": self._import_insomnia,
-            },
-            {
-                "id": "export_postman",
-                "label": "Export Collection as Postman",
-                "callback": lambda: self._export_collection("postman"),
-            },
-            {
-                "id": "export_openapi",
-                "label": "Export Collection as OpenAPI",
-                "callback": lambda: self._export_collection("openapi"),
-            },
-            {
-                "id": "export_insomnia",
-                "label": "Export Collection as Insomnia",
-                "callback": lambda: self._export_collection("insomnia"),
-            },
-            {
-                "id": "manage_env",
-                "label": "Manage Environments",
-                "callback": self._manage_environments,
-            },
-            {
-                "id": "preferences",
-                "label": "Open Preferences",
-                "shortcut": "Ctrl+,",
-                "callback": self._open_preferences,
-            },
-            {"id": "setup_wizard", "label": "Run Setup Wizard", "callback": self._run_setup_wizard},
-        ]
+        commands = self._build_base_commands()
+
         tracker = getattr(self, "_ui_usage_tracker", None)
         if tracker is None:
             return commands
 
-        ranked: list = []
-        for idx, cmd in enumerate(commands):
+        ranked = self._rank_commands(commands, tracker)
+        return [item for _, _, item in ranked]
+
+    def _build_base_commands(self) -> list[_CommandPaletteItem]:
+        return [
+            self._cmd("new_request", "New Request", "Ctrl+N", self._new_request),
+            self._cmd("send_request", "Send Request", "Ctrl+Enter", self.request_panel.send),
+            self._cmd(
+                "save_request", "Save Request", "Ctrl+S", self.request_panel.save_current_request,
+            ),
+            self._cmd("focus_url", "Focus URL", "Ctrl+L", self.request_panel._focus_url_input),
+            self._cmd("import_postman", "Import Postman", "", self._import_postman),
+            self._cmd("import_openapi", "Import OpenAPI", "", self._import_openapi),
+            self._cmd("import_har", "Import HAR", "", self._import_har),
+            self._cmd("import_insomnia", "Import Insomnia", "", self._import_insomnia),
+            self._cmd(
+                "export_postman",
+                "Export Collection as Postman",
+                "",
+                lambda: self._export_collection("postman"),
+            ),
+            self._cmd(
+                "export_openapi",
+                "Export Collection as OpenAPI",
+                "",
+                lambda: self._export_collection("openapi"),
+            ),
+            self._cmd(
+                "export_insomnia",
+                "Export Collection as Insomnia",
+                "",
+                lambda: self._export_collection("insomnia"),
+            ),
+            self._cmd("manage_env", "Manage Environments", "", self._manage_environments),
+            self._cmd("preferences", "Open Preferences", "Ctrl+,", self._open_preferences),
+            self._cmd("setup_wizard", "Run Setup Wizard", "", self._run_setup_wizard),
+        ]
+
+    def _cmd(
+        self,
+        cmd_id: str,
+        label: str,
+        shortcut: str,
+        callback: Callable[[], None],
+    ) -> _CommandPaletteItem:
+        return {
+            "id": cmd_id,
+            "label": label,
+            "shortcut": shortcut,
+            "callback": callback,
+        }
+
+    def _rank_commands(
+        self,
+        commands: list[_CommandPaletteItem],
+        tracker: UIUsageTracker,
+    ) -> list[tuple[int, int, _CommandPaletteItem]]:
+        ranked: list[tuple[int, int, _CommandPaletteItem]] = []
+
+        for index, cmd in enumerate(commands):
             cmd_id = str(cmd.get("id") or "")
-            score = 0
-            if cmd_id:
-                score = tracker.get_count(
-                    category="command",
-                    context="command_palette",
-                    element_id=f"command.{cmd_id}",
-                )
-            ranked.append((score, idx, cmd))
+            score = self._lookup_usage_score(tracker, cmd_id)
+            ranked.append((score, index, cmd))
+
         ranked.sort(key=lambda item: (-item[0], item[1]))
-        return [item[2] for item in ranked]
+        return ranked
+
+    def _lookup_usage_score(self, tracker: UIUsageTracker, cmd_id: str) -> int:
+        if not cmd_id:
+            return 0
+
+        return cast(
+            int, tracker.get_count(
+                category="command",
+                context="command_palette",
+                element_id=f"command.{cmd_id}",
+            ),
+        )
 
     def _open_command_palette(self) -> None:
         """Open searchable command palette and execute selected command."""
@@ -422,7 +459,7 @@ class _MenuMixin:
             {"id": c["id"], "label": c["label"], "shortcut": c.get("shortcut", "")}
             for c in commands
         ]
-        dlg = CommandPaletteDialog(view_items, self)
+        dlg = CommandPaletteDialog(view_items, self._as_qwidget())
         if dlg.exec() != dlg.DialogCode.Accepted:
             return
 
@@ -445,20 +482,26 @@ class _MenuMixin:
                     )
         except Exception:
             logger.error("Command palette command failed: %s", selected_id, exc_info=True)
-            QMessageBox.warning(self, "Command Failed", f"Could not execute command: {selected_id}")
+            QMessageBox.warning(
+                self._as_qwidget(), "Command Failed", f"Could not execute command: {selected_id}",
+            )
 
     def _show_shortcuts_dialog(self) -> None:
         """Display a read-only table of all keyboard shortcuts."""
-        dialog = QDialog(self)
+        dialog = QDialog(self._as_qwidget())
         dialog.setWindowTitle("Keyboard Shortcuts")
         dialog.setMinimumSize(480, 400)
         dlg_layout = QVBoxLayout(dialog)
 
         table = QTableWidget(len(_KEYBOARD_SHORTCUTS), 2)
         table.setHorizontalHeaderLabels(["Shortcut", "Action"])
-        table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
-        table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
-        table.verticalHeader().setVisible(False)
+        h_header = table.horizontalHeader()
+        if h_header is not None:
+            h_header.setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
+            h_header.setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
+        v_header = table.verticalHeader()
+        if v_header is not None:
+            v_header.setVisible(False)
         table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
         table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
         table.setAlternatingRowColors(True)
@@ -477,7 +520,7 @@ class _MenuMixin:
         from equinox import __version__
 
         QMessageBox.about(
-            self,
+            self._as_qwidget(),
             "About Equinox",
             f"<h2>Equinox v{__version__}</h2>"
             "<p>A local-first API testing tool</p>"
@@ -495,10 +538,12 @@ class _MenuMixin:
     def _show_ui_usage_snapshot(self) -> None:
         tracker = getattr(self, "_ui_usage_tracker", None)
         if tracker is None:
-            QMessageBox.information(self, "UI Usage", "Usage tracking is not available yet.")
+            QMessageBox.information(
+                self._as_qwidget(), "UI Usage", "Usage tracking is not available yet.",
+            )
             return
 
-        dialog = QDialog(self)
+        dialog = QDialog(self._as_qwidget())
         dialog.setWindowTitle("UI Usage Snapshot")
         dialog.setMinimumSize(680, 420)
         layout = QVBoxLayout(dialog)
@@ -519,7 +564,7 @@ class _MenuMixin:
         if tracker is None:
             return
         answer = QMessageBox.question(
-            self,
+            self._as_qwidget(),
             "Reset UI Usage Data",
             "Clear all tracked UI usage counters for this profile?",
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
