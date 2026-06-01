@@ -24,12 +24,14 @@ from PyQt6.QtWidgets import QToolButton
 from PyQt6.QtWidgets import QVBoxLayout
 from PyQt6.QtWidgets import QWidget
 
+from .constants import ASYNC_MIN_DOC_CHARS
 from .constants import DEBOUNCE_INTERVAL_MS
 from .constants import ERROR_NO_JSON
 from .constants import PLACEHOLDER_TEXT_FIND
 from .constants import PLACEHOLDER_TEXT_JSONPATH
 from .constants import PLACEHOLDER_TEXT_REGEX
 from .constants import SEARCH_HIGHLIGHT_RADIUS
+from .constants import STATUS_CANCELLED
 from .core import SearchEngine
 from .core import SearchJobConfig
 from .core import SearchMode
@@ -241,10 +243,22 @@ class SearchBar(QWidget):
         runnable = _SearchRunnable(cfg, self._engine)
         runnable.signals.result.connect(self._on_result)
 
-        if len(cfg.doc_text) >= 20_000:
+        if len(cfg.doc_text) >= ASYNC_MIN_DOC_CHARS:
             self._thread_pool.start(runnable) # type: ignore[union-attr]
         else:
             runnable.run()
+
+    def _start_search_job(self, text: str) -> None:
+        """Backward-compatible search entrypoint used by legacy callers/tests."""
+        self._start_search(text)
+
+    def _on_cancel_search(self) -> None:
+        """Cancel pending search work and reset the visible search state."""
+        self._debounce_timer.stop()
+        self._job_counter += 1
+        self._current_job_id = self._job_counter
+        self._clear_state()
+        self._match_label.setText(STATUS_CANCELLED)
 
     def _on_result(self, job_id: int, result) -> None: # type: ignore[no-untyped-def]
         if job_id != self._current_job_id:
