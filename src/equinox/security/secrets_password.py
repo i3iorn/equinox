@@ -5,19 +5,18 @@ at rest, replacing the previous file-based Fernet key approach when a master
 password is configured. It also provides a lightweight rotation helper to
 re-encrypt plaintext secrets with a new master password.
 """
-
 from __future__ import annotations
 
 import base64
 import hashlib
 import logging
 import os
+from collections.abc import Callable
 from getpass import getpass
 from pathlib import Path
-from typing import Callable, cast
+from sqlite3 import Connection
 
 from cryptography.fernet import Fernet
-
 from equinox.core.config.flags import is_strict_secret_rotation_enabled
 
 _SALT_FILE = Path.home() / ".equinox" / "salt.bin"
@@ -159,87 +158,117 @@ def ensure_master_password_initialized() -> Fernet | None:
             )
             if is_strict_secret_rotation_enabled():
                 raise RuntimeError(
-                    "Startup secret rotation failed while strict mode is enabled"
+                    "Startup secret rotation failed while strict mode is enabled",
                 ) from exc
     return f
 
 
 def rotate_all_secrets(db_path: str, new_password: str | None = None) -> None:
-    """Rotate all plaintext secrets to be encrypted with a new master password.
-
-    This function will take all known plaintext secret fields and re-encrypt
-    them using the Fernet derived from *new_password*. If the provided value
-    already starts with the encryption prefix (enc:), it will be skipped.
-
-    Tables touched (best-effort):
-      - oauth_clients.client_secret
-      - saved_credentials.config
-      - collections.auth_data (and auth_type)
-
-    Note: This only encrypts plaintext values; previously encrypted values using an
-    older master password are not decrypted (to avoid attempting to derive the
-    old key without access to it). They will be left as-is until a separate
-    decryption/rotation path is provided.
-    """
+    """Rotate all plaintext secrets to be encrypted with a new master password."""
     fernet = get_fernet_for_password(new_password)
     if not fernet:
-        # No master password configured; nothing to rotate
         return
 
-    import sqlite3
-
+    conn = _open_sqlite_connection(db_path)
     try:
-        conn = sqlite3.connect(str(db_path))
-        conn.row_factory = sqlite3.Row
-        cur = conn.cursor()
-        cur.execute("BEGIN")
+        _begin_transaction(conn)
+        encrypt = _build_encrypt_fn(fernet)
 
-        def enc(value: str | None) -> str | None:
-            if value is None:
-                return None
-            if isinstance(value, str) and value.startswith(_ENC_PREFIX):
-                return value
-            token = cast(bytes, fernet.encrypt(value.encode("utf-8")))
-            return _ENC_PREFIX + token.decode("ascii")
+        _rotate_oauth_client_secrets(conn, encrypt)
+        _rotate_saved_credentials(conn, encrypt)
+        _rotate_collection_auth(conn, encrypt)
 
-        # Rotate oauth_clients.client_secret
-        for row in conn.execute("SELECT id, client_secret FROM oauth_clients"):
-            uid, secret = row[0], row[1]
-            if secret is None:
-                continue
-            new_secret = enc(secret)
-            if new_secret != secret:
-                conn.execute(
-                    "UPDATE oauth_clients SET client_secret=? WHERE id=?", (new_secret, uid)
-                )
-
-        # Rotate saved_credentials.config
-        for row in conn.execute("SELECT id, config FROM saved_credentials"):
-            sid, cfg = row[0], row[1]
-            if cfg is None:
-                continue
-            new_cfg = enc(cfg)
-            if new_cfg != cfg:
-                conn.execute("UPDATE saved_credentials SET config=? WHERE id=?", (new_cfg, sid))
-
-        # Rotate collection-level auth (auth_type + auth_data)
-        for row in conn.execute("SELECT id, auth_type, auth_data FROM collections"):
-            cid, a_type, a_data = row[0], row[1], row[2]
-            if not a_type or a_data is None:
-                continue
-            new_data = enc(a_data)
-            if new_data != a_data:
-                conn.execute("UPDATE collections SET auth_data=? WHERE id=?", (new_data, cid))
-
-        conn.execute("COMMIT")
+        _commit_transaction(conn)
     except Exception:
-        try:
-            conn.execute("ROLLBACK")
-        except Exception:
-            pass
+        _rollback_safely(conn)
         raise
     finally:
-        try:
-            conn.close()
-        except Exception:
-            pass
+        _close_safely(conn)
+
+
+def _open_sqlite_connection(db_path: str) -> Connection:
+    import sqlite3
+
+    conn = sqlite3.connect(str(db_path))
+    conn.row_factory = sqlite3.Row
+    return conn
+
+
+def _begin_transaction(conn: Connection) -> None:
+    conn.execute("BEGIN")
+
+
+def _commit_transaction(conn: Connection) -> None:
+    conn.execute("COMMIT")
+
+
+def _rollback_safely(conn: Connection) -> None:
+    try:
+        conn.execute("ROLLBACK")
+    except Exception:
+        pass
+
+
+def _close_safely(conn: Connection) -> None:
+    try:
+        conn.close()
+    except Exception:
+        pass
+
+
+def _build_encrypt_fn(fernet: Fernet) -> Callable[[str | None], str | None]:
+    def encrypt(value: str | None) -> str | None:
+        if value is None:
+            return None
+        if isinstance(value, str) and value.startswith(_ENC_PREFIX):
+            return value
+
+        token = fernet.encrypt(value.encode("utf-8"))
+        if not isinstance(token, bytes):
+            raise TypeError("Fernet.encrypt returned non-bytes token")
+
+        return _ENC_PREFIX + token.decode("ascii")
+
+    return encrypt
+
+
+def _rotate_oauth_client_secrets(conn: Connection, encrypt: Callable[[str | None], str | None]) -> None:
+    for row in conn.execute("SELECT id, client_secret FROM oauth_clients"):
+        uid, secret = row["id"], row["client_secret"]
+        if secret is None:
+            continue
+
+        new_secret = encrypt(secret)
+        if new_secret != secret:
+            conn.execute(
+                "UPDATE oauth_clients SET client_secret=? WHERE id=?",
+                (new_secret, uid),
+            )
+
+
+def _rotate_saved_credentials(conn: Connection, encrypt: Callable[[str | None], str | None]) -> None:
+    for row in conn.execute("SELECT id, config FROM saved_credentials"):
+        sid, cfg = row["id"], row["config"]
+        if cfg is None:
+            continue
+
+        new_cfg = encrypt(cfg)
+        if new_cfg != cfg:
+            conn.execute(
+                "UPDATE saved_credentials SET config=? WHERE id=?",
+                (new_cfg, sid),
+            )
+
+
+def _rotate_collection_auth(conn: Connection, encrypt: Callable[[str | None], str | None]) -> None:
+    for row in conn.execute("SELECT id, auth_type, auth_data FROM collections"):
+        cid, a_type, a_data = row["id"], row["auth_type"], row["auth_data"]
+        if not a_type or a_data is None:
+            continue
+
+        new_data = encrypt(a_data)
+        if new_data != a_data:
+            conn.execute(
+                "UPDATE collections SET auth_data=? WHERE id=?",
+                (new_data, cid),
+            )
