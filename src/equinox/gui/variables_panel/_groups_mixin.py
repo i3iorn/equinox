@@ -1,117 +1,163 @@
 """Variable groups and group-scoped variables section for VariablesPanel."""
-
 from __future__ import annotations
 
 import logging
 from typing import Any
-
-from PyQt6.QtCore import Qt
-from PyQt6.QtWidgets import (
-    QDialog,
-    QHBoxLayout,
-    QHeaderView,
-    QInputDialog,
-    QLabel,
-    QListWidget,
-    QListWidgetItem,
-    QMenu,
-    QMessageBox,
-    QPushButton,
-    QSplitter,
-    QTableWidget,
-    QTableWidgetItem,
-    QVBoxLayout,
-    QWidget,
-)
+from typing import cast
+from typing import TYPE_CHECKING
 
 from equinox.core.interpolation import VariableInterpolator
+from PyQt6.QtCore import QSettings
+from PyQt6.QtCore import Qt
+from PyQt6.QtWidgets import QDialog
+from PyQt6.QtWidgets import QHBoxLayout
+from PyQt6.QtWidgets import QHeaderView
+from PyQt6.QtWidgets import QInputDialog
+from PyQt6.QtWidgets import QLabel
+from PyQt6.QtWidgets import QListWidget
+from PyQt6.QtWidgets import QListWidgetItem
+from PyQt6.QtWidgets import QMenu
+from PyQt6.QtWidgets import QMessageBox
+from PyQt6.QtWidgets import QPushButton
+from PyQt6.QtWidgets import QSplitter
+from PyQt6.QtWidgets import QTableWidget
+from PyQt6.QtWidgets import QTableWidgetItem
+from PyQt6.QtWidgets import QVBoxLayout
+from PyQt6.QtWidgets import QWidget
 
-from ..ui_common import configure_splitter_persistence, confirm_yes_no
+from ..ui_common import configure_splitter_persistence
+from ..ui_common import confirm_yes_no
 from .variable_dialog import VariableDialog
+
+if TYPE_CHECKING:
+    from ...storage import VariableGroupManager
 
 logger = logging.getLogger(__name__)
 
 
-class _GroupsMixin:
+class _GroupsMixin(QWidget):
     """Mixin providing variable groups and group-scoped variable CRUD logic."""
 
-    def _build_groups_section(self) -> QSplitter:
-        """Construct and wire the groups + variables splitter panel.
+    if TYPE_CHECKING:
+        variables_changed: Any
+        _mgr: VariableGroupManager
+        _settings: QSettings
+        def _ordered_context_actions(self, menu_key: str, action_specs: Any) -> Any: ...
+        def _run_context_action(self, menu_key: str, action_id: str, callback: Any) -> None: ...
 
-        Assigns widget references to ``self`` so handler methods can reach them.
-        Returns the constructed ``QSplitter``.
-        """
+    def _build_groups_section(self) -> QSplitter:
+        """Construct the groups/variables splitter panel."""
         splitter = QSplitter(Qt.Orientation.Horizontal)
 
-        left_widget = QWidget()
-        left_layout = QVBoxLayout(left_widget)
-        left_layout.addWidget(QLabel("<b>Groups</b>"))
+        left_widget = self._build_groups_panel()
+        right_widget = self._build_variables_panel()
 
-        groups_toolbar = QHBoxLayout()
+        splitter.addWidget(left_widget)
+        splitter.addWidget(right_widget)
+
+        self._configure_splitter(splitter)
+        return splitter
+
+    def _build_groups_panel(self) -> QWidget:
+        """Create the left-side groups panel."""
+        container = QWidget()
+        layout = QVBoxLayout(container)
+
+        layout.addWidget(QLabel("<b>Groups</b>"))
+        layout.addLayout(self._build_groups_toolbar())
+        layout.addWidget(self._build_groups_list())
+
+        return container
+
+    def _build_groups_toolbar(self) -> QHBoxLayout:
+        """Create toolbar with group actions."""
+        toolbar = QHBoxLayout()
+
         self.new_group_btn = QPushButton("New Group")
         self.new_group_btn.clicked.connect(self.create_group)
+
         self.delete_group_btn = QPushButton("Delete Group")
         self.delete_group_btn.clicked.connect(self.delete_group)
         self.delete_group_btn.setEnabled(False)
-        groups_toolbar.addWidget(self.new_group_btn)
-        groups_toolbar.addWidget(self.delete_group_btn)
-        groups_toolbar.addStretch()
-        left_layout.addLayout(groups_toolbar)
 
+        toolbar.addWidget(self.new_group_btn)
+        toolbar.addWidget(self.delete_group_btn)
+        toolbar.addStretch()
+
+        return toolbar
+
+    def _build_groups_list(self) -> QListWidget:
+        """Create and configure the groups list widget."""
         self.groups_list = QListWidget()
         self.groups_list.itemSelectionChanged.connect(self._on_group_selected)
         self.groups_list.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.groups_list.customContextMenuRequested.connect(self._show_group_context_menu)
-        left_layout.addWidget(self.groups_list)
-        splitter.addWidget(left_widget)
+        return self.groups_list
 
-        right_widget = QWidget()
-        right_layout = QVBoxLayout(right_widget)
-        right_layout.addWidget(QLabel("<b>Variables</b>"))
+    def _build_variables_panel(self) -> QWidget:
+        """Create the right-side variables panel."""
+        container = QWidget()
+        layout = QVBoxLayout(container)
 
-        vars_toolbar = QHBoxLayout()
+        layout.addWidget(QLabel("<b>Variables</b>"))
+        layout.addLayout(self._build_variables_toolbar())
+        layout.addWidget(self._build_variables_table())
+
+        return container
+
+    def _build_variables_toolbar(self) -> QHBoxLayout:
+        """Create toolbar with variable actions."""
+        toolbar = QHBoxLayout()
+
         self.add_var_btn = QPushButton("Add Variable")
         self.add_var_btn.clicked.connect(self.add_variable)
         self.add_var_btn.setEnabled(False)
+
         self.edit_var_btn = QPushButton("Edit")
         self.edit_var_btn.clicked.connect(self.edit_variable)
         self.edit_var_btn.setEnabled(False)
+
         self.remove_var_btn = QPushButton("Remove")
         self.remove_var_btn.clicked.connect(self.remove_variable)
         self.remove_var_btn.setEnabled(False)
-        vars_toolbar.addWidget(self.add_var_btn)
-        vars_toolbar.addWidget(self.edit_var_btn)
-        vars_toolbar.addWidget(self.remove_var_btn)
-        vars_toolbar.addStretch()
-        right_layout.addLayout(vars_toolbar)
 
+        toolbar.addWidget(self.add_var_btn)
+        toolbar.addWidget(self.edit_var_btn)
+        toolbar.addWidget(self.remove_var_btn)
+        toolbar.addStretch()
+
+        return toolbar
+
+    def _build_variables_table(self) -> QTableWidget:
+        """Create and configure the variables table."""
         self.variables_table = QTableWidget()
         self.variables_table.setColumnCount(3)
         self.variables_table.setHorizontalHeaderLabels(["Key", "Value", "Description"])
-        self.variables_table.horizontalHeader().setSectionResizeMode(
-            0, QHeaderView.ResizeMode.ResizeToContents
-        )
-        self.variables_table.horizontalHeader().setSectionResizeMode(
-            1, QHeaderView.ResizeMode.Stretch
-        )
-        self.variables_table.horizontalHeader().setSectionResizeMode(
-            2, QHeaderView.ResizeMode.Stretch
-        )
+
+        header = self.variables_table.horizontalHeader()
+
+        if header is not None:
+            header.setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
+            header.setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
+            header.setSectionResizeMode(2, QHeaderView.ResizeMode.Stretch)
+
         self.variables_table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
         self.variables_table.itemSelectionChanged.connect(self._on_variable_selected)
         self.variables_table.itemDoubleClicked.connect(self.edit_variable)
-        right_layout.addWidget(self.variables_table)
-        splitter.addWidget(right_widget)
 
+        return self.variables_table
+
+    def _configure_splitter(self, splitter: QSplitter) -> None:
+        """Apply persistence and visual settings to the splitter."""
         splitter.setChildrenCollapsible(False)
         splitter.setHandleWidth(5)
+
         configure_splitter_persistence(
             splitter,
             settings_key="splitter/variables",
             default_sizes=[250, 550],
             settings=self._settings,
         )
-        return splitter
 
     # ── Group data refresh ────────────────────────────────────────────────────
 
@@ -124,7 +170,7 @@ class _GroupsMixin:
         self.groups_list.setUpdatesEnabled(False)
         try:
             self.groups_list.clear()
-            self.current_group_id = None
+            self.current_group_id: int | None = None
             for group in self._mgr.list_groups():
                 item = QListWidgetItem(group["name"])
                 item.setData(Qt.ItemDataRole.UserRole, group["id"])
@@ -205,11 +251,12 @@ class _GroupsMixin:
         self.refresh_variables()
 
     def create_group(self) -> None:
-        name, ok = QInputDialog.getText(self, "New Variable Group", "Group name:")
+        parent = cast(QWidget, self)
+        name, ok = QInputDialog.getText(parent, "New Variable Group", "Group name:")
         if not ok or not name:
             return
         description, ok = QInputDialog.getText(
-            self, "New Variable Group", "Description (optional):"
+            parent, "New Variable Group", "Description (optional):",
         )
         if not ok:
             return
@@ -217,10 +264,10 @@ class _GroupsMixin:
             self._mgr.create_group(name, description or "")
             self.refresh_groups()
             self.variables_changed.emit()
-            QMessageBox.information(self, "Success", f"Variable group '{name}' created")
+            QMessageBox.information(parent, "Success", f"Variable group '{name}' created")
         except Exception as exc:
             logger.error("Failed to create group %r: %s", name, exc, exc_info=True)
-            QMessageBox.critical(self, "Error", f"Failed to create group: {exc}")
+            QMessageBox.critical(parent, "Error", f"Failed to create group: {exc}")
 
     def delete_group(self) -> None:
         if not self.current_group_id:
@@ -230,7 +277,7 @@ class _GroupsMixin:
             return
         group_name = selected[0].text()
         if not confirm_yes_no(
-            self,
+            cast(QWidget, self),
             "Confirm Delete",
             f"Are you sure you want to delete variable group '{group_name}'?\n"
             "This will also delete all variables in the group.",
@@ -242,7 +289,7 @@ class _GroupsMixin:
             self.variables_changed.emit()
         except Exception as exc:
             logger.error("Failed to delete group %s: %s", self.current_group_id, exc, exc_info=True)
-            QMessageBox.critical(self, "Error", f"Failed to delete group: {exc}")
+            QMessageBox.critical(cast(QWidget, self), "Error", f"Failed to delete group: {exc}")
 
     def _show_group_context_menu(self, position: Any) -> None:
         item = self.groups_list.itemAt(position)
@@ -262,15 +309,20 @@ class _GroupsMixin:
             menu.addAction(
                 label,
                 lambda aid=action_id, cb=callback: self._run_context_action(
-                    "variables_group", aid, cb
+                    "variables_group", aid, cb,
                 ),
             )
-        menu.exec(self.groups_list.viewport().mapToGlobal(position))
+        viewport = self.groups_list.viewport()
+        if viewport is None:
+            return
+        menu.exec(viewport.mapToGlobal(position))
 
     def _rename_group(self, item: QListWidgetItem) -> None:
         group_id = item.data(Qt.ItemDataRole.UserRole)
         old_name = item.text()
-        new_name, ok = QInputDialog.getText(self, "Rename Group", "New name:", text=old_name)
+        new_name, ok = QInputDialog.getText(
+            cast(QWidget, self), "Rename Group", "New name:", text=old_name,
+        )
         if not ok or not new_name or new_name == old_name:
             return
         try:
@@ -291,12 +343,12 @@ class _GroupsMixin:
     def add_variable(self) -> None:
         if not self.current_group_id:
             return
-        dialog = VariableDialog(self)
+        dialog = VariableDialog(cast(QWidget, self))
         if dialog.exec() != QDialog.DialogCode.Accepted:
             return
         key, value, description = dialog.get_values()
         if not key:
-            QMessageBox.warning(self, "Error", "Variable key is required")
+            QMessageBox.warning(cast(QWidget, self), "Error", "Variable key is required")
             return
         try:
             self._mgr.add_variable(self.current_group_id, key, value, description)
@@ -304,7 +356,7 @@ class _GroupsMixin:
             self.variables_changed.emit()
         except Exception as exc:
             logger.error("Failed to add variable %r: %s", key, exc, exc_info=True)
-            QMessageBox.critical(self, "Error", f"Failed to add variable: {exc}")
+            QMessageBox.critical(cast(QWidget, self), "Error", f"Failed to add variable: {exc}")
 
     def edit_variable(self) -> None:
         if not self.current_group_id:
@@ -312,15 +364,20 @@ class _GroupsMixin:
         selected_row = self.variables_table.currentRow()
         if selected_row < 0:
             return
-        key = self.variables_table.item(selected_row, 0).text()
-        value = self.variables_table.item(selected_row, 1).text()
-        description = self.variables_table.item(selected_row, 2).text()
-        dialog = VariableDialog(self, key, value, description)
+        key_item = self.variables_table.item(selected_row, 0)
+        value_item = self.variables_table.item(selected_row, 1)
+        desc_item = self.variables_table.item(selected_row, 2)
+        if key_item is None or value_item is None or desc_item is None:
+            return
+        key = key_item.text()
+        value = value_item.text()
+        description = desc_item.text()
+        dialog = VariableDialog(cast(QWidget, self), key, value, description)
         if dialog.exec() != QDialog.DialogCode.Accepted:
             return
         new_key, new_value, new_description = dialog.get_values()
         if not new_key:
-            QMessageBox.warning(self, "Error", "Variable key is required")
+            QMessageBox.warning(cast(QWidget, self), "Error", "Variable key is required")
             return
         try:
             if new_key != key:
@@ -330,7 +387,7 @@ class _GroupsMixin:
             self.variables_changed.emit()
         except Exception as exc:
             logger.error("Failed to update variable %r: %s", key, exc, exc_info=True)
-            QMessageBox.critical(self, "Error", f"Failed to update variable: {exc}")
+            QMessageBox.critical(cast(QWidget, self), "Error", f"Failed to update variable: {exc}")
 
     def remove_variable(self) -> None:
         if not self.current_group_id:
@@ -338,9 +395,14 @@ class _GroupsMixin:
         selected_row = self.variables_table.currentRow()
         if selected_row < 0:
             return
-        key = self.variables_table.item(selected_row, 0).text()
+        key_item = self.variables_table.item(selected_row, 0)
+        if key_item is None:
+            return
+        key = key_item.text()
         if not confirm_yes_no(
-            self, "Confirm Delete", f"Are you sure you want to delete variable '{key}'?"
+            cast(QWidget, self),
+            "Confirm Delete",
+            f"Are you sure you want to delete variable '{key}'?",
         ):
             return
         try:
@@ -349,4 +411,4 @@ class _GroupsMixin:
             self.variables_changed.emit()
         except Exception as exc:
             logger.error("Failed to remove variable %r: %s", key, exc, exc_info=True)
-            QMessageBox.critical(self, "Error", f"Failed to remove variable: {exc}")
+            QMessageBox.critical(cast(QWidget, self), "Error", f"Failed to remove variable: {exc}")
