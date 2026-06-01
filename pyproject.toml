@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "equinox"
-version = "0.4.8"
+dynamic = ["version"]
 description = "A local-first API testing tool with GUI"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -51,6 +51,9 @@ dev = [
     "pre-commit>=3.0.0",
     "isort>=5.13.0,<6.0.0",
 ]
+
+[tool.setuptools_scm]
+write_to = "hatchery/__version__.py"
 
 [tool.black]
 line-length = 100
