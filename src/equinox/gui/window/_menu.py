@@ -76,255 +76,12 @@ def _require_menu(menu: QMenu | None, label: str) -> QMenu:
     return menu
 
 
-class _MenuMixin(QWidget):
-    """Menu bar construction, command palette, and top-level action handlers."""
+class _MenuActionsMixin:
+    """Command palette, dialogs, and menu-driven action handlers."""
 
     def _as_qwidget(self) -> QWidget:
         """Return this mixin host as a QWidget for Qt parent arguments."""
         return cast(QWidget, self)
-
-    def _create_menu_bar(self) -> None:
-        """Initialize the application menu bar."""
-        menubar = self.menuBar()
-        if menubar is None:
-            return
-
-        menubar.addMenu(self._build_file_menu())
-        menubar.addMenu(self._build_view_menu())
-        menubar.addMenu(self._build_collections_menu())
-        menubar.addMenu(self._build_environment_menu())
-        menubar.addMenu(self._build_help_menu())
-
-        self._add_window_controls_to_menu_bar(menubar)
-        menubar.installEventFilter(self)
-
-    def _build_file_menu(self) -> QMenu:
-        """Create the File menu."""
-        menu = QMenu("&File", self)
-
-        new_req = QAction("&New Request", self)
-        new_req.setShortcut("Ctrl+N")
-        new_req.triggered.connect(self._new_request)
-        menu.addAction(new_req)
-        menu.addSeparator()
-
-        import_menu = menu.addMenu("&Import")
-        for label, slot in [
-            ("Postman Collection…", self._import_postman),
-            ("OpenAPI/Swagger Spec…", self._import_openapi),
-            ("HAR File…", self._import_har),
-            ("Insomnia Collection…", self._import_insomnia),
-        ]:
-            act = QAction(label, self)
-            if act is not None and import_menu is not None:
-                act.triggered.connect(slot)
-                import_menu.addAction(act)
-
-        menu.addSeparator()
-
-        exit_act = QAction("E&xit", self)
-        exit_act.setShortcut("Ctrl+Q")
-        exit_act.triggered.connect(self.close)
-        menu.addAction(exit_act)
-
-        return menu
-
-    def _build_view_menu(self) -> QMenu:
-        """Create the View menu with zoom, theme, palette, and preferences."""
-        owner = self._as_qwidget()
-        menu = QMenu("&View", owner)
-
-        for label, shortcut, slot in [
-            ("Zoom &In", "Ctrl+=", self._zoom_in),
-            ("Zoom &Out", "Ctrl+-", self._zoom_out),
-            ("&Reset Zoom", "Ctrl+0", self._zoom_reset),
-        ]:
-            act = QAction(label, owner)
-            act.setShortcut(QKeySequence(shortcut))
-            act.triggered.connect(slot)
-            menu.addAction(act)
-
-        menu.addSeparator()
-        menu.addMenu(self._build_theme_menu())
-        menu.addSeparator()
-
-        cmd_palette = QAction("Command &Palette…", self)
-        cmd_palette.setShortcut(QKeySequence("Ctrl+K"))
-        cmd_palette.triggered.connect(self._open_command_palette)
-        menu.addAction(cmd_palette)
-
-        menu.addSeparator()
-
-        prefs_act = QAction("&Preferences…", self)
-        prefs_act.setShortcut("Ctrl+,")
-        prefs_act.triggered.connect(self._open_preferences)
-        menu.addAction(prefs_act)
-
-        return menu
-
-    def _build_theme_menu(self) -> QMenu:
-        """Create the theme selection submenu."""
-        from equinox.gui.theme import THEME_LABELS, THEME_MODES, get_theme_mode
-
-        owner = self._as_qwidget()
-        menu = QMenu("&Theme", owner)
-        self._theme_actions = {}
-
-        current = get_theme_mode()
-        for mode in THEME_MODES:
-            act = QAction(str(THEME_LABELS[mode]), owner)
-            act.setCheckable(True)
-            act.setChecked(mode == current)
-            act.triggered.connect(lambda checked, m=mode: self._set_theme(m))
-            menu.addAction(act)
-            self._theme_actions[mode] = act
-
-        return menu
-
-    def _build_collections_menu(self) -> QMenu:
-        """Create the Collections menu."""
-        menu = QMenu("&Collections", self)
-
-        new_col = QAction("New &Collection", self)
-        new_col.triggered.connect(
-            lambda: self.collections_panel.create_collection() if self.collections_panel else None,
-        )
-        menu.addAction(new_col)
-
-        refresh_act = QAction("&Refresh", self)
-        refresh_act.setShortcut("F5")
-        refresh_act.triggered.connect(
-            lambda: self.collections_panel.refresh() if self.collections_panel else None,
-        )
-        menu.addAction(refresh_act)
-
-        menu.addSeparator()
-
-        export_menu = menu.addMenu("&Export")
-        for label, fmt in [
-            ("Postman Format…", "postman"),
-            ("OpenAPI Format…", "openapi"),
-            ("Insomnia Format…", "insomnia"),
-        ]:
-            act = QAction(label, self)
-            if act is not None and export_menu is not None:
-                act.triggered.connect(lambda checked, f=fmt: self._export_collection(f))
-                export_menu.addAction(act)
-
-        return menu
-
-    def _build_environment_menu(self) -> QMenu:
-        """Create the Environment menu."""
-        menu = QMenu("E&nvironment", self)
-
-        manage_env = QAction("&Manage Environments…", self)
-        manage_env.triggered.connect(self._manage_environments)
-        menu.addAction(manage_env)
-
-        manage_creds = QAction("Manage &Saved Credentials…", self)
-        manage_creds.triggered.connect(self._manage_oauth_clients)
-        menu.addAction(manage_creds)
-
-        manage_secrets = QAction("Manage &Secret Managers…", self)
-        manage_secrets.triggered.connect(self._manage_secret_managers)
-        menu.addAction(manage_secrets)
-
-        return menu
-
-    def _build_help_menu(self) -> QMenu:
-        """Create the Help menu."""
-        menu = QMenu("&Help", self)
-
-        shortcuts_act = QAction("&Keyboard Shortcuts…", self)
-        shortcuts_act.setShortcut(QKeySequence("F1"))
-        shortcuts_act.triggered.connect(self._show_shortcuts_dialog)
-        menu.addAction(shortcuts_act)
-
-        menu.addSeparator()
-
-        log_act = QAction("&View Log File…", self)
-        log_act.triggered.connect(self._open_log_file)
-        menu.addAction(log_act)
-
-        menu.addSeparator()
-
-        about_act = QAction("&About", self)
-        about_act.triggered.connect(self._show_about)
-        menu.addAction(about_act)
-
-        menu.addSeparator()
-
-        setup_act = QAction("Run Setup Wizard…", self)
-        setup_act.triggered.connect(self._run_setup_wizard)
-        menu.addAction(setup_act)
-
-        menu.addSeparator()
-
-        usage_act = QAction("UI Usage Snapshot…", self)
-        usage_act.setObjectName("help_ui_usage_snapshot")
-        usage_act.triggered.connect(self._show_ui_usage_snapshot)
-        menu.addAction(usage_act)
-
-        reset_usage_act = QAction("Reset UI Usage Data", self)
-        reset_usage_act.setObjectName("help_ui_usage_reset")
-        reset_usage_act.triggered.connect(self._reset_ui_usage_data)
-        menu.addAction(reset_usage_act)
-
-        return menu
-
-    def setWindowTitle(self, title: str) -> None:  # type: ignore[override]
-        """Keep the menu-bar title label synchronized with the window title."""
-        super().setWindowTitle(title)
-        if hasattr(self, "_menu_title_label"):
-            self._menu_title_label.setText(title)
-
-    def _add_window_controls_to_menu_bar(self, menubar: QMenuBar) -> None:
-        """Attach frameless-window controls to the right side of the menu bar."""
-        from PyQt6.QtCore import Qt
-        from PyQt6.QtWidgets import QHBoxLayout, QToolButton, QWidget
-
-        title_container = QWidget(menubar)
-        title_container.setObjectName("menuBarWindowTitleContainer")
-        title_layout = QHBoxLayout(title_container)
-        title_layout.setContentsMargins(18, 0, 18, 0)
-
-        self._menu_title_label = QLabel(self.windowTitle(), title_container)
-        self._menu_title_label.setObjectName("menuBarWindowTitle")
-        self._menu_title_label.setTextInteractionFlags(Qt.TextInteractionFlag.NoTextInteraction)
-        self._menu_title_label.setCursor(Qt.CursorShape.ArrowCursor)
-        title_layout.addWidget(self._menu_title_label)
-
-        menubar.setCornerWidget(title_container, Qt.Corner.TopLeftCorner)
-        owner = self._as_qwidget()
-        title_container.installEventFilter(owner)
-        self._menu_title_label.installEventFilter(owner)
-        self._drag_handles.update({menubar, title_container, self._menu_title_label})
-
-        container = QWidget(menubar)
-        layout = QHBoxLayout(container)
-        layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(0)
-
-        self._win_min_btn = QToolButton(container)
-        self._win_min_btn.setText("—")
-        self._win_min_btn.setToolTip("Minimize")
-        self._win_min_btn.clicked.connect(self.showMinimized)
-
-        self._win_max_btn = QToolButton(container)
-        self._win_max_btn.clicked.connect(self._toggle_max_restore)
-
-        self._win_close_btn = QToolButton(container)
-        self._win_close_btn.setText("✕")
-        self._win_close_btn.setToolTip("Close")
-        self._win_close_btn.clicked.connect(self.close)
-
-        for btn in (self._win_min_btn, self._win_max_btn, self._win_close_btn):
-            btn.setObjectName("windowControlBtn")
-            btn.setFixedSize(28, 22)
-            layout.addWidget(btn)
-
-        menubar.setCornerWidget(container, Qt.Corner.TopRightCorner)
-        self._sync_window_controls()
 
     def _open_preferences(self) -> None:
         from equinox.gui.dialogs.preferences_dialog import PreferencesDialog
@@ -442,13 +199,12 @@ class _MenuMixin(QWidget):
         if not cmd_id:
             return 0
 
-        return cast(
-            int, tracker.get_count(
-                category="command",
-                context="command_palette",
-                element_id=f"command.{cmd_id}",
-            ),
+        count = tracker.get_count(
+            category="command",
+            context="command_palette",
+            element_id=f"command.{cmd_id}",
         )
+        return int(count)
 
     def _open_command_palette(self) -> None:
         """Open searchable command palette and execute selected command."""
@@ -530,7 +286,7 @@ class _MenuMixin(QWidget):
     def _open_log_file(self) -> None:
         log_gui_event("log_file_open_requested")
         show_log_file_open_result(
-            self,
+            self._as_qwidget(),
             try_open_current_log_file(),
             "No log file found yet — send a request first.",
         )
@@ -574,3 +330,246 @@ class _MenuMixin(QWidget):
             return
         tracker.reset()
         self.status_bar.showMessage("UI usage data reset", 3000)
+
+
+class _MenuMixin(_MenuActionsMixin):
+    """Menu bar construction and frameless titlebar control wiring."""
+
+    def _create_menu_bar(self) -> None:
+        """Initialize the application menu bar."""
+        menubar = self.menuBar()
+        if menubar is None:
+            return
+
+        menubar.addMenu(self._build_file_menu())
+        menubar.addMenu(self._build_view_menu())
+        menubar.addMenu(self._build_collections_menu())
+        menubar.addMenu(self._build_environment_menu())
+        menubar.addMenu(self._build_help_menu())
+
+        self._add_window_controls_to_menu_bar(menubar)
+        menubar.installEventFilter(self._as_qwidget())
+
+    def _build_file_menu(self) -> QMenu:
+        """Create the File menu."""
+        owner = self._as_qwidget()
+        menu = QMenu("&File", owner)
+
+        new_req = QAction("&New Request", owner)
+        new_req.setShortcut("Ctrl+N")
+        new_req.triggered.connect(self._new_request)
+        menu.addAction(new_req)
+        menu.addSeparator()
+
+        import_menu = _require_menu(menu.addMenu("&Import"), "Import")
+        for label, slot in [
+            ("Postman Collection…", self._import_postman),
+            ("OpenAPI/Swagger Spec…", self._import_openapi),
+            ("HAR File…", self._import_har),
+            ("Insomnia Collection…", self._import_insomnia),
+        ]:
+            act = QAction(label, owner)
+            act.triggered.connect(slot)
+            import_menu.addAction(act)
+
+        menu.addSeparator()
+
+        exit_act = QAction("E&xit", owner)
+        exit_act.setShortcut("Ctrl+Q")
+        exit_act.triggered.connect(self.close)
+        menu.addAction(exit_act)
+
+        return menu
+
+    def _build_view_menu(self) -> QMenu:
+        """Create the View menu with zoom, theme, palette, and preferences."""
+        owner = self._as_qwidget()
+        menu = QMenu("&View", owner)
+
+        for label, shortcut, slot in [
+            ("Zoom &In", "Ctrl+=", self._zoom_in),
+            ("Zoom &Out", "Ctrl+-", self._zoom_out),
+            ("&Reset Zoom", "Ctrl+0", self._zoom_reset),
+        ]:
+            act = QAction(label, owner)
+            act.setShortcut(QKeySequence(shortcut))
+            act.triggered.connect(slot)
+            menu.addAction(act)
+
+        menu.addSeparator()
+        menu.addMenu(self._build_theme_menu())
+        menu.addSeparator()
+
+        cmd_palette = QAction("Command &Palette…", owner)
+        cmd_palette.setShortcut(QKeySequence("Ctrl+K"))
+        cmd_palette.triggered.connect(self._open_command_palette)
+        menu.addAction(cmd_palette)
+
+        menu.addSeparator()
+
+        prefs_act = QAction("&Preferences…", owner)
+        prefs_act.setShortcut("Ctrl+,")
+        prefs_act.triggered.connect(self._open_preferences)
+        menu.addAction(prefs_act)
+
+        return menu
+
+    def _build_theme_menu(self) -> QMenu:
+        """Create the theme selection submenu."""
+        from equinox.gui.theme import THEME_LABELS, THEME_MODES, get_theme_mode
+
+        owner = self._as_qwidget()
+        menu = QMenu("&Theme", owner)
+        self._theme_actions = {}
+
+        current = get_theme_mode()
+        for mode in THEME_MODES:
+            act = QAction(str(THEME_LABELS[mode]), owner)
+            act.setCheckable(True)
+            act.setChecked(mode == current)
+            act.triggered.connect(lambda checked, m=mode: self._set_theme(m))
+            menu.addAction(act)
+            self._theme_actions[mode] = act
+
+        return menu
+
+    def _build_collections_menu(self) -> QMenu:
+        """Create the Collections menu."""
+        owner = self._as_qwidget()
+        menu = QMenu("&Collections", owner)
+
+        new_col = QAction("New &Collection", owner)
+        new_col.triggered.connect(
+            lambda: self.collections_panel.create_collection() if self.collections_panel else None,
+        )
+        menu.addAction(new_col)
+
+        refresh_act = QAction("&Refresh", owner)
+        refresh_act.setShortcut("F5")
+        refresh_act.triggered.connect(
+            lambda: self.collections_panel.refresh() if self.collections_panel else None,
+        )
+        menu.addAction(refresh_act)
+
+        menu.addSeparator()
+
+        export_menu = _require_menu(menu.addMenu("&Export"), "Export")
+        for label, fmt in [
+            ("Postman Format…", "postman"),
+            ("OpenAPI Format…", "openapi"),
+            ("Insomnia Format…", "insomnia"),
+        ]:
+            act = QAction(label, owner)
+            act.triggered.connect(lambda checked, f=fmt: self._export_collection(f))
+            export_menu.addAction(act)
+
+        return menu
+
+    def _build_environment_menu(self) -> QMenu:
+        """Create the Environment menu."""
+        owner = self._as_qwidget()
+        menu = QMenu("E&nvironment", owner)
+
+        manage_env = QAction("&Manage Environments…", owner)
+        manage_env.triggered.connect(self._manage_environments)
+        menu.addAction(manage_env)
+
+        manage_creds = QAction("Manage &Saved Credentials…", owner)
+        manage_creds.triggered.connect(self._manage_oauth_clients)
+        menu.addAction(manage_creds)
+
+        manage_secrets = QAction("Manage &Secret Managers…", owner)
+        manage_secrets.triggered.connect(self._manage_secret_managers)
+        menu.addAction(manage_secrets)
+
+        return menu
+
+    def _build_help_menu(self) -> QMenu:
+        """Create the Help menu."""
+        owner = self._as_qwidget()
+        menu = QMenu("&Help", owner)
+
+        shortcuts_act = QAction("&Keyboard Shortcuts…", owner)
+        shortcuts_act.setShortcut(QKeySequence("F1"))
+        shortcuts_act.triggered.connect(self._show_shortcuts_dialog)
+        menu.addAction(shortcuts_act)
+
+        menu.addSeparator()
+
+        log_act = QAction("&View Log File…", owner)
+        log_act.triggered.connect(self._open_log_file)
+        menu.addAction(log_act)
+
+        menu.addSeparator()
+
+        about_act = QAction("&About", owner)
+        about_act.triggered.connect(self._show_about)
+        menu.addAction(about_act)
+
+        menu.addSeparator()
+
+        setup_act = QAction("Run Setup Wizard…", owner)
+        setup_act.triggered.connect(self._run_setup_wizard)
+        menu.addAction(setup_act)
+
+        menu.addSeparator()
+
+        usage_act = QAction("UI Usage Snapshot…", owner)
+        usage_act.setObjectName("help_ui_usage_snapshot")
+        usage_act.triggered.connect(self._show_ui_usage_snapshot)
+        menu.addAction(usage_act)
+
+        reset_usage_act = QAction("Reset UI Usage Data", owner)
+        reset_usage_act.setObjectName("help_ui_usage_reset")
+        reset_usage_act.triggered.connect(self._reset_ui_usage_data)
+        menu.addAction(reset_usage_act)
+
+        return menu
+
+    def _add_window_controls_to_menu_bar(self, menubar: QMenuBar) -> None:
+        """Attach frameless-window controls to the right side of the menu bar."""
+        from PyQt6.QtCore import Qt
+        from PyQt6.QtWidgets import QHBoxLayout, QToolButton, QWidget
+
+        title_container = QWidget(menubar)
+        title_container.setObjectName("menuBarWindowTitleContainer")
+        title_layout = QHBoxLayout(title_container)
+        title_layout.setContentsMargins(18, 0, 18, 0)
+
+        self._menu_title_label = QLabel(self.windowTitle(), title_container)
+        self._menu_title_label.setObjectName("menuBarWindowTitle")
+        self._menu_title_label.setTextInteractionFlags(Qt.TextInteractionFlag.NoTextInteraction)
+        self._menu_title_label.setCursor(Qt.CursorShape.ArrowCursor)
+        title_layout.addWidget(self._menu_title_label)
+
+        menubar.setCornerWidget(title_container, Qt.Corner.TopLeftCorner)
+        owner = self._as_qwidget()
+        title_container.installEventFilter(owner)
+        self._menu_title_label.installEventFilter(owner)
+        self._drag_handles.update({menubar, title_container, self._menu_title_label})
+
+        container = QWidget(menubar)
+        layout = QHBoxLayout(container)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
+
+        self._win_min_btn = QToolButton(container)
+        self._win_min_btn.setText("—")
+        self._win_min_btn.setToolTip("Minimize")
+        self._win_min_btn.clicked.connect(self.showMinimized)
+
+        self._win_max_btn = QToolButton(container)
+        self._win_max_btn.clicked.connect(self._toggle_max_restore)
+
+        self._win_close_btn = QToolButton(container)
+        self._win_close_btn.setText("✕")
+        self._win_close_btn.setToolTip("Close")
+        self._win_close_btn.clicked.connect(self.close)
+
+        for btn in (self._win_min_btn, self._win_max_btn, self._win_close_btn):
+            btn.setObjectName("windowControlBtn")
+            btn.setFixedSize(28, 22)
+            layout.addWidget(btn)
+
+        menubar.setCornerWidget(container, Qt.Corner.TopRightCorner)
+        self._sync_window_controls()

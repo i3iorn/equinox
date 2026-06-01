@@ -77,8 +77,8 @@ class MainWindow(
     _HistoryMixin,  # type: ignore[misc]
     _ImportExportMixin,  # type: ignore[misc]
     _EnvironmentMixin,  # type: ignore[misc]
-    _MenuMixin,  # type: ignore[misc]
-    _FramelessMixin,  # type: ignore[misc]
+    _MenuMixin,
+    _FramelessMixin,
     QMainWindow,
 ):
     """Main application window."""
@@ -116,6 +116,7 @@ class MainWindow(
         self._install_navigation_shortcuts()
         self._restore_layout()
         QTimer.singleShot(0, self._maybe_run_setup_wizard)
+
 
     def _init_usage_tracking(self) -> None:
         """Attach lightweight usage tracking to menus, tabs, and tracked buttons."""
