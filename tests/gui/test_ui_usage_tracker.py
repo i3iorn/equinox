@@ -69,8 +69,8 @@ def test_request_panel_secondary_tools_rank_by_usage(tmp_path, monkeypatch):
     more_btn = win.request_panel.findChild(QToolButton, "requestMoreToolsBtn")
     action_texts = [a.text() for a in more_btn.menu().actions() if not a.isSeparator()]
 
-    assert action_texts[0] == "Benchmark…"
-    assert action_texts[1] == "Import from cURL…"
+    assert action_texts[0] == "Benchmark..."
+    assert action_texts[1] == "Import from cURL..."
     assert action_texts[-1] == "Clear Session Vars"
 
     win.close()

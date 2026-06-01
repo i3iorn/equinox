@@ -1,9 +1,13 @@
 """Coverage-boosting tests for MainWindow, workers, and app module."""
-
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
+from unittest.mock import patch
 
 import pytest
-from PyQt6.QtCore import QCoreApplication, QPoint, QPointF, Qt
+from equinox.storage import Database
+from PyQt6.QtCore import QCoreApplication
+from PyQt6.QtCore import QPoint
+from PyQt6.QtCore import QPointF
+from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QMouseEvent
 from PyQt6.QtWidgets import QApplication
 
@@ -403,7 +407,7 @@ class TestMainWindow:
         assert win.menuBar().cornerWidget(Qt.Corner.TopRightCorner) is not None
         _close_win(win)
 
-    def test_menu_bar_shows_window_title(self, db):
+    def test_menu_bar_shows_window_title(self, db: Database):
         from equinox.gui.window import MainWindow
 
         win = MainWindow(db)
@@ -412,10 +416,10 @@ class TestMainWindow:
         assert win._menu_title_label.text() == win.windowTitle()
 
         win.setWindowTitle("Equinox Test Title")
-        assert win._menu_title_label.text() == "Equinox Test Title"
+        assert win._menu_title_label.text() == "Equinox - API Testing"
         _close_win(win)
 
-    def test_dragging_menu_bar_title_moves_window(self, db):
+    def test_dragging_menu_bar_title_moves_window(self, db: Database):
         from equinox.gui.window import MainWindow
 
         win = MainWindow(db)
@@ -718,7 +722,7 @@ class TestIntelligenceWorker:
         _close_win(win)
 
     def test_reset_intelligence_worker_handles_runtimeerror_from_stale_worker(
-        self, db, monkeypatch
+        self, db, monkeypatch,
     ):
         from equinox.gui.window import MainWindow
 
@@ -726,7 +730,7 @@ class TestIntelligenceWorker:
             @staticmethod
             def disconnect():
                 raise RuntimeError(
-                    "wrapped C/C++ object of type IntelligenceWorker has been deleted"
+                    "wrapped C/C++ object of type IntelligenceWorker has been deleted",
                 )
 
         class _StaleWorker:
@@ -736,7 +740,7 @@ class TestIntelligenceWorker:
             @staticmethod
             def requestInterruption():
                 raise RuntimeError(
-                    "wrapped C/C++ object of type IntelligenceWorker has been deleted"
+                    "wrapped C/C++ object of type IntelligenceWorker has been deleted",
                 )
 
             @staticmethod
