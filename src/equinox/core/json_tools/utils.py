@@ -21,7 +21,7 @@ def strip_tags(obj: Any) -> Any:
     return obj
 
 
-def walk(obj: Any) -> Generator[tuple[str, Any], None, None]:
+def walk(obj: Any) -> Generator[tuple[str, Any]]:
     """Yield every dictionary key/value pair in a nested JSON-like structure."""
     if isinstance(obj, dict):
         for k, v in obj.items():

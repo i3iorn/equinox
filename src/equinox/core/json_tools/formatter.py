@@ -2,13 +2,18 @@ from __future__ import annotations
 
 import logging
 import time
-from typing import Any, Mapping
+from collections.abc import Mapping
+from typing import Any
 
 from .decoder import JsonDecoder
 from .encoder import safe_json_dumps
-from .models import JsonErrorDetail, JsonResult
-from .traversal import sax_events, stream_json_objects
-from .validation import JsonConversionError, validate_schema, validate_structure_limits
+from .models import JsonErrorDetail
+from .models import JsonResult
+from .traversal import sax_events
+from .traversal import stream_json_objects
+from .validation import JsonConversionError
+from .validation import validate_schema
+from .validation import validate_structure_limits
 
 logger = logging.getLogger(__name__)
 
@@ -34,7 +39,7 @@ def json_to_object(
             JsonErrorDetail(
                 message="Input exceeds maximum allowed length.",
                 context=f"max_length={max_length}",
-            )
+            ),
         )
 
     start_time = time.perf_counter()
@@ -71,14 +76,14 @@ def _parse_input(
                 max_depth=max_depth,
                 max_key_count=max_key_count,
                 max_array_length=max_array_length,
-            )
+            ),
         )
     decoder = JsonDecoder(allow_comments=True)
     try:
         parsed = decoder.loads_jsonc(text)
     except Exception as exc:
         raise JsonConversionError(
-            JsonErrorDetail("Failed to parse JSON input.", context=str(exc))
+            JsonErrorDetail("Failed to parse JSON input.", context=str(exc)),
         ) from exc
     validate_structure_limits(
         parsed,
@@ -120,14 +125,14 @@ def json_to_str(
         )
     except Exception as exc:
         raise JsonConversionError(
-            JsonErrorDetail("Failed to serialize object to JSON.", context=str(exc))
+            JsonErrorDetail("Failed to serialize object to JSON.", context=str(exc)),
         ) from exc
     if max_length is not None and len(json_text) > max_length:
         raise JsonConversionError(
             JsonErrorDetail(
                 message="Output exceeds maximum allowed length.",
                 context=f"max_length={max_length}",
-            )
+            ),
         )
 
     elapsed_ms = int((time.perf_counter() - start_time) * 1000)

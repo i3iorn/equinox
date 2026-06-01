@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from typing import Any, Mapping
+from collections.abc import Mapping
+from typing import Any
 
 import jsonschema
 
@@ -46,7 +47,7 @@ def _validate_depth(depth: int, max_depth: int | None) -> None:
         JsonErrorDetail(
             message="JSON structure exceeds maximum allowed depth.",
             context=f"max_depth={max_depth}",
-        )
+        ),
     )
 
 
@@ -57,7 +58,7 @@ def _validate_key_count(count: int, max_key_count: int | None) -> None:
         JsonErrorDetail(
             message="Object exceeds maximum allowed key count.",
             context=f"max_key_count={max_key_count}",
-        )
+        ),
     )
 
 
@@ -68,7 +69,7 @@ def _validate_array_length(length: int, max_array_length: int | None) -> None:
         JsonErrorDetail(
             message="Array exceeds maximum allowed length.",
             context=f"max_array_length={max_array_length}",
-        )
+        ),
     )
 
 
@@ -83,5 +84,5 @@ def validate_schema(obj: Any, schema: Mapping[str, Any] | None) -> None:
             JsonErrorDetail(
                 message="JSON does not conform to schema.",
                 context=str(exc),
-            )
+            ),
         ) from exc

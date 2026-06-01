@@ -1,5 +1,6 @@
 from equinox.core.json_tools import JsonLexerConfig
-from equinox.gui.syntax_highlighter.json_highlighter import JsonLexer, LexerState
+from equinox.gui.syntax_highlighter.json_highlighter import JsonLexer
+from equinox.gui.syntax_highlighter.json_highlighter import LexerState
 
 
 def test_timestamp_tokenized() -> None:

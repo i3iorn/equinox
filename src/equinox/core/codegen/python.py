@@ -1,13 +1,14 @@
-from typing import Union
-
 from equinox.core.json_tools import safe_json_dumps
-from equinox.core.request import Request, Response
+from equinox.core.request import Request
+from equinox.core.request import Response
 
-from ._python_helpers import _auth_kwarg_for_basic, _inject_auth_into_headers, _python_body_lines
+from ._python_helpers import _auth_kwarg_for_basic
+from ._python_helpers import _inject_auth_into_headers
+from ._python_helpers import _python_body_lines
 
 
 class PythonRequestsGenerator:
-    def generate(self, response_or_request: Union[Response, Request]) -> str:
+    def generate(self, response_or_request: Response | Request) -> str:
         request = (
             response_or_request.request
             if isinstance(response_or_request, Response)
@@ -50,7 +51,7 @@ class PythonRequestsGenerator:
 
 
 class PythonHttpxGenerator:
-    def generate(self, response_or_request: Union[Response, Request]) -> str:
+    def generate(self, response_or_request: Response | Request) -> str:
         request = (
             response_or_request.request
             if isinstance(response_or_request, Response)

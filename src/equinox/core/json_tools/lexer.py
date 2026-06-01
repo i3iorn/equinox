@@ -1,18 +1,16 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import Generator
 from dataclasses import dataclass
 from enum import Enum
-from typing import Generator, List, Tuple
 
-from .patterns import (
-    CONTROL_CHAR_THRESHOLD,
-    JSON5_LITERALS,
-    JSON_ESCAPE_CHARS,
-    NUMBER_RE,
-    TIMESTAMP_RE,
-    UNICODE_HEX_RE,
-)
+from .patterns import CONTROL_CHAR_THRESHOLD
+from .patterns import JSON5_LITERALS
+from .patterns import JSON_ESCAPE_CHARS
+from .patterns import NUMBER_RE
+from .patterns import TIMESTAMP_RE
+from .patterns import UNICODE_HEX_RE
 from .tokens import Token
 
 logger = logging.getLogger(__name__)
@@ -71,7 +69,7 @@ class LexerState(str, Enum):
                 raise InvalidLexerStateError(f"Unrecognized lexer state: {state_int}")
         except ValueError as exc:
             raise InvalidLexerStateError(
-                f"Unrecognized lexer state integer: {state_int!r}"
+                f"Unrecognized lexer state integer: {state_int!r}",
             ) from exc
 
 
@@ -122,7 +120,7 @@ class JsonLexer:
     # ------------------------------------------------------------
     # PUBLIC API #1: Full-document streaming
     # ------------------------------------------------------------
-    def tokenize(self, text: str) -> Generator[Token, None, None]:
+    def tokenize(self, text: str) -> Generator[Token]:
         """Tokenize an entire document as a single stream.
 
         Args:
@@ -155,7 +153,7 @@ class JsonLexer:
     def tokenize_line_by_line(
         self,
         text: str,
-    ) -> Generator[Tuple[List[Token], LexerState], None, None]:
+    ) -> Generator[tuple[list[Token], LexerState]]:
         """Tokenize a multi-line string, yielding tokens and state per line.
 
         This is suitable for syntax highlighters that process text incrementally.
@@ -180,8 +178,8 @@ class JsonLexer:
     # PUBLIC API #3: Single-line lexing (used by QSyntaxHighlighter)
     # ------------------------------------------------------------
     def tokenize_line(
-        self, text: str, state: LexerState | str | int
-    ) -> Tuple[List[Token], LexerState]:
+        self, text: str, state: LexerState | str | int,
+    ) -> tuple[list[Token], LexerState]:
         """Tokenize a single line of text given an initial lexer state.
 
         Args:
@@ -198,7 +196,7 @@ class JsonLexer:
         self._validate_text_input(text)
         normalized_state = self._normalize_state(state)
 
-        tokens: List[Token] = []
+        tokens: list[Token] = []
         index = 0
         length = len(text)
         string_start = 0
@@ -277,7 +275,7 @@ class JsonLexer:
         index: int,
         state: LexerState,
         string_start: int,
-    ) -> Tuple[int, LexerState, Token | None, int]:
+    ) -> tuple[int, LexerState, Token | None, int]:
         """Advance the lexer by one logical step.
 
         Args:
@@ -305,7 +303,7 @@ class JsonLexer:
         text: str,
         index: int,
         string_start: int,
-    ) -> Tuple[int, LexerState, Token | None, int]:
+    ) -> tuple[int, LexerState, Token | None, int]:
         """Handle lexing while inside a string literal."""
         ch = text[index]
         length = len(text)
@@ -357,7 +355,7 @@ class JsonLexer:
         text: str,
         index: int,
         string_start: int,
-    ) -> Tuple[int, LexerState, Token | None, int]:
+    ) -> tuple[int, LexerState, Token | None, int]:
         """Handle lexing while inside a block comment."""
         if text.startswith("*/", index):
             end = index + 2
@@ -375,7 +373,7 @@ class JsonLexer:
         text: str,
         index: int,
         string_start: int,
-    ) -> Tuple[int, LexerState, Token | None, int]:
+    ) -> tuple[int, LexerState, Token | None, int]:
         """Handle lexing while in the normal (top-level) mode."""
         ch = text[index]
         length = len(text)

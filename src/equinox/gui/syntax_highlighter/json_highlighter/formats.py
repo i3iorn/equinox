@@ -1,11 +1,8 @@
 from __future__ import annotations
 
-from typing import Dict
-
-from PyQt6.QtGui import QTextCharFormat
-
 from equinox.gui.syntax_highlighter.base import _make_format
 from equinox.gui.theme import Colors
+from PyQt6.QtGui import QTextCharFormat
 
 __all__ = ["build_token_formats"]
 
@@ -47,7 +44,7 @@ _FORMAT_STYLES: dict[str, dict[str, bool]] = {
 }
 
 
-def build_token_formats() -> Dict[str, QTextCharFormat]:
+def build_token_formats() -> dict[str, QTextCharFormat]:
     """Build QTextCharFormat map from color and style specs."""
     formats: dict[str, QTextCharFormat] = {}
     for token_type, color in _FORMAT_MAP.items():

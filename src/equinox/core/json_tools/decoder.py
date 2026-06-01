@@ -2,11 +2,13 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass
+from dataclasses import field
 from pathlib import Path
 from typing import Any
 
 from ..exceptions import JsonParseError
-from .lexer import JsonLexer, JsonLexerConfig
+from .lexer import JsonLexer
+from .lexer import JsonLexerConfig
 
 
 class JsonDecoder:
@@ -48,10 +50,7 @@ class CommentStripState:
     in_line_comment: bool = False
     in_block_comment: bool = False
     is_escaped: bool = False
-    result: list[str] = None
-
-    def __post_init__(self) -> None:
-        self.result = []
+    result: list[str] = field(default_factory=list)
 
 
 def _peek(state: CommentStripState) -> str:

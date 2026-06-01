@@ -1,10 +1,9 @@
 """Tests for ``equinox.storage.utils`` with full branch coverage."""
-
 from __future__ import annotations
 
 import pytest
-
-from equinox.core.exceptions import SecurityError, ValidationError
+from equinox.core.exceptions import SecurityError
+from equinox.core.exceptions import ValidationError
 from equinox.storage import utils
 
 

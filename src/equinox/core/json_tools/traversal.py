@@ -1,11 +1,14 @@
 from __future__ import annotations
 
-from collections.abc import Generator, Iterable
+from collections.abc import Generator
+from collections.abc import Iterable
 from typing import Any
 
 from .decoder import JsonDecoder
-from .models import EventType, JsonErrorDetail
-from .validation import JsonConversionError, validate_structure_limits
+from .models import EventType
+from .models import JsonErrorDetail
+from .validation import JsonConversionError
+from .validation import validate_structure_limits
 
 
 def iter_json_lines(text: str) -> Iterable[str]:
@@ -22,7 +25,7 @@ def stream_json_objects(
     max_depth: int | None = None,
     max_key_count: int | None = None,
     max_array_length: int | None = None,
-) -> Generator[Any, None, None]:
+) -> Generator[Any]:
     """Yield one parsed object per non-empty line of JSON or JSONC text."""
     decoder = JsonDecoder(allow_comments=True)
     for chunk in iter_json_lines(text):
@@ -33,7 +36,7 @@ def stream_json_objects(
                 JsonErrorDetail(
                     message="Failed to parse JSON chunk.",
                     context=str(exc),
-                )
+                ),
             ) from exc
         validate_structure_limits(
             obj,
@@ -44,7 +47,7 @@ def stream_json_objects(
         yield obj
 
 
-def sax_events(obj: Any) -> Generator[tuple[EventType, Any], None, None]:
+def sax_events(obj: Any) -> Generator[tuple[EventType, Any]]:
     """Generate SAX-style events from a parsed JSON structure."""
     if isinstance(obj, dict):
         yield ("start_object", None)
