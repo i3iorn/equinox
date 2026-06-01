@@ -3,14 +3,12 @@
 Provides a QTextEdit subclass configured for displaying code/text
 with syntax highlighting. Optimized for large response bodies.
 """
-
 from __future__ import annotations
 
 import logging
 
-from PyQt6.QtWidgets import QTextEdit
-
 from equinox.gui.theme import get_mono_font
+from PyQt6.QtWidgets import QTextEdit
 
 logger = logging.getLogger(__name__)
 
@@ -49,7 +47,7 @@ class ReadOnlyText(QTextEdit):
         # Disable undo/redo to avoid allocating history for large bodies
         self.setUndoRedoEnabled(_UNDO_REDO_ENABLED)
 
-    def set_code(self, text: str) -> None:
+    def set_code(self, text: object | None) -> None:
         """Set editor content with batched updates.
 
         Replaces entire document content while batching signals to prevent

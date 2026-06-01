@@ -1,32 +1,34 @@
 """Intelligence panel — displays Response Intelligence findings."""
-
 from __future__ import annotations
 
 import json
 import logging
+from collections.abc import Callable
 from collections.abc import Generator
 from contextlib import contextmanager
-from datetime import datetime, timedelta, timezone
+from datetime import datetime
+from datetime import timedelta
+from datetime import timezone
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 
+from equinox.core.response_intelligence import Category
+from equinox.core.response_intelligence import Finding
+from equinox.core.response_intelligence import Severity
+from equinox.gui.theme import Colors
+from equinox.gui.theme import get_mono_font
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QGuiApplication
-from PyQt6.QtWidgets import (
-    QFrame,
-    QHBoxLayout,
-    QLabel,
-    QListWidget,
-    QListWidgetItem,
-    QPushButton,
-    QScrollArea,
-    QToolButton,
-    QVBoxLayout,
-    QWidget,
-)
-
-from equinox.core.response_intelligence import Category, Finding, Severity
-from equinox.gui.theme import Colors, get_mono_font
+from PyQt6.QtWidgets import QFrame
+from PyQt6.QtWidgets import QHBoxLayout
+from PyQt6.QtWidgets import QLabel
+from PyQt6.QtWidgets import QListWidget
+from PyQt6.QtWidgets import QListWidgetItem
+from PyQt6.QtWidgets import QPushButton
+from PyQt6.QtWidgets import QScrollArea
+from PyQt6.QtWidgets import QToolButton
+from PyQt6.QtWidgets import QVBoxLayout
+from PyQt6.QtWidgets import QWidget
 
 __all__ = ["IntelligencePanel"]
 
@@ -53,10 +55,10 @@ _KEY_MUTED_FINDINGS = "intelligence/muted_findings"
 
 def _finding_key(finding: Finding) -> str:
     """Return a stable key used for muting a finding class."""
-    return finding.analyzer_id or finding.title
+    return str(finding.analyzer_id or finding.title)
 
 
-def _missing_headers_template(missing: list[dict]) -> str:
+def _missing_headers_template(missing: list[dict[str, Any]]) -> str:
     """Build a copy/paste security header template from missing-header findings."""
     defaults = {
         "strict-transport-security": "max-age=31536000; includeSubDomains",
@@ -86,119 +88,159 @@ class _FindingCard(QFrame):
         parent: QWidget | None = None,
     ) -> None:
         super().__init__(parent)
+
         self._finding = finding
         self._on_apply = on_apply
         self._on_mute = on_mute
         self._expanded = False
+
+        self._configure_frame()
+        self._build_layout()
+
+    def _configure_frame(self) -> None:
+        """Configure the outer frame styling."""
         self.setObjectName("intelCard")
         self.setFrameShape(QFrame.Shape.StyledPanel)
         self.setLineWidth(1)
 
+    def _build_layout(self) -> None:
+        """Assemble the card layout."""
         layout = QVBoxLayout(self)
         layout.setContentsMargins(8, 6, 8, 6)
         layout.setSpacing(3)
 
-        # ── Header row ────────────────────────────────────────────────
-        header_row = QHBoxLayout()
-        header_row.setSpacing(6)
+        layout.addLayout(self._build_header_row())
+        layout.addWidget(self._build_description_label())
 
-        icon, _ = _SEV_STYLE.get(finding.severity, _SEV_STYLE_DEFAULT)
+        rec_label = self._build_recommendation_label()
+        if rec_label is not None:
+            layout.addWidget(rec_label)
 
-        sev_label = QLabel(icon)
-        sev_label.setObjectName("intelSeverityIcon")
-        sev_label.setProperty("severity", finding.severity.value)
-        sev_label.setFixedWidth(18)
-        header_row.addWidget(sev_label)
+        layout.addLayout(self._build_actions_row())
 
-        title_label = QLabel(finding.title)
-        title_label.setObjectName("intelTitle")
-        title_label.setTextFormat(Qt.TextFormat.PlainText)
-        title_label.setWordWrap(True)
-        header_row.addWidget(title_label, 1)
+        details = self._build_details_widget()
+        if details is not None:
+            layout.addWidget(details)
 
-        sev_badge = QLabel(f" {finding.severity.value.upper()} ")
-        sev_badge.setObjectName("intelSeverityBadge")
-        sev_badge.setProperty("severity", finding.severity.value)
-        sev_badge.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        sev_badge.setFixedHeight(18)
-        header_row.addWidget(sev_badge)
+    def _build_header_row(self) -> QHBoxLayout:
+        """Create the header row with severity icon, title, badge, and toggle."""
+        row = QHBoxLayout()
+        row.setSpacing(6)
 
-        if finding.details:
-            self._toggle_btn: QToolButton | None = QToolButton()
-            self._toggle_btn.setObjectName("intelToggle")
-            self._toggle_btn.setText("▶")
-            self._toggle_btn.setFixedSize(20, 20)
-            self._toggle_btn.clicked.connect(self._toggle_details)
-            header_row.addWidget(self._toggle_btn)
-        else:
+        row.addWidget(self._build_severity_icon())
+        row.addWidget(self._build_title_label(), 1)
+        row.addWidget(self._build_severity_badge())
+
+        toggle = self._build_toggle_button()
+        if toggle is not None:
+            row.addWidget(toggle)
+
+        return row
+
+    def _build_severity_icon(self) -> QLabel:
+        icon, _ = _SEV_STYLE.get(self._finding.severity, _SEV_STYLE_DEFAULT)
+        label = QLabel(icon)
+        label.setObjectName("intelSeverityIcon")
+        label.setProperty("severity", self._finding.severity.value)
+        label.setFixedWidth(18)
+        return label
+
+    def _build_title_label(self) -> QLabel:
+        label = QLabel(self._finding.title)
+        label.setObjectName("intelTitle")
+        label.setTextFormat(Qt.TextFormat.PlainText)
+        label.setWordWrap(True)
+        return label
+
+    def _build_severity_badge(self) -> QLabel:
+        label = QLabel(f" {self._finding.severity.value.upper()} ")
+        label.setObjectName("intelSeverityBadge")
+        label.setProperty("severity", self._finding.severity.value)
+        label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        label.setFixedHeight(18)
+        return label
+
+    def _build_toggle_button(self) -> QToolButton | None:
+        if not self._finding.details:
             self._toggle_btn = None
+            return None
 
-        layout.addLayout(header_row)
+        btn = QToolButton()
+        btn.setObjectName("intelToggle")
+        btn.setText("▶")
+        btn.setFixedSize(20, 20)
+        btn.clicked.connect(self._toggle_details)
+        self._toggle_btn = btn
+        return btn
 
-        # ── Description ───────────────────────────────────────────────
-        desc = QLabel(finding.description)
-        desc.setObjectName("intelDescription")
-        desc.setTextFormat(Qt.TextFormat.PlainText)
-        desc.setWordWrap(True)
-        layout.addWidget(desc)
+    def _build_description_label(self) -> QLabel:
+        label = QLabel(self._finding.description)
+        label.setObjectName("intelDescription")
+        label.setTextFormat(Qt.TextFormat.PlainText)
+        label.setWordWrap(True)
+        return label
 
-        if finding.recommendation:
-            rec = QLabel(f"Suggested action: {finding.recommendation}")
-            rec.setObjectName("intelRecommendation")
-            rec.setTextFormat(Qt.TextFormat.PlainText)
-            rec.setWordWrap(True)
-            layout.addWidget(rec)
+    def _build_recommendation_label(self) -> QLabel | None:
+        if not self._finding.recommendation:
+            return None
 
-        # ── Actions ─────────────────────────────────────────────────────
-        actions = QHBoxLayout()
-        actions.setSpacing(6)
+        label = QLabel(f"Suggested action: {self._finding.recommendation}")
+        label.setObjectName("intelRecommendation")
+        label.setTextFormat(Qt.TextFormat.PlainText)
+        label.setWordWrap(True)
+        return label
 
-        copy_fix = QPushButton("Copy Fix")
-        copy_fix.setObjectName("intelActionBtn")
-        copy_fix.clicked.connect(self._copy_fix)
-        actions.addWidget(copy_fix)
+    def _build_actions_row(self) -> QHBoxLayout:
+        row = QHBoxLayout()
+        row.setSpacing(6)
 
-        apply_btn = QPushButton("Apply")
-        apply_btn.setObjectName("intelActionBtn")
-        apply_btn.clicked.connect(self._apply_fix)
-        actions.addWidget(apply_btn)
+        row.addWidget(self._make_action_button("Copy Fix", self._copy_fix))
+        row.addWidget(self._make_action_button("Apply", self._apply_fix))
+        row.addWidget(self._make_action_button("Copy Task", self._copy_task))
+        row.addWidget(self._make_action_button("Mute 7d", self._mute_finding))
 
-        task_btn = QPushButton("Copy Task")
-        task_btn.setObjectName("intelActionBtn")
-        task_btn.clicked.connect(self._copy_task)
-        actions.addWidget(task_btn)
+        row.addStretch()
+        return row
 
-        mute_btn = QPushButton("Mute 7d")
-        mute_btn.setObjectName("intelActionBtn")
-        mute_btn.clicked.connect(self._mute_finding)
-        actions.addWidget(mute_btn)
+    def _make_action_button(self, text: str, handler: Callable[[], None]) -> QPushButton:
+        btn = QPushButton(text)
+        btn.setObjectName("intelActionBtn")
+        btn.clicked.connect(handler)
+        return btn
 
-        actions.addStretch()
-        layout.addLayout(actions)
+    def _build_details_widget(self) -> QLabel | None:
+        if not self._finding.details:
+            self._details_widget = None
+            return None
 
-        # ── Collapsible details ───────────────────────────────────────
-        self._details_widget: QLabel | None = None
-        if finding.details:
-            self._details_widget = QLabel()
-            self._details_widget.setObjectName("intelDetails")
-            self._details_widget.setFont(get_mono_font())
-            self._details_widget.setWordWrap(True)
-            self._details_widget.setTextFormat(Qt.TextFormat.PlainText)
-            self._details_widget.setTextInteractionFlags(
-                Qt.TextInteractionFlag.TextSelectableByMouse
+        label = QLabel()
+        label.setObjectName("intelDetails")
+        label.setFont(get_mono_font())
+        label.setWordWrap(True)
+        label.setTextFormat(Qt.TextFormat.PlainText)
+        label.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+
+        label.setText(self._serialize_details(self._finding))
+        label.setVisible(False)
+
+        self._details_widget = label
+        return label
+
+    def _serialize_details(self, finding: Finding) -> str:
+        try:
+            return json.dumps(
+                finding.details,
+                indent=2,
+                ensure_ascii=False,
+                default=str,
             )
-            try:
-                detail_text = json.dumps(finding.details, indent=2, ensure_ascii=False, default=str)
-            except Exception as exc:
-                logger.warning(
-                    "Failed to serialise finding details for %r: %s",
-                    finding.title,
-                    exc,
-                )
-                detail_text = str(finding.details)
-            self._details_widget.setText(detail_text)
-            self._details_widget.setVisible(False)
-            layout.addWidget(self._details_widget)
+        except Exception as exc:
+            logger.warning(
+                "Failed to serialise finding details for %r: %s",
+                finding.title,
+                exc,
+            )
+            return str(finding.details)
 
     def _toggle_details(self) -> None:
         self._expanded = not self._expanded
@@ -209,7 +251,9 @@ class _FindingCard(QFrame):
 
     def _copy_fix(self) -> None:
         text = self._finding.recommendation or self._finding.description
-        QGuiApplication.clipboard().setText(text)
+        clipboard = QGuiApplication.clipboard()
+        if clipboard is not None:
+            clipboard.setText(text)
 
     def _copy_task(self) -> None:
         task = (
@@ -218,7 +262,9 @@ class _FindingCard(QFrame):
             f"  - Action: {self._finding.recommendation or 'Investigate and remediate'}\n"
             f"  - Analyzer: {self._finding.analyzer_id}"
         )
-        QGuiApplication.clipboard().setText(task)
+        clipboard = QGuiApplication.clipboard()
+        if clipboard is not None:
+            clipboard.setText(task)
 
     def _apply_fix(self) -> None:
         if self._on_apply is not None:
@@ -339,7 +385,7 @@ class IntelligencePanel(QWidget):
     # ── Private helpers ───────────────────────────────────────────────────────
 
     @contextmanager
-    def _suspend_card_updates(self) -> Generator[None, None, None]:
+    def _suspend_card_updates(self) -> Generator[None]:
         """Context manager that suppresses repaints on the scroll content widget.
 
         Using a context manager instead of inline try/finally blocks makes every
@@ -357,7 +403,7 @@ class IntelligencePanel(QWidget):
         self._summary_label.setText(text)
         self._summary_label.setStyleSheet(f"color: {color};")
         self._summary_label.setTextFormat(
-            Qt.TextFormat.RichText if rich_text else Qt.TextFormat.PlainText
+            Qt.TextFormat.RichText if rich_text else Qt.TextFormat.PlainText,
         )
 
     def _set_placeholder(self, text: str, color: str = "", *, bold: bool = False) -> None:
@@ -457,7 +503,9 @@ class IntelligencePanel(QWidget):
         text = finding.recommendation or finding.description
         if finding.analyzer_id == "security.missing_headers":
             text = _missing_headers_template(list((finding.details or {}).get("missing") or []))
-        QGuiApplication.clipboard().setText(text)
+        clipboard = QGuiApplication.clipboard()
+        if clipboard is not None:
+            clipboard.setText(text)
 
     def _mute_for_seven_days(self, finding: Finding) -> None:
         key = _finding_key(finding)
@@ -566,6 +614,8 @@ class IntelligencePanel(QWidget):
         """
         while self._scroll_layout.count() > 1:  # keep the trailing stretch
             item = self._scroll_layout.takeAt(self._scroll_layout.count() - 2)
+            if item is None:
+                continue
             w = item.widget()
             if w:
                 w.deleteLater()

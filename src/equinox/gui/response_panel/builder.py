@@ -3,36 +3,33 @@
 Contains all ``_build_*`` methods that create the widget tree.  Has no
 ``__init__`` — relies on ``self.*`` attributes set by ``ResponsePanel.__init__``.
 """
-
 # mypy: disable-error-code=attr-defined
-
 from __future__ import annotations
 
-from typing import Tuple
-
-from PyQt6.QtCore import Qt
-from PyQt6.QtGui import QKeySequence, QShortcut
-from PyQt6.QtWidgets import (
-    QHBoxLayout,
-    QHeaderView,
-    QLabel,
-    QLineEdit,
-    QMenu,
-    QPushButton,
-    QTableWidget,
-    QTabWidget,
-    QToolButton,
-    QVBoxLayout,
-    QWidget,
-)
+from collections.abc import Callable
 
 from equinox.core.codegen import GENERATORS
 from equinox.gui.response_panel.header_table import HeaderTable
 from equinox.gui.response_panel.intelligence_panel import IntelligencePanel
 from equinox.gui.response_panel.json_tree import JsonTree
 from equinox.gui.response_panel.read_only_text import ReadOnlyText
-from equinox.gui.response_panel.search_bar import SearchBar
+from equinox.gui.response_panel.search import SearchBar
 from equinox.gui.theme import get_mono_font
+from PyQt6.QtCore import Qt
+from PyQt6.QtGui import QAction
+from PyQt6.QtGui import QKeySequence
+from PyQt6.QtGui import QShortcut
+from PyQt6.QtWidgets import QHBoxLayout
+from PyQt6.QtWidgets import QHeaderView
+from PyQt6.QtWidgets import QLabel
+from PyQt6.QtWidgets import QLineEdit
+from PyQt6.QtWidgets import QMenu
+from PyQt6.QtWidgets import QPushButton
+from PyQt6.QtWidgets import QTableWidget
+from PyQt6.QtWidgets import QTabWidget
+from PyQt6.QtWidgets import QToolButton
+from PyQt6.QtWidgets import QVBoxLayout
+from PyQt6.QtWidgets import QWidget
 
 # Layout spacing constants
 _STATUS_BAR_SPACING = 0
@@ -74,7 +71,9 @@ def _make_muted_label(text: str = "") -> QLabel:
     return label
 
 
-def _make_button(text: str, width: int, tooltip: str = "", parent=None) -> QPushButton:
+def _make_button(
+    text: str, width: int, tooltip: str = "", parent: QWidget | None = None,
+) -> QPushButton:
     """Create a button with minimum width and optional tooltip."""
     btn = QPushButton(text, parent)
     btn.setMinimumWidth(width)
@@ -84,7 +83,7 @@ def _make_button(text: str, width: int, tooltip: str = "", parent=None) -> QPush
 
 
 def _make_container(
-    margins: tuple[int, int, int, int], spacing: int
+    margins: tuple[int, int, int, int], spacing: int,
 ) -> tuple[QWidget, QVBoxLayout]:
     """Create a QWidget with QVBoxLayout (contents margins and spacing pre-set).
 
@@ -97,11 +96,18 @@ def _make_container(
     return container, layout
 
 
-def _make_shortcut(seq: str, parent, callback) -> QShortcut:
+def _make_shortcut(seq: str, parent: QWidget, callback: Callable[[], None]) -> QShortcut:
     """Create a keyboard shortcut with proper activation connection."""
     shortcut = QShortcut(QKeySequence(seq), parent)
     shortcut.activated.connect(callback)
     return shortcut
+
+
+def _require_action(action: QAction | None, text: str) -> QAction:
+    """Return an action and fail fast if Qt did not create one."""
+    if action is None:
+        raise RuntimeError(f"Failed to create QAction: {text}")
+    return action
 
 
 class ResponseBuilderMixin:
@@ -146,7 +152,7 @@ class ResponseBuilderMixin:
         self._redact_btn.toggled.connect(self._on_redaction_toggled)
 
         diff_btn = _make_button(
-            "Diff…", _BTN_WIDTH_SMALL, "Compare response body with a history entry"
+            "Diff…", _BTN_WIDTH_SMALL, "Compare response body with a history entry",
         )
         diff_btn.clicked.connect(self._diff_with_history)
 
@@ -181,13 +187,14 @@ class ResponseBuilderMixin:
 
         menu.addSeparator()
         view_act = menu.addAction("View…")
-        view_act.triggered.connect(self._view_code_dialog)
+        if view_act is not None:
+            view_act.triggered.connect(self._view_code_dialog)
 
         btn.setMenu(menu)
         btn.clicked.connect(self._view_code_dialog)
         return btn
 
-    def _build_view_selector(self) -> Tuple[QToolButton, QMenu]:
+    def _build_view_selector(self) -> tuple[QToolButton, QMenu]:
         btn = QToolButton()
         btn.setText("View")
         btn.setToolTip("Switch between Raw and JSON Tree view")
@@ -195,14 +202,17 @@ class ResponseBuilderMixin:
 
         menu = QMenu(btn)
         raw_act = menu.addAction("Raw")
-        json_act = menu.addAction("JSON Tree")
-        raw_act.setCheckable(True)
-        json_act.setCheckable(True)
-        raw_act.setChecked(True)
-        json_act.setChecked(False)
+        if raw_act is not None:
+            raw_act.setCheckable(True)
+            raw_act.setChecked(True)
+            raw_act.triggered.connect(lambda: self._on_view_selected("raw"))
 
-        raw_act.triggered.connect(lambda: self._on_view_selected("raw"))
-        json_act.triggered.connect(lambda: self._on_view_selected("json"))
+        json_act = menu.addAction("JSON Tree")
+        if json_act is not None:
+            json_act.setCheckable(True)
+            json_act.setChecked(False)
+            json_act.triggered.connect(lambda: self._on_view_selected("json"))
+
         btn.setMenu(menu)
         btn.clicked.connect(btn.showMenu)
 
@@ -211,17 +221,17 @@ class ResponseBuilderMixin:
 
         return btn, menu
 
-    def _build_readability_selector(self) -> Tuple[QToolButton, QMenu]:
+    def _build_readability_selector(self) -> tuple[QToolButton, QMenu]:
         btn = QToolButton()
         btn.setText("Mode")
         btn.setToolTip("Switch body readability mode")
         btn.setPopupMode(QToolButton.ToolButtonPopupMode.MenuButtonPopup)
 
         menu = QMenu(btn)
-        pretty_act = menu.addAction("Pretty")
-        raw_act = menu.addAction("Raw")
-        split_act = menu.addAction("Split")
-        diff_act = menu.addAction("Diff")
+        pretty_act = _require_action(menu.addAction("Pretty"), "Pretty")
+        raw_act = _require_action(menu.addAction("Raw"), "Raw")
+        split_act = _require_action(menu.addAction("Split"), "Split")
+        diff_act = _require_action(menu.addAction("Diff"), "Diff")
         for action in (pretty_act, raw_act, split_act, diff_act):
             action.setCheckable(True)
         pretty_act.setChecked(True)
@@ -340,7 +350,7 @@ class ResponseBuilderMixin:
         self._body_tab_idx = self.tabs.addTab(container, "Body")
 
         # Keyboard shortcuts
-        _make_shortcut("Ctrl+F", self, self._open_search)
+        _make_shortcut("Ctrl+F", container, self._open_search)
 
         esc = QShortcut(QKeySequence("Escape"), self._search_bar)
         esc.setContext(Qt.ShortcutContext.WidgetWithChildrenShortcut)
@@ -380,15 +390,18 @@ class ResponseBuilderMixin:
 
         self._cookies_table = QTableWidget(0, _COOKIES_COLUMNS)
         self._cookies_table.setHorizontalHeaderLabels(
-            ["Name", "Value", "Domain", "Path", "Expires", "Secure", "HttpOnly"]
+            ["Name", "Value", "Domain", "Path", "Expires", "Secure", "HttpOnly"],
         )
         hdr = self._cookies_table.horizontalHeader()
-        hdr.setSectionResizeMode(0, QHeaderView.ResizeMode.Interactive)
-        hdr.setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
-        for col in (2, 3, 4, 5, 6):
-            hdr.setSectionResizeMode(col, QHeaderView.ResizeMode.ResizeToContents)
+        if hdr is not None:
+            hdr.setSectionResizeMode(0, QHeaderView.ResizeMode.Interactive)
+            hdr.setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
+            for col in (2, 3, 4, 5, 6):
+                hdr.setSectionResizeMode(col, QHeaderView.ResizeMode.ResizeToContents)
 
-        self._cookies_table.verticalHeader().setVisible(False)
+        v_header = self._cookies_table.verticalHeader()
+        if v_header is not None:
+            v_header.setVisible(False)
         self._cookies_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
         self._cookies_table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
         self._cookies_table.setAlternatingRowColors(True)
@@ -421,7 +434,7 @@ class ResponseBuilderMixin:
         self.sent_url_label.setFont(get_mono_font())
 
         copy_curl_btn = _make_button(
-            "Copy as cURL", _BTN_WIDTH_XLARGE, "Copy the request as a cURL command"
+            "Copy as cURL", _BTN_WIDTH_XLARGE, "Copy the request as a cURL command",
         )
         copy_curl_btn.clicked.connect(self._copy_as_curl)
 
