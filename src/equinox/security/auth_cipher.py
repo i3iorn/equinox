@@ -1,14 +1,13 @@
 """Security primitives for auth credential encryption and decryption."""
-
 from __future__ import annotations
 
 import logging
 import threading
+from collections.abc import Callable
 from pathlib import Path
-from typing import Callable, cast
 
-from cryptography.fernet import Fernet, InvalidToken
-
+from cryptography.fernet import Fernet
+from cryptography.fernet import InvalidToken
 from equinox.core.exceptions import SecurityError
 from equinox.security import crypto
 
@@ -20,7 +19,10 @@ _fernet_lock = threading.Lock()
 
 def get_or_create_key(key_path: Path | None = None) -> bytes:
     """Return the raw key used for auth-data encryption."""
-    return crypto.get_or_create_raw_key(key_path)
+    key = crypto.get_or_create_raw_key(key_path)
+    if isinstance(key, bytes):
+        return key
+    raise SecurityError("Crypto backend returned non-bytes key material")
 
 
 def get_fernet(
@@ -43,7 +45,10 @@ def get_fernet(
             return _fernet
 
         key = get_or_create_key()
-        _fernet = crypto.make_fernet(key)
+        fernet_obj = crypto.make_fernet(key)
+        if not isinstance(fernet_obj, Fernet):
+            raise SecurityError("Crypto backend returned invalid Fernet instance")
+        _fernet = fernet_obj
         return _fernet
 
 
@@ -65,7 +70,9 @@ def encrypt_utf8(
 ) -> str:
     """Encrypt a UTF-8 plaintext string and return ASCII Fernet token text."""
     f = get_fernet(master_password_loader=master_password_loader)
-    token = cast(bytes, f.encrypt(plaintext.encode("utf-8")))
+    token = f.encrypt(plaintext.encode("utf-8"))
+    if not isinstance(token, bytes):
+        raise SecurityError("Encryption backend returned non-bytes token")
     return token.decode("ascii")
 
 
@@ -77,7 +84,10 @@ def decrypt_token_to_bytes(
     """Decrypt ASCII ciphertext and return raw plaintext bytes."""
     f = get_fernet(master_password_loader=master_password_loader)
     try:
-        return cast(bytes, f.decrypt(ciphertext.encode("ascii")))
+        plaintext = f.decrypt(ciphertext.encode("ascii"))
+        if isinstance(plaintext, bytes):
+            return plaintext
+        raise SecurityError("Decryption backend returned non-bytes payload")
     except InvalidToken as exc:
         logger.error(
             "Failed to decrypt %s: ciphertext is invalid or corrupted",
