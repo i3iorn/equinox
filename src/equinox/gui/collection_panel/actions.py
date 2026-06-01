@@ -1,20 +1,19 @@
 """Action methods mixin for CollectionsPanel."""
-
 from typing import Any
-
-# mypy: disable-error-code=attr-defined
-from PyQt6.QtCore import Qt
-from PyQt6.QtWidgets import (
-    QDialog,
-    QInputDialog,
-    QMessageBox,
-)
+from typing import cast
 
 from equinox.core.request import Request
 from equinox.gui.error_presenter import ErrorPresenter
+from PyQt6.QtCore import Qt
+from PyQt6.QtWidgets import QDialog
+from PyQt6.QtWidgets import QInputDialog
+from PyQt6.QtWidgets import QMessageBox
+from PyQt6.QtWidgets import QTreeWidgetItem
+from PyQt6.QtWidgets import QWidget
+# mypy: disable-error-code=attr-defined
 
 
-class _CollectionsActionsMixin:
+class _CollectionsActionsMixin(QWidget):
     """Mixin providing all action/handler methods for CollectionsPanel.
 
     Expects ``self.db``, ``self._tree`` (or ``self.tree``), signals
@@ -22,20 +21,26 @@ class _CollectionsActionsMixin:
     ``self.collections_changed`` to be available on the host class.
     """
 
-    def _load_request(self, request_id: int):
+    def _as_qwidget(self) -> QWidget:
+        """Return the host as a QWidget for Qt parent arguments."""
+        return cast(QWidget, self)
+
+    def _load_request(self, request_id: int) -> None:
         request = self._collection_facade.get_request(request_id)
         if request:
             self.request_selected.emit(request)
 
-    def _run_request(self, request_id: int):
+    def _run_request(self, request_id: int) -> None:
         """Load and immediately fire the request without opening the editor."""
         request = self._collection_facade.get_request(request_id)
         if request:
             self.request_run.emit(request)
 
-    def _rename_collection(self, collection_id: int, item):
+    def _rename_collection(self, collection_id: int, item: Any) -> None:
         old_name = item.text(0)
-        new_name, ok = QInputDialog.getText(self, "Rename Collection", "New name:", text=old_name)
+        new_name, ok = QInputDialog.getText(
+            self._as_qwidget(), "Rename Collection", "New name:", text=old_name,
+        )
         if not ok or not new_name.strip() or new_name.strip() == old_name:
             return
         try:
@@ -45,7 +50,7 @@ class _CollectionsActionsMixin:
         except Exception as exc:
             ErrorPresenter.error(self, str(exc))
 
-    def _rename_request(self, request_id: int, item):
+    def _rename_request(self, request_id: int, item: QTreeWidgetItem) -> None:
         # Strip method prefix from displayed name
         old_display = item.text(0)
         # "GET  My Request" → "My Request"
@@ -61,7 +66,7 @@ class _CollectionsActionsMixin:
         except Exception as exc:
             ErrorPresenter.error(self, str(exc))
 
-    def _duplicate_request(self, request_id: int):
+    def _duplicate_request(self, request_id: int) -> None:
         try:
             self._collection_facade.duplicate_request(request_id)
             self.refresh()
@@ -71,7 +76,7 @@ class _CollectionsActionsMixin:
 
     # ── Delete ────────────────────────────────────────────────────────
 
-    def _delete_collection(self, collection_id: int):
+    def _delete_collection(self, collection_id: int) -> None:
         reply = QMessageBox.question(
             self,
             "Confirm Delete",
@@ -84,7 +89,7 @@ class _CollectionsActionsMixin:
                 self.refresh()
                 self.collections_changed.emit()
             except Exception as e:
-                ErrorPresenter.error(self, f"Failed to delete collection: {e}")
+                ErrorPresenter.error(self._as_qwidget(), f"Failed to delete collection: {e}")
 
     def _delete_request(self, request_id: int) -> None:
         reply = QMessageBox.question(
@@ -101,7 +106,7 @@ class _CollectionsActionsMixin:
             except Exception as e:
                 ErrorPresenter.error(self, f"Failed to delete request: {e}")
 
-    def _manage_variables(self, collection_id: int):
+    def _manage_variables(self, collection_id: int) -> None:
         from equinox.gui.dialogs.collection_variables_dialog import CollectionVariablesDialog
 
         collection = self._collection_facade.get_collection(collection_id)
@@ -132,7 +137,7 @@ class _CollectionsActionsMixin:
         if col_id is None:
             return
         path, ok = QInputDialog.getText(
-            self, "Add Folder", "Folder name or path (e.g. Auth or Auth/OAuth):"
+            self, "Add Folder", "Folder name or path (e.g. Auth or Auth/OAuth):",
         )
         if not ok or not path.strip():
             return
@@ -141,14 +146,14 @@ class _CollectionsActionsMixin:
             self.refresh()
             self.collections_changed.emit()
         except Exception as exc:
-            ErrorPresenter.error(self, str(exc))
+            ErrorPresenter.error(self._as_qwidget(), str(exc))
 
-    def _create_subfolder(self, col_id: "int | None", parent_path: str) -> None:
+    def _create_subfolder(self, col_id: int | None, parent_path: str) -> None:
         """Prompt the user for a subfolder name and create it under *parent_path*."""
         if col_id is None:
             return
         name, ok = QInputDialog.getText(
-            self, "Add Subfolder", f'Subfolder name (inside "{parent_path}"):'
+            self._as_qwidget(), "Add Subfolder", f'Subfolder name (inside "{parent_path}"):',
         )
         if not ok or not name.strip():
             return
@@ -181,7 +186,7 @@ class _CollectionsActionsMixin:
         from equinox.gui.collection_panel.panel import _NewRequestDialog
 
         dlg = _NewRequestDialog(
-            self, title=f'New Request in "{folder_path}"', folder_hint=folder_path
+            self, title=f'New Request in "{folder_path}"', folder_hint=folder_path,
         )
         if dlg.exec() != QDialog.DialogCode.Accepted:
             return
@@ -194,7 +199,7 @@ class _CollectionsActionsMixin:
         name: str,
         method: str,
         url: str,
-        folder: "str | None",
+        folder: str | None,
     ) -> None:
         """Persist a new request and emit request_selected to open it in the editor."""
         req = Request(
@@ -225,7 +230,7 @@ class _CollectionsActionsMixin:
         if col_id is None:
             return
         new_path, ok = QInputDialog.getText(
-            self, "Rename Folder", "New folder name/path:", text=old_path
+            self, "Rename Folder", "New folder name/path:", text=old_path,
         )
         if not ok or not new_path.strip() or new_path.strip() == old_path:
             return
@@ -234,13 +239,13 @@ class _CollectionsActionsMixin:
             self.refresh()
             self.collections_changed.emit()
         except Exception as exc:
-            ErrorPresenter.error(self, str(exc))
+            ErrorPresenter.error(self._as_qwidget(), str(exc))
 
-    def _delete_folder(self, col_id: "int | None", folder_path: str) -> None:
+    def _delete_folder(self, col_id: int | None, folder_path: str) -> None:
         if col_id is None:
             return
         reply = QMessageBox.question(
-            self,
+            self._as_qwidget(),
             "Delete Folder",
             f'Delete folder "{folder_path}"?\n\n'
             "Choose Yes to move requests to root, or No to delete them.",
@@ -256,11 +261,11 @@ class _CollectionsActionsMixin:
             self.refresh()
             self.collections_changed.emit()
         except Exception as exc:
-            ErrorPresenter.error(self, str(exc))
+            ErrorPresenter.error(self._as_qwidget(), str(exc))
 
     def _move_to_folder(self, request_id: int) -> None:
         folder_path, ok = QInputDialog.getText(
-            self,
+            self._as_qwidget(),
             "Move to Folder",
             "Folder path (leave empty to move to root):",
         )
@@ -271,7 +276,7 @@ class _CollectionsActionsMixin:
             self.refresh()
             self.collections_changed.emit()
         except Exception as exc:
-            ErrorPresenter.error(self, str(exc))
+            ErrorPresenter.error(self._as_qwidget(), str(exc))
 
     def _on_request_dropped(self, request_id: int, target_col_id: int, target_folder: str) -> None:
         """Handle a drag-and-drop move of a request to a new collection/folder."""
@@ -290,7 +295,7 @@ class _CollectionsActionsMixin:
 
             if source_col != target_col_id:
                 self._collection_facade.move_request_to_collection(
-                    request_id, target_col_id, target_folder
+                    request_id, target_col_id, target_folder,
                 )
             else:
                 self._collection_facade.move_request_to_folder(request_id, target_folder)
@@ -298,7 +303,7 @@ class _CollectionsActionsMixin:
             self.refresh()
             self.collections_changed.emit()
         except Exception as exc:
-            ErrorPresenter.error(self, f"Failed to move request: {exc}")
+            ErrorPresenter.error(self._as_qwidget(), f"Failed to move request: {exc}")
 
     def _on_request_reorder(self, dragged_id: int, target_id: int) -> None:
         """Handle reordering: place *dragged_id* immediately before *target_id*."""
@@ -308,7 +313,7 @@ class _CollectionsActionsMixin:
             self.refresh()
             self.collections_changed.emit()
         except Exception as exc:
-            ErrorPresenter.error(self, f"Failed to reorder: {exc}")
+            ErrorPresenter.error(self._as_qwidget(), f"Failed to reorder: {exc}")
 
     def _sort_group(self, col_id: int, folder: "str | None", mode: str) -> None:
         """Sort requests in a collection/folder group."""
@@ -329,7 +334,7 @@ class _CollectionsActionsMixin:
         current_auth = self._collection_facade.get_collection_auth(col_id)
         from equinox.gui.dialogs.auth_dialog import AuthDialog
 
-        dialog = AuthDialog(current_auth, self, db=self.db)
+        dialog = AuthDialog(current_auth, self._as_qwidget(), db=self.db)
         if dialog.exec() == QDialog.DialogCode.Accepted and hasattr(dialog, "_saved_auth"):
             self._collection_facade.set_collection_auth(col_id, dialog._saved_auth)
             self.collections_changed.emit()
@@ -343,7 +348,7 @@ class _CollectionsActionsMixin:
         current_auth = self._collection_facade.get_folder_auth(col_id, folder_path)
         from equinox.gui.dialogs.auth_dialog import AuthDialog
 
-        dialog = AuthDialog(current_auth, self, db=self.db)
+        dialog = AuthDialog(current_auth, self._as_qwidget(), db=self.db)
         if dialog.exec() == QDialog.DialogCode.Accepted and hasattr(dialog, "_saved_auth"):
             self._collection_facade.set_folder_auth(col_id, folder_path, dialog._saved_auth)
             self.collections_changed.emit()
