@@ -264,6 +264,7 @@ class RequestPanelLayoutMixin:
     def _build_body_type_bar(self) -> QHBoxLayout:
         """Body-type combo and format button."""
         type_bar = QHBoxLayout()
+        type_bar.setContentsMargins(10, 0, 0, 0)
         self.body_type_combo = QComboBox()
         self.body_type_combo.addItems(
             [
