@@ -11,26 +11,22 @@ Non-UI responsibilities intentionally left to the caller / facade:
 - auto-creating a default collection when none exist
 - performing the actual save/update persistence
 """
-
 from collections.abc import Iterable
-from typing import Optional, Tuple, TypedDict
+from typing import TypedDict
 
-from PyQt6.QtWidgets import (
-    QComboBox,
-    QDialog,
-    QDialogButtonBox,
-    QHBoxLayout,
-    QLabel,
-    QLineEdit,
-    QMessageBox,
-    QVBoxLayout,
-    QWidget,
-)
+from PyQt6.QtWidgets import QComboBox
+from PyQt6.QtWidgets import QDialog
+from PyQt6.QtWidgets import QDialogButtonBox
+from PyQt6.QtWidgets import QHBoxLayout
+from PyQt6.QtWidgets import QLabel
+from PyQt6.QtWidgets import QLineEdit
+from PyQt6.QtWidgets import QMessageBox
+from PyQt6.QtWidgets import QVBoxLayout
+from PyQt6.QtWidgets import QWidget
 
-from equinox.gui.request_panel._constants import (
-    SAVE_DIALOG_MIN_WIDTH,
-    SAVE_DIALOG_URL_PREVIEW_LEN,
-)
+
+SAVE_DIALOG_MIN_WIDTH = 420
+SAVE_DIALOG_URL_PREVIEW_LEN = 50
 
 
 class SaveDialogCollectionChoice(TypedDict):
@@ -49,7 +45,7 @@ class SaveRequestDialog(QDialog):
         method: str,
         url: str,
         current_folder: str = "",
-        parent: Optional[QWidget] = None,
+        parent: QWidget | None = None,
     ) -> None:
         super().__init__(parent)
         self.setWindowTitle("Save Request")
@@ -88,7 +84,7 @@ class SaveRequestDialog(QDialog):
 
         # ── Dialog Buttons ────────────────────────────────────────────────
         buttons = QDialogButtonBox(
-            QDialogButtonBox.StandardButton.Save | QDialogButtonBox.StandardButton.Cancel
+            QDialogButtonBox.StandardButton.Save | QDialogButtonBox.StandardButton.Cancel,
         )
         buttons.accepted.connect(self._on_save_clicked)
         buttons.rejected.connect(self.reject)
@@ -113,7 +109,7 @@ class SaveRequestDialog(QDialog):
         """
         if self._col_combo.currentData() is None:
             QMessageBox.warning(
-                self, "No Collection", "Please select or create a collection first."
+                self, "No Collection", "Please select or create a collection first.",
             )
             return False
         return True
@@ -126,7 +122,7 @@ class SaveRequestDialog(QDialog):
 
     # ── Public API ────────────────────────────────────────────────────────
 
-    def result_values(self) -> Tuple[str, int, str, Optional[str]]:
+    def result_values(self) -> tuple[str, int, str, str | None]:
         """Extract and return the user's choices.
 
         Returns:
@@ -139,5 +135,5 @@ class SaveRequestDialog(QDialog):
         name = self._name_input.text().strip() or self._default_name
         col_id: int = self._col_combo.currentData()
         col_name: str = self._col_combo.currentText()
-        folder: Optional[str] = self._folder_input.text().strip() or None
+        folder: str | None = self._folder_input.text().strip() or None
         return name, col_id, col_name, folder
