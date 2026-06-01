@@ -12,15 +12,17 @@ This mixin extracts those patterns so each dialog only implements the
 parts that genuinely differ.  Subclasses set the ``_list_widget`` and
 ``_save_method`` attributes and everything else works automatically.
 """
-
 from __future__ import annotations
 
-from typing import Callable
-
-from PyQt6.QtCore import Qt
-from PyQt6.QtWidgets import QLabel, QListWidget, QMessageBox
+from collections.abc import Callable
+from typing import cast
 
 from equinox.gui.theme import Colors
+from PyQt6.QtCore import Qt
+from PyQt6.QtWidgets import QLabel
+from PyQt6.QtWidgets import QListWidget
+from PyQt6.QtWidgets import QMessageBox
+from PyQt6.QtWidgets import QWidget
 
 
 class DirtyDialogMixin:
@@ -50,7 +52,7 @@ class DirtyDialogMixin:
         """Prompt to save dirty changes before closing the dialog."""
         if self._dirty:
             ans = QMessageBox.question(
-                self,  # type: ignore[arg-type]
+                cast(QWidget, self),
                 "Unsaved Changes",
                 "Save changes before closing?",
                 QMessageBox.StandardButton.Save
@@ -70,7 +72,10 @@ class DirtyDialogMixin:
         """Re-select the list item carrying *item_id* without firing signals."""
         self._list_widget.blockSignals(True)
         for i in range(self._list_widget.count()):
-            if self._list_widget.item(i).data(Qt.ItemDataRole.UserRole) == item_id:
+            item = self._list_widget.item(i)
+            if item is None:
+                continue
+            if item.data(Qt.ItemDataRole.UserRole) == item_id:
                 self._list_widget.setCurrentRow(i)
                 break
         self._list_widget.blockSignals(False)
@@ -84,7 +89,7 @@ class DirtyDialogMixin:
         ``False`` if the switch was cancelled (or save failed).
         """
         ans = QMessageBox.question(
-            self,  # type: ignore[arg-type]
+            cast(QWidget, self),
             "Unsaved Changes",
             "Save changes to the current item before switching?",
             QMessageBox.StandardButton.Save
