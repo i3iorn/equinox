@@ -316,7 +316,7 @@ body_bytes = raw_body.encode("utf-8") if isinstance(raw_body, str) else (raw_bod
 Syntax highlighting is implemented centrally in the `gui/syntax_highlighter/` **package**.
 
 - **`base.py`**: `RegexHighlighterBase(QSyntaxHighlighter)`, `RegexRule`, `_make_format()`, `_variable_fmt()`, `_VARIABLE_PATTERN`
-- **`json_highlighter.py`**: `JsonHighlighter`
+- **`json_highlighter/`**: `JsonHighlighter`, `JsonLexer`, `LexerState`, `JsonLexerConfig`, `Token` (implementation lives in `highlighter.py`, with related formatting and lexer helpers in the subpackage)
 - **`python_highlighter.py`**: `PythonHighlighter`
 - **`xml_highlighter.py`**: `XmlHighlighter` (alias `HtmlHighlighter`)
 - **`yaml_highlighter.py`**: `YamlHighlighter`
@@ -335,7 +335,7 @@ Where highlighters attach:
 
 Guidance for adding a new language highlighter:
 
-1. Add a new subclass of `RegexHighlighterBase` in `src/equinox/gui/syntax_highlighter/` (new file) and implement `_build_rules()` returning `RegexRule(pattern, fmt)` entries.
+1. Add a new subclass of `RegexHighlighterBase` in `src/equinox/gui/syntax_highlighter/` (new file or subpackage) and implement `_build_rules()` returning `RegexRule(pattern, fmt)` entries.
 2. Export it from `__init__.py`.
 3. Reuse `_make_format(...)` and `Colors` for consistent styling.
 4. Attach the highlighter to the editor's `QTextDocument` when creating the editor.
@@ -461,7 +461,7 @@ def run(self) -> None:
 | `gui/dialogs/usage_stats_dialog.py` | UI usage statistics viewer and management interface (v0.4.3+) |
 | `gui/request_panel/` | Package: `panel.py` (RequestPanel), `mixins.py` (send/auth), `body_mixin.py`, `builder.py`, `save_dialog.py`, `toolbar.py` |
 | `gui/response_panel/` | Package: `panel.py`, `builder.py`, `display_mixin.py`, `actions_mixin.py`, `search_bar.py`, etc. |
-| `gui/syntax_highlighter/` | Package: `base.py`, `json_highlighter.py`, `python_highlighter.py`, `xml_highlighter.py`, `yaml_highlighter.py` |
+| `gui/syntax_highlighter/` | Package: `base.py`, `json_highlighter/` (`highlighter.py`, `formats.py`, `lexer/`), `python_highlighter.py`, `xml_highlighter.py`, `yaml_highlighter.py` |
 | `gui/intelligence_worker.py` | Background intelligence analysis with defensive parent widget checks (v0.4.2+) |
 | `gui/window.py` | Signal wiring hub — connects all panels, menu actions, and keyboard shortcuts |
 | `core/interceptors/` | `InterceptorChain`, logging interceptors |

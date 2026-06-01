@@ -2,22 +2,20 @@
 Pure search engine logic.
 No Qt imports. No UI. Fully testable.
 """
-
 from __future__ import annotations
 
 import json
 import logging
 from dataclasses import dataclass
-from enum import Enum, auto
-from typing import Any, Sequence
+from enum import auto
+from enum import Enum
+from typing import Any
 
-from .constants import (
-    MAX_MATCHES,
-    PREVIEW_MAX_VALUES,
-    PREVIEW_VALUE_LIMIT,
-    ERROR_NO_JSON,
-    ERROR_JSONPATH_IMPORT,
-)
+from .constants import ERROR_JSONPATH_IMPORT
+from .constants import ERROR_NO_JSON
+from .constants import MAX_MATCHES
+from .constants import PREVIEW_MAX_VALUES
+from .constants import PREVIEW_VALUE_LIMIT
 
 logger = logging.getLogger(__name__)
 

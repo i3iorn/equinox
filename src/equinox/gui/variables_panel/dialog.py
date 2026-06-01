@@ -15,7 +15,7 @@ class GroupDialogs:
     def __init__(self, parent: QWidget) -> None:
         self.parent = parent
 
-    # ── Group dialogs ───────────────────────────────────────────────────────
+    # ÔöÇÔöÇ Group dialogs ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ
 
     def ask_group_name(self) -> tuple[str | None, bool]:
         name, ok = QInputDialog.getText(self.parent, "New Variable Group", "Group name:")
@@ -50,7 +50,7 @@ class GroupDialogs:
         accepted = bool(ok)
         return (new_name if accepted and new_name else None, accepted)
 
-    # ── Variable dialogs ─────────────────────────────────────────────────────
+    # ÔöÇÔöÇ Variable dialogs ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ
 
     def edit_variable(
         self,
@@ -71,7 +71,7 @@ class GroupDialogs:
         values = dialog.get_values()
         return (str(values[0]), str(values[1]), str(values[2]))
 
-    # ── Messages ─────────────────────────────────────────────────────────────
+    # ÔöÇÔöÇ Messages ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ
 
     def show_success(self, message: str) -> None:
         QMessageBox.information(self.parent, "Success", message)

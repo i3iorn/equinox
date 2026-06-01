@@ -16,6 +16,7 @@ import json
 import logging
 from collections.abc import Iterable
 from typing import Any
+from typing import cast
 
 from equinox.core.request import Response
 
@@ -96,7 +97,7 @@ def _pretty_print_xml(text: str) -> str:
     """
     try:
         parsed = _SAFE_MINIDOM.parseString(text.encode("utf-8"))
-        return str(parsed.toprettyxml(indent="  "))
+        return cast(str, parsed.toprettyxml(indent="  "))
     except Exception as e:
         logger.debug("XML pretty-print failed: %s", e)
         return text

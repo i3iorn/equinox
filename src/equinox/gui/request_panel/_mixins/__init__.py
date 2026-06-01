@@ -11,7 +11,6 @@ All public names are re-exported here for backward compatibility — existing
 imports like ``from equinox.gui.request_panel.mixins import _RequestSendMixin``
 continue to work unchanged.
 """
-
 from equinox.gui.request_panel._mixins.auth_mixin import _RequestAuthMixin
 from equinox.gui.request_panel._mixins.helpers import notify_log_panel
 from equinox.gui.request_panel._mixins.send_mixin import _RequestSendMixin

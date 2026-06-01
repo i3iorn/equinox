@@ -1,5 +1,4 @@
 """Coverage-boosting tests for GUI dialogs."""
-
 from unittest.mock import patch
 
 import pytest
@@ -119,7 +118,7 @@ class TestApiSpecDialog:
             {
                 "OpenAPI": '{"openapi": "3.0.0"}',
                 "Postman": '{"info": {"name": "test"}}',
-            }
+            },
         )
         assert dlg.format_combo.count() == 2
 
@@ -138,7 +137,7 @@ class TestApiSpecDialog:
             {
                 "OpenAPI": '{"openapi": "3.0.0"}',
                 "Postman": '{"info": {"name": "test"}}',
-            }
+            },
         )
         dlg.format_combo.setCurrentIndex(1)
         _process()
@@ -564,7 +563,7 @@ class TestSaveRequestDialog:
         from equinox.gui.dialogs.save_dialog import SaveRequestDialog
 
         dlg = SaveRequestDialog(
-            self._collections(), "GET", "https://example.com", current_folder="Auth/OAuth"
+            self._collections(), "GET", "https://example.com", current_folder="Auth/OAuth",
         )
         assert dlg._folder_input.text() == "Auth/OAuth"
 

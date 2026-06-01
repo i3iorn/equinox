@@ -8,7 +8,6 @@ Auth display and preflight checks are now derived from the strategy
 classes themselves (via ``get_display_summary`` / ``get_preflight_warning``),
 eliminating the need for parallel isinstance dispatch tables.
 """
-
 from __future__ import annotations
 
 import re
@@ -30,7 +29,7 @@ AUTH_VOLATILE_KEYS = frozenset(
         "access_token",
         "refresh_token",
         "token_timeout",
-    }
+    },
 )
 
 

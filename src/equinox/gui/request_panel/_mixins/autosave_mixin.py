@@ -1,13 +1,13 @@
 """Autosave and dirty-state helpers for RequestPanel."""
-
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING, Any
+from typing import Any
+from typing import TYPE_CHECKING
 
+from equinox.application.requests._assembly import assemble_body
 from equinox.core.request import Request
 from equinox.gui.request_panel._constants import STATUS_DURATION_LONG
-from equinox.gui.request_panel.builder import assemble_body
 
 logger = logging.getLogger(__name__)
 
@@ -107,10 +107,10 @@ class RequestAutosaveMixin:
             logger.debug("Autosaved request id=%s %s %s", req.id, updated.method, updated.url)
         except Exception:
             logger.error(
-                "Autosave failed for request id=%s", getattr(req, "id", None), exc_info=True
+                "Autosave failed for request id=%s", getattr(req, "id", None), exc_info=True,
             )
             self._status_message(
-                "Autosave failed - click Save to preserve changes", STATUS_DURATION_LONG
+                "Autosave failed - click Save to preserve changes", STATUS_DURATION_LONG,
             )
 
     def save_current_request(self) -> bool:

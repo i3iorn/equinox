@@ -25,7 +25,7 @@ _ASSERTION_TYPES: tuple[str, ...] = (
 
 _LABEL_ASSERTIONS = "Assertions"
 _LABEL_LAST_ASSERTION = "Last assertion results:"
-_LABEL_EMPTY = "—"
+_LABEL_EMPTY = "ÔÇö"
 _LAYOUT_MARGINS = (0, 4, 0, 0)
 _TOOLBAR_MARGINS = (0, 2, 0, 0)
 _TOOLBAR_SPACING = 2
@@ -55,7 +55,7 @@ class AssertionsMixin:
         add_button = QPushButton("+ Add")
         add_button.setMinimumWidth(_BUTTON_ADD_WIDTH)
         add_button.clicked.connect(add_slot)
-        remove_button = QPushButton("− Remove")
+        remove_button = QPushButton("ÔêÆ Remove")
         remove_button.setMinimumWidth(_BUTTON_REMOVE_WIDTH)
         remove_button.clicked.connect(remove_slot)
 
@@ -168,12 +168,12 @@ class AssertionsMixin:
     def _render_assertion_line(self, rule: dict[str, str], response: Any) -> str:
         """Return a rendered assertion result line."""
         passed, message = _evaluate_assertion(rule, response)
-        icon = "✓" if passed else "✗"
+        icon = "Ô£ô" if passed else "Ô£ù"
         return f"{icon} {message}"
 
     def _update_assertions_tab_label(self, lines: list[str]) -> None:
         """Reflect assertion pass/fail counts in the tab label."""
-        passed_count = sum(1 for line in lines if line.startswith("✓"))
+        passed_count = sum(1 for line in lines if line.startswith("Ô£ô"))
         total = len(lines)
         label = f"{_LABEL_ASSERTIONS} ({passed_count}/{total})" if lines else _LABEL_ASSERTIONS
         for index in range(self.tabs.count()):

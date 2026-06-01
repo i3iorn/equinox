@@ -78,7 +78,7 @@ class SendWorkerMixin:
             label.setText(f"Error: {result.error}")
             return
         change_count = len(result.env_changes)
-        label.setText(f"OK — {change_count} var(s) set" if change_count else "OK")
+        label.setText(f"OK ÔÇö {change_count} var(s) set" if change_count else "OK")
 
     def _apply_script_vars(self, result: Any) -> None:
         """Merge script output variables into session state."""
@@ -135,7 +135,7 @@ class SendWorkerMixin:
         if sending:
             self._elapsed_secs = 0.0
             self._elapsed_timer.start()
-            self.send_button.setText("0.0s…")
+            self.send_button.setText("0.0sÔÇª")
             return
         self._elapsed_timer.stop()
         self.send_button.setText("Send")
@@ -143,4 +143,4 @@ class SendWorkerMixin:
     def _tick_elapsed(self) -> None:
         """Update the elapsed-time indicator while a request is in flight."""
         self._elapsed_secs += 0.1
-        self.send_button.setText(f"{self._elapsed_secs:.1f}s…")
+        self.send_button.setText(f"{self._elapsed_secs:.1f}sÔÇª")

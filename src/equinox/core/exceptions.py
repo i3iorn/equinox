@@ -1,5 +1,4 @@
 """Exceptions for Equinox"""
-
 from typing import Any
 
 
@@ -150,5 +149,17 @@ class FileSizeError(EquinoxError):
 
 class CertificateError(EquinoxError):
     """SSL/TLS certificate validation error."""
+
+    pass
+
+
+class JsonParseError(EquinoxError):
+    """JSON parsing error."""
+
+    pass
+
+
+class JsonTypeError(EquinoxError):
+    """JSON type error."""
 
     pass

@@ -1,27 +1,28 @@
 """Global variables section for VariablesPanel."""
-
 from __future__ import annotations
 
 import logging
-
-from PyQt6.QtCore import Qt
-from PyQt6.QtWidgets import (
-    QDialog,
-    QGroupBox,
-    QHBoxLayout,
-    QHeaderView,
-    QMessageBox,
-    QPushButton,
-    QSizePolicy,
-    QTableWidget,
-    QTableWidgetItem,
-    QVBoxLayout,
-)
+from typing import Any
+from typing import cast
+from typing import TYPE_CHECKING
 
 from equinox.core.exceptions import ValidationError
 from equinox.core.validation import Validator
+from PyQt6.QtCore import Qt
+from PyQt6.QtWidgets import QDialog
+from PyQt6.QtWidgets import QGroupBox
+from PyQt6.QtWidgets import QHBoxLayout
+from PyQt6.QtWidgets import QHeaderView
+from PyQt6.QtWidgets import QMessageBox
+from PyQt6.QtWidgets import QPushButton
+from PyQt6.QtWidgets import QSizePolicy
+from PyQt6.QtWidgets import QTableWidget
+from PyQt6.QtWidgets import QTableWidgetItem
+from PyQt6.QtWidgets import QVBoxLayout
+from PyQt6.QtWidgets import QWidget
 
-from ..ui_common import confirm_yes_no, create_muted_label
+from ..ui_common import confirm_yes_no
+from ..ui_common import create_muted_label
 from .variable_dialog import VariableDialog
 
 logger = logging.getLogger(__name__)
@@ -32,6 +33,10 @@ _GLOBAL_TABLE_MIN_VISIBLE_ROWS = 1
 
 class _GlobalVarsMixin:
     """Mixin providing the Global Variables section UI and CRUD logic."""
+
+    if TYPE_CHECKING:
+        _global_mgr: Any
+        variables_changed: Any
 
     def _build_global_vars_section(self) -> QGroupBox:
         """Construct the Global Variables group box and wire all signals.
@@ -46,7 +51,7 @@ class _GlobalVarsMixin:
         global_layout.setSpacing(4)
 
         self._magic_hint = create_muted_label(
-            "Built-in magic vars: {{TODAY}}, {{ONE_MONTH_AGO}}, {{ONE_YEAR_AGO}}, {{NOW_ISO}}"
+            "Built-in magic vars: {{TODAY}}, {{ONE_MONTH_AGO}}, {{ONE_YEAR_AGO}}, {{NOW_ISO}}",
         )
         self._magic_hint.setWordWrap(True)
         global_layout.addWidget(self._magic_hint)
@@ -69,20 +74,18 @@ class _GlobalVarsMixin:
         self._global_table = QTableWidget()
         self._global_table.setColumnCount(3)
         self._global_table.setHorizontalHeaderLabels(["Variable", "Value", "Description"])
-        self._global_table.horizontalHeader().setSectionResizeMode(
-            0, QHeaderView.ResizeMode.ResizeToContents
-        )
-        self._global_table.horizontalHeader().setSectionResizeMode(
-            1, QHeaderView.ResizeMode.Stretch
-        )
-        self._global_table.horizontalHeader().setSectionResizeMode(
-            2, QHeaderView.ResizeMode.Stretch
-        )
+        header = self._global_table.horizontalHeader()
+        if header is not None:
+            header.setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
+            header.setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
+            header.setSectionResizeMode(2, QHeaderView.ResizeMode.Stretch)
         self._global_table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
         self._global_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
         self._global_table.itemSelectionChanged.connect(self._on_global_selection)
         self._global_table.itemDoubleClicked.connect(self._edit_global_var)
-        self._global_table.verticalHeader().setVisible(False)
+        v_header = self._global_table.verticalHeader()
+        if v_header is not None:
+            v_header.setVisible(False)
         self._global_table.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Maximum)
         global_layout.addWidget(self._global_table)
 
@@ -92,9 +95,11 @@ class _GlobalVarsMixin:
 
     def _global_table_target_height(self) -> int:
         """Return a compact, content-based height for the global variables table."""
-        header_h = self._global_table.horizontalHeader().height()
+        header = self._global_table.horizontalHeader()
+        v_header = self._global_table.verticalHeader()
+        header_h = header.height() if header is not None else 0
         frame_h = self._global_table.frameWidth() * 2
-        row_h = self._global_table.verticalHeader().defaultSectionSize()
+        row_h = v_header.defaultSectionSize() if v_header is not None else 0
         visible_rows = max(
             _GLOBAL_TABLE_MIN_VISIBLE_ROWS,
             min(self._global_var_count, _GLOBAL_TABLE_MAX_VISIBLE_ROWS),
@@ -142,7 +147,8 @@ class _GlobalVarsMixin:
         self._global_delete_btn.setEnabled(has_selection)
 
     def _add_global_var(self) -> None:
-        dialog = VariableDialog(self)
+        parent = cast(QWidget, self)
+        dialog = VariableDialog(parent)
         if dialog.exec() != QDialog.DialogCode.Accepted:
             return
         key, value, description = dialog.get_values()
@@ -152,19 +158,25 @@ class _GlobalVarsMixin:
             self.refresh_global_vars()
             self.variables_changed.emit()
         except ValidationError as exc:
-            QMessageBox.warning(self, "Validation", str(exc))
+            QMessageBox.warning(parent, "Validation", str(exc))
         except Exception as exc:
             logger.error("Failed to add global variable %r: %s", key, exc, exc_info=True)
-            QMessageBox.critical(self, "Error", f"Failed to add global variable: {exc}")
+            QMessageBox.critical(parent, "Error", f"Failed to add global variable: {exc}")
 
     def _edit_global_var(self) -> None:
         row = self._global_table.currentRow()
         if row < 0:
             return
-        key = self._global_table.item(row, 0).text()
-        value = self._global_table.item(row, 1).text()
-        description = self._global_table.item(row, 2).text()
-        dialog = VariableDialog(self, key, value, description)
+        key_item = self._global_table.item(row, 0)
+        value_item = self._global_table.item(row, 1)
+        desc_item = self._global_table.item(row, 2)
+        if key_item is None or value_item is None or desc_item is None:
+            return
+        key = key_item.text()
+        value = value_item.text()
+        description = desc_item.text()
+        parent = cast(QWidget, self)
+        dialog = VariableDialog(parent, key, value, description)
         if dialog.exec() != QDialog.DialogCode.Accepted:
             return
         new_key, new_value, new_description = dialog.get_values()
@@ -176,17 +188,21 @@ class _GlobalVarsMixin:
             self.refresh_global_vars()
             self.variables_changed.emit()
         except ValidationError as exc:
-            QMessageBox.warning(self, "Validation", str(exc))
+            QMessageBox.warning(parent, "Validation", str(exc))
         except Exception as exc:
             logger.error("Failed to edit global variable %r: %s", key, exc, exc_info=True)
-            QMessageBox.critical(self, "Error", f"Failed to edit global variable: {exc}")
+            QMessageBox.critical(parent, "Error", f"Failed to edit global variable: {exc}")
 
     def _delete_global_var(self) -> None:
         row = self._global_table.currentRow()
         if row < 0:
             return
-        key = self._global_table.item(row, 0).text()
-        if not confirm_yes_no(self, "Confirm Delete", f"Delete global variable '{key}'?"):
+        key_item = self._global_table.item(row, 0)
+        if key_item is None:
+            return
+        key = key_item.text()
+        parent = cast(QWidget, self)
+        if not confirm_yes_no(parent, "Confirm Delete", f"Delete global variable '{key}'?"):
             return
         try:
             key = Validator.validate_variable_name(key)
@@ -195,4 +211,4 @@ class _GlobalVarsMixin:
             self.variables_changed.emit()
         except Exception as exc:
             logger.error("Failed to delete global variable %r: %s", key, exc, exc_info=True)
-            QMessageBox.critical(self, "Error", f"Failed to delete global variable: {exc}")
+            QMessageBox.critical(parent, "Error", f"Failed to delete global variable: {exc}")

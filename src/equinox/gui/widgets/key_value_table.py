@@ -1,10 +1,13 @@
 """Auto-growing key-value table widget."""
-
+from collections.abc import Iterator
 from contextlib import contextmanager
-from typing import Iterator
 
-from PyQt6.QtCore import QObject, pyqtSignal
-from PyQt6.QtWidgets import QHeaderView, QTableWidget, QTableWidgetItem, QWidget
+from PyQt6.QtCore import pyqtSignal
+from PyQt6.QtCore import QObject
+from PyQt6.QtWidgets import QHeaderView
+from PyQt6.QtWidgets import QTableWidget
+from PyQt6.QtWidgets import QTableWidgetItem
+from PyQt6.QtWidgets import QWidget
 
 # ---------------------------------------------------------------------------
 # Module-level helpers

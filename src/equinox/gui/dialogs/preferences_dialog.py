@@ -1,40 +1,36 @@
 """Preferences dialog — user-configurable appearance settings."""
-
 from __future__ import annotations
 
 import json as _json
+from typing import Any
 
-from PyQt6.QtCore import QSettings, Qt
-from PyQt6.QtWidgets import (
-    QCheckBox,
-    QComboBox,
-    QDialog,
-    QDialogButtonBox,
-    QFormLayout,
-    QGroupBox,
-    QHBoxLayout,
-    QLabel,
-    QLineEdit,
-    QMessageBox,
-    QScrollArea,
-    QSlider,
-    QSpinBox,
-    QVBoxLayout,
-    QWidget,
-)
-
-from equinox.gui.theme import (
-    DEFAULT_FONT_SIZE,
-    MAX_FONT_SIZE,
-    MIN_FONT_SIZE,
-    THEME_LABELS,
-    THEME_MODES,
-    THEME_SYSTEM,
-    get_font_size,
-    get_theme_mode,
-    set_font_size,
-    set_theme_mode,
-)
+from equinox.gui.theme import DEFAULT_FONT_SIZE
+from equinox.gui.theme import get_font_size
+from equinox.gui.theme import get_theme_mode
+from equinox.gui.theme import MAX_FONT_SIZE
+from equinox.gui.theme import MIN_FONT_SIZE
+from equinox.gui.theme import set_font_size
+from equinox.gui.theme import set_theme_mode
+from equinox.gui.theme import THEME_LABELS
+from equinox.gui.theme import THEME_MODES
+from equinox.gui.theme import THEME_SYSTEM
+from PyQt6.QtCore import QSettings
+from PyQt6.QtCore import Qt
+from PyQt6.QtWidgets import QCheckBox
+from PyQt6.QtWidgets import QComboBox
+from PyQt6.QtWidgets import QDialog
+from PyQt6.QtWidgets import QDialogButtonBox
+from PyQt6.QtWidgets import QFormLayout
+from PyQt6.QtWidgets import QGroupBox
+from PyQt6.QtWidgets import QHBoxLayout
+from PyQt6.QtWidgets import QLabel
+from PyQt6.QtWidgets import QLineEdit
+from PyQt6.QtWidgets import QMessageBox
+from PyQt6.QtWidgets import QScrollArea
+from PyQt6.QtWidgets import QSlider
+from PyQt6.QtWidgets import QSpinBox
+from PyQt6.QtWidgets import QVBoxLayout
+from PyQt6.QtWidgets import QWidget
 
 # ── Module-level constants ────────────────────────────────────────────────────
 _SETTINGS_ORG = "Equinox"
@@ -52,7 +48,7 @@ _RECOMMENDER_ANALYZER_ID = "recommender"
 class PreferencesDialog(QDialog):
     """Preferences dialog — theme mode, font size, network and intelligence settings."""
 
-    def __init__(self, parent=None) -> None:
+    def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self._settings = QSettings(_SETTINGS_ORG, _SETTINGS_APP)
         self.setWindowTitle("Preferences")
@@ -77,9 +73,9 @@ class PreferencesDialog(QDialog):
         )
         btns.accepted.connect(self._accept)
         btns.rejected.connect(self._cancel)
-        btns.button(QDialogButtonBox.StandardButton.RestoreDefaults).clicked.connect(
-            self._restore_defaults
-        )
+        restore_btn = btns.button(QDialogButtonBox.StandardButton.RestoreDefaults)
+        if restore_btn is not None:
+            restore_btn.clicked.connect(self._restore_defaults)
         layout.addWidget(btns)
 
     # ── Group builders ────────────────────────────────────────────────
@@ -150,66 +146,98 @@ class PreferencesDialog(QDialog):
         return net_group
 
     def _build_intelligence_group(self) -> QGroupBox:
-        """Per-analyzer enable/disable checkboxes with category headings."""
-        intel_group = QGroupBox("Response Intelligence")
-        intel_layout = QVBoxLayout(intel_group)
+        """Build the Response Intelligence settings group."""
+        group = QGroupBox("Response Intelligence")
+        layout = QVBoxLayout(group)
 
-        desc = QLabel("Select which analyzers run automatically after each response.")
-        desc.setWordWrap(True)
-        intel_layout.addWidget(desc)
+        layout.addWidget(self._build_intel_description())
+        self._disabled_set = self._load_disabled_analyzer_set()
 
-        # Load the disabled-analyzer set from persistent settings
-        disabled_raw = self._settings.value("intelligence/disabled_analyzers", "[]")
+        scroll_area = self._build_analyzer_scroll_area()
+        layout.addWidget(scroll_area)
+
+        return group
+
+    def _build_intel_description(self) -> QLabel:
+        label = QLabel("Select which analyzers run automatically after each response.")
+        label.setWordWrap(True)
+        return label
+
+    def _load_disabled_analyzer_set(self) -> set[str]:
+        raw = self._settings.value("intelligence/disabled_analyzers", "[]")
         try:
-            self._disabled_set: set = set(_json.loads(disabled_raw)) if disabled_raw else set()
+            return set(_json.loads(raw)) if raw else set()
         except (_json.JSONDecodeError, TypeError, ValueError):
-            self._disabled_set = set()
+            return set()
 
+    def _build_analyzer_scroll_area(self) -> QScrollArea:
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
         scroll.setMaximumHeight(_ANALYZER_SCROLL_MAX_H)
-        scroll_widget = QWidget()
-        scroll_layout = QVBoxLayout(scroll_widget)
-        scroll_layout.setContentsMargins(4, 4, 4, 4)
-        scroll_layout.setSpacing(2)
 
-        scroll_widget.setUpdatesEnabled(False)
+        widget = QWidget()
+        layout = QVBoxLayout(widget)
+        layout.setContentsMargins(4, 4, 4, 4)
+        layout.setSpacing(2)
+
+        widget.setUpdatesEnabled(False)
         try:
-            from equinox.core.response_intelligence import AnalysisEngine
-
-            analyzer_ids = set()
-            current_cat = ""
-            for info in AnalysisEngine().get_all_analyzer_info():
-                cat = info["category"]
-                if cat != current_cat:
-                    current_cat = cat
-                    cat_label = QLabel(f"── {cat} ──")
-                    scroll_layout.addWidget(cat_label)
-                cb = QCheckBox(info["name"])
-                cb.setChecked(info["id"] not in self._disabled_set)
-                cb.setProperty("analyzer_id", info["id"])
-                scroll_layout.addWidget(cb)
-                self._analyzer_checks.append(cb)
-                analyzer_ids.add(str(info.get("id") or ""))
-
-            if _RECOMMENDER_ANALYZER_ID not in analyzer_ids:
-                hints_label = QLabel("── Developer Hints ──")
-                scroll_layout.addWidget(hints_label)
-                rec_cb = QCheckBox("Request Recommender")
-                rec_cb.setChecked(_RECOMMENDER_ANALYZER_ID not in self._disabled_set)
-                rec_cb.setProperty("analyzer_id", _RECOMMENDER_ANALYZER_ID)
-                scroll_layout.addWidget(rec_cb)
-                self._analyzer_checks.append(rec_cb)
+            self._populate_analyzer_list(layout)
         except Exception:
-            scroll_layout.addWidget(QLabel("(Could not load analyzers)"))
+            layout.addWidget(QLabel("(Could not load analyzers)"))
         finally:
-            scroll_widget.setUpdatesEnabled(True)
+            widget.setUpdatesEnabled(True)
 
-        scroll_layout.addStretch()
-        scroll.setWidget(scroll_widget)
-        intel_layout.addWidget(scroll)
+        layout.addStretch()
+        scroll.setWidget(widget)
+        return scroll
 
-        return intel_group
+    def _populate_analyzer_list(self, layout: QVBoxLayout) -> None:
+        from equinox.core.response_intelligence import AnalysisEngine
+
+        analyzer_ids: set[str] = set()
+        current_category = ""
+
+        for info in AnalysisEngine().get_all_analyzer_info():
+            current_category = self._maybe_add_category_header(
+                layout, current_category, info["category"],
+            )
+            self._add_analyzer_checkbox(layout, info)
+            analyzer_ids.add(str(info.get("id") or ""))
+
+        self._maybe_add_recommender(layout, analyzer_ids)
+
+    def _maybe_add_category_header(
+        self,
+        layout: QVBoxLayout,
+        current_category: str,
+        new_category: str,
+    ) -> str:
+        if new_category != current_category:
+            header = QLabel(f"── {new_category} ──")
+            layout.addWidget(header)
+            return new_category
+        return current_category
+
+    def _add_analyzer_checkbox(self, layout: QVBoxLayout, info: dict[str, Any]) -> None:
+        cb = QCheckBox(info["name"])
+        cb.setChecked(info["id"] not in self._disabled_set)
+        cb.setProperty("analyzer_id", info["id"])
+        layout.addWidget(cb)
+        self._analyzer_checks.append(cb)
+
+    def _maybe_add_recommender(self, layout: QVBoxLayout, analyzer_ids: set[str]) -> None:
+        if _RECOMMENDER_ANALYZER_ID in analyzer_ids:
+            return
+
+        header = QLabel("── Developer Hints ──")
+        layout.addWidget(header)
+
+        cb = QCheckBox("Request Recommender")
+        cb.setChecked(_RECOMMENDER_ANALYZER_ID not in self._disabled_set)
+        cb.setProperty("analyzer_id", _RECOMMENDER_ANALYZER_ID)
+        layout.addWidget(cb)
+        self._analyzer_checks.append(cb)
 
     # ── Callbacks ─────────────────────────────────────────────────────
 

@@ -1,7 +1,5 @@
 """Background worker threads and dialogs for the Equinox GUI."""
-
 # mypy: disable-error-code=no-untyped-def
-
 import base64
 import csv
 import inspect
@@ -10,25 +8,12 @@ import logging
 import os
 import threading
 import time
+from collections.abc import Callable
 from datetime import datetime as _dt
 from pathlib import Path
 from tempfile import NamedTemporaryFile
-from typing import Any, Callable, cast
-
-from PyQt6.QtCore import QThread, pyqtSignal
-from PyQt6.QtWidgets import (
-    QDialog,
-    QDialogButtonBox,
-    QFileDialog,
-    QFormLayout,
-    QHBoxLayout,
-    QMessageBox,
-    QPlainTextEdit,
-    QProgressBar,
-    QPushButton,
-    QSpinBox,
-    QVBoxLayout,
-)
+from typing import Any
+from typing import cast
 
 from equinox.core.client import HTTPClient
 from equinox.core.format.error_enrichment import enrich_exception
@@ -37,8 +22,23 @@ from equinox.core.request import Request
 from equinox.core.validation import Validator
 from equinox.gui.theme import get_mono_font
 from equinox.security import redact_body
+from PyQt6.QtCore import pyqtSignal
+from PyQt6.QtCore import QThread
+from PyQt6.QtWidgets import QDialog
+from PyQt6.QtWidgets import QDialogButtonBox
+from PyQt6.QtWidgets import QFileDialog
+from PyQt6.QtWidgets import QFormLayout
+from PyQt6.QtWidgets import QHBoxLayout
+from PyQt6.QtWidgets import QMessageBox
+from PyQt6.QtWidgets import QPlainTextEdit
+from PyQt6.QtWidgets import QProgressBar
+from PyQt6.QtWidgets import QPushButton
+from PyQt6.QtWidgets import QSpinBox
+from PyQt6.QtWidgets import QVBoxLayout
 
-from .ui_common import get_gui_settings, resolve_proxy_url
+from .. import Response
+from .ui_common import get_gui_settings
+from .ui_common import resolve_proxy_url
 
 logger = logging.getLogger(__name__)
 
@@ -52,10 +52,10 @@ _P99: float = 0.99
 # ── Private helpers ───────────────────────────────────────────────────────────
 
 
-def _percentile(sorted_times: list[float], p: float) -> float:
+def _percentile(sorted_times: list[float | int], p: float) -> float:
     """Return the *p*-th percentile value from a pre-sorted sequence of timings."""
     n = len(sorted_times)
-    return float(sorted_times[max(0, int(n * p) - 1)])
+    return sorted_times[max(0, int(n * p) - 1)]
 
 
 def _build_client(
@@ -166,78 +166,110 @@ class OAuthTokenTester(QThread):
         self._cancelled = True
 
     def run(self) -> None:
+        """Execute the OAuth token request workflow."""
         try:
-            import httpx
+            self._validate_token_url()
+            data = self._build_request_data()
+            headers = self._build_request_headers()
 
-            # Validate the token URL before making the request — this enforces
-            # SSRF protection and schema checks through the same path as the
-            # main HTTP client.
-            try:
-                Validator.validate_resolved_url(self.token_url)
-            except Exception as exc:
-                if not self._cancelled:
-                    self.done.emit(False, f"Invalid token URL: {exc}", None)
-                return
+            response = self._perform_token_request(data, headers)
+            self._last_response = self._snapshot_response(response)
 
-            data = {
-                "grant_type": self.grant_type,
-            }
-            headers: dict[str, str] = {}
-
-            if self.token_auth == "basic":
-                # RFC 6749 §2.3.1 — credentials in HTTP Basic Authorization header.
-                # Reuse the shared utility from OAuth2Auth to avoid duplication.
-                try:
-                    headers["Authorization"] = _make_oauth2_basic_auth_header(
-                        self.client_id, self.secret
-                    )
-                except Exception as exc:
-                    if not self._cancelled:
-                        self.done.emit(False, str(exc), None)
-                    return
+            if response.status_code == 200:
+                self._handle_success_response(response)
             else:
-                # Default: credentials in the POST body
-                data["client_id"] = self.client_id
-                data["client_secret"] = self.secret
+                self._handle_error_response(response)
 
-            if self.scope:
-                data["scope"] = self.scope
-            if self.grant_type == "refresh_token":
-                data["refresh_token"] = ""  # placeholder
-            data.update(self.extra_params)
-
-            resp = httpx.post(self.token_url, data=data, headers=headers, timeout=10.0)
-            self._last_response = self._snapshot_response(resp)
-            if resp.status_code == 200:
-                payload = resp.json()
-                token_type = payload.get("token_type", "bearer")
-                expires_in = payload.get("expires_in")
-                has_access = bool(payload.get("access_token"))
-                msg = (
-                    f"\u2713 Token received  [{token_type}]"
-                    + (f"  expires_in={expires_in}s" if expires_in else "")
-                    + ("  (no access_token!)" if not has_access else "")
-                )
-                if not self._cancelled:
-                    self.done.emit(True, msg, self._last_response)
-            else:
-                try:
-                    body = resp.json()
-                    err = body.get("error_description") or body.get("error") or resp.text[:200]
-                except Exception:
-                    err = resp.text[:200]
-                if not self._cancelled:
-                    self.done.emit(
-                        False,
-                        f"HTTP {resp.status_code}: {redact_body(str(err))}",
-                        self._last_response,
-                    )
         except Exception as exc:
             if not self._cancelled:
                 self.done.emit(False, redact_body(str(exc)), self._last_response)
 
+    def _validate_token_url(self) -> None:
+        """Validate the token URL using the shared validator."""
+        try:
+            Validator.validate_resolved_url(self.token_url)
+        except Exception as exc:
+            if not self._cancelled:
+                self.done.emit(False, f"Invalid token URL: {exc}", None)
+            raise
+
+    def _build_request_data(self) -> dict[str, str]:
+        """Construct the POST body for the OAuth token request."""
+        data: dict[str, str] = {"grant_type": self.grant_type}
+
+        if self.token_auth != "basic":
+            data["client_id"] = self.client_id
+            data["client_secret"] = self.secret
+
+        if self.scope:
+            data["scope"] = self.scope
+
+        if self.grant_type == "refresh_token":
+            data["refresh_token"] = ""
+
+        data.update(self.extra_params)
+        return data
+
+    def _build_request_headers(self) -> dict[str, str]:
+        """Construct the HTTP headers for the OAuth token request."""
+        if self.token_auth != "basic":
+            return {}
+
+        try:
+            return {
+                "Authorization": _make_oauth2_basic_auth_header(
+                    self.client_id,
+                    self.secret,
+                ),
+            }
+        except Exception as exc:
+            if not self._cancelled:
+                self.done.emit(False, str(exc), None)
+            raise
+
+    def _perform_token_request(
+        self,
+        data: dict[str, str],
+        headers: dict[str, str],
+    ):
+        """Send the OAuth token request."""
+        import httpx
+
+        return httpx.post(self.token_url, data=data, headers=headers, timeout=10.0)
+
+    def _handle_success_response(self, response) -> None:
+        """Process a successful token response."""
+        payload = response.json()
+        token_type = payload.get("token_type", "bearer")
+        expires_in = payload.get("expires_in")
+        has_access = bool(payload.get("access_token"))
+
+        msg = (
+            f"\u2713 Token received  [{token_type}]"
+            + (f"  expires_in={expires_in}s" if expires_in else "")
+            + ("  (no access_token!)" if not has_access else "")
+        )
+
+        if not self._cancelled:
+            self.done.emit(True, msg, self._last_response)
+
+    def _handle_error_response(self, response) -> None:
+        """Process an error response from the token endpoint."""
+        try:
+            body = response.json()
+            err = body.get("error_description") or body.get("error") or response.text[:200]
+        except Exception:
+            err = response.text[:200]
+
+        if not self._cancelled:
+            self.done.emit(
+                False,
+                f"HTTP {response.status_code}: {redact_body(str(err))}",
+                self._last_response,
+            )
+
     @staticmethod
-    def _snapshot_response(resp: Any) -> dict[str, Any]:
+    def _snapshot_response(resp: Response) -> dict[str, int | str | dict[str, str]]:
         try:
             headers = {
                 k: v for k, v in resp.headers.items() if k.lower() not in {"set-cookie", "cookie"}
@@ -313,7 +345,7 @@ class RequestWorker(QThread):
             else:
                 logger.debug("No proxy configured")
             client = _build_client(
-                self.request, self._cookie_manager, self._proxy, self._cancel_event
+                self.request, self._cookie_manager, self._proxy, self._cancel_event,
             )
             response = client.send(self.request)
             self._emit_if_active(response)
@@ -499,7 +531,7 @@ class BenchmarkDialog(QDialog):
     # ── Private helpers ───────────────────────────────────────────────────────
 
     @staticmethod
-    def _compute_stats(times: list[float], errors: int) -> dict[str, Any]:
+    def _compute_stats(times: list[float | int], errors: int) -> dict[str, int | float | list[float | int]]:
         """Return a stats dict computed from raw benchmark timings.
 
         All ``*_ms`` values are rounded to 3 decimal places.
@@ -561,7 +593,7 @@ class BenchmarkDialog(QDialog):
     def _on_progress(self, value: int) -> None:
         self._progress.setValue(value)
 
-    def _on_finished(self, times: list[float], errors: int) -> None:
+    def _on_finished(self, times: list[float | int], errors: int) -> None:
         self._run_btn.setEnabled(True)
         self._cancel_btn.setEnabled(False)
         self._progress.setVisible(False)
@@ -606,7 +638,7 @@ class BenchmarkDialog(QDialog):
             f"Avg      : {s['avg_ms']:.1f} ms\n"
             f"Max      : {s['max_ms']:.1f} ms\n"
             f"p95      : {s['p95_ms']:.1f} ms\n"
-            f"p99      : {s['p99_ms']:.1f} ms\n"
+            f"p99      : {s['p99_ms']:.1f} ms\n",
         )
         self._export_btn.setEnabled(True)
 

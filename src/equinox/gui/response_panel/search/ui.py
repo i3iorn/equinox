@@ -2,34 +2,39 @@
 Qt UI layer for the search bar.
 Depends on search.core but core does NOT depend on Qt.
 """
-
 from __future__ import annotations
 
 import logging
-from typing import Any, Callable
+from collections.abc import Callable
+from typing import Any
 
-from PyQt6.QtCore import QObject, QRunnable, QThreadPool, QTimer, pyqtSignal
-from PyQt6.QtGui import QColor, QTextCharFormat, QTextCursor
-from PyQt6.QtWidgets import (
-    QHBoxLayout,
-    QLabel,
-    QLineEdit,
-    QTextEdit,
-    QToolButton,
-    QVBoxLayout,
-    QWidget,
-)
+from PyQt6.QtCore import pyqtSignal
+from PyQt6.QtCore import QObject
+from PyQt6.QtCore import QRunnable
+from PyQt6.QtCore import QThreadPool
+from PyQt6.QtCore import QTimer
+from PyQt6.QtGui import QColor
+from PyQt6.QtGui import QTextCharFormat
+from PyQt6.QtGui import QTextCursor
+from PyQt6.QtWidgets import QHBoxLayout
+from PyQt6.QtWidgets import QLabel
+from PyQt6.QtWidgets import QLineEdit
+from PyQt6.QtWidgets import QTextEdit
+from PyQt6.QtWidgets import QToolButton
+from PyQt6.QtWidgets import QVBoxLayout
+from PyQt6.QtWidgets import QWidget
 
-from .constants import (
-    DEBOUNCE_INTERVAL_MS,
-    ERROR_NO_JSON,
-    MAX_MATCHES,
-    PLACEHOLDER_TEXT_FIND,
-    PLACEHOLDER_TEXT_JSONPATH,
-    PLACEHOLDER_TEXT_REGEX,
-    SEARCH_HIGHLIGHT_RADIUS,
-)
-from .core import SearchEngine, SearchJobConfig, SearchMode
+from .constants import ASYNC_MIN_DOC_CHARS
+from .constants import DEBOUNCE_INTERVAL_MS
+from .constants import ERROR_NO_JSON
+from .constants import PLACEHOLDER_TEXT_FIND
+from .constants import PLACEHOLDER_TEXT_JSONPATH
+from .constants import PLACEHOLDER_TEXT_REGEX
+from .constants import SEARCH_HIGHLIGHT_RADIUS
+from .constants import STATUS_CANCELLED
+from .core import SearchEngine
+from .core import SearchJobConfig
+from .core import SearchMode
 
 logger = logging.getLogger(__name__)
 
@@ -151,13 +156,13 @@ class SearchBar(QWidget):
         layout.addLayout(row)
         layout.addWidget(self._jp_label)
 
-    def _make_button(self, text: str, slot: Callable) -> QToolButton:
+    def _make_button(self, text: str, slot: Callable) -> QToolButton: # type: ignore[type-arg]
         btn = QToolButton()
         btn.setText(text)
         btn.clicked.connect(slot)
         return btn
 
-    def _make_toggle(self, text: str, slot: Callable) -> QToolButton:
+    def _make_toggle(self, text: str, slot: Callable) -> QToolButton: # type: ignore[type-arg]
         btn = QToolButton()
         btn.setText(text)
         btn.setCheckable(True)
@@ -238,12 +243,24 @@ class SearchBar(QWidget):
         runnable = _SearchRunnable(cfg, self._engine)
         runnable.signals.result.connect(self._on_result)
 
-        if len(cfg.doc_text) >= 20_000:
-            self._thread_pool.start(runnable)
+        if len(cfg.doc_text) >= ASYNC_MIN_DOC_CHARS:
+            self._thread_pool.start(runnable) # type: ignore[union-attr]
         else:
             runnable.run()
 
-    def _on_result(self, job_id: int, result) -> None:
+    def _start_search_job(self, text: str) -> None:
+        """Backward-compatible search entrypoint used by legacy callers/tests."""
+        self._start_search(text)
+
+    def _on_cancel_search(self) -> None:
+        """Cancel pending search work and reset the visible search state."""
+        self._debounce_timer.stop()
+        self._job_counter += 1
+        self._current_job_id = self._job_counter
+        self._clear_state()
+        self._match_label.setText(STATUS_CANCELLED)
+
+    def _on_result(self, job_id: int, result) -> None: # type: ignore[no-untyped-def]
         if job_id != self._current_job_id:
             return
 
@@ -260,7 +277,7 @@ class SearchBar(QWidget):
     # UI Updates
     # ────────────────────────────────────────────────────────────────
 
-    def _update_labels(self, result) -> None:
+    def _update_labels(self, result) -> None: # type: ignore[no-untyped-def]
         if result.preview.startswith("⚠"):
             self._match_label.setText("expression error")
         elif result.preview == "invalid regex":

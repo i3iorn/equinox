@@ -1,12 +1,13 @@
 """QMessageBox subclass with a built-in *Copy* button."""
-
 from __future__ import annotations
 
 import logging
-from typing import cast
 
 from PyQt6.QtCore import QTimer
-from PyQt6.QtWidgets import QApplication, QMessageBox, QPushButton, QWidget
+from PyQt6.QtWidgets import QApplication
+from PyQt6.QtWidgets import QMessageBox
+from PyQt6.QtWidgets import QPushButton
+from PyQt6.QtWidgets import QWidget
 
 logger = logging.getLogger(__name__)
 
@@ -43,10 +44,9 @@ class CopyableMessageBox(QMessageBox):
         # Explicit None check: an empty-string copy_text means "copy nothing",
         # not "fall back to the visible message".
         self._copy_text = copy_text if copy_text is not None else text
-        self._copy_btn = cast(
-            QPushButton,
-            self.addButton(self._COPY_LABEL, QMessageBox.ButtonRole.ActionRole),
-        )
+        self._copy_btn: QPushButton = self.addButton(
+            self._COPY_LABEL, QMessageBox.ButtonRole.ActionRole,
+        )  # type: ignore[assignment]
 
         # Single reusable timer so repeated Copy clicks just restart the countdown.
         self._reset_timer = QTimer(self)
@@ -86,52 +86,49 @@ class CopyableMessageBox(QMessageBox):
     def _reset_copy_label(self) -> None:
         self._copy_btn.setText(self._COPY_LABEL)
 
-    @staticmethod
+    @classmethod
     def _show(
+        cls,
         icon: QMessageBox.Icon,
         parent: QWidget | None,
-        title: str | None,
-        text: str | None,
-    ) -> QMessageBox.StandardButton:
+        title: str,
+        text: str,
+        copy_text: str | None,
+    ) -> int:
         """Instantiate and execute the dialog with the given *icon*."""
-        box = CopyableMessageBox(icon, title or "", text or "", text, parent)
-        result = box.exec()
-        return cast(QMessageBox.StandardButton, result)
+        return cls(icon, title, text, copy_text, parent).exec()
 
     # ── Convenience class methods (mirror QMessageBox API) ────────────
 
-    @staticmethod
-    def critical(
+    @classmethod
+    def critical( # type: ignore[override]
+        cls,
         parent: QWidget | None,
-        title: str | None,
-        text: str | None,
-        buttons: QMessageBox.StandardButton = QMessageBox.StandardButton.Ok,
-        defaultButton: QMessageBox.StandardButton = QMessageBox.StandardButton.NoButton,
-    ) -> QMessageBox.StandardButton:
+        title: str,
+        text: str,
+        copy_text: str | None = None,
+    ) -> int:
         """Show a *Critical* dialog with OK + Copy buttons."""
-        del buttons, defaultButton
-        return CopyableMessageBox._show(QMessageBox.Icon.Critical, parent, title, text)
+        return cls._show(QMessageBox.Icon.Critical, parent, title, text, copy_text)
 
-    @staticmethod
-    def warning(
+    @classmethod
+    def warning( # type: ignore[override]
+        cls,
         parent: QWidget | None,
-        title: str | None,
-        text: str | None,
-        buttons: QMessageBox.StandardButton = QMessageBox.StandardButton.Ok,
-        defaultButton: QMessageBox.StandardButton = QMessageBox.StandardButton.NoButton,
-    ) -> QMessageBox.StandardButton:
+        title: str,
+        text: str,
+        copy_text: str | None = None,
+    ) -> int:
         """Show a *Warning* dialog with OK + Copy buttons."""
-        del buttons, defaultButton
-        return CopyableMessageBox._show(QMessageBox.Icon.Warning, parent, title, text)
+        return cls._show(QMessageBox.Icon.Warning, parent, title, text, copy_text)
 
-    @staticmethod
-    def information(
+    @classmethod
+    def information( # type: ignore[override]
+        cls,
         parent: QWidget | None,
-        title: str | None,
-        text: str | None,
-        buttons: QMessageBox.StandardButton = QMessageBox.StandardButton.Ok,
-        defaultButton: QMessageBox.StandardButton = QMessageBox.StandardButton.NoButton,
-    ) -> QMessageBox.StandardButton:
+        title: str,
+        text: str,
+        copy_text: str | None = None,
+    ) -> int:
         """Show an *Information* dialog with OK + Copy buttons."""
-        del buttons, defaultButton
-        return CopyableMessageBox._show(QMessageBox.Icon.Information, parent, title, text)
+        return cls._show(QMessageBox.Icon.Information, parent, title, text, copy_text)

@@ -2,30 +2,30 @@
 
 This module keeps high-level orchestration only.
 """
-
 from __future__ import annotations
 
 import json
 import logging
 from typing import Any
 
-from PyQt6 import sip
-from PyQt6.QtCore import QPoint, Qt, QTimer
-from PyQt6.QtGui import QKeySequence, QShortcut
-from PyQt6.QtWidgets import (
-    QApplication,
-    QHBoxLayout,
-    QMainWindow,
-    QSplitter,
-    QTabWidget,
-    QVBoxLayout,
-    QWidget,
-)
-
 from equinox.application.history import HistoryFacade
-from equinox.core.request import Request, Response
+from equinox.core.request import Request
+from equinox.core.request import Response
 from equinox.storage import Database
 from equinox.storage.cookies import CookieJarManager
+from PyQt6 import sip
+from PyQt6.QtCore import QPoint
+from PyQt6.QtCore import Qt
+from PyQt6.QtCore import QTimer
+from PyQt6.QtGui import QKeySequence
+from PyQt6.QtGui import QShortcut
+from PyQt6.QtWidgets import QApplication
+from PyQt6.QtWidgets import QHBoxLayout
+from PyQt6.QtWidgets import QMainWindow
+from PyQt6.QtWidgets import QSplitter
+from PyQt6.QtWidgets import QTabWidget
+from PyQt6.QtWidgets import QVBoxLayout
+from PyQt6.QtWidgets import QWidget
 
 from ..intelligence_worker import IntelligenceWorker
 from ..logging_utils import log_gui_event
@@ -36,7 +36,8 @@ from ._frameless import _FramelessMixin
 from ._history import _HistoryMixin
 from ._import_export import _ImportExportMixin
 from ._layout import _LayoutMixin
-from ._menu import _KEY_INTEL_DISABLED, _MenuMixin
+from ._menu import _KEY_INTEL_DISABLED
+from ._menu import _MenuMixin
 from ._panels import _PanelsMixin
 
 logger = logging.getLogger(__name__)
@@ -71,11 +72,11 @@ def _is_deleted_qobject(obj: Any) -> bool:
 
 
 class MainWindow(
-    _LayoutMixin,
-    _PanelsMixin,
-    _HistoryMixin,
-    _ImportExportMixin,
-    _EnvironmentMixin,
+    _LayoutMixin,  # type: ignore[misc]
+    _PanelsMixin,  # type: ignore[misc]
+    _HistoryMixin,  # type: ignore[misc]
+    _ImportExportMixin,  # type: ignore[misc]
+    _EnvironmentMixin,  # type: ignore[misc]
     _MenuMixin,
     _FramelessMixin,
     QMainWindow,
@@ -89,12 +90,12 @@ class MainWindow(
         self._drag_menu_active = False
         self._drag_menu_offset = QPoint()
         self._resize_active = False
-        self._drag_handles: set = set()
+        self._drag_handles: set[Any] = set()
         self._app_event_filter_installed = False
         self._settings = get_gui_settings()
         self._intelligence_worker: IntelligenceWorker | None = None
-        self._background_workers: set = set()
-        self._pending_panel_refreshes: set = set()
+        self._background_workers: set[Any] = set()
+        self._pending_panel_refreshes: set[Any] = set()
         self.setWindowTitle("Equinox - API Testing")
         self.setGeometry(_WINDOW_X, _WINDOW_Y, _WINDOW_W, _WINDOW_H)
         self.setWindowFlag(Qt.WindowType.FramelessWindowHint, True)
@@ -115,6 +116,7 @@ class MainWindow(
         self._install_navigation_shortcuts()
         self._restore_layout()
         QTimer.singleShot(0, self._maybe_run_setup_wizard)
+
 
     def _init_usage_tracking(self) -> None:
         """Attach lightweight usage tracking to menus, tabs, and tracked buttons."""
@@ -148,7 +150,7 @@ class MainWindow(
         self.logging_panel = None
         self.cookies_panel = None
         self.websocket_panel = None
-        self._tabs_initialized: set = set()
+        self._tabs_initialized: set[int] = set()
         self._left_tabs = QTabWidget()
         self._left_tabs.setObjectName("leftSidebarTabs")
         self._left_tabs.setTabPosition(QTabWidget.TabPosition.South)
@@ -188,10 +190,10 @@ class MainWindow(
         rp.response_received.connect(self._on_response_received)
         rp.response_received.connect(self._run_intelligence_analysis)
         rp.response_received.connect(
-            lambda _r: self._refresh_side_panel_on_response(_TAB_COOKIES, self.cookies_panel)
+            lambda _r: self._refresh_side_panel_on_response(_TAB_COOKIES, self.cookies_panel),
         )
         rp.response_received.connect(
-            lambda _r: self._refresh_side_panel_on_response(_TAB_HISTORY, self.history_panel)
+            lambda _r: self._refresh_side_panel_on_response(_TAB_HISTORY, self.history_panel),
         )
         self._main_splitter.splitterMoved.connect(self._on_splitter_moved)
         self._req_resp_splitter.splitterMoved.connect(self._on_splitter_moved)
@@ -224,7 +226,7 @@ class MainWindow(
             logger.debug("%s splitter moved (pos=%d, index=%d)", name, pos, index)
         self._layout_save_timer.start()
 
-    def closeEvent(self, event) -> None:  # type: ignore[override]
+    def closeEvent(self, event: Any | None) -> None:
         self.request_panel.autosave_current()
         if self._intelligence_worker is not None:
             worker = self._intelligence_worker
@@ -308,13 +310,14 @@ class MainWindow(
         except Exception:
             logger.info("Could not stop previous intelligence worker", exc_info=True)
 
-    def _disabled_analyzers(self) -> set:
+    def _disabled_analyzers(self) -> set[str]:
         disabled_raw = self._settings.value(_KEY_INTEL_DISABLED, "[]")
         try:
-            return set(json.loads(disabled_raw)) if disabled_raw else set()
+            raw = set(json.loads(disabled_raw)) if disabled_raw else set()
+            return {str(item) for item in raw}
         except Exception:
             logger.debug(
-                "Invalid disabled-analyzers setting, defaulting to empty set", exc_info=True
+                "Invalid disabled-analyzers setting, defaulting to empty set", exc_info=True,
             )
             return set()
 
@@ -338,7 +341,7 @@ class MainWindow(
             )
             worker.finished.connect(self.response_panel.intelligence_panel.display_findings)
             worker.finished.connect(
-                lambda findings: self.response_panel.set_intelligence_badge(len(findings))
+                lambda findings: self.response_panel.set_intelligence_badge(len(findings)),
             )
             worker.finished.connect(worker.deleteLater)
             worker.destroyed.connect(lambda *_args: setattr(self, "_intelligence_worker", None))

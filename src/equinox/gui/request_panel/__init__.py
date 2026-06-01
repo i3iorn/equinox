@@ -8,10 +8,9 @@ Sub-modules
 - ``body_mixin``  – Body/captures/assertions/multipart mixin
 - ``builder``     – Pure-logic helpers (``assemble_body``, ``inject_content_type``, ``detect_body_type``)
 """
-
-from equinox.gui.dialogs.save_dialog import SaveRequestDialog  # noqa: F401
+from equinox.gui.dialogs.save_dialog import SaveRequestDialog
 from equinox.gui.request_panel._constants import _HEADER_PRESETS
-from equinox.gui.request_panel.panel import (  # noqa: F401 – public API
+from equinox.gui.request_panel.panel import (  # – public API
     RequestPanel,
 )
 

@@ -9,21 +9,24 @@ Delegates UI construction and data display to mixin classes:
 
 This module wires them together and owns the response display pipeline.
 """
-
 from __future__ import annotations
 
 import json
 import logging
-from typing import Any, Callable
-
-from PyQt6.QtCore import QThreadPool
-from PyQt6.QtWidgets import QLabel, QMessageBox, QVBoxLayout, QWidget
+from collections.abc import Callable
+from typing import Any
+from typing import cast
 
 from equinox.core.request import Response
 from equinox.gui import ui_common
 from equinox.gui.response_panel.actions_mixin import ResponseActionsMixin
 from equinox.gui.response_panel.builder import ResponseBuilderMixin
 from equinox.gui.response_panel.display_mixin import ResponseDisplayMixin
+from PyQt6.QtCore import QThreadPool
+from PyQt6.QtWidgets import QLabel
+from PyQt6.QtWidgets import QMessageBox
+from PyQt6.QtWidgets import QVBoxLayout
+from PyQt6.QtWidgets import QWidget
 
 logger = logging.getLogger(__name__)
 
@@ -51,8 +54,8 @@ _KEY_ACTIVE_TAB = "response/active_tab"
 
 
 class ResponsePanel(
-    ResponseBuilderMixin,
-    ResponseDisplayMixin,
+    ResponseBuilderMixin, # type: ignore[misc]
+    ResponseDisplayMixin, # type: ignore[misc]
     ResponseActionsMixin,
     QWidget,
 ):
@@ -99,7 +102,7 @@ class ResponsePanel(
         self._view_preference = _VIEW_MODE_RAW  # Preferred view: "raw" or "json"
         self._readability_mode = _READ_MODE_PRETTY
         self._redaction_preview = bool(
-            self._settings.value(_KEY_REDACTION_PREVIEW, False, type=bool)
+            self._settings.value(_KEY_REDACTION_PREVIEW, False, type=bool),
         )
         self._raw_body_text = ""
         self._pretty_body_text = ""
@@ -109,6 +112,10 @@ class ResponsePanel(
 
         # Initialize UI
         self._init_ui()
+
+    def _as_qwidget(self) -> QWidget:
+        """Return this panel cast as QWidget for Qt dialog APIs."""
+        return cast(QWidget, self)
 
     # ------------------------------------------------------------------
     # Initialization & Setup
@@ -128,7 +135,7 @@ class ResponsePanel(
         self._render_warning_label.setVisible(False)
         layout.addWidget(self._render_warning_label)
         self._build_tabs(layout)
-        ui_common.configure_tab_persistence(  # type: ignore[attr-defined]
+        ui_common.configure_tab_persistence(
             self.tabs,
             settings_key=_KEY_ACTIVE_TAB,
             default_tab="Body",
@@ -223,7 +230,7 @@ class ResponsePanel(
             if not self._safe_display(self._populate_all_tabs, self.current_response):
                 failed_sections.append("tabs")
             if not self._safe_display(
-                self._apply_readability_mode_for_response, self.current_response
+                self._apply_readability_mode_for_response, self.current_response,
             ):
                 failed_sections.append("mode")
             self._update_render_warning(failed_sections)
@@ -236,11 +243,11 @@ class ResponsePanel(
             return
         unique = ", ".join(sorted(set(failed_sections)))
         self._render_warning_label.setText(
-            f"Some sections failed to render ({unique}). See logs for details."
+            f"Some sections failed to render ({unique}). See logs for details.",
         )
         self._render_warning_label.setVisible(True)
 
-    def _load_readability_preferences(self) -> dict:
+    def _load_readability_preferences(self) -> dict[str, str]:
         """Load saved readability preferences from QSettings."""
         raw = self._settings.value(_KEY_READABILITY_PREFS, "{}")
         try:
@@ -297,7 +304,7 @@ class ResponsePanel(
 
             if persist:
                 family = self._content_type_family(
-                    self.current_response.headers.get("content-type", "")
+                    self.current_response.headers.get("content-type", ""),
                 )
                 self._readability_by_type[family] = mode
                 self._save_readability_preferences()

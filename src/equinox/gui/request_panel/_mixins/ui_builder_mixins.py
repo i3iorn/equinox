@@ -1,5 +1,5 @@
 """
-UI‑builder mixins for RequestPanel.
+UIÔÇæbuilder mixins for RequestPanel.
 
 Each mixin encapsulates a single area of UI construction.
 This keeps QWidget creation out of the main panel class and
@@ -44,7 +44,7 @@ from ...ui_common import configure_tab_persistence
 
 
 class RequestPanelOrchestrationMixin:
-    """High‑level layout assembly for the RequestPanel."""
+    """HighÔÇælevel layout assembly for the RequestPanel."""
 
     def build_request_panel_ui(self: Any) -> None:
         """Build the full request panel UI tree."""
@@ -148,7 +148,7 @@ class URLBarMixin:
 
         self.url_input = UrlLineEdit()
         self.url_input.setPlaceholderText(
-            "https://api.example.com/v1/resource  ·  {{VAR}} for variables  ·  Ctrl+N = new",
+            "https://api.example.com/v1/resource  ┬À  {{VAR}} for variables  ┬À  Ctrl+N = new",
         )
         self.url_input.returnPressed.connect(self._send_request)
 
@@ -256,7 +256,7 @@ class BodySearchBarMixin:
 
     def build_body_search_bar(self: Any) -> QHBoxLayout:
         self._body_search_input = QLineEdit()
-        self._body_search_input.setPlaceholderText("Find in body…")
+        self._body_search_input.setPlaceholderText("Find in bodyÔÇª")
         self._body_search_input.setFixedHeight(26)
         self._body_search_input.setClearButtonEnabled(True)
         self._body_search_input.returnPressed.connect(self._body_find_next)
@@ -275,13 +275,13 @@ class BodySearchBarMixin:
         self._body_jsonpath_cb.setFixedWidth(36)
 
         prev_btn = QToolButton()
-        prev_btn.setText("▲")
+        prev_btn.setText("Ôû▓")
         prev_btn.setFixedSize(24, 24)
         prev_btn.setToolTip("Find previous match")
         prev_btn.clicked.connect(self._body_find_prev)
 
         next_btn = QToolButton()
-        next_btn.setText("▼")
+        next_btn.setText("Ôû╝")
         next_btn.setFixedSize(24, 24)
         next_btn.setToolTip("Find next match")
         next_btn.clicked.connect(self._body_find_next)
@@ -420,7 +420,7 @@ class NotesTabMixin:
 
         self.notes_editor = QPlainTextEdit()
         self.notes_editor.setPlaceholderText(
-            "Add notes, cURL examples, API docs links, or any context about this request…",
+            "Add notes, cURL examples, API docs links, or any context about this requestÔÇª",
         )
 
         layout.addWidget(self.notes_editor, 1)

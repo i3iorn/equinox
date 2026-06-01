@@ -1,10 +1,8 @@
 """Architecture guard tests for service and plugin boundaries."""
-
 from __future__ import annotations
 
 import ast
 from pathlib import Path
-from typing import List
 
 
 def _repo_root() -> Path:
@@ -15,9 +13,9 @@ def _read(path: Path) -> str:
     return path.read_text(encoding="utf-8")
 
 
-def _imports(path: Path) -> List[str]:
+def _imports(path: Path) -> list[str]:
     tree = ast.parse(_read(path), str(path))
-    found: List[str] = []
+    found: list[str] = []
     for node in ast.walk(tree):
         if isinstance(node, ast.Import):
             for alias in node.names:

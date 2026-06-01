@@ -2,12 +2,10 @@ from types import SimpleNamespace
 from unittest.mock import Mock
 
 import pytest
-from PyQt6.QtCore import QCoreApplication
-from PyQt6.QtWidgets import QApplication
-
 from equinox.gui.request_panel._mixins.autosave_mixin import RequestAutosaveMixin
 from equinox.gui.request_panel._mixins.save_flow_mixin import RequestSaveFlowMixin
-
+from PyQt6.QtCore import QCoreApplication
+from PyQt6.QtWidgets import QApplication
 
 def ensure_qapp():
     app = QApplication.instance()
@@ -304,7 +302,7 @@ def test_save_updates_existing_request_when_collection_unchanged(tmp_db_path, mo
         def _build_request_from_editor(self, **overrides):
             """Mock request builder."""
             return Request(
-                method="GET", url="https://api.example.com/items", headers={}, **overrides
+                method="GET", url="https://api.example.com/items", headers={}, **overrides,
             )
 
         def _mark_dirty(self):
@@ -346,7 +344,7 @@ def test_save_updates_existing_request_when_collection_unchanged(tmp_db_path, mo
         _FakeDialog,
     )
     mock_panel._request_persistence.list_save_collections.return_value = [
-        {"id": 7, "name": "Default"}
+        {"id": 7, "name": "Default"},
     ]
     mock_panel._request_persistence.save_request_from_dialog.return_value = SimpleNamespace(
         request_id=123,
@@ -398,7 +396,7 @@ def test_save_calls_save_request_when_collection_changes(tmp_db_path, monkeypatc
 
         def _build_request_from_editor(self, **overrides):
             return Request(
-                method="POST", url="https://api.example.com/users", headers={}, **overrides
+                method="POST", url="https://api.example.com/users", headers={}, **overrides,
             )
 
         def _mark_dirty(self):
@@ -441,7 +439,7 @@ def test_save_calls_save_request_when_collection_changes(tmp_db_path, monkeypatc
         _FakeDialog,
     )
     mock_panel._request_persistence.list_save_collections.return_value = [
-        {"id": 99, "name": "Other"}
+        {"id": 99, "name": "Other"},
     ]
 
     mock_panel._request_persistence.save_request_from_dialog.return_value = SimpleNamespace(

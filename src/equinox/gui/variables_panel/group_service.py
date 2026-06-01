@@ -24,7 +24,7 @@ class GroupService:
         self._mgr = mgr
         self._log = logger
 
-    # ── Groups ──────────────────────────────────────────────────────────────
+    # ÔöÇÔöÇ Groups ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ
 
     def list_groups(self) -> list[dict[str, Any]]:
         return self._mgr.list_groups()
@@ -38,7 +38,7 @@ class GroupService:
     def rename_group(self, group_id: int, new_name: str) -> None:
         self._mgr.update_group(group_id, name=new_name)
 
-    # ── Variables ───────────────────────────────────────────────────────────
+    # ÔöÇÔöÇ Variables ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ
 
     def list_variables(self, group_id: int) -> list[dict[str, Any]]:
         return self._mgr.list_group_variables(group_id)

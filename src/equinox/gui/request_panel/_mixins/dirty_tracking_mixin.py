@@ -4,6 +4,7 @@ from __future__ import annotations
 import logging
 from collections.abc import Callable
 from typing import Any
+from typing import TYPE_CHECKING
 
 DIRTY_SIGNAL_BINDINGS: list[tuple[str, str, str]] = [
     ("url_input.textChanged", "_mark_dirty", "url_input.textChanged"),
@@ -40,11 +41,15 @@ DIRTY_SIGNAL_BINDINGS: list[tuple[str, str, str]] = [
     ("verify_ssl_check.stateChanged", "_mark_dirty", "verify_ssl_check.stateChanged"),
     (
         "verify_ssl_check.stateChanged",
-        "_update_auth_display",
+        "_refresh_auth_display_from_state",
         "verify_ssl_check.stateChanged->auth_display",
     ),
     ("follow_redirects_check.stateChanged", "_mark_dirty", "follow_redirects_check.stateChanged"),
-    ("url_input.textChanged", "_update_auth_display", "url_input.textChanged->auth_display"),
+    (
+        "url_input.textChanged",
+        "_refresh_auth_display_from_state",
+        "url_input.textChanged->auth_display",
+    ),
     ("notes_editor.textChanged", "_mark_dirty", "notes_editor.textChanged"),
     ("_gql_query.textChanged", "_mark_dirty", "_gql_query.textChanged"),
     ("_gql_vars.textChanged", "_mark_dirty", "_gql_vars.textChanged"),
@@ -54,46 +59,37 @@ DIRTY_SIGNAL_BINDINGS: list[tuple[str, str, str]] = [
 class DirtyTrackingMixin:
     """Mixin providing dirty-state signal wiring for RequestPanel."""
 
-    logger: logging.Logger
+    if TYPE_CHECKING:
 
-    # The panel using this mixin must define:
-    #   - url_input
-    #   - method_combo
-    #   - body_text
-    #   - body_type_combo
-    #   - headers_table
-    #   - params_table
-    #   - path_params_table
-    #   - _multipart_table
-    #   - timeout_spin
-    #   - verify_ssl_check
-    #   - follow_redirects_check
-    #   - notes_editor
-    #   - _gql_query
-    #   - _gql_vars
-    #   - _auth
-    #   - _mark_dirty()
-    #   - _update_tab_labels()
-    #   - _update_url_suffix()
-    #   - _update_auth_display(auth)
+        def _update_auth_display(self, auth: Any = None) -> None: ...
 
-    # ─────────────────────────────────────────────────────────────
-    # Public API
-    # ─────────────────────────────────────────────────────────────
+    def _dirty_logger(self) -> logging.Logger:
+        candidate = getattr(self, "logger", None)
+        if isinstance(candidate, logging.Logger):
+            return candidate
+        return logging.getLogger(__name__)
+
+    def _setup_dirty_tracking(self) -> None:
+        """Compatibility wrapper used by ``RequestPanel``."""
+        self.setup_dirty_tracking()
 
     def setup_dirty_tracking(self) -> None:
         """Connect editor signals that should mark the request as dirty."""
         connected_count = 0
-
         for get_signal, slot, name in self._dirty_signal_bindings():
             if self._safe_connect(get_signal, slot, name):
                 connected_count += 1
+        self._dirty_logger().debug("Dirty tracking: %d signal(s) connected", connected_count)
 
-        self.logger.debug("Dirty tracking: %d signal(s) connected", connected_count)
-
-    # ─────────────────────────────────────────────────────────────
-    # Internal helpers
-    # ─────────────────────────────────────────────────────────────
+    def _refresh_auth_display_from_state(self, *_args: Any) -> None:
+        """Refresh auth display using current own/inherited auth state."""
+        try:
+            self._update_auth_display(getattr(self, "_auth", None))
+        except Exception:
+            self._dirty_logger().debug(
+                "Failed to refresh auth display during dirty tracking",
+                exc_info=True,
+            )
 
     def _safe_connect(
         self,
@@ -102,29 +98,26 @@ class DirtyTrackingMixin:
         name: str,
     ) -> bool:
         """Safely retrieve and connect a Qt signal."""
+        logger = self._dirty_logger()
         try:
             signal = get_signal()
         except (AttributeError, RuntimeError) as exc:
-            self.logger.debug(
+            logger.debug(
                 "Signal retrieval skipped (C++ object missing): %s - %s",
                 name,
                 type(exc).__name__,
             )
             return False
         except Exception:
-            self.logger.warning("Unexpected error retrieving signal: %s", name, exc_info=True)
+            logger.warning("Unexpected error retrieving signal: %s", name, exc_info=True)
             return False
 
         try:
             signal.connect(slot)
             return True
         except RuntimeError:
-            self.logger.debug("Failed to connect signal after retrieval: %s", name)
+            logger.debug("Failed to connect signal after retrieval: %s", name)
             return False
-
-    # ─────────────────────────────────────────────────────────────
-    # Declarative signal→slot mapping
-    # ─────────────────────────────────────────────────────────────
 
     def _dirty_signal_bindings(
         self,

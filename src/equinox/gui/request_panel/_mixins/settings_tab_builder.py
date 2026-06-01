@@ -145,7 +145,7 @@ class SettingsTabMixin:
         self.cert_path_input = QLineEdit()
         self.cert_path_input.setPlaceholderText("Path to .pem / .crt file")
 
-        browse = QPushButton("Browse…")
+        browse = QPushButton("Browse...")
         browse.setMinimumWidth(browse_button_width)
         browse.clicked.connect(self._browse_cert)
 
@@ -161,7 +161,7 @@ class SettingsTabMixin:
         self.cert_key_input = QLineEdit()
         self.cert_key_input.setPlaceholderText("Path to private key file (leave blank if combined)")
 
-        browse = QPushButton("Browse…")
+        browse = QPushButton("Browse...")
         browse.setMinimumWidth(browse_button_width)
         browse.clicked.connect(self._browse_cert_key)
 

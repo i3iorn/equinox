@@ -78,7 +78,7 @@ class BottomBarMixin:
     # -----------------------------
     def _create_secondary_tools_button(self) -> QToolButton:
         button = QToolButton()
-        button.setText("More ▾")
+        button.setText("More...")
         button.setToolTip("Secondary request tools")
         button.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
         button.setObjectName("requestMoreToolsBtn")
@@ -93,14 +93,14 @@ class BottomBarMixin:
 
         actions = [
             self._create_menu_action(
-                text="Import from cURL…",
+                text="Import from cURL...",
                 object_name="request_import_curl",
                 usage_id="request.import_curl",
                 handler=self._import_from_curl,
                 is_destructive=False,
             ),
             self._create_menu_action(
-                text="Benchmark…",
+                text="Benchmark...",
                 object_name="request_benchmark",
                 usage_id="request.benchmark",
                 handler=self._open_benchmark,

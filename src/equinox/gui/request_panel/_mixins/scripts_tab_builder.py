@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from typing import Any
+from typing import cast
 
 from equinox.gui.syntax_highlighter.python_highlighter import PythonHighlighter
 from equinox.gui.theme import get_mono_font
@@ -65,11 +66,11 @@ def create_scripts_tab(panel: Any, cheat_text: str) -> QWidget:
     splitter.setHandleWidth(5)
     layout.addWidget(splitter, 1)
 
-    panel._pre_highlighter = PythonHighlighter(panel.pre_script_editor.document())
-    panel._post_highlighter = PythonHighlighter(panel.post_script_editor.document())
+    panel._pre_highlighter = PythonHighlighter(cast(Any, panel.pre_script_editor.document()))
+    panel._post_highlighter = PythonHighlighter(cast(Any, panel.post_script_editor.document()))
 
     cheat_toggle = QPushButton()
-    cheat_toggle.setText("▶ Available variables & modules")
+    cheat_toggle.setText("Show available variables & modules")
     cheat_toggle.setCheckable(True)
     cheat_toggle.setFlat(True)
     layout.addWidget(cheat_toggle)
@@ -84,7 +85,7 @@ def create_scripts_tab(panel: Any, cheat_text: str) -> QWidget:
     def _toggle_cheatsheet(checked: bool) -> None:
         cheat_label.setVisible(checked)
         cheat_toggle.setText(
-            "▼ Available variables & modules" if checked else "▶ Available variables & modules",
+            "Hide available variables & modules" if checked else "Show available variables & modules",
         )
 
     cheat_toggle.toggled.connect(_toggle_cheatsheet)

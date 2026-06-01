@@ -3,14 +3,12 @@
 Provides a QTextEdit subclass configured for displaying code/text
 with syntax highlighting. Optimized for large response bodies.
 """
-
 from __future__ import annotations
 
 import logging
 
-from PyQt6.QtWidgets import QTextEdit
-
 from equinox.gui.theme import get_mono_font
+from PyQt6.QtWidgets import QTextEdit
 
 logger = logging.getLogger(__name__)
 

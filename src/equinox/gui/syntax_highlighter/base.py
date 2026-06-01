@@ -1,5 +1,4 @@
 """Base classes and utilities for syntax highlighters."""
-
 from __future__ import annotations
 
 import re
@@ -7,10 +6,12 @@ from collections.abc import Iterable
 from dataclasses import dataclass
 from re import Pattern
 
-from PyQt6.QtGui import QColor, QFont, QSyntaxHighlighter, QTextCharFormat
-from PyQt6.QtWidgets import QWidget
-
 from equinox.gui.theme import Colors
+from PyQt6.QtGui import QColor
+from PyQt6.QtGui import QFont
+from PyQt6.QtGui import QSyntaxHighlighter
+from PyQt6.QtGui import QTextCharFormat
+from PyQt6.QtWidgets import QWidget
 
 # ---------------------------------------------------------------------------
 # Format creation utilities
@@ -108,9 +109,8 @@ class RegexHighlighterBase(QSyntaxHighlighter):
         """
         return []
 
-    def highlightBlock(self, text: str | None) -> None:  # noqa: N802
-        if text is None:
-            return
+    def highlightBlock(self, text: str | None) -> None:
+        text = text or ""
         # Apply language-specific rules.
         for rule in self._rules:
             for match in rule.pattern.finditer(text):

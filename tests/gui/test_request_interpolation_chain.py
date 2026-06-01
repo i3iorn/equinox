@@ -1,13 +1,11 @@
 """Regression tests for chained URL/path-param interpolation in send mixin."""
-
 from types import SimpleNamespace
 
-from equinox.application.requests import (
-    collect_unresolved_placeholders,
-    interpolate_request_fields,
-    resolve_path_params,
-)
-from equinox.application.requests.models import PreparationIssue, SendOrchestratorResult
+from equinox.application.requests import collect_unresolved_placeholders
+from equinox.application.requests import interpolate_request_fields
+from equinox.application.requests import resolve_path_params
+from equinox.application.requests.models import PreparationIssue
+from equinox.application.requests.models import SendOrchestratorResult
 from equinox.gui.request_panel._mixins import _RequestSendMixin
 from equinox.gui.request_panel._mixins import send_mixin as send_mixin_mod
 
@@ -151,7 +149,7 @@ def test_send_request_blocks_dispatch_when_placeholders_still_unresolved(monkeyp
                     severity="error",
                     field_name="url",
                 ),
-            )
+            ),
         ),
     )
     monkeypatch.setattr(

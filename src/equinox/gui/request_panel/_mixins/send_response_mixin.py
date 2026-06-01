@@ -148,7 +148,7 @@ class SendResponseMixin:
         if outcome.session_updates:
             self._session_vars.update(outcome.session_updates)
             self.session_vars_changed.emit(dict(self._session_vars))
-        lines = "\n".join(outcome.display_lines) if outcome.display_lines else "—"
+        lines = "\n".join(outcome.display_lines) if outcome.display_lines else "ÔÇö"
         self.captures_results_label.setText(lines)
 
     def _run_post_script(self, response: Any) -> None:

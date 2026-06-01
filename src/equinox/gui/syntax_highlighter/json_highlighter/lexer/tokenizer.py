@@ -2,20 +2,15 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Generator
-from typing import Optional
 
-from .comment_handler import (
-    consume_block_comment,
-    try_block_comment_start,
-    try_line_comment,
-)
+from .comment_handler import consume_block_comment
+from .comment_handler import try_block_comment_start
+from .comment_handler import try_line_comment
 from .escape_validator import validate_escape
-from .patterns import (
-    CONTROL_CHAR_THRESHOLD,
-    JSON5_LITERALS,
-    NUMBER_RE,
-    Token,
-)
+from .patterns import CONTROL_CHAR_THRESHOLD
+from .patterns import JSON5_LITERALS
+from .patterns import NUMBER_RE
+from .patterns import Token
 from .states import State
 from .timestamp_detector import detect_string_token_type
 
@@ -39,7 +34,7 @@ class JsonLexer:
         while index < length:
             if state == State.STRING:
                 index, tok, state, string_opened = self._lex_string(
-                    text, index, string_start, string_opened
+                    text, index, string_start, string_opened,
                 )
                 yield tok
                 if state == State.STRING and index >= length:
@@ -55,7 +50,7 @@ class JsonLexer:
                 continue
 
             index, state, normal_tok, string_opened, string_start = self._lex_normal(
-                text, index, state, string_opened, string_start
+                text, index, state, string_opened, string_start,
             )
             if normal_tok is not None:
                 yield normal_tok
@@ -63,8 +58,8 @@ class JsonLexer:
         return state
 
     def _lex_normal(
-        self, text: str, index: int, state: State, opened: bool, start: int
-    ) -> tuple[int, State, Optional[Token], bool, int]:
+        self, text: str, index: int, state: State, opened: bool, start: int,
+    ) -> tuple[int, State, Token | None, bool, int]:
         ch = text[index]
 
         if ch.isspace():
@@ -99,7 +94,7 @@ class JsonLexer:
         return index + 1, state, Token("ERROR", index, index + 1, ch), opened, start
 
     def _lex_string(
-        self, text: str, index: int, start: int, opened: bool
+        self, text: str, index: int, start: int, opened: bool,
     ) -> tuple[int, Token, State, bool]:
         length = len(text)
         while index < length:
@@ -126,7 +121,7 @@ class JsonLexer:
         value = text[start + 1 : length]
         return length, Token("STRING", start, length, value), State.STRING, opened
 
-    def _match_literal(self, text: str, index: int) -> Optional[tuple[str, int]]:
+    def _match_literal(self, text: str, index: int) -> tuple[str, int] | None:
         """Return (token_type, end_index) if a JSON5 literal matches."""
         for literal, token_type in JSON5_LITERALS.items():
             if text.startswith(literal, index):

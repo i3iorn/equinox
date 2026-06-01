@@ -1,35 +1,31 @@
 """Secret Manager settings and configuration panel."""
-
 from __future__ import annotations
 
-import json
 import logging
 from pathlib import Path
 from typing import Any
 
-from PyQt6.QtCore import Qt, pyqtSignal
-from PyQt6.QtWidgets import (
-    QComboBox,
-    QFormLayout,
-    QGroupBox,
-    QHBoxLayout,
-    QLabel,
-    QMessageBox,
-    QPushButton,
-    QTextEdit,
-    QVBoxLayout,
-    QWidget,
-)
-
-from equinox.core.secret_managers import SecretManagerProfile, test_secret_manager_connection
+from equinox.core.json_tools import safe_json_dumps
+from equinox.core.secret_managers import SecretManagerProfile
+from equinox.core.secret_managers import test_secret_manager_connection
 from equinox.gui.dialogs.secret_manager_config_dialog import SecretManagerConfigDialog
-from equinox.gui.secret_manager_feedback import (
-    SecretManagerConnectionMessages,
-    show_secret_manager_connection_feedback,
-)
+from equinox.gui.secret_manager_feedback import SecretManagerConnectionMessages
+from equinox.gui.secret_manager_feedback import show_secret_manager_connection_feedback
 from equinox.gui.widgets.secret_browser import SecretBrowserWidget
 from equinox.security import sanitize_details
 from equinox.storage.secret_manager_configs import SecretManagerConfigStore
+from PyQt6.QtCore import pyqtSignal
+from PyQt6.QtCore import Qt
+from PyQt6.QtWidgets import QComboBox
+from PyQt6.QtWidgets import QFormLayout
+from PyQt6.QtWidgets import QGroupBox
+from PyQt6.QtWidgets import QHBoxLayout
+from PyQt6.QtWidgets import QLabel
+from PyQt6.QtWidgets import QMessageBox
+from PyQt6.QtWidgets import QPushButton
+from PyQt6.QtWidgets import QTextEdit
+from PyQt6.QtWidgets import QVBoxLayout
+from PyQt6.QtWidgets import QWidget
 
 logger = logging.getLogger(__name__)
 
@@ -55,7 +51,7 @@ class SecretManagerSettingsPanel(QWidget):
     # Signal emitted when a secret is selected for use in a credential
     secret_selected = pyqtSignal(str, dict)  # secret_name, secret_dict
 
-    def __init__(self, config_path: Path | None = None, parent=None):
+    def __init__(self, config_path: Path | None = None, parent: QWidget | None = None) -> None:
         """Initialize the settings panel.
 
         Args:
@@ -77,63 +73,73 @@ class SecretManagerSettingsPanel(QWidget):
         """Initialize the UI."""
         layout = QVBoxLayout(self)
 
-        # Configuration selection
-        config_layout = QHBoxLayout()
-        config_layout.addWidget(QLabel("Saved Configuration:"))
+        self._build_config_selector(layout)
+        self._build_config_display(layout)
+        self._build_browser_section(layout)
+        self._build_action_buttons(layout)
+
+        layout.addStretch()
+
+    def _build_config_selector(self, parent_layout: QVBoxLayout) -> None:
+        """Build the configuration selection row."""
+        row = QHBoxLayout()
+        row.addWidget(QLabel("Saved Configuration:"))
 
         self.config_combo = QComboBox()
         self.config_combo.currentTextChanged.connect(self._on_config_selected)
-        config_layout.addWidget(self.config_combo)
+        row.addWidget(self.config_combo)
 
         new_btn = QPushButton("New")
         new_btn.clicked.connect(self._create_new_config)
-        config_layout.addWidget(new_btn)
+        row.addWidget(new_btn)
 
         delete_btn = QPushButton("Delete")
         delete_btn.clicked.connect(self._delete_current_config)
-        config_layout.addWidget(delete_btn)
+        row.addWidget(delete_btn)
 
-        layout.addLayout(config_layout)
+        parent_layout.addLayout(row)
 
-        # Configuration display
-        config_group = QGroupBox("Current Configuration")
-        config_form = QFormLayout(config_group)
+    def _build_config_display(self, parent_layout: QVBoxLayout) -> None:
+        """Build the configuration details display."""
+        group = QGroupBox("Current Configuration")
+        form = QFormLayout(group)
 
         self.config_display = QTextEdit()
         self.config_display.setReadOnly(True)
         self.config_display.setMaximumHeight(100)
-        config_form.addRow("Details:", self.config_display)
 
-        layout.addWidget(config_group)
+        form.addRow("Details:", self.config_display)
+        parent_layout.addWidget(group)
 
-        # Secret browser area
-        browser_group = QGroupBox("Secret Browser")
-        browser_layout = QVBoxLayout(browser_group)
+    def _build_browser_section(self, parent_layout: QVBoxLayout) -> None:
+        """Build the secret browser container."""
+        group = QGroupBox("Secret Browser")
+        layout = QVBoxLayout(group)
 
-        browser_info = QLabel(
-            "Use the browser below to search for and retrieve secrets from the configured manager."
+        info = QLabel(
+            "Use the browser below to search for and retrieve secrets from the configured manager.",
         )
-        browser_layout.addWidget(browser_info)
+        layout.addWidget(info)
 
         self.browser_placeholder = QLabel("No configuration selected")
         self.browser_placeholder.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        browser_layout.addWidget(self.browser_placeholder)
+        layout.addWidget(self.browser_placeholder)
 
-        layout.addWidget(browser_group)
+        parent_layout.addWidget(group)
 
-        # Status/buttons
-        button_layout = QHBoxLayout()
+    def _build_action_buttons(self, parent_layout: QVBoxLayout) -> None:
+        """Build the bottom action buttons."""
+        row = QHBoxLayout()
 
         test_btn = QPushButton("Test Connection")
         test_btn.clicked.connect(self._test_connection)
-        button_layout.addWidget(test_btn)
+        row.addWidget(test_btn)
 
-        clear_cache_btn = QPushButton("Clear Cache")
-        clear_cache_btn.clicked.connect(self._clear_cache)
-        button_layout.addWidget(clear_cache_btn)
+        clear_btn = QPushButton("Clear Cache")
+        clear_btn.clicked.connect(self._clear_cache)
+        row.addWidget(clear_btn)
 
-        layout.addLayout(button_layout)
-        layout.addStretch()
+        parent_layout.addLayout(row)
 
     def _load_configurations(self) -> None:
         """Load saved configurations from storage and populate the selector."""
@@ -179,7 +185,7 @@ class SecretManagerSettingsPanel(QWidget):
         from PyQt6.QtWidgets import QInputDialog
 
         name, ok = QInputDialog.getText(
-            self, "Save Configuration", "Enter a name for this configuration:"
+            self, "Save Configuration", "Enter a name for this configuration:",
         )
 
         if not ok or not name:
@@ -203,9 +209,14 @@ class SecretManagerSettingsPanel(QWidget):
         self.config_combo.blockSignals(True)
         if name not in [self.config_combo.itemText(i) for i in range(self.config_combo.count())]:
             self.config_combo.addItem(name)
-        self.config_combo.model().sort(0)
-        self.config_combo.blockSignals(False)
-        self.config_combo.setCurrentText(name)
+
+        if self.config_combo is not None:
+            model = self.config_combo.model()
+            if model is not None:
+                model.sort(0)
+            self.config_combo.blockSignals(False)
+            self.config_combo.setCurrentText(name)
+
         self._on_config_selected(name)
         self._display_config()
         self._save_configurations()
@@ -263,7 +274,7 @@ Cache TTL: {profile.cache_ttl}s
 {warning_text}
 
 Configuration:
-{json.dumps(safe_config, indent=2)}
+{safe_json_dumps(safe_config, indent=2)}
 """
         self.config_display.setText(display_text)
 
@@ -273,7 +284,10 @@ Configuration:
         if profile is None:
             return
 
-        layout = self.browser_placeholder.parent().layout()
+        parent_widget = self.browser_placeholder.parentWidget()
+        if parent_widget is None:
+            return
+        layout = parent_widget.layout()
         self._remove_browser()
         if layout is None:
             return
@@ -290,23 +304,25 @@ Configuration:
         )
         self._browser_widget.secret_selected.connect(self.secret_selected)
         if hasattr(layout, "insertWidget"):
-            layout.insertWidget(0, self._browser_widget)  # type: ignore[attr-defined]
+            layout.insertWidget(0, self._browser_widget)
         else:
             layout.addWidget(self._browser_widget)
 
     def _remove_browser(self) -> None:
         """Remove and destroy the current browser widget (if any)."""
-        layout = self.browser_placeholder.parent().layout()
+        parent_widget = self.browser_placeholder.parentWidget()
+        if parent_widget is None:
+            return
+        layout = parent_widget.layout()
         if layout is None:
             return
         if self._browser_widget:
             layout.removeWidget(self._browser_widget)
             self._browser_widget.deleteLater()
             self._browser_widget = None
-        if self.browser_placeholder.parent() is not None:
-            if layout.indexOf(self.browser_placeholder) == -1:
-                layout.addWidget(self.browser_placeholder)
-            self.browser_placeholder.setVisible(True)
+        if layout.indexOf(self.browser_placeholder) == -1:
+            layout.addWidget(self.browser_placeholder)
+        self.browser_placeholder.setVisible(True)
 
     def _test_connection(self) -> None:
         """Test connection to the configured secret manager."""
@@ -322,7 +338,7 @@ Configuration:
         result = test_secret_manager_connection(manager_type, config)
         messages = SecretManagerConnectionMessages(
             success=_PANEL_CONNECTION_MESSAGES.success.format(
-                profile_name=self._current_config_name, manager_type="{manager_type}"
+                profile_name=self._current_config_name, manager_type="{manager_type}",
             ),
             unavailable=_PANEL_CONNECTION_MESSAGES.unavailable.format(
                 profile_name=self._current_config_name,
@@ -370,7 +386,7 @@ Configuration:
             return
 
         reply = QMessageBox.question(
-            self, "Confirm Delete", f"Delete configuration '{current_name}'?"
+            self, "Confirm Delete", f"Delete configuration '{current_name}'?",
         )
 
         if reply != QMessageBox.StandardButton.Yes:

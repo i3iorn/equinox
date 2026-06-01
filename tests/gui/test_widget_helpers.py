@@ -2,18 +2,12 @@
 
 These functions have no PyQt6 dependency so they run headless.
 """
-
 import pytest
-
 from equinox.application.requests._assembly import apply_default_headers
+from equinox.application.requests._assembly import assemble_body
+from equinox.application.requests._assembly import detect_body_type
+from equinox.application.requests._assembly import inject_content_type
 from equinox.core.request import Request
-
-# ── builder helpers ───────────────────────────────────────────────────────────
-from equinox.gui.request_panel.builder import (
-    assemble_body,
-    detect_body_type,
-    inject_content_type,
-)
 
 
 class TestDetectBodyType:

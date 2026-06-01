@@ -45,7 +45,7 @@ class VariablesTableController:
                     f"Raw: {raw}\nInterpolated: {interpolated}" if interpolated != raw else raw
                 )
                 value_item.setToolTip(tooltip)
-                key_item.setToolTip(f"{key} → {interpolated}")
+                key_item.setToolTip(f"{key} ÔåÆ {interpolated}")
 
         finally:
             self.table.setUpdatesEnabled(True)

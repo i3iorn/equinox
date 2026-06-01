@@ -4,37 +4,38 @@ Codegen, copy, download, diff-with-history, search, word-wrap, and
 large-body loading.  Has no ``__init__`` — relies on ``self.*`` attributes
 set by ``ResponsePanel.__init__``.
 """
-
 # mypy: disable-error-code=attr-defined
-
 from __future__ import annotations
 
 import difflib
 import logging
+from collections.abc import Callable
+from typing import Any
+from typing import cast
 from typing import TYPE_CHECKING
 
-from PyQt6.QtCore import Qt
-from PyQt6.QtWidgets import (
-    QApplication,
-    QComboBox,
-    QDialog,
-    QFileDialog,
-    QHBoxLayout,
-    QLabel,
-    QListWidget,
-    QListWidgetItem,
-    QMessageBox,
-    QPlainTextEdit,
-    QPushButton,
-    QTextEdit,
-    QVBoxLayout,
-)
-
-from equinox.core.codegen import GENERATORS, generate_code
-from equinox.gui.file_ops import atomic_write_bytes, validate_selected_path
+from equinox.core.codegen import generate_code
+from equinox.core.codegen import GENERATORS
+from equinox.gui.file_ops import atomic_write_bytes
+from equinox.gui.file_ops import validate_selected_path
 from equinox.gui.response_panel._formatting import pretty_print_body
 from equinox.gui.response_panel.pretty_print import PrettyPrintRunnable
 from equinox.gui.theme import get_mono_font
+from PyQt6.QtCore import Qt
+from PyQt6.QtWidgets import QApplication
+from PyQt6.QtWidgets import QComboBox
+from PyQt6.QtWidgets import QDialog
+from PyQt6.QtWidgets import QFileDialog
+from PyQt6.QtWidgets import QHBoxLayout
+from PyQt6.QtWidgets import QLabel
+from PyQt6.QtWidgets import QListWidget
+from PyQt6.QtWidgets import QListWidgetItem
+from PyQt6.QtWidgets import QMessageBox
+from PyQt6.QtWidgets import QPlainTextEdit
+from PyQt6.QtWidgets import QPushButton
+from PyQt6.QtWidgets import QTextEdit
+from PyQt6.QtWidgets import QVBoxLayout
+from PyQt6.QtWidgets import QWidget
 
 if TYPE_CHECKING:
     from equinox.storage import Database
@@ -61,6 +62,9 @@ _DEFAULT_FILENAME = "response.txt"
 class ResponseActionsMixin:
     """Mixin providing all user-action methods for ResponsePanel."""
 
+    if TYPE_CHECKING:
+        _as_qwidget: Callable[[], QWidget]
+
     # ------------------------------------------------------------------
     # Private helpers — encapsulation
     # ------------------------------------------------------------------
@@ -72,10 +76,10 @@ class ResponseActionsMixin:
         """
         displayed = self.body_text.toPlainText()
         if displayed:
-            return displayed
+            return str(displayed)
         if self.current_response is not None:
             try:
-                return pretty_print_body(self.current_response)
+                return str(pretty_print_body(self.current_response))
             except Exception:
                 logger.exception("Failed to pretty-print body")
         return ""
@@ -86,7 +90,7 @@ class ResponseActionsMixin:
         Centralizes the risky window traversal so it can be updated in one place.
         """
         try:
-            return self.window().db
+            return cast(Database, self.window().db)
         except Exception:
             return None
 
@@ -100,7 +104,7 @@ class ResponseActionsMixin:
         if self.current_response is None:
             return None
         return getattr(self.current_response, "sent_url", None) or getattr(
-            self.current_response.request, "url", None
+            self.current_response.request, "url", None,
         )
 
     def _suggest_filename(self) -> str:
@@ -204,7 +208,7 @@ class ResponseActionsMixin:
         history_entries = self._fetch_history_entries()
         if not history_entries:
             QMessageBox.information(
-                self,
+                self._as_qwidget(),
                 "Diff vs. History",
                 "No matching history entries found for this request.",
             )
@@ -218,7 +222,7 @@ class ResponseActionsMixin:
         new_body = self._get_body_text()
         self._show_diff_dialog(old_body, new_body)
 
-    def _fetch_history_entries(self) -> list:
+    def _fetch_history_entries(self) -> list[dict[str, Any]]:
         """Return recent history entries matching the current request.
 
         Returns an empty list if the database is unavailable or the query fails.
@@ -231,12 +235,13 @@ class ResponseActionsMixin:
             from equinox.storage import HistoryManager
 
             req = self.current_response.request
-            return HistoryManager(db).search_history(query=req.url, method=req.method, limit=30)
+            entries = HistoryManager(db).search_history(query=req.url, method=req.method, limit=30)
+            return [cast(dict[str, Any], entry) for entry in entries]
         except Exception:
             logger.exception("Failed to fetch history entries for diff")
             return []
 
-    def _format_history_entry(self, entry: dict) -> str:
+    def _format_history_entry(self, entry: dict[str, Any]) -> str:
         """Format a history entry for display in the picker list."""
         ts = entry.get("executed_at", "")[:19]
         method = entry.get("method", "")
@@ -244,9 +249,9 @@ class ResponseActionsMixin:
         status = entry.get("status_code", "?")
         return f"{ts}  {method}  {url}  [{status}]"
 
-    def _pick_history_entry(self, history_entries: list) -> dict | None:
+    def _pick_history_entry(self, history_entries: list[dict[str, Any]]) -> dict[str, Any] | None:
         """Show a picker dialog and return the selected history entry, or None."""
-        picker = QDialog(self)
+        picker = QDialog(cast(QDialog, self))
         picker.setWindowTitle("Choose History Entry")
         picker.setMinimumSize(_HISTORY_PICKER_WIDTH, _HISTORY_PICKER_HEIGHT)
         pk_layout = QVBoxLayout(picker)
@@ -272,13 +277,15 @@ class ResponseActionsMixin:
         cancel_btn.clicked.connect(picker.reject)
         compare_btn.clicked.connect(picker.accept)
         list_widget.currentItemChanged.connect(
-            lambda cur, _: compare_btn.setEnabled(cur is not None)
+            lambda cur, _: compare_btn.setEnabled(cur is not None),
         )
 
         if picker.exec() != QDialog.DialogCode.Accepted:
             return None
         selected = list_widget.currentItem()
-        return selected.data(Qt.ItemDataRole.UserRole) if selected else None
+        if selected is None:
+            return None
+        return cast(dict[str, Any], selected.data(Qt.ItemDataRole.UserRole))
 
     def _show_diff_dialog(self, old_body: str, new_body: str) -> None:
         """Display a unified diff between *old_body* and *new_body*."""
@@ -286,12 +293,12 @@ class ResponseActionsMixin:
         new_lines = new_body.splitlines(keepends=True)
         diff_lines = list(
             difflib.unified_diff(
-                old_lines, new_lines, fromfile="History", tofile="Current", lineterm=""
-            )
+                old_lines, new_lines, fromfile="History", tofile="Current", lineterm="",
+            ),
         )
         diff_text = "".join(diff_lines) if diff_lines else "(No differences)"
 
-        dlg = QDialog(self)
+        dlg = QDialog(cast(QDialog, self))
         dlg.setWindowTitle("Response Body Diff")
         dlg.setMinimumSize(_DIFF_DIALOG_WIDTH, _DIFF_DIALOG_HEIGHT)
         dv_layout = QVBoxLayout(dlg)
@@ -314,7 +321,9 @@ class ResponseActionsMixin:
         text = self._get_body_text()
         if not text:
             return
-        QApplication.clipboard().setText(text)
+        clipboard = QApplication.clipboard()
+        if clipboard is not None:
+            clipboard.setText(text)
 
     def _download_body(self) -> None:
         """Save the current body text to a file."""
@@ -323,7 +332,7 @@ class ResponseActionsMixin:
 
         suggested_filename = self._suggest_filename()
         path, _ = QFileDialog.getSaveFileName(
-            self,
+            self._as_qwidget(),
             "Save Response Body",
             suggested_filename,
             "All Files (*.*)",
@@ -342,10 +351,10 @@ class ResponseActionsMixin:
             )
         except ValueError as exc:
             logger.warning("response_panel.download_body_invalid_path path=%s error=%s", path, exc)
-            QMessageBox.warning(self, "Save Failed", str(exc))
+            QMessageBox.warning(self._as_qwidget(), "Save Failed", str(exc))
         except Exception as exc:
             logger.warning("response_panel.download_body_failed path=%s error=%s", path, exc)
-            QMessageBox.warning(self, "Save Failed", f"Could not save file:\n{exc}")
+            QMessageBox.warning(self._as_qwidget(), "Save Failed", f"Could not save file:\n{exc}")
 
     def _response_bytes_for_download(self) -> bytes:
         """Return exact response bytes for file download, with safe text fallback."""
@@ -367,7 +376,7 @@ class ResponseActionsMixin:
         if self.current_response is None:
             return "# No response available"
         try:
-            return generate_code(fmt, self.current_response)
+            return str(generate_code(fmt, self.current_response))
         except Exception as exc:
             return f"# Error generating code: {exc}"
 
@@ -375,16 +384,18 @@ class ResponseActionsMixin:
         """Generate client code for this request and copy to clipboard."""
         code = self._generate_code_snippet(fmt)
         if code.startswith("# Error"):
-            QMessageBox.warning(self, "Code Generation Failed", code)
+            QMessageBox.warning(self._as_qwidget(), "Code Generation Failed", code)
         else:
-            QApplication.clipboard().setText(code)
+            clipboard = QApplication.clipboard()
+            if clipboard is not None:
+                clipboard.setText(code)
 
     def _view_code_dialog(self) -> None:
         """Show a dialog with generated client code in multiple languages."""
         if self.current_response is None:
             return
 
-        dlg = QDialog(self)
+        dlg = QDialog(self._as_qwidget())
         dlg.setWindowTitle("Generate Client Code")
         dlg.setMinimumSize(_CODEGEN_DIALOG_WIDTH, _CODEGEN_DIALOG_HEIGHT)
         layout = QVBoxLayout(dlg)
@@ -417,7 +428,12 @@ class ResponseActionsMixin:
         combo.currentIndexChanged.connect(update_code)
         update_code()
 
-        copy_btn.clicked.connect(lambda: QApplication.clipboard().setText(editor.toPlainText()))
+        def _copy_generated_code() -> None:
+            clipboard = QApplication.clipboard()
+            if clipboard is not None:
+                clipboard.setText(editor.toPlainText())
+
+        copy_btn.clicked.connect(_copy_generated_code)
         close_btn.clicked.connect(dlg.accept)
 
         dlg.exec()
