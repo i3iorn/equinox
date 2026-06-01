@@ -1,9 +1,10 @@
 """Tests for local GUI usage tracking and compact request toolbar behavior."""
-
 from __future__ import annotations
 
-from PyQt6.QtCore import QCoreApplication, QSettings
-from PyQt6.QtWidgets import QApplication, QToolButton
+from PyQt6.QtCore import QCoreApplication
+from PyQt6.QtCore import QSettings
+from PyQt6.QtWidgets import QApplication
+from PyQt6.QtWidgets import QToolButton
 
 _APP = QApplication.instance() or QApplication([])
 
@@ -43,8 +44,8 @@ def test_request_panel_secondary_actions_moved_to_more_menu(tmp_path, monkeypatc
     assert more_btn is not None
     assert more_btn.menu() is not None
     action_texts = [a.text() for a in more_btn.menu().actions() if not a.isSeparator()]
-    assert "Import from cURL…" in action_texts
-    assert "Benchmark…" in action_texts
+    assert "Import from cURL..." in action_texts
+    assert "Benchmark..." in action_texts
     assert "Clear Session Vars" in action_texts
 
     win.close()
@@ -186,7 +187,7 @@ def test_history_context_actions_rank_by_usage_and_keep_delete_last(tmp_path, mo
 
 
 def test_variables_session_context_actions_rank_by_usage_and_keep_delete_last(
-    tmp_path, monkeypatch
+    tmp_path, monkeypatch,
 ):
     from equinox.gui.variables_panel import VariablesPanel
     from equinox.gui.window import MainWindow
@@ -217,7 +218,7 @@ def test_variables_session_context_actions_rank_by_usage_and_keep_delete_last(
 
 
 def test_collections_request_context_actions_rank_by_usage_and_keep_delete_last(
-    tmp_path, monkeypatch
+    tmp_path, monkeypatch,
 ):
     from equinox.gui.collection_panel import CollectionsPanel
     from equinox.gui.window import MainWindow

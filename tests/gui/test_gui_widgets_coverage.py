@@ -2,14 +2,23 @@
 from PyQt6.QtCore import QCoreApplication
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QKeyEvent
+from PyQt6.QtTest import QTest
 from PyQt6.QtWidgets import QApplication
 from PyQt6.QtWidgets import QTextEdit
 
 _APP = QApplication.instance() or QApplication([])
 
+# SearchBar debounce is 250 ms — wait slightly longer to let the timer fire.
+_SEARCH_DEBOUNCE_WAIT_MS = 300
+
 
 def _process():
     QCoreApplication.processEvents()
+
+
+def _process_search():
+    """Advance the event loop long enough to flush the SearchBar debounce timer."""
+    QTest.qWait(_SEARCH_DEBOUNCE_WAIT_MS)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -340,7 +349,7 @@ class TestSearchBar:
         bar, target = self._make_bar()
         bar.show_and_focus()
         bar._input.setText("Hello")
-        _process()
+        _process_search()
         assert len(bar._matches) >= 1
 
     def test_case_sensitive_search(self):
@@ -348,7 +357,7 @@ class TestSearchBar:
         bar.show_and_focus()
         bar._case_btn.setChecked(True)
         bar._input.setText("hello")  # lowercase won't match uppercase "Hello"
-        _process()
+        _process_search()
         # Case-sensitive: "hello" ≠ "Hello"
         assert len(bar._matches) == 0
 
@@ -357,7 +366,7 @@ class TestSearchBar:
         bar.show_and_focus()
         bar._case_btn.setChecked(False)
         bar._input.setText("hello")
-        _process()
+        _process_search()
         # Case-insensitive: should match "Hello"
         assert len(bar._matches) >= 1
 
@@ -366,14 +375,14 @@ class TestSearchBar:
         bar.show_and_focus()
         bar._regex_btn.setChecked(True)
         bar._input.setText("Hello.*")
-        _process()
+        _process_search()
         assert len(bar._matches) >= 1
 
     def test_find_next(self):
         bar, target = self._make_bar()
         bar.show_and_focus()
         bar._input.setText("Hello")
-        _process()
+        _process_search()
         initial_idx = bar._current_idx
         bar._find_next()
         # Either advances or wraps around
@@ -383,7 +392,7 @@ class TestSearchBar:
         bar, target = self._make_bar()
         bar.show_and_focus()
         bar._input.setText("Hello")
-        _process()
+        _process_search()
         bar._find_prev()
         assert bar._current_idx >= 0
 
@@ -399,7 +408,7 @@ class TestSearchBar:
         bar, target = self._make_bar()
         bar.show_and_focus()
         bar._input.setText("ZZZNOMATCH")
-        _process()
+        _process_search()
         assert bar._matches == []
 
     def test_jsonpath_mode_toggle(self):

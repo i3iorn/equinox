@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import difflib
 import logging
+from collections.abc import Callable
 from typing import Any
 from typing import cast
 from typing import TYPE_CHECKING
@@ -34,6 +35,7 @@ from PyQt6.QtWidgets import QPlainTextEdit
 from PyQt6.QtWidgets import QPushButton
 from PyQt6.QtWidgets import QTextEdit
 from PyQt6.QtWidgets import QVBoxLayout
+from PyQt6.QtWidgets import QWidget
 
 if TYPE_CHECKING:
     from equinox.storage import Database
@@ -59,6 +61,9 @@ _DEFAULT_FILENAME = "response.txt"
 
 class ResponseActionsMixin:
     """Mixin providing all user-action methods for ResponsePanel."""
+
+    if TYPE_CHECKING:
+        _as_qwidget: Callable[[], QWidget]
 
     # ------------------------------------------------------------------
     # Private helpers — encapsulation
