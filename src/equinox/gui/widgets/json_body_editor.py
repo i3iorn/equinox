@@ -9,26 +9,26 @@ JSON body editor with:
 - Line numbers
 - Structural bracket matching ({}, [], ())
 """
-
 import json as _json
 import logging
 from collections.abc import Iterator
 
-from PyQt6.QtCore import QRect, QSize, Qt
-from PyQt6.QtGui import (
-    QColor,
-    QKeyEvent,
-    QPainter,
-    QPaintEvent,
-    QResizeEvent,
-    QTextBlock,
-    QTextCharFormat,
-    QTextCursor,
-    QTextDocument,
-)
-from PyQt6.QtWidgets import QPlainTextEdit, QTextEdit, QWidget
-
 from equinox.gui.syntax_highlighter import JsonHighlighter
+from PyQt6.QtCore import QRect
+from PyQt6.QtCore import QSize
+from PyQt6.QtCore import Qt
+from PyQt6.QtGui import QColor
+from PyQt6.QtGui import QKeyEvent
+from PyQt6.QtGui import QPainter
+from PyQt6.QtGui import QPaintEvent
+from PyQt6.QtGui import QResizeEvent
+from PyQt6.QtGui import QTextBlock
+from PyQt6.QtGui import QTextCharFormat
+from PyQt6.QtGui import QTextCursor
+from PyQt6.QtGui import QTextDocument
+from PyQt6.QtWidgets import QPlainTextEdit
+from PyQt6.QtWidgets import QTextEdit
+from PyQt6.QtWidgets import QWidget
 
 logger = logging.getLogger(__name__)
 
@@ -76,7 +76,9 @@ class LineNumberArea(QWidget):
     def sizeHint(self) -> QSize:
         return QSize(self._editor.line_number_area_width(), 0)
 
-    def paintEvent(self, event: QPaintEvent) -> None:  # noqa: N802
+    def paintEvent(self, event: QPaintEvent | None) -> None:
+        if event is None:
+            return
         painter = QPainter(self)
         painter.fillRect(event.rect(), QColor(240, 240, 240))
 
@@ -142,7 +144,10 @@ class JsonBodyEditor(QPlainTextEdit):
         self._update_line_number_area_width(0)
 
         # Syntax highlighting
-        self._highlighter = JsonHighlighter(self.document())
+        doc = self.document()
+        if doc is None:
+            raise RuntimeError("JsonBodyEditor requires a valid QTextDocument")
+        self._highlighter = JsonHighlighter(doc)
 
         # Bracket matching
         self.cursorPositionChanged.connect(self._highlight_matching_bracket)
@@ -158,7 +163,7 @@ class JsonBodyEditor(QPlainTextEdit):
 
     def line_number_area_width(self) -> int:
         """Return the pixel width required to display all line numbers."""
-        digits = len(str(self.document().blockCount())) + 1
+        digits = len(str(self.blockCount())) + 1
         # Use actual font metrics instead of a hardcoded value so the gutter
         # stays correct on HiDPI displays and with non-default font sizes.
         char_width = self.fontMetrics().horizontalAdvance("9")
@@ -172,16 +177,17 @@ class JsonBodyEditor(QPlainTextEdit):
             self._line_number_area.scroll(0, dy)
         else:
             self._line_number_area.update(
-                0, rect.y(), self._line_number_area.width(), rect.height()
+                0, rect.y(), self._line_number_area.width(), rect.height(),
             )
-        if rect.contains(self.viewport().rect()):
+        viewport = self.viewport()
+        if viewport is not None and rect.contains(viewport.rect()):
             self._update_line_number_area_width(0)
 
-    def resizeEvent(self, event: QResizeEvent) -> None:  # noqa: N802
+    def resizeEvent(self, event: QResizeEvent | None) -> None:
         super().resizeEvent(event)
         cr = self.contentsRect()
         self._line_number_area.setGeometry(
-            cr.left(), cr.top(), self.line_number_area_width(), cr.height()
+            cr.left(), cr.top(), self.line_number_area_width(), cr.height(),
         )
 
     # ------------------------------------------------------------------
@@ -193,6 +199,8 @@ class JsonBodyEditor(QPlainTextEdit):
         cursor = self.textCursor()
         pos = cursor.position()
         doc = self.document()
+        if doc is None:
+            return
 
         self.setExtraSelections([])
 
@@ -222,7 +230,7 @@ class JsonBodyEditor(QPlainTextEdit):
                 self.setExtraSelections(sels)
 
     def _find_matching_forward(
-        self, doc: QTextDocument, start: int, open_char: str, close_char: str
+        self, doc: QTextDocument, start: int, open_char: str, close_char: str,
     ) -> int | None:
         """Return the position of the closing bracket matching *open_char* at *start*."""
         depth = 1
@@ -238,7 +246,7 @@ class JsonBodyEditor(QPlainTextEdit):
         return None
 
     def _find_matching_backward(
-        self, doc: QTextDocument, start: int, open_char: str, close_char: str
+        self, doc: QTextDocument, start: int, open_char: str, close_char: str,
     ) -> int | None:
         """Return the position of the opening bracket matching *close_char* at *start*."""
         depth = 1
@@ -256,6 +264,8 @@ class JsonBodyEditor(QPlainTextEdit):
     def _make_selection(self, pos: int, fmt: QTextCharFormat) -> QTextEdit.ExtraSelection | None:
         """Return a single-character ``ExtraSelection`` at *pos*, or ``None`` if out of range."""
         doc = self.document()
+        if doc is None:
+            return None
         # characterCount() includes Qt's implicit trailing newline, so valid
         # user-character positions are in [0, characterCount() - 2].
         if pos < 0 or pos >= doc.characterCount() - 1:
@@ -263,7 +273,7 @@ class JsonBodyEditor(QPlainTextEdit):
         cursor = QTextCursor(doc)
         cursor.setPosition(pos)
         cursor.movePosition(
-            QTextCursor.MoveOperation.NextCharacter, QTextCursor.MoveMode.KeepAnchor
+            QTextCursor.MoveOperation.NextCharacter, QTextCursor.MoveMode.KeepAnchor,
         )
         sel = QTextEdit.ExtraSelection()
         sel.cursor = cursor
@@ -274,7 +284,9 @@ class JsonBodyEditor(QPlainTextEdit):
     # Key event dispatch
     # ------------------------------------------------------------------
 
-    def keyPressEvent(self, event: QKeyEvent) -> None:  # noqa: N802
+    def keyPressEvent(self, event: QKeyEvent | None) -> None:
+        if event is None:
+            return
         key = event.key()
         mods = event.modifiers()
         cursor = self.textCursor()
@@ -462,7 +474,7 @@ class JsonBodyEditor(QPlainTextEdit):
         indent = len(block.text()) - len(block.text().lstrip())
         cursor = QTextCursor(block)
         cursor.movePosition(
-            QTextCursor.MoveOperation.Right, QTextCursor.MoveMode.MoveAnchor, indent
+            QTextCursor.MoveOperation.Right, QTextCursor.MoveMode.MoveAnchor, indent,
         )
         cursor.insertText(_LINE_COMMENT + " ")
 
@@ -481,7 +493,7 @@ class JsonBodyEditor(QPlainTextEdit):
 
         cursor = QTextCursor(block)
         cursor.movePosition(
-            QTextCursor.MoveOperation.Right, QTextCursor.MoveMode.MoveAnchor, indent
+            QTextCursor.MoveOperation.Right, QTextCursor.MoveMode.MoveAnchor, indent,
         )
         for _ in range(remove):
             cursor.deleteChar()
@@ -515,9 +527,10 @@ class JsonBodyEditor(QPlainTextEdit):
         # Preserve the vertical scroll position; setPlainText() resets the
         # viewport to the top, which is disorienting for large documents.
         scrollbar = self.verticalScrollBar()
-        saved_scroll = scrollbar.value()
+        saved_scroll = scrollbar.value() if scrollbar is not None else 0
         self.setPlainText(formatted)
-        scrollbar.setValue(saved_scroll)
+        if scrollbar is not None:
+            scrollbar.setValue(saved_scroll)
 
     # ------------------------------------------------------------------
     # Private utilities
@@ -529,6 +542,9 @@ class JsonBodyEditor(QPlainTextEdit):
         Falls back to just the current block when there is no selection.
         """
         doc = self.document()
+        if doc is None:
+            yield cursor.block()
+            return
         if cursor.hasSelection():
             start = doc.findBlock(cursor.selectionStart())
             end_block = doc.findBlock(cursor.selectionEnd() - 1)
