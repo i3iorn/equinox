@@ -3,25 +3,27 @@
 Owns the shared ``httpx.Client`` lifecycle, multipart file handling,
 SSL context construction, and response wrapping.
 """
-
 from __future__ import annotations
 
 import logging
 import ssl
 import threading
 import time
+from io import _WrappedBuffer
+from io import TextIOWrapper
 from pathlib import Path
 from typing import Any
 
 import httpx
-
 from equinox.core.client.auth_redirect import _RedirectSafeAuth
 from equinox.core.client.cookie_handler import CookieHandler
 from equinox.core.exceptions import ValidationError
-from equinox.core.request import Request, Response
+from equinox.core.request import Request
+from equinox.core.request import Response
 from equinox.core.util.time import utc_now
 from equinox.core.validation import Validator
-from equinox.security import redact_headers, redact_url
+from equinox.security import redact_headers
+from equinox.security import redact_url
 
 logger = logging.getLogger(__name__)
 
@@ -179,7 +181,7 @@ class HttpxDispatcher:
                 else:
                     raise ValidationError(
                         f"Unsupported file spec for field {field!r}: "
-                        f"expected a path or (filename, data[, content_type]) tuple"
+                        f"expected a path or (filename, data[, content_type]) tuple",
                     )
         except Exception:
             # Close any handles that were successfully opened before the error.
@@ -369,82 +371,135 @@ class HttpxDispatcher:
         headers: dict[str, str],
         auth_headers: dict[str, str] | None = None,
     ) -> Response:
-        """Send *request* via httpx and return a wrapped :class:`Response`.
-
-        Auth headers are removed from *headers* and passed through httpx's
-        native ``auth`` parameter so they survive cross-origin redirects (see
-        :class:`~equinox.core.client.auth_redirect._RedirectSafeAuth`).
-        """
+        """Send request via httpx and return a wrapped Response."""
         client = self._ensure_client(request.verify_ssl)
+        self._log_request_start(request)
 
+        sent_headers = dict(headers)
+        httpx_auth = self._extract_auth_headers(headers, auth_headers)
+
+        multipart_files, opened_handles = self._build_multipart_files(request)
+        user_set_content_type = self._user_set_content_type(headers)
+
+        start_time = time.perf_counter()
+        raw_response = None
+
+        try:
+            httpx_request = self._build_httpx_request(
+                client,
+                request,
+                headers,
+                multipart_files,
+                user_set_content_type,
+            )
+            raw_response = self._send_httpx_request(
+                client,
+                httpx_request,
+                request,
+                httpx_auth,
+            )
+        finally:
+            self._close_file_handles(opened_handles)
+
+        if raw_response is None:
+            raise RuntimeError("HttpxDispatcher.execute: transport returned no response")
+
+        self._log_redirect_chain(raw_response)
+        elapsed = time.perf_counter() - start_time
+        self._log_request_complete(raw_response, elapsed)
+
+        return self._wrap_response(
+            raw_response,
+            request,
+            elapsed,
+            sent_headers=sent_headers,
+        )
+
+    def _log_request_start(self, request: Request) -> None:
         logger.debug(
             "HttpxDispatcher: sending %s %s",
             request.method,
             Validator.sanitize_for_display(request.url, 100),
         )
 
-        # Route auth headers through the redirect-safe adapter instead of
-        # embedding them directly — httpx strips plain headers on redirects.
-        httpx_auth: _RedirectSafeAuth | None = None
-        # Make a copy of headers before popping auth headers for sent_headers
-        sent_headers = dict(headers)
-        if auth_headers:
-            for key in auth_headers:
-                headers.pop(key, None)
-            httpx_auth = _RedirectSafeAuth(auth_headers)
-
-        multipart_files, opened_handles = self._build_multipart_files(request)
-        user_set_content_type = any(k.lower() == "content-type" for k in headers)
-
-        start_time = time.perf_counter()
-        raw: httpx.Response | None = None
-        try:
-            httpx_request = client.build_request(
-                method=request.method,
-                url=request.url,
-                headers=headers,
-                params=request.params,
-                content=(
-                    (
-                        request.body.encode("utf-8")
-                        if isinstance(request.body, str)
-                        else request.body
-                    )
-                    if (request.body and not multipart_files)
-                    else None
-                ),
-                files=multipart_files or None,
-                timeout=request.timeout or self._timeout,
-            )
-            self._strip_auto_content_type(
-                httpx_request, user_set_content_type, bool(multipart_files)
-            )
-            raw = client.send(
-                httpx_request,
-                follow_redirects=(
-                    request.follow_redirects
-                    if request.follow_redirects is not None
-                    else self._follow_redirects
-                ),
-                auth=httpx_auth,
-            )
-        finally:
-            for fh in opened_handles:
-                try:
-                    fh.close()
-                except Exception as exc:
-                    logger.debug("Failed to close file handle: %s", exc)
-
-        if raw is None:
-            raise RuntimeError("HttpxDispatcher.execute: transport returned no response")
-        self._log_redirect_chain(raw)
-        elapsed = time.perf_counter() - start_time
+    def _log_request_complete(self, response: httpx.Response, elapsed: float) -> None:
         logger.debug(
             "HttpxDispatcher: completed in %.3fs — status %d",
             elapsed,
-            raw.status_code,
+            response.status_code,
         )
-        return self._wrap_response(raw, request, elapsed, sent_headers=sent_headers)
+
+    def _extract_auth_headers(
+        self,
+        headers: dict[str, str],
+        auth_headers: dict[str, str] | None,
+    ) -> _RedirectSafeAuth | None:
+        if not auth_headers:
+            return None
+
+        for key in auth_headers:
+            headers.pop(key, None)
+
+        return _RedirectSafeAuth(auth_headers)
+
+    def _user_set_content_type(self, headers: dict[str, str]) -> bool:
+        return any(k.lower() == "content-type" for k in headers)
+
+    def _build_httpx_request(
+        self,
+        client: httpx.Client,
+        request: Request,
+        headers: dict[str, str],
+        multipart_files: dict[str, Any] | None,
+        user_set_content_type: bool,
+    ) -> httpx.Request:
+        content = None
+        if request.body and not multipart_files:
+            content = (
+                request.body.encode("utf-8") if isinstance(request.body, str) else request.body
+            )
+
+        httpx_request = client.build_request(
+            method=request.method,
+            url=request.url,
+            headers=headers,
+            params=request.params,
+            content=content,
+            files=multipart_files or None,
+            timeout=request.timeout or self._timeout,
+        )
+
+        self._strip_auto_content_type(
+            httpx_request,
+            user_set_content_type,
+            bool(multipart_files),
+        )
+
+        return httpx_request
+
+    def _send_httpx_request(
+        self,
+        client: httpx.Client,
+        httpx_request: httpx.Request,
+        request: Request,
+        httpx_auth: _RedirectSafeAuth | None,
+    ) -> httpx.Response:
+        return client.send(
+            httpx_request,
+            follow_redirects=(
+                request.follow_redirects
+                if request.follow_redirects is not None
+                else self._follow_redirects
+            ),
+            auth=httpx_auth,
+        )
+
+    def _close_file_handles(self, handles: list[TextIOWrapper[_WrappedBuffer]]) -> None:
+        for fh in handles:
+            try:
+                fh.close()
+            except Exception as exc:
+                logger.debug("Failed to close file handle: %s", exc)
 
     # ── Dunder helpers ────────────────────────────────────────────────────────
 
