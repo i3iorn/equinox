@@ -7,7 +7,6 @@ from equinox.gui.request_panel._mixins.save_flow_mixin import RequestSaveFlowMix
 from PyQt6.QtCore import QCoreApplication
 from PyQt6.QtWidgets import QApplication
 
-
 def ensure_qapp():
     app = QApplication.instance()
     if app is None:
