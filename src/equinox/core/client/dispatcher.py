@@ -9,7 +9,6 @@ import logging
 import ssl
 import threading
 import time
-from io import _WrappedBuffer
 from io import TextIOWrapper
 from pathlib import Path
 from typing import Any
@@ -494,7 +493,7 @@ class HttpxDispatcher:
             auth=httpx_auth,
         )
 
-    def _close_file_handles(self, handles: list[TextIOWrapper[_WrappedBuffer]]) -> None:
+    def _close_file_handles(self, handles: list[TextIOWrapper]) -> None:
         for fh in handles:
             try:
                 fh.close()
