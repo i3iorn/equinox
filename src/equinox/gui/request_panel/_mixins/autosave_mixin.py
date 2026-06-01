@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING
 from equinox.application.requests._assembly import assemble_body
 from equinox.core.request import Request
 from equinox.gui.request_panel._constants import STATUS_DURATION_LONG
+from equinox.security.redactor import redact_url
 
 logger = logging.getLogger(__name__)
 
@@ -104,7 +105,7 @@ class RequestAutosaveMixin:
             )
             self._request_persistence.autosave_request(updated)
             self._clear_dirty()
-            logger.debug("Autosaved request id=%s %s %s", req.id, updated.method, updated.url)
+            logger.debug("Autosaved request id=%s %s %s", req.id, updated.method, redact_url(updated.url))
         except Exception:
             logger.error(
                 "Autosave failed for request id=%s", getattr(req, "id", None), exc_info=True,
