@@ -86,7 +86,7 @@ class AuthDisplayMixin:
         try:
             inherited_auth, inherited_source = self._request_persistence.resolve_effective_auth(probe)
         except Exception as exc:
-            logger.debug("Failed to resolve inherited auth: %s", exc)
+            logger.warning("Failed to resolve inherited auth: %s", exc)
             return
         if inherited_auth is None:
             return

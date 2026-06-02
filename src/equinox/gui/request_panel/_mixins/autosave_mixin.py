@@ -36,6 +36,7 @@ class RequestAutosaveMixin:
                 sync()
         except Exception:
             logger.debug("Failed to refresh dirty-state UI", exc_info=True)
+            raise
 
     def is_dirty(self) -> bool:
         return self._dirty
@@ -49,7 +50,7 @@ class RequestAutosaveMixin:
         try:
             self.window().statusBar().showMessage(text, timeout_ms)
         except Exception:
-            logger.debug("Could not show status message: %s", text)
+            logger.warning("Could not show status message: %s", text)
 
     def _build_request_from_editor(self, **overrides: Any) -> Request:
         """Construct a Request from the current editor widget state."""
