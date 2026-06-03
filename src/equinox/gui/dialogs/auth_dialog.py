@@ -1,36 +1,44 @@
 """Authentication configuration dialog"""
-
 import json
 import logging
-from typing import Any, Literal, Optional
+from typing import Any
+from typing import Literal
 
-from PyQt6.QtCore import QThread, pyqtSignal
-from PyQt6.QtWidgets import (
-    QCheckBox,
-    QComboBox,
-    QDialog,
-    QFormLayout,
-    QFrame,
-    QHBoxLayout,
-    QLabel,
-    QLineEdit,
-    QMessageBox,
-    QPushButton,
-    QTabWidget,
-    QTextEdit,
-    QVBoxLayout,
-    QWidget,
-)
-
-from equinox.auth import AUTH_TYPES, APIKeyAuth, AWSSigV4Auth, BasicAuth, BearerAuth, OAuth2Auth
+from equinox.auth import APIKeyAuth
+from equinox.auth import AUTH_TYPES
+from equinox.auth import AWSSigV4Auth
+from equinox.auth import BasicAuth
+from equinox.auth import BearerAuth
+from equinox.auth import OAuth2Auth
 from equinox.core.exceptions import AuthError
-from equinox.core.interpolation import VariableInterpolator, collect_interpolation_variables
+from equinox.core.interpolation import collect_interpolation_variables
+from equinox.core.interpolation import VariableInterpolator
 from equinox.core.util.time import utc_now
 from equinox.gui.theme import get_mono_font
 from equinox.gui.widgets import make_secret_row
 from equinox.storage import SavedCredentialsManager
+from PyQt6.QtCore import pyqtSignal
+from PyQt6.QtCore import QObject
+from PyQt6.QtCore import QThread
+from PyQt6.QtWidgets import QCheckBox
+from PyQt6.QtWidgets import QComboBox
+from PyQt6.QtWidgets import QDialog
+from PyQt6.QtWidgets import QFormLayout
+from PyQt6.QtWidgets import QFrame
+from PyQt6.QtWidgets import QHBoxLayout
+from PyQt6.QtWidgets import QLabel
+from PyQt6.QtWidgets import QLineEdit
+from PyQt6.QtWidgets import QMessageBox
+from PyQt6.QtWidgets import QPushButton
+from PyQt6.QtWidgets import QTabWidget
+from PyQt6.QtWidgets import QTextEdit
+from PyQt6.QtWidgets import QVBoxLayout
+from PyQt6.QtWidgets import QWidget
 
 logger = logging.getLogger(__name__)
+
+
+AUTH_TYPE = APIKeyAuth | AWSSigV4Auth | BasicAuth | BearerAuth | OAuth2Auth | None
 
 
 def _sanitize_field(text: str) -> str:
@@ -45,7 +53,7 @@ def _sanitize_field(text: str) -> str:
 # Sentinel returned by _build_auth_from_tab when a required-field check
 # fails and a QMessageBox has already been shown.  Distinct from ``None``
 # which means "No Auth".
-_MISSING = object()
+_MISSING: None = None
 
 
 class _TokenFetchWorker(QThread):
@@ -54,11 +62,11 @@ class _TokenFetchWorker(QThread):
     # Emits a dict payload: {ok, auth, error, response}
     finished = pyqtSignal(object)
 
-    def __init__(self, auth, parent=None) -> None:
+    def __init__(self, auth: OAuth2Auth, parent: QObject | None = None) -> None:
         super().__init__(parent)
         self._auth = auth
 
-    def run(self):
+    def run(self) -> None:
         try:
             self._auth.apply(object(), {})
             self.finished.emit(
@@ -67,7 +75,7 @@ class _TokenFetchWorker(QThread):
                     "auth": self._auth,
                     "error": None,
                     "response": self._auth.last_token_response,
-                }
+                },
             )
         except Exception as exc:
             response = self._auth.last_token_response
@@ -79,14 +87,14 @@ class _TokenFetchWorker(QThread):
                     "auth": self._auth,
                     "error": str(exc),
                     "response": response,
-                }
+                },
             )
 
 
 class _TokenResponseDialog(QDialog):
     """Read-only dialog showing the redacted token endpoint response."""
 
-    def __init__(self, data: dict[str, Any], parent=None):
+    def __init__(self, data: dict[str, Any], parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self.setWindowTitle("Token Endpoint Response")
         self.resize(560, 420)
@@ -160,7 +168,12 @@ class AuthDialog(QDialog):
         "aws_sigv4": _TAB_AWS,
     }
 
-    def __init__(self, current_auth=None, parent=None, db=None) -> None:
+    def __init__(
+        self,
+        current_auth: Any = None,
+        parent: QWidget | None = None,
+        db: Any = None,
+    ) -> None:
         super().__init__(parent)
         self.current_auth = current_auth
         self._db = db  # optional — enables the saved-credential picker
@@ -288,7 +301,7 @@ class AuthDialog(QDialog):
         self.oauth2_token_auth.setToolTip(
             "How client credentials are sent to the token endpoint.\n"
             "• Body — client_id/client_secret in the POST body (default, RFC 6749 §2.3.1)\n"
-            "• Basic — Base64-encoded Authorization header (required by some providers)"
+            "• Basic — Base64-encoded Authorization header (required by some providers)",
         )
         self.oauth2_verify_ssl_check = QCheckBox("Verify token endpoint SSL certificates")
         self.oauth2_verify_ssl_check.setChecked(True)
@@ -304,8 +317,8 @@ class AuthDialog(QDialog):
         lay.addRow(
             self._info(
                 "Select a saved credential above to auto-fill, or type manually.\n"
-                "Uses client_credentials or refresh_token grant type."
-            )
+                "Uses client_credentials or refresh_token grant type.",
+            ),
         )
 
         # ── Token fetch ───────────────────────────────────────────────
@@ -314,10 +327,10 @@ class AuthDialog(QDialog):
         self.oauth2_view_response_btn = QPushButton("View Response…")
         self.oauth2_view_response_btn.setEnabled(False)
         self.oauth2_view_response_btn.setToolTip(
-            "Inspect the token endpoint response (tokens redacted)"
+            "Inspect the token endpoint response (tokens redacted)",
         )
         self.oauth2_view_response_btn.clicked.connect(self._view_token_response)
-        self._last_fetched_auth: Optional[OAuth2Auth] = (
+        self._last_fetched_auth: OAuth2Auth | None = (
             None  # stores OAuth2Auth after successful fetch
         )
         self._last_token_response: dict[str, Any] | None = None
@@ -376,8 +389,8 @@ class AuthDialog(QDialog):
         lay.addRow(
             self._info(
                 "Signs requests using AWS Signature Version 4.  "
-                "Leave Session Token blank unless you are using temporary credentials."
-            )
+                "Leave Session Token blank unless you are using temporary credentials.",
+            ),
         )
         return w
 
@@ -393,10 +406,10 @@ class AuthDialog(QDialog):
         if not self._db:
             return {}
         try:
-            return collect_interpolation_variables(self._db)
+            return dict(collect_interpolation_variables(self._db))
         except Exception as exc:
             logger.debug("Failed to collect interpolation variables: %s", exc)
-            return {}
+            raise
 
     # ── OAuth2 token fetch ─────────────────────────────────────────────
 
@@ -415,7 +428,7 @@ class AuthDialog(QDialog):
             try:
 
                 def _interp(value: str) -> str:
-                    return VariableInterpolator.interpolate(value, variables)
+                    return str(VariableInterpolator.interpolate(value, variables))
 
                 token_url = _interp(token_url)
                 client_id = _interp(client_id)
@@ -424,7 +437,7 @@ class AuthDialog(QDialog):
             except Exception as exc:
                 logger.warning("Variable interpolation failed in OAuth2 fetch: %s", exc)
                 self.oauth2_fetch_status.setText(f"Variable error: {exc}")
-                return
+                raise
         else:
             client_secret = self.oauth2_client_secret.text().strip() or None
             scope = self.oauth2_scope.text().strip() or None
@@ -488,7 +501,7 @@ class AuthDialog(QDialog):
                     secs = int(
                         (
                             datetime.fromisoformat(str(info["expires_at"])) - utc_now()
-                        ).total_seconds()
+                        ).total_seconds(),
                     )
                     expiry = f", expires in {secs}s"
                 except Exception:
@@ -605,7 +618,7 @@ class AuthDialog(QDialog):
         """Open the saved-credentials manager dialog."""
         if not self._db:
             QMessageBox.information(
-                self, "Not available", "The credential manager is not available in this context."
+                self, "Not available", "The credential manager is not available in this context.",
             )
             return
         # Deferred to avoid circular import between sibling dialog modules.
@@ -630,15 +643,17 @@ class AuthDialog(QDialog):
             self.bearer_token.setText(self.current_auth.token)
         elif isinstance(self.current_auth, OAuth2Auth):
             self.tabs.setCurrentIndex(self._TAB_OAUTH2)
-            self.oauth2_token_url.setText(self.current_auth.token_url or "")
-            self.oauth2_client_id.setText(self.current_auth.client_id or "")
-            self.oauth2_client_secret.setText(self.current_auth.client_secret or "")
-            self.oauth2_scope.setText(self.current_auth.scope or "")
+            self.oauth2_token_url.setText(str(getattr(self.current_auth, "token_url", "") or ""))
+            self.oauth2_client_id.setText(str(getattr(self.current_auth, "client_id", "") or ""))
+            self.oauth2_client_secret.setText(
+                str(getattr(self.current_auth, "client_secret", "") or ""),
+            )
+            self.oauth2_scope.setText(str(getattr(self.current_auth, "scope", "") or ""))
             self.oauth2_verify_ssl_check.setChecked(getattr(self.current_auth, "verify_ssl", True))
             self.oauth2_access_token.setText(self.current_auth.access_token or "")
             self.oauth2_refresh_token.setText(self.current_auth.refresh_token or "")
             ta_idx = self.oauth2_token_auth.findData(
-                getattr(self.current_auth, "token_auth", "body") or "body"
+                getattr(self.current_auth, "token_auth", "body") or "body",
             )
             self.oauth2_token_auth.setCurrentIndex(max(ta_idx, 0))
         elif isinstance(self.current_auth, APIKeyAuth):
@@ -646,7 +661,7 @@ class AuthDialog(QDialog):
             self.api_key_name.setText(self.current_auth.key)
             self.api_key_value.setText(self.current_auth.value)
             self.api_key_location.setCurrentIndex(
-                0 if self.current_auth.location == "header" else 1
+                0 if self.current_auth.location == "header" else 1,
             )
         elif isinstance(self.current_auth, AWSSigV4Auth):
             self.tabs.setCurrentIndex(self._TAB_AWS)
@@ -680,7 +695,7 @@ class AuthDialog(QDialog):
         except Exception as exc:
             QMessageBox.critical(self, "Error", f"Failed to configure authentication: {exc}")
 
-    def _build_auth_from_tab(self, tab: int):
+    def _build_auth_from_tab(self, tab: int) -> AUTH_TYPE:
         """Construct an auth strategy from the current tab's fields.
 
         Returns:
@@ -776,7 +791,11 @@ class AuthDialog(QDialog):
         return None
 
     @staticmethod
-    def configure_auth(current_auth=None, parent=None, db=None) -> tuple:
+    def configure_auth(
+        current_auth: Any = None,
+        parent: QWidget | None = None,
+        db: Any = None,
+    ) -> tuple[bool, Any]:
         dialog = AuthDialog(current_auth, parent, db=db)
         if dialog.exec() == QDialog.DialogCode.Accepted:
             return (True, getattr(dialog, "_saved_auth", None))
