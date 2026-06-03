@@ -55,7 +55,7 @@ class URLHistoryMixin:
                 elapsed_ms,
             )
         except Exception:
-            logger.debug("Failed to refresh URL completer", exc_info=True)
+            logger.exception("Failed to refresh URL completer", exc_info=True)
 
     def _add_url_to_completer(self, url: str) -> None:
         """Add a URL to the in-memory completer list without a re-query."""

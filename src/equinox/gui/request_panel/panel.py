@@ -53,7 +53,7 @@ __all__ = ["RequestPanel"]
 
 class RequestPanel(
     RequestEditorStateMixin, # type: ignore[misc]
-    URLHistoryMixin, # type: ignore[misc]
+    URLHistoryMixin,
     RequestToolsMixin, # type: ignore[misc]
     BottomBarMixin, # type: ignore[misc]
     SettingsTabMixin, # type: ignore[misc]
@@ -61,7 +61,7 @@ class RequestPanel(
     RequestAutosaveMixin, # type: ignore[misc]
     RequestSaveFlowMixin, # type: ignore[misc]
     RequestCommandsMixin, # type: ignore[misc]
-    RequestPanelLayoutMixin,
+    RequestPanelLayoutMixin, # type: ignore[misc]
     _RequestValidationMixin, # type: ignore[misc]
     _RequestSendMixin, # type: ignore[misc]
     _RequestAuthMixin, # type: ignore[misc]
@@ -85,8 +85,8 @@ class RequestPanel(
             win = self.window()
             return getattr(win, "logging_panel", None)
         except Exception:
-            logger.debug("Could not access logging panel", exc_info=True)
-            return None
+            logger.exception("Could not access logging panel", exc_info=True)
+            raise
 
     def __init__(
         self,

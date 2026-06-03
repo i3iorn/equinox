@@ -357,7 +357,7 @@ class _CollectionsContextMenuMixin(CollectionsPanelProtocol):
                 ),
             )
         except Exception:
-            logger.debug(
+            logger.exception(
                 "Failed to get context action usage for %s/%s", context, action_id, exc_info=True,
             )
             return 0
@@ -373,7 +373,7 @@ class _CollectionsContextMenuMixin(CollectionsPanelProtocol):
                 context=context,
             )
         except Exception:
-            logger.debug(
+            logger.exception(
                 "Failed to record context action usage for %s/%s", context, action_id, exc_info=True,
             )
 

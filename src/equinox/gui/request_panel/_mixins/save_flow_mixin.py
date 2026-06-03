@@ -227,4 +227,4 @@ def _refresh_collections_panel(self: RequestSaveFlowMixin) -> None:
         if win is not None and hasattr(win, "collections_panel"):
             win.collections_panel.refresh()
     except Exception:
-        logger.debug("Failed to refresh collections panel after save", exc_info=True)
+        logger.exception("Failed to refresh collections panel after save", exc_info=True)

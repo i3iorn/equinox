@@ -1,15 +1,17 @@
 """Environment switching and status bar mixin for MainWindow."""
-
 # mypy: disable-error-code=attr-defined
-
 from __future__ import annotations
 
 import logging
-
-from PyQt6.QtCore import Qt
-from PyQt6.QtWidgets import QMenu, QToolButton
+from typing import Any
+from typing import cast
 
 from equinox.storage import EnvironmentManager
+from PyQt6.QtCore import Qt
+from PyQt6.QtGui import QAction
+from PyQt6.QtWidgets import QMenu
+from PyQt6.QtWidgets import QToolButton
+from PyQt6.QtWidgets import QWidget
 
 logger = logging.getLogger(__name__)
 
@@ -24,18 +26,22 @@ class _EnvironmentMixin:
         if tracker is None:
             return 0
         try:
-            return tracker.get_count(
+            return int(
+                tracker.get_count(
                 category="environment",
                 context="quick_switch",
                 element_id=f"env.{int(env_id)}",
+                ),
             )
         except Exception:
-            logger.debug("Could not read environment usage for id=%s", env_id, exc_info=True)
+            logger.exception("Could not read environment usage for id=%s", env_id, exc_info=True)
             return 0
 
-    def _rank_environments(self, envs: list, active_id: object) -> list:
+    def _rank_environments(
+        self, envs: list[dict[str, Any]], active_id: object,
+    ) -> list[dict[str, Any]]:
         """Order envs by UX-friendly rules: active first, then usage, then name."""
-        ranked = []
+        ranked: list[tuple[bool, int, str, dict[str, Any]]] = []
         for env in envs:
             env_id = int(env.get("id") or 0)
             usage = self._env_usage_count(env_id)
@@ -79,17 +85,19 @@ class _EnvironmentMixin:
                 action.setCheckable(True)
                 action.setChecked(env["id"] == active_id)
                 action.triggered.connect(
-                    lambda checked, eid=env["id"]: self._switch_environment(eid)
+                    lambda checked, eid=env["id"]: self._switch_environment(eid),
                 )
             if envs:
                 self._env_menu.addSeparator()
 
             manage = self._env_menu.addAction("Manage Environments…")
-            manage.triggered.connect(self._manage_environments)
+            if isinstance(manage, QAction):
+                manage.triggered.connect(self._manage_environments)
         except Exception:
-            logger.debug("Failed to build env menu", exc_info=True)
+            logger.exception("Failed to build env menu", exc_info=True)
             manage = self._env_menu.addAction("Manage Environments…")
-            manage.triggered.connect(self._manage_environments)
+            if isinstance(manage, QAction):
+                manage.triggered.connect(self._manage_environments)
 
         self._env_menu.popup(self._env_btn.mapToGlobal(self._env_btn.rect().topLeft()))
 
@@ -107,7 +115,7 @@ class _EnvironmentMixin:
             self._refresh_env_label()
             self.request_panel.refresh_inherited_auth()
         except Exception:
-            logger.debug("Failed to switch environment to %d", env_id, exc_info=True)
+            logger.exception("Failed to switch environment to %d", env_id, exc_info=True)
 
     def _refresh_env_label(self) -> None:
         try:
@@ -117,12 +125,12 @@ class _EnvironmentMixin:
             else:
                 self._env_btn.setText("No environment")
         except Exception:
-            logger.debug("Failed to refresh env label", exc_info=True)
+            logger.exception("Failed to refresh env label", exc_info=True)
 
     def _manage_environments(self) -> None:
         from equinox.gui.dialogs.environment_dialog import EnvironmentDialog
 
-        EnvironmentDialog(self.db, self).exec()
+        EnvironmentDialog(self.db, cast(QWidget, self)).exec()
         if self.variables_panel:
             self.variables_panel.refresh()
         self._refresh_env_label()
@@ -130,9 +138,9 @@ class _EnvironmentMixin:
     def _manage_oauth_clients(self) -> None:
         from equinox.gui.dialogs.saved_credentials_dialog import SavedCredentialsDialog
 
-        SavedCredentialsDialog(self.db, self).exec()
+        SavedCredentialsDialog(self.db, cast(QWidget, self)).exec()
 
     def _manage_secret_managers(self) -> None:
         from equinox.gui.dialogs.secret_manager_settings_dialog import SecretManagerSettingsDialog
 
-        SecretManagerSettingsDialog(parent=self).exec()
+        SecretManagerSettingsDialog(parent=cast(QWidget, self)).exec()

@@ -141,7 +141,7 @@ def _iter_set_cookie_values(headers: Any) -> Iterable[str]:
             values = get_list("set-cookie") or []
             return [str(v) for v in values if v is not None]
         except Exception:
-            logger.debug("Header get_list('set-cookie') failed", exc_info=True)
+            logger.exception("Header get_list('set-cookie') failed", exc_info=True)
 
     get_all = getattr(headers, "get_all", None)
     if callable(get_all):
@@ -149,7 +149,7 @@ def _iter_set_cookie_values(headers: Any) -> Iterable[str]:
             values = get_all("set-cookie") or []
             return [str(v) for v in values if v is not None]
         except Exception:
-            logger.debug("Header get_all('set-cookie') failed", exc_info=True)
+            logger.exception("Header get_all('set-cookie') failed", exc_info=True)
 
     # Fallback: dict-like or iterable pair handling.
     try:
@@ -160,7 +160,7 @@ def _iter_set_cookie_values(headers: Any) -> Iterable[str]:
                 out.append(str(value))
         return out
     except Exception:
-        logger.debug("Failed iterating cookie headers", exc_info=True)
+        logger.exception("Failed iterating cookie headers", exc_info=True)
         return []
 
 

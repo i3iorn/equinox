@@ -429,7 +429,7 @@ class RequestPanelLayoutMixin:
         try:
             self._settings.setValue("request/policy_profile", profile)
         except Exception:
-            logger.debug("Failed to persist policy profile", exc_info=True)
+            logger.exception("Failed to persist policy profile", exc_info=True)
 
         if profile == _POLICY_STRICT:
             self.verify_ssl_check.setChecked(True)
@@ -463,7 +463,7 @@ class RequestPanelLayoutMixin:
             parts = [f"{k}={v}" for k, v in enabled.items() if k]
             self.url_input.set_param_suffix(sep + "&".join(parts))
         except Exception:
-            logger.debug("Failed to update URL suffix", exc_info=True)
+            logger.exception("Failed to update URL suffix", exc_info=True)
             self.url_input.set_param_suffix("")
 
     def _on_url_changed_for_path_params(self, text: str) -> None:
@@ -474,7 +474,7 @@ class RequestPanelLayoutMixin:
             self._path_params_widget.setVisible(visible)
             self._update_tab_labels()
         except Exception:
-            logger.debug("Failed to update path parameters from URL", exc_info=True)
+            logger.exception("Failed to update path parameters from URL", exc_info=True)
 
     def _format_json_body(self) -> None:
         """Pretty-print the JSON in the body editor."""

@@ -31,7 +31,7 @@ class RequestEditorStateMixin:
             path_params = cast(dict[str, str], dict(self.path_params_table.get_all_data()))
             context.update(path_params)
         except Exception:
-            logger.debug("Failed to read path params for interpolation context", exc_info=True)
+            logger.exception("Failed to read path params for interpolation context", exc_info=True)
         return context
 
     def set_session_var(self: Any, key: str, value: str) -> None:
@@ -65,7 +65,7 @@ class RequestEditorStateMixin:
         try:
             raw = to_dict()
         except Exception:
-            logger.debug("Failed to serialize auth state for snapshot", exc_info=True)
+            logger.exception("Failed to serialize auth state for snapshot", exc_info=True)
             return auth_type, {}
         if not isinstance(raw, dict):
             return auth_type, {}

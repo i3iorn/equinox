@@ -5,13 +5,14 @@ history interactions so GUI code does not construct ``HistoryManager``
 directly. It currently covers URL-completer lookups and deferred request
 history persistence.
 """
-
 from __future__ import annotations
 
 import logging
 
-from equinox.core.request import Request, Response
-from equinox.storage import Database, HistoryManager
+from equinox.core.request import Request
+from equinox.core.request import Response
+from equinox.storage import Database
+from equinox.storage import HistoryManager
 
 logger = logging.getLogger(__name__)
 
@@ -45,4 +46,4 @@ class RequestHistoryService:
             elif error is not None:
                 self._history_manager.save_history(request, error=error)
         except Exception:
-            logger.debug("Failed to save history", exc_info=True)
+            logger.exception("Failed to save history", exc_info=True)

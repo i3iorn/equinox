@@ -59,7 +59,7 @@ class RequestLoadingMixin:
         try:
             self._resolve_inherited_auth()
         except Exception:
-            logger.debug("Failed to resolve inherited auth during load_request", exc_info=True)
+            logger.exception("Failed to resolve inherited auth during load_request", exc_info=True)
 
     def _load_core_request_fields(self: Any, request: Request) -> None:
         """Populate URL, method, headers, and query parameters."""

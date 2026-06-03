@@ -1,5 +1,4 @@
 """Consistency & Correctness analyzers."""
-
 from __future__ import annotations
 
 import json
@@ -8,17 +7,15 @@ import re
 from typing import Any
 
 from equinox.core.response_intelligence.base import Analyzer
-from equinox.core.response_intelligence.models import (
-    AnalysisContext,
-    Category,
-    Finding,
-    Severity,
-)
+from equinox.core.response_intelligence.models import AnalysisContext
+from equinox.core.response_intelligence.models import Category
+from equinox.core.response_intelligence.models import Finding
+from equinox.core.response_intelligence.models import Severity
 
 logger = logging.getLogger(__name__)
 
 
-class StatusBodyMismatchAnalyzer(Analyzer):
+class StatusBodyMismatchAnalyzer(Analyzer):  # type: ignore[misc]
     analyzer_id = "consistency.status_body"
     category = Category.CONSISTENCY
     display_name = "Status Code vs Body Mismatch"
@@ -42,7 +39,7 @@ class StatusBodyMismatchAnalyzer(Analyzer):
                     analyzer_id=self.analyzer_id,
                     recommendation="Return an empty body for no-content responses, or use a status code that allows payload content.",
                     details={"status_code": status_code, "body_size": len(body)},
-                )
+                ),
             )
 
         if status_code == 201 and (not body or len(body.strip()) == 0):
@@ -58,7 +55,7 @@ class StatusBodyMismatchAnalyzer(Analyzer):
                         "status_code": status_code,
                         "has_location": "location" in ctx.response.headers,
                     },
-                )
+                ),
             )
 
         if 200 <= status_code < 300 and ctx.response.is_json:
@@ -79,10 +76,10 @@ class StatusBodyMismatchAnalyzer(Analyzer):
                                     "status_code": status_code,
                                     "error_paths": error_paths[:20],
                                 },
-                            )
+                            ),
                         )
             except Exception:
-                logger.debug("StatusBodyMismatchAnalyzer: failed to parse JSON body", exc_info=True)
+                logger.exception("StatusBodyMismatchAnalyzer: failed to parse JSON body", exc_info=True)
 
         return findings
 
@@ -107,7 +104,7 @@ class StatusBodyMismatchAnalyzer(Analyzer):
         return found
 
 
-class ContentTypeMismatchAnalyzer(Analyzer):
+class ContentTypeMismatchAnalyzer(Analyzer):  # type: ignore[misc]
     analyzer_id = "consistency.content_type"
     category = Category.CONSISTENCY
     display_name = "Content-Type vs Body Mismatch"
@@ -140,7 +137,7 @@ class ContentTypeMismatchAnalyzer(Analyzer):
                             analyzer_id=self.analyzer_id,
                             recommendation="Return JSON payloads starting with an object/array, or correct the Content-Type header.",
                             details={"content_type": content_type, "body_size": len(body)},
-                        )
+                        ),
                     )
                     return findings
                 findings.append(
@@ -158,7 +155,7 @@ class ContentTypeMismatchAnalyzer(Analyzer):
                             "body_size": len(body),
                             "validation_limit": self._MAX_JSON_VALIDATE_SIZE,
                         },
-                    )
+                    ),
                 )
                 return findings
             parsed = ctx.response.json_safe()
@@ -172,7 +169,7 @@ class ContentTypeMismatchAnalyzer(Analyzer):
                         analyzer_id=self.analyzer_id,
                         recommendation="Return valid JSON for JSON content types or correct the Content-Type header.",
                         details={"content_type": content_type},
-                    )
+                    ),
                 )
         elif "xml" in content_type:
             stripped = text.lstrip()
@@ -186,7 +183,7 @@ class ContentTypeMismatchAnalyzer(Analyzer):
                         analyzer_id=self.analyzer_id,
                         recommendation="Ensure XML payloads are serialized correctly and set Content-Type accordingly.",
                         details={"content_type": content_type},
-                    )
+                    ),
                 )
         elif "html" in content_type:
             stripped = text.lstrip().lower()
@@ -200,13 +197,13 @@ class ContentTypeMismatchAnalyzer(Analyzer):
                         analyzer_id=self.analyzer_id,
                         recommendation="Serve HTML with valid markup or switch to a more accurate Content-Type.",
                         details={"content_type": content_type},
-                    )
+                    ),
                 )
 
         return findings
 
 
-class DuplicateJsonKeysAnalyzer(Analyzer):
+class DuplicateJsonKeysAnalyzer(Analyzer):  # type: ignore[misc]
     analyzer_id = "consistency.duplicate_keys"
     category = Category.CONSISTENCY
     display_name = "Duplicate JSON Keys"
@@ -232,7 +229,7 @@ class DuplicateJsonKeysAnalyzer(Analyzer):
                     analyzer_id=self.analyzer_id,
                     recommendation="Run duplicate-key validation server-side or in CI for very large JSON responses.",
                     details={"body_size": len(ctx.response.body), "scan_limit": self._MAX_SCAN},
-                )
+                ),
             )
             return findings
 
@@ -251,7 +248,7 @@ class DuplicateJsonKeysAnalyzer(Analyzer):
         try:
             json.loads(text, object_pairs_hook=detect_duplicates)
         except Exception:
-            logger.debug("DuplicateJsonKeysAnalyzer: invalid JSON payload, skipping", exc_info=True)
+            logger.exception("DuplicateJsonKeysAnalyzer: invalid JSON payload, skipping", exc_info=True)
             return findings
 
         if duplicate_keys:
@@ -265,12 +262,12 @@ class DuplicateJsonKeysAnalyzer(Analyzer):
                     analyzer_id=self.analyzer_id,
                     recommendation="Remove duplicate keys in serializers to avoid parser-dependent behavior.",
                     details={"duplicate_keys": keys_sorted[:20]},
-                )
+                ),
             )
         return findings
 
 
-class RedirectLocationAnalyzer(Analyzer):
+class RedirectLocationAnalyzer(Analyzer):  # type: ignore[misc]
     analyzer_id = "consistency.redirect_location"
     category = Category.CONSISTENCY
     display_name = "Redirect Location Header"
@@ -296,7 +293,7 @@ class RedirectLocationAnalyzer(Analyzer):
                 analyzer_id=self.analyzer_id,
                 recommendation="Include a valid Location header for redirect responses.",
                 details={"status_code": status_code},
-            )
+            ),
         )
         return findings
 
@@ -311,7 +308,7 @@ _DATE_PATTERNS: list[tuple[str, re.Pattern[str]]] = [
 ]
 
 
-class DateFormatInconsistencyAnalyzer(Analyzer):
+class DateFormatInconsistencyAnalyzer(Analyzer):  # type: ignore[misc]
     analyzer_id = "consistency.date_formats"
     category = Category.CONSISTENCY
     display_name = "Date Format Inconsistency"
@@ -339,12 +336,12 @@ class DateFormatInconsistencyAnalyzer(Analyzer):
                     analyzer_id=self.analyzer_id,
                     recommendation="Use one date format across the API, ideally ISO 8601 with timezone.",
                     details={"formats": formats_found},
-                )
+                ),
             )
         return findings
 
 
-class NullVsMissingAnalyzer(Analyzer):
+class NullVsMissingAnalyzer(Analyzer):  # type: ignore[misc]
     analyzer_id = "consistency.null_vs_missing"
     category = Category.CONSISTENCY
     display_name = "Null vs Missing Field Patterns"
@@ -395,7 +392,7 @@ class NullVsMissingAnalyzer(Analyzer):
                     analyzer_id=self.analyzer_id,
                     recommendation="Pick one convention (null or omitted) for optional fields and document it.",
                     details={"fields": inconsistent[:20]},
-                )
+                ),
             )
 
         return findings
@@ -410,7 +407,7 @@ class NullVsMissingAnalyzer(Analyzer):
         return []
 
 
-class SchemaDriftAnalyzer(Analyzer):
+class SchemaDriftAnalyzer(Analyzer):  # type: ignore[misc]
     analyzer_id = "consistency.schema_drift"
     category = Category.CONSISTENCY
     display_name = "Schema Drift Detection"
@@ -464,7 +461,7 @@ class SchemaDriftAnalyzer(Analyzer):
                     "removed": sorted(removed)[:20],
                     "type_changed": type_changed[:20],
                 },
-            )
+            ),
         )
         return findings
 
@@ -480,7 +477,7 @@ class SchemaDriftAnalyzer(Analyzer):
                 result[path] = type(value).__name__
                 if isinstance(value, (dict, list)):
                     result.update(
-                        SchemaDriftAnalyzer.build_schema_fingerprint(value, path, depth + 1)
+                        SchemaDriftAnalyzer.build_schema_fingerprint(value, path, depth + 1),
                     )
         elif isinstance(obj, list) and obj:
             list_path = f"{prefix}[]" if prefix else "[]"
@@ -493,7 +490,7 @@ class SchemaDriftAnalyzer(Analyzer):
             for item in sample:
                 if isinstance(item, (dict, list)):
                     result.update(
-                        SchemaDriftAnalyzer.build_schema_fingerprint(item, list_path, depth + 1)
+                        SchemaDriftAnalyzer.build_schema_fingerprint(item, list_path, depth + 1),
                     )
 
         return result

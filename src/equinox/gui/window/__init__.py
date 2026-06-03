@@ -7,6 +7,7 @@ from __future__ import annotations
 import json
 import logging
 from typing import Any
+from typing import cast
 
 from equinox.application.history import HistoryFacade
 from equinox.core.request import Request
@@ -77,8 +78,8 @@ class MainWindow(
     _HistoryMixin,  # type: ignore[misc]
     _ImportExportMixin,  # type: ignore[misc]
     _EnvironmentMixin,  # type: ignore[misc]
-    _MenuMixin,
-    _FramelessMixin,
+    _MenuMixin,  # type: ignore[misc]
+    _FramelessMixin,  # type: ignore[misc]
     QMainWindow,
 ):
     """Main application window."""
@@ -144,12 +145,12 @@ class MainWindow(
         main_layout.setContentsMargins(0, 0, 0, 0)
         self._main_splitter = QSplitter(Qt.Orientation.Horizontal)
         self._cookie_manager = CookieJarManager(self.db)
-        self.collections_panel = None
-        self.history_panel = None
-        self.variables_panel = None
-        self.logging_panel = None
-        self.cookies_panel = None
-        self.websocket_panel = None
+        self.collections_panel = cast(Any, None)
+        self.history_panel = cast(Any, None)
+        self.variables_panel = cast(Any, None)
+        self.logging_panel = cast(Any, None)
+        self.cookies_panel = cast(Any, None)
+        self.websocket_panel = cast(Any, None)
         self._tabs_initialized: set[int] = set()
         self._left_tabs = QTabWidget()
         self._left_tabs.setObjectName("leftSidebarTabs")
@@ -217,7 +218,7 @@ class MainWindow(
             label = self._left_tabs.tabText(index)
             self.status_bar.showMessage(f"Opened {label}", 2500)
         except Exception:
-            logger.debug("Failed to show left-tab navigation status", exc_info=True)
+            logger.exception("Failed to show left-tab navigation status", exc_info=True)
 
     def _on_splitter_moved(self, pos: int, index: int) -> None:
         sender = self.sender()
@@ -237,7 +238,7 @@ class MainWindow(
                     if not worker.wait(500):
                         worker.wait(200)
                 except Exception:
-                    logger.debug("Error stopping intelligence worker on close", exc_info=True)
+                    logger.exception("Error stopping intelligence worker on close", exc_info=True)
         self._layout_save_timer.stop()
         self._save_layout()
         if self._app_event_filter_installed:
@@ -301,14 +302,14 @@ class MainWindow(
         except RuntimeError:
             pass
         except Exception:
-            logger.debug("Could not disconnect previous intelligence worker", exc_info=True)
+            logger.exception("Could not disconnect previous intelligence worker", exc_info=True)
 
         try:
             worker.requestInterruption()
             if worker.isRunning():
                 worker.wait(300)
         except Exception:
-            logger.info("Could not stop previous intelligence worker", exc_info=True)
+            logger.exception("Could not stop previous intelligence worker", exc_info=True)
 
     def _disabled_analyzers(self) -> set[str]:
         disabled_raw = self._settings.value(_KEY_INTEL_DISABLED, "[]")
@@ -316,7 +317,7 @@ class MainWindow(
             raw = set(json.loads(disabled_raw)) if disabled_raw else set()
             return {str(item) for item in raw}
         except Exception:
-            logger.debug(
+            logger.exception(
                 "Invalid disabled-analyzers setting, defaulting to empty set", exc_info=True,
             )
             return set()
@@ -325,7 +326,7 @@ class MainWindow(
         try:
             self.status_bar.showMessage(self._build_status_message(response), _STATUS_TIMEOUT_MS)
         except Exception:
-            logger.debug("Failed to update status bar after response", exc_info=True)
+            logger.exception("Failed to update status bar after response", exc_info=True)
 
     def _run_intelligence_analysis(self, response: Response) -> None:
         try:
