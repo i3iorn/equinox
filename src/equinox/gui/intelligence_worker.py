@@ -1,23 +1,25 @@
 """Background worker for Response Intelligence analysis."""
-
 from __future__ import annotations
 
 import logging
-from typing import Callable, TypeVar
+from collections.abc import Callable
+from typing import Any
+from typing import TypeVar
 
-from PyQt6.QtCore import QObject, QThread, pyqtSignal
-
-from equinox.core.request import Request, Response
-from equinox.core.response_intelligence import (
-    AnalysisContext,
-    AnalysisEngine,
-    Finding,
-    SchemaDriftAnalyzer,
-    normalize_url_pattern,
-)
-from equinox.intelligence import Recommender, suggestions_to_findings
+from equinox.core.request import Request
+from equinox.core.request import Response
+from equinox.core.response_intelligence import AnalysisContext
+from equinox.core.response_intelligence import AnalysisEngine
+from equinox.core.response_intelligence import Finding
+from equinox.core.response_intelligence import normalize_url_pattern
+from equinox.core.response_intelligence import SchemaDriftAnalyzer
+from equinox.intelligence import Recommender
+from equinox.intelligence import suggestions_to_findings
 from equinox.storage import Database
 from equinox.storage.response_intelligence import ResponseIntelligenceManager
+from PyQt6.QtCore import pyqtSignal
+from PyQt6.QtCore import QObject
+from PyQt6.QtCore import QThread
 
 __all__ = ["IntelligenceWorker"]
 
@@ -150,7 +152,7 @@ class IntelligenceWorker(QThread):
             )
             return findings
         except Exception:
-            logger.debug("Intelligence worker: recommender hints failed", exc_info=True)
+            logger.exception("Intelligence worker: recommender hints failed", exc_info=True)
             return []
 
     # ── URL resolution ────────────────────────────────────────────────────────
@@ -189,7 +191,7 @@ class IntelligenceWorker(QThread):
             lambda: mgr.get_schema(url_pattern, method, status_code=self._response.status_code),
             "stored schema",
         )
-        history_rows: list[dict] = (
+        history_rows: list[dict[str, Any]] = (
             self._try_fetch(
                 lambda: mgr.get_recent_history(limit=50),
                 "recent history",
@@ -235,15 +237,7 @@ class IntelligenceWorker(QThread):
         method: str,
     ) -> None:
         """Append the current response time to the endpoint's timing history."""
-        elapsed = self._response.elapsed
-        if elapsed is None:
-            logger.debug(
-                "Skipping endpoint stats update: elapsed is None for %s %s",
-                method,
-                url_pattern,
-            )
-            return
-        elapsed_ms = round(elapsed * 1000, 2)
+        elapsed_ms = round(self._response.elapsed * 1000, 2)
         self._try_write(
             lambda: mgr.update_endpoint_stats(url_pattern, method, elapsed_ms),
             "endpoint stats",
@@ -281,7 +275,7 @@ class IntelligenceWorker(QThread):
         try:
             return operation()
         except Exception:
-            logger.debug("Failed to fetch %s", label, exc_info=True)
+            logger.exception("Failed to fetch %s", label, exc_info=True)
             return None
 
     @staticmethod
@@ -295,7 +289,7 @@ class IntelligenceWorker(QThread):
         try:
             operation()
         except Exception:
-            logger.debug("Failed to write %s", label, exc_info=True)
+            logger.exception("Failed to write %s", label, exc_info=True)
 
     # ── Dunder helpers ────────────────────────────────────────────────────────
 
