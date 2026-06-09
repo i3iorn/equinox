@@ -6,9 +6,9 @@ from dataclasses import dataclass
 from pathlib import Path
 
 DEFAULT_LIMITS = {
-    "module": 1200,
-    "function": 120,
-    "class": 700,
+    "module": 1100,
+    "function": 100,
+    "class": 600,
 }
 
 # ------------------------------------------------------------
