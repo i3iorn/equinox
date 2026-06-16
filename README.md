@@ -4,7 +4,7 @@ Equinox is a secure, local-first API testing tool with GUI and CLI workflows. Bu
 
 > **Getting started?** See [WORKFLOW.md](WORKFLOW.md) for a complete documentation map and quick navigation guide.
 >
-> **Latest release notes:** [changelog/CHANGELOG_v0.4.9.md](changelog/CHANGELOG_v0.4.9.md)
+> **Latest release notes:** [changelog/CHANGELOG_v0.4.10.md](changelog/CHANGELOG_v0.4.10.md)
 
 ## Highlights
 
