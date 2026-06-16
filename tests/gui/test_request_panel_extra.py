@@ -2,6 +2,7 @@ from types import SimpleNamespace
 from unittest.mock import Mock
 
 import pytest
+from equinox.gui.request_panel._mixins.assertions_mixin import AssertionsMixin
 from equinox.gui.request_panel._mixins.autosave_mixin import RequestAutosaveMixin
 from equinox.gui.request_panel._mixins.save_flow_mixin import RequestSaveFlowMixin
 from PyQt6.QtCore import QCoreApplication
@@ -534,3 +535,17 @@ def test_sync_dirty_state_ui_swallows_sync_errors() -> None:
 
     panel = _Panel()
     panel._sync_dirty_state_ui()
+
+
+def test_assertions_tab_builder_creates_required_widgets() -> None:
+    ensure_qapp()
+
+    class _Panel(AssertionsMixin):
+        pass
+
+    panel = _Panel()
+    widget = panel._create_assertions_tab()
+
+    assert widget is not None
+    assert panel.assertions_table.columnCount() == 3
+    assert panel.assertions_results_label.text() == "—"

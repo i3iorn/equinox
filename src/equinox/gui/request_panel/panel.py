@@ -25,7 +25,6 @@ from equinox.gui.request_panel._mixins.request_editor_state_mixin import Request
 from equinox.gui.request_panel._mixins.request_tools_mixin import RequestToolsMixin
 from equinox.gui.request_panel._mixins.save_flow_mixin import RequestSaveFlowMixin
 from equinox.gui.request_panel._mixins.settings_tab_builder import SettingsTabMixin
-from equinox.gui.request_panel._mixins.ui_builder_mixins import RequestPanelOrchestrationMixin
 from equinox.gui.request_panel._mixins.ui_builder_mixins import URLBarMixin
 from equinox.gui.request_panel._mixins.url_history_mixin import URLHistoryMixin
 from equinox.gui.request_panel._mixins.validation_mixin import _RequestValidationMixin
@@ -66,7 +65,6 @@ class RequestPanel(
     _RequestSendMixin,
     _RequestAuthMixin,
     RequestBodyMixin,
-    RequestPanelOrchestrationMixin,
     URLBarMixin,
     QWidget,
 ):

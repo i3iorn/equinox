@@ -65,6 +65,19 @@ class AssertionsMixin:
     # Tab Construction
     # ──────────────────────────────────────────────────────────────────────
 
+    def _create_assertions_tab(self) -> QWidget:
+        """Create the Assertions tab and wire table/results widgets."""
+        widget, layout, self.assertions_results_label = self._build_action_tab_shell(
+            LABEL_ASSERTIONS,
+            self._assertions_add_row,
+            self._assertions_remove_row,
+        )
+        self.assertions_table = self._create_assertions_table()
+        layout.addWidget(self.assertions_table)
+        layout.addWidget(QLabel(LABEL_LAST_ASSERTION))
+        layout.addWidget(self.assertions_results_label)
+        return widget
+
     @staticmethod
     def _build_action_tab_shell(
         title: str,
