@@ -1,19 +1,22 @@
 """OAuth2 client management — named, reusable OAuth2 credentials."""
-
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING, Any, Literal
+from typing import Any
+from typing import cast
+from typing import Literal
+from typing import TYPE_CHECKING
 
-from equinox.core.exceptions import DuplicateError, StorageError, ValidationError
-from equinox.storage.auth_cipher_storage import (
-    decrypt_auth_storage_value,
-    encrypt_auth_storage_value,
-    is_encrypted_value,
-)
+from equinox.core.exceptions import DuplicateError
+from equinox.core.exceptions import StorageError
+from equinox.core.exceptions import ValidationError
+from equinox.storage.auth_cipher_storage import decrypt_auth_storage_value
+from equinox.storage.auth_cipher_storage import encrypt_auth_storage_value
+from equinox.storage.auth_cipher_storage import is_encrypted_value
 from equinox.storage.database import Database
 from equinox.storage.utils import require_str as _require_str
-from equinox.storage.utils import safe_json_dumps, safe_json_loads
+from equinox.storage.utils import safe_json_dumps
+from equinox.storage.utils import safe_json_loads
 
 logger = logging.getLogger(__name__)
 
@@ -22,6 +25,19 @@ if TYPE_CHECKING:
 
 # Allowed grant types
 GRANT_TYPES = ("client_credentials", "refresh_token", "password", "authorization_code")
+
+_ClientPayload = tuple[
+    str,
+    str,
+    str,
+    str,
+    str,
+    str,
+    str,
+    int,
+    str,
+    str,
+]
 
 
 class OAuthClientManager:
@@ -73,57 +89,84 @@ class OAuthClientManager:
         extra_params: dict[str, str] | None = None,
         description: str = "",
     ) -> int:
-        """Create a new OAuth2 client.
+        """Create a new OAuth2 client and return its row ID."""
+        payload = self._build_client_creation_payload(
+            name=name,
+            token_url=token_url,
+            client_id=client_id,
+            client_secret=client_secret,
+            scope=scope,
+            grant_type=grant_type,
+            token_auth=token_auth,
+            verify_ssl=verify_ssl,
+            extra_params=extra_params,
+            description=description,
+        )
 
-        Returns the new row ID.
+        return self._insert_client_record(payload)
 
-        Raises:
-            ValidationError: bad input
-            StorageError: duplicate name or DB error
-        """
+    def _build_client_creation_payload(
+        self,
+        *,
+        name: str,
+        token_url: str,
+        client_id: str,
+        client_secret: str,
+        scope: str,
+        grant_type: str,
+        token_auth: str,
+        verify_ssl: bool,
+        extra_params: dict[str, str] | None,
+        description: str,
+    ) -> _ClientPayload:
         name = _require_str(name, "name", self.MAX_NAME_LEN)
         token_url = _require_str(token_url, "token_url", self.MAX_URL_LEN, required=False)
         client_id = _require_str(client_id, "client_id", self.MAX_ID_LEN, required=False)
-        client_secret = _require_str(
-            client_secret, "client_secret", self.MAX_SECRET_LEN, required=False
+
+        raw_secret = _require_str(
+            client_secret, "client_secret", self.MAX_SECRET_LEN, required=False,
         )
-        encrypted_secret = self._encrypt_client_secret(client_secret)
+        encrypted_secret = self._encrypt_client_secret(raw_secret)
+
         scope = _require_str(scope, "scope", self.MAX_SCOPE_LEN, required=False)
         description = _require_str(description, "description", self.MAX_DESC_LEN, required=False)
+
         self._validate_grant_type(grant_type)
         self._validate_token_auth(token_auth)
 
         extra_json = safe_json_dumps(extra_params or {})
 
+        return (
+            name,
+            token_url,
+            client_id,
+            encrypted_secret,
+            scope,
+            grant_type,
+            token_auth,
+            1 if verify_ssl else 0,
+            extra_json,
+            description,
+        )
+
+    def _insert_client_record(self, payload: _ClientPayload) -> int:
+        sql = """
+            INSERT INTO oauth_clients
+              (name, token_url, client_id, client_secret, scope,
+               grant_type, token_auth, verify_ssl, extra_params, description)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """
+
         try:
-            row_id = self.db.insert(
-                """
-                INSERT INTO oauth_clients
-                  (name, token_url, client_id, client_secret, scope,
-                   grant_type, token_auth, verify_ssl, extra_params, description)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """,
-                (
-                    name,
-                    token_url,
-                    client_id,
-                    encrypted_secret,
-                    scope,
-                    grant_type,
-                    token_auth,
-                    1 if verify_ssl else 0,
-                    extra_json,
-                    description,
-                ),
-            )
-            logger.info("Created OAuth2 client '%s' (id=%d)", name, row_id)
-            return row_id
+            row_id = self.db.insert(sql, payload)
+            logger.info("Created OAuth2 client (id=%d)", row_id)
+            return int(row_id)
         except DuplicateError:
-            raise DuplicateError(f"An OAuth2 client named '{name}' already exists")
+            raise DuplicateError(f"An OAuth2 client named '{payload[0]}' already exists")
         except StorageError:
             raise
         except Exception as exc:
-            raise StorageError(f"Failed to create OAuth2 client: {exc}") from exc
+            raise StorageError("Failed to create OAuth2 client") from exc
 
     # ── Read ──────────────────────────────────────────────────────────
 
@@ -163,71 +206,113 @@ class OAuthClientManager:
         extra_params: dict[str, str] | None = None,
         description: str | None = None,
     ) -> None:
-        """Partially update a client.  Only supplied (non-None) fields are changed."""
-        existing = self.get_client(client_id)
-        if not existing:
-            raise StorageError(f"OAuth2 client {client_id} not found")
+        """Partially update an OAuth2 client with validated, sanitized fields."""
+        existing = self._require_client(client_id)
 
-        updates: list[str] = []
-        params: list[Any] = []
-
-        if name is not None:
-            updates.append("name = ?")
-            params.append(_require_str(name, "name", self.MAX_NAME_LEN))
-        if token_url is not None:
-            updates.append("token_url = ?")
-            params.append(_require_str(token_url, "token_url", self.MAX_URL_LEN))
-        if client_id_val is not None:
-            updates.append("client_id = ?")
-            params.append(_require_str(client_id_val, "client_id", self.MAX_ID_LEN))
-        if client_secret is not None:
-            updates.append("client_secret = ?")
-            validated_secret = _require_str(
-                client_secret, "client_secret", self.MAX_SECRET_LEN, required=False
-            )
-            params.append(self._encrypt_client_secret(validated_secret))
-        if scope is not None:
-            updates.append("scope = ?")
-            params.append(_require_str(scope, "scope", self.MAX_SCOPE_LEN, required=False))
-        if grant_type is not None:
-            self._validate_grant_type(grant_type)
-            updates.append("grant_type = ?")
-            params.append(grant_type)
-        if token_auth is not None:
-            self._validate_token_auth(token_auth)
-            updates.append("token_auth = ?")
-            params.append(token_auth)
-        if verify_ssl is not None:
-            updates.append("verify_ssl = ?")
-            params.append(1 if verify_ssl else 0)
-        if extra_params is not None:
-            updates.append("extra_params = ?")
-            params.append(safe_json_dumps(extra_params))
-        if description is not None:
-            updates.append("description = ?")
-            params.append(
-                _require_str(description, "description", self.MAX_DESC_LEN, required=False)
-            )
+        updates, params = self._build_client_update_payload(
+            name=name,
+            token_url=token_url,
+            client_id_val=client_id_val,
+            client_secret=client_secret,
+            scope=scope,
+            grant_type=grant_type,
+            token_auth=token_auth,
+            verify_ssl=verify_ssl,
+            extra_params=extra_params,
+            description=description,
+        )
 
         if not updates:
             return
 
+        self._apply_client_update(client_id, existing["name"], updates, params)
+
+    def _require_client(self, client_id: int) -> dict[str, Any]:
+        client = self.get_client(client_id)
+        if not client:
+            raise StorageError(f"OAuth2 client {client_id} not found")
+        return client
+
+    def _build_client_update_payload(
+        self,
+        *,
+        name: str | None,
+        token_url: str | None,
+        client_id_val: str | None,
+        client_secret: str | None,
+        scope: str | None,
+        grant_type: str | None,
+        token_auth: str | None,
+        verify_ssl: bool | None,
+        extra_params: dict[str, str] | None,
+        description: str | None,
+    ) -> tuple[list[str], list[Any]]:
+        updates: list[str] = []
+        params: list[Any] = []
+
+        def add(field: str, value: Any) -> None:
+            updates.append(f"{field} = ?")
+            params.append(value)
+
+        if name is not None:
+            add("name", _require_str(name, "name", self.MAX_NAME_LEN))
+
+        if token_url is not None:
+            add("token_url", _require_str(token_url, "token_url", self.MAX_URL_LEN))
+
+        if client_id_val is not None:
+            add("client_id", _require_str(client_id_val, "client_id", self.MAX_ID_LEN))
+
+        if client_secret is not None:
+            raw = _require_str(client_secret, "client_secret", self.MAX_SECRET_LEN, required=False)
+            add("client_secret", self._encrypt_client_secret(raw))
+
+        if scope is not None:
+            add("scope", _require_str(scope, "scope", self.MAX_SCOPE_LEN, required=False))
+
+        if grant_type is not None:
+            self._validate_grant_type(grant_type)
+            add("grant_type", grant_type)
+
+        if token_auth is not None:
+            self._validate_token_auth(token_auth)
+            add("token_auth", token_auth)
+
+        if verify_ssl is not None:
+            add("verify_ssl", 1 if verify_ssl else 0)
+
+        if extra_params is not None:
+            add("extra_params", safe_json_dumps(extra_params))
+
+        if description is not None:
+            add(
+                "description",
+                _require_str(description, "description", self.MAX_DESC_LEN, required=False),
+            )
+        return updates, params
+
+    def _apply_client_update(
+        self,
+        client_id: int,
+        old_name: str,
+        updates: list[str],
+        params: list[Any],
+    ) -> None:
         updates.append("updated_at = CURRENT_TIMESTAMP")
         params.append(client_id)
+
+        # updates contains only hardcoded "col = ?" literals — no user data in the SQL string.
+        sql = "UPDATE oauth_clients SET " + ", ".join(updates) + " WHERE id = ?"  # nosec B608
+
         try:
-            # updates contains only hardcoded "col = ?" literals — no user data in the SQL string.
-            self.db.execute(
-                f"UPDATE oauth_clients SET {', '.join(updates)} WHERE id = ?",  # nosec B608
-                tuple(params),
-            )
+            self.db.execute(sql, tuple(params))
             logger.info("Updated OAuth2 client id=%d", client_id)
         except DuplicateError:
-            display_name = name if name is not None else existing["name"]
-            raise DuplicateError(f"An OAuth2 client named '{display_name}' already exists")
+            raise DuplicateError(f"An OAuth2 client named '{old_name}' already exists")
         except StorageError:
             raise
         except Exception as exc:
-            raise StorageError(f"Failed to update OAuth2 client: {exc}") from exc
+            raise StorageError("Failed to update OAuth2 client") from exc
 
     def set_default(self, client_id: int) -> None:
         """Mark one client as the default; clears any previous default.
@@ -318,7 +403,7 @@ class OAuthClientManager:
             return secret
         if is_encrypted_value(secret):
             return secret
-        return encrypt_auth_storage_value(secret)
+        return cast(str, encrypt_auth_storage_value(secret))
 
     @classmethod
     def _decrypt_client_secret(cls, stored: str | None) -> str:

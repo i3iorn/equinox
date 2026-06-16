@@ -1,9 +1,11 @@
 """Variable groups management"""
-
 import logging
 from typing import Any
+from typing import cast
 
-from equinox.core.exceptions import DuplicateError, SecurityError, StorageError
+from equinox.core.exceptions import DuplicateError
+from equinox.core.exceptions import SecurityError
+from equinox.core.exceptions import StorageError
 from equinox.storage.database import Database
 from equinox.storage.utils import (
     MAX_DESCRIPTION_LENGTH as _MAX_DESC,
@@ -17,12 +19,10 @@ from equinox.storage.utils import (
 from equinox.storage.utils import (
     MAX_VARIABLE_VALUE_LENGTH as _MAX_VAR_VAL,
 )
-from equinox.storage.utils import (
-    require_positive_int,
-    require_str,
-    validate_variable_key,
-    validate_variable_value,
-)
+from equinox.storage.utils import require_positive_int
+from equinox.storage.utils import require_str
+from equinox.storage.utils import validate_variable_key
+from equinox.storage.utils import validate_variable_value
 
 logger = logging.getLogger(__name__)
 
@@ -68,7 +68,7 @@ class VariableGroupManager:
         group = self.db.fetchone("SELECT * FROM variable_groups WHERE id = ?", (group_id,))
         if not group:
             raise StorageError(f"Variable group with ID {group_id} does not exist")
-        return group
+        return cast(dict[str, Any], group)
 
     # ── Group CRUD ────────────────────────────────────────────────────────────
 
@@ -89,7 +89,7 @@ class VariableGroupManager:
         """
         name = require_str(name, "Variable group name", self.MAX_NAME_LENGTH)
         description = require_str(
-            description, "Variable group description", self.MAX_DESCRIPTION_LENGTH, required=False
+            description, "Variable group description", self.MAX_DESCRIPTION_LENGTH, required=False,
         )
 
         count_result = self.db.fetchone("SELECT COUNT(*) as count FROM variable_groups")
@@ -98,10 +98,10 @@ class VariableGroupManager:
 
         try:
             group_id = self.db.insert(
-                "INSERT INTO variable_groups (name, description) VALUES (?, ?)", (name, description)
+                "INSERT INTO variable_groups (name, description) VALUES (?, ?)", (name, description),
             )
             logger.info("Created variable group %r with ID %d", name, group_id)
-            return group_id
+            return int(group_id)
 
         except DuplicateError:
             raise DuplicateError(f"Variable group '{name}' already exists")
@@ -121,7 +121,8 @@ class VariableGroupManager:
             ValidationError: If group_id is invalid
         """
         require_positive_int(group_id, "Variable group ID")
-        return self.db.fetchone("SELECT * FROM variable_groups WHERE id = ?", (group_id,))
+        row = self.db.fetchone("SELECT * FROM variable_groups WHERE id = ?", (group_id,))
+        return cast(dict[str, Any] | None, row)
 
     def list_groups(self) -> list[dict[str, Any]]:
         """List all variable groups
@@ -129,10 +130,11 @@ class VariableGroupManager:
         Returns:
             List of variable groups
         """
-        return self.db.fetchall("SELECT * FROM variable_groups ORDER BY name")
+        rows = self.db.fetchall("SELECT * FROM variable_groups ORDER BY name")
+        return cast(list[dict[str, Any]], rows)
 
     def update_group(
-        self, group_id: int, name: str | None = None, description: str | None = None
+        self, group_id: int, name: str | None = None, description: str | None = None,
     ) -> None:
         """Update variable group
 
@@ -173,8 +175,8 @@ class VariableGroupManager:
             updates.append("updated_at = CURRENT_TIMESTAMP")
             params.append(group_id)
             # updates contains only hardcoded "col = ?" literals — no user data in the SQL string.
-            query = f"UPDATE variable_groups SET {', '.join(updates)} WHERE id = ?"  # nosec B608
-            self.db.execute(query, tuple(params))
+            sql = "UPDATE variable_groups SET " + ", ".join(updates) + " WHERE id = ?"  # nosec B608
+            self.db.execute(sql, tuple(params))
             logger.info("Updated variable group %r (ID: %d)", group["name"], group_id)
 
         except DuplicateError:
@@ -236,11 +238,11 @@ class VariableGroupManager:
         key = validate_variable_key(key, self.MAX_VARIABLE_KEY_LENGTH)
         validate_variable_value(value, self.MAX_VARIABLE_VALUE_LENGTH)
         description = require_str(
-            description, "Variable description", self.MAX_DESCRIPTION_LENGTH, required=False
+            description, "Variable description", self.MAX_DESCRIPTION_LENGTH, required=False,
         )
 
         count_result = self.db.fetchone(
-            "SELECT COUNT(*) as count FROM variable_group_items WHERE group_id = ?", (group_id,)
+            "SELECT COUNT(*) as count FROM variable_group_items WHERE group_id = ?", (group_id,),
         )
         if count_result and count_result["count"] >= self.MAX_VARIABLES_PER_GROUP:
             existing = self.db.fetchone(
@@ -249,7 +251,7 @@ class VariableGroupManager:
             )
             if not existing:
                 raise SecurityError(
-                    f"Maximum number of variables per group reached ({self.MAX_VARIABLES_PER_GROUP})"
+                    f"Maximum number of variables per group reached ({self.MAX_VARIABLES_PER_GROUP})",
                 )
 
         try:
@@ -265,7 +267,7 @@ class VariableGroupManager:
                 (group_id, key, value, description),
             )
             logger.info("Added/updated variable %r in group %d", key, group_id)
-            return var_id
+            return int(var_id)
 
         except Exception as e:
             raise StorageError(f"Failed to add variable: {e}")
@@ -286,7 +288,7 @@ class VariableGroupManager:
 
         try:
             cursor = self.db.execute(
-                "DELETE FROM variable_group_items WHERE group_id = ? AND key = ?", (group_id, key)
+                "DELETE FROM variable_group_items WHERE group_id = ? AND key = ?", (group_id, key),
             )
             if cursor.rowcount == 0:
                 raise StorageError(f"Variable '{key}' not found in group {group_id}")
@@ -311,9 +313,10 @@ class VariableGroupManager:
         """
         require_positive_int(group_id, "Variable group ID")
 
-        return self.db.fetchall(
-            "SELECT * FROM variable_group_items WHERE group_id = ? ORDER BY key", (group_id,)
+        rows = self.db.fetchall(
+            "SELECT * FROM variable_group_items WHERE group_id = ? ORDER BY key", (group_id,),
         )
+        return cast(list[dict[str, Any]], rows)
 
     def get_group_variables_dict(self, group_id: int) -> dict[str, str]:
         """Get group variables as a dictionary
