@@ -17,7 +17,7 @@ logger = logging.getLogger(__name__)
 
 _AUTH_NONE_LABEL = "Auth: None"
 _AUTH_NONE_DESC = "No authentication configured"
-_BTN_CONFIGURE = "Configure AuthenticationÔÇª"
+_BTN_CONFIGURE = "Configure Authentication"
 _BTN_CLEAR = "Clear Auth"
 
 

@@ -256,7 +256,7 @@ class BodySearchBarMixin:
 
     def build_body_search_bar(self: Any) -> QHBoxLayout:
         self._body_search_input = QLineEdit()
-        self._body_search_input.setPlaceholderText("Find in bodyÔÇª")
+        self._body_search_input.setPlaceholderText("Find in body")
         self._body_search_input.setFixedHeight(26)
         self._body_search_input.setClearButtonEnabled(True)
         self._body_search_input.returnPressed.connect(self._body_find_next)
@@ -420,7 +420,7 @@ class NotesTabMixin:
 
         self.notes_editor = QPlainTextEdit()
         self.notes_editor.setPlaceholderText(
-            "Add notes, cURL examples, API docs links, or any context about this requestÔÇª",
+            "Add notes, cURL examples, API docs links, or any context about this request",
         )
 
         layout.addWidget(self.notes_editor, 1)

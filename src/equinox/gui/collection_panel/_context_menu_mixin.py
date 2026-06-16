@@ -130,13 +130,13 @@ class _CollectionsContextMenuMixin(CollectionsPanelProtocol):
         specs = [
             (
                 "new_request",
-                "New RequestÔÇª",
+                "New Request",
                 lambda: self._new_request_in_collection(col_id),
                 False,
             ),
             (
                 "add_folder",
-                "Add FolderÔÇª",
+                "Add Folder",
                 lambda: self._create_folder_in_collection(col_id),
                 False,
             ),
@@ -152,7 +152,7 @@ class _CollectionsContextMenuMixin(CollectionsPanelProtocol):
             specs.append(
                 (
                     "show_api_spec",
-                    "Show API SpecÔÇª",
+                    "Show API Spec",
                     lambda cid=col_id: self._show_api_spec_for_collection(cid), # type: ignore[misc]
                     False,
                 ),
@@ -162,14 +162,14 @@ class _CollectionsContextMenuMixin(CollectionsPanelProtocol):
 
         specs.extend(
             [
-                ("rename", "RenameÔÇª", lambda: self._rename_collection(col_id, item), False),
+                ("rename", "Rename", lambda: self._rename_collection(col_id, item), False),
                 (
                     "manage_variables",
-                    "Manage VariablesÔÇª",
+                    "Manage Variables",
                     lambda: self._manage_variables(col_id),
                     False,
                 ),
-                ("set_auth", "Set AuthÔÇª", lambda: self._set_collection_auth(col_id), False),
+                ("set_auth", "Set Auth", lambda: self._set_collection_auth(col_id), False),
                 (
                     "clear_auth",
                     "Clear Auth",
@@ -205,7 +205,7 @@ class _CollectionsContextMenuMixin(CollectionsPanelProtocol):
             [
                 (
                     "delete_folder",
-                    "Delete FolderÔÇª",
+                    "Delete Folder",
                     lambda: self._delete_folder(col_id, folder_path),
                     True,
                 ),
@@ -216,13 +216,13 @@ class _CollectionsContextMenuMixin(CollectionsPanelProtocol):
         specs = [
             (
                 "new_request_here",
-                "New Request HereÔÇª",
+                "New Request Here",
                 lambda: self._new_request_in_folder(col_id, folder_path),
                 False,
             ),
             (
                 "add_subfolder",
-                "Add SubfolderÔÇª",
+                "Add Subfolder",
                 lambda: self._create_subfolder(col_id, folder_path),
                 False,
             ),
@@ -235,7 +235,7 @@ class _CollectionsContextMenuMixin(CollectionsPanelProtocol):
         specs = [
             (
                 "set_auth",
-                "Set AuthÔÇª",
+                "Set Auth",
                 lambda: self._set_folder_auth(col_id, folder_path),
                 False,
             ),
@@ -247,7 +247,7 @@ class _CollectionsContextMenuMixin(CollectionsPanelProtocol):
             ),
             (
                 "rename_folder",
-                "Rename FolderÔÇª",
+                "Rename Folder",
                 lambda: self._rename_folder(col_id, folder_path, item),
                 False,
             ),
@@ -285,7 +285,7 @@ class _CollectionsContextMenuMixin(CollectionsPanelProtocol):
             specs.append(
                 (
                     "show_api_spec",
-                    "Show API SpecÔÇª",
+                    "Show API Spec",
                     lambda r=req_id: self._show_api_spec_for_request(r), # type: ignore[misc]
                     False,
                 ),
@@ -295,11 +295,11 @@ class _CollectionsContextMenuMixin(CollectionsPanelProtocol):
 
         specs.extend(
             [
-                ("rename", "RenameÔÇª", lambda: self._rename_request(req_id, item), False),
+                ("rename", "Rename", lambda: self._rename_request(req_id, item), False),
                 ("duplicate", "Duplicate", lambda: self._duplicate_request(req_id), False),
                 (
                     "move_to_folder",
-                    "Move to FolderÔÇª",
+                    "Move to Folder",
                     lambda: self._move_to_folder(req_id),
                     False,
                 ),
