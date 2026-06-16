@@ -591,7 +591,7 @@ class SavedCredentialsDialog(
             return True
         except Exception as exc:
             QMessageBox.critical(self, "Save Failed", str(exc))
-            raise
+            return False
 
     def _collect_config(self, auth_type: str) -> tuple[dict[str, Any] | None, str | None]:
         """Read type-specific form fields.  Returns (config_dict, None) or (None, error)."""
