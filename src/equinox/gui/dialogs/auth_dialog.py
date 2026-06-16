@@ -695,7 +695,7 @@ class AuthDialog(QDialog):
         except Exception as exc:
             QMessageBox.critical(self, "Error", f"Failed to configure authentication: {exc}")
 
-    def _build_auth_from_tab(self, tab: int) -> AUTH_TYPE:
+def _build_auth_from_tab(self, tab: int) -> AUTH_TYPE | _MissingAuth:
         """Construct an auth strategy from the current tab's fields.
 
         Returns:
