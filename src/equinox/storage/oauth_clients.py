@@ -159,7 +159,7 @@ class OAuthClientManager:
 
         try:
             row_id = self.db.insert(sql, payload)
-            logger.info("Created OAuth2 client '%s' (id=%d)", payload[0], row_id)
+            logger.info("Created OAuth2 client (id=%d)", row_id)
             return int(row_id)
         except DuplicateError:
             raise DuplicateError(f"An OAuth2 client named '{payload[0]}' already exists")
