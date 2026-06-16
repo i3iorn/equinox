@@ -78,7 +78,7 @@ class CopyableMessageBox(QMessageBox):
             clipboard.setText(self._copy_text)
         except Exception:
             logger.warning("Failed to write text to clipboard", exc_info=True)
-            raise
+            return
         # Visual confirmation: rename the button, then restore after a short delay.
         self._copy_btn.setText(self._COPIED_LABEL)
         self._reset_timer.start()  # restart if already running
