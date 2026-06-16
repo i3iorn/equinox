@@ -333,6 +333,21 @@ class SearchBar(QWidget):
             selections.append(sel)
 
         self._target.setExtraSelections(selections)
+        self._scroll_to_current_match()
+
+    def _scroll_to_current_match(self) -> None:
+        """Move viewport/caret to the active match without changing selection state."""
+        if not self._offsets or self._current_idx < 0:
+            return
+
+        try:
+            start, _ = self._offsets[self._current_idx]
+            cursor = self._target.textCursor()
+            cursor.setPosition(start)
+            self._target.setTextCursor(cursor)
+            self._target.ensureCursorVisible()
+        except Exception:
+            logger.debug("Failed to scroll to current search match", exc_info=True)
 
     # ────────────────────────────────────────────────────────────────
     # Navigation

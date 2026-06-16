@@ -129,6 +129,23 @@ def test_searchbar_dispatches_async_for_large_document(monkeypatch) -> None:
     assert called["start"] is True
 
 
+def test_searchbar_moves_editor_to_first_and_next_match() -> None:
+    editor = QTextEdit()
+    editor.setPlainText("line-0\nline-1 needle\nline-2\nline-3 needle\n")
+    bar = SearchBar(editor)
+
+    first = editor.toPlainText().index("needle")
+    second = editor.toPlainText().index("needle", first + 1)
+
+    bar._start_search_job("needle")
+
+    assert bar._current_idx == 0
+    assert editor.textCursor().position() == first
+
+    bar._find_next()
+    assert editor.textCursor().position() == second
+
+
 def test_jsonpath_mode_does_not_emit_text_offsets() -> None:
     editor = QTextEdit()
     editor.setPlainText('{"users":[{"name":"Alice"},{"name":"Alice"}]}')
