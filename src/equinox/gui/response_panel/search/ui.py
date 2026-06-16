@@ -336,7 +336,7 @@ class SearchBar(QWidget):
         self._scroll_to_current_match()
 
     def _scroll_to_current_match(self) -> None:
-        """Move viewport/caret to the active match without changing selection state."""
+        """Move viewport/caret to the active match (updates the QTextEdit cursor)."""
         if not self._offsets or self._current_idx < 0:
             return
 
