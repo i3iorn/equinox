@@ -29,7 +29,7 @@ ERROR_NO_JSON = "No JSON document available send a request that returns JSON fir
 ERROR_JSONPATH_IMPORT = "jsonpath-ng is not installed. Run: pip install jsonpath-ng"
 
 # Status messages
-STATUS_SEARCHING = "searching"
+STATUS_SEARCHING = "searching..."
 STATUS_NO_MATCHES = "no matches"
 STATUS_CANCELLED = "cancelled"
 STATUS_INVALID_REGEX = "invalid regex"
@@ -37,6 +37,6 @@ STATUS_JSONPATH_ERROR = "expression error"
 STATUS_JSONPATH_MISSING = "jsonpath-ng missing"
 
 # UI text
-PLACEHOLDER_TEXT_FIND = "Find in body"
+PLACEHOLDER_TEXT_FIND = "Find in body..."
 PLACEHOLDER_TEXT_REGEX = "Regular expression"
 PLACEHOLDER_TEXT_JSONPATH = "JSONPath expression e.g. $.users[*].name"
