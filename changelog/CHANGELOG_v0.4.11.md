@@ -4,7 +4,7 @@
 
 ## Overview
 
-Equinox v0.4.11 is a minor update to fix strange symbols in various labels and placeholders. Probably an artifact of an AI pass or other.
+Equinox v0.4.11 is a minor update that fixes mojibake (encoding artifacts) in various labels and placeholders across the GUI.
 
 ---
 
