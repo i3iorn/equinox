@@ -1,5 +1,4 @@
 """SQL filter construction and Python post-filters for history search."""
-
 from __future__ import annotations
 
 import logging
@@ -7,11 +6,14 @@ import re
 from datetime import datetime as _dt
 from typing import Any
 
-from equinox.core.exceptions import SecurityError, ValidationError
+from equinox.core.exceptions import SecurityError
+from equinox.core.exceptions import ValidationError
 from equinox.storage.database import Database
-from equinox.storage.utils import coerce_body_to_str, safe_json_loads
+from equinox.storage.utils import coerce_body_to_str
+from equinox.storage.utils import safe_json_loads
 
-from ._constants import _LIKE_ESCAPE_CLAUSE, _STATUS_CODE_RANGES
+from ._constants import _LIKE_ESCAPE_CLAUSE
+from ._constants import _STATUS_CODE_RANGES
 from ._serializer import _HistorySerializer
 
 __all__ = ["_HistorySearcher"]
@@ -116,8 +118,11 @@ class _HistorySearcher:
         limit: int,
         offset: int,
     ) -> list[dict[str, Any]]:
-        # where_clause is built solely from hardcoded SQL fragments; user values are in params.
-        sql = f"SELECT * FROM history {where_clause} " "ORDER BY executed_at DESC LIMIT ? OFFSET ?"  # nosec B608
+        sql = "SELECT * FROM history "
+        if where_clause:
+            sql += where_clause + " "
+        sql += "ORDER BY executed_at DESC LIMIT ? OFFSET ?"
+
         rows = self._db.fetchall(sql, tuple(params_list) + (limit, offset))
         return [self._serializer.decode_row(dict(row), row_id=row["id"]) for row in rows]
 
@@ -141,13 +146,14 @@ class _HistorySearcher:
         cursor_offset = offset
         batch_size = max(limit * 4, 200)
         # where_clause is built solely from hardcoded SQL fragments; user values are in params.
-        sql_template = (  # nosec B608
-            f"SELECT * FROM history {where_clause} " "ORDER BY executed_at DESC LIMIT ? OFFSET ?"  # nosec B608
-        )
+        sql_template = "SELECT * FROM history "
+        if where_clause:
+            sql_template += where_clause + " "
+        sql_template += "ORDER BY executed_at DESC LIMIT ? OFFSET ?"
 
         while len(result) < limit:
             batch = self._db.fetchall(
-                sql_template, tuple(params_list) + (batch_size, cursor_offset)
+                sql_template, tuple(params_list) + (batch_size, cursor_offset),
             )
             if not batch:
                 break
@@ -159,7 +165,7 @@ class _HistorySearcher:
                 if compiled_regex and not self._matches_body_regex(decoded, compiled_regex):
                     continue
                 if parsed_jsonpath and not self._matches_jsonpath(
-                    decoded, parsed_jsonpath, jsonpath_value
+                    decoded, parsed_jsonpath, jsonpath_value,
                 ):
                     continue
                 if header_name and not self._matches_header(decoded, header_name, header_val):
@@ -189,15 +195,28 @@ class _HistorySearcher:
         executed_after: str | None,
         executed_before: str | None,
     ) -> tuple[list[str], list[Any]]:
-        """Return ``(conditions, params)`` for the SQL WHERE clause."""
+        """Return (conditions, params) for the SQL WHERE clause."""
         conditions: list[str] = []
         params: list[Any] = []
 
+        self._filter_query_fields(query, method, conditions, params)
+        self._filter_status_fields(status_code, status_class, conditions, params)
+        self._filter_content_and_elapsed(content_type, min_elapsed, max_elapsed, conditions, params)
+        self._filter_execution_timestamps(executed_after, executed_before, conditions, params)
+
+        return conditions, params
+
+    def _filter_query_fields(
+        self,
+        query: str,
+        method: str,
+        conditions: list[str],
+        params: list[Any],
+    ) -> None:
         if query and isinstance(query, str):
             like = f"%{self._escape_like(query)}%"
             conditions.append(
-                f"(url LIKE ? {_LIKE_ESCAPE_CLAUSE}"
-                f" OR request_body LIKE ? {_LIKE_ESCAPE_CLAUSE})"
+                f"(url LIKE ? {_LIKE_ESCAPE_CLAUSE} OR request_body LIKE ? {_LIKE_ESCAPE_CLAUSE})",
             )
             params.extend([like, like])
 
@@ -205,40 +224,65 @@ class _HistorySearcher:
             conditions.append("method = ?")
             params.append(method.upper())
 
+    def _filter_status_fields(
+        self,
+        status_code: int | None,
+        status_class: str,
+        conditions: list[str],
+        params: list[Any],
+    ) -> None:
         if status_code is not None:
             if not isinstance(status_code, int):
                 raise ValidationError("status_code must be an integer")
             conditions.append("status_code = ?")
             params.append(status_code)
-        else:
-            status_class_lower = (status_class or "").lower()
-            if status_class_lower in _STATUS_CODE_RANGES:
-                start, end = _STATUS_CODE_RANGES[status_class_lower]
-                conditions.append(f"status_code BETWEEN {start} AND {end}")
-            elif status_class_lower == "errors":
-                conditions.append("(status_code IS NULL OR status_code >= 400)")
+            return
 
+        status_class_lower = (status_class or "").lower()
+
+        if status_class_lower in _STATUS_CODE_RANGES:
+            start, end = _STATUS_CODE_RANGES[status_class_lower]
+            conditions.append(f"status_code BETWEEN {start} AND {end}")
+        elif status_class_lower == "errors":
+            conditions.append("(status_code IS NULL OR status_code >= 400)")
+
+    def _filter_content_and_elapsed(
+        self,
+        content_type: str,
+        min_elapsed: float | None,
+        max_elapsed: float | None,
+        conditions: list[str],
+        params: list[Any],
+    ) -> None:
         if content_type and isinstance(content_type, str):
+            like = f"%{self._escape_like(content_type)}%"
             conditions.append(f"response_headers LIKE ? {_LIKE_ESCAPE_CLAUSE}")
-            params.append(f"%{self._escape_like(content_type)}%")
+            params.append(like)
 
         if min_elapsed is not None:
             conditions.append("elapsed >= ?")
             params.append(float(min_elapsed))
+
         if max_elapsed is not None:
             conditions.append("elapsed <= ?")
             params.append(float(max_elapsed))
 
+    def _filter_execution_timestamps(
+        self,
+        executed_after: str | None,
+        executed_before: str | None,
+        conditions: list[str],
+        params: list[Any],
+    ) -> None:
         if executed_after and isinstance(executed_after, str):
             self._validate_iso_timestamp(executed_after, "executed_after")
             conditions.append("executed_at >= ?")
             params.append(executed_after)
+
         if executed_before and isinstance(executed_before, str):
             self._validate_iso_timestamp(executed_before, "executed_before")
             conditions.append("executed_at <= ?")
             params.append(executed_before)
-
-        return conditions, params
 
     # ── Post-filter predicates ────────────────────────────────────────────────
 
@@ -306,7 +350,7 @@ class _HistorySearcher:
         if not jsonpath:
             return None
         try:
-            from jsonpath_ng import parse as _jp_parse  # type: ignore[import-untyped]
+            from jsonpath_ng import parse as _jp_parse
 
             return _jp_parse(jsonpath)
         except Exception as exc:
