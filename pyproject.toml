@@ -51,8 +51,8 @@ dev = [
     "isort>=5.13.0,<6.0.0",
 ]
 
-[tool.setuptools_scm]
-write_to = "hatchery/__version__.py"
+[tool.setuptools.dynamic]
+version = { attr = "equinox.__version__" }
 
 [tool.black]
 line-length = 100
