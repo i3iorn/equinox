@@ -53,7 +53,7 @@ def _sanitize_field(text: str) -> str:
 # Sentinel returned by _build_auth_from_tab when a required-field check
 # fails and a QMessageBox has already been shown.  Distinct from ``None``
 # which means "No Auth".
-_MISSING: None = None
+_MISSING: object = object()
 
 
 class _TokenFetchWorker(QThread):
