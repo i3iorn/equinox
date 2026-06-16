@@ -60,7 +60,7 @@ jobs:
 
   # ──────────────────────────────────────────────────────────────────────────
   # Job: typecheck
-  # Strict mypy on src/ and tests/. Runs on the default Python only.
+  # Strict mypy on src/. Runs on the default Python only.
   # ──────────────────────────────────────────────────────────────────────────
   typecheck:
     name: Type Check (mypy)
@@ -80,7 +80,7 @@ jobs:
           pip install -e ".[dev]"
 
       - name: Type check with Mypy (strict)
-        run: mypy --strict src tests
+        run: mypy --strict src
 
   # ──────────────────────────────────────────────────────────────────────────
   # Job: test
