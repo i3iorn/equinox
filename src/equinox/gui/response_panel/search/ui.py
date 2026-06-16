@@ -346,7 +346,7 @@ class SearchBar(QWidget):
             cursor.setPosition(start)
             self._target.setTextCursor(cursor)
             self._target.ensureCursorVisible()
-        except Exception:
+        except (IndexError, RuntimeError):
             logger.debug("Failed to scroll to current search match", exc_info=True)
 
     # ────────────────────────────────────────────────────────────────
