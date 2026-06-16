@@ -174,7 +174,8 @@ class VariableGroupManager:
         try:
             updates.append("updated_at = CURRENT_TIMESTAMP")
             params.append(group_id)
-            sql = "UPDATE variable_groups SET " + ", ".join(updates) + " WHERE id = ?"
+            # updates contains only hardcoded "col = ?" literals — no user data in the SQL string.
+            sql = "UPDATE variable_groups SET " + ", ".join(updates) + " WHERE id = ?"  # nosec B608
             self.db.execute(sql, tuple(params))
             logger.info("Updated variable group %r (ID: %d)", group["name"], group_id)
 

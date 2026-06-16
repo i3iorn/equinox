@@ -301,7 +301,8 @@ class OAuthClientManager:
         updates.append("updated_at = CURRENT_TIMESTAMP")
         params.append(client_id)
 
-        sql = "UPDATE oauth_clients SET " + ", ".join(updates) + " WHERE id = ?"
+        # updates contains only hardcoded "col = ?" literals — no user data in the SQL string.
+        sql = "UPDATE oauth_clients SET " + ", ".join(updates) + " WHERE id = ?"  # nosec B608
 
         try:
             self.db.execute(sql, tuple(params))
