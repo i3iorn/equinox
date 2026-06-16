@@ -52,22 +52,22 @@ __all__ = ["RequestPanel"]
 
 
 class RequestPanel(
-    RequestEditorStateMixin, # type: ignore[misc]
+    RequestEditorStateMixin,
     URLHistoryMixin,
-    RequestToolsMixin, # type: ignore[misc]
-    BottomBarMixin, # type: ignore[misc]
-    SettingsTabMixin, # type: ignore[misc]
-    DirtyTrackingMixin, # type: ignore[misc]
-    RequestAutosaveMixin, # type: ignore[misc]
-    RequestSaveFlowMixin, # type: ignore[misc]
-    RequestCommandsMixin, # type: ignore[misc]
-    RequestPanelLayoutMixin, # type: ignore[misc]
-    _RequestValidationMixin, # type: ignore[misc]
-    _RequestSendMixin, # type: ignore[misc]
-    _RequestAuthMixin, # type: ignore[misc]
-    RequestBodyMixin, # type: ignore[misc]
-    RequestPanelOrchestrationMixin, # type: ignore[misc]
-    URLBarMixin, # type: ignore[misc]
+    RequestToolsMixin,
+    BottomBarMixin,
+    SettingsTabMixin,
+    DirtyTrackingMixin,
+    RequestAutosaveMixin,
+    RequestSaveFlowMixin,
+    RequestCommandsMixin,
+    RequestPanelLayoutMixin,
+    _RequestValidationMixin,
+    _RequestSendMixin,
+    _RequestAuthMixin,
+    RequestBodyMixin,
+    RequestPanelOrchestrationMixin,
+    URLBarMixin,
     QWidget,
 ):
     """Panel for building and sending HTTP requests."""
@@ -85,8 +85,8 @@ class RequestPanel(
             win = self.window()
             return getattr(win, "logging_panel", None)
         except Exception:
-            logger.exception("Could not access logging panel", exc_info=True)
-            raise
+            logger.debug("Could not access logging panel", exc_info=True)
+            return None
 
     def __init__(
         self,

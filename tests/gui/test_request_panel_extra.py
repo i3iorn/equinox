@@ -455,3 +455,82 @@ def test_save_calls_save_request_when_collection_changes(tmp_db_path, monkeypatc
     mock_panel._request_persistence.save_request_from_dialog.assert_called_once()
     mock_panel._request_persistence.save_request.assert_not_called()
     mock_panel._request_persistence.update_request.assert_not_called()
+
+
+def test_save_dialog_cancel_is_non_error(monkeypatch):
+    from PyQt6.QtWidgets import QDialog
+
+    class _Panel(RequestSaveFlowMixin):
+        def __init__(self):
+            self._request_persistence = Mock()
+            self.url_input = Mock()
+            self.method_combo = Mock()
+
+        def _build_request_editor_snapshot(self):
+            return SimpleNamespace(
+                url="https://api.example.com/items",
+                method="GET",
+                folder="",
+                request_id=None,
+                collection_id=None,
+            )
+
+        def _as_qwidget(self):
+            return None
+
+        def _build_request_from_editor(self, **overrides):
+            raise AssertionError("should not build request when dialog is cancelled")
+
+        def _clear_dirty(self):
+            pass
+
+        def _status_message(self, msg, timeout_ms=5000):
+            pass
+
+    class _FakeDialog:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        def exec(self):
+            return QDialog.DialogCode.Rejected
+
+        def result_values(self):
+            raise AssertionError("result_values should not be called on cancel")
+
+    critical_calls = []
+    monkeypatch.setattr(
+        "equinox.gui.request_panel._mixins.save_flow_mixin.SaveRequestDialog",
+        _FakeDialog,
+    )
+    monkeypatch.setattr(
+        "equinox.gui.request_panel._mixins.save_flow_mixin.QMessageBox.critical",
+        lambda *args, **kwargs: critical_calls.append((args, kwargs)),
+    )
+
+    panel = _Panel()
+    panel._request_persistence.list_save_collections.return_value = []
+
+    assert panel._save_request() is False
+    assert critical_calls == []
+
+
+def test_logging_panel_accessor_returns_none_on_window_error(tmp_db_path, monkeypatch):
+    from equinox.gui.request_panel.panel import RequestPanel
+
+    class _PanelShim:
+        def window(self):
+            raise RuntimeError("boom")
+
+    assert RequestPanel._logging_panel.fget(_PanelShim()) is None
+
+
+def test_sync_dirty_state_ui_swallows_sync_errors() -> None:
+    class _Panel(RequestAutosaveMixin):
+        def __init__(self) -> None:
+            self._dirty = False
+
+        def _sync_editor_state_ui(self):
+            raise RuntimeError("ui unavailable")
+
+    panel = _Panel()
+    panel._sync_dirty_state_ui()

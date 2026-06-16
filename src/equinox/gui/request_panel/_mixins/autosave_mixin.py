@@ -35,8 +35,7 @@ class RequestAutosaveMixin:
             if callable(sync):
                 sync()
         except Exception:
-            logger.exception("Failed to refresh dirty-state UI", exc_info=True)
-            raise
+            logger.debug("Failed to refresh dirty-state UI", exc_info=True)
 
     def is_dirty(self) -> bool:
         return self._dirty

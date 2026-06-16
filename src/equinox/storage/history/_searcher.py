@@ -1,17 +1,20 @@
 """SQL filter construction and Python post-filters for history search."""
-
 from __future__ import annotations
 
 import logging
 import re
 from datetime import datetime as _dt
+from importlib import import_module
 from typing import Any
 
-from equinox.core.exceptions import SecurityError, ValidationError
+from equinox.core.exceptions import SecurityError
+from equinox.core.exceptions import ValidationError
 from equinox.storage.database import Database
-from equinox.storage.utils import coerce_body_to_str, safe_json_loads
+from equinox.storage.utils import coerce_body_to_str
+from equinox.storage.utils import safe_json_loads
 
-from ._constants import _LIKE_ESCAPE_CLAUSE, _STATUS_CODE_RANGES
+from ._constants import _LIKE_ESCAPE_CLAUSE
+from ._constants import _STATUS_CODE_RANGES
 from ._serializer import _HistorySerializer
 
 __all__ = ["_HistorySearcher"]
@@ -147,7 +150,7 @@ class _HistorySearcher:
 
         while len(result) < limit:
             batch = self._db.fetchall(
-                sql_template, tuple(params_list) + (batch_size, cursor_offset)
+                sql_template, tuple(params_list) + (batch_size, cursor_offset),
             )
             if not batch:
                 break
@@ -159,7 +162,7 @@ class _HistorySearcher:
                 if compiled_regex and not self._matches_body_regex(decoded, compiled_regex):
                     continue
                 if parsed_jsonpath and not self._matches_jsonpath(
-                    decoded, parsed_jsonpath, jsonpath_value
+                    decoded, parsed_jsonpath, jsonpath_value,
                 ):
                     continue
                 if header_name and not self._matches_header(decoded, header_name, header_val):
@@ -197,7 +200,7 @@ class _HistorySearcher:
             like = f"%{self._escape_like(query)}%"
             conditions.append(
                 f"(url LIKE ? {_LIKE_ESCAPE_CLAUSE}"
-                f" OR request_body LIKE ? {_LIKE_ESCAPE_CLAUSE})"
+                f" OR request_body LIKE ? {_LIKE_ESCAPE_CLAUSE})",
             )
             params.extend([like, like])
 
@@ -306,9 +309,8 @@ class _HistorySearcher:
         if not jsonpath:
             return None
         try:
-            from jsonpath_ng import parse as _jp_parse  # type: ignore[import-untyped]
-
-            return _jp_parse(jsonpath)
+            parser = getattr(import_module("jsonpath_ng"), "parse")
+            return parser(jsonpath)
         except Exception as exc:
             raise ValidationError(f"Invalid JSONPath expression: {exc}")
 

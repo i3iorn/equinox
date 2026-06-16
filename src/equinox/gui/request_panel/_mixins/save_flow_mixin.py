@@ -38,6 +38,10 @@ class SaveRequestError(Exception):
     """Raised when saving a request fails safely."""
 
 
+class SaveDialogCancelled(SaveRequestError):
+    """Raised when the user closes the save dialog without confirming."""
+
+
 # -----------------------------
 # Mixin
 # -----------------------------
@@ -54,7 +58,7 @@ class RequestSaveFlowMixin:
         def _build_request_editor_snapshot(self) -> Any: ...
         def _build_request_from_editor(self, **overrides: Any) -> Any: ...
         def _clear_dirty(self) -> None: ...
-        def _status_message(self, message: str, timeout_ms: int = ...) -> None: ...
+        def _status_message(self, message: str, timeout_ms: int = 5000) -> None: ...
 
     def _as_qwidget(self) -> QWidget:
         return cast(QWidget, cast(object, self))
@@ -83,6 +87,10 @@ class RequestSaveFlowMixin:
             save_result = _persist_request(self, snapshot, dialog_result, request)
             _finalize_save(self, snapshot, dialog_result, save_result, request)
             return True
+
+        except SaveDialogCancelled:
+            logger.debug("request_panel.save_dialog_cancelled op=save_request")
+            return False
 
         except SaveRequestError as exc:
             logger.error("Failed to save request", exc_info=True)
@@ -120,7 +128,7 @@ def _open_save_dialog(self: RequestSaveFlowMixin, snapshot: Any) -> SaveDialogRe
     logger.debug("request_panel.save_dialog_created op=save_request")
 
     if dialog.exec() != QDialog.DialogCode.Accepted:
-        raise SaveRequestError("User cancelled save dialog.")
+        raise SaveDialogCancelled("User cancelled save dialog.")
 
     name, col_id, col_name, folder = dialog.result_values()
     folder_value = folder or ""
