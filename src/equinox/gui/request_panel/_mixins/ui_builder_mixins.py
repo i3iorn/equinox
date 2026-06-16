@@ -256,7 +256,7 @@ class BodySearchBarMixin:
 
     def build_body_search_bar(self: Any) -> QHBoxLayout:
         self._body_search_input = QLineEdit()
-        self._body_search_input.setPlaceholderText("Find in bodyÔÇª")
+        self._body_search_input.setPlaceholderText("Find in body...")
         self._body_search_input.setFixedHeight(26)
         self._body_search_input.setClearButtonEnabled(True)
         self._body_search_input.returnPressed.connect(self._body_find_next)
@@ -275,13 +275,13 @@ class BodySearchBarMixin:
         self._body_jsonpath_cb.setFixedWidth(36)
 
         prev_btn = QToolButton()
-        prev_btn.setText("Ôû▓")
+        prev_btn.setText("<")
         prev_btn.setFixedSize(24, 24)
         prev_btn.setToolTip("Find previous match")
         prev_btn.clicked.connect(self._body_find_prev)
 
         next_btn = QToolButton()
-        next_btn.setText("Ôû╝")
+        next_btn.setText(">")
         next_btn.setFixedSize(24, 24)
         next_btn.setToolTip("Find next match")
         next_btn.clicked.connect(self._body_find_next)
@@ -420,7 +420,7 @@ class NotesTabMixin:
 
         self.notes_editor = QPlainTextEdit()
         self.notes_editor.setPlaceholderText(
-            "Add notes, cURL examples, API docs links, or any context about this requestÔÇª",
+            "Add notes, cURL examples, API docs links, or any context about this request",
         )
 
         layout.addWidget(self.notes_editor, 1)
