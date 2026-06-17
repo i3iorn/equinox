@@ -42,7 +42,7 @@ class _PanelsMixin:
                 index,
                 self._left_tabs.tabText(index),
             )
-            raise
+            return
         self._tabs_initialized.add(index)
         label = self._left_tabs.tabText(index)
         self._left_tabs.blockSignals(True)
