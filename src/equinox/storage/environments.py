@@ -1,12 +1,15 @@
 """Environment management"""
-
 from __future__ import annotations
 
 import logging
 import re
 from typing import Any
+from typing import cast
 
-from equinox.core.exceptions import DuplicateError, SecurityError, StorageError, ValidationError
+from equinox.core.exceptions import DuplicateError
+from equinox.core.exceptions import SecurityError
+from equinox.core.exceptions import StorageError
+from equinox.core.exceptions import ValidationError
 from equinox.core.interpolation import VariableInterpolator
 from equinox.storage.database import Database
 from equinox.storage.utils import (
@@ -21,13 +24,11 @@ from equinox.storage.utils import (
 from equinox.storage.utils import (
     MAX_VARIABLE_VALUE_LENGTH as _MAX_VAR_VAL,
 )
-from equinox.storage.utils import (
-    require_positive_int,
-    safe_json_dumps,
-    safe_json_loads,
-    validate_variable_key,
-    validate_variable_value,
-)
+from equinox.storage.utils import require_positive_int
+from equinox.storage.utils import safe_json_dumps
+from equinox.storage.utils import safe_json_loads
+from equinox.storage.utils import validate_variable_key
+from equinox.storage.utils import validate_variable_value
 
 logger = logging.getLogger(__name__)
 
@@ -70,7 +71,7 @@ class EnvironmentManager:
             if not _VAR_NAME_RE.match(key):
                 raise ValidationError(
                     f"Invalid variable key: {key}. Must contain only alphanumeric characters, "
-                    "underscores, and hyphens"
+                    "underscores, and hyphens",
                 )
             validate_variable_value(value, self.MAX_VARIABLE_VALUE_LENGTH)
             sanitized[key] = value
@@ -96,7 +97,7 @@ class EnvironmentManager:
             raise ValidationError("Environment name cannot be empty or whitespace")
         if len(name) > self.MAX_NAME_LENGTH:
             raise ValidationError(
-                f"Environment name too long (max {self.MAX_NAME_LENGTH} characters)"
+                f"Environment name too long (max {self.MAX_NAME_LENGTH} characters)",
             )
         return name
 
@@ -120,7 +121,7 @@ class EnvironmentManager:
 
         if len(description) > self.MAX_DESCRIPTION_LENGTH:
             raise ValidationError(
-                f"Environment description too long (max {self.MAX_DESCRIPTION_LENGTH} characters)"
+                f"Environment description too long (max {self.MAX_DESCRIPTION_LENGTH} characters)",
             )
 
         return description.strip()
@@ -153,14 +154,14 @@ class EnvironmentManager:
                 raise ValidationError("Each secret_keys entry must be a string")
             if len(item) > self.MAX_VARIABLE_KEY_LENGTH:
                 raise ValidationError(
-                    f"Secret key name too long (max {self.MAX_VARIABLE_KEY_LENGTH} characters)"
+                    f"Secret key name too long (max {self.MAX_VARIABLE_KEY_LENGTH} characters)",
                 )
             validated.append(item.strip())
 
         return validated
 
     def create_environment(
-        self, name: str, variables: dict[str, str], description: str = ""
+        self, name: str, variables: dict[str, str], description: str = "",
     ) -> int:
         """Create a new environment.
 
@@ -199,7 +200,7 @@ class EnvironmentManager:
                 environment_id,
                 len(sanitized_variables),
             )
-            return environment_id
+            return int(environment_id)
         except DuplicateError:
             raise DuplicateError(f"Environment '{name}' already exists")
         except (SecurityError, StorageError):
@@ -218,7 +219,7 @@ class EnvironmentManager:
         """
         row["variables"] = safe_json_loads(row.get("variables"), row_id=row.get("id"))
         secret_keys = safe_json_loads(
-            row.get("secret_keys") or "[]", default=[], row_id=row.get("id")
+            row.get("secret_keys") or "[]", default=[], row_id=row.get("id"),
         )
         if not isinstance(secret_keys, list):
             logger.error("Failed to parse secret_keys for environment %s", row.get("id"))
@@ -267,75 +268,93 @@ class EnvironmentManager:
         description: str | None = None,
         secret_keys: list[str] | None = None,
     ) -> None:
-        """Update environment.
+        """Update an existing environment with validated, sanitized fields.
 
         Args:
-            environment_id: Environment ID
-            name: New environment name
-            variables: New environment variables
-            description: New environment description
-            secret_keys: New list of secret key names
+            environment_id: Target environment ID.
+            name: Optional new name.
+            variables: Optional variable mapping.
+            description: Optional description text.
+            secret_keys: Optional list of secret key identifiers.
 
         Raises:
-            ValidationError: If input is invalid
-            SecurityError: If limits exceeded
-            StorageError: If environment doesn't exist or update fails
+            ValidationError, SecurityError, StorageError
         """
-        # Validate environment_id
         require_positive_int(environment_id, "Environment ID")
+        environment = self._require_environment(environment_id)
 
-        # Check environment exists
-        environment = self.get_environment(environment_id)
-        if not environment:
-            raise StorageError(f"Environment with ID {environment_id} does not exist")
-
-        updates: list[str] = []
-        params: list[Any] = []
-
-        # Build update clauses using validation helpers
-        if name is not None:
-            name = self._validate_name(name)
-            updates.append("name = ?")
-            params.append(name)
-
-        if description is not None:
-            description = self._validate_description(description)
-            updates.append("description = ?")
-            params.append(description)
-
-        if variables is not None:
-            sanitized_variables = self._validate_variables(variables)
-            updates.append("variables = ?")
-            try:
-                params.append(safe_json_dumps(sanitized_variables, max_len=200_000))
-            except SecurityError as exc:
-                raise SecurityError(f"Environment variables too large: {exc}") from exc
-
-        if secret_keys is not None:
-            validated_keys = self._validate_secret_keys(secret_keys)
-            updates.append("secret_keys = ?")
-            try:
-                params.append(safe_json_dumps(validated_keys, max_len=10_000))
-            except SecurityError:
-                raise SecurityError("Secret keys list too large") from None
+        updates, params = self._build_update_payload(
+            name=name,
+            description=description,
+            variables=variables,
+            secret_keys=secret_keys,
+        )
 
         if not updates:
             logger.warning("No updates provided for environment %d", environment_id)
             return
 
+        self._apply_environment_update(environment_id, environment["name"], updates, params)
+
+    def _require_environment(self, environment_id: int) -> dict[str, Any]:
+        environment = self.get_environment(environment_id)
+        if not environment:
+            raise StorageError(f"Environment with ID {environment_id} does not exist")
+        return environment
+
+    def _build_update_payload(
+        self,
+        *,
+        name: str | None,
+        description: str | None,
+        variables: dict[str, str] | None,
+        secret_keys: list[str] | None,
+    ) -> tuple[list[str], list[Any]]:
+        updates: list[str] = []
+        params: list[Any] = []
+
+        if name is not None:
+            updates.append("name = ?")
+            params.append(self._validate_name(name))
+
+        if description is not None:
+            updates.append("description = ?")
+            params.append(self._validate_description(description))
+
+        if variables is not None:
+            sanitized = self._validate_variables(variables)
+            updates.append("variables = ?")
+            params.append(safe_json_dumps(sanitized, max_len=200_000))
+
+        if secret_keys is not None:
+            validated = self._validate_secret_keys(secret_keys)
+            updates.append("secret_keys = ?")
+            params.append(safe_json_dumps(validated, max_len=10_000))
+
+        return updates, params
+
+    def _apply_environment_update(
+        self,
+        environment_id: int,
+        old_name: str,
+        updates: list[str],
+        params: list[Any],
+    ) -> None:
+        updates.append("updated_at = CURRENT_TIMESTAMP")
+        params.append(environment_id)
+
+        # updates contains only hardcoded "col = ?" literals — no user data in the SQL string.
+        sql = "UPDATE environments SET " + ", ".join(updates) + " WHERE id = ?"  # nosec B608
+
         try:
-            updates.append("updated_at = CURRENT_TIMESTAMP")
-            params.append(environment_id)
-            # updates contains only hardcoded "col = ?" literals — no user data in the SQL string.
-            query = f"UPDATE environments SET {', '.join(updates)} WHERE id = ?"  # nosec B608
-            self.db.execute(query, tuple(params))
-            logger.info("Updated environment '%s' (ID: %d)", environment["name"], environment_id)
+            self.db.execute(sql, tuple(params))
+            logger.info("Updated environment '%s' (ID: %d)", old_name, environment_id)
         except DuplicateError:
             raise DuplicateError("Environment name already exists")
         except (SecurityError, StorageError):
             raise
         except Exception as exc:
-            raise StorageError(f"Failed to update environment: {exc}") from exc
+            raise StorageError("Failed to update environment") from exc
 
     def set_active_environment(self, environment_id: int) -> None:
         """Set active environment
@@ -405,7 +424,7 @@ class EnvironmentManager:
 
         if len(text) > self.MAX_TEXT_SIZE:
             raise SecurityError(
-                f"Text too large for variable interpolation (max {self.MAX_TEXT_SIZE} bytes)"
+                f"Text too large for variable interpolation (max {self.MAX_TEXT_SIZE} bytes)",
             )
 
         env = self.get_active_environment()
@@ -416,4 +435,4 @@ class EnvironmentManager:
         if not variables:
             return text
 
-        return VariableInterpolator.interpolate(text, variables, max_iterations=max_iterations)
+        return cast(str, VariableInterpolator.interpolate(text, variables, max_iterations=max_iterations))

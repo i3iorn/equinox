@@ -20,14 +20,12 @@ Integration:
               stages: [commit]
               files: '(\\.github/workflows|pyproject\\.toml|setup\\.py)'
 """
-
 import re
 import sys
 from pathlib import Path
-from typing import Dict, Set
 
 
-def extract_ci_tools() -> Set[str]:
+def extract_ci_tools() -> set[str]:
     """Extract tool names from CI workflow files."""
     ci_dir = Path(".github/workflows")
     if not ci_dir.exists():
@@ -42,9 +40,9 @@ def extract_ci_tools() -> Set[str]:
         # Extract tool invocations (common patterns)
         # Patterns: "tool --version", "tool --check", "tool -r", etc.
         patterns = [
-            r"^\s+- (black|isort|ruff|mypy|bandit|safety|pip-audit|pytest)(\s|$)",
-            r"(black|isort|ruff|mypy|bandit|safety|pip-audit|pytest)\s+--",
-            r"(python\s+)?(-m\s+)?(black|isort|ruff|mypy|bandit|safety|pip-audit|pytest)",
+            r"^\s+- (black|isort|ruff|mypy|bandit|pip-audit|pytest)(\s|$)",
+            r"(black|isort|ruff|mypy|bandit|pip-audit|pytest)\s+--",
+            r"(python\s+)?(-m\s+)?(black|isort|ruff|mypy|bandit|pip-audit|pytest)",
         ]
 
         for pattern in patterns:
@@ -65,7 +63,7 @@ def extract_ci_tools() -> Set[str]:
     return tools
 
 
-def extract_declared_deps() -> Dict[str, Set[str]]:
+def extract_declared_deps() -> dict[str, set[str]]:
     """Extract declared dev dependencies from pyproject.toml and setup.py."""
     deps = {"pyproject.toml": set(), "setup.py": set()}
 
@@ -141,7 +139,6 @@ def main() -> int:
         "ruff": "ruff",
         "mypy": "mypy",
         "bandit": "bandit",
-        "safety": "safety",
         "pip-audit": "pip-audit",
         "pytest": "pytest",
     }

@@ -1,6 +1,7 @@
 """Variable groups management"""
 import logging
 from typing import Any
+from typing import cast
 
 from equinox.core.exceptions import DuplicateError
 from equinox.core.exceptions import SecurityError
@@ -67,7 +68,7 @@ class VariableGroupManager:
         group = self.db.fetchone("SELECT * FROM variable_groups WHERE id = ?", (group_id,))
         if not group:
             raise StorageError(f"Variable group with ID {group_id} does not exist")
-        return group
+        return cast(dict[str, Any], group)
 
     # ── Group CRUD ────────────────────────────────────────────────────────────
 
@@ -174,8 +175,8 @@ class VariableGroupManager:
             updates.append("updated_at = CURRENT_TIMESTAMP")
             params.append(group_id)
             # updates contains only hardcoded "col = ?" literals — no user data in the SQL string.
-            query = f"UPDATE variable_groups SET {', '.join(updates)} WHERE id = ?"  # nosec B608
-            self.db.execute(query, tuple(params))
+            sql = "UPDATE variable_groups SET " + ", ".join(updates) + " WHERE id = ?"  # nosec B608
+            self.db.execute(sql, tuple(params))
             logger.info("Updated variable group %r (ID: %d)", group["name"], group_id)
 
         except DuplicateError:

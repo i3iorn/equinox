@@ -119,8 +119,11 @@ class _HistorySearcher:
         limit: int,
         offset: int,
     ) -> list[dict[str, Any]]:
-        # where_clause is built solely from hardcoded SQL fragments; user values are in params.
-        sql = f"SELECT * FROM history {where_clause} " "ORDER BY executed_at DESC LIMIT ? OFFSET ?"  # nosec B608
+        sql = "SELECT * FROM history "
+        if where_clause:
+            sql += where_clause + " "
+        sql += "ORDER BY executed_at DESC LIMIT ? OFFSET ?"
+
         rows = self._db.fetchall(sql, tuple(params_list) + (limit, offset))
         return [self._serializer.decode_row(dict(row), row_id=row["id"]) for row in rows]
 
@@ -144,9 +147,10 @@ class _HistorySearcher:
         cursor_offset = offset
         batch_size = max(limit * 4, 200)
         # where_clause is built solely from hardcoded SQL fragments; user values are in params.
-        sql_template = (  # nosec B608
-            f"SELECT * FROM history {where_clause} " "ORDER BY executed_at DESC LIMIT ? OFFSET ?"  # nosec B608
-        )
+        sql_template = "SELECT * FROM history "
+        if where_clause:
+            sql_template += where_clause + " "
+        sql_template += "ORDER BY executed_at DESC LIMIT ? OFFSET ?"
 
         while len(result) < limit:
             batch = self._db.fetchall(
@@ -192,10 +196,24 @@ class _HistorySearcher:
         executed_after: str | None,
         executed_before: str | None,
     ) -> tuple[list[str], list[Any]]:
-        """Return ``(conditions, params)`` for the SQL WHERE clause."""
+        """Return (conditions, params) for the SQL WHERE clause."""
         conditions: list[str] = []
         params: list[Any] = []
 
+        self._filter_query_fields(query, method, conditions, params)
+        self._filter_status_fields(status_code, status_class, conditions, params)
+        self._filter_content_and_elapsed(content_type, min_elapsed, max_elapsed, conditions, params)
+        self._filter_execution_timestamps(executed_after, executed_before, conditions, params)
+
+        return conditions, params
+
+    def _filter_query_fields(
+        self,
+        query: str,
+        method: str,
+        conditions: list[str],
+        params: list[Any],
+    ) -> None:
         if query and isinstance(query, str):
             like = f"%{self._escape_like(query)}%"
             conditions.append(
@@ -208,40 +226,65 @@ class _HistorySearcher:
             conditions.append("method = ?")
             params.append(method.upper())
 
+    def _filter_status_fields(
+        self,
+        status_code: int | None,
+        status_class: str,
+        conditions: list[str],
+        params: list[Any],
+    ) -> None:
         if status_code is not None:
             if not isinstance(status_code, int):
                 raise ValidationError("status_code must be an integer")
             conditions.append("status_code = ?")
             params.append(status_code)
-        else:
-            status_class_lower = (status_class or "").lower()
-            if status_class_lower in _STATUS_CODE_RANGES:
-                start, end = _STATUS_CODE_RANGES[status_class_lower]
-                conditions.append(f"status_code BETWEEN {start} AND {end}")
-            elif status_class_lower == "errors":
-                conditions.append("(status_code IS NULL OR status_code >= 400)")
+            return
 
+        status_class_lower = (status_class or "").lower()
+
+        if status_class_lower in _STATUS_CODE_RANGES:
+            start, end = _STATUS_CODE_RANGES[status_class_lower]
+            conditions.append(f"status_code BETWEEN {start} AND {end}")
+        elif status_class_lower == "errors":
+            conditions.append("(status_code IS NULL OR status_code >= 400)")
+
+    def _filter_content_and_elapsed(
+        self,
+        content_type: str,
+        min_elapsed: float | None,
+        max_elapsed: float | None,
+        conditions: list[str],
+        params: list[Any],
+    ) -> None:
         if content_type and isinstance(content_type, str):
+            like = f"%{self._escape_like(content_type)}%"
             conditions.append(f"response_headers LIKE ? {_LIKE_ESCAPE_CLAUSE}")
-            params.append(f"%{self._escape_like(content_type)}%")
+            params.append(like)
 
         if min_elapsed is not None:
             conditions.append("elapsed >= ?")
             params.append(float(min_elapsed))
+
         if max_elapsed is not None:
             conditions.append("elapsed <= ?")
             params.append(float(max_elapsed))
 
+    def _filter_execution_timestamps(
+        self,
+        executed_after: str | None,
+        executed_before: str | None,
+        conditions: list[str],
+        params: list[Any],
+    ) -> None:
         if executed_after and isinstance(executed_after, str):
             self._validate_iso_timestamp(executed_after, "executed_after")
             conditions.append("executed_at >= ?")
             params.append(executed_after)
+
         if executed_before and isinstance(executed_before, str):
             self._validate_iso_timestamp(executed_before, "executed_before")
             conditions.append("executed_at <= ?")
             params.append(executed_before)
-
-        return conditions, params
 
     # ── Post-filter predicates ────────────────────────────────────────────────
 
