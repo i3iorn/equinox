@@ -20,7 +20,6 @@ Security:
     - Circular references detected and warned
     - Unresolvable placeholders left unchanged
 """
-
 import calendar
 import copy
 import logging
@@ -29,10 +28,14 @@ import re
 from collections.abc import Callable
 from dataclasses import is_dataclass
 from dataclasses import replace as dataclass_replace
-from datetime import date, datetime
-from typing import Any, Optional, Tuple, TypeVar, cast
+from datetime import date
+from datetime import datetime
+from typing import Any
+from typing import cast
+from typing import TypeVar
 
-from equinox.core.exceptions import SecurityError, ValidationError
+from equinox.core.exceptions import SecurityError
+from equinox.core.exceptions import ValidationError
 
 logger = logging.getLogger(__name__)
 
@@ -51,17 +54,17 @@ _TEXT_ENCODING: str = "utf-8"
 _VARIABLE_NAME_RE: re.Pattern[str] = re.compile(r"^[a-zA-Z0-9_-]+$")
 
 
-def _shift_months(base: date, delta_months: int) -> date:
+def _shift_months(base: date, delta_months: int) -> datetime:
     """Shift a date by whole months, clamping day to month length."""
     month0 = (base.month - 1) + delta_months
     year = base.year + (month0 // 12)
     month = (month0 % 12) + 1
     day = min(base.day, calendar.monthrange(year, month)[1])
-    return date(year, month, day)
+    return datetime(year, month, day)
 
 
-def _magic_variables(
-    today: Optional[date] = None, now: Optional[datetime] = None
+def magic_variables(
+    today: date | None = None, now: datetime | None = None,
 ) -> dict[str, str]:
     """Return built-in dynamic variables for date/time convenience."""
     now_value = now or datetime.now()
@@ -70,14 +73,17 @@ def _magic_variables(
     one_year_ago = _shift_months(today_value, -12)
     return {
         "TODAY": today_value.isoformat(),
-        "ONE_MONTH_AGO": one_month_ago.isoformat(),
-        "ONE_YEAR_AGO": one_year_ago.isoformat(),
+        "ONE_MONTH_AGO": one_month_ago.date().isoformat(),
+        "ONE_MONTH_AGO_TIMESTAMP": str(one_month_ago.timestamp()),
+        "ONE_YEAR_AGO": one_year_ago.date().isoformat(),
+        "ONE_YEAR_AGO_TIMESTAMP": one_year_ago.isoformat(),
         "NOW_ISO": now_value.isoformat(timespec="seconds"),
+        "NOW_TIMESTAMP": str(now_value.timestamp()),
     }
 
 
 def _validate_interpolation_inputs(
-    text: str, variables: dict[str, str], max_input_bytes: int
+    text: str, variables: dict[str, str], max_input_bytes: int,
 ) -> None:
     """Validate input types and enforce max input size."""
     if not isinstance(text, str):
@@ -98,7 +104,7 @@ def _validate_interpolation_inputs(
             max_input_bytes,
         )
         raise SecurityError(
-            f"Input text too large ({len(text_bytes):,} bytes, max {max_input_bytes:,} bytes)"
+            f"Input text too large ({len(text_bytes):,} bytes, max {max_input_bytes:,} bytes)",
         )
 
 
@@ -155,7 +161,7 @@ def _check_expansion_limits(
         )
         raise SecurityError(
             f"Variable interpolation caused excessive text expansion: "
-            f"{len(text):,} bytes (limit {expansion_limit:,} bytes, ratio {expansion_ratio:.1f}x)"
+            f"{len(text):,} bytes (limit {expansion_limit:,} bytes, ratio {expansion_ratio:.1f}x)",
         )
 
     text_encoded = text.encode(_TEXT_ENCODING)
@@ -167,7 +173,7 @@ def _check_expansion_limits(
         )
         raise SecurityError(
             f"Variable interpolation output exceeds maximum size "
-            f"({len(text_encoded)} bytes, max {max_output_bytes} bytes)"
+            f"({len(text_encoded)} bytes, max {max_output_bytes} bytes)",
         )
 
 
@@ -240,7 +246,7 @@ def _interpolate_dict_values(
     """Interpolate all key/value pairs in a dict-like request field."""
     return {
         interpolator.interpolate(str(key), variables): interpolator.interpolate(
-            str(value), variables
+            str(value), variables,
         )
         for key, value in values.items()
     }
@@ -276,7 +282,7 @@ class VariableInterpolator:
         cls,
         text: str,
         variables: dict[str, str],
-        max_iterations: Optional[int] = None,
+        max_iterations: int | None = None,
     ) -> str:
         """Interpolate {{var}} placeholders with bounded multi-pass expansion."""
         _validate_interpolation_inputs(text, variables, cls.MAX_INPUT_BYTES)
@@ -505,7 +511,7 @@ def _load_environment_variables(db: Any) -> dict[str, str]:
     return {}
 
 
-def _load_collection_variables(db: Any, collection_id: Optional[int]) -> dict[str, str]:
+def _load_collection_variables(db: Any, collection_id: int | None) -> dict[str, str]:
     """Load collection-scoped interpolation variables from storage."""
     if collection_id is None:
         return {}
@@ -533,15 +539,15 @@ def _load_collection_variables(db: Any, collection_id: Optional[int]) -> dict[st
 
 def collect_interpolation_variables_detailed(
     db: Any,
-    collection_id: Optional[int] = None,
-    session_vars: Optional[dict[str, str]] = None,
-) -> Tuple[dict[str, str], dict[str, str]]:
+    collection_id: int | None = None,
+    session_vars: dict[str, str] | None = None,
+) -> tuple[dict[str, str], dict[str, str]]:
     """Collect interpolation variables and source labels by precedence order."""
 
     variables: dict[str, str] = {}
     sources: dict[str, str] = {}
 
-    builtin = _magic_variables()
+    builtin = magic_variables()
     _merge_sourced_variables(variables, sources, builtin, "magic")
     logger.debug("collect_interpolation_variables: %d magic vars", len(builtin))
 
@@ -575,8 +581,8 @@ def collect_interpolation_variables_detailed(
 
 def collect_interpolation_variables(
     db: Any,
-    collection_id: Optional[int] = None,
-    session_vars: Optional[dict[str, str]] = None,
+    collection_id: int | None = None,
+    session_vars: dict[str, str] | None = None,
 ) -> dict[str, str]:
     """Compatibility wrapper returning only collected variables."""
     variables, _sources = collect_interpolation_variables_detailed(

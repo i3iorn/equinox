@@ -21,6 +21,7 @@ from PyQt6.QtWidgets import QTableWidgetItem
 from PyQt6.QtWidgets import QVBoxLayout
 from PyQt6.QtWidgets import QWidget
 
+from ...core.interpolation import magic_variables
 from ..ui_common import confirm_yes_no
 from ..ui_common import create_muted_label
 from .variable_dialog import VariableDialog
@@ -51,7 +52,7 @@ class _GlobalVarsMixin:
         global_layout.setSpacing(4)
 
         self._magic_hint = create_muted_label(
-            "Built-in magic vars: {{TODAY}}, {{ONE_MONTH_AGO}}, {{ONE_YEAR_AGO}}, {{NOW_ISO}}",
+            "Built-in magic vars: " + ", ".join(k for k in magic_variables().keys()),
         )
         self._magic_hint.setWordWrap(True)
         global_layout.addWidget(self._magic_hint)
