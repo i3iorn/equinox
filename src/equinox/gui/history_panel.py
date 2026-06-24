@@ -1,43 +1,52 @@
 """History panel"""
-
 from __future__ import annotations
 
 import logging
-from datetime import date, datetime, timedelta
-from typing import Callable
-
-from PyQt6.QtCore import Qt, QTimer, pyqtSignal
-from PyQt6.QtGui import QAction, QColor, QFont
-from PyQt6.QtWidgets import (
-    QCheckBox,
-    QComboBox,
-    QDialog,
-    QDialogButtonBox,
-    QDoubleSpinBox,
-    QGridLayout,
-    QGroupBox,
-    QHBoxLayout,
-    QLabel,
-    QLineEdit,
-    QListWidget,
-    QListWidgetItem,
-    QMenu,
-    QPushButton,
-    QSpinBox,
-    QVBoxLayout,
-    QWidget,
-)
+from collections.abc import Callable
+from datetime import date
+from datetime import datetime
+from datetime import timedelta
+from typing import Any
 
 from equinox.application.history import HistoryFacade
 from equinox.gui.dialogs.history_diff_dialog import HistoryDiffDialog
 from equinox.gui.error_presenter import ErrorPresenter
 from equinox.gui.theme import Colors
-from equinox.gui.ui_common import confirm_yes_no, create_muted_label, create_panel_layout
+from equinox.gui.ui_common import confirm_yes_no
+from equinox.gui.ui_common import create_muted_label
+from equinox.gui.ui_common import create_panel_layout
 from equinox.storage import Database
+from PyQt6.QtCore import pyqtSignal
+from PyQt6.QtCore import QPoint
+from PyQt6.QtCore import Qt
+from PyQt6.QtCore import QTimer
+from PyQt6.QtGui import QAction
+from PyQt6.QtGui import QColor
+from PyQt6.QtGui import QFont
+from PyQt6.QtWidgets import QCheckBox
+from PyQt6.QtWidgets import QComboBox
+from PyQt6.QtWidgets import QDialog
+from PyQt6.QtWidgets import QDialogButtonBox
+from PyQt6.QtWidgets import QDoubleSpinBox
+from PyQt6.QtWidgets import QGridLayout
+from PyQt6.QtWidgets import QGroupBox
+from PyQt6.QtWidgets import QHBoxLayout
+from PyQt6.QtWidgets import QLabel
+from PyQt6.QtWidgets import QLineEdit
+from PyQt6.QtWidgets import QListWidget
+from PyQt6.QtWidgets import QListWidgetItem
+from PyQt6.QtWidgets import QMenu
+from PyQt6.QtWidgets import QPushButton
+from PyQt6.QtWidgets import QSpinBox
+from PyQt6.QtWidgets import QVBoxLayout
+from PyQt6.QtWidgets import QWidget
 
 __all__ = ["HistoryPanel"]
 
 logger = logging.getLogger(__name__)
+
+HistoryEntry = dict[str, Any]
+ContextActionSpec = tuple[str, str, Callable[[], None], bool]
 
 # ── Module-level constants ────────────────────────────────────────────────────
 
@@ -384,7 +393,7 @@ class HistoryPanel(QWidget):
         sep.setBackground(QColor(Colors.BG_ALT))
         self.list_widget.addItem(sep)
 
-    def _populate_list(self, entries: list[dict]) -> None:
+    def _populate_list(self, entries: list[HistoryEntry]) -> None:
         """Rebuild the list widget from *entries*, restoring the prior selection.
 
         Signals and screen updates are suppressed during the rebuild to avoid
@@ -453,7 +462,7 @@ class HistoryPanel(QWidget):
             self.stats_label.setText(
                 f"Total: {stats['total']}  |  "
                 f"OK: {stats['successful']}  |  "
-                f"Failed: {stats['failed']}"
+                f"Failed: {stats['failed']}",
             )
         except Exception as exc:
             logger.error("Failed to load history stats: %s", exc, exc_info=True)
@@ -471,11 +480,11 @@ class HistoryPanel(QWidget):
 
     def _open_selected(self) -> None:
         """Emit ``history_selected`` for the first real selected entry."""
-        self._emit_first_selected(self.history_selected)
+        self._emit_first_selected(self.history_selected.emit)
 
     def _replay_selected(self) -> None:
         """Emit ``history_replay`` for the first real selected entry."""
-        self._emit_first_selected(self.history_replay)
+        self._emit_first_selected(self.history_replay.emit)
 
     def _delete_selected(self) -> None:
         """Delete all currently selected history entries."""
@@ -508,7 +517,7 @@ class HistoryPanel(QWidget):
                 title="Delete Errors",
             )
 
-    def _show_context_menu(self, position) -> None:
+    def _show_context_menu(self, position: QPoint) -> None:
         item = self.list_widget.itemAt(position)
         if not item:
             return
@@ -516,23 +525,23 @@ class HistoryPanel(QWidget):
         if history_id is None:
             return  # separator row
         menu = QMenu()
-        action_specs = [
+        action_specs: list[ContextActionSpec] = [
             (
                 "open_in_editor",
                 "Open in Editor",
-                lambda: self.history_selected.emit(history_id),
+                lambda: self.history_selected.emit(int(history_id)),
                 False,
             ),
             (
                 "edit_replay",
                 "Edit && Replay…",
-                lambda: self.history_selected.emit(history_id),
+                lambda: self.history_selected.emit(int(history_id)),
                 False,
             ),
             (
                 "replay",
                 "▶  Replay",
-                lambda: self.history_replay.emit(history_id),
+                lambda: self.history_replay.emit(int(history_id)),
                 False,
             ),
             (
@@ -553,25 +562,30 @@ class HistoryPanel(QWidget):
                 action.setToolTip("Load into editor for modification before sending")
             action.triggered.connect(
                 lambda _checked=False, aid=action_id, cb=callback: self._run_context_action(
-                    "history_item", aid, cb
-                )
+                    "history_item", aid, cb,
+                ),
             )
             menu.addAction(action)
-        menu.exec(self.list_widget.viewport().mapToGlobal(position))
+        viewport = self.list_widget.viewport()
+        if viewport is None:
+            return
+        menu.exec(viewport.mapToGlobal(position))
 
     def _context_action_usage_count(self, context: str, action_id: str) -> int:
         tracker = getattr(self.window(), "_ui_usage_tracker", None)
         if tracker is None:
             return 0
         try:
-            return tracker.get_count(
+            return int(
+                tracker.get_count(
                 category="context_menu",
                 context=context,
                 element_id=f"action.{action_id}",
+                ),
             )
         except Exception:
-            logger.debug(
-                "Failed to get context action usage for %s/%s", context, action_id, exc_info=True
+            logger.exception(
+                "Failed to get context action usage for %s/%s", context, action_id, exc_info=True,
             )
             return 0
 
@@ -586,17 +600,19 @@ class HistoryPanel(QWidget):
                 context=context,
             )
         except Exception:
-            logger.debug(
-                "Failed to record context action usage for %s/%s", context, action_id, exc_info=True
+            logger.exception(
+                "Failed to record context action usage for %s/%s", context, action_id, exc_info=True,
             )
 
     def _run_context_action(
-        self, context: str, action_id: str, callback: Callable[[], None]
+        self, context: str, action_id: str, callback: Callable[[], None],
     ) -> None:
         self._record_context_action_usage(context, action_id)
         callback()
 
-    def _ordered_context_actions(self, context: str, action_specs: list[tuple]) -> list[tuple]:
+    def _ordered_context_actions(
+        self, context: str, action_specs: list[ContextActionSpec],
+    ) -> list[ContextActionSpec]:
         """Sort non-destructive actions by usage while keeping destructive actions last."""
         safe = []
         destructive = []
@@ -669,7 +685,7 @@ class HistoryPanel(QWidget):
         dlg_layout.addWidget(info)
 
         btns = QDialogButtonBox(
-            QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
+            QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel,
         )
         btns.accepted.connect(dialog.accept)
         btns.rejected.connect(dialog.reject)
@@ -700,7 +716,7 @@ class HistoryPanel(QWidget):
         never have to guard against ``None`` IDs themselves.
         """
         return [
-            i.data(Qt.ItemDataRole.UserRole)
+            int(i.data(Qt.ItemDataRole.UserRole))
             for i in self.list_widget.selectedItems()
             if i.data(Qt.ItemDataRole.UserRole) is not None
         ]

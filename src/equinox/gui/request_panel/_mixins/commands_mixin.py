@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING
 
 from equinox.core.request import Request
 from equinox.gui.workers import BenchmarkDialog
+from equinox.security import redact_url
 from PyQt6.QtCore import QObject
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QKeySequence
@@ -164,7 +165,7 @@ class RequestCommandsMixin:
 
         self._mark_dirty()
         self._status_message("Request imported from cURL command")
-        logger.info("cURL import: %s %s (%d headers)", method, url, len(headers))
+        logger.info("cURL import: %s %s (%d headers)", method, redact_url(url), len(headers))
 
     def _open_benchmark(self) -> None:
         """Open the benchmark dialog for the currently configured request."""
@@ -192,7 +193,7 @@ class RequestCommandsMixin:
             verify_ssl=self.verify_ssl_check.isChecked(),
             follow_redirects=self.follow_redirects_check.isChecked(),
         )
-        logger.debug("Opening benchmark: %s %s", method, url)
+        logger.debug("Opening benchmark: %s %s", method, redact_url(url))
         try:
             BenchmarkDialog(req, self, cookie_manager=self._cookie_manager).exec()
         except Exception:

@@ -4,12 +4,11 @@ This module holds the pure rules that prepare editor state for request send
 and save flows. It intentionally avoids Qt imports so the helpers can be unit
 tested in isolation.
 """
-
 from __future__ import annotations
 
 import logging
 import re
-from typing import Callable
+from collections.abc import Callable
 
 from equinox.application.requests.models import PreparationIssue
 from equinox.auth import AuthStrategy
@@ -46,7 +45,7 @@ def build_preflight_issues(
                 message="URL does not start with http:// or https://",
                 severity="warning",
                 field_name="url",
-            )
+            ),
         )
 
     if normalized_profile == "strict":
@@ -57,7 +56,7 @@ def build_preflight_issues(
                     message="Strict policy blocks insecure HTTP requests; use https://",
                     severity="warning",
                     field_name="url",
-                )
+                ),
             )
         if not verify_ssl:
             issues.append(
@@ -66,7 +65,7 @@ def build_preflight_issues(
                     message="Strict policy requires SSL verification",
                     severity="warning",
                     field_name="verify_ssl",
-                )
+                ),
             )
         if follow_redirects:
             issues.append(
@@ -75,7 +74,7 @@ def build_preflight_issues(
                     message="Strict policy recommends disabling redirects",
                     severity="warning",
                     field_name="follow_redirects",
-                )
+                ),
             )
         if (pre_script or "").strip() or (post_script or "").strip():
             issues.append(
@@ -84,7 +83,7 @@ def build_preflight_issues(
                     message="Strict policy disables pre/post scripts",
                     severity="warning",
                     field_name="scripts",
-                )
+                ),
             )
 
     if auth is not None and hasattr(auth, "get_preflight_warning"):
@@ -96,7 +95,7 @@ def build_preflight_issues(
                     message=str(warning),
                     severity="warning",
                     field_name="auth",
-                )
+                ),
             )
 
     return tuple(issues)
@@ -147,13 +146,13 @@ def interpolate_request_fields(
     resolved_url = VariableInterpolator.interpolate(url, merged_vars)
     resolved_headers = {
         VariableInterpolator.interpolate(key, merged_vars): VariableInterpolator.interpolate(
-            value, merged_vars
+            value, merged_vars,
         )
         for key, value in headers.items()
     }
     resolved_params = {
         VariableInterpolator.interpolate(key, merged_vars): VariableInterpolator.interpolate(
-            value, merged_vars
+            value, merged_vars,
         )
         for key, value in params.items()
     }
@@ -196,7 +195,7 @@ def interpolate_auth(
     try:
         return auth.interpolate(interp)
     except Exception:
-        logger.debug(
+        logger.exception(
             "preparation.interpolate_auth: %s.interpolate() failed — returning unchanged",
             type(auth).__name__,
             exc_info=True,

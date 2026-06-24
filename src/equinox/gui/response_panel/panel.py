@@ -56,7 +56,7 @@ _KEY_ACTIVE_TAB = "response/active_tab"
 class ResponsePanel(
     ResponseBuilderMixin, # type: ignore[misc]
     ResponseDisplayMixin, # type: ignore[misc]
-    ResponseActionsMixin,
+    ResponseActionsMixin, # type: ignore[misc]
     QWidget,
 ):
     """Panel for displaying HTTP responses and the request that was sent.
@@ -160,10 +160,6 @@ class ResponsePanel(
         Raises:
             ValueError: If response is None
         """
-        if response is None:
-            logger.warning("display_response: called with None response")
-            return
-
         logger.debug(
             "display_response: status=%d size=%d content_type=%s",
             response.status_code,
@@ -223,7 +219,7 @@ class ResponsePanel(
         try:
             self._settings.setValue(_KEY_REDACTION_PREVIEW, self._redaction_preview)
         except Exception:
-            logger.debug("Failed to persist redaction preview setting", exc_info=True)
+            logger.exception("Failed to persist redaction preview setting", exc_info=True)
 
         if self.current_response is not None:
             failed_sections = []
@@ -255,7 +251,7 @@ class ResponsePanel(
             if isinstance(data, dict):
                 return {str(k): str(v) for k, v in data.items() if str(v) in _READABILITY_MODES}
         except Exception:
-            logger.debug("Failed to parse readability preferences", exc_info=True)
+            logger.exception("Failed to parse readability preferences", exc_info=True)
         return {}
 
     def _save_readability_preferences(self) -> None:
@@ -263,7 +259,7 @@ class ResponsePanel(
         try:
             self._settings.setValue(_KEY_READABILITY_PREFS, json.dumps(self._readability_by_type))
         except Exception:
-            logger.debug("Failed to save readability preferences", exc_info=True)
+            logger.exception("Failed to save readability preferences", exc_info=True)
 
     @staticmethod
     def _content_type_family(content_type: str) -> str:
@@ -366,10 +362,12 @@ class ResponsePanel(
             if hasattr(self.body_text, "update"):
                 self.body_text.update()
             if hasattr(self.body_text, "viewport"):
-                self.body_text.viewport().update()
+                viewport = self.body_text.viewport()
+                if viewport is not None:
+                    viewport.update()
             self.update()
         except Exception:
-            logger.debug("refresh_display: error during widget refresh", exc_info=True)
+            logger.exception("refresh_display: error during widget refresh", exc_info=True)
 
     # ------------------------------------------------------------------
     # View Mode Management
@@ -381,6 +379,9 @@ class ResponsePanel(
         Attempts to switch to the preferred view, falling back to raw view
         if JSON view is not available.
         """
+        if self._view_json_act is None or self._view_raw_act is None:
+            return
+
         if self._view_preference == _VIEW_MODE_JSON and self._view_json_act.isEnabled():
             self._switch_view(_VIEW_MODE_JSON)
         else:
@@ -412,6 +413,8 @@ class ResponsePanel(
             mode: "json" or "raw"
         """
         is_json = mode == _VIEW_MODE_JSON
+        if self._view_json_act is None or self._view_raw_act is None:
+            return
 
         # Update action states (signal blocking prevents loops)
         self._view_json_act.blockSignals(True)
@@ -437,6 +440,9 @@ class ResponsePanel(
         """Keep view actions in sync with selected tab and lazy-load JSON tree."""
         if idx == self._json_tab_idx:
             self._json_tree.ensure_loaded()
+
+        if self._view_json_act is None or self._view_raw_act is None:
+            return
 
         if getattr(self, "_suppress_tab_sync", False):
             return
@@ -492,7 +498,7 @@ class ResponsePanel(
         try:
             QMessageBox.critical(self, title, message)
         except Exception:
-            logger.debug(
+            logger.exception(
                 "show_error_dialog: failed to display dialog (title=%r)",
                 title,
                 exc_info=True,

@@ -38,7 +38,7 @@ class MultipartDataMixin:
         except RuntimeError:
             raise
         except Exception:
-            logger.debug("Failed to add multipart row", exc_info=True)
+            logger.exception("Failed to add multipart row", exc_info=True)
 
     def _multipart_remove_row(self) -> None:
         """Remove the selected multipart rows."""
@@ -52,7 +52,7 @@ class MultipartDataMixin:
         except RuntimeError:
             raise
         except Exception:
-            logger.debug("Failed to remove multipart row", exc_info=True)
+            logger.exception("Failed to remove multipart row", exc_info=True)
 
     def _multipart_browse_file(self) -> None:
         """Pick a multipart file path and write it into the selected row."""
@@ -84,7 +84,7 @@ class MultipartDataMixin:
         except RuntimeError:
             raise
         except Exception:
-            logger.debug("Failed to browse multipart file", exc_info=True)
+            logger.exception("Failed to browse multipart file", exc_info=True)
 
     def _get_multipart_data(self) -> list[dict[str, str]]:
         """Return the multipart rows as ``{key, type, value}`` dictionaries."""
@@ -105,7 +105,7 @@ class MultipartDataMixin:
                     },
                 )
         except Exception:
-            logger.debug("Failed to read multipart data", exc_info=True)
+            logger.exception("Failed to read multipart data", exc_info=True)
         return output
 
     @staticmethod
@@ -133,7 +133,7 @@ class MultipartDataMixin:
             for entry in data or []:
                 self._append_multipart_entry(table, entry)
         except Exception:
-            logger.debug("Failed to set multipart data", exc_info=True)
+            logger.exception("Failed to set multipart data", exc_info=True)
 
     @staticmethod
     def _append_multipart_entry(table: Any, entry: dict[str, str]) -> None:

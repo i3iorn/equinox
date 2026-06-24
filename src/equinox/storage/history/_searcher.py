@@ -4,6 +4,7 @@ from __future__ import annotations
 import logging
 import re
 from datetime import datetime as _dt
+from importlib import import_module
 from typing import Any
 
 from equinox.core.exceptions import SecurityError
@@ -216,7 +217,8 @@ class _HistorySearcher:
         if query and isinstance(query, str):
             like = f"%{self._escape_like(query)}%"
             conditions.append(
-                f"(url LIKE ? {_LIKE_ESCAPE_CLAUSE} OR request_body LIKE ? {_LIKE_ESCAPE_CLAUSE})",
+                f"(url LIKE ? {_LIKE_ESCAPE_CLAUSE}"
+                f" OR request_body LIKE ? {_LIKE_ESCAPE_CLAUSE})",
             )
             params.extend([like, like])
 
@@ -350,9 +352,8 @@ class _HistorySearcher:
         if not jsonpath:
             return None
         try:
-            from jsonpath_ng import parse as _jp_parse
-
-            return _jp_parse(jsonpath)
+            parser = getattr(import_module("jsonpath_ng"), "parse")
+            return parser(jsonpath)
         except Exception as exc:
             raise ValidationError(f"Invalid JSONPath expression: {exc}")
 

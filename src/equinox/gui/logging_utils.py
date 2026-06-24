@@ -34,4 +34,4 @@ def notify_log_panel(log_panel: Any, method: str, *args: Any) -> None:
     try:
         getattr(log_panel, method)(*args)
     except Exception:
-        logger.debug("Failed to call log_panel.%s", method, exc_info=True)
+        logger.exception("Failed to call log_panel.%s", method, exc_info=True)

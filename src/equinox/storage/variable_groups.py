@@ -122,7 +122,7 @@ class VariableGroupManager:
         """
         require_positive_int(group_id, "Variable group ID")
         row = self.db.fetchone("SELECT * FROM variable_groups WHERE id = ?", (group_id,))
-        return cast(dict[str, Any] | None, row)
+        return row
 
     def list_groups(self) -> list[dict[str, Any]]:
         """List all variable groups
@@ -131,7 +131,7 @@ class VariableGroupManager:
             List of variable groups
         """
         rows = self.db.fetchall("SELECT * FROM variable_groups ORDER BY name")
-        return cast(list[dict[str, Any]], rows)
+        return rows
 
     def update_group(
         self, group_id: int, name: str | None = None, description: str | None = None,
@@ -316,7 +316,7 @@ class VariableGroupManager:
         rows = self.db.fetchall(
             "SELECT * FROM variable_group_items WHERE group_id = ? ORDER BY key", (group_id,),
         )
-        return cast(list[dict[str, Any]], rows)
+        return rows
 
     def get_group_variables_dict(self, group_id: int) -> dict[str, str]:
         """Get group variables as a dictionary

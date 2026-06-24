@@ -1,8 +1,6 @@
 """Context-menu usage-tracking helpers for VariablesPanel."""
-
 # Ignore [attr-defined] errors as this will be mixed into a QWidget subclass that has the necessary attributes.
 # mypy: disable-error-code="attr-defined"
-
 from __future__ import annotations
 
 import logging
@@ -29,10 +27,10 @@ class _ContextMenuMixin:
                     category="context_menu",
                     context=context,
                     element_id=f"action.{action_id}",
-                )
+                ),
             )
         except Exception:
-            logger.debug(
+            logger.exception(
                 "Failed to get context action usage for %s/%s",
                 context,
                 action_id,
@@ -52,7 +50,7 @@ class _ContextMenuMixin:
                 context=context,
             )
         except Exception:
-            logger.debug(
+            logger.exception(
                 "Failed to record context action usage for %s/%s",
                 context,
                 action_id,

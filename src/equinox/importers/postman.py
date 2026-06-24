@@ -4,17 +4,18 @@ Supports Postman Collection Format v2.0 and v2.1.
 Collection-level variables (including ``{{baseUrl}}``) are resolved before
 saving requests and persisted on the collection for reference.
 """
-
 import json
 import logging
 from pathlib import Path
 from typing import Any
 
 from equinox.core import urls
-from equinox.core.exceptions import SecurityError, ValidationError
+from equinox.core.exceptions import SecurityError
+from equinox.core.exceptions import ValidationError
 from equinox.core.request import Request
 from equinox.core.validation import Validator
-from equinox.importers._utils import normalize_path_variables, validate_import_file
+from equinox.importers._utils import normalize_path_variables
+from equinox.importers._utils import validate_import_file
 from equinox.storage.collections import CollectionManager
 
 logger = logging.getLogger(__name__)
@@ -136,7 +137,7 @@ class PostmanImporter:
         # import to improve performance and ensure atomicity.
         items = collection_data.get("item", [])
         requests: list[Request] = self._collect_items(
-            items, folder_name="", col_variables=col_variables
+            items, folder_name="", col_variables=col_variables,
         )
 
         try:
@@ -162,8 +163,8 @@ class PostmanImporter:
                         )
                         logger.debug("Added collection variable: %s=%s", var_name, var_value)
                     except Exception:
-                        logger.debug(
-                            "Failed to add collection variable %s", var_name, exc_info=True
+                        logger.exception(
+                            "Failed to add collection variable %s", var_name, exc_info=True,
                         )
 
                 # Insert requests via the manager's centralised method
@@ -175,11 +176,11 @@ class PostmanImporter:
                     )
         except Exception as exc:
             logger.error(
-                "Failed to import Postman collection transactionally: %s", exc, exc_info=True
+                "Failed to import Postman collection transactionally: %s", exc, exc_info=True,
             )
             # Fall back: create a collection via manager and insert requests individually
             collection_id = self.collection_manager.create_collection(
-                name=collection_name, description=collection_description
+                name=collection_name, description=collection_description,
             )
             for var_name, var_value in col_variables.items():
                 try:
@@ -195,10 +196,10 @@ class PostmanImporter:
                 try:
                     self.collection_manager.save_request(request, collection_id)
                 except Exception:
-                    logger.debug("Failed to save individual request during fallback", exc_info=True)
-            return collection_id
+                    logger.exception("Failed to save individual request during fallback", exc_info=True)
+            return int(collection_id)
 
-        return col_id
+        return int(col_id)
 
     def _validate_file(self, file_path: Path) -> None:
         """Validate collection file exists, is JSON, and is not too large."""
@@ -245,7 +246,7 @@ class PostmanImporter:
         if version not in self.SUPPORTED_VERSIONS:
             raise ValidationError(
                 f"Unsupported collection version: {version}. "
-                f"Supported: {', '.join(self.SUPPORTED_VERSIONS)}"
+                f"Supported: {', '.join(self.SUPPORTED_VERSIONS)}",
             )
 
         items = collection_data.get("item", [])
@@ -415,7 +416,7 @@ class PostmanImporter:
         # (which may already have params embedded as a query string).
         if "raw" in url_data and not query:
             return normalize_path_variables(
-                _resolve_postman_variable(str(url_data["raw"]), col_variables)
+                _resolve_postman_variable(str(url_data["raw"]), col_variables),
             ), []
 
         # Build base URL from components (excluding query string)

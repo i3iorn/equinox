@@ -1,20 +1,26 @@
 """Serialization of Request/Response objects into database-storable primitives."""
-
 from __future__ import annotations
 
 import logging
-from typing import Any, Optional
+from typing import Any
 
-from equinox.core.exceptions import SecurityError, ValidationError
+from equinox.core.exceptions import SecurityError
+from equinox.core.exceptions import ValidationError
 from equinox.core.history_config import should_capture_bodies
 from equinox.core.log_setup import get_current_request_id
-from equinox.core.request import Request, Response
+from equinox.core.request import Request
+from equinox.core.request import Response
 from equinox.core.util.constants import MAX_BODY_SIZE as _MAX_BODY
 from equinox.core.util.constants import MAX_ERROR_MESSAGE_LENGTH as _MAX_ERROR_MESSAGE_LENGTH
-from equinox.core.util.constants import MAX_HEADERS_SIZE, MAX_URL_LENGTH
-from equinox.security import redact_headers, redact_url
-from equinox.security.serialization import serialize_body, serialize_headers
-from equinox.storage.utils import coerce_body_to_str, safe_json_dumps, safe_json_loads
+from equinox.core.util.constants import MAX_HEADERS_SIZE
+from equinox.core.util.constants import MAX_URL_LENGTH
+from equinox.security import redact_headers
+from equinox.security import redact_url
+from equinox.security.serialization import serialize_body
+from equinox.security.serialization import serialize_headers
+from equinox.storage.utils import coerce_body_to_str
+from equinox.storage.utils import safe_json_dumps
+from equinox.storage.utils import safe_json_loads
 
 __all__ = ["_HistorySerializer"]
 
@@ -53,7 +59,7 @@ class _HistorySerializer:
             "request_correlation_id": self._prepare_request_correlation_id(request),
         }
 
-    def prepare_response(self, response: Optional[Response]) -> dict[str, Any | None]:
+    def prepare_response(self, response: Response | None) -> dict[str, Any | None]:
         """Serialize the response side of a history row.
 
         Returns:
@@ -100,7 +106,7 @@ class _HistorySerializer:
             return text[: self.MAX_ERROR_MESSAGE_LENGTH] + "... [TRUNCATED]"
         return text
 
-    def decode_row(self, row: dict[str, Any], row_id: int | None = None) -> dict[str, Any]:
+    def decode_row(self, row: dict[str, Any], row_id: int | None = None) -> dict[str, str | int | float | bool | object]:
         """Return a copy of *row* with header columns decoded from JSON to dicts.
 
         *row* is never mutated.

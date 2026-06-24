@@ -4,7 +4,6 @@ This module centralizes history reads/writes and history-row reconstruction so
 GUI modules do not construct ``HistoryManager`` directly and do not duplicate
 entry-to-model mapping logic.
 """
-
 from __future__ import annotations
 
 import logging
@@ -12,8 +11,10 @@ from collections.abc import Mapping
 from datetime import datetime
 from typing import Any
 
-from equinox.core.request import Request, Response
-from equinox.storage import Database, HistoryManager
+from equinox.core.request import Request
+from equinox.core.request import Response
+from equinox.storage import Database
+from equinox.storage import HistoryManager
 
 logger = logging.getLogger(__name__)
 
@@ -30,13 +31,13 @@ class HistoryFacade:
 
     # ── History manager wrappers ───────────────────────────────────────
 
-    def get_history(self, history_id: int) -> dict[str, Any] | None:
+    def get_history(self, history_id: int) -> dict[str, str | int | float | bool | object] | None:
         return self._history_manager.get_history(history_id)
 
     def search_history(self, **filters: Any) -> list[dict[str, Any]]:
         return list(self._history_manager.search_history(**filters))
 
-    def get_stats(self) -> dict[str, Any]:
+    def get_stats(self) -> dict[str, str | int | float | bool | object]:
         return self._history_manager.get_stats()
 
     def delete_history(self, history_id: int) -> None:
@@ -55,10 +56,10 @@ class HistoryFacade:
             try:
                 return {str(k): v for k, v in value.items()}
             except Exception:
-                logger.debug(
-                    "Could not coerce %s mapping-like value to dict", field_name, exc_info=True
+                logger.exception(
+                    "Could not coerce %s mapping-like value to dict", field_name, exc_info=True,
                 )
-                return {}
+                raise
         logger.debug("Could not coerce %s to dict, defaulting to {}", field_name)
         return {}
 
@@ -68,10 +69,7 @@ class HistoryFacade:
             return raw
         if isinstance(raw, str):
             return raw.encode("utf-8")
-        try:
-            return str(raw).encode("utf-8")
-        except Exception:
-            return b""
+        return str(raw).encode("utf-8")
 
     @staticmethod
     def _parse_timestamp(value: object) -> datetime | None:
@@ -87,7 +85,7 @@ class HistoryFacade:
     def request_from_entry(entry: dict[str, Any]) -> Request:
         """Build a Request instance from a history row dict."""
         headers = HistoryFacade._coerce_to_dict(
-            entry.get("request_headers") or {}, "request_headers"
+            entry.get("request_headers") or {}, "request_headers",
         )
         params = HistoryFacade._coerce_to_dict(entry.get("request_params") or {}, "request_params")
 
@@ -122,7 +120,7 @@ class HistoryFacade:
         body_bytes = HistoryFacade._coerce_body_to_bytes(entry.get("response_body") or "")
         timestamp = HistoryFacade._parse_timestamp(entry.get("executed_at")) or datetime.now()
         headers = HistoryFacade._coerce_to_dict(
-            entry.get("response_headers") or {}, "response_headers"
+            entry.get("response_headers") or {}, "response_headers",
         )
 
         try:
@@ -141,7 +139,7 @@ class HistoryFacade:
                 history_id if history_id is not None else "unknown",
                 exc_info=True,
             )
-            return None
+            raise
 
         logger.debug(
             "Built history response id=%s (status=%s size=%s)",

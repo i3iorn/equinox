@@ -1,12 +1,14 @@
 """HistoryManager — public orchestrator for request/response history."""
-
 from __future__ import annotations
 
 import logging
-from typing import Any, Optional, Tuple
+from typing import Any
 
-from equinox.core.exceptions import SecurityError, StorageError, ValidationError
-from equinox.core.request import Request, Response
+from equinox.core.exceptions import SecurityError
+from equinox.core.exceptions import StorageError
+from equinox.core.exceptions import ValidationError
+from equinox.core.request import Request
+from equinox.core.request import Response
 from equinox.security import redact_url
 from equinox.storage.database import Database
 from equinox.storage.utils import require_positive_int as _require_positive_int
@@ -50,8 +52,8 @@ class HistoryManager:
     def save_history(
         self,
         request: Request,
-        response: Optional[Response] = None,
-        error: Optional[str] = None,
+        response: Response | None = None,
+        error: str | None = None,
     ) -> int:
         """Save request/response to history and return the new history ID.
 
@@ -161,7 +163,7 @@ class HistoryManager:
 
     # ── Public read API ───────────────────────────────────────────────────────
 
-    def get_history(self, history_id: int) -> dict[str, Any] | None:
+    def get_history(self, history_id: int) -> dict[str, str | int | float | bool | object] | None:
         """Return a single history entry by ID, or *None* if not found.
 
         Raises:
@@ -171,7 +173,7 @@ class HistoryManager:
         row = self.db.fetchone("SELECT * FROM history WHERE id = ?", (history_id,))
         if row is None:
             return None
-        return self._serializer.decode_row(dict(row), row_id=history_id)
+        return dict(self._serializer.decode_row(dict(row), row_id=history_id))
 
     def list_history(
         self,
@@ -197,7 +199,7 @@ class HistoryManager:
                 "SELECT * FROM history WHERE request_id = ? "
                 "ORDER BY executed_at DESC LIMIT ? OFFSET ?"
             )
-            params: Tuple[Any, ...] = (request_id, limit, offset)
+            params: tuple[Any, ...] = (request_id, limit, offset)
         else:
             sql = "SELECT * FROM history ORDER BY executed_at DESC LIMIT ? OFFSET ?"
             params = (limit, offset)
@@ -267,7 +269,7 @@ class HistoryManager:
                 executed_before=executed_before,
                 limit=limit,
                 offset=offset,
-            )
+            ),
         )
 
     def get_stats(self) -> dict[str, Any]:
@@ -279,7 +281,7 @@ class HistoryManager:
             "           AND status_code < 400 THEN 1 ELSE 0 END)  AS successful,"
             "  SUM(CASE WHEN status_code >= 400"
             "           OR error IS NOT NULL  THEN 1 ELSE 0 END)  AS failed"
-            " FROM history"
+            " FROM history",
         )
         row = row or {}
         return {
