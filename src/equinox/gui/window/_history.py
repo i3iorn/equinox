@@ -1,31 +1,35 @@
 """History loading and response reconstruction mixin for MainWindow."""
-
 # mypy: disable-error-code=attr-defined
-
 from __future__ import annotations
 
 import logging
+from typing import Any
+from typing import cast
 
 from equinox.application.history import HistoryFacade
 from equinox.core.request import Request
 from equinox.gui.error_presenter import ErrorPresenter
+from PyQt6.QtWidgets import QWidget
 
 logger = logging.getLogger(__name__)
+
+HistoryEntry = dict[str, Any]
 
 
 class _HistoryMixin:
     """Methods for loading and replaying requests from history."""
 
     @staticmethod
-    def _request_from_history(entry: dict) -> Request:
+    def _request_from_history(entry: HistoryEntry) -> Request:
         """Backward-compatible wrapper for tests and legacy call sites."""
         return HistoryFacade.request_from_entry(entry)
 
-    def _fetch_history_entry(self, history_id: int) -> dict | None:
+    def _fetch_history_entry(self, history_id: int) -> HistoryEntry | None:
         """Fetch a history entry by ID, or None."""
-        return self._history_facade.get_history(history_id)
+        entry = self._history_facade.get_history(history_id)
+        return cast(HistoryEntry | None, entry)
 
-    def _fetch_and_load_history(self, history_id: int) -> tuple[dict, Request] | None:
+    def _fetch_and_load_history(self, history_id: int) -> tuple[HistoryEntry, Request] | None:
         """Autosave, fetch, build, and load a history entry into the request panel.
 
         Returns ``(entry, request)`` on success, ``None`` when the entry is absent.
@@ -62,11 +66,11 @@ class _HistoryMixin:
             logger.error("Unhandled error loading history entry id=%s", history_id, exc_info=True)
             try:
                 ErrorPresenter.error(
-                    self,
+                    cast(QWidget, self),
                     f"Failed to load history entry {history_id}. See log for details.",
                 )
             except Exception:
-                logger.debug("Also failed to show error dialog for history load", exc_info=True)
+                logger.exception("Also failed to show error dialog for history load", exc_info=True)
 
     def _replay_history_entry(self, history_id: int) -> None:
         """Re-run a history entry exactly as originally sent."""

@@ -36,7 +36,7 @@ class RequestToolsMixin:
                 ),
             )
         except Exception:
-            logger.debug("Failed to read usage count for action '%s'", element_id, exc_info=True)
+            logger.exception("Failed to read usage count for action '%s'", element_id, exc_info=True)
             return 0
 
     def _rebuild_secondary_tools_menu(self) -> None:

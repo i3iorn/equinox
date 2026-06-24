@@ -780,7 +780,7 @@ class _CollectionsContextMenuMixin:
                 ),
             )
         except Exception:
-            logger.debug(
+            logger.exception(
                 "Failed to get context action usage for %s/%s",
                 context,
                 action_id,
@@ -799,7 +799,7 @@ class _CollectionsContextMenuMixin:
                 context=context,
             )
         except Exception:
-            logger.debug(
+            logger.exception(
                 "Failed to record context action usage for %s/%s",
                 context,
                 action_id,
@@ -866,7 +866,7 @@ class _CollectionsApiSpecMixin:
             dlg.raise_()
             dlg.activateWindow()
         except Exception:
-            logger.debug(
+            logger.exception(
                 "CollectionsPanel: unable to raise/activate API spec dialog",
                 exc_info=True,
             )

@@ -4,33 +4,12 @@ Manages named, reusable auth credentials of any supported type
 (OAuth 2.0, API Key, Basic Auth, Bearer Token).  Replaces the OAuth2-only
 OAuthClientsDialog as the primary credential manager opened from AuthDialog.
 """
-
 from __future__ import annotations
 
 import json
 import logging
+from collections.abc import Iterable
 from typing import Any
-
-from PyQt6.QtCore import Qt, pyqtSignal
-from PyQt6.QtWidgets import (
-    QComboBox,
-    QDialog,
-    QDialogButtonBox,
-    QFormLayout,
-    QFrame,
-    QHBoxLayout,
-    QInputDialog,
-    QLabel,
-    QLineEdit,
-    QListWidget,
-    QMessageBox,
-    QPushButton,
-    QSplitter,
-    QStackedWidget,
-    QTextEdit,
-    QVBoxLayout,
-    QWidget,
-)
 
 from equinox.auth import AUTH_TYPES
 from equinox.gui.dialogs._list_form_dialog_mixin import ListFormDialogMixin
@@ -38,12 +17,32 @@ from equinox.gui.dialogs._oauth_connection_test_mixin import OAuthConnectionTest
 from equinox.gui.dialogs._oauth_form_utils import (
     parse_json_object_field,
 )
-from equinox.gui.theme import Colors, get_mono_font
+from equinox.gui.theme import Colors
+from equinox.gui.theme import get_mono_font
 from equinox.gui.widgets.secret_row import make_secret_row as _secret_row
 from equinox.gui.workers import OAuthTokenTester
 from equinox.storage import Database
 from equinox.storage.oauth_clients import GRANT_TYPES
 from equinox.storage.saved_credentials import SavedCredentialsManager
+from PyQt6.QtCore import pyqtSignal
+from PyQt6.QtCore import Qt
+from PyQt6.QtWidgets import QComboBox
+from PyQt6.QtWidgets import QDialog
+from PyQt6.QtWidgets import QDialogButtonBox
+from PyQt6.QtWidgets import QFormLayout
+from PyQt6.QtWidgets import QFrame
+from PyQt6.QtWidgets import QHBoxLayout
+from PyQt6.QtWidgets import QInputDialog
+from PyQt6.QtWidgets import QLabel
+from PyQt6.QtWidgets import QLineEdit
+from PyQt6.QtWidgets import QListWidget
+from PyQt6.QtWidgets import QMessageBox
+from PyQt6.QtWidgets import QPushButton
+from PyQt6.QtWidgets import QSplitter
+from PyQt6.QtWidgets import QStackedWidget
+from PyQt6.QtWidgets import QTextEdit
+from PyQt6.QtWidgets import QVBoxLayout
+from PyQt6.QtWidgets import QWidget
 
 logger = logging.getLogger(__name__)
 
@@ -64,7 +63,11 @@ _TYPE_COLOUR = {
 }
 
 
-class SavedCredentialsDialog(OAuthConnectionTestMixin, ListFormDialogMixin, QDialog):
+class SavedCredentialsDialog(
+    OAuthConnectionTestMixin,  # type: ignore[misc]
+    ListFormDialogMixin,  # type: ignore[misc]
+    QDialog,
+):
     """Manager for named, reusable auth credentials of any type.
 
     Left panel  – scrollable list of all saved credentials grouped by type.
@@ -74,14 +77,14 @@ class SavedCredentialsDialog(OAuthConnectionTestMixin, ListFormDialogMixin, QDia
 
     credentials_changed = pyqtSignal()
 
-    def __init__(self, db: Database, parent=None) -> None:
+    def __init__(self, db: Database, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self.db = db
         self.mgr = SavedCredentialsManager(db)
         self._current_id: int | None = None
         self._dirty = False
         self._tester: OAuthTokenTester | None = None  # kept alive until worker completion
-        self._last_test_response: dict | None = None
+        self._last_test_response: dict[str, Any] | None = None
         self._test_btn_idle_text = "🔌  Test Connection"
         self._test_btn_busy_text = "Testing…"
 
@@ -239,7 +242,7 @@ class SavedCredentialsDialog(OAuthConnectionTestMixin, ListFormDialogMixin, QDia
         self.o_token_auth.setToolTip(
             "How client credentials are sent to the token endpoint.\n"
             "• Body — client_id/client_secret in the POST body (default, RFC 6749 §2.3.1)\n"
-            "• Basic — Base64-encoded Authorization header (required by some providers)"
+            "• Basic — Base64-encoded Authorization header (required by some providers)",
         )
         self.o_grant_type = QComboBox()
         self.o_grant_type.addItems(list(GRANT_TYPES))
@@ -363,7 +366,7 @@ class SavedCredentialsDialog(OAuthConnectionTestMixin, ListFormDialogMixin, QDia
 
     # ── List management (ListFormDialogMixin template methods) ────────
 
-    def _build_list_items(self):
+    def _build_list_items(self) -> Iterable[tuple[int, str, dict[str, Any]]]:
         """Yield (item_id, label, kwargs) for each credential."""
         from PyQt6.QtGui import QFont
 
@@ -374,7 +377,7 @@ class SavedCredentialsDialog(OAuthConnectionTestMixin, ListFormDialogMixin, QDia
             label = AUTH_TYPES.get(at, at)
             tag = " \u2605" if c["is_default"] else ""
             item_label = f"[{label}] {c['name']}{tag}"
-            kwargs = {"fg_color": _TYPE_COLOUR.get(at, Colors.FG)}
+            kwargs: dict[str, Any] = {"fg_color": _TYPE_COLOUR.get(at, Colors.FG)}
             if c["is_default"]:
                 font = QFont()
                 font.setBold(True)
@@ -435,7 +438,7 @@ class SavedCredentialsDialog(OAuthConnectionTestMixin, ListFormDialogMixin, QDia
             f"<b>{c['name']}</b>"
             f"  <small style='color:{Colors.FG_MUTED};'>"
             f"[{AUTH_TYPES.get(c['auth_type'], c['auth_type'])}]"
-            f"</small>"
+            f"</small>",
         )
         self.status_label.setText("")
 
@@ -649,7 +652,7 @@ class SavedCredentialsDialog(OAuthConnectionTestMixin, ListFormDialogMixin, QDia
                 return None, "Region is required for AWS SigV4."
             if not service:
                 return None, "Service is required for AWS SigV4."
-            config: dict = {
+            config: dict[str, Any] = {
                 "access_key": access_key,
                 "secret_key": secret_key,
                 "region": region,

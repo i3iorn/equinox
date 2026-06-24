@@ -3,13 +3,15 @@
 Each left-tab panel is created on first selection and replaces its
 placeholder widget, keeping startup cost near zero.
 """
-
 # mypy: disable-error-code=attr-defined
-
 from __future__ import annotations
 
 import logging
-from typing import Any, Callable
+from collections.abc import Callable
+from typing import Any
+from typing import cast
+
+from PyQt6.QtWidgets import QWidget
 
 logger = logging.getLogger(__name__)
 
@@ -51,60 +53,67 @@ class _PanelsMixin:
         self._flush_pending_panel_refresh(index)
         logger.debug("Lazy-initialized left panel index=%d (%s)", index, label)
 
-    def _init_collections_panel(self):
+    def _init_collections_panel(self) -> QWidget:
         from equinox.gui.collection_panel import CollectionsPanel
 
-        self.collections_panel = CollectionsPanel(self.db, self)
+        owner = cast(QWidget, self)
+        self.collections_panel = CollectionsPanel(self.db, owner)
         rp = self.request_panel
         self.collections_panel.request_selected.connect(self._load_request_guarded)
         self.collections_panel.request_run.connect(self._run_request_directly)
         self.collections_panel.collections_changed.connect(lambda: self.collections_panel.refresh())
         self.collections_panel.collections_changed.connect(rp.refresh_inherited_auth)
-        return self.collections_panel
+        return cast(QWidget, self.collections_panel)
 
-    def _init_history_panel(self):
+    def _init_history_panel(self) -> QWidget:
         from equinox.gui.history_panel import HistoryPanel
 
-        self.history_panel = HistoryPanel(self.db, self, history_facade=self._history_facade)
+        self.history_panel = HistoryPanel(
+            self.db,
+            cast(QWidget, self),
+            history_facade=self._history_facade,
+        )
         self.history_panel.history_selected.connect(self._load_history_entry)
         self.history_panel.history_replay.connect(self._replay_history_entry)
-        return self.history_panel
+        return cast(QWidget, self.history_panel)
 
-    def _init_variables_panel(self):
+    def _init_variables_panel(self) -> QWidget:
         from equinox.gui.variables_panel import VariablesPanel
 
-        self.variables_panel = VariablesPanel(self.db, self)
+        self.variables_panel = VariablesPanel(self.db, cast(QWidget, self))
         rp = self.request_panel
         rp.session_vars_changed.connect(self.variables_panel.refresh_session_vars)
         self.variables_panel.clear_session_requested.connect(rp.clear_session_vars)
-        return self.variables_panel
+        return cast(QWidget, self.variables_panel)
 
-    def _init_logging_panel(self):
+    def _init_logging_panel(self) -> QWidget:
         from equinox.gui.logging_panel import LoggingPanel
 
-        self.logging_panel = LoggingPanel(self)
-        return self.logging_panel
+        self.logging_panel = LoggingPanel(cast(QWidget, self))
+        return cast(QWidget, self.logging_panel)
 
-    def _init_cookies_panel(self):
+    def _init_cookies_panel(self) -> QWidget:
         from equinox.gui.cookies_panel import CookiesPanel
 
-        self.cookies_panel = CookiesPanel(self.db, self)
-        return self.cookies_panel
+        self.cookies_panel = CookiesPanel(self.db, cast(QWidget, self))
+        return cast(QWidget, self.cookies_panel)
 
-    def _init_websocket_panel(self):
+    def _init_websocket_panel(self) -> QWidget:
         from equinox.gui.websocket_panel import WebSocketPanel
 
-        self.websocket_panel = WebSocketPanel(self)
-        return self.websocket_panel
+        self.websocket_panel = WebSocketPanel(cast(QWidget, self))
+        return cast(QWidget, self.websocket_panel)
 
     def _safe_refresh(self, panel: object) -> None:
         """Call ``panel.refresh()`` if the panel exists, swallowing any error."""
         if panel is None:
             return
         try:
-            panel.refresh()  # type: ignore[union-attr]
+            refresh = getattr(panel, "refresh", None)
+            if callable(refresh):
+                refresh()
         except Exception:
-            logger.debug("Panel refresh failed for %r", panel, exc_info=True)
+            logger.exception("Panel refresh failed for %r", panel, exc_info=True)
 
     def _left_panel_for_index(self, index: int) -> object:
         if index == 0:

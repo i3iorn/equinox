@@ -25,7 +25,6 @@ from equinox.gui.request_panel._mixins.request_editor_state_mixin import Request
 from equinox.gui.request_panel._mixins.request_tools_mixin import RequestToolsMixin
 from equinox.gui.request_panel._mixins.save_flow_mixin import RequestSaveFlowMixin
 from equinox.gui.request_panel._mixins.settings_tab_builder import SettingsTabMixin
-from equinox.gui.request_panel._mixins.ui_builder_mixins import RequestPanelOrchestrationMixin
 from equinox.gui.request_panel._mixins.ui_builder_mixins import URLBarMixin
 from equinox.gui.request_panel._mixins.url_history_mixin import URLHistoryMixin
 from equinox.gui.request_panel._mixins.validation_mixin import _RequestValidationMixin
@@ -52,22 +51,21 @@ __all__ = ["RequestPanel"]
 
 
 class RequestPanel(
-    RequestEditorStateMixin, # type: ignore[misc]
-    URLHistoryMixin, # type: ignore[misc]
-    RequestToolsMixin, # type: ignore[misc]
-    BottomBarMixin, # type: ignore[misc]
-    SettingsTabMixin, # type: ignore[misc]
-    DirtyTrackingMixin, # type: ignore[misc]
-    RequestAutosaveMixin, # type: ignore[misc]
-    RequestSaveFlowMixin, # type: ignore[misc]
-    RequestCommandsMixin, # type: ignore[misc]
+    RequestEditorStateMixin,
+    URLHistoryMixin,
+    RequestToolsMixin,
+    BottomBarMixin,
+    SettingsTabMixin,
+    DirtyTrackingMixin,
+    RequestAutosaveMixin,
+    RequestSaveFlowMixin,
+    RequestCommandsMixin,
     RequestPanelLayoutMixin,
-    _RequestValidationMixin, # type: ignore[misc]
-    _RequestSendMixin, # type: ignore[misc]
-    _RequestAuthMixin, # type: ignore[misc]
-    RequestBodyMixin, # type: ignore[misc]
-    RequestPanelOrchestrationMixin, # type: ignore[misc]
-    URLBarMixin, # type: ignore[misc]
+    _RequestValidationMixin,
+    _RequestSendMixin,
+    _RequestAuthMixin,
+    RequestBodyMixin,
+    URLBarMixin,
     QWidget,
 ):
     """Panel for building and sending HTTP requests."""

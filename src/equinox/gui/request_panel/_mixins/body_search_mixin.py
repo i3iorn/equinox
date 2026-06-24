@@ -91,7 +91,7 @@ class BodySearchMixin:
         except RuntimeError:
             logger.debug("Body editor unavailable while highlighting", exc_info=True)
         except Exception:
-            logger.debug("Error during body highlight", exc_info=True)
+            logger.exception("Error during body highlight", exc_info=True)
 
     def _current_body_search(self) -> tuple[Any, str, str]:
         """Return the search target, document text, and current search term."""
@@ -190,7 +190,7 @@ class BodySearchMixin:
             direction = "next" if forward else "prev"
             logger.debug("Body editor unavailable during find %s", direction, exc_info=True)
         except Exception:
-            logger.debug("Error during body navigate", exc_info=True)
+            logger.exception("Error during body navigate", exc_info=True)
 
     def _get_search_term(self) -> str:
         """Return the current body search term."""

@@ -3,7 +3,6 @@
 Tracks high-value GUI interactions (tabs, buttons, actions), persists counts in
 QSettings, and exposes a compact text snapshot that can be reviewed from the UI.
 """
-
 from __future__ import annotations
 
 import json
@@ -11,13 +10,16 @@ import logging
 import re
 from typing import Any
 
-from PyQt6.QtCore import QObject, QSettings, QTimer
-from PyQt6.QtGui import QAction
-from PyQt6.QtWidgets import QAbstractButton, QMenuBar, QTabWidget
-
 from equinox.core.util.time import utc_now
 from equinox.gui.logging_utils import log_gui_event
 from equinox.gui.ui_common import get_gui_settings
+from PyQt6.QtCore import QObject
+from PyQt6.QtCore import QSettings
+from PyQt6.QtCore import QTimer
+from PyQt6.QtGui import QAction
+from PyQt6.QtWidgets import QAbstractButton
+from PyQt6.QtWidgets import QMenuBar
+from PyQt6.QtWidgets import QTabWidget
 
 logger = logging.getLogger(__name__)
 
@@ -73,7 +75,7 @@ class UIUsageTracker(QObject):
         self._bound_tab_widgets.add(marker)
 
         tab_widget.currentChanged.connect(
-            lambda index, tabs=tab_widget, ctx=context: self._on_tab_changed(tabs, index, ctx)
+            lambda index, tabs=tab_widget, ctx=context: self._on_tab_changed(tabs, index, ctx),
         )
 
     def record(
@@ -131,7 +133,7 @@ class UIUsageTracker(QObject):
         for idx, row in enumerate(top, start=1):
             lines.append(
                 f"{idx:>2}. {row.get('count', 0):>4}  {row.get('category')}/{row.get('context')}"
-                f"  ->  {row.get('element_id')}"
+                f"  ->  {row.get('element_id')}",
             )
 
         low_candidates = self.low_use_candidates(max_count=2)
@@ -141,7 +143,7 @@ class UIUsageTracker(QObject):
             for item in low_candidates[:10]:
                 lines.append(
                     f" - {item.get('category')}/{item.get('context')} -> {item.get('element_id')}"
-                    f" (count={item.get('count', 0)})"
+                    f" (count={item.get('count', 0)})",
                 )
 
         return "\n".join(lines)
@@ -193,7 +195,7 @@ class UIUsageTracker(QObject):
                     elem,
                     category="button",
                     context="gui",
-                )
+                ),
             )
             self._bound_buttons.add(marker)
 
@@ -225,7 +227,7 @@ class UIUsageTracker(QObject):
                 elem,
                 category="action",
                 context=context,
-            )
+            ),
         )
         self._bound_actions.add(marker)
 
@@ -256,7 +258,7 @@ class UIUsageTracker(QObject):
         try:
             data = json.loads(str(raw or "{}"))
         except Exception:
-            logger.debug("Invalid UI usage payload in settings, resetting", exc_info=True)
+            logger.exception("Invalid UI usage payload in settings, resetting", exc_info=True)
             return {}
 
         if not isinstance(data, dict):

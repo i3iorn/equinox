@@ -1,5 +1,4 @@
 """JWT decoding and expiry validation analyzer."""
-
 import base64
 import json
 import logging
@@ -8,12 +7,10 @@ import time
 from typing import Any
 
 from equinox.core.response_intelligence.base import Analyzer
-from equinox.core.response_intelligence.models import (
-    AnalysisContext,
-    Category,
-    Finding,
-    Severity,
-)
+from equinox.core.response_intelligence.models import AnalysisContext
+from equinox.core.response_intelligence.models import Category
+from equinox.core.response_intelligence.models import Finding
+from equinox.core.response_intelligence.models import Severity
 
 logger = logging.getLogger(__name__)
 
@@ -24,7 +21,7 @@ _SEVERITY_RANK = {
 }
 
 
-class JWTDecodeAnalyzer(Analyzer):
+class JWTDecodeAnalyzer(Analyzer):  # type: ignore[misc]
     """Decodes JWTs found in responses and checks for security issues."""
 
     analyzer_id = "security.jwt_decode"
@@ -67,7 +64,7 @@ class JWTDecodeAnalyzer(Analyzer):
                         if isinstance(value, str) and value.startswith("eyJ"):
                             sources.append((f"field '{key}'", value))
         except Exception:
-            logger.debug("JWTDecodeAnalyzer: failed JSON token extraction", exc_info=True)
+            logger.exception("JWTDecodeAnalyzer: failed JSON token extraction", exc_info=True)
 
         for source_label, text in sources:
             for match in self._JWT_RE.finditer(text):
@@ -123,7 +120,7 @@ class JWTDecodeAnalyzer(Analyzer):
                         analyzer_id=self.analyzer_id,
                         recommendation="Avoid returning tokens in response bodies when possible and enforce short token expiry windows.",
                         details=details,
-                    )
+                    ),
                 )
                 break
 

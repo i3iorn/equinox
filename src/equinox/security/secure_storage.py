@@ -1,5 +1,4 @@
 """Secure credential storage using encryption (refactored, single-module)"""
-
 from __future__ import annotations
 
 import base64
@@ -11,15 +10,16 @@ import os
 import tempfile
 import threading
 from pathlib import Path
-from typing import Any, TypedDict
+from typing import Any
+from typing import TypedDict
 
 from cryptography.fernet import Fernet
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 from cryptography.hazmat.primitives.kdf.scrypt import Scrypt
-
 from equinox.core.audit import get_audit_logger
-from equinox.core.exceptions import SecurityError, ValidationError
+from equinox.core.exceptions import SecurityError
+from equinox.core.exceptions import ValidationError
 from equinox.security import crypto
 
 logger = logging.getLogger(__name__)
@@ -121,7 +121,7 @@ def _wipe_bytes(b: bytes | None) -> None:
         for i in range(len(b)):
             ptr[offset + i] = b"\x00"
     except Exception:
-        logger.debug("_wipe_bytes: ctypes overwrite failed (non-critical)")
+        logger.exception("_wipe_bytes: ctypes overwrite failed (non-critical)")
     finally:
         del b
         gc.collect()
@@ -192,7 +192,7 @@ class SecureStorage:
 
         try:
             key = crypto.get_or_create_raw_key(key_path)
-            return key
+            return bytes(key)
         except Exception as exc:
             logger.exception("Key generation failed")
             raise SecurityError("Failed to load encryption key") from exc
@@ -422,7 +422,7 @@ class SecureStorage:
 
         if classes < 3:
             raise ValidationError(
-                "Password too weak: must include at least 3 of uppercase, lowercase, digits, or symbols"
+                "Password too weak: must include at least 3 of uppercase, lowercase, digits, or symbols",
             )
 
     @staticmethod

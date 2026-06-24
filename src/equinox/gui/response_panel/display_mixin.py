@@ -4,9 +4,7 @@ Handles populating every tab with response data, applying syntax
 highlighting, and formatting helpers.  Has no ``__init__`` — relies on
 ``self.*`` attributes set by ``ResponsePanel.__init__``.
 """
-
 # mypy: disable-error-code=attr-defined
-
 from __future__ import annotations
 
 import difflib
@@ -14,18 +12,17 @@ import json
 import logging
 from typing import Any
 
-from PyQt6.QtWidgets import QTableWidgetItem
-
 from equinox.core import urls
 from equinox.core.request import Response
-from equinox.gui.response_panel._formatting import (
-    format_size,
-    parse_cookies,
-    pretty_print_body,
-)
+from equinox.gui.response_panel._formatting import format_size
+from equinox.gui.response_panel._formatting import parse_cookies
+from equinox.gui.response_panel._formatting import pretty_print_body
 from equinox.gui.response_panel.pretty_print import CT_HIGHLIGHTERS
 from equinox.gui.theme import Colors
-from equinox.security import redact_body, redact_headers, redact_url
+from equinox.security import redact_body
+from equinox.security import redact_headers
+from equinox.security import redact_url
+from PyQt6.QtWidgets import QTableWidgetItem
 
 logger = logging.getLogger(__name__)
 
@@ -80,7 +77,7 @@ class ResponseDisplayMixin:
         self.size_label.setText(format_size(response.size))
         self.content_type_label.setText(content_type_summary)
         self.content_type_label.setToolTip(
-            content_type or "Content type not provided by the server"
+            content_type or "Content type not provided by the server",
         )
 
         # Verify values were actually set
@@ -126,16 +123,16 @@ class ResponseDisplayMixin:
             self._body_warning.setVisible(True)
             if response.size > self._MAX_RENDER_BODY_SIZE:
                 self._body_warn_label.setText(
-                    f"Response body is {format_size(response.size)} — full render disabled above {format_size(self._MAX_RENDER_BODY_SIZE)}."
+                    f"Response body is {format_size(response.size)} — full render disabled above {format_size(self._MAX_RENDER_BODY_SIZE)}.",
                 )
                 self._body_load_btn.setEnabled(False)
                 self._body_load_btn.setToolTip("Use Download to inspect very large payloads safely")
                 self.body_text.setPlaceholderText(
-                    "Payload too large to render fully. Click 'Load Full' to preview only the first chunk."
+                    "Payload too large to render fully. Click 'Load Full' to preview only the first chunk.",
                 )
             else:
                 self._body_warn_label.setText(
-                    f"Response body is {format_size(response.size)} — rendering may be slow."
+                    f"Response body is {format_size(response.size)} — rendering may be slow.",
                 )
                 self._body_load_btn.setEnabled(True)
                 self._body_load_btn.setToolTip("")
@@ -186,7 +183,7 @@ class ResponseDisplayMixin:
                 return raw.decode("utf-8", errors="replace")
             return str(response.body)
         except Exception:
-            logger.debug("Failed decoding response body", exc_info=True)
+            logger.exception("Failed decoding response body", exc_info=True)
             return ""
 
     @staticmethod
@@ -231,7 +228,7 @@ class ResponseDisplayMixin:
         try:
             return redact_body(text) or ""
         except Exception:
-            logger.debug("Redacting body preview failed", exc_info=True)
+            logger.exception("Redacting body preview failed", exc_info=True)
             return text
 
     def _maybe_redact_headers(self, headers: dict[str, str]) -> dict[str, str]:
@@ -246,7 +243,7 @@ class ResponseDisplayMixin:
                 for k, v in masked.items()
             }
         except Exception:
-            logger.debug("Redacting headers preview failed", exc_info=True)
+            logger.exception("Redacting headers preview failed", exc_info=True)
             return dict(headers)
 
     def _maybe_redact_url(self, value: str) -> str:
@@ -256,7 +253,7 @@ class ResponseDisplayMixin:
         try:
             return redact_url(value) or value
         except Exception:
-            logger.debug("Redacting URL preview failed", exc_info=True)
+            logger.exception("Redacting URL preview failed", exc_info=True)
             return value
 
     # ------------------------------------------------------------------
@@ -390,10 +387,10 @@ class ResponseDisplayMixin:
         self._cookies_table.setItem(row, 3, QTableWidgetItem(attributes.get("path", "")))
         self._cookies_table.setItem(row, 4, QTableWidgetItem(attributes.get("expires", "")))
         self._cookies_table.setItem(
-            row, 5, QTableWidgetItem("✓" if attributes.get("secure") == "true" else "")
+            row, 5, QTableWidgetItem("✓" if attributes.get("secure") == "true" else ""),
         )
         self._cookies_table.setItem(
-            row, 6, QTableWidgetItem("✓" if attributes.get("httponly") == "true" else "")
+            row, 6, QTableWidgetItem("✓" if attributes.get("httponly") == "true" else ""),
         )
 
     def _update_cookies_tab_title(self) -> None:

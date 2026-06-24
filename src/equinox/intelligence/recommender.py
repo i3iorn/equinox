@@ -7,12 +7,12 @@ suggestions for headers and query parameters.
 Similarity is computed across five dimensions (method, path, query, headers,
 body) weighted to produce a single score in [0, 1].
 """
-
 import hashlib
 import json
 import logging
 import re
-from typing import Any, cast
+from typing import Any
+from typing import cast
 
 from equinox.core import urls
 from equinox.storage.database import Database
@@ -39,7 +39,7 @@ IGNORED_HEADERS: frozenset[str] = frozenset(
         "user-agent",
         "date",
         "content-length",
-    }
+    },
 )
 
 # Similarity dimension weights — must sum to 1.0.
@@ -186,7 +186,7 @@ def _stable_body_bytes(value: Any) -> bytes:
         return bytes(value)
     if isinstance(value, (dict, list)):
         return json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode(
-            "utf-8"
+            "utf-8",
         )
 
     if isinstance(value, str):
@@ -197,7 +197,7 @@ def _stable_body_bytes(value: Any) -> bytes:
             parsed = json.loads(text)
             if isinstance(parsed, (dict, list)):
                 return json.dumps(
-                    parsed, sort_keys=True, separators=(",", ":"), ensure_ascii=False
+                    parsed, sort_keys=True, separators=(",", ":"), ensure_ascii=False,
                 ).encode("utf-8")
         except Exception:
             pass
@@ -273,7 +273,7 @@ def _parse_candidate_row(row: Any) -> dict[str, Any] | None:
 
         return cast(dict[str, Any], r)
     except Exception:
-        logger.debug("recommender_parse_candidate_failed", exc_info=True)
+        logger.exception("recommender_parse_candidate_failed", exc_info=True)
         return None
 
 
@@ -386,7 +386,7 @@ def suggestions_to_findings(
                 desc,
                 analyzer_id="recommender",
                 details=dict(suggestion),
-            )
+            ),
         )
 
     return findings
@@ -596,7 +596,7 @@ class Recommender:
                     "suggested_value": _most_frequent_value(value_counts),
                     "confidence": confidence,
                     "based_on": total,
-                }
+                },
             )
 
         # ── Query parameter suggestions ───────────────────────────────────────
@@ -620,7 +620,7 @@ class Recommender:
                     "suggested_value": None,
                     "confidence": confidence,
                     "based_on": total,
-                }
+                },
             )
 
         suggestions.sort(

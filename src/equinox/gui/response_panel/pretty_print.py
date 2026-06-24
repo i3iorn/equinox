@@ -3,16 +3,18 @@
 Provides off-thread pretty-printing and content-type to syntax highlighter mapping.
 Uses the centralized formatting module for actual formatting logic.
 """
-
 from __future__ import annotations
 
 import logging
 
-from PyQt6.QtCore import QObject, QRunnable, pyqtSignal
-
 from equinox.core.request import Response
 from equinox.gui.response_panel._formatting import pretty_print_body
-from equinox.gui.syntax_highlighter import JsonHighlighter, XmlHighlighter, YamlHighlighter
+from equinox.gui.syntax_highlighter import JsonHighlighter
+from equinox.gui.syntax_highlighter import XmlHighlighter
+from equinox.gui.syntax_highlighter import YamlHighlighter
+from PyQt6.QtCore import pyqtSignal
+from PyQt6.QtCore import QObject
+from PyQt6.QtCore import QRunnable
 
 logger = logging.getLogger(__name__)
 
@@ -120,5 +122,5 @@ class PrettyPrintRunnable(QRunnable):
                 return bytes(response.body).decode("utf-8", errors="replace")
             return str(getattr(response, "body", ""))
         except Exception:
-            logger.debug("Pretty-print fallback text decode failed", exc_info=True)
+            logger.exception("Pretty-print fallback text decode failed", exc_info=True)
             return ""

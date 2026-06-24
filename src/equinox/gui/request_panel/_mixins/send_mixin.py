@@ -13,6 +13,7 @@ from equinox.gui.error_presenter import ErrorPresenter
 from equinox.gui.logging_utils import notify_log_panel
 from equinox.gui.request_panel._mixins.send_response_mixin import SendResponseMixin
 from equinox.gui.request_panel._mixins.send_worker_mixin import SendWorkerMixin
+from equinox.security import redact_url
 from PyQt6.QtWidgets import QWidget
 
 logger = logging.getLogger(__name__)
@@ -59,7 +60,7 @@ class _RequestSendMixin(SendWorkerMixin, SendResponseMixin):  # type: ignore[mis
         snapshot = self._build_request_editor_snapshot()
         if not self._ensure_sendable_url(snapshot.url):
             return
-        logger.debug("_send_request() initiated: url=%s", snapshot.url[:80])
+        logger.debug("_send_request() initiated: url=%s", redact_url(snapshot.url)[:80])
         self._display_preflight_warnings()
         if not self._strict_policy_allows_send(snapshot):
             return
@@ -125,7 +126,7 @@ class _RequestSendMixin(SendWorkerMixin, SendResponseMixin):  # type: ignore[mis
         self._track_prepared_auth_state(package)
         request = package.request
         self.current_request = request
-        logger.info("Sending %s %s", request.method, request.url, extra={"method": request.method, "url": request.url})
+        logger.info("Sending %s %s", request.method, request.url, extra={"method": request.method, "url": redact_url(request.url)})
         notify_log_panel(self._logging_panel, "log_request", request)
         self.request_sent.emit(request)
         self._set_sending_state(True)

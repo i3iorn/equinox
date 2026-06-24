@@ -76,7 +76,7 @@ class BodyStateMixin:
             self._update_capture_tab_label()
             self._update_presence_badges()
         except Exception:
-            logger.debug("Failed to update tab labels", exc_info=True)
+            logger.exception("Failed to update tab labels", exc_info=True)
 
     def _update_header_and_param_labels(self: Any) -> None:
         """Refresh badge counts for the Headers and Params tabs."""

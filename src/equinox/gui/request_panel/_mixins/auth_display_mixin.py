@@ -69,7 +69,7 @@ class AuthDisplayMixin:
                 collection_id = getattr(snapshot, "collection_id", None)
                 folder = getattr(snapshot, "folder", folder)
             except Exception:
-                logger.debug("Failed to build auth probe from editor snapshot", exc_info=True)
+                logger.exception("Failed to build auth probe from editor snapshot", exc_info=True)
         if not collection_id:
             return None
         method = getattr(request, "method", "GET") if request is not None else "GET"
@@ -86,7 +86,7 @@ class AuthDisplayMixin:
         try:
             inherited_auth, inherited_source = self._request_persistence.resolve_effective_auth(probe)
         except Exception as exc:
-            logger.debug("Failed to resolve inherited auth: %s", exc)
+            logger.warning("Failed to resolve inherited auth: %s", exc)
             return
         if inherited_auth is None:
             return

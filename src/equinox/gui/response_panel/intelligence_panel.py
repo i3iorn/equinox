@@ -494,7 +494,7 @@ class IntelligencePanel(QWidget):
 
             self._copy_finding_template(finding)
         except Exception:
-            logger.debug("Failed to apply finding action", exc_info=True)
+            logger.exception("Failed to apply finding action", exc_info=True)
             self._copy_finding_template(finding)
 
     @staticmethod
@@ -533,14 +533,14 @@ class IntelligencePanel(QWidget):
             if isinstance(data, dict):
                 return {str(k): str(v) for k, v in data.items()}
         except Exception:
-            logger.debug("Failed to parse muted finding rules", exc_info=True)
+            logger.exception("Failed to parse muted finding rules", exc_info=True)
         return {}
 
     def _save_muted_rules(self) -> None:
         try:
             self._settings.setValue(_KEY_MUTED_FINDINGS, json.dumps(self._muted_until))
         except Exception:
-            logger.debug("Failed to save muted finding rules", exc_info=True)
+            logger.exception("Failed to save muted finding rules", exc_info=True)
 
     def _clear_muted_rules(self) -> None:
         self._muted_until = {}
@@ -583,7 +583,7 @@ class IntelligencePanel(QWidget):
             if shown == 0:
                 self._audit_list.addItem(QListWidgetItem("No recent security events."))
         except Exception:
-            logger.debug("Failed to refresh audit timeline", exc_info=True)
+            logger.exception("Failed to refresh audit timeline", exc_info=True)
             self._audit_list.addItem(QListWidgetItem("Unable to load audit timeline."))
 
     @staticmethod
@@ -602,7 +602,7 @@ class IntelligencePanel(QWidget):
                 lines = lines[-_AUDIT_MAX_LINES:]
             return lines
         except Exception:
-            logger.debug("Failed to read audit log tail", exc_info=True)
+            logger.exception("Failed to read audit log tail", exc_info=True)
             return []
 
     def _clear_cards(self) -> None:
