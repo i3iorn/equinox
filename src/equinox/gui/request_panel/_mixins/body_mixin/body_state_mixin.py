@@ -4,8 +4,9 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from equinox.application.requests import detect_body_type
 from PyQt6.QtWidgets import QTableWidget
+
+from equinox.application.requests import detect_body_type
 
 logger = logging.getLogger(__name__)
 

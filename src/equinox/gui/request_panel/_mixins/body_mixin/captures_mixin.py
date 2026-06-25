@@ -3,20 +3,16 @@ from __future__ import annotations
 
 from typing import cast
 
+from PyQt6.QtWidgets import QComboBox, QHeaderView, QLabel, QTableWidget, QTableWidgetItem, QWidget
+
 from equinox.gui.request_panel._mixins.assertions_mixin import AssertionsMixin
-from PyQt6.QtWidgets import QComboBox
-from PyQt6.QtWidgets import QHeaderView
-from PyQt6.QtWidgets import QLabel
-from PyQt6.QtWidgets import QTableWidget
-from PyQt6.QtWidgets import QTableWidgetItem
-from PyQt6.QtWidgets import QWidget
 
 _CAPTURE_SOURCES: tuple[str, ...] = ("json", "header", "regex", "status")
 _LABEL_CAPTURES = "Captures"
 _LABEL_LAST_CAPTURE = "Last capture results:"
 
 
-class CapturesMixin(AssertionsMixin):  # type: ignore[misc]
+class CapturesMixin(AssertionsMixin):
     """Create, populate, and read response capture rules."""
 
     def _create_captures_tab(self) -> QWidget:
@@ -30,7 +26,7 @@ class CapturesMixin(AssertionsMixin):  # type: ignore[misc]
         layout.addWidget(self.captures_table)
         layout.addWidget(QLabel(_LABEL_LAST_CAPTURE))
         layout.addWidget(self.captures_results_label)
-        return cast(QWidget, widget)
+        return widget
 
     @staticmethod
     def _create_captures_table() -> QTableWidget:

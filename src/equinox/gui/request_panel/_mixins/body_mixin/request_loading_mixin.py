@@ -2,12 +2,12 @@
 from __future__ import annotations
 
 import logging
-from typing import Any
-from typing import cast
+from typing import Any, cast
+
+from PyQt6.QtWidgets import QWidget
 
 from equinox.core.request import Request
 from equinox.gui.workers import DEFAULT_TIMEOUT
-from PyQt6.QtWidgets import QWidget
 
 logger = logging.getLogger(__name__)
 

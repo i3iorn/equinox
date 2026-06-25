@@ -2,15 +2,11 @@
 from __future__ import annotations
 
 import logging
-from typing import Any
-from typing import cast
+from typing import Any, cast
+
+from PyQt6.QtWidgets import QComboBox, QFileDialog, QMessageBox, QTableWidgetItem, QWidget
 
 from equinox.gui.file_ops import validate_selected_path
-from PyQt6.QtWidgets import QComboBox
-from PyQt6.QtWidgets import QFileDialog
-from PyQt6.QtWidgets import QMessageBox
-from PyQt6.QtWidgets import QTableWidgetItem
-from PyQt6.QtWidgets import QWidget
 
 logger = logging.getLogger(__name__)
 

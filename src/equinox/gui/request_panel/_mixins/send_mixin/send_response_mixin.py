@@ -2,19 +2,20 @@
 from __future__ import annotations
 
 import logging
-from typing import Any
-from typing import cast
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, cast
 
-from equinox.application.requests import apply_captures
-from equinox.application.requests import build_error_handling_plan
-from equinox.application.requests import build_success_handling_plan
-from equinox.application.requests import run_post_script
+from PyQt6.QtWidgets import QWidget
+
+from equinox.application.requests import (
+    apply_captures,
+    build_error_handling_plan,
+    build_success_handling_plan,
+    run_post_script,
+)
 from equinox.core.log_setup import get_log_file
 from equinox.gui.error_presenter import ErrorPresenter
 from equinox.gui.logging_utils import notify_log_panel
 from equinox.gui.request_panel._constants import STATUS_DURATION_LONG
-from PyQt6.QtWidgets import QWidget
 
 logger = logging.getLogger(__name__)
 

@@ -6,10 +6,7 @@ import logging
 import re
 from typing import Any
 
-from PyQt6.QtGui import QColor
-from PyQt6.QtGui import QTextCharFormat
-from PyQt6.QtGui import QTextCursor
-from PyQt6.QtGui import QTextDocument
+from PyQt6.QtGui import QColor, QTextCharFormat, QTextCursor, QTextDocument
 from PyQt6.QtWidgets import QTextEdit
 
 logger = logging.getLogger(__name__)
