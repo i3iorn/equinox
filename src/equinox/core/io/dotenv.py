@@ -41,6 +41,6 @@ def parse_dotenv(text: str) -> dict[str, str]:
             if comment_idx >= 0:
                 value = value[:comment_idx].rstrip()
         if key:
-            result[key] = value
+            result[key] = str(value)
     logger.debug("parse_dotenv: loaded %d variable(s)", len(result))
-    return result
+    return dict(result)
