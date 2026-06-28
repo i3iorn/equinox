@@ -5,6 +5,8 @@ from __future__ import annotations
 from collections.abc import Mapping
 from unittest.mock import Mock
 
+import pytest
+
 from equinox.application.history import HistoryFacade
 from equinox.core.request import Request
 
@@ -49,8 +51,8 @@ class TestCoerceToDict:
             def items(self):
                 raise RuntimeError("items broken")
 
-        result = HistoryFacade._coerce_to_dict(BrokenMapping(), "headers")
-        assert result == {}
+        with pytest.raises(RuntimeError):
+            result = HistoryFacade._coerce_to_dict(BrokenMapping(), "headers")
 
     def test_non_mapping_returns_empty_dict(self) -> None:
         result = HistoryFacade._coerce_to_dict(42, "headers")
@@ -194,8 +196,9 @@ class TestResponseFromEntry:
             "response_body": b"body",
         }
         request = Request(method="GET", url="https://example.com")
-        result = HistoryFacade.response_from_entry(entry, request, history_id=99)
-        assert result is None
+        with pytest.raises(ValueError):
+            result = HistoryFacade.response_from_entry(entry, request, history_id=99)
+            assert result is None
 
     def test_missing_executed_at_uses_now(self) -> None:
         entry = {
