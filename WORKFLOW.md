@@ -13,7 +13,7 @@ Your question likely falls into one of these categories. Find the right doc:
 | Understand project architecture & design decisions | [AGENTS.md](AGENTS.md) | Deep-dive: components, data flow, security model, conventions, key files |
 | Start contributing code | [CONTRIBUTING.md](CONTRIBUTING.md) | Code standards, clean code principles, testing requirements, commit guidelines |
 | Work day-to-day on features | [DEVELOPMENT.md](DEVELOPMENT.md) | Step-by-step workflow, common tasks, debugging tips, git commands |
-| Understand GUI service boundaries | [docs/gui_service_boundary_refactor_plan.md](docs/gui_service_boundary_refactor_plan.md) | Architecture refactoring phases (5-12), service boundary placement |
+| Understand GUI service boundaries | [AGENTS.md](AGENTS.md#boundary-placement-rules-for-new-code) | Service boundary placement rules, application/GUI/storage separation |
 | Learn about security & plugin trust | [docs/security_policy.md](docs/security_policy.md) | Encryption, master passwords, secret rotation, plugin trust model |
 | Get started quickly | [README.md](README.md) | Installation, quick start, highlights, troubleshooting |
 | View release notes | [changelog/](changelog/) | Version history, changes per release |
@@ -47,9 +47,9 @@ equinox/
 
 ## Key Architectural Principles
 
-### The Service-Boundary Refactor (Phases 5-12 Complete)
+### Service-Boundary Architecture
 
-Equinox follows a **strict service-boundary architecture** completed in v0.4.4–v0.4.5:
+Equinox follows a **strict service-boundary architecture**:
 
 - **GUI is thin:** event handling, rendering, dialog wiring only
 - **Application services** own business logic & orchestration (`application/requests/`, `application/collections/`, `application/history/`)
@@ -212,7 +212,7 @@ python scripts/manage_requirements_lock.py --check
 python scripts/check_dependency_vulnerabilities.py
 pytest --cov=equinox --cov-report=term
 mypy src tests
-bandit -r src/equinox --severity-level=medium
+bandit -r src/equinox --severity-level=medium -s "B102,B113,B318,B608"
 ```
 
 `requirements-lock.txt` is committed. Regenerate it intentionally with `python scripts/manage_requirements_lock.py --write` when dependency changes are made.
@@ -223,7 +223,7 @@ bandit -r src/equinox --severity-level=medium
 
 Key architectural decisions are documented in:
 
-- **Service boundaries:** [docs/gui_service_boundary_refactor_plan.md](docs/gui_service_boundary_refactor_plan.md)
+- **Service boundaries:** [AGENTS.md](AGENTS.md#boundary-placement-rules-for-new-code)
 - **Security model:** [docs/security_policy.md](docs/security_policy.md)
 - **Plugin trust:** [AGENTS.md](AGENTS.md#plugin-trust-model-explicit)
 
@@ -263,7 +263,8 @@ mypy src tests                            # Type check
 ### Run the App
 
 ```bash
-python -m equinox.gui.app
+equinox gui
+# equivalent to: python -m equinox.gui.app
 ```
 
 ### Run Tests Locally
@@ -292,8 +293,8 @@ pytest -k "my_test" # Specific test
 
 ## Version & Release Info
 
-- **Current Version:** v0.4.9 (June 1, 2026)
-- **Latest Changelog:** [changelog/CHANGELOG_v0.4.9.md](changelog/CHANGELOG_v0.4.9.md)
+- **Current Version:** `equinox.__version__` in `src/equinox/__init__.py` is authoritative — check there for the exact in-tree version
+- **Latest Changelog:** [changelog/CHANGELOG_v0.4.12.md](changelog/CHANGELOG_v0.4.12.md)
 - **Release History:** [changelog/](changelog/)
 
 ---

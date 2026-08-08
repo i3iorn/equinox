@@ -134,12 +134,11 @@ mypy src/equinox/core/validation/
 # Lint with ruff (shows issues)
 ruff check src/
 
-# Format code with ruff & black
+# Format code with ruff
 ruff format src/ tests/
-black src/ tests/
 
-# Security scan
-bandit -r src/equinox --severity-level=medium
+# Security scan (skip list matches .pre-commit-config.yaml / ci.yml)
+bandit -r src/equinox --severity-level=medium -s "B102,B113,B318,B608"
 
 # Dependency vulnerability scan (blocking)
 python scripts/check_dependency_vulnerabilities.py
@@ -158,19 +157,18 @@ git add .
 git commit -m "feat: my feature"
 
 # Common issues & fixes:
-# - Black format conflict? → Re-run black: black src/
 # - Ruff wants changes? → Review with: ruff check src/ --diff
 # - Mypy errors? → Fix types or add # type: ignore with reason
 ```
 
 **Pre-commit does:**
-- Format code (black, ruff)
+- Format code (ruff format, add-trailing-comma, pyupgrade)
 - Check for merge conflicts
 - Detect private keys & large files
-- Type checking (mypy)
-- Security scan (bandit)
-- Custom checks (dependency consistency, committed lockfile freshness, dependency vulnerability scan)
-- Affected-test execution with coverage threshold enforcement (`run-affected-tests`)
+- Type checking (mypy, strict via pyproject.toml)
+- Security scan (bandit, secret detection)
+- Custom checks (dependency consistency, committed lockfile freshness, dependency vulnerability scan, code size limits, CI toolchain consistency)
+- Affected-test execution with coverage threshold enforcement (`run-affected-tests`, pre-push only)
 
 ### 6. Committing Changes
 
@@ -387,12 +385,14 @@ def test_something(tmp_db_path):
 
 ## Continuous Integration
 
-GitHub Actions runs when you push:
+`dev` is the CI-gated integration branch — every push and every PR into it
+runs the full pipeline below; `master` is release-only (see
+[WORKFLOW.md](WORKFLOW.md#cicd-pipeline)).
 
-1. **Linting & Formatting:** ruff, black
-2. **Type Checking:** mypy
-3. **Security:** bandit + blocking dependency vulnerability scan (`scripts/check_dependency_vulnerabilities.py`)
-4. **Tests:** pytest with coverage (>= 87% required)
+1. **Linting & Formatting:** ruff check, ruff format --check
+2. **Type Checking:** mypy (strict, via `pyproject.toml`'s `[tool.mypy]`)
+3. **Security:** bandit (skip `B102,B113,B318,B608` — see `.pre-commit-config.yaml`) + blocking dependency vulnerability scan (`scripts/check_dependency_vulnerabilities.py`)
+4. **Tests:** pytest with coverage (>= 87% required), matrix across Python 3.10/3.11/3.12
 5. **Code Coverage:** reported in PR
 
 **Local CI simulation:**
@@ -401,12 +401,14 @@ GitHub Actions runs when you push:
 # Do what CI does:
 pre-commit run --all-files
 pytest --cov=equinox --cov-report=term
-bandit -r src/equinox --severity-level=medium
+mypy src
+bandit -r src/equinox --severity-level=medium -s "B102,B113,B318,B608"
 python scripts/check_dependency_vulnerabilities.py
 ```
 
 If CI fails and local passes:
-- Check Python version (CI uses 3.10+)
+- Check Python version (CI's matrix covers 3.10, 3.11, 3.12 — a bug on one
+  version alone can be invisible on whichever you use locally)
 - Check for test isolation issues
 - Review CI logs for details
 

@@ -81,7 +81,7 @@ pre-commit run --all-files
 pytest --cov=equinox --cov-report=html
 
 # Security scans (blocking)
-bandit -r src/equinox
+bandit -r src/equinox --severity-level=medium -s "B102,B113,B318,B608"
 python scripts/check_dependency_vulnerabilities.py
 ```
 
@@ -371,10 +371,10 @@ equinox my-command --help
 # Update pre-commit hooks
 pre-commit autoupdate
 
-# Run specific hook manually
-pre-commit run black --all-files
+# Run specific hook manually (hook IDs from .pre-commit-config.yaml)
 pre-commit run ruff --all-files
-pre-commit run mypy --all-files
+pre-commit run ruff-format --all-files
+pre-commit run mypy-strict --all-files
 ```
 
 ### Type Hints Cause Errors
@@ -407,14 +407,14 @@ pytest tests/my_test.py::specific_test -v
 - **Questions?** Open a discussion on GitHub
 - **Found a bug?** Open an issue with reproduction steps
 - **Security concern?** Use GitHub security advisories (private)
-- **Architecture question?** Refer to `AGENTS.md` and `docs/gui_service_boundary_refactor_plan.md`
+- **Architecture question?** Refer to `AGENTS.md` and the [Architecture Principles](#architecture-principles) section above
 
 ---
 
 ## Additional Resources
 
 - **Architecture Guide:** See `AGENTS.md` for detailed component descriptions
-- **Refactor Plan:** See `docs/gui_service_boundary_refactor_plan.md` for service boundary info
+- **Service Boundaries:** See [Architecture Principles](#architecture-principles) above for the GUI/application/storage separation
 - **Security Policy:** See `docs/security_policy.md` for encryption/rotation practices
 - **Development Workflow:** See `DEVELOPMENT.md` for detailed workflow steps
 

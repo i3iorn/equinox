@@ -14,13 +14,14 @@ This guide helps AI agents understand Equinox architecture and development pract
   - **`core/http/`** — HTTP protocol helpers (`CookieManager`, `RateLimiter`, `check_proxy_reachable`)
   - **`core/io/`** — I/O and parsing utilities (`parse_curl`, `parse_dotenv`, multipart handling)
   - **`core/urls/`** — URL handling package (`normalizer.py`, `parsing.py`, `utils.py`)
-- **`gui/`**: PyQt6 panels — request builder (package), response viewer (package), collections (package), history, variables, logs, intelligence, websocket; shared widgets, dialogs (package), syntax highlighter (package), keyboard shortcuts, UI usage tracking
+- **`application/`**: Business logic & orchestration — thin GUI delegates here. `collections/` (collection facade), `history/` (history facade), `requests/` (request assembly, execution, persistence, post-processing)
+- **`gui/`**: PyQt6 panels — request builder (package), response viewer (package), collections (package), history, variables, logs, intelligence (nested under `response_panel/`), websocket; shared widgets, dialogs (package), syntax highlighter (package), keyboard shortcuts, UI usage tracking
 - **`storage/`**: SQLite layer — **versioned migrations** (`migrations.py`), collection/env/history (package) managers, variable groups, cookies, saved credentials, response intelligence
 - **`auth/`**: Auth strategies — OAuth2 (auto-refresh + encrypted token storage), Bearer, API Key, Basic, AWS SigV4; factory module
 - **`importers/`**: OpenAPI (multi-server, server-variable expansion), Postman (`{{baseUrl}}` resolution), HAR, Insomnia
 - **`exporters/`**: Standalone package — Postman, OpenAPI, Insomnia, HAR, cURL exporters
 - **`intelligence/`**: Request recommender (header/param suggestions from history)
-- **`cli/`**: Click-based operational commands (currently `rotate-secrets`)
+- **`cli/`**: Click-based operational commands (`gui`, `rotate-secrets`)
 - **`security/`**: Shared security primitives (redaction, secure storage, keystore, secret rotation)
 - **`plugins/`**: Plugin system for extending functionality
 
@@ -41,8 +42,8 @@ User input → Validator (zero-trust, package) → Request model
 
 ### Critical Entry Points
 
-- **GUI**: `src/equinox/gui/app.py` — PyQt6 main entry; `window.py` wires panels together
-- **CLI**: `src/equinox/cli/main.py` — Click command group (`rotate-secrets`)
+- **GUI**: `src/equinox/gui/app.py` — PyQt6 main entry; `gui/window/` (package) wires panels together
+- **CLI**: `src/equinox/cli/main.py` — Click command group (`gui`, `rotate-secrets`)
 - **Database**: `src/equinox/storage/database.py` — `Database.__init__` always calls `MigrationRunner.run()`
 - **Migrations**: `src/equinox/storage/migrations.py` — add new `Migration` entries to `MIGRATIONS` list
 - **HTTP**: `src/equinox/core/client/http_client.py` — `HTTPClient` runs `InterceptorChain` around every request
@@ -71,7 +72,7 @@ The runner is triggered automatically on `Database.__init__` — no manual invoc
 
 ### Current schema version
 
-The schema is at **version 24** (migration 24 adds the `ui_usage` table for UI usage tracking). See `migrations.py` for the full list.
+The schema is at **version 25**. See `migrations.py` for the full list.
 
 ## Database — Key Implementation Notes
 
@@ -139,7 +140,7 @@ pytest --cov=equinox --cov-report=html
 ### Running the app
 
 ```bash
-python -m equinox.gui.app  # PyQt6 GUI bootstrap
+python -m equinox.gui.app  # PyQt6 GUI bootstrap (equivalent to `equinox gui`)
 equinox rotate-secrets --db-path ./equinox.db  # rotate plaintext secrets to enc: blobs
 ```
 
@@ -301,7 +302,7 @@ Use `CollectionManager.update_request_auth(request_id, auth_obj)` to modify auth
 
 ### Response body storage
 
-`Response.body` is `bytes` (from httpx), but history stores it as decoded text. When reconstructing a `Response` from history (e.g. `_load_history_entry` in `window.py`), encode the DB string back to bytes:
+`Response.body` is `bytes` (from httpx), but history stores it as decoded text. When reconstructing a `Response` from history (e.g. `_load_history_entry` in `gui/window/_history.py`), encode the DB string back to bytes:
 ```python
 raw_body = entry.get("response_body") or ""
 body_bytes = raw_body.encode("utf-8") if isinstance(raw_body, str) else (raw_body or b"")
@@ -357,7 +358,7 @@ Guidance for adding a new language highlighter:
 
 `core/response_intelligence/` is a package providing endpoint statistics, schema drift tracking, and security/performance hints. Stored via `storage/response_intelligence.py`.
 
-The intelligence panel (`gui/intelligence_panel.py`) and its background worker (`gui/intelligence_worker.py`) surface these insights in the GUI.
+The intelligence panel (`gui/response_panel/intelligence_panel.py`) and its background worker (`gui/intelligence_worker.py`) surface these insights in the GUI.
 
 ### Request Recommender
 
@@ -396,20 +397,19 @@ The tracking system powers:
 
 ### Keyboard Shortcuts and Navigation (v0.4.3+)
 
-`gui/window.py` and `gui/sidebar.py` implement keyboard-driven navigation:
+`gui/window/__init__.py` (`_install_navigation_shortcuts`, `_activate_left_tab`) implements keyboard-driven sidebar navigation; `gui/window/_menu.py` owns the full shortcut table shown in the Keyboard Shortcuts dialog (`F1`).
 
-- **Shortcuts**: `Ctrl+1` through `Ctrl+8` navigate between sidebar tabs
+- **Shortcuts**: `Alt+1` through `Alt+6` switch between left-sidebar tabs
 - **Implementation**: Qt `QShortcut` objects registered at main window level
-- **Conflict Prevention**: Shortcuts only activate when focus is on neutral UI (tab bar, status bar, not text editors)
-- **Tab Mapping**:
-  - `Ctrl+1`: Request Builder
-  - `Ctrl+2`: Response Viewer
-  - `Ctrl+3`: Collections
-  - `Ctrl+4`: Variables
-  - `Ctrl+5`: History
-  - `Ctrl+6`: Logs
-  - `Ctrl+7`: Intelligence
-  - `Ctrl+8`: WebSocket
+- **Tab Mapping** (`_LEFT_TAB_LABELS` in `gui/window/__init__.py`):
+  - `Alt+1`: Collections
+  - `Alt+2`: History
+  - `Alt+3`: Variables
+  - `Alt+4`: Logs
+  - `Alt+5`: Cookies
+  - `Alt+6`: WebSocket
+
+Request Builder and Response Viewer are the always-visible main panels, not sidebar tabs; Intelligence is a tab within the Response Viewer (`gui/response_panel/intelligence_panel.py`), not the left sidebar. See `gui/window/_menu.py`'s `_KEYBOARD_SHORTCUTS` for the rest of the shortcut set (`Ctrl+N`, `Ctrl+L`, `Ctrl+Return`, `Ctrl+S`, `Ctrl+K` command palette, `Ctrl+F` find-in-response, etc.).
 
 ### Worker Thread Management (v0.4.2+)
 
@@ -435,7 +435,7 @@ def run(self) -> None:
 
 | File | Purpose |
 |------|---------|
-| `storage/migrations.py` | Versioned schema — **only place to change the DB schema** (currently at v24) |
+| `storage/migrations.py` | Versioned schema — **only place to change the DB schema** (currently at v25) |
 | `storage/schema.sql` | Reference schema (documentation only — not used at runtime) |
 | `storage/ui_usage_tracker.py` | `UIUsageTracker` — local UI analytics and action ranking (v0.4.3+) |
 | `storage/collections/manager.py` | `CollectionManager` — `save_request`, `update_request`, `update_request_auth`, CRUD |
@@ -459,11 +459,11 @@ def run(self) -> None:
 | `gui/dialogs/_dirty_dialog_mixin.py` | `DirtyDialogMixin` — shared dirty-state infrastructure for list+form dialogs |
 | `gui/dialogs/context_menu.py` | Ranked context menu with usage-based sorting and destructive action separation (v0.4.3+) |
 | `gui/dialogs/usage_stats_dialog.py` | UI usage statistics viewer and management interface (v0.4.3+) |
-| `gui/request_panel/` | Package: `panel.py` (RequestPanel), `mixins.py` (send/auth), `body_mixin.py`, `builder.py`, `save_dialog.py`, `toolbar.py` |
-| `gui/response_panel/` | Package: `panel.py`, `builder.py`, `display_mixin.py`, `actions_mixin.py`, `search_bar.py`, etc. |
+| `gui/request_panel/` | Package: `panel.py` (RequestPanel), `_constants.py`; `_mixins/` subpackage with `auth_mixin/` (config/display), `body_mixin/` (state/search/captures/multipart/loading), `send_mixin/` (worker/response), plus `assertions_mixin.py`, `autosave_mixin.py`, `save_flow_mixin.py`, `validation_mixin.py`, `commands_mixin.py`, etc. |
+| `gui/response_panel/` | Package: `panel.py`, `builder.py`, `display_mixin.py`, `actions_mixin.py`, `intelligence_panel.py`, `header_table.py`, `json_tree.py`, `search/` subpackage (`core.py`, `ui.py`, `constants.py`) |
 | `gui/syntax_highlighter/` | Package: `base.py`, `json_highlighter/` (`highlighter.py`, `formats.py`, `lexer/`), `python_highlighter.py`, `xml_highlighter.py`, `yaml_highlighter.py` |
 | `gui/intelligence_worker.py` | Background intelligence analysis with defensive parent widget checks (v0.4.2+) |
-| `gui/window.py` | Signal wiring hub — connects all panels, menu actions, and keyboard shortcuts |
+| `gui/window/` | Package: `__init__.py` (signal wiring hub — connects all panels, sidebar navigation shortcuts), `_menu.py` (menu bar, command palette, shortcut table), `_layout.py`, `_panels.py`, `_history.py`, `_environment.py`, `_import_export.py`, `_frameless.py` |
 | `core/interceptors/` | `InterceptorChain`, logging interceptors |
 | `core/log_setup.py` | JSON structured logging to `~/.equinox/logs/equinox.log` |
 | `core/config/flags.py` | Environment-based feature toggles (`EQUINOX_USE_OS_KEYRING`, `EQUINOX_HISTORY_CAPTURE_BODIES`) |
@@ -491,7 +491,7 @@ def run(self) -> None:
 | `auth/aws_sigv4.py` | `AWSSigV4Auth` — pure-Python AWS Signature V4 signing |
 | `auth/factory.py` | Auth instance factory |
 | `security/__init__.py` | Public security facade for redaction + crypto helpers + `SecureStorage` |
-| `cli/main.py` | Click operational entrypoint (`rotate-secrets`) |
+| `cli/main.py` | Click operational entrypoint (`gui`, `rotate-secrets`) |
 | `intelligence/recommender.py` | `Recommender` — confidence-ranked header/param suggestions |
 | `scripts/benchmark_history_search.py` | Performance benchmark harness for history search (v0.4.2+) |
 | `tests/storage/test_migrations.py` | Reference for how to test new migrations |
