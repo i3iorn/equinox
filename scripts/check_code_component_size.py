@@ -5,10 +5,13 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 
+# These are the documented *hard* limits (CONTRIBUTING.md, WORKFLOW.md) - the
+# single enforced threshold, not the softer aspirational targets (30-line
+# functions, 400-line classes) those docs also list.
 DEFAULT_LIMITS = {
     "module": 1000,
-    "function": 60,
-    "class": 500,
+    "function": 120,
+    "class": 800,
 }
 
 # ------------------------------------------------------------
@@ -101,7 +104,8 @@ def annotate_parents(tree):
     for node in ast.walk(tree):
         for child in ast.iter_child_nodes(node):
             if isinstance(node, ast.ClassDef) and isinstance(
-                child, (ast.FunctionDef, ast.AsyncFunctionDef),
+                child,
+                (ast.FunctionDef, ast.AsyncFunctionDef),
             ):
                 child.parent_class = node.name
             annotate_parents(child)

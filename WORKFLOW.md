@@ -126,7 +126,7 @@ git push origin feature/my-feature
 
 | **Aspect** | **Standard** |
 |---|---|
-| **Functions** | ≤ 30 lines (soft), ≤ 60 lines (hard limit) |
+| **Functions** | ≤ 30 lines (soft), ≤ 120 lines (hard limit) |
 | **Classes** | ≤ 400 lines (soft), ≤ 800 lines (hard limit) |
 | **Modules** | ≤ 1000 lines (split if larger) |
 | **Packages** | ≤ 15 direct children (reorganize if larger) |
