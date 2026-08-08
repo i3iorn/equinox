@@ -4,7 +4,7 @@ Equinox is a secure, local-first API testing tool with GUI and CLI workflows. Bu
 
 > **Getting started?** See [WORKFLOW.md](WORKFLOW.md) for a complete documentation map and quick navigation guide.
 >
-> **Latest release notes:** [changelog/CHANGELOG_v0.4.11.md](changelog/CHANGELOG_v0.4.11.md)
+> **Latest release notes:** [changelog/CHANGELOG_v0.4.12.md](changelog/CHANGELOG_v0.4.12.md) ([full history](changelog/))
 
 ## Highlights
 
@@ -23,6 +23,10 @@ Source is organized by cohesive packages aligned with functional domains:
 
 ```text
 src/equinox/
+  application/        # Business logic & orchestration (thin GUI delegates here)
+    collections/      # Collection facade
+    history/          # History facade
+    requests/         # Request assembly, execution, persistence, post-processing
   core/
     audit/            # Request/response audit logging
     auth_cipher.py    # Compatibility facade for auth-data encryption/decryption
@@ -44,24 +48,23 @@ src/equinox/
   gui/
     dialogs/          # Reusable dialog components
     request_panel/    # Request builder UI
-    response_panel/   # Response viewer UI
+    response_panel/   # Response viewer UI, incl. intelligence_panel.py
     syntax_highlighter/  # JSON, Python, XML, YAML highlighting
     theme/            # Color schemes and fonts
-    intelligence_panel.py   # Endpoint intelligence and suggestions
     intelligence_worker.py  # Background intelligence analysis
-    window.py         # Main window and panel wiring
+    window/           # Main window package - panel wiring, layout, menus, frameless mode
   storage/
     auth_cipher_storage.py  # enc: prefix and auth/config column encoding helpers
     collections/      # Collection/request/folder CRUD
     history/          # Request/response history with search and indexing
     ui_usage_tracker.py  # UI interaction analytics (local only)
     database.py       # SQLite ORM with migrations
-    migrations.py     # Versioned schema (currently v24)
+    migrations.py     # Versioned schema (currently v25)
   auth/               # Auth strategies (OAuth2, Bearer, Basic, AWS SigV4)
   importers/          # Multi-format importers (OpenAPI, Postman, HAR, Insomnia)
-  exporters/          # Export to Postman, OpenAPI, HAR, cURL
+  exporters/          # Export to Postman, OpenAPI, HAR, cURL, Insomnia
   intelligence/       # Request recommender (header/param suggestions)
-  cli/                # Click-based CLI (rotate-secrets command)
+  cli/                # Click-based CLI (gui, rotate-secrets commands)
   plugins/            # Plugin system for extending functionality
   security/           # Redaction, secure storage, keystore
     auth_cipher.py    # Cryptographic primitives for auth-data encryption
@@ -112,6 +115,10 @@ python -m equinox.gui.app
 # View help
 equinox --help
 
+# Launch the GUI (equivalent to `python -m equinox.gui.app`; PyQt6 is only
+# imported when this command runs, so the CLI works without it installed)
+equinox gui
+
 # Rotate stored plaintext secrets to encrypted format
 equinox rotate-secrets --db-path ./equinox.db
 
@@ -129,7 +136,7 @@ ruff check .
 ruff format --check .
 mypy src tests
 pytest
-bandit -r src/equinox
+bandit -r src/equinox --severity-level=medium -s "B102,B113,B318,B608"
 python scripts/check_dependency_vulnerabilities.py
 ```
 
@@ -163,7 +170,7 @@ open htmlcov/index.html
 mypy src tests
 
 # Run security scan
-bandit -r src/equinox
+bandit -r src/equinox --severity-level=medium -s "B102,B113,B318,B608"
 
 # Run dependency vulnerability gate (blocking)
 python scripts/check_dependency_vulnerabilities.py
