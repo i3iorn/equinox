@@ -75,8 +75,11 @@ repos:
       - id: check-symlinks
       - id: mixed-line-ending
       - id: detect-private-key
- #     - id: no-commit-to-branch
- #       args: ['--branch', 'main', '--branch', 'master']
+      - id: no-commit-to-branch
+        # master is release-only: it changes solely via the dev -> master
+        # promotion PR. Direct local commits while checked out on master
+        # are almost always a mistake — this catches it before push.
+        args: ['--branch', 'master']
 
   - repo: https://github.com/abravalheri/validate-pyproject
     rev: v0.25
@@ -104,10 +107,16 @@ repos:
       - id: yesqa
 
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.15.14
+    rev: v0.16.2
     hooks:
       - id: ruff
         args: [--fix, --exit-zero]
+      - id: ruff-format
+        # Keeps this hook's ruff pinned to the same version CI resolves
+        # (pyproject.toml's `ruff>=0.5.0` is unbounded, so CI always installs
+        # latest). Without a matching local check, format drift accumulates
+        # silently until `ruff format --check` fails in CI — see the 140-file
+        # backlog this rev bump fixed.
 
   - repo: https://github.com/asottile/add-trailing-comma
     rev: v4.0.0

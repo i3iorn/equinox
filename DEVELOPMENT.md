@@ -34,10 +34,11 @@ pytest --cov=equinox --cov-report=html  # Full coverage check (slower)
 ### 1. Starting Work
 
 ```bash
-# Update from main branch
+# Update from dev (the integration branch — CI-gated, all feature/fix/refactor
+# work targets this, not master)
 git fetch origin
-git checkout main
-git pull origin main
+git checkout dev
+git pull origin dev
 
 # Create feature branch
 git checkout -b feature/your-feature-name
@@ -260,8 +261,8 @@ git push origin feature/your-feature-name
 
 ```bash
 # Locally, after merge:
-git checkout main
-git pull origin main
+git checkout dev
+git pull origin dev
 git branch -d feature/your-feature-name
 ```
 

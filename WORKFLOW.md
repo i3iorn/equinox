@@ -190,7 +190,13 @@ test: add regression tests for X
 
 ## CI/CD Pipeline
 
-GitHub Actions runs on every push:
+`dev` is the CI-gated integration branch: every push to `dev` and every PR
+into it runs the full pipeline below. `master` is release-only — it only
+changes via the `dev → master` promotion PR (which is itself CI-gated), never
+via direct commits or feature-branch merges. Tags on `master` (`vX.Y.Z`)
+trigger the separate release/publish workflow.
+
+GitHub Actions runs on every push to `dev`:
 
 1. **Pre-commit hooks:** ruff format, type checking, security scan
 2. **Tests:** full suite with ≥ 87% coverage requirement

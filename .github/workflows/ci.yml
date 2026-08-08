@@ -2,9 +2,13 @@ name: CI
 
 on:
   push:
-    branches: [main, master, "release/**"]
+    branches: [dev]
   pull_request:
-    branches: [main, master]
+    # dev: every feature/fix/refactor PR into the integration branch.
+    # master: the dev -> master release-promotion PR (master itself only
+    # ever changes via that promotion, so it doesn't need its own push
+    # trigger — the PR check already validates the merge commit).
+    branches: [dev, master]
 
 concurrency:
   group: ci-${{ github.ref }}
@@ -37,7 +41,11 @@ jobs:
 
       - name: Install dev dependencies
         run: |
-          python -m pip install --upgrade pip
+          # pip>=26.2 dropped the internal `stdlib_pkgs` symbol that pip-tools
+          # (through at least 7.6.0) still imports, breaking `piptools compile`.
+          # Cap pip until pip-tools ships a fix; safe to drop this ceiling once
+          # https://github.com/jazzband/pip-tools import breakage is resolved.
+          python -m pip install --upgrade "pip<26.2"
           pip install -e ".[dev]"
 
       - name: Verify dependency manifest consistency
