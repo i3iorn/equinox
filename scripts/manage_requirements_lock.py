@@ -64,9 +64,14 @@ def _normalize_lock_text(content: str) -> str:
         flags=re.MULTILINE,
     )
 
+    # pip-compile only quotes the echoed path when it contains characters the
+    # host shell would need escaping (e.g. Windows backslashes) - so the same
+    # logical path comes out quoted on Windows and unquoted on Linux CI.
+    # Both regexes must collapse to the same unquoted canonical form, or a
+    # Windows-generated file can never byte-match a Linux-generated one.
     normalized = re.sub(
-        r"(--output-file=')([^']*requirements-lock\.txt)(')",
-        r"\1requirements-lock.txt\3",
+        r"--output-file='[^']*requirements-lock\.txt'",
+        "--output-file=requirements-lock.txt",
         normalized,
     )
     normalized = re.sub(

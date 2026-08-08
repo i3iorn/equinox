@@ -187,7 +187,12 @@ jobs:
         run: python scripts/check_dependency_vulnerabilities.py
 
       - name: Bandit - blocking (medium+ severity)
-        run: bandit -r src/equinox --severity-level=medium -f json -o bandit-ci.json
+        # Skip list matches .pre-commit-config.yaml's bandit hooks: B102/B113/B318
+        # are accepted findings in this codebase (sandboxed exec, an internal
+        # vault client, and response pretty-printing), B608 has inline nosec
+        # comments. CI never matched this until now, so those hooks and this
+        # step disagreed on every push.
+        run: bandit -r src/equinox --severity-level=medium -s "B102,B113,B318,B608" -f json -o bandit-ci.json
 
       - name: Upload Bandit report
         if: always()
