@@ -4,6 +4,7 @@ import logging
 import multiprocessing
 import queue
 import time
+from multiprocessing.process import BaseProcess
 from typing import Any
 
 from .models import ScriptResult
@@ -59,7 +60,7 @@ def _subprocess_exec_target(
         q.put(("error", str(exc)))
 
 
-def _terminate_process(p: multiprocessing.Process | None) -> None:
+def _terminate_process(p: BaseProcess | None) -> None:
     """Terminate and join *p*, escalating to kill if it does not exit promptly.
 
     Always no-ops when *p* is ``None`` or already dead so callers can call this
@@ -161,8 +162,20 @@ class ScriptRunner:
         start_time = time.time()
 
         try:
-            q: multiprocessing.Queue[tuple[str, Any]] = multiprocessing.Queue()
-            p: multiprocessing.Process | None = None
+            # Forced explicitly rather than relying on the platform default.
+            # Linux defaults to "fork", which duplicates the parent's memory
+            # as-is - including any Qt/PyQt6 state the GUI (or a test
+            # session's QApplication) has already initialized. Forking a
+            # process with Qt's internal threads and mutexes already running
+            # is a well-documented deadlock source: the child can hang
+            # forever waiting on a lock that will never be released, since
+            # fork() only copies the calling thread. "spawn" starts a fresh
+            # interpreter instead, at the cost of a small startup delay well
+            # within EXECUTION_TIMEOUT. Windows already only supports spawn,
+            # so this changes behavior only on Linux/macOS.
+            ctx = multiprocessing.get_context("spawn")
+            q: multiprocessing.Queue[tuple[str, Any]] = ctx.Queue()
+            p: BaseProcess | None = None
         except Exception as e:
             return ScriptResult(
                 error=f"Failed to start script execution: {e}",
@@ -170,7 +183,7 @@ class ScriptRunner:
             )
 
         try:
-            p = multiprocessing.Process(
+            p = ctx.Process(
                 target=_subprocess_exec_target,
                 args=(q, script, extra_locals, session_vars, filename),
                 daemon=True,
