@@ -134,6 +134,7 @@ pluggy==1.6.0
     # via
     #   pytest
     #   pytest-cov
+    #   pytest-qt
 ply==3.11
     # via jsonpath-ng
 pre-commit==4.6.1
@@ -172,6 +173,7 @@ pytest==9.1.1
     #   pytest-benchmark
     #   pytest-cov
     #   pytest-mock
+    #   pytest-qt
 pytest-asyncio==1.4.0
     # via equinox (pyproject.toml)
 pytest-benchmark==5.2.3
@@ -179,6 +181,8 @@ pytest-benchmark==5.2.3
 pytest-cov==7.1.0
     # via equinox (pyproject.toml)
 pytest-mock==3.15.1
+    # via equinox (pyproject.toml)
+pytest-qt==4.5.0
     # via equinox (pyproject.toml)
 python-discovery==1.5.1
     # via virtualenv
@@ -226,6 +230,7 @@ typing-extensions==4.16.0
     #   equinox (pyproject.toml)
     #   mypy
     #   pytest-asyncio
+    #   pytest-qt
     #   referencing
 urllib3==2.7.0
     # via requests
