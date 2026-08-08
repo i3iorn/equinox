@@ -6,9 +6,9 @@ from dataclasses import dataclass
 from pathlib import Path
 
 DEFAULT_LIMITS = {
-    "module": 1100,
-    "function": 100,
-    "class": 600,
+    "module": 1000,
+    "function": 60,
+    "class": 500,
 }
 
 # ------------------------------------------------------------
@@ -156,7 +156,6 @@ def main():
     if cli_files:
         # Pre-commit passes explicit filenames
         files = [f for f in cli_files if f.suffix == ".py" and f.exists()]
-        print("Checking pre-commit provided files\n")
     elif mode == "all":
         files = get_all_python_files()
         print("Checking ALL Python files\n")
@@ -216,8 +215,6 @@ def main():
 
     # Sort and apply limit
     if violations:
-        print("\nSize violations (sorted by % over):\n")
-
         sorted_violations = sorted(violations, key=lambda x: x[0], reverse=True)
 
         if limit is not None and limit > 0:
@@ -228,8 +225,6 @@ def main():
 
         if limit is not None and 0 < limit < len(violations):
             print(f"\n(Showing top {limit} of {len(violations)} violations)")
-
-        print("\nCommit blocked due to size violations.")
         return 1
 
     return 0

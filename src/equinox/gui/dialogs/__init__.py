@@ -15,13 +15,17 @@ from equinox.gui.dialogs.master_password_dialog import (
     prompt_master_password,
 )
 from equinox.gui.dialogs.preferences_dialog import PreferencesDialog
-from equinox.gui.dialogs.saved_credentials_dialog import SavedCredentialsDialog
+from equinox.gui.dialogs.saved_credentials_dialog import (
+    SavedCredentialsDialog,
+    SavedCredentialsView,
+)
 from equinox.gui.dialogs.secret_manager_settings_dialog import SecretManagerSettingsDialog
 
 __all__ = [
     "AuthDialog",
     "EnvironmentDialog",
     "SavedCredentialsDialog",
+    "SavedCredentialsView",
     "PreferencesDialog",
     "CollectionVariablesDialog",
     "AddVariableGroupDialog",

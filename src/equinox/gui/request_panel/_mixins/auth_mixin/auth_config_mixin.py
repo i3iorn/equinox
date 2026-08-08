@@ -2,16 +2,11 @@
 from __future__ import annotations
 
 import logging
-from typing import Any
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
+
+from PyQt6.QtWidgets import QDialog, QHBoxLayout, QLabel, QPushButton, QVBoxLayout, QWidget
 
 from equinox.gui.request_panel._constants import AUTH_TAB_MARGINS
-from PyQt6.QtWidgets import QDialog
-from PyQt6.QtWidgets import QHBoxLayout
-from PyQt6.QtWidgets import QLabel
-from PyQt6.QtWidgets import QPushButton
-from PyQt6.QtWidgets import QVBoxLayout
-from PyQt6.QtWidgets import QWidget
 
 logger = logging.getLogger(__name__)
 
@@ -105,7 +100,7 @@ class AuthConfigMixin:
 
         was_inherited = self._auth is None and self._inherited_auth is not None
         display_auth = self._auth or self._inherited_auth
-        dialog = AuthDialog(display_auth, self, db=self.db)
+        dialog = AuthDialog(display_auth, self, db=self.db)  # type: ignore[arg-type]
         if dialog.exec() != QDialog.DialogCode.Accepted:
             return
 

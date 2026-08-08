@@ -2,24 +2,22 @@
 from __future__ import annotations
 
 import logging
-from typing import Any
-from typing import cast
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, cast
 
-from equinox.application.requests import build_preflight_issues
-from equinox.application.requests import issues_to_messages
-from equinox.application.requests import prepare_send
+from PyQt6.QtWidgets import QWidget
+
+from equinox.application.requests import build_preflight_issues, issues_to_messages, prepare_send
 from equinox.gui.error_presenter import ErrorPresenter
 from equinox.gui.logging_utils import notify_log_panel
-from equinox.gui.request_panel._mixins.send_response_mixin import SendResponseMixin
-from equinox.gui.request_panel._mixins.send_worker_mixin import SendWorkerMixin
 from equinox.security import redact_url
-from PyQt6.QtWidgets import QWidget
+
+from .send_response_mixin import SendResponseMixin
+from .send_worker_mixin import SendWorkerMixin
 
 logger = logging.getLogger(__name__)
 
 
-class _RequestSendMixin(SendWorkerMixin, SendResponseMixin):  # type: ignore[misc]
+class _RequestSendMixin(SendWorkerMixin, SendResponseMixin):
     """Orchestrate request preparation, worker dispatch, and response handling."""
 
     url_input: Any
@@ -60,7 +58,7 @@ class _RequestSendMixin(SendWorkerMixin, SendResponseMixin):  # type: ignore[mis
         snapshot = self._build_request_editor_snapshot()
         if not self._ensure_sendable_url(snapshot.url):
             return
-        logger.debug("_send_request() initiated: url=%s", redact_url(snapshot.url)[:80])
+        logger.debug("_send_request() initiated: url=%s", redact_url(snapshot.url)[:80])  # type: ignore[index]
         self._display_preflight_warnings()
         if not self._strict_policy_allows_send(snapshot):
             return

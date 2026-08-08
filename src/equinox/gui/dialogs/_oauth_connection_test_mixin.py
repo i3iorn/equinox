@@ -2,13 +2,13 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from equinox.gui.dialogs._oauth_form_utils import parse_json_object_field_lenient
 from equinox.gui.workers import OAuthTokenTester
 
 if TYPE_CHECKING:
-    from PyQt6.QtWidgets import QPushButton
+    from PyQt6.QtWidgets import QPushButton, QWidget
 
 
 class OAuthConnectionTestMixin:
@@ -25,7 +25,7 @@ class OAuthConnectionTestMixin:
     test_btn: QPushButton
     view_response_btn: QPushButton
     _tester: OAuthTokenTester | None
-    _last_test_response: dict | None
+    _last_test_response: dict[str, Any] | None
     _test_btn_idle_text: str
     _test_btn_busy_text: str
 
@@ -39,10 +39,25 @@ class OAuthConnectionTestMixin:
         if not self._last_test_response:
             return
         # Deferred import to avoid circular imports between sibling dialogs.
-        from equinox.gui.dialogs.auth_dialog import _TokenResponseDialog
+        from equinox.gui.dialogs.auth_dialog.oauth2.response_dialog import (
+            OAuth2TokenResponseDialog,
+        )
 
-        dlg = _TokenResponseDialog(self._last_test_response, self)  # type: ignore[arg-type]
+        dlg = OAuth2TokenResponseDialog(self._last_test_response, self._dialog_parent())
         dlg.exec()
+
+    def _dialog_parent(self) -> QWidget | None:
+        """Return the widget modal children should parent to.
+
+        Hosts are usually the dialog itself, but a non-widget controller can
+        point at its view instead.
+        """
+        from PyQt6.QtWidgets import QWidget as _QWidget
+
+        if isinstance(self, _QWidget):
+            return self
+        view = getattr(self, "_view", None)
+        return view if isinstance(view, _QWidget) else None
 
     def _set_status(self, msg: str, ok: bool | None) -> None:
         """Update status text using DirtyDialogMixin formatting when available."""
@@ -71,7 +86,7 @@ class OAuthConnectionTestMixin:
         if missing:
             from PyQt6.QtWidgets import QMessageBox
 
-            QMessageBox.warning(self, "Missing Fields", missing)  # type: ignore[arg-type]
+            QMessageBox.warning(self._dialog_parent(), "Missing Fields", missing)
             return
 
         extra_params = parse_json_object_field_lenient(extra_raw)

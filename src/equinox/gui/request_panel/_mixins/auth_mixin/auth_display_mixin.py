@@ -8,8 +8,7 @@ from typing import Any
 from equinox.auth import OAuth2Auth
 from equinox.core.request import Request
 from equinox.core.util.time import utc_now
-from equinox.gui.request_panel._constants import AUTH_VOLATILE_KEYS
-from equinox.gui.request_panel._constants import FOLDER_AUTH_PREFIX
+from equinox.gui.request_panel._constants import AUTH_VOLATILE_KEYS, FOLDER_AUTH_PREFIX
 from equinox.security import mask_secret
 
 logger = logging.getLogger(__name__)

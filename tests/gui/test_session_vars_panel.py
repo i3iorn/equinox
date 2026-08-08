@@ -129,7 +129,7 @@ class TestVariablesPanelRefresh:
         vp.refresh_session_vars({"BASE_URL": "https://api.test", "TOKEN": "abc"})
         clipboard_text = []
         with patch(
-            "equinox.gui.variables_panel._session_vars_mixin.QApplication.clipboard"
+            "equinox.gui.variables_panel._session_vars_mixin.QApplication.clipboard",
         ) as mock_cb:
             mock_clip = MagicMock()
             mock_cb.return_value = mock_clip
@@ -167,7 +167,7 @@ class TestVariablesPanelRefresh:
         parent.request_panel = rp
 
         with patch(
-            "equinox.gui.variables_panel._session_vars_mixin.QInputDialog.getText"
+            "equinox.gui.variables_panel._session_vars_mixin.QInputDialog.getText",
         ) as mock_get_text:
             mock_get_text.side_effect = [("TOKEN", True), ("abc123", True)]
             vp._add_session_var()
@@ -181,7 +181,7 @@ class TestVariablesPanelRefresh:
         vp.refresh_session_vars({"A": "1"})
 
         with patch(
-            "equinox.gui.variables_panel._session_vars_mixin.QInputDialog.getText"
+            "equinox.gui.variables_panel._session_vars_mixin.QInputDialog.getText",
         ) as mock_get_text:
             mock_get_text.side_effect = [("B", True), ("2", True)]
             vp._add_session_var()
@@ -197,10 +197,10 @@ class TestVariablesPanelRefresh:
         vp = variables_panel
         with (
             patch(
-                "equinox.gui.variables_panel._session_vars_mixin.QInputDialog.getText"
+                "equinox.gui.variables_panel._session_vars_mixin.QInputDialog.getText",
             ) as mock_get_text,
             patch(
-                "equinox.gui.variables_panel._session_vars_mixin.QMessageBox.warning"
+                "equinox.gui.variables_panel._session_vars_mixin.QMessageBox.warning",
             ) as mock_warn,
         ):
             mock_get_text.return_value = ("bad key", True)
@@ -211,8 +211,8 @@ class TestVariablesPanelRefresh:
 
     def test_magic_hint_is_visible_in_global_section(self, variables_panel):
         vp = variables_panel
-        assert "{{TODAY}}" in vp._magic_hint.text()
-        assert "{{ONE_MONTH_AGO}}" in vp._magic_hint.text()
+        assert "TODAY" in vp._magic_hint.text()
+        assert "ONE_MONTH_AGO" in vp._magic_hint.text()
 
     def test_global_table_height_scales_with_content(self, variables_panel):
         vp = variables_panel

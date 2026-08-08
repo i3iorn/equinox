@@ -11,8 +11,7 @@ import hashlib
 import json
 import logging
 import re
-from typing import Any
-from typing import cast
+from typing import Any, cast
 
 from equinox.core import urls
 from equinox.storage.database import Database
@@ -532,20 +531,7 @@ class Recommender:
         new_request: dict[str, Any],
         top_n: int = _DEFAULT_TOP_N,
     ) -> list[dict[str, Any]]:
-        """Generate ranked header and query-parameter suggestions.
-
-        Analyses successful history matches to propose headers and query params
-        ranked by how consistently they appear, scaled by a per-type weight.
-
-        Args:
-            new_request: Dict with at least ``"method"`` and ``"url"`` keys.
-            top_n:       Maximum number of suggestions to return.
-
-        Returns:
-            List of suggestion dicts ordered by descending confidence, each
-            containing ``"type"``, ``"key"``, ``"suggested_value"``,
-            ``"confidence"``, and ``"based_on"`` fields.
-        """
+        """Generate ranked header and query-parameter suggestions."""
         top_n = max(1, min(int(top_n), _MAX_TOP_N))
 
         existing_header_keys = _request_header_set(new_request)
@@ -562,19 +548,56 @@ class Recommender:
 
         successful = matches
 
-        total = len(successful)
-        total_weight = sum(
-            max(float(score.get("total") or 0.0), _SUCCESS_WEIGHT_FLOOR) for _, score in successful
-        )
+        total_weight = self._calculate_total_weight(successful)
         if total_weight <= 0:
             return []
 
+        header_suggestions = self._generate_header_suggestions(
+            successful,
+            existing_header_keys,
+            total_weight,
+        )
+        query_suggestions = self._generate_query_parameter_suggestions(
+            successful,
+            existing_query_keys,
+            total_weight,
+        )
+
+        suggestions = header_suggestions + query_suggestions
+
+        suggestions.sort(
+            key=lambda s: (s["confidence"], s["type"], s["key"]),
+            reverse=True,
+        )
+
+        self._log_recommender_suggestions(
+            new_request,
+            suggestions,
+            top_n,
+        )
+
+        return suggestions[:top_n]
+
+    def _calculate_total_weight(self, successful: list[tuple[dict[str, Any], dict[str, Any]]]) -> float:
+        """Calculates the total normalized weight based on successful matches."""
+        total_weight = sum(
+            max(float(score.get("total") or 0.0), _SUCCESS_WEIGHT_FLOOR)
+            for _, score in successful
+        )
+        return total_weight
+
+    def _generate_header_suggestions(
+        self,
+        successful: list[tuple[dict[str, Any], dict[str, Any]]],
+        existing_header_keys: set[str],
+        total_weight: float,
+    ) -> list[dict[str, Any]]:
+        """Generates header suggestions based on frequency and confidence."""
+        header_freq: dict[str, dict[str, float]] = {}
         suggestions: list[dict[str, Any]] = []
 
-        # ── Header suggestions ────────────────────────────────────────────────
-        # Build a frequency map: header_name → {value → count}
-        header_freq: dict[str, dict[str, float]] = {}
         for cand, score in successful:
+            # 'score' here is a dictionary from find_best_matches results
             weight = max(float(score.get("total") or 0.0), _SUCCESS_WEIGHT_FLOOR)
             for k, v in (cand.get("request_headers") or {}).items():
                 norm_key = _normalize_header_key(k)
@@ -595,12 +618,21 @@ class Recommender:
                     "key": key,
                     "suggested_value": _most_frequent_value(value_counts),
                     "confidence": confidence,
-                    "based_on": total,
+                    "based_on": len(successful),  # Corrected based on structure
                 },
             )
+        return suggestions
 
-        # ── Query parameter suggestions ───────────────────────────────────────
+    def _generate_query_parameter_suggestions(
+        self,
+        successful: list[tuple[dict[str, Any], dict[str, Any]]],
+        existing_query_keys: set[str],
+        total_weight: float,
+    ) -> list[dict[str, Any]]:
+        """Generates query parameter suggestions based on frequency and confidence."""
         param_freq: dict[str, float] = {}
+        suggestions: list[dict[str, Any]] = []
+
         for cand, score in successful:
             weight = max(float(score.get("total") or 0.0), _SUCCESS_WEIGHT_FLOOR)
             for k in cand.get("query_params") or {}:
@@ -619,15 +651,18 @@ class Recommender:
                     "key": key,
                     "suggested_value": None,
                     "confidence": confidence,
-                    "based_on": total,
+                    "based_on": len(successful),  # Corrected based on structure
                 },
             )
+        return suggestions
 
-        suggestions.sort(
-            key=lambda s: (s["confidence"], s["type"], s["key"]),
-            reverse=True,
-        )
-
+    def _log_recommender_suggestions(
+        self,
+        new_request: dict[str, Any],
+        suggestions: list[dict[str, Any]],
+        top_n: int,
+    ) -> None:
+        """Logs the generated recommendations."""
         logger.debug(
             "recommender_generated_suggestions",
             extra={
@@ -637,5 +672,3 @@ class Recommender:
                 "top_n": top_n,
             },
         )
-
-        return suggestions[:top_n]

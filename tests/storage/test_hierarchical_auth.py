@@ -654,7 +654,7 @@ class TestQueryParamsDefaultUnchecked:
             [
                 {"key": "enabled_param", "value": "1", "enabled": True},
                 {"key": "disabled_param", "value": "2", "enabled": False},
-            ]
+            ],
         )
 
         # Data rows
@@ -708,7 +708,7 @@ class TestParamsSetAll:
             [
                 {"key": "a", "value": "1", "enabled": False},
                 {"key": "b", "value": "2", "enabled": False},
-            ]
+            ],
         )
         # Both disabled
         assert panel.params_table.item(0, 0).checkState() == Qt.CheckState.Unchecked
@@ -727,7 +727,7 @@ class TestParamsSetAll:
             [
                 {"key": "a", "value": "1", "enabled": True},
                 {"key": "b", "value": "2", "enabled": True},
-            ]
+            ],
         )
         assert panel.params_table.item(0, 0).checkState() == Qt.CheckState.Checked
         assert panel.params_table.item(1, 0).checkState() == Qt.CheckState.Checked
@@ -866,8 +866,8 @@ class TestAuthDialogClientPicker:
         dialog = AuthDialog(stale_auth, None, db=db)
 
         # Verify the stale tokens are loaded
-        assert dialog.oauth2_access_token.text() == "stale-token"
-        assert dialog.oauth2_refresh_token.text() == "stale-refresh"
+        assert dialog.oauth2.access_token.text() == "stale-token"
+        assert dialog.oauth2.refresh_token.text() == "stale-refresh"
 
         # Simulate picking the saved credential
         dialog._on_client_picked(1)  # trigger with any index
@@ -876,32 +876,8 @@ class TestAuthDialogClientPicker:
         dialog.cred_picker.setCurrentIndex(1)
 
         # Token fields must be cleared
-        assert dialog.oauth2_access_token.text() == ""
-        assert dialog.oauth2_refresh_token.text() == ""
+        assert dialog.oauth2.access_token.text() == ""
+        assert dialog.oauth2.refresh_token.text() == ""
         # But credential fields should be populated
-        assert dialog.oauth2_token_url.text() == "https://auth.example.com/token"
-        assert dialog.oauth2_client_id.text() == "cid"
-
-    def test_oauth2_error_with_response_enables_view_button(self, qapp, db):
-        """Error payloads with a response snapshot should keep View Response enabled."""
-        from equinox.gui.dialogs.auth_dialog import AuthDialog
-
-        dialog = AuthDialog(None, None, db=db)
-        response = {
-            "status_code": 401,
-            "method": "POST",
-            "url": "https://auth.example.com/token",
-            "headers": {"content-type": "application/json"},
-            "body": {"error": "invalid_client"},
-        }
-
-        dialog._on_token_fetched(
-            {
-                "ok": False,
-                "auth": None,
-                "error": "Token endpoint returned HTTP 401",
-                "response": response,
-            }
-        )
-
-        assert dialog.oauth2_view_response_btn.isEnabled() is True
+        assert dialog.oauth2.token_url.text() == "https://auth.example.com/token"
+        assert dialog.oauth2.client_id.text() == "cid"

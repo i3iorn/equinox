@@ -87,7 +87,7 @@ def safe_read_text_file(
     size_bytes = path.stat().st_size
     if size_bytes > max_bytes:
         raise ValueError(
-            f"File is too large ({size_bytes} bytes). Maximum allowed is {max_bytes} bytes."
+            f"File is too large ({size_bytes} bytes). Maximum allowed is {max_bytes} bytes.",
         )
 
-    return path.read_text(encoding=encoding, errors=errors)
+    return str(path.read_text(encoding=encoding, errors=errors))

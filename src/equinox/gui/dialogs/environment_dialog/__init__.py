@@ -1,6 +1,7 @@
 """Environment management dialog — full variable CRUD."""
 
-from typing import Any, Iterator, Optional
+from collections.abc import Iterator
+from typing import Any
 
 from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtGui import QFont
@@ -23,9 +24,11 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
-from equinox.core.io.dotenv import parse_dotenv as _parse_dotenv
 from equinox.gui.dialogs._list_form_dialog_mixin import ListFormDialogMixin
-from equinox.gui.file_ops import safe_read_text_file, validate_selected_path
+from equinox.gui.dialogs.environment_dialog.dotenv_importer import (
+    DotenvImporter,
+    DotenvImportResult,
+)
 from equinox.gui.theme import Colors
 from equinox.storage import Database, EnvironmentManager
 
@@ -43,12 +46,12 @@ class EnvironmentDialog(ListFormDialogMixin, QDialog):
 
     environment_changed = pyqtSignal()  # emitted after any structural change
 
-    def __init__(self, db: Database, parent: Optional[QWidget] = None) -> None:
+    def __init__(self, db: Database, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self.db = db
         self.env_manager = EnvironmentManager(db)
-        self._current_env_id: Optional[int] = None
-        self._current_id: Optional[int] = None  # Alias for mixin
+        self._current_env_id: int | None = None
+        self._current_id: int | None = None  # Alias for mixin
         self._dirty = False  # unsaved variable edits
 
         # DirtyDialogMixin requirements
@@ -57,19 +60,31 @@ class EnvironmentDialog(ListFormDialogMixin, QDialog):
         self.setWindowTitle("Manage Environments")
         self.setMinimumSize(780, 520)
         self._init_ui()
-        # Set _list_widget after UI construction (required by ListFormDialogMixin)
         self._list_widget = self.env_list
         self._refresh_list()
 
     # ── UI ────────────────────────────────────────────────────────────
 
     def _init_ui(self) -> None:
+        """Initializes and sets up the user interface layout."""
         root = QVBoxLayout(self)
         root.setSpacing(8)
 
         splitter = QSplitter(Qt.Orientation.Horizontal)
 
-        # ── Left: environment list ────────────────────────────────────
+        left = self._build_left_panel()
+        right = self._build_right_panel()
+
+        splitter.addWidget(left)
+        splitter.addWidget(right)
+        splitter.setSizes([240, 540])
+        splitter.setChildrenCollapsible(False)
+        splitter.setHandleWidth(5)
+        root.addWidget(splitter, 1)
+        self._setup_bottom_buttons(root)
+
+    def _build_left_panel(self) -> QWidget:
+        """Constructs the left panel containing environment list and controls."""
         left = QWidget()
         llay = QVBoxLayout(left)
         llay.setContentsMargins(0, 0, 4, 0)
@@ -81,47 +96,72 @@ class EnvironmentDialog(ListFormDialogMixin, QDialog):
         self.env_list.itemDoubleClicked.connect(self._rename_environment)
         llay.addWidget(self.env_list, 1)
 
+        # Environment Action Buttons
         env_btns = QHBoxLayout()
         self.new_btn = QPushButton("New…")
         self.rename_btn = QPushButton("Rename…")
         self.activate_btn = QPushButton("Activate")
         self.delete_btn = QPushButton("Delete")
+
         for b in (self.new_btn, self.rename_btn, self.activate_btn, self.delete_btn):
             b.setFixedHeight(26)
             env_btns.addWidget(b)
+
         self.rename_btn.setEnabled(False)
         self.activate_btn.setEnabled(False)
         self.delete_btn.setEnabled(False)
         llay.addLayout(env_btns)
 
+        # Connect signals
         self.new_btn.clicked.connect(self._create_environment)
         self.rename_btn.clicked.connect(self._rename_environment)
         self.activate_btn.clicked.connect(self._activate_environment)
         self.delete_btn.clicked.connect(self._delete_environment)
 
-        splitter.addWidget(left)
+        return left
 
-        # ── Right: variable table ─────────────────────────────────────
+    def _build_right_panel(self) -> QWidget:
+        """Constructs the right panel containing the variable table and controls."""
         right = QWidget()
         rlay = QVBoxLayout(right)
         rlay.setContentsMargins(4, 0, 0, 0)
 
+        # Header Label
+        self._setup_header(rlay)
+
+        # Variable Table Setup
+        self._setup_variable_table(rlay)
+
+        # Variable Action Buttons
+        self._setup_variable_controls(rlay)
+
+        return right
+
+    def _setup_header(self, rlay: QVBoxLayout) -> None:
+        """Sets up the header label for the right panel."""
         self.var_header = QLabel(
-            f"<b>Variables</b>  <span style='color:{Colors.FG_MUTED};'>(select an environment)</span>"
+            f"<b>Variables</b>  <span style='color:{Colors.FG_MUTED};'>(select an environment)</span>",
         )
         rlay.addWidget(self.var_header)
 
+    def _setup_variable_table(self, rlay: QVBoxLayout) -> None:
+        """Configures and adds the variable table to the layout."""
         self.var_table = QTableWidget()
         self.var_table.setColumnCount(3)
         self.var_table.setHorizontalHeaderLabels(["Variable", "Value", "Secret"])
+
+        # Configure Header Resize Modes
         hdr = self.var_table.horizontalHeader()
         if hdr is not None:
             hdr.setSectionResizeMode(0, QHeaderView.ResizeMode.Interactive)
             hdr.setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
             hdr.setSectionResizeMode(2, QHeaderView.ResizeMode.Fixed)
+
         self.var_table.setColumnWidth(2, 58)
         if hdr is not None:
             hdr.setDefaultSectionSize(180)
+
+        # Other Table Settings
         v_hdr = self.var_table.verticalHeader()
         if v_hdr is not None:
             v_hdr.setVisible(False)
@@ -131,12 +171,15 @@ class EnvironmentDialog(ListFormDialogMixin, QDialog):
         self.var_table.itemChanged.connect(self._on_var_changed)
         rlay.addWidget(self.var_table, 1)
 
+    def _setup_variable_controls(self, rlay: QVBoxLayout) -> None:
+        """Sets up the action buttons for variable management."""
         var_btns = QHBoxLayout()
         self.add_var_btn = QPushButton("Add Variable")
         self.remove_var_btn = QPushButton("Remove Selected")
         self.import_dotenv_btn = QPushButton("Import .env…")
         self.import_dotenv_btn.setToolTip("Load variables from a .env file (merged with existing)")
         self.save_vars_btn = QPushButton("💾  Save Variables")
+
         for b in (
             self.add_var_btn,
             self.remove_var_btn,
@@ -145,26 +188,21 @@ class EnvironmentDialog(ListFormDialogMixin, QDialog):
         ):
             b.setEnabled(False)
             var_btns.addWidget(b)
+
         var_btns.addStretch()
         rlay.addLayout(var_btns)
 
+        # Connect signals
         self.add_var_btn.clicked.connect(self._add_variable_row)
         self.remove_var_btn.clicked.connect(self._remove_selected_variable)
         self.import_dotenv_btn.clicked.connect(self._import_dotenv)
         self.save_vars_btn.clicked.connect(self._save_variables)
 
-        splitter.addWidget(right)
-        splitter.setSizes([240, 540])
-        splitter.setChildrenCollapsible(False)
-        splitter.setHandleWidth(5)
-        root.addWidget(splitter, 1)
-
-        # ── Bottom buttons ────────────────────────────────────────────
+    def _setup_bottom_buttons(self, parent_layout: QVBoxLayout) -> None:
+        """Adds the final dialog button box to the main layout."""
         btns = QDialogButtonBox(QDialogButtonBox.StandardButton.Close)
         btns.rejected.connect(self._on_close)
-        root.addWidget(btns)
-
-    # ── Environment list actions (ListFormDialogMixin template methods) ──
+        parent_layout.addWidget(btns)
 
     def _build_list_items(self) -> Iterator[tuple[int, str, dict[str, Any]]]:
         """Yield (item_id, label, kwargs) for each environment."""
@@ -173,7 +211,7 @@ class EnvironmentDialog(ListFormDialogMixin, QDialog):
             name = env["name"]
             active = bool(env.get("is_active"))
             label = ("✓  " if active else "     ") + name
-            kwargs = {}
+            kwargs: dict[str, Any] = {}
             if active:
                 from equinox.gui.theme import Colors
 
@@ -187,10 +225,6 @@ class EnvironmentDialog(ListFormDialogMixin, QDialog):
         """Load the variables for the environment."""
         self._current_env_id = env_id
         self._load_variables(env_id)
-
-    # ── Selection logic ───────────────────────────────────────────────
-    # _apply_selection() inherited from ListFormDialogMixin
-    # _on_item_selected(current, _prev) inherited from ListFormDialogMixin
 
     def _set_form_enabled(self, enabled: bool) -> None:
         """Enable/disable the variable table and action buttons."""
@@ -213,8 +247,6 @@ class EnvironmentDialog(ListFormDialogMixin, QDialog):
         if not has:
             self.var_table.setRowCount(0)
 
-    # ── Variable loading ───────────────────────────────────────────────
-
     def _load_variables(self, env_id: int) -> None:
         env = self.env_manager.get_environment(env_id)
         if not env:
@@ -228,7 +260,7 @@ class EnvironmentDialog(ListFormDialogMixin, QDialog):
         self.var_header.setText(
             f"<b>Variables — {name}</b>{active_tag}"
             f"  <span style='color:{Colors.FG_MUTED};'>"
-            f"{len(variables)} variable(s)</span>"
+            f"{len(variables)} variable(s)</span>",
         )
         self.var_table.blockSignals(True)
         self.var_table.setUpdatesEnabled(False)
@@ -251,8 +283,6 @@ class EnvironmentDialog(ListFormDialogMixin, QDialog):
             self.save_vars_btn.setText("💾  Save Variables *")
         else:
             self.save_vars_btn.setText("💾  Save Variables")
-
-    # ── Variable table helpers ────────────────────────────────────────
 
     def _append_var_row(self, key: str = "", value: str = "", secret: bool = False) -> None:
         row = self.var_table.rowCount()
@@ -316,7 +346,9 @@ class EnvironmentDialog(ListFormDialogMixin, QDialog):
 
         try:
             self.env_manager.update_environment(
-                self._current_env_id, variables=variables, secret_keys=secret_keys
+                self._current_env_id,
+                variables=variables,
+                secret_keys=secret_keys,
             )
             self._dirty = False
             self._update_save_btn()
@@ -324,7 +356,7 @@ class EnvironmentDialog(ListFormDialogMixin, QDialog):
             self.environment_changed.emit()
             try:
                 win = self.window()
-                status = win.statusBar() if win is not None else None
+                status = win.statusBar() if win is not None else None  # type: ignore[attr-defined]
                 if status is not None:
                     status.showMessage("Variables saved", 3000)
             except Exception:
@@ -400,9 +432,9 @@ class EnvironmentDialog(ListFormDialogMixin, QDialog):
             QMessageBox.critical(self, "Error", f"Failed to delete: {exc}")
 
     def _import_dotenv(self) -> None:
-        """Import variables from a .env file into the current environment (merge)."""
         if self._current_env_id is None:
             return
+
         path, _ = QFileDialog.getOpenFileName(
             self,
             "Import .env File",
@@ -411,56 +443,92 @@ class EnvironmentDialog(ListFormDialogMixin, QDialog):
         )
         if not path:
             return
+
+        importer = DotenvImporter()
+
         try:
-            source = validate_selected_path(path, must_exist=True)
-            content = safe_read_text_file(
-                source,
-                max_bytes=_MAX_DOTENV_IMPORT_BYTES,
-                encoding="utf-8",
-                errors="replace",
-            )
-            new_vars = _parse_dotenv(content)
-        except ValueError as exc:
-            QMessageBox.warning(self, "Import Error", str(exc))
-            return
+            content = importer.load_file(path)
+            new_vars = importer.parse(content)
         except Exception as exc:
-            QMessageBox.critical(self, "Import Error", f"Could not read file:\n{exc}")
+            QMessageBox.critical(self, "Import Error", str(exc))
             return
 
-        if not new_vars:
-            QMessageBox.information(
-                self, "Import .env", "No KEY=VALUE pairs found in the selected file."
-            )
-            return
+        existing = self._get_existing_keys_with_values()
+        result = importer.diff(new_vars, existing)
 
+        self._apply_import_result(result)
+        self._dirty = True
+        self._update_save_btn()
+        self._show_import_summary(result)
+
+    def _get_existing_keys_with_values(self) -> dict[str, str]:
+        data = {}
+        for r in range(self.var_table.rowCount()):
+            k = self.var_table.item(r, 0)
+            v = self.var_table.item(r, 1)
+            if k and v:
+                data[k.text()] = v.text()
+        return data
+
+    def _apply_import_result(self, result: DotenvImportResult) -> None:
+        self.var_table.blockSignals(True)
+        try:
+            for key, value in result.updated.items():
+                row = self._find_row_for_key(key)
+                if row is not None:
+                    self.var_table.item(row, 1).setText(value)  # type: ignore[union-attr]
+
+            for key, value in result.added.items():
+                self._append_var_row(key, value)
+        finally:
+            self.var_table.blockSignals(False)
+
+    def _find_row_for_key(self, key: str) -> int | None:
+        for r in range(self.var_table.rowCount()):
+            k_item = self.var_table.item(r, 0)
+            if k_item and k_item.text() == key:
+                return r
+        return None
+
+    def _get_existing_keys(self) -> dict[str, int]:
+        """Retrieves the current variables already stored in the table."""
         existing_keys: dict[str, int] = {}
         for r in range(self.var_table.rowCount()):
             k_item = self.var_table.item(r, 0)
             if k_item:
                 existing_keys[k_item.text()] = r
+        return existing_keys
 
+    def _update_table_with_variables(
+        self,
+        new_vars: dict[str, str],
+        existing_keys: dict[str, int],
+    ) -> None:
+        """Updates or appends rows in the QTableWidget based on new variables."""
         self.var_table.blockSignals(True)
         self.var_table.setUpdatesEnabled(False)
-        added = updated = 0
-        try:
-            for key, value in new_vars.items():
-                if key in existing_keys:
-                    v_item = self.var_table.item(existing_keys[key], 1)
-                    if v_item:
-                        v_item.setText(value)
-                    updated += 1
-                else:
-                    self._append_var_row(key, value)
-                    added += 1
-        finally:
-            self.var_table.setUpdatesEnabled(True)
-            self.var_table.blockSignals(False)
 
-        self._dirty = True
-        self._update_save_btn()
+        added = 0
+        updated = 0
+        for key, value in new_vars.items():
+            if key in existing_keys:
+                r = existing_keys[key]
+                v_item = self.var_table.item(r, 1)
+                if v_item:
+                    v_item.setText(value)
+                updated += 1
+            else:
+                self._append_var_row(key, value)
+                added += 1
+
+        self.var_table.setUpdatesEnabled(True)
+        self.var_table.blockSignals(False)
+
+    def _show_import_summary(self, imported: DotenvImportResult) -> None:
+        """Displays a summary message to the user after the import operation."""
         QMessageBox.information(
             self,
             "Import .env",
-            f"Imported {len(new_vars)} variable(s): {added} new, {updated} updated.\n\n"
+            f"Imported {imported.added} variable(s): {imported.added} new, {imported.updated} updated.\n\n"
             "Click 'Save Variables' to persist the changes.",
         )
