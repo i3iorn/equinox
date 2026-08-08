@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from typing import Any
-from typing import cast
 from typing import Literal
 
 from equinox.auth import OAuth2Auth
@@ -23,8 +22,6 @@ TokenAuthMode = Literal["basic", "body"]
 
 class OAuth2TokenController(QObject):
     """Controller responsible for securely fetching OAuth2 tokens."""
-
-    _ALLOWED_TOKEN_AUTH: set[TokenAuthMode] = {"basic", "body"}
 
     def __init__(
         self,
@@ -146,11 +143,16 @@ class OAuth2TokenController(QObject):
 
     def _validate_token_auth(self, value: Any) -> TokenAuthMode:
         value_str = self._as_optional_str(value)
-        if value_str not in self._ALLOWED_TOKEN_AUTH:
-            raise AuthError("Invalid token_auth: must be 'basic' or 'body'.")
-        # `in` narrowing against a set[Literal[...]] isn't guaranteed across
-        # mypy versions - cast explicitly rather than depend on it.
-        return cast(TokenAuthMode, value_str)
+        # Direct literal comparisons, not `in` against self._ALLOWED_TOKEN_AUTH:
+        # whether that narrows str to TokenAuthMode is mypy-version-dependent
+        # (CI and local versions disagreed on it), so a cast is "needed" on
+        # one and "redundant" on the other. Matching each literal explicitly
+        # narrows identically on every version.
+        if value_str == "basic":
+            return "basic"
+        if value_str == "body":
+            return "body"
+        raise AuthError("Invalid token_auth: must be 'basic' or 'body'.")
 
     def _load_interpolation_variables(self) -> dict[str, str]:
         if not self._db:
