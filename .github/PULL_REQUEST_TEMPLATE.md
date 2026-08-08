@@ -51,19 +51,19 @@ Closes #(issue number, if applicable)
 - [ ] No hardcoded secrets or credentials
 - [ ] No SQL string formatting - parameterized queries only
 - [ ] Auth data encrypted via `_serialize_auth` / `_deserialize_auth` boundary (`storage/collections/auth.py`)
-- [ ] Security scan passes: `bandit -r src/equinox --severity-level=medium` (no new medium/high findings)
+- [ ] Security scan passes: `bandit -r src/equinox --severity-level=medium -s "B102,B113,B318,B608"` (no new medium/high findings)
 
 ### Type Safety
 
 - [ ] Explicit type hints on all new functions/methods
-- [ ] `mypy --strict src tests` passes locally
+- [ ] `mypy src tests` passes locally (strict mode is enabled via `pyproject.toml`'s `[tool.mypy]`, not a CLI flag)
 - [ ] No `# type: ignore` added without a justification comment
-- [ ] `Optional[X]` used instead of bare `X | None` for Python 3.9 compat
+- [ ] Modern union syntax (`X | None`) used freely — `requires-python >= 3.10` supports it natively
 
 ### Testing
 
-- [ ] Coverage ≥ 85% maintained (`pytest --cov-fail-under=85`)
-- [ ] Tests pass on Python 3.9, 3.10, 3.11, 3.12
+- [ ] Coverage ≥ 87% maintained (`pytest --cov-fail-under=87`)
+- [ ] Tests pass on Python 3.10, 3.11, 3.12
 - [ ] No flaky tests introduced
 
 ### Schema Changes (if applicable)

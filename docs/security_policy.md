@@ -13,10 +13,11 @@ Rotation Semantics
 - rotate_all_secrets(db_path, new_password) will re-encrypt plaintext secrets with a Fernet derived from new_password.
 - If a value already begins with the enc: prefix, it is skipped (no decryption attempt of prior blobs).
 - Encrypted blobs (enc:) are not decrypted with a newer key; their ciphertext remains opaque and is preserved unless a separate rotation path is introduced.
-- A startup rotation can be forced by setting EQUINOX_DB_PATH; a separate CLI command (rotate-secrets) will be added to drive rotation explicitly with a provided new password.
+- A startup rotation can be forced by setting EQUINOX_DB_PATH; a separate CLI command (rotate-secrets) drives rotation explicitly with a provided new password.
 
 CLI & Automation
-- Added a lightweight CLI subcommand: equinox rotate-secrets --db-path <path> --new-password <password>
+- CLI subcommand: equinox rotate-secrets --db-path <path> --new-password <password>
+- If --new-password is omitted, the command prompts for it securely instead of accepting it as a plaintext argument.
 - In production setups, consider an automation hook that rotates secrets after a key rotation event, or periodically as part of maintenance.
 
 Threat Model & Remediation
