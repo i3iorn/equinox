@@ -536,7 +536,7 @@ class MigrationRunner:
             try:
                 rows = conn.execute(
                     f"SELECT version, description, applied_at "  # nosec B608
-                    f"FROM {self.VERSION_TABLE} ORDER BY version"  # nosec B608
+                    f"FROM {self.VERSION_TABLE} ORDER BY version",  # nosec B608
                 ).fetchall()
                 return [dict(row) for row in rows]
             except sqlite3.OperationalError:
@@ -560,7 +560,7 @@ class MigrationRunner:
     def _read_version(self, conn: sqlite3.Connection) -> int:
         try:
             row = conn.execute(
-                f"SELECT MAX(version) FROM {self.VERSION_TABLE}"  # nosec B608
+                f"SELECT MAX(version) FROM {self.VERSION_TABLE}",  # nosec B608
             ).fetchone()
             return int(row[0]) if row and row[0] is not None else 0
         except sqlite3.OperationalError:
@@ -574,7 +574,9 @@ class MigrationRunner:
             try:
                 stmts = self._split_sql(migration.sql)
                 logger.debug(
-                    "Migration v%d contains %d SQL statement(s)", migration.version, len(stmts)
+                    "Migration v%d contains %d SQL statement(s)",
+                    migration.version,
+                    len(stmts),
                 )
                 for i, stmt in enumerate(stmts, 1):
                     logger.debug("Migration v%d executing statement %d", migration.version, i)
@@ -620,7 +622,8 @@ class MigrationRunner:
             )
             if cur.fetchone() is None:
                 logger.debug(
-                    "Target table %s for ALTER TABLE does not exist — skipping statement", table
+                    "Target table %s for ALTER TABLE does not exist — skipping statement",
+                    table,
                 )
                 return
             # PRAGMA statements do not support parameter binding. Safely inline

@@ -81,7 +81,10 @@ def test_wrap_response_attaches_connection_info_and_sent_url():
     )
 
     wrapped = dispatcher._wrap_response(
-        raw_resp, req, elapsed=0.01, sent_headers={"accept": "application/json"}
+        raw_resp,
+        req,
+        elapsed=0.01,
+        sent_headers={"accept": "application/json"},
     )
 
     assert wrapped.sent_url == "https://api.example.com/users"
@@ -123,7 +126,7 @@ def test_wrap_response_preserves_repeated_set_cookie_headers():
         [
             (b"Set-Cookie", b"a=1; Path=/"),
             (b"Set-Cookie", b"b=2; Path=/"),
-        ]
+        ],
     )
     raw_resp = httpx.Response(200, headers=headers, content=b"{}", request=raw_req)
 
@@ -175,7 +178,7 @@ def test_dispatcher_applies_cookie_scope_by_domain():
                     "value": "abc",
                     "domain": "example.com",
                     "path": "/",
-                }
+                },
             ]
 
     dispatcher = HttpxDispatcher(

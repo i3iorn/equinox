@@ -243,7 +243,7 @@ class TestScriptRunnerComprehensive:
 
     def test_post_script_json_body_parsing(self):
         resp = {"status_code": 200, "body": '{"items":[1,2,3]}', "json": {"items": [1, 2, 3]}}
-        script = "import json\n" 'env["count"] = str(len(response["json"]["items"]))\n'
+        script = 'import json\nenv["count"] = str(len(response["json"]["items"]))\n'
         result = ScriptRunner.run_post(script, resp, {})
         assert result.error is None
         assert result.env_changes["count"] == "3"
@@ -347,7 +347,7 @@ class TestRedactComprehensive:
                 "client_secret": "s1",
                 "refresh_token": "r1",
                 "username": "alice",
-            }
+            },
         )
         result = redact_body(body)
         assert "s1" not in result
@@ -812,7 +812,7 @@ class TestInterpolationComprehensive:
         random.seed(_seed + 300)
         # Generate a random template
         var_name = "".join(
-            random.choices(string.ascii_letters + string.digits + "_-", k=random.randint(1, 20))
+            random.choices(string.ascii_letters + string.digits + "_-", k=random.randint(1, 20)),
         )
         value = "".join(random.choices(string.printable, k=random.randint(0, 100)))
         text = f"prefix {{{{{var_name}}}}} suffix"

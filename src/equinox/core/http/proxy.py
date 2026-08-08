@@ -45,7 +45,11 @@ def _raise_refused(proxy_url: str, host: str, port: int, err: int, errno_name: s
 
 
 def _check_select_result(
-    sock: socket.socket, host: str, port: int, timeout: float, proxy_url: str
+    sock: socket.socket,
+    host: str,
+    port: int,
+    timeout: float,
+    proxy_url: str,
 ) -> None:
     _, writable, exceptional = _select.select([], [sock], [sock], timeout)
     logger.debug(
@@ -64,7 +68,11 @@ def _check_select_result(
 
 
 def _connect_non_blocking(
-    sock: socket.socket, host: str, port: int, timeout: float, proxy_url: str
+    sock: socket.socket,
+    host: str,
+    port: int,
+    timeout: float,
+    proxy_url: str,
 ) -> None:
     try:
         logger.debug("Attempting non-blocking connect to %s:%s", host, port)

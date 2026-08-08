@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import json
 import logging
-from typing import Any, Optional, cast
+from typing import Any, cast
 
 from equinox.core.secret_managers.base import (
     SecretAuthError,
@@ -35,8 +35,8 @@ class AWSSecretsManagerBackend(SecretManager):
     def __init__(self, **kwargs: Any) -> None:
         """Initialize AWS Secrets Manager backend."""
         super().__init__(**kwargs)
-        self.client: Optional[Any] = None
-        self.region_name: Optional[str] = None
+        self.client: Any | None = None
+        self.region_name: str | None = None
 
     def configure(self, region_name: str = "us-east-1", **kwargs: Any) -> None:
         """Configure AWS Secrets Manager connection.
@@ -53,7 +53,7 @@ class AWSSecretsManagerBackend(SecretManager):
             import boto3  # type: ignore[import-not-found]
         except ImportError as exc:
             raise SecretManagerError(
-                "boto3 is required for AWS Secrets Manager. " "Install with: pip install boto3"
+                "boto3 is required for AWS Secrets Manager. Install with: pip install boto3",
             ) from exc
 
         try:
@@ -133,12 +133,12 @@ class AWSSecretsManagerBackend(SecretManager):
             loaded = json.loads(value)
             if not isinstance(loaded, dict):
                 raise SecretManagerError(
-                    f"Secret '{mask_secret(secret_name, keep=4)}' JSON value is not an object"
+                    f"Secret '{mask_secret(secret_name, keep=4)}' JSON value is not an object",
                 )
             return cast(dict[str, Any], loaded)
         except json.JSONDecodeError as exc:
             raise SecretManagerError(
-                f"Secret '{mask_secret(secret_name, keep=4)}' is not valid JSON: {exc}"
+                f"Secret '{mask_secret(secret_name, keep=4)}' is not valid JSON: {exc}",
             ) from exc
 
     def is_available(self) -> bool:

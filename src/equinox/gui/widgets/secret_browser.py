@@ -98,7 +98,7 @@ class SecretBrowserWidget(QWidget):
         config: dict[str, Any],
         enable_cache: bool = True,
         cache_ttl: int = 300,
-        parent=None,
+        parent: QWidget | None = None,
     ):
         """Initialize the secret browser.
 
@@ -125,7 +125,7 @@ class SecretBrowserWidget(QWidget):
 
         self.secret_input = QLineEdit()
         self.secret_input.setPlaceholderText(
-            "Enter secret name, path, or ID (e.g., db-password or secret/data/db)"
+            "Enter secret name, path, or ID (e.g., db-password or secret/data/db)",
         )
         self.secret_input.returnPressed.connect(self._retrieve_secret)
         search_layout.addWidget(self.secret_input)
@@ -187,7 +187,11 @@ class SecretBrowserWidget(QWidget):
 
         # Create worker thread
         worker = SecretRetrievalWorker(
-            self.manager_type, self.config, self.enable_cache, self.cache_ttl, secret_name
+            self.manager_type,
+            self.config,
+            self.enable_cache,
+            self.cache_ttl,
+            secret_name,
         )
 
         self._retrieval_thread = QThread()
@@ -256,7 +260,9 @@ class SecretBrowserWidget(QWidget):
             return
 
         value = self._current_secret.get(self._selected_key, "")
-        QApplication.clipboard().setText(str(value))
+        clipboard = QApplication.clipboard()
+        if clipboard is not None:
+            clipboard.setText(str(value))
         QMessageBox.information(self, "Copied", "Value copied to clipboard")
 
     def _use_secret(self) -> None:

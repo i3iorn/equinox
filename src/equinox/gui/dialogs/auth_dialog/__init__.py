@@ -254,7 +254,9 @@ class AuthDialog(QDialog):
         self.oauth2.scope.setText(self._auth_text(auth, AuthConfigKey.SCOPE))
         self.oauth2.access_token.setText(self._auth_text(auth, "access_token"))
         self.oauth2.refresh_token.setText(self._auth_text(auth, "refresh_token"))
-        self.oauth2.verify_ssl.setChecked(getattr(auth, AuthConfigKey.VERIFY_SSL, True) is not False)
+        self.oauth2.verify_ssl.setChecked(
+            getattr(auth, AuthConfigKey.VERIFY_SSL, True) is not False,
+        )
 
         token_auth = self._auth_text(auth, AuthConfigKey.TOKEN_AUTH) or self._DEFAULT_TOKEN_AUTH
         token_auth_index = self.oauth2.token_auth.findData(token_auth)

@@ -3,6 +3,7 @@
 Provides a consistent left-aligned label with standard Add / Remove /
 Enable All / Disable All actions and optional presets or file-browse support.
 """
+
 from __future__ import annotations
 
 import re

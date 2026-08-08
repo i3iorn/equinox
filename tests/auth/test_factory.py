@@ -74,9 +74,9 @@ class TestAuthRegistry:
             ("aws_sigv4", "AWSSigV4Auth"),
         ]
         for short, class_name in pairs:
-            assert (
-                AUTH_REGISTRY[short]() is AUTH_REGISTRY[class_name]()
-            ), f"{short!r} and {class_name!r} should resolve to the same class"
+            assert AUTH_REGISTRY[short]() is AUTH_REGISTRY[class_name](), (
+                f"{short!r} and {class_name!r} should resolve to the same class"
+            )
 
 
 # ---------------------------------------------------------------------------

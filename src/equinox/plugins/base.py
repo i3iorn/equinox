@@ -3,7 +3,7 @@
 import logging
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import Any, Optional
+from typing import Any
 
 from equinox.core.request import Request, Response
 from equinox.security import redact_body, redact_url
@@ -23,7 +23,7 @@ class PluginContext:
 class Plugin(ABC):
     """Base class for trusted local plugin extensions."""
 
-    sandbox: Optional[Any]
+    sandbox: Any | None
 
     def __init__(self, context: PluginContext):
         """
@@ -97,7 +97,11 @@ class Plugin(ABC):
         safe_url = redact_url(request.url) if request and request.url else ""
         safe_error = redact_body(str(error), max_length=200)
         logger.debug(
-            "Plugin %s on_error: %s %s → %s", self.name, request.method, safe_url, safe_error
+            "Plugin %s on_error: %s %s → %s",
+            self.name,
+            request.method,
+            safe_url,
+            safe_error,
         )
 
 

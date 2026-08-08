@@ -8,7 +8,6 @@ labels, and full tracebacks for logging.
 import dataclasses
 import logging
 import traceback
-from typing import Optional
 
 from equinox.security import redact_body as _redact
 from equinox.security import redact_url as _redact_url
@@ -62,7 +61,7 @@ def enrich_exception(exc: Exception) -> RichError:
     return RichError(exc_type=exc_type, message=safe_msg, tb=safe_tb, hint=hint)
 
 
-def _enrich_httpx_error(exc: Exception, raw: str, exc_type: str) -> Optional[str]:
+def _enrich_httpx_error(exc: Exception, raw: str, exc_type: str) -> str | None:
     """Return a human-readable message for httpx errors, or None."""
     import httpx
 
@@ -96,9 +95,7 @@ def _describe_connect_error(inner: str) -> str:
     inner = _redact_url(inner) or ""
     lower = inner.lower()
     if "ssl" in lower or "certificate" in lower:
-        return (
-            "SSL/TLS error — the server's certificate could not be verified.\n" f"Details: {inner}"
-        )
+        return f"SSL/TLS error — the server's certificate could not be verified.\nDetails: {inner}"
     if (
         "name or service not known" in lower
         or "nodename nor servname" in lower
@@ -138,7 +135,7 @@ def _is_proxy_connect_error(exc: Exception) -> bool:
     return False
 
 
-def _enrich_equinox_error(exc: Exception, raw: str, exc_type: str) -> Optional[str]:
+def _enrich_equinox_error(exc: Exception, raw: str, exc_type: str) -> str | None:
     """Return a human-readable message for equinox domain errors, or None."""
     from equinox.core.exceptions import (
         AuthError,

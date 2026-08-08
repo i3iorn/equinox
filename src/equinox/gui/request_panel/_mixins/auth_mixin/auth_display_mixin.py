@@ -1,4 +1,5 @@
 """Auth inheritance, comparison, and display helpers for ``RequestPanel``."""
+
 from __future__ import annotations
 
 import logging
@@ -73,7 +74,13 @@ class AuthDisplayMixin:
             return None
         method = getattr(request, "method", "GET") if request is not None else "GET"
         url = getattr(request, "url", "") if request is not None else ""
-        return Request(method=method, url=url, collection_id=collection_id, folder=folder, auth=None)
+        return Request(
+            method=method,
+            url=url,
+            collection_id=collection_id,
+            folder=folder,
+            auth=None,
+        )
 
     def _resolve_inherited_auth(self) -> None:
         """Refresh inherited auth from collection and folder sources."""
@@ -83,7 +90,9 @@ class AuthDisplayMixin:
         if probe is None:
             return
         try:
-            inherited_auth, inherited_source = self._request_persistence.resolve_effective_auth(probe)
+            inherited_auth, inherited_source = self._request_persistence.resolve_effective_auth(
+                probe,
+            )
         except Exception as exc:
             logger.warning("Failed to resolve inherited auth: %s", exc)
             return

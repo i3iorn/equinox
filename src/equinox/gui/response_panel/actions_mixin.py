@@ -4,6 +4,7 @@ Codegen, copy, download, diff-with-history, search, word-wrap, and
 large-body loading.  Has no ``__init__`` — relies on ``self.*`` attributes
 set by ``ResponsePanel.__init__``.
 """
+
 # mypy: disable-error-code=attr-defined
 from __future__ import annotations
 
@@ -104,7 +105,9 @@ class ResponseActionsMixin:
         if self.current_response is None:
             return None
         return getattr(self.current_response, "sent_url", None) or getattr(
-            self.current_response.request, "url", None,
+            self.current_response.request,
+            "url",
+            None,
         )
 
     def _suggest_filename(self) -> str:
@@ -236,7 +239,7 @@ class ResponseActionsMixin:
 
             req = self.current_response.request
             entries = HistoryManager(db).search_history(query=req.url, method=req.method, limit=30)
-            return [cast(dict[str, Any], entry) for entry in entries]
+            return entries
         except Exception:
             logger.exception("Failed to fetch history entries for diff")
             return []
@@ -293,7 +296,11 @@ class ResponseActionsMixin:
         new_lines = new_body.splitlines(keepends=True)
         diff_lines = list(
             difflib.unified_diff(
-                old_lines, new_lines, fromfile="History", tofile="Current", lineterm="",
+                old_lines,
+                new_lines,
+                fromfile="History",
+                tofile="Current",
+                lineterm="",
             ),
         )
         diff_text = "".join(diff_lines) if diff_lines else "(No differences)"

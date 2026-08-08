@@ -87,7 +87,10 @@ class SavedCredentialsManager:
         """
         name = require_str(name, "name", MAX_NAME_LENGTH)
         description = require_str(
-            description, "description", MAX_DESCRIPTION_LENGTH, required=False
+            description,
+            "description",
+            MAX_DESCRIPTION_LENGTH,
+            required=False,
         )
         self._validate_auth_type(auth_type)
         config_json = self._serialize_config(config or {})
@@ -125,7 +128,7 @@ class SavedCredentialsManager:
         """Return the default credential (optionally filtered by auth_type)."""
         if auth_type:
             row = self.db.fetchone(
-                "SELECT * FROM saved_credentials" " WHERE is_default = 1 AND auth_type = ? LIMIT 1",
+                "SELECT * FROM saved_credentials WHERE is_default = 1 AND auth_type = ? LIMIT 1",
                 (auth_type,),
             )
         else:
@@ -174,7 +177,7 @@ class SavedCredentialsManager:
         if description is not None:
             updates.append("description = ?")
             params.append(
-                require_str(description, "description", MAX_DESCRIPTION_LENGTH, required=False)
+                require_str(description, "description", MAX_DESCRIPTION_LENGTH, required=False),
             )
 
         if not updates:
@@ -268,7 +271,7 @@ class SavedCredentialsManager:
             if candidate not in existing:
                 return candidate
         raise StorageError(
-            f"Could not generate unique name after {self._MAX_COPY_ATTEMPTS} attempts"
+            f"Could not generate unique name after {self._MAX_COPY_ATTEMPTS} attempts",
         )
 
     # ── Delete ────────────────────────────────────────────────────────
@@ -309,7 +312,7 @@ class SavedCredentialsManager:
             raise ValidationError(f"Unknown auth_type: {auth_type!r}")
         except Exception as exc:
             raise StorageError(
-                f"Saved credential '{row.get('name', '?')}' has invalid config: {exc}"
+                f"Saved credential '{row.get('name', '?')}' has invalid config: {exc}",
             ) from exc
 
     # ── Aliases (for backward-compat with test expectations) ──────────

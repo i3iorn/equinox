@@ -5,6 +5,7 @@ Focused UI-builder mixins for `RequestPanel`.
 This module intentionally keeps only the URL bar mixin used by `RequestPanel`
 and a lightweight orchestration shim for backward compatibility.
 """
+
 from __future__ import annotations
 
 from typing import Any

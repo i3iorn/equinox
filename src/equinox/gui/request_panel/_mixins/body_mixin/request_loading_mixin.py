@@ -1,4 +1,5 @@
 """Request loading and reset helpers for ``RequestPanel``."""
+
 from __future__ import annotations
 
 import logging
@@ -114,7 +115,10 @@ class RequestLoadingMixin:
     def _load_scripts(self: Any, request: Request) -> None:
         """Load pre-request and post-response scripts."""
         self._try_ui(self.pre_script_editor.setPlainText, getattr(request, "pre_script", "") or "")
-        self._try_ui(self.post_script_editor.setPlainText, getattr(request, "post_script", "") or "")
+        self._try_ui(
+            self.post_script_editor.setPlainText,
+            getattr(request, "post_script", "") or "",
+        )
 
     def _load_certificates(self: Any, request: Request) -> None:
         """Load client certificate paths."""

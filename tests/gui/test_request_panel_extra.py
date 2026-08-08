@@ -8,6 +8,7 @@ from equinox.gui.request_panel._mixins.save_flow_mixin import RequestSaveFlowMix
 from PyQt6.QtCore import QCoreApplication
 from PyQt6.QtWidgets import QApplication
 
+
 def ensure_qapp():
     app = QApplication.instance()
     if app is None:
@@ -303,7 +304,10 @@ def test_save_updates_existing_request_when_collection_unchanged(tmp_db_path, mo
         def _build_request_from_editor(self, **overrides):
             """Mock request builder."""
             return Request(
-                method="GET", url="https://api.example.com/items", headers={}, **overrides,
+                method="GET",
+                url="https://api.example.com/items",
+                headers={},
+                **overrides,
             )
 
         def _mark_dirty(self):
@@ -397,7 +401,10 @@ def test_save_calls_save_request_when_collection_changes(tmp_db_path, monkeypatc
 
         def _build_request_from_editor(self, **overrides):
             return Request(
-                method="POST", url="https://api.example.com/users", headers={}, **overrides,
+                method="POST",
+                url="https://api.example.com/users",
+                headers={},
+                **overrides,
             )
 
         def _mark_dirty(self):

@@ -109,13 +109,16 @@ class InterceptorChain:
 
         for interceptor in self.error_interceptors:
             if context.error is None or not interceptor.can_intercept(
-                context.error, context.request
+                context.error,
+                context.request,
             ):
                 continue
 
             result = interceptor.intercept(context)
             logger.debug(
-                "Error interceptor %s returned %s", type(interceptor).__name__, result.action.value
+                "Error interceptor %s returned %s",
+                type(interceptor).__name__,
+                result.action.value,
             )
 
             if result.action == InterceptorAction.SUPPRESS:

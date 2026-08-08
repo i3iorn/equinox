@@ -1,4 +1,5 @@
 """Response-handling helpers for ``RequestPanel`` send flows."""
+
 from __future__ import annotations
 
 import logging
@@ -219,4 +220,7 @@ class SendResponseMixin:
             logger.debug("Failed to persist own OAuth2 token: %s", exc)
             return
         if persisted:
-            logger.debug("Persisted own-auth OAuth2 token for request %s", getattr(self.current_request, "id", None))
+            logger.debug(
+                "Persisted own-auth OAuth2 token for request %s",
+                getattr(self.current_request, "id", None),
+            )

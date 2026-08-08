@@ -1,4 +1,5 @@
 """RequestPanel layout and UI-construction mixin."""
+
 # mypy: disable-error-code="attr-defined"
 from __future__ import annotations
 
@@ -68,8 +69,7 @@ _HEADER_PRESETS = [
 ]
 
 _SCRIPTS_CHEAT_TEXT = (
-    "<h3>Pre/Post Scripts</h3>"
-    "<p>Use Python helpers to mutate the request/response context.</p>"
+    "<h3>Pre/Post Scripts</h3><p>Use Python helpers to mutate the request/response context.</p>"
 )
 
 
@@ -86,7 +86,7 @@ class RequestPanelLayoutMixin:
     """Layout and UI-construction helpers for RequestPanel."""
 
     def _init_ui(self) -> None:
-        layout = QVBoxLayout(self) # type: ignore[call-overload]
+        layout = QVBoxLayout(self)  # type: ignore[call-overload]
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(4)
 
@@ -212,10 +212,10 @@ class RequestPanelLayoutMixin:
                 "",
                 presets=presets,
                 preset_context=f"request_{title}",
-                parent=self,
+                parent=cast(QWidget, self),
             )
         else:
-            toolbar = TabToolbar("", presets=presets, parent=self)
+            toolbar = TabToolbar("", presets=presets, parent=cast(QWidget, self))
         table = CheckableKeyValueTable(enable_key_completer=enable_key_completer)
         toolbar.add_clicked.connect(lambda: self._add_row_and_focus(table))
         toolbar.remove_clicked.connect(lambda: self._remove_table_rows(table))
@@ -335,7 +335,7 @@ class RequestPanelLayoutMixin:
 
     def _build_body_editor(self, layout: QVBoxLayout) -> None:
         """Create the raw/text body editor and wrap it in a resilient proxy."""
-        real_body = JsonBodyEditor(self)
+        real_body = JsonBodyEditor(cast(QWidget, self))
         proxy = TextEditorProxy(self, real_body)
         layout.addWidget(real_body, 1)
         self.body_text = proxy
@@ -344,7 +344,7 @@ class RequestPanelLayoutMixin:
 
     def _build_multipart_section(self, layout: QVBoxLayout) -> None:
         """Multipart form-data toolbar and table."""
-        self._mp_toolbar = TabToolbar("", include_file_btn=True, parent=self)
+        self._mp_toolbar = TabToolbar("", include_file_btn=True, parent=cast(QWidget, self))
         self._mp_toolbar.add_clicked.connect(self._multipart_add_row)
         self._mp_toolbar.remove_clicked.connect(self._multipart_remove_row)
         self._mp_toolbar.file_browse_clicked.connect(self._multipart_browse_file)
@@ -409,7 +409,7 @@ class RequestPanelLayoutMixin:
 
     def _create_scripts_tab(self) -> QWidget:
         """Compatibility wrapper for the shared scripts-tab builder."""
-        return cast(QWidget, create_scripts_tab(self, _SCRIPTS_CHEAT_TEXT))
+        return create_scripts_tab(self, _SCRIPTS_CHEAT_TEXT)
 
     def _create_settings_tab(self) -> QWidget:
         """Compatibility wrapper for the shared settings-tab builder mixin."""

@@ -7,7 +7,8 @@ from typing import Any
 
 
 def parse_json_object_field(
-    raw_text: str, field_name: str = "Extra Params"
+    raw_text: str,
+    field_name: str = "Extra Params",
 ) -> tuple[dict[str, Any] | None, str | None]:
     """Parse a JSON object field, returning ``(value, error)``.
 

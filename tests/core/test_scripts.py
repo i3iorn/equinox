@@ -138,14 +138,18 @@ class TestSandbox:
 
     def test_allowed_base64(self):
         result = ScriptRunner.run_pre(
-            "import base64; env['b'] = base64.b64encode(b'hi').decode()", {}, {}
+            "import base64; env['b'] = base64.b64encode(b'hi').decode()",
+            {},
+            {},
         )
         assert result.error is None
         assert result.env_changes["b"] == "aGk="
 
     def test_allowed_hashlib(self):
         result = ScriptRunner.run_pre(
-            "import hashlib; env['h'] = hashlib.md5(b'x').hexdigest()", {}, {}
+            "import hashlib; env['h'] = hashlib.md5(b'x').hexdigest()",
+            {},
+            {},
         )
         assert result.error is None
         assert len(result.env_changes["h"]) == 32
@@ -163,7 +167,7 @@ class TestSandboxOutputLimits:
         assert "keys must be strings" in result.error
 
     def test_env_value_length_limit_enforced(self):
-        script = "env['k'] = 'x' * " f"{ScriptRunner.MAX_ENV_VALUE_LENGTH + 1}"
+        script = f"env['k'] = 'x' * {ScriptRunner.MAX_ENV_VALUE_LENGTH + 1}"
         result = ScriptRunner.run_pre(script, {}, {})
         assert result.error is not None
         assert "value too long" in result.error

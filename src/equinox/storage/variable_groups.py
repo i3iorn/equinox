@@ -1,7 +1,7 @@
 """Variable groups management"""
+
 import logging
 from typing import Any
-from typing import cast
 
 from equinox.core.exceptions import DuplicateError
 from equinox.core.exceptions import SecurityError
@@ -68,7 +68,7 @@ class VariableGroupManager:
         group = self.db.fetchone("SELECT * FROM variable_groups WHERE id = ?", (group_id,))
         if not group:
             raise StorageError(f"Variable group with ID {group_id} does not exist")
-        return cast(dict[str, Any], group)
+        return group
 
     # ── Group CRUD ────────────────────────────────────────────────────────────
 
@@ -89,7 +89,10 @@ class VariableGroupManager:
         """
         name = require_str(name, "Variable group name", self.MAX_NAME_LENGTH)
         description = require_str(
-            description, "Variable group description", self.MAX_DESCRIPTION_LENGTH, required=False,
+            description,
+            "Variable group description",
+            self.MAX_DESCRIPTION_LENGTH,
+            required=False,
         )
 
         count_result = self.db.fetchone("SELECT COUNT(*) as count FROM variable_groups")
@@ -98,7 +101,8 @@ class VariableGroupManager:
 
         try:
             group_id = self.db.insert(
-                "INSERT INTO variable_groups (name, description) VALUES (?, ?)", (name, description),
+                "INSERT INTO variable_groups (name, description) VALUES (?, ?)",
+                (name, description),
             )
             logger.info("Created variable group %r with ID %d", name, group_id)
             return int(group_id)
@@ -134,7 +138,10 @@ class VariableGroupManager:
         return rows
 
     def update_group(
-        self, group_id: int, name: str | None = None, description: str | None = None,
+        self,
+        group_id: int,
+        name: str | None = None,
+        description: str | None = None,
     ) -> None:
         """Update variable group
 
@@ -238,11 +245,15 @@ class VariableGroupManager:
         key = validate_variable_key(key, self.MAX_VARIABLE_KEY_LENGTH)
         validate_variable_value(value, self.MAX_VARIABLE_VALUE_LENGTH)
         description = require_str(
-            description, "Variable description", self.MAX_DESCRIPTION_LENGTH, required=False,
+            description,
+            "Variable description",
+            self.MAX_DESCRIPTION_LENGTH,
+            required=False,
         )
 
         count_result = self.db.fetchone(
-            "SELECT COUNT(*) as count FROM variable_group_items WHERE group_id = ?", (group_id,),
+            "SELECT COUNT(*) as count FROM variable_group_items WHERE group_id = ?",
+            (group_id,),
         )
         if count_result and count_result["count"] >= self.MAX_VARIABLES_PER_GROUP:
             existing = self.db.fetchone(
@@ -288,7 +299,8 @@ class VariableGroupManager:
 
         try:
             cursor = self.db.execute(
-                "DELETE FROM variable_group_items WHERE group_id = ? AND key = ?", (group_id, key),
+                "DELETE FROM variable_group_items WHERE group_id = ? AND key = ?",
+                (group_id, key),
             )
             if cursor.rowcount == 0:
                 raise StorageError(f"Variable '{key}' not found in group {group_id}")
@@ -314,7 +326,8 @@ class VariableGroupManager:
         require_positive_int(group_id, "Variable group ID")
 
         rows = self.db.fetchall(
-            "SELECT * FROM variable_group_items WHERE group_id = ? ORDER BY key", (group_id,),
+            "SELECT * FROM variable_group_items WHERE group_id = ? ORDER BY key",
+            (group_id,),
         )
         return rows
 

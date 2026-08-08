@@ -14,7 +14,9 @@ import hashlib
 import hmac
 import logging
 from datetime import datetime, timezone
-from typing import Any, Callable
+from typing import Any
+
+from collections.abc import Callable
 from urllib.parse import quote
 
 from equinox.auth._base import AuthError, AuthStrategy, _interpolate_field, _validate_credential
@@ -105,7 +107,9 @@ class AWSSigV4Auth(AuthStrategy):
 
         signing_key = self._get_signing_key(date_stamp)
         signature = hmac.new(
-            signing_key, string_to_sign.encode("utf-8"), hashlib.sha256
+            signing_key,
+            string_to_sign.encode("utf-8"),
+            hashlib.sha256,
         ).hexdigest()
 
         headers["Authorization"] = (
@@ -180,7 +184,7 @@ class AWSSigV4Auth(AuthStrategy):
                 canonical_headers,
                 signed_headers,
                 payload_hash,
-            ]
+            ],
         )
 
     def to_dict(self) -> dict[str, Any]:
@@ -209,7 +213,7 @@ class AWSSigV4Auth(AuthStrategy):
                 amz_date,
                 credential_scope,
                 hashed_request,
-            ]
+            ],
         )
 
     @classmethod

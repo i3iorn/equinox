@@ -1,4 +1,5 @@
 """Tests for ``equinox.storage.utils`` with full branch coverage."""
+
 from __future__ import annotations
 
 import pytest

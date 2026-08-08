@@ -7,7 +7,9 @@ from __future__ import annotations
 import json
 import logging
 from datetime import datetime, timezone
-from typing import Any, Callable, Literal
+from typing import Any, Literal
+
+from collections.abc import Callable
 
 import httpx
 
@@ -104,7 +106,7 @@ class OAuth2Auth(AuthStrategy):
             logger.error("Failed to acquire token refresh lock within %.1f seconds", _LOCK_TIMEOUT)
             raise AuthError(
                 f"Token refresh lock timeout - possible deadlock or high contention "
-                f"(waited {_LOCK_TIMEOUT}s)"
+                f"(waited {_LOCK_TIMEOUT}s)",
             )
 
         try:
@@ -138,7 +140,7 @@ class OAuth2Auth(AuthStrategy):
         }
 
     @classmethod
-    def from_dict(cls, data: dict[str, Any], **kwargs: Any) -> "OAuth2Auth":
+    def from_dict(cls, data: dict[str, Any], **kwargs: Any) -> OAuth2Auth:
         """Create from dictionary."""
         secure_storage = kwargs.get("secure_storage")
         instance = cls(
@@ -157,7 +159,7 @@ class OAuth2Auth(AuthStrategy):
         instance.expires_at = cls._parse_expires_at(data.get("expires_at"))
         return instance
 
-    def interpolate(self, interp: Callable[[str], str]) -> "OAuth2Auth":
+    def interpolate(self, interp: Callable[[str], str]) -> OAuth2Auth:
         """Return a copy with expanded ``{{VAR}}`` placeholders."""
         new_auth = OAuth2Auth(
             token_url=_interpolate_field(self.token_url, interp),
@@ -175,7 +177,7 @@ class OAuth2Auth(AuthStrategy):
         return new_auth
 
     def get_display_summary(self) -> str:
-        return f"Token URL: {self.token_url or '-'}\n" f"Client ID: {self.client_id or '-'}"
+        return f"Token URL: {self.token_url or '-'}\nClient ID: {self.client_id or '-'}"
 
     def get_preflight_warning(self) -> str | None:
         if not self.token_url:
@@ -279,7 +281,8 @@ class OAuth2Auth(AuthStrategy):
                 data = json.loads(stored)
             except (json.JSONDecodeError, ValueError) as parse_exc:
                 logger.warning(
-                    "Failed to parse stored OAuth2 tokens (corrupted data): %s", parse_exc
+                    "Failed to parse stored OAuth2 tokens (corrupted data): %s",
+                    parse_exc,
                 )
                 return
 

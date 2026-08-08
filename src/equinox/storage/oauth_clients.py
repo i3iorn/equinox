@@ -1,9 +1,9 @@
 """OAuth2 client management — named, reusable OAuth2 credentials."""
+
 from __future__ import annotations
 
 import logging
 from typing import Any
-from typing import cast
 from typing import Literal
 from typing import TYPE_CHECKING
 
@@ -124,7 +124,10 @@ class OAuthClientManager:
         client_id = _require_str(client_id, "client_id", self.MAX_ID_LEN, required=False)
 
         raw_secret = _require_str(
-            client_secret, "client_secret", self.MAX_SECRET_LEN, required=False,
+            client_secret,
+            "client_secret",
+            self.MAX_SECRET_LEN,
+            required=False,
         )
         encrypted_secret = self._encrypt_client_secret(raw_secret)
 
@@ -403,7 +406,7 @@ class OAuthClientManager:
             return secret
         if is_encrypted_value(secret):
             return secret
-        return cast(str, encrypt_auth_storage_value(secret))
+        return encrypt_auth_storage_value(secret)
 
     @classmethod
     def _decrypt_client_secret(cls, stored: str | None) -> str:

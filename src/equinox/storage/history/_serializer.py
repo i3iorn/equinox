@@ -1,4 +1,5 @@
 """Serialization of Request/Response objects into database-storable primitives."""
+
 from __future__ import annotations
 
 import logging
@@ -106,7 +107,11 @@ class _HistorySerializer:
             return text[: self.MAX_ERROR_MESSAGE_LENGTH] + "... [TRUNCATED]"
         return text
 
-    def decode_row(self, row: dict[str, Any], row_id: int | None = None) -> dict[str, str | int | float | bool | object]:
+    def decode_row(
+        self,
+        row: dict[str, Any],
+        row_id: int | None = None,
+    ) -> dict[str, str | int | float | bool | object]:
         """Return a copy of *row* with header columns decoded from JSON to dicts.
 
         *row* is never mutated.

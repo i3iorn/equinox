@@ -4,6 +4,7 @@ Handles populating every tab with response data, applying syntax
 highlighting, and formatting helpers.  Has no ``__init__`` — relies on
 ``self.*`` attributes set by ``ResponsePanel.__init__``.
 """
+
 # mypy: disable-error-code=attr-defined
 from __future__ import annotations
 
@@ -387,10 +388,14 @@ class ResponseDisplayMixin:
         self._cookies_table.setItem(row, 3, QTableWidgetItem(attributes.get("path", "")))
         self._cookies_table.setItem(row, 4, QTableWidgetItem(attributes.get("expires", "")))
         self._cookies_table.setItem(
-            row, 5, QTableWidgetItem("✓" if attributes.get("secure") == "true" else ""),
+            row,
+            5,
+            QTableWidgetItem("✓" if attributes.get("secure") == "true" else ""),
         )
         self._cookies_table.setItem(
-            row, 6, QTableWidgetItem("✓" if attributes.get("httponly") == "true" else ""),
+            row,
+            6,
+            QTableWidgetItem("✓" if attributes.get("httponly") == "true" else ""),
         )
 
     def _update_cookies_tab_title(self) -> None:

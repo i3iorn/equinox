@@ -1,4 +1,5 @@
 """Dirty-state signal wiring mixin for RequestPanel."""
+
 from __future__ import annotations
 
 import logging

@@ -50,7 +50,7 @@ class _BodyValidator:
         size = len(body_str.encode("utf-8"))
         if size > _Limits.MAX_BODY_SIZE:
             raise ValidationError(
-                f"Request body too large: {size:,} bytes " f"(max: {_Limits.MAX_BODY_SIZE:,} bytes)"
+                f"Request body too large: {size:,} bytes (max: {_Limits.MAX_BODY_SIZE:,} bytes)",
             )
 
     @staticmethod

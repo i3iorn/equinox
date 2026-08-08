@@ -1,4 +1,5 @@
 """Background worker threads and dialogs for the Equinox GUI."""
+
 # mypy: disable-error-code=no-untyped-def
 import base64
 import csv
@@ -345,7 +346,10 @@ class RequestWorker(QThread):
             else:
                 logger.debug("No proxy configured")
             client = _build_client(
-                self.request, self._cookie_manager, self._proxy, self._cancel_event,
+                self.request,
+                self._cookie_manager,
+                self._proxy,
+                self._cancel_event,
             )
             response = client.send(self.request)
             self._emit_if_active(response)
@@ -531,7 +535,10 @@ class BenchmarkDialog(QDialog):
     # ── Private helpers ───────────────────────────────────────────────────────
 
     @staticmethod
-    def _compute_stats(times: list[float | int], errors: int) -> dict[str, int | float | list[float | int]]:
+    def _compute_stats(
+        times: list[float | int],
+        errors: int,
+    ) -> dict[str, int | float | list[float | int]]:
         """Return a stats dict computed from raw benchmark timings.
 
         All ``*_ms`` values are rounded to 3 decimal places.

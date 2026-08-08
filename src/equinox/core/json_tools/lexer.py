@@ -178,7 +178,9 @@ class JsonLexer:
     # PUBLIC API #3: Single-line lexing (used by QSyntaxHighlighter)
     # ------------------------------------------------------------
     def tokenize_line(
-        self, text: str, state: LexerState | str | int,
+        self,
+        text: str,
+        state: LexerState | str | int,
     ) -> tuple[list[Token], LexerState]:
         """Tokenize a single line of text given an initial lexer state.
 

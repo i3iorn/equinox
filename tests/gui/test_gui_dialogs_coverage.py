@@ -1,4 +1,5 @@
 """Coverage-boosting tests for GUI dialogs."""
+
 from unittest.mock import patch
 
 import pytest
@@ -563,7 +564,10 @@ class TestSaveRequestDialog:
         from equinox.gui.dialogs.save_dialog import SaveRequestDialog
 
         dlg = SaveRequestDialog(
-            self._collections(), "GET", "https://example.com", current_folder="Auth/OAuth",
+            self._collections(),
+            "GET",
+            "https://example.com",
+            current_folder="Auth/OAuth",
         )
         assert dlg._folder_input.text() == "Auth/OAuth"
 

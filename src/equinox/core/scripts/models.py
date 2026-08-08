@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import FrozenSet
 
 
 @dataclass
@@ -19,7 +18,7 @@ class ScriptResult:
         return self.error is None
 
 
-ALLOWED_MODULES: FrozenSet[str] = frozenset(
+ALLOWED_MODULES: frozenset[str] = frozenset(
     {
         "json",
         "re",
@@ -42,7 +41,7 @@ ALLOWED_MODULES: FrozenSet[str] = frozenset(
         "codecs",
         "textwrap",
         "pprint",
-    }
+    },
 )
 
-ALLOWED_PARENT_PACKAGES: FrozenSet[str] = frozenset({"urllib"})
+ALLOWED_PARENT_PACKAGES: frozenset[str] = frozenset({"urllib"})

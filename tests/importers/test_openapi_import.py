@@ -59,7 +59,7 @@ class TestOpenAPIImporter:
                                 "in": "query",
                                 "schema": {"type": "integer"},
                                 "example": 10,
-                            }
+                            },
                         ],
                     },
                     "post": {
@@ -75,8 +75,8 @@ class TestOpenAPIImporter:
                                         },
                                     },
                                     "example": {"name": "John Doe", "email": "john@example.com"},
-                                }
-                            }
+                                },
+                            },
                         },
                     },
                 },
@@ -89,9 +89,9 @@ class TestOpenAPIImporter:
                                 "in": "path",
                                 "required": True,
                                 "schema": {"type": "string"},
-                            }
+                            },
                         ],
-                    }
+                    },
                 },
             },
         }
@@ -110,10 +110,10 @@ class TestOpenAPIImporter:
                     "get": {
                         "summary": "List items",
                         "parameters": [
-                            {"name": "page", "in": "query", "type": "integer", "default": 1}
+                            {"name": "page", "in": "query", "type": "integer", "default": 1},
                         ],
-                    }
-                }
+                    },
+                },
             },
         }
 

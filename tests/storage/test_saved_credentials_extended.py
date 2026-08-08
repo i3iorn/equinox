@@ -56,7 +56,10 @@ class TestCreate:
 
     def test_is_default_flag(self, mgr):
         cid = mgr.create(
-            name="Default Cred", auth_type="bearer", config={"token": "t"}, is_default=True
+            name="Default Cred",
+            auth_type="bearer",
+            config={"token": "t"},
+            is_default=True,
         )
         cred = mgr.get(cid)
         assert cred["is_default"] is True
@@ -95,7 +98,10 @@ class TestGetMethods:
             is_default=True,
         )
         mgr.create(
-            name="Bearer Default", auth_type="bearer", config={"token": "x"}, is_default=True
+            name="Bearer Default",
+            auth_type="bearer",
+            config={"token": "x"},
+            is_default=True,
         )
         d = mgr.get_default(auth_type="oauth2")
         assert d["auth_type"] == "oauth2"
@@ -262,7 +268,9 @@ class TestToAuthStrategy:
 
     def test_basic(self, mgr):
         cid = mgr.create(
-            name="Basic", auth_type="basic", config={"username": "user", "password": "pass"}
+            name="Basic",
+            auth_type="basic",
+            config={"username": "user", "password": "pass"},
         )
         row = mgr.get(cid)
         auth = mgr.to_auth_strategy(row)

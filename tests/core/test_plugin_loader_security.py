@@ -3,7 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any
 
 from equinox.core.request import Request
 from equinox.plugins.base import PluginContext
@@ -15,8 +15,8 @@ def _write_plugin(
     root: Path,
     plugin_dir_name: str,
     plugin_module: str,
-    manifest_overrides: Optional[Dict[str, Any]] = None,
-    extra_files: Optional[Dict[str, str]] = None,
+    manifest_overrides: dict[str, Any] | None = None,
+    extra_files: dict[str, str] | None = None,
 ) -> Path:
     plugin_dir = root / plugin_dir_name
     plugin_dir.mkdir(parents=True, exist_ok=True)
@@ -25,7 +25,7 @@ def _write_plugin(
     plugin_file.write_text(plugin_module, encoding="utf-8")
 
     digest = hashlib.sha256(plugin_file.read_bytes()).hexdigest()
-    manifest: Dict[str, Any] = {
+    manifest: dict[str, Any] = {
         "name": f"plugin_{plugin_dir_name}",
         "version": "1.0.0",
         "author": "tests",
@@ -160,7 +160,8 @@ class PluginClass(Plugin):
 
 
 def test_plugin_manager_strict_checksum_mode_requires_manifest_checksum(
-    tmp_path: Path, monkeypatch
+    tmp_path: Path,
+    monkeypatch,
 ) -> None:
     _write_plugin(
         tmp_path,
@@ -210,7 +211,8 @@ class PluginClass(Plugin):
 
 
 def test_plugin_manager_deny_by_default_allows_allowlisted_plugin(
-    tmp_path: Path, monkeypatch
+    tmp_path: Path,
+    monkeypatch,
 ) -> None:
     plugin_dir = _write_plugin(
         tmp_path,
@@ -236,8 +238,8 @@ class PluginClass(Plugin):
                 "name": manifest["name"],
                 "version": manifest["version"],
                 "checksum": manifest["checksum"],
-            }
-        ]
+            },
+        ],
     }
     allowlist_path = tmp_path / "allowlist.json"
     allowlist_path.write_text(json.dumps(allowlist), encoding="utf-8")
@@ -272,7 +274,8 @@ class PluginClass(Plugin):
 
 
 def test_plugin_manager_allows_dangerous_permissions_with_explicit_opt_in(
-    tmp_path: Path, monkeypatch
+    tmp_path: Path,
+    monkeypatch,
 ) -> None:
     _write_plugin(
         tmp_path,

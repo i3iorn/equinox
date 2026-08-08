@@ -1,4 +1,5 @@
 """Intelligence panel — displays Response Intelligence findings."""
+
 from __future__ import annotations
 
 import json

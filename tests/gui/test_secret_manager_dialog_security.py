@@ -56,7 +56,8 @@ def test_vault_dialog_requires_confirmation_for_insecure_http_override(qtbot, mo
 
 
 def test_secret_manager_panel_redacts_sensitive_config_and_shows_http_warning(
-    qtbot, tmp_path
+    qtbot,
+    tmp_path,
 ) -> None:
     panel = SecretManagerSettingsPanel(config_path=tmp_path / "secret_managers.json")
     qtbot.addWidget(panel)

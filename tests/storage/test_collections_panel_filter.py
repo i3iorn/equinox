@@ -318,9 +318,9 @@ class TestManualExpandCollapseWhileFiltered:
         # Clear filter
         panel._filter_input.setText("")
         col_a_item = _get_col_item(panel, seeded["col_a"])
-        assert (
-            not col_a_item.isExpanded()
-        ), "Collection A was collapsed while filtered, should stay collapsed"
+        assert not col_a_item.isExpanded(), (
+            "Collection A was collapsed while filtered, should stay collapsed"
+        )
 
     def test_expand_collection_while_filtered(self, panel, seeded):
         """Collapsing then re-expanding a collection while filtered → stays expanded after clear."""
@@ -335,9 +335,9 @@ class TestManualExpandCollapseWhileFiltered:
 
         panel._filter_input.setText("")
         col_b_item = _get_col_item(panel, seeded["col_b"])
-        assert (
-            col_b_item.isExpanded()
-        ), "Collection B was re-expanded while filtered, should stay expanded"
+        assert col_b_item.isExpanded(), (
+            "Collection B was re-expanded while filtered, should stay expanded"
+        )
 
     def test_collapse_folder_while_filtered(self, panel, seeded):
         """Collapsing a folder while filtered → stays collapsed after clear."""
@@ -356,9 +356,9 @@ class TestManualExpandCollapseWhileFiltered:
 
         panel._filter_input.setText("")
         folder_item = _get_folder_item(panel, seeded["col_a"], "Auth")
-        assert (
-            not folder_item.isExpanded()
-        ), "Auth folder was collapsed while filtered, should stay collapsed"
+        assert not folder_item.isExpanded(), (
+            "Auth folder was collapsed while filtered, should stay collapsed"
+        )
 
     def test_no_snapshot_without_filter(self, panel, seeded):
         """_pre_filter_expansion should be None when no filter is active."""

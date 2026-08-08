@@ -43,8 +43,8 @@ def test_secret_manager_panel_loads_profiles_from_storage(qtbot, tmp_path: Path)
                     "config": {"prefix": "EQUINOX_SECRET_"},
                     "enable_cache": True,
                     "cache_ttl": 300,
-                }
-            }
+                },
+            },
         ),
         encoding="utf-8",
     )
@@ -59,7 +59,9 @@ def test_secret_manager_panel_loads_profiles_from_storage(qtbot, tmp_path: Path)
 
 
 def test_secret_manager_panel_clear_cache_uses_profile_cache_settings(
-    qtbot, monkeypatch, tmp_path: Path
+    qtbot,
+    monkeypatch,
+    tmp_path: Path,
 ) -> None:
     panel = SecretManagerSettingsPanel(config_path=tmp_path / "secret_managers.json")
     qtbot.addWidget(panel)

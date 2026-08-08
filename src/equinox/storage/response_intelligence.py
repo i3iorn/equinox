@@ -58,7 +58,7 @@ class ResponseIntelligenceManager:
         """
         if not math.isfinite(elapsed_ms) or elapsed_ms < 0:
             raise StorageError(
-                f"elapsed_ms must be a non-negative finite number, got {elapsed_ms!r}"
+                f"elapsed_ms must be a non-negative finite number, got {elapsed_ms!r}",
             )
         method_upper = self._normalize_method(method)
         with self.db.transaction() as tx:
@@ -117,7 +117,7 @@ class ResponseIntelligenceManager:
         comparisons.
         """
         row = self.db.fetchone(
-            "SELECT schema_json FROM response_schemas " "WHERE url_pattern = ? AND method = ?",
+            "SELECT schema_json FROM response_schemas WHERE url_pattern = ? AND method = ?",
             (url_pattern, self._normalize_method(method)),
         )
         if row is None:
@@ -218,7 +218,7 @@ class ResponseIntelligenceManager:
         """
         limit = max(1, min(limit, self._MAX_HISTORY_LIMIT))
         rows = self.db.fetchall(
-            "SELECT method, url, elapsed, executed_at " "FROM history ORDER BY id DESC LIMIT ?",
+            "SELECT method, url, elapsed, executed_at FROM history ORDER BY id DESC LIMIT ?",
             (limit,),
         )
         return [dict(r) for r in rows]

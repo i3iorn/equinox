@@ -41,7 +41,7 @@ _REFRESH_GRANT_FALLBACK_ERRORS: frozenset[str] = frozenset(
     {
         "invalid_grant",
         "unsupported_grant_type",
-    }
+    },
 )
 
 # Hex-suffix length appended to anonymous (no client_id) storage keys.

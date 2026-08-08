@@ -7,6 +7,7 @@ suggestions for headers and query parameters.
 Similarity is computed across five dimensions (method, path, query, headers,
 body) weighted to produce a single score in [0, 1].
 """
+
 import hashlib
 import json
 import logging
@@ -196,7 +197,10 @@ def _stable_body_bytes(value: Any) -> bytes:
             parsed = json.loads(text)
             if isinstance(parsed, (dict, list)):
                 return json.dumps(
-                    parsed, sort_keys=True, separators=(",", ":"), ensure_ascii=False,
+                    parsed,
+                    sort_keys=True,
+                    separators=(",", ":"),
+                    ensure_ascii=False,
                 ).encode("utf-8")
         except Exception:
             pass
@@ -578,11 +582,13 @@ class Recommender:
 
         return suggestions[:top_n]
 
-    def _calculate_total_weight(self, successful: list[tuple[dict[str, Any], dict[str, Any]]]) -> float:
+    def _calculate_total_weight(
+        self,
+        successful: list[tuple[dict[str, Any], dict[str, Any]]],
+    ) -> float:
         """Calculates the total normalized weight based on successful matches."""
         total_weight = sum(
-            max(float(score.get("total") or 0.0), _SUCCESS_WEIGHT_FLOOR)
-            for _, score in successful
+            max(float(score.get("total") or 0.0), _SUCCESS_WEIGHT_FLOOR) for _, score in successful
         )
         return total_weight
 

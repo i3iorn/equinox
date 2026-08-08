@@ -1,4 +1,5 @@
 """Guards against uncontrolled growth in high-risk core modules."""
+
 from pathlib import Path
 
 

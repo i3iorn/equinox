@@ -39,7 +39,7 @@ _DANGEROUS_PERMISSIONS = frozenset(
         Permission.FILE_DELETE,
         Permission.STORAGE_DELETE,
         Permission.CREDENTIAL_WRITE,
-    }
+    },
 )
 
 
@@ -99,7 +99,7 @@ class PluginManager:
         approved = self.allowlist.get("plugins") if isinstance(self.allowlist, dict) else None
         if not isinstance(approved, list):
             raise PluginError(
-                f"Deny-by-default is enabled but allowlist is missing 'plugins' list ({_ALLOWLIST_FILE_ENV})"
+                f"Deny-by-default is enabled but allowlist is missing 'plugins' list ({_ALLOWLIST_FILE_ENV})",
             )
 
         for entry in approved:
@@ -116,7 +116,7 @@ class PluginManager:
             return
 
         raise PluginError(
-            f"Plugin '{manifest.name}' is not allowlisted while deny-by-default mode is enabled"
+            f"Plugin '{manifest.name}' is not allowlisted while deny-by-default mode is enabled",
         )
 
     def _assert_permissions_allowed(self, manifest: PluginManifest) -> None:
@@ -128,7 +128,8 @@ class PluginManager:
         )
         if blocked:
             raise PluginError(
-                "Plugin requests dangerous permissions without opt-in policy: " + ", ".join(blocked)
+                "Plugin requests dangerous permissions without opt-in policy: "
+                + ", ".join(blocked),
             )
 
     def _load_plugins(self) -> None:
@@ -211,7 +212,7 @@ class PluginManager:
             # or mandatory enforcement when strict mode is enabled.
             if self.require_checksums and not plugin_manifest.checksum:
                 raise PluginError(
-                    f"Plugin '{plugin_manifest.name}' is missing required manifest checksum"
+                    f"Plugin '{plugin_manifest.name}' is missing required manifest checksum",
                 )
             if plugin_manifest.checksum:
                 verify_checksum(plugin_file, plugin_manifest.checksum)

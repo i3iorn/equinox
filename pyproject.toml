@@ -22,7 +22,7 @@ dependencies = [
     "jsonpath-ng>=1.6.0,<1.7.0",
     "pyyaml>=6.0.0,<7.0.0",
     "python-dotenv>=1.0.0,<2.0.0",
-    "cryptography>=50.0.0,<51.0",
+    "cryptography>=50.0,<51.0",
     "certifi>=2023.0.0",
     "urlps==0.5.1",
     "websockets>=12.0,<13.0.0",
@@ -37,6 +37,7 @@ dev = [
     "pytest>=7.0.0",
     "pytest-asyncio>=0.21.0",
     "pytest-cov>=4.0.0",
+    "pytest-qt>=4.2.0",
     "hypothesis>=6.120.0",
     "pytest-benchmark>=4.0.0",
     "pytest-mock>=3.12.0",
@@ -44,6 +45,8 @@ dev = [
     "ruff>=0.5.0",
     "flake8>=6.0.0",
     "mypy>=1.0.0",
+    "types-jsonschema>=4.0.0",
+    "types-requests>=2.0.0",
     "bandit>=1.7.0",
     "pip-audit>=2.9.0",
     "pip-tools>=7.5.0,<8.0.0",
@@ -119,6 +122,20 @@ equinox = ["py.typed"]
 
 [tool.mypy]
 python_version = "3.10"
+# CI (ubuntu-latest) is the authoritative target. Without this, mypy
+# evaluates sys.platform-conditional typeshed stubs (e.g. the Unix-only
+# `resource` module) against whatever OS is actually running mypy, so a
+# Windows-run check and CI's Linux-run check can disagree on the exact same
+# source tree - notably on "unused type: ignore" for guards around
+# platform-conditional imports.
+platform = "linux"
+# CI runs `mypy --strict src` (ci.yml); CONTRIBUTING.md/WORKFLOW.md document
+# the bare `mypy src` command for local use. Without `strict = true` here,
+# those two only agreed on the settings explicitly listed below, and the
+# local command was measurably weaker than CI's gate (70 vs 93 errors found
+# on the same tree at one point). Declaring it here makes both commands
+# identical, so "passes locally" actually means "passes in CI".
+strict = true
 warn_return_any = true
 warn_unused_configs = true
 disallow_untyped_defs = true
@@ -128,6 +145,10 @@ no_implicit_optional = true
 warn_redundant_casts = true
 warn_unreachable = true
 strict_optional = true
+
+[[tool.mypy.overrides]]
+module = ["defusedxml.*", "jsonpath_ng.*"]
+ignore_missing_imports = true
 
 [[tool.mypy.overrides]]
 module = ["tests.*"]

@@ -56,14 +56,29 @@ def test_normalize_lock_text_removes_environment_specific_variance(lock_script: 
             "#    pip-compile --extra=dev --output-file='C:\\tmp\\requirements-lock.txt' 'C:\\repo\\pyproject.toml'",
             "typing-extensions==4.15.0",
             "    # via equinox (C:/repo/pyproject.toml)",
-        ]
+        ],
     )
 
     normalized = lock_script._normalize_lock_text(raw)
 
     assert "Python X.Y" in normalized
-    assert "--output-file='requirements-lock.txt'" in normalized
+    # Must collapse to the same unquoted form regardless of whether
+    # pip-compile happened to quote the path (Windows vs. Linux) - a quoted
+    # and an unquoted echo of the same logical path are not "variance".
+    assert "--output-file=requirements-lock.txt" in normalized
+    assert "--output-file='requirements-lock.txt'" not in normalized
     assert "'pyproject.toml'" in normalized
     assert "(pyproject.toml)" in normalized
     assert "C:/repo/pyproject.toml" not in normalized
     assert "C:\\repo\\pyproject.toml" not in normalized
+
+
+def test_normalize_lock_text_converges_regardless_of_quoting(lock_script: object) -> None:
+    """A quoted (Windows) and unquoted (Linux) echo of the same command must
+    normalize identically, or `--write` on one OS can never match `--check`
+    on the other.
+    """
+    quoted = "#    pip-compile --extra=dev --output-file='requirements-lock.txt' pyproject.toml"
+    unquoted = "#    pip-compile --extra=dev --output-file=requirements-lock.txt pyproject.toml"
+
+    assert lock_script._normalize_lock_text(quoted) == lock_script._normalize_lock_text(unquoted)

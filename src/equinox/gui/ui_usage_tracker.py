@@ -3,6 +3,7 @@
 Tracks high-value GUI interactions (tabs, buttons, actions), persists counts in
 QSettings, and exposes a compact text snapshot that can be reviewed from the UI.
 """
+
 from __future__ import annotations
 
 import json

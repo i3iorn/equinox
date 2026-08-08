@@ -196,7 +196,8 @@ class HTTPClient:
             Validator.validate_query_params(request.params)
         if request.body:
             Validator.validate_request_body(
-                request.body, self._resolve_content_type(request.headers)
+                request.body,
+                self._resolve_content_type(request.headers),
             )
 
     @staticmethod
@@ -266,7 +267,7 @@ class HTTPClient:
             },
         )
         response = self._retry_policy.execute_with_http_overload(
-            lambda: self._execute_single_attempt(request, auth)
+            lambda: self._execute_single_attempt(request, auth),
         )
 
         retry_summary = self._retry_policy.get_retry_summary()

@@ -100,7 +100,7 @@ class Validator:
             from equinox.core.exceptions import ValidationError
 
             raise ValidationError(
-                "Variable names may contain only letters, numbers, underscore, and hyphen."
+                "Variable names may contain only letters, numbers, underscore, and hyphen.",
             )
         if len(name) > _Limits.MAX_VARIABLE_NAME_LENGTH:
             from equinox.core.exceptions import ValidationError

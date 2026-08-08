@@ -1,4 +1,5 @@
 """Action methods mixin for CollectionsPanel."""
+
 from typing import Any
 from typing import cast
 
@@ -39,7 +40,10 @@ class _CollectionsActionsMixin(QWidget):
     def _rename_collection(self, collection_id: int, item: Any) -> None:
         old_name = item.text(0)
         new_name, ok = QInputDialog.getText(
-            self._as_qwidget(), "Rename Collection", "New name:", text=old_name,
+            self._as_qwidget(),
+            "Rename Collection",
+            "New name:",
+            text=old_name,
         )
         if not ok or not new_name.strip() or new_name.strip() == old_name:
             return
@@ -137,7 +141,9 @@ class _CollectionsActionsMixin(QWidget):
         if col_id is None:
             return
         path, ok = QInputDialog.getText(
-            self, "Add Folder", "Folder name or path (e.g. Auth or Auth/OAuth):",
+            self,
+            "Add Folder",
+            "Folder name or path (e.g. Auth or Auth/OAuth):",
         )
         if not ok or not path.strip():
             return
@@ -153,7 +159,9 @@ class _CollectionsActionsMixin(QWidget):
         if col_id is None:
             return
         name, ok = QInputDialog.getText(
-            self._as_qwidget(), "Add Subfolder", f'Subfolder name (inside "{parent_path}"):',
+            self._as_qwidget(),
+            "Add Subfolder",
+            f'Subfolder name (inside "{parent_path}"):',
         )
         if not ok or not name.strip():
             return
@@ -186,7 +194,9 @@ class _CollectionsActionsMixin(QWidget):
         from equinox.gui.collection_panel.panel import _NewRequestDialog
 
         dlg = _NewRequestDialog(
-            self, title=f'New Request in "{folder_path}"', folder_hint=folder_path,
+            self,
+            title=f'New Request in "{folder_path}"',
+            folder_hint=folder_path,
         )
         if dlg.exec() != QDialog.DialogCode.Accepted:
             return
@@ -230,7 +240,10 @@ class _CollectionsActionsMixin(QWidget):
         if col_id is None:
             return
         new_path, ok = QInputDialog.getText(
-            self, "Rename Folder", "New folder name/path:", text=old_path,
+            self,
+            "Rename Folder",
+            "New folder name/path:",
+            text=old_path,
         )
         if not ok or not new_path.strip() or new_path.strip() == old_path:
             return
@@ -295,7 +308,9 @@ class _CollectionsActionsMixin(QWidget):
 
             if source_col != target_col_id:
                 self._collection_facade.move_request_to_collection(
-                    request_id, target_col_id, target_folder,
+                    request_id,
+                    target_col_id,
+                    target_folder,
                 )
             else:
                 self._collection_facade.move_request_to_folder(request_id, target_folder)

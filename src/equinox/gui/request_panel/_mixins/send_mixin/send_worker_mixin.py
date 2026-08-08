@@ -1,4 +1,5 @@
 """Worker-dispatch and send-state helpers for ``RequestPanel``."""
+
 from __future__ import annotations
 
 import logging
@@ -122,7 +123,11 @@ class SendWorkerMixin:
             try:
                 return enrich_exception(result)
             except Exception:
-                return RichError(exc_type=type(result).__name__, message=str(result) or "Unknown error", tb="")
+                return RichError(
+                    exc_type=type(result).__name__,
+                    message=str(result) or "Unknown error",
+                    tb="",
+                )
         return result
 
     def _set_sending_state(self, sending: bool) -> None:

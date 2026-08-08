@@ -59,7 +59,10 @@ class RequestResponseLogger:
             payload = request_or_payload
         else:
             payload = response_payload(
-                request_or_payload, response, elapsed_time, include_body=include_body
+                request_or_payload,
+                response,
+                elapsed_time,
+                include_body=include_body,
             )
 
         self._logger.log(level, "response_received", payload)

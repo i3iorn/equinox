@@ -12,6 +12,7 @@ This mixin extracts those patterns so each dialog only implements the
 parts that genuinely differ.  Subclasses set the ``_list_widget`` and
 ``_save_method`` attributes and everything else works automatically.
 """
+
 from __future__ import annotations
 
 from collections.abc import Callable

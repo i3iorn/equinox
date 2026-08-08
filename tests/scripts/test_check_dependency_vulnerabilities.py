@@ -39,8 +39,8 @@ def test_parse_findings_formats_fix_versions(vulnerability_script: object) -> No
                     {"id": "CVE-1", "fix_versions": ["46.0.6"]},
                     {"id": "CVE-2", "fix_versions": []},
                 ],
-            }
-        ]
+            },
+        ],
     }
 
     findings = vulnerability_script._parse_findings(payload)

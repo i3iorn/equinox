@@ -53,7 +53,7 @@ class APIKeyAuth(AuthStrategy):
         if location not in _VALID_LOCATIONS:
             raise AuthError(
                 f"Invalid location {location!r}. Must be one of: "
-                + ", ".join(sorted(_VALID_LOCATIONS))
+                + ", ".join(sorted(_VALID_LOCATIONS)),
             )
         self.key = _validate_credential(key, "API key name")
         self.value = _validate_credential(value, "API key value")

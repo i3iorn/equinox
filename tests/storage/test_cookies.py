@@ -154,7 +154,7 @@ class TestToHttpxCookies:
                 "value": "s123",
                 "domain": "api.example.com",
                 "path": "/v1",
-            }
+            },
         ]
 
 
@@ -215,7 +215,7 @@ class TestUpdateFromResponse:
 
     def test_combined_header_with_expires_keeps_cookie_boundaries(self, mgr):
         headers = {
-            "Set-Cookie": ("a=1; Expires=Thu, 01 Jan 2030 00:00:00 GMT; Path=/, " "b=2; Path=/")
+            "Set-Cookie": ("a=1; Expires=Thu, 01 Jan 2030 00:00:00 GMT; Path=/, b=2; Path=/"),
         }
         mgr.update_from_response(headers, "https://example.com")
         cookies = mgr.list_cookies()

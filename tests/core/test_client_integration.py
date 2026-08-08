@@ -18,7 +18,10 @@ class TestHTTPClientIntegration:
     def test_client_initialization(self):
         """Test client initialization with various configs."""
         client = HTTPClient(
-            timeout=60.0, verify_ssl=True, max_rate_per_minute=100, max_concurrent_requests=5
+            timeout=60.0,
+            verify_ssl=True,
+            max_rate_per_minute=100,
+            max_concurrent_requests=5,
         )
 
         assert client.timeout == 60.0

@@ -85,7 +85,9 @@ class TestCreateEnvironmentValidation:
 
     def test_successful_creation_with_description(self, mgr):
         eid = mgr.create_environment(
-            "Env With Desc", {"API_URL": "http://x.com"}, description="my desc"
+            "Env With Desc",
+            {"API_URL": "http://x.com"},
+            description="my desc",
         )
         env = mgr.get_environment(eid)
         assert env["description"] == "my desc"

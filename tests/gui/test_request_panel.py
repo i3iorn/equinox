@@ -145,7 +145,7 @@ def test_request_panel_builds_canonical_editor_snapshot(tmp_db_path):
     panel.params_table.set_data(
         [
             {"key": "q", "value": "search", "enabled": True},
-        ]
+        ],
     )
     panel.body_type_combo.setCurrentText("GraphQL")
     panel.body_text.setPlainText("raw body")

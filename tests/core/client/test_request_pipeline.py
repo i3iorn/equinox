@@ -27,7 +27,7 @@ class _AuditRecorder:
                 "url": url,
                 "status_code": status_code,
                 "error": error,
-            }
+            },
         )
 
 

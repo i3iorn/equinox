@@ -1,4 +1,5 @@
 """Variable groups and group-scoped variables section for VariablesPanel."""
+
 from __future__ import annotations
 
 import logging
@@ -42,8 +43,10 @@ class _GroupsMixin(QWidget):
         variables_changed: Any
         _mgr: VariableGroupManager
         _settings: QSettings
+
         def _ordered_context_actions(self, menu_key: str, action_specs: Any) -> Any: ...
         def _run_context_action(self, menu_key: str, action_id: str, callback: Any) -> None: ...
+        def _build_interp_context(self) -> dict[str, str]: ...
 
     def _build_groups_section(self) -> QSplitter:
         """Construct the groups/variables splitter panel."""
@@ -256,7 +259,9 @@ class _GroupsMixin(QWidget):
         if not ok or not name:
             return
         description, ok = QInputDialog.getText(
-            parent, "New Variable Group", "Description (optional):",
+            parent,
+            "New Variable Group",
+            "Description (optional):",
         )
         if not ok:
             return
@@ -309,7 +314,9 @@ class _GroupsMixin(QWidget):
             menu.addAction(
                 label,
                 lambda aid=action_id, cb=callback: self._run_context_action(
-                    "variables_group", aid, cb,
+                    "variables_group",
+                    aid,
+                    cb,
                 ),
             )
         viewport = self.groups_list.viewport()
@@ -321,7 +328,10 @@ class _GroupsMixin(QWidget):
         group_id = item.data(Qt.ItemDataRole.UserRole)
         old_name = item.text()
         new_name, ok = QInputDialog.getText(
-            cast(QWidget, self), "Rename Group", "New name:", text=old_name,
+            cast(QWidget, self),
+            "Rename Group",
+            "New name:",
+            text=old_name,
         )
         if not ok or not new_name or new_name == old_name:
             return

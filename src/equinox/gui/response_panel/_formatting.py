@@ -9,6 +9,7 @@ testability, and separation of concerns. Handles:
 
 Security: Uses defusedxml when available to prevent XXE attacks.
 """
+
 from __future__ import annotations
 
 import http.cookies as _hc

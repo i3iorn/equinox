@@ -98,7 +98,7 @@ class OpenAPIExporter(_BaseCollectionExporter):
                 "200": {
                     "description": "Successful response",
                     "content": {req.content_type: {}},
-                }
+                },
             },
         }
 
@@ -143,7 +143,7 @@ class OpenAPIExporter(_BaseCollectionExporter):
                         "authorizationUrl": auth_obj.get("auth_url", ""),
                         "tokenUrl": auth_obj.get("token_url", ""),
                         "scopes": {},
-                    }
+                    },
                 },
             }
         return {}

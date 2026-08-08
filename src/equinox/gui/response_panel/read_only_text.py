@@ -3,6 +3,7 @@
 Provides a QTextEdit subclass configured for displaying code/text
 with syntax highlighting. Optimized for large response bodies.
 """
+
 from __future__ import annotations
 
 import logging

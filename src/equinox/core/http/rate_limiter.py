@@ -126,7 +126,7 @@ class RateLimiter:
             if len(self._times) >= self.max_per_minute:
                 self._report_violation()
                 raise RateLimitError(
-                    f"Rate limit exceeded: {self.max_per_minute} requests per minute"
+                    f"Rate limit exceeded: {self.max_per_minute} requests per minute",
                 )
             self._times.append(now)
 

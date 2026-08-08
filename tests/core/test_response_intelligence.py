@@ -220,7 +220,7 @@ class TestCookieFlags:
             "set-cookie": (
                 "session=abc; Expires=Wed, 21 Oct 2026 07:28:00 GMT; Path=/; Secure; HttpOnly; SameSite=Lax, "
                 "prefs=light; Path=/"
-            )
+            ),
         }
         ctx = _make_ctx(headers=hdrs, body=b"ok")
         findings = CookieFlagsAnalyzer().analyze(ctx)
@@ -351,7 +351,7 @@ class TestJWTDecode:
         )
         payload = (
             base64.urlsafe_b64encode(
-                json.dumps({"sub": "u1", "exp": int(time.time()) + 600}).encode()
+                json.dumps({"sub": "u1", "exp": int(time.time()) + 600}).encode(),
             )
             .rstrip(b"=")
             .decode()
@@ -364,7 +364,7 @@ class TestJWTDecode:
 
     def test_claims_are_redacted(self):
         jwt = self._make_jwt(
-            {"sub": "user1", "iss": "auth.example.com", "email": "user@example.com"}
+            {"sub": "user1", "iss": "auth.example.com", "email": "user@example.com"},
         )
         body = json.dumps({"access_token": jwt}).encode()
         ctx = _make_ctx(body=body)
@@ -378,7 +378,8 @@ class TestJWTDecode:
 
     def test_jwt_in_authorization_header(self):
         jwt = self._make_jwt(
-            {"sub": "user1", "iss": "auth.example.com"}, exp=int(time.time()) + 600
+            {"sub": "user1", "iss": "auth.example.com"},
+            exp=int(time.time()) + 600,
         )
         ctx = _make_ctx(headers={"authorization": f"Bearer {jwt}"}, body=b"")
         findings = JWTDecodeAnalyzer().analyze(ctx)
@@ -400,7 +401,7 @@ class TestJWTDecode:
 
     def test_sanitize_claims_keeps_safe_list_values(self):
         sanitized = JWTDecodeAnalyzer._sanitize_claims(
-            {"aud": [1, "two", {"three": 3}], "scope": ["read", "write"], "email": "x@example.com"}
+            {"aud": [1, "two", {"three": 3}], "scope": ["read", "write"], "email": "x@example.com"},
         )
 
         assert sanitized["aud"] == ["1", "two", "{'three': 3}"]
@@ -518,7 +519,7 @@ class TestPagination:
                 "page": 2,
                 "total_pages": 10,
                 "total": 95,
-            }
+            },
         ).encode()
         ctx = _make_ctx(body=body)
         findings = PaginationDetectionAnalyzer().analyze(ctx)
@@ -631,7 +632,7 @@ class TestDateFormats:
                 "created": "2025-01-15T10:30:00Z",
                 "updated": 1705312200,
                 "display_date": "01/15/2025",
-            }
+            },
         ).encode()
         ctx = _make_ctx(body=body)
         findings = DateFormatInconsistencyAnalyzer().analyze(ctx)
@@ -643,7 +644,7 @@ class TestDateFormats:
             {
                 "created": "2025-01-15T10:30:00Z",
                 "updated": "2025-02-20T14:00:00Z",
-            }
+            },
         ).encode()
         ctx = _make_ctx(body=body)
         findings = DateFormatInconsistencyAnalyzer().analyze(ctx)
@@ -657,7 +658,7 @@ class TestNullVsMissing:
             [
                 {"name": "Alice", "email": None},
                 {"name": "Bob"},  # email key missing
-            ]
+            ],
         ).encode()
         ctx = _make_ctx(body=body)
         findings = NullVsMissingAnalyzer().analyze(ctx)
@@ -669,7 +670,7 @@ class TestNullVsMissing:
             [
                 {"name": "Alice", "email": None},
                 {"name": "Bob", "email": None},
-            ]
+            ],
         ).encode()
         ctx = _make_ctx(body=body)
         findings = NullVsMissingAnalyzer().analyze(ctx)
@@ -941,7 +942,7 @@ class TestEncodingIssues:
 class TestLinkHeader:
     def test_link_with_next(self):
         hdrs = {
-            "link": '<https://api.com/users?page=3>; rel="next", <https://api.com/users?page=1>; rel="prev"'
+            "link": '<https://api.com/users?page=3>; rel="next", <https://api.com/users?page=1>; rel="prev"',
         }
         ctx = _make_ctx(headers=hdrs, body=b"{}")
         findings = LinkHeaderParsingAnalyzer().analyze(ctx)
@@ -966,7 +967,7 @@ class TestIntelligenceMigration:
         with Database(str(tmp_path / "test.db")) as db:
             # Tables should exist after Database.__init__ runs migrations
             rows = db.fetchall(
-                "SELECT name FROM sqlite_master WHERE type='table' AND name IN ('endpoint_stats', 'response_schemas')"
+                "SELECT name FROM sqlite_master WHERE type='table' AND name IN ('endpoint_stats', 'response_schemas')",
             )
             names = {r["name"] for r in rows}
             assert "endpoint_stats" in names

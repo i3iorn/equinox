@@ -11,6 +11,7 @@ Non-UI responsibilities intentionally left to the caller / facade:
 - auto-creating a default collection when none exist
 - performing the actual save/update persistence
 """
+
 from collections.abc import Iterable
 from typing import TypedDict
 
@@ -109,7 +110,9 @@ class SaveRequestDialog(QDialog):
         """
         if self._col_combo.currentData() is None:
             QMessageBox.warning(
-                self, "No Collection", "Please select or create a collection first.",
+                self,
+                "No Collection",
+                "Please select or create a collection first.",
             )
             return False
         return True

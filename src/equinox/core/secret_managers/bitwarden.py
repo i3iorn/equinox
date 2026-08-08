@@ -71,7 +71,7 @@ class BitwardenManager(SecretManager):
                 raise SecretManagerError("Bitwarden CLI not found or not executable")
         except FileNotFoundError as exc:
             raise SecretManagerError(
-                "Bitwarden CLI not found. Install from: https://bitwarden.com/help/cli/"
+                "Bitwarden CLI not found. Install from: https://bitwarden.com/help/cli/",
             ) from exc
         except Exception as exc:
             raise SecretManagerError(f"Failed to check Bitwarden CLI: {exc}") from exc
@@ -81,7 +81,7 @@ class BitwardenManager(SecretManager):
             result = subprocess.run(["bw", "status"], capture_output=True, text=True, timeout=5)
             if result.returncode != 0:
                 raise SecretAuthError(
-                    "Not logged in to Bitwarden. Run: bw login your-email@example.com"
+                    "Not logged in to Bitwarden. Run: bw login your-email@example.com",
                 )
 
             status = json.loads(result.stdout)
@@ -97,7 +97,8 @@ class BitwardenManager(SecretManager):
         self.organization_id = organization_id
         self._configured = True
         logger.info(
-            "Bitwarden configured%s", f" (org: {organization_id})" if organization_id else ""
+            "Bitwarden configured%s",
+            f" (org: {organization_id})" if organization_id else "",
         )
 
     def get_secret(self, secret_name: str) -> str:
@@ -176,7 +177,7 @@ class BitwardenManager(SecretManager):
         if cached is not None:
             if not isinstance(cached, dict):
                 raise SecretManagerError(
-                    f"Cached secret dict for '{mask_secret(secret_name, keep=4)}' is invalid"
+                    f"Cached secret dict for '{mask_secret(secret_name, keep=4)}' is invalid",
                 )
             return cached
 
@@ -252,7 +253,10 @@ class BitwardenManager(SecretManager):
             # Try to get by ID first (assumes UUID format)
             if self._is_uuid(secret_name):
                 result = subprocess.run(
-                    ["bw", "get", "item", secret_name], capture_output=True, text=True, timeout=10
+                    ["bw", "get", "item", secret_name],
+                    capture_output=True,
+                    text=True,
+                    timeout=10,
                 )
             else:
                 # Search by name
@@ -273,7 +277,10 @@ class BitwardenManager(SecretManager):
                 # Use the first matching item
                 item_id = items[0]["id"]
                 result = subprocess.run(
-                    ["bw", "get", "item", item_id], capture_output=True, text=True, timeout=10
+                    ["bw", "get", "item", item_id],
+                    capture_output=True,
+                    text=True,
+                    timeout=10,
                 )
 
             if result.returncode != 0:
@@ -309,6 +316,7 @@ class BitwardenManager(SecretManager):
         import re
 
         uuid_pattern = re.compile(
-            r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$", re.IGNORECASE
+            r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+            re.IGNORECASE,
         )
         return bool(uuid_pattern.match(value))

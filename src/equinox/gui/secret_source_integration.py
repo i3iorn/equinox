@@ -6,9 +6,10 @@ Provides extensions to the saved credentials dialog to use secrets from managers
 from __future__ import annotations
 
 import logging
-from typing import Any, Optional
+from typing import Any
 
 from PyQt6.QtWidgets import (
+    QBoxLayout,
     QComboBox,
     QDialog,
     QFormLayout,
@@ -30,7 +31,7 @@ class SecretSourceConfigWidget(QGroupBox):
     from an external secret manager instead of storing them locally.
     """
 
-    def __init__(self, parent: Optional[QDialog] = None) -> None:
+    def __init__(self, parent: QDialog | None = None) -> None:
         """Initialize the widget.
 
         Args:
@@ -73,7 +74,7 @@ class SecretSourceConfigWidget(QGroupBox):
         keys_label = QLabel("JSON Keys:")
         self.keys_input = QLineEdit()
         self.keys_input.setPlaceholderText(
-            "e.g., username,password (leave empty to use whole secret)"
+            "e.g., username,password (leave empty to use whole secret)",
         )
         self.keys_input.setVisible(False)
         keys_label.setVisible(False)
@@ -85,7 +86,7 @@ class SecretSourceConfigWidget(QGroupBox):
         info_label = QLabel(
             "When enabled, the credential will fetch values from the secret manager "
             "instead of storing them locally. This improves security by centralizing "
-            "secret management."
+            "secret management.",
         )
         info_label.setWordWrap(True)
         self.info_label = info_label
@@ -181,9 +182,10 @@ class SecretSourceIntegration:
             layout = dialog.layout()
             if layout is None:
                 return widget
-            # Add before buttons if possible
+            # Add before buttons if possible - insertWidget is QBoxLayout-only,
+            # other layout types (e.g. QFormLayout) only support addWidget.
             widget_count = layout.count()
-            if widget_count > 0:
+            if widget_count > 0 and isinstance(layout, QBoxLayout):
                 layout.insertWidget(widget_count - 1, widget)
             else:
                 layout.addWidget(widget)
@@ -192,7 +194,8 @@ class SecretSourceIntegration:
 
     @staticmethod
     def apply_secret_source_to_config(
-        config: dict[str, Any], secret_widget: SecretSourceConfigWidget
+        config: dict[str, Any],
+        secret_widget: SecretSourceConfigWidget,
     ) -> dict[str, Any]:
         """Apply secret source configuration to a credential config.
 

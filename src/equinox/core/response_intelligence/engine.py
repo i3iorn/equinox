@@ -66,16 +66,30 @@ class AnalysisEngine:
                 continue
 
             for _, obj in inspect.getmembers(module, inspect.isclass):
-                if (
-                    issubclass(obj, Analyzer)
-                    and obj is not Analyzer
-                    and obj.__module__ == module_name
-                ):
+                # Neither inspect.isclass() nor isinstance(obj, type) reliably
+                # excludes PEP 585 generic aliases (e.g. a module-level
+                # `Foo = tuple[str, int]` type alias) - on Python 3.10 both
+                # return True for such an alias, and issubclass() then raises
+                # "arg 1 must be a class". Not reproducible on 3.11+, but this
+                # project supports 3.10, so guard the call itself rather than
+                # rely on a pre-filter that CPython doesn't guarantee.
+                try:
+                    if not issubclass(obj, Analyzer):
+                        continue
+                except TypeError:
+                    continue
+                # issubclass() used directly above (not via an intermediate
+                # bool) so mypy narrows obj to type[Analyzer] for the rest of
+                # this iteration - storing the result in a variable first
+                # doesn't reliably preserve that narrowing across versions.
+                if obj is not Analyzer and obj.__module__ == module_name:
                     try:
                         analyzers.append(obj())
                     except Exception:
                         logger.error(
-                            "Failed to instantiate analyzer %s", obj.__name__, exc_info=True
+                            "Failed to instantiate analyzer %s",
+                            obj.__name__,
+                            exc_info=True,
                         )
 
         return analyzers
@@ -92,12 +106,15 @@ class AnalysisEngine:
             analyzer_id = (analyzer.analyzer_id or "").strip()
             if not analyzer_id:
                 logger.warning(
-                    "Skipping analyzer with empty analyzer_id: %s", type(analyzer).__name__
+                    "Skipping analyzer with empty analyzer_id: %s",
+                    type(analyzer).__name__,
                 )
                 continue
             if analyzer_id in unique:
                 logger.warning(
-                    "Duplicate analyzer_id %r ignored (%s)", analyzer_id, type(analyzer).__name__
+                    "Duplicate analyzer_id %r ignored (%s)",
+                    analyzer_id,
+                    type(analyzer).__name__,
                 )
                 continue
             unique[analyzer_id] = analyzer
@@ -147,7 +164,7 @@ class AnalysisEngine:
                 results = analyzer.analyze(ctx)
                 if not isinstance(results, list):
                     raise TypeError(
-                        f"Analyzer returned {type(results).__name__}; expected list[Finding]"
+                        f"Analyzer returned {type(results).__name__}; expected list[Finding]",
                     )
                 for item in results:
                     if not isinstance(item, Finding):
@@ -155,13 +172,15 @@ class AnalysisEngine:
                 findings.extend(results)
             except Exception as exc:
                 logger.warning(
-                    "Analyzer %s raised and was skipped", analyzer.analyzer_id, exc_info=True
+                    "Analyzer %s raised and was skipped",
+                    analyzer.analyzer_id,
+                    exc_info=True,
                 )
                 findings.append(
                     self._failure_finding(
                         analyzer.analyzer_id,
                         f"Analyzer raised {type(exc).__name__}: {exc}",
-                    )
+                    ),
                 )
 
         findings.sort(
@@ -170,7 +189,7 @@ class AnalysisEngine:
                 finding.category.value,
                 finding.title.lower(),
                 finding.analyzer_id,
-            )
+            ),
         )
         return findings
 

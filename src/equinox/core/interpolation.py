@@ -20,6 +20,7 @@ Security:
     - Circular references detected and warned
     - Unresolvable placeholders left unchanged
 """
+
 import calendar
 import copy
 import logging
@@ -64,7 +65,8 @@ def _shift_months(base: date, delta_months: int) -> datetime:
 
 
 def magic_variables(
-    today: date | None = None, now: datetime | None = None,
+    today: date | None = None,
+    now: datetime | None = None,
 ) -> dict[str, str]:
     """Return built-in dynamic variables for date/time convenience."""
     now_value = now or datetime.now()
@@ -83,7 +85,9 @@ def magic_variables(
 
 
 def _validate_interpolation_inputs(
-    text: str, variables: dict[str, str], max_input_bytes: int,
+    text: str,
+    variables: dict[str, str],
+    max_input_bytes: int,
 ) -> None:
     """Validate input types and enforce max input size."""
     if not isinstance(text, str):
@@ -246,7 +250,8 @@ def _interpolate_dict_values(
     """Interpolate all key/value pairs in a dict-like request field."""
     return {
         interpolator.interpolate(str(key), variables): interpolator.interpolate(
-            str(value), variables,
+            str(value),
+            variables,
         )
         for key, value in values.items()
     }

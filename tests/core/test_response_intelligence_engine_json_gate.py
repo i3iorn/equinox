@@ -1,7 +1,5 @@
 """Tests for engine-level JSON gating in response intelligence analyzers."""
 
-from typing import List
-
 from equinox.core.request import Request, Response
 from equinox.core.response_intelligence.base import Analyzer
 from equinox.core.response_intelligence.engine import AnalysisEngine
@@ -17,7 +15,7 @@ class _RequiresJsonAnalyzer(Analyzer):
     def __init__(self) -> None:
         self.calls = 0
 
-    def analyze(self, ctx: AnalysisContext) -> List[Finding]:
+    def analyze(self, ctx: AnalysisContext) -> list[Finding]:
         self.calls += 1
         return []
 
@@ -30,7 +28,7 @@ class _AlwaysAnalyzer(Analyzer):
     def __init__(self) -> None:
         self.calls = 0
 
-    def analyze(self, ctx: AnalysisContext) -> List[Finding]:
+    def analyze(self, ctx: AnalysisContext) -> list[Finding]:
         self.calls += 1
         return [
             Finding(
@@ -39,7 +37,7 @@ class _AlwaysAnalyzer(Analyzer):
                 title="ran",
                 description="always runs",
                 analyzer_id=self.analyzer_id,
-            )
+            ),
         ]
 
 
@@ -48,7 +46,7 @@ class _RaisingAnalyzer(Analyzer):
     category = Category.HINTS
     display_name = "Raises"
 
-    def analyze(self, ctx: AnalysisContext) -> List[Finding]:
+    def analyze(self, ctx: AnalysisContext) -> list[Finding]:
         raise RuntimeError("boom")
 
 

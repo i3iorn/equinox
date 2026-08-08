@@ -1,4 +1,5 @@
 """URL history completer helpers for ``RequestPanel``."""
+
 from __future__ import annotations
 
 import logging

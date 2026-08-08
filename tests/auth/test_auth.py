@@ -151,7 +151,9 @@ class TestOAuth2Auth:
         mock_client.post.return_value = mock_response
 
         auth = OAuth2Auth(
-            client_id="client", client_secret="secret", token_url="https://auth.example.com/token"
+            client_id="client",
+            client_secret="secret",
+            token_url="https://auth.example.com/token",
         )
 
         # Trigger token refresh by applying auth
@@ -200,7 +202,9 @@ class TestOAuth2Auth:
         mock_client.post.return_value = mock_response
 
         auth = OAuth2Auth(
-            client_id="client", client_secret="secret", token_url="https://auth.example.com/token"
+            client_id="client",
+            client_secret="secret",
+            token_url="https://auth.example.com/token",
         )
 
         request = Mock()
@@ -260,7 +264,9 @@ class TestOAuth2Auth:
         mock_client.return_value.__enter__.return_value = mock_client_instance
 
         auth = OAuth2Auth(
-            client_id="client", client_secret="secret", token_url="https://auth.example.com/token"
+            client_id="client",
+            client_secret="secret",
+            token_url="https://auth.example.com/token",
         )
 
         with pytest.raises(Exception):
@@ -391,7 +397,10 @@ class TestAuthStorage:
             scope="read",
         )
         request = Request(
-            method="GET", url="https://api.example.com/data", auth=auth, name="OAuth2 Endpoint"
+            method="GET",
+            url="https://api.example.com/data",
+            auth=auth,
+            name="OAuth2 Endpoint",
         )
 
         req_id = mgr.save_request(request, collection_id=collection_id)
@@ -408,7 +417,10 @@ class TestAuthStorage:
         """Test saving request with API key"""
         auth = APIKeyAuth(key="X-API-Key", value="key123", location="header")
         request = Request(
-            method="GET", url="https://api.example.com/data", auth=auth, name="API Key Endpoint"
+            method="GET",
+            url="https://api.example.com/data",
+            auth=auth,
+            name="API Key Endpoint",
         )
 
         req_id = mgr.save_request(request, collection_id=collection_id)
@@ -423,7 +435,9 @@ class TestAuthStorage:
     def test_save_request_without_auth(self, mgr, collection_id):
         """Test saving request without auth"""
         request = Request(
-            method="GET", url="https://api.example.com/public", name="Public Endpoint"
+            method="GET",
+            url="https://api.example.com/public",
+            name="Public Endpoint",
         )
 
         req_id = mgr.save_request(request, collection_id=collection_id)
@@ -435,7 +449,10 @@ class TestAuthStorage:
         """Test that loading a request preserves auth"""
         auth = BasicAuth(username="testuser", password="testpass")
         request = Request(
-            method="POST", url="https://api.example.com/create", auth=auth, name="Create Endpoint"
+            method="POST",
+            url="https://api.example.com/create",
+            auth=auth,
+            name="Create Endpoint",
         )
 
         req_id = mgr.save_request(request, collection_id=collection_id)

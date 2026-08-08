@@ -32,7 +32,7 @@ _SENSITIVE_KEY_PATTERNS: frozenset[str] = frozenset(
         "authorization",
         "bearer",
         "credential",
-    }
+    },
 )
 
 SENSITIVE_HEADER_NAMES: frozenset[str] = frozenset(
@@ -50,7 +50,7 @@ SENSITIVE_HEADER_NAMES: frozenset[str] = frozenset(
         "token",
         "password",
         "secret",
-    }
+    },
 )
 
 SENSITIVE_PAYLOAD_KEYS: frozenset[str] = _SENSITIVE_KEY_PATTERNS | frozenset(
@@ -58,19 +58,22 @@ SENSITIVE_PAYLOAD_KEYS: frozenset[str] = _SENSITIVE_KEY_PATTERNS | frozenset(
         "bearer",
         "authorization",
         "credential",
-    }
+    },
 )
 
 _SECRET_KEYS_PATTERN: str = "|".join(sorted(_SENSITIVE_KEY_PATTERNS))
 _BODY_SECRET_KEYS: re.Pattern[str] = re.compile(
-    rf"((?:{_SECRET_KEYS_PATTERN})=)([^&\s]+)", re.IGNORECASE
+    rf"((?:{_SECRET_KEYS_PATTERN})=)([^&\s]+)",
+    re.IGNORECASE,
 )
 _JSON_SECRET_KEYS: re.Pattern[str] = re.compile(
-    rf'("(?:{_SECRET_KEYS_PATTERN})"\s*:\s*")([^\"]+)(")', re.IGNORECASE
+    rf'("(?:{_SECRET_KEYS_PATTERN})"\s*:\s*")([^\"]+)(")',
+    re.IGNORECASE,
 )
 _URL_CREDENTIALS: re.Pattern[str] = re.compile(r"(https?://)([^@/:]+):([^@/]+)@", re.IGNORECASE)
 _URL_SECRET_PARAMS: re.Pattern[str] = re.compile(
-    rf"((?:\?|&)(?:{_SECRET_KEYS_PATTERN})=)([^&#]+)", re.IGNORECASE
+    rf"((?:\?|&)(?:{_SECRET_KEYS_PATTERN})=)([^&#]+)",
+    re.IGNORECASE,
 )
 
 
@@ -113,7 +116,9 @@ def mask_secret(value: str | None, *, keep: int = _DEFAULT_MASK_KEEP_CHARS) -> s
 
 
 def sanitize_details(
-    details: dict[str, Any], *, max_string_len: int = _DEFAULT_MAX_STRING_LEN
+    details: dict[str, Any],
+    *,
+    max_string_len: int = _DEFAULT_MAX_STRING_LEN,
 ) -> dict[str, Any]:
     def _sanitize(obj: Any) -> Any:
         if isinstance(obj, dict):

@@ -54,7 +54,7 @@ class ConcurrencyGuard:
             return self._active
 
     @contextlib.contextmanager
-    def slot(self, timeout: float | None = None) -> Generator[None, None, None]:
+    def slot(self, timeout: float | None = None) -> Generator[None]:
         """Context manager that acquires a slot on entry and releases it on exit.
 
         Args:
@@ -97,7 +97,7 @@ class ConcurrencyGuard:
                         raise RequestError(
                             f"Failed to acquire concurrency slot: "
                             f"limit reached ({self._active}/{self._max}) "
-                            f"and timeout expired after {timeout}s"
+                            f"and timeout expired after {timeout}s",
                         )
                     self._condition.wait(timeout=remaining)
                 else:
@@ -117,7 +117,7 @@ class ConcurrencyGuard:
             if self._active == 0:
                 raise RuntimeError(
                     "ConcurrencyGuard.release() called with no active slots — "
-                    "acquire/release mismatch detected"
+                    "acquire/release mismatch detected",
                 )
             self._active -= 1
             self._condition.notify_all()  # Wake waiting threads

@@ -1,7 +1,7 @@
 import json
 import logging
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 from equinox.core.audit._level import AuditLevel
 from equinox.core.audit._type import AuditEventType
@@ -13,7 +13,7 @@ logger = logging.getLogger(__name__)
 
 
 class AuditLogger:
-    def __init__(self, log_path: Optional[Path] = None):
+    def __init__(self, log_path: Path | None = None):
         if log_path is None:
             log_path = Path.home() / ".equinox" / "audit.log"
 
@@ -42,9 +42,9 @@ class AuditLogger:
         event_type: AuditEventType,
         level: AuditLevel = AuditLevel.INFO,
         message: str = "",
-        details: Optional[dict[str, Any]] = None,
-        user: Optional[str] = None,
-        request_id: Optional[str] = None,
+        details: dict[str, Any] | None = None,
+        user: str | None = None,
+        request_id: str | None = None,
     ) -> None:
         """Log an audit event.
 
@@ -88,7 +88,7 @@ class AuditLogger:
         # consistent across modules (audit, logging, exports).
         return sanitize_details(details, max_string_len=200)
 
-    def log_auth_success(self, auth_type: str, user: Optional[str] = None) -> None:
+    def log_auth_success(self, auth_type: str, user: str | None = None) -> None:
         """Log successful authentication."""
         self.log_event(
             AuditEventType.AUTH_SUCCESS,
@@ -98,7 +98,7 @@ class AuditLogger:
             user=user,
         )
 
-    def log_auth_failure(self, auth_type: str, reason: str, user: Optional[str] = None) -> None:
+    def log_auth_failure(self, auth_type: str, reason: str, user: str | None = None) -> None:
         """Log failed authentication."""
         safe_reason = redact_body(reason, max_length=200) or "unknown"
         self.log_event(
@@ -109,7 +109,7 @@ class AuditLogger:
             user=user,
         )
 
-    def log_credential_access(self, operation: str, key: str, user: Optional[str] = None) -> None:
+    def log_credential_access(self, operation: str, key: str, user: str | None = None) -> None:
         """Log credential access."""
         event_map = {
             "store": AuditEventType.CREDENTIAL_STORED,
@@ -129,10 +129,10 @@ class AuditLogger:
         self,
         method: str,
         url: str,
-        status_code: Optional[int] = None,
-        error: Optional[str] = None,
-        user: Optional[str] = None,
-        request_id: Optional[str] = None,
+        status_code: int | None = None,
+        error: str | None = None,
+        user: str | None = None,
+        request_id: str | None = None,
     ) -> None:
         """Log HTTP request."""
         safe_url = redact_url(url)
@@ -160,8 +160,8 @@ class AuditLogger:
         self,
         plugin_name: str,
         action: str,
-        error: Optional[str] = None,
-        user: Optional[str] = None,
+        error: str | None = None,
+        user: str | None = None,
     ) -> None:
         """Log plugin event."""
         event_map = {
@@ -181,7 +181,10 @@ class AuditLogger:
         )
 
     def log_security_violation(
-        self, violation_type: str, details: dict[str, Any], user: Optional[str] = None
+        self,
+        violation_type: str,
+        details: dict[str, Any],
+        user: str | None = None,
     ) -> None:
         """Log security violation."""
         event_map = {
@@ -200,7 +203,10 @@ class AuditLogger:
         )
 
     def log_file_operation(
-        self, operation: str, file_path: str, user: Optional[str] = None
+        self,
+        operation: str,
+        file_path: str,
+        user: str | None = None,
     ) -> None:
         """Log file operation."""
         event_map = {

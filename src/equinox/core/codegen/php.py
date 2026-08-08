@@ -31,7 +31,7 @@ class PhpCurlGenerator:
                 else request.body
             )
             lines.append(
-                f"curl_setopt($ch, CURLOPT_POSTFIELDS, '{_escape_single_quoted(body_text)}');"
+                f"curl_setopt($ch, CURLOPT_POSTFIELDS, '{_escape_single_quoted(body_text)}');",
             )
 
         lines.append("")

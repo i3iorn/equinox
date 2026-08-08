@@ -140,7 +140,7 @@ After approval and CI passing:
 All code must follow:
 
 - **SOLID principles** and separation of concerns
-- **Single responsibility:** functions ≤ 30 lines, classes ≤ 400 lines (soft), 800 lines (hard limit)
+- **Single responsibility:** functions ≤ 30 lines, classes ≤ 400 lines (soft), 120/800 lines (hard limit)
 - **DRY:** avoid duplication, but prioritize readability
 - **Meaningful names:** variable, function, and class names should be self-explanatory
 - **Explicit typing:** use type hints (no `Any` where specific types are known)
@@ -159,7 +159,7 @@ All changes involving user input or data handling must:
 ### Module Size Limits
 
 - **Modules:** ≤ 1000 lines (split into focused packages if larger)
-- **Functions:** ≤ 30 lines (soft), ≤ 60 lines (hard limit)
+- **Functions:** ≤ 30 lines (soft), ≤ 120 lines (hard limit)
 - **Classes:** ≤ 400 lines (soft), ≤ 800 lines (hard limit)
 - **Packages:** ≤ 15 direct child modules (consider reorganization if larger)
 

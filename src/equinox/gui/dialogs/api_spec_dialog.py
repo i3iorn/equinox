@@ -5,7 +5,6 @@ import logging
 import os
 import re
 import tempfile
-from typing import Optional
 
 from PyQt6.QtGui import QFont
 from PyQt6.QtWidgets import (
@@ -31,7 +30,7 @@ _SAVE_MAX = 10_000_000  # 10 MB — warn before saving larger content
 
 # Keywords used for heuristic secret detection in clipboard copy
 _SECRET_KEYWORDS = frozenset(
-    {"client_secret", "client-secret", "secret", "token", "authorization", "api_key", "api-key"}
+    {"client_secret", "client-secret", "secret", "token", "authorization", "api_key", "api-key"},
 )
 
 
@@ -58,7 +57,10 @@ def _atomic_write(path: str, content: str) -> None:
     tmp_path = None
     try:
         with tempfile.NamedTemporaryFile(
-            mode="w", encoding="utf-8", delete=False, dir=directory
+            mode="w",
+            encoding="utf-8",
+            delete=False,
+            dir=directory,
         ) as tmp:
             tmp_path = tmp.name
             tmp.write(content)
@@ -84,7 +86,7 @@ class ApiSpecDialog(QDialog):
         dlg.exec()
     """
 
-    def __init__(self, parent: Optional[QWidget] = None, title: str = "API Spec") -> None:
+    def __init__(self, parent: QWidget | None = None, title: str = "API Spec") -> None:
         super().__init__(parent)
         self.setWindowTitle(title)
         self.setMinimumSize(700, 480)
@@ -162,9 +164,7 @@ class ApiSpecDialog(QDialog):
 
         size = len(text.encode("utf-8"))
         if size > _PRETTY_PRINT_MAX:
-            notice = (
-                f"\n\n[Preview truncated: {size:,} bytes " f"> {_PRETTY_PRINT_MAX:,} byte limit]"
-            )
+            notice = f"\n\n[Preview truncated: {size:,} bytes > {_PRETTY_PRINT_MAX:,} byte limit]"
             self.preview.setPlainText(text[:4096] + notice)
             return
 
@@ -184,7 +184,9 @@ class ApiSpecDialog(QDialog):
 
         if not self._allow_clipboard:
             QMessageBox.warning(
-                self, "Copy blocked", "Copying to clipboard is disabled for this dialog."
+                self,
+                "Copy blocked",
+                "Copying to clipboard is disabled for this dialog.",
             )
             logger.info("Clipboard copy blocked by policy")
             return
@@ -229,7 +231,10 @@ class ApiSpecDialog(QDialog):
 
         suggested = _sanitize_filename(self.windowTitle().replace(" ", "_")) + ".json"
         path, _ = QFileDialog.getSaveFileName(
-            self, "Save Spec", suggested, "JSON Files (*.json);;All Files (*)"
+            self,
+            "Save Spec",
+            suggested,
+            "JSON Files (*.json);;All Files (*)",
         )
         if not path:
             return

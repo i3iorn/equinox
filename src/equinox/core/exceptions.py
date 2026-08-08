@@ -1,4 +1,5 @@
 """Exceptions for Equinox"""
+
 from typing import Any
 
 

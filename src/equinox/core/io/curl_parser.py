@@ -36,7 +36,7 @@ _VALUE_FLAGS = frozenset(
         "--cert",
         "--key",
         "--max-redirs",
-    }
+    },
 )
 
 _METHOD_FLAGS = frozenset({"-X", "--request"})
@@ -91,7 +91,10 @@ def _parse_header(raw_header: str, headers: dict[str, str]) -> None:
 
 
 def _consume_method_header_or_data(
-    tok: str, tokens: list[str], index: int, state: _ParserState
+    tok: str,
+    tokens: list[str],
+    index: int,
+    state: _ParserState,
 ) -> int | None:
     """Consume value flags for method/header/body-like arguments."""
     if tok in _METHOD_FLAGS:
@@ -116,7 +119,10 @@ def _consume_method_header_or_data(
 
 
 def _consume_json_or_auth(
-    tok: str, tokens: list[str], index: int, state: _ParserState
+    tok: str,
+    tokens: list[str],
+    index: int,
+    state: _ParserState,
 ) -> int | None:
     """Consume value flags for JSON shorthand and basic auth."""
 

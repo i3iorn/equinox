@@ -48,8 +48,8 @@ class HARGenerator:
                             "bodySize": response.size,
                         },
                         "timings": response.timings or {},
-                    }
+                    },
                 ],
-            }
+            },
         }
         return json.dumps(har, indent=4)

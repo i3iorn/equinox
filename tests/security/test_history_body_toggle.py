@@ -18,7 +18,10 @@ def test_history_body_capture_toggle_off(monkeypatch):
     history_config.set_capture_bodies(False)
 
     req = Request(
-        method="POST", url="https://example.com/api/echo", headers={}, body='{"secret": "abc"}'
+        method="POST",
+        url="https://example.com/api/echo",
+        headers={},
+        body='{"secret": "abc"}',
     )
     s = _HistorySerializer()
     req_row = s.prepare_request(req)

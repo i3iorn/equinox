@@ -3,6 +3,7 @@
 Provides off-thread pretty-printing and content-type to syntax highlighter mapping.
 Uses the centralized formatting module for actual formatting logic.
 """
+
 from __future__ import annotations
 
 import logging
@@ -40,7 +41,7 @@ class WorkerSignals(QObject):
         result: Emitted when formatting completes with (marker, formatted_text)
     """
 
-    result = pyqtSignal(object, str)  # (marker: str, formatted_text: str)
+    result = pyqtSignal(object, str)  # (marker: object, formatted_text: str)
 
 
 class PrettyPrintRunnable(QRunnable):
@@ -52,12 +53,14 @@ class PrettyPrintRunnable(QRunnable):
     Delegates actual formatting to centralized formatting module.
     """
 
-    def __init__(self, response: Response, marker: str) -> None:
+    def __init__(self, response: Response, marker: object) -> None:
         """Initialize pretty-printer worker.
 
         Args:
             response: Response to format
-            marker: Marker to identify this result in UI
+            marker: Opaque staleness token, compared for equality by the
+                caller - never a string operation. Round-tripped through
+                self.marker and the result signal unchanged.
 
         Raises:
             ValueError: If response is None

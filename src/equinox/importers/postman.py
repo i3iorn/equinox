@@ -4,6 +4,7 @@ Supports Postman Collection Format v2.0 and v2.1.
 Collection-level variables (including ``{{baseUrl}}``) are resolved before
 saving requests and persisted on the collection for reference.
 """
+
 import json
 import logging
 from pathlib import Path
@@ -137,7 +138,9 @@ class PostmanImporter:
         # import to improve performance and ensure atomicity.
         items = collection_data.get("item", [])
         requests: list[Request] = self._collect_items(
-            items, folder_name="", col_variables=col_variables,
+            items,
+            folder_name="",
+            col_variables=col_variables,
         )
 
         try:
@@ -164,7 +167,9 @@ class PostmanImporter:
                         logger.debug("Added collection variable: %s=%s", var_name, var_value)
                     except Exception:
                         logger.exception(
-                            "Failed to add collection variable %s", var_name, exc_info=True,
+                            "Failed to add collection variable %s",
+                            var_name,
+                            exc_info=True,
                         )
 
                 # Insert requests via the manager's centralised method
@@ -176,11 +181,14 @@ class PostmanImporter:
                     )
         except Exception as exc:
             logger.error(
-                "Failed to import Postman collection transactionally: %s", exc, exc_info=True,
+                "Failed to import Postman collection transactionally: %s",
+                exc,
+                exc_info=True,
             )
             # Fall back: create a collection via manager and insert requests individually
             collection_id = self.collection_manager.create_collection(
-                name=collection_name, description=collection_description,
+                name=collection_name,
+                description=collection_description,
             )
             for var_name, var_value in col_variables.items():
                 try:
@@ -196,7 +204,10 @@ class PostmanImporter:
                 try:
                     self.collection_manager.save_request(request, collection_id)
                 except Exception:
-                    logger.exception("Failed to save individual request during fallback", exc_info=True)
+                    logger.exception(
+                        "Failed to save individual request during fallback",
+                        exc_info=True,
+                    )
             return int(collection_id)
 
         return int(col_id)

@@ -34,7 +34,10 @@ def gui() -> None:
 
 @main.command()
 @click.option(
-    "--db-path", "db_path", envvar="EQUINOX_DB_PATH", help="Path to the Equinox SQLite DB."
+    "--db-path",
+    "db_path",
+    envvar="EQUINOX_DB_PATH",
+    help="Path to the Equinox SQLite DB.",
 )
 @click.option(
     "--new-password",

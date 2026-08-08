@@ -46,7 +46,7 @@ _BLOCKED: frozenset[str] = frozenset(
         "globals",
         "locals",
         "help",
-    }
+    },
 )
 
 

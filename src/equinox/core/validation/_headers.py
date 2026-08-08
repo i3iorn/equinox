@@ -25,7 +25,7 @@ class _HeaderValidator:
             "content-length",
             "transfer-encoding",
             "upgrade",
-        }
+        },
     )
 
     @classmethod

@@ -18,15 +18,15 @@ template methods:
 from __future__ import annotations
 
 from collections.abc import Iterable
-from typing import Any, Dict, Optional, Tuple, Union
+from typing import Any, Union
 
 from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import QListWidget, QListWidgetItem
-from typing_extensions import TypeAlias
+from typing import TypeAlias
 
 from equinox.gui.dialogs._dirty_dialog_mixin import DirtyDialogMixin
 
-_ListItemSpec: TypeAlias = Union[Tuple[int, str], Tuple[int, str, Dict[str, Any]]]
+_ListItemSpec: TypeAlias = Union[tuple[int, str], tuple[int, str, dict[str, Any]]]
 
 
 class ListFormDialogMixin(DirtyDialogMixin):
@@ -60,12 +60,12 @@ class ListFormDialogMixin(DirtyDialogMixin):
     """
 
     _list_widget: QListWidget
-    _current_id: Optional[int]
+    _current_id: int | None
     _dirty: bool
 
     # ── Standard refresh+selection pattern ─────────────────────────────
 
-    def _refresh_list(self, select_id: Optional[int] = None) -> None:
+    def _refresh_list(self, select_id: int | None = None) -> None:
         """Rebuild the list from ``_build_list_items()`` and restore selection.
 
         If ``select_id`` is given, that item is pre-selected while signals are
@@ -126,7 +126,9 @@ class ListFormDialogMixin(DirtyDialogMixin):
         self._sync_buttons()
 
     def _on_item_selected(
-        self, current: Optional[QListWidgetItem], _prev: Optional[QListWidgetItem]
+        self,
+        current: QListWidgetItem | None,
+        _prev: QListWidgetItem | None,
     ) -> None:
         """Handle interactive selection changes from the list (signal slot).
 

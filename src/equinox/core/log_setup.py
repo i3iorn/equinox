@@ -10,6 +10,8 @@ Call `configure_logging()` once at application startup. After that every
 Log file is rotated at 10 MB and up to 5 old files are kept.
 """
 
+from __future__ import annotations
+
 import json
 import logging
 import logging.handlers

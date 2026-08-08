@@ -89,7 +89,7 @@ class TestResolveServersOpenAPI3:
                 {"url": "https://api.example.com", "description": "Production"},
                 {"url": "https://staging.example.com", "description": "Staging"},
                 {"url": "https://dev.example.com", "description": "Development"},
-            ]
+            ],
         }
         servers = _resolve_servers_openapi3(spec)
         assert len(servers) == 3
@@ -113,8 +113,8 @@ class TestResolveServersOpenAPI3:
                         "port": {"default": "443", "enum": ["443", "8443"]},
                         "version": {"default": "2"},
                     },
-                }
-            ]
+                },
+            ],
         }
         servers = _resolve_servers_openapi3(spec)
         assert servers[0].url == "https://demo.example.com:443/v2"
@@ -178,7 +178,7 @@ class TestOpenAPIMultiServer:
             [
                 {"url": "https://api.example.com", "description": "Production"},
                 {"url": "https://staging.example.com", "description": "Staging"},
-            ]
+            ],
         )
         openapi_importer.import_dict(spec)
         collections = col_mgr.list_collections()
@@ -189,7 +189,7 @@ class TestOpenAPIMultiServer:
             [
                 {"url": "https://api.example.com", "description": "Production"},
                 {"url": "https://staging.example.com", "description": "Staging"},
-            ]
+            ],
         )
         openapi_importer.import_dict(spec)
         names = {c["name"] for c in col_mgr.list_collections()}
@@ -201,7 +201,7 @@ class TestOpenAPIMultiServer:
             [
                 {"url": "https://api.example.com"},
                 {"url": "https://staging.example.com"},
-            ]
+            ],
         )
         openapi_importer.import_dict(spec)
         for collection in col_mgr.list_collections():
@@ -213,7 +213,7 @@ class TestOpenAPIMultiServer:
             [
                 {"url": "https://prod.example.com"},
                 {"url": "https://staging.example.com"},
-            ]
+            ],
         )
         openapi_importer.import_dict(spec)
         all_urls = set()
@@ -234,7 +234,7 @@ class TestOpenAPIMultiServer:
                         "env": {"default": "prod"},
                         "ver": {"default": "3"},
                     },
-                }
+                },
             ],
             "paths": {"/ping": {"get": {"summary": "Ping"}}},
         }
@@ -247,7 +247,7 @@ class TestOpenAPIMultiServer:
             [
                 {"url": "https://a.example.com"},
                 {"url": "https://b.example.com"},
-            ]
+            ],
         )
         first_id = openapi_importer.import_dict(spec)
         assert first_id == min(c["id"] for c in col_mgr.list_collections())
@@ -401,7 +401,7 @@ class TestPostmanBaseUrl:
                 {
                     "name": "Users",
                     "item": [_postman_get("List", "{{baseUrl}}/users")],
-                }
+                },
             ],
             variables={"baseUrl": "https://api.example.com"},
         )
@@ -421,7 +421,7 @@ class TestPostmanBaseUrl:
                         "url": {"raw": "https://api.example.com/me"},
                         "header": [{"key": "X-Api-Version", "value": "{{apiVersion}}"}],
                     },
-                }
+                },
             ],
             variables={"apiVersion": "v3"},
         )

@@ -79,7 +79,7 @@ class CookieJarManager:
         """Return all stored cookies ordered by domain, name."""
         rows = self.db.fetchall(
             "SELECT id, name, value, domain, path, secure, http_only, expires, created_at "
-            "FROM cookies ORDER BY domain, name"
+            "FROM cookies ORDER BY domain, name",
         )
         return [self._row_to_dict(r) for r in rows]
 
@@ -118,7 +118,7 @@ class CookieJarManager:
         count = row["cnt"] if row else 0
         if count >= self.MAX_COOKIES:
             raise StorageError(
-                f"Cookie jar is full ({self.MAX_COOKIES} cookies). Delete some first."
+                f"Cookie jar is full ({self.MAX_COOKIES} cookies). Delete some first.",
             )
 
         try:

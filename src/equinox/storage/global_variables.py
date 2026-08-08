@@ -19,7 +19,7 @@ class GlobalVariablesManager:
 
     MAX_DESCRIPTION_LENGTH = 1000
 
-    def __init__(self, db: "Database") -> None:
+    def __init__(self, db: Database) -> None:
         self.db = db
 
     def set_variable(self, key: str, value: str, description: str = "") -> int:
@@ -30,7 +30,7 @@ class GlobalVariablesManager:
             raise ValidationError("Variable description must be a string")
         if len(description) > self.MAX_DESCRIPTION_LENGTH:
             raise ValidationError(
-                f"Variable description too long (max {self.MAX_DESCRIPTION_LENGTH} characters)"
+                f"Variable description too long (max {self.MAX_DESCRIPTION_LENGTH} characters)",
             )
 
         try:

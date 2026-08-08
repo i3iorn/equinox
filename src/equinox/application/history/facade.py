@@ -4,6 +4,7 @@ This module centralizes history reads/writes and history-row reconstruction so
 GUI modules do not construct ``HistoryManager`` directly and do not duplicate
 entry-to-model mapping logic.
 """
+
 from __future__ import annotations
 
 import logging
@@ -57,7 +58,9 @@ class HistoryFacade:
                 return {str(k): v for k, v in value.items()}
             except Exception:
                 logger.exception(
-                    "Could not coerce %s mapping-like value to dict", field_name, exc_info=True,
+                    "Could not coerce %s mapping-like value to dict",
+                    field_name,
+                    exc_info=True,
                 )
                 raise
         logger.debug("Could not coerce %s to dict, defaulting to {}", field_name)
@@ -85,7 +88,8 @@ class HistoryFacade:
     def request_from_entry(entry: dict[str, Any]) -> Request:
         """Build a Request instance from a history row dict."""
         headers = HistoryFacade._coerce_to_dict(
-            entry.get("request_headers") or {}, "request_headers",
+            entry.get("request_headers") or {},
+            "request_headers",
         )
         params = HistoryFacade._coerce_to_dict(entry.get("request_params") or {}, "request_params")
 
@@ -120,7 +124,8 @@ class HistoryFacade:
         body_bytes = HistoryFacade._coerce_body_to_bytes(entry.get("response_body") or "")
         timestamp = HistoryFacade._parse_timestamp(entry.get("executed_at")) or datetime.now()
         headers = HistoryFacade._coerce_to_dict(
-            entry.get("response_headers") or {}, "response_headers",
+            entry.get("response_headers") or {},
+            "response_headers",
         )
 
         try:

@@ -64,9 +64,14 @@ def _normalize_lock_text(content: str) -> str:
         flags=re.MULTILINE,
     )
 
+    # pip-compile only quotes the echoed path when it contains characters the
+    # host shell would need escaping (e.g. Windows backslashes) - so the same
+    # logical path comes out quoted on Windows and unquoted on Linux CI.
+    # Both regexes must collapse to the same unquoted canonical form, or a
+    # Windows-generated file can never byte-match a Linux-generated one.
     normalized = re.sub(
-        r"(--output-file=')([^']*requirements-lock\.txt)(')",
-        r"\1requirements-lock.txt\3",
+        r"--output-file='[^']*requirements-lock\.txt'",
+        "--output-file=requirements-lock.txt",
         normalized,
     )
     normalized = re.sub(
@@ -104,8 +109,16 @@ def write_lockfile() -> int:
     result = _compile_lock(LOCK_PATH)
     if result.returncode != 0:
         return _print_failure(
-            "requirements-lock generation failed:", result.stderr or result.stdout
+            "requirements-lock generation failed:",
+            result.stderr or result.stdout,
         )
+
+    # pip-compile echoes back whatever --output-file path it was given, which
+    # is an absolute, machine-specific path here. Without normalizing, every
+    # `--write` bakes the generating contributor's local path into the
+    # committed file. `--check` already normalizes before comparing; do the
+    # same here so the committed file matches what `--check` expects to see.
+    LOCK_PATH.write_text(_normalize_lock_text(_read_text(LOCK_PATH)), encoding="utf-8")
 
     print(f"Generated {LOCK_PATH.name} from {PYPROJECT_PATH.name}.")
     return 0
@@ -133,7 +146,7 @@ def check_lockfile() -> int:
                 generated.splitlines(keepends=True),
                 fromfile="requirements-lock.txt",
                 tofile="generated requirements-lock.txt",
-            )
+            ),
         )
         print("requirements-lock.txt is out of date. Regenerate it with:")
         print("  py -3 scripts/manage_requirements_lock.py --write")
@@ -146,7 +159,9 @@ def parse_args() -> argparse.Namespace:
     group = parser.add_mutually_exclusive_group(required=True)
     group.add_argument("--write", action="store_true", help="Regenerate requirements-lock.txt")
     group.add_argument(
-        "--check", action="store_true", help="Verify requirements-lock.txt is current"
+        "--check",
+        action="store_true",
+        help="Verify requirements-lock.txt is current",
     )
     return parser.parse_args()
 

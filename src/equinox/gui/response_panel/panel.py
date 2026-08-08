@@ -9,6 +9,7 @@ Delegates UI construction and data display to mixin classes:
 
 This module wires them together and owns the response display pipeline.
 """
+
 from __future__ import annotations
 
 import json
@@ -54,9 +55,9 @@ _KEY_ACTIVE_TAB = "response/active_tab"
 
 
 class ResponsePanel(
-    ResponseBuilderMixin, # type: ignore[misc]
-    ResponseDisplayMixin, # type: ignore[misc]
-    ResponseActionsMixin, # type: ignore[misc]
+    ResponseBuilderMixin,
+    ResponseDisplayMixin,
+    ResponseActionsMixin,
     QWidget,
 ):
     """Panel for displaying HTTP responses and the request that was sent.
@@ -226,7 +227,8 @@ class ResponsePanel(
             if not self._safe_display(self._populate_all_tabs, self.current_response):
                 failed_sections.append("tabs")
             if not self._safe_display(
-                self._apply_readability_mode_for_response, self.current_response,
+                self._apply_readability_mode_for_response,
+                self.current_response,
             ):
                 failed_sections.append("mode")
             self._update_render_warning(failed_sections)

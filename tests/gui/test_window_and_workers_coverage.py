@@ -1,4 +1,5 @@
 """Coverage-boosting tests for MainWindow, workers, and app module."""
+
 from unittest.mock import MagicMock
 from unittest.mock import patch
 
@@ -722,7 +723,9 @@ class TestIntelligenceWorker:
         _close_win(win)
 
     def test_reset_intelligence_worker_handles_runtimeerror_from_stale_worker(
-        self, db, monkeypatch,
+        self,
+        db,
+        monkeypatch,
     ):
         from equinox.gui.window import MainWindow
 

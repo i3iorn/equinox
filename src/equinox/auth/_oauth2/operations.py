@@ -217,7 +217,8 @@ def execute_token_post(
 
 
 def _build_token_post_payload(
-    auth: Any, grant_data: dict[str, Any]
+    auth: Any,
+    grant_data: dict[str, Any],
 ) -> tuple[dict[str, str], dict[str, Any]]:
     headers: dict[str, str] = {}
     body = grant_data.copy()
@@ -300,7 +301,12 @@ def try_alternate_client_auth_mode(
         extra={"token_url": redact_url(auth.token_url)},
     )
     return _run_auth_mode_fallback(
-        auth, grant_data, current_mode, alternate_mode, proxy, verify_ssl
+        auth,
+        grant_data,
+        current_mode,
+        alternate_mode,
+        proxy,
+        verify_ssl,
     )
 
 
@@ -394,7 +400,12 @@ def post_token_request(
             return _attempt_token_request(auth, grant_data, attempts_made, proxy, verify_ssl)
         except httpx.HTTPStatusError as status_exc:
             _raise_http_status_auth_error(
-                auth, grant_data, status_exc, proxy, verify_ssl, attempts_made
+                auth,
+                grant_data,
+                status_exc,
+                proxy,
+                verify_ssl,
+                attempts_made,
             )
         except (httpx.TransportError, httpx.TimeoutException) as transient_exc:
             last_exc = transient_exc
@@ -653,5 +664,5 @@ def _maybe_update_refresh_token(auth: Any, token_data: dict[str, Any]) -> None:
         )
     except AuthError:
         logger.warning(
-            "Token endpoint returned an invalid refresh_token - keeping previous refresh_token"
+            "Token endpoint returned an invalid refresh_token - keeping previous refresh_token",
         )

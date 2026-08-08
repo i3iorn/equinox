@@ -79,29 +79,14 @@ class ApiSpecExportService:
 
     def _get_collection(self, collection_id: int) -> dict[str, Any]:
         coll = self._mgr.get_collection(collection_id)
-        if isinstance(coll, dict):
-            return coll
-        if isinstance(coll, list):
-            normalized = self._coerce_collection_list(collection_id, coll)
-            if normalized:
-                return normalized
-        raise ValueError("Collection not found.")
-
-    def _coerce_collection_list(self, collection_id: int, coll: list[Any]) -> dict[str, Any]:
-        self._logger.warning(
-            "spec_export.collection.coerce_list collection_id=%s",
-            collection_id,
-        )
-        for entry in coll:
-            if isinstance(entry, dict) and (entry.get("id") == collection_id or entry.get("name")):
-                return entry
-        for entry in coll:
-            if isinstance(entry, dict):
-                return entry
-        return {"name": f"Collection {collection_id}", "items": coll}
+        if coll is None:
+            raise ValueError("Collection not found.")
+        return coll
 
     def _export_collection_variants(
-        self, collection_id: int, coll: dict[str, Any]
+        self,
+        collection_id: int,
+        coll: dict[str, Any],
     ) -> dict[str, str]:
         variants: dict[str, str] = {}
         errors: list[str] = []
@@ -116,7 +101,8 @@ class ApiSpecExportService:
             variants["OpenAPI 3 (JSON)"] = json.dumps(oa, indent=2, ensure_ascii=False)
         except Exception as exc:
             self._logger.exception(
-                "spec_export.collection.openapi_failed collection_id=%s", collection_id
+                "spec_export.collection.openapi_failed collection_id=%s",
+                collection_id,
             )
             variants["OpenAPI 3 (JSON)"] = json.dumps(
                 self._fallback_openapi(coll, reqs),
@@ -130,7 +116,8 @@ class ApiSpecExportService:
             variants["Postman v2.1 (JSON)"] = json.dumps(pm, indent=2, ensure_ascii=False)
         except Exception as exc:
             self._logger.exception(
-                "spec_export.collection.postman_failed collection_id=%s", collection_id
+                "spec_export.collection.postman_failed collection_id=%s",
+                collection_id,
             )
             variants["Postman v2.1 (JSON)"] = json.dumps(
                 self._fallback_postman(coll, reqs),
@@ -151,8 +138,8 @@ class ApiSpecExportService:
         for key in ("url", "raw_url", "full_url", "path"):
             value = row.get(key)
             if value:
-                return value
-        return row.get("name") or ""
+                return str(value)
+        return str(row.get("name") or "")
 
     def _fallback_openapi(self, coll: dict[str, Any], reqs: list[Any]) -> dict[str, Any]:
         paths: dict[str, dict[str, dict[str, Any]]] = {}
@@ -184,7 +171,7 @@ class ApiSpecExportService:
                         "method": row.get("method") or "GET",
                         "url": self._request_url(row) or "",
                     },
-                }
+                },
             )
 
         return {

@@ -35,7 +35,9 @@ class TestRequestModel:
     def test_request_with_query_params(self):
         """Test request with query parameters."""
         req = Request(
-            method="GET", url="https://api.example.com/users", params={"page": "1", "limit": "10"}
+            method="GET",
+            url="https://api.example.com/users",
+            params={"page": "1", "limit": "10"},
         )
         assert req.params["page"] == "1"
         assert req.params["limit"] == "10"
@@ -92,7 +94,9 @@ class TestRequestModel:
     def test_request_with_path_params(self):
         """Test request with path parameters."""
         req = Request(
-            method="GET", url="https://api.example.com/users/{id}", path_params={"id": "123"}
+            method="GET",
+            url="https://api.example.com/users/{id}",
+            path_params={"id": "123"},
         )
         assert req.path_params == {"id": "123"}
 
@@ -296,7 +300,12 @@ class TestResponseModel:
         """Test response without Content-Type header."""
         req = Request(method="GET", url="https://api.example.com")
         resp = Response(
-            status_code=200, reason="OK", headers={}, body=b"data", elapsed=0.1, request=req
+            status_code=200,
+            reason="OK",
+            headers={},
+            body=b"data",
+            elapsed=0.1,
+            request=req,
         )
         assert resp.content_type is None
 
@@ -304,7 +313,12 @@ class TestResponseModel:
         """Test response timestamp."""
         req = Request(method="GET", url="https://api.example.com")
         resp = Response(
-            status_code=200, reason="OK", headers={}, body=b"", elapsed=0.1, request=req
+            status_code=200,
+            reason="OK",
+            headers={},
+            body=b"",
+            elapsed=0.1,
+            request=req,
         )
         assert resp.timestamp is not None
         assert isinstance(resp.timestamp, datetime)

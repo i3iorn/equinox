@@ -55,7 +55,7 @@ class PostmanExporter(_BaseCollectionExporter):
             )
             logger.warning(
                 "PostmanExporter.export_collection called with include_history=True, "
-                "which is not yet implemented and has been ignored."
+                "which is not yet implemented and has been ignored.",
             )
 
         collection, requests = PostmanExporter._load_collection(db, collection_id)

@@ -14,7 +14,7 @@ import base64
 import json
 import os
 from datetime import datetime, timedelta, timezone
-from typing import Any, Dict
+from typing import Any
 from unittest.mock import MagicMock, Mock, PropertyMock, patch
 
 import httpx
@@ -48,7 +48,7 @@ class TestAWSSigV4Coverage:
         req.url = "https://s3.amazonaws.com:8443/bucket/key"
         req.method = "GET"
         req.body = b""
-        headers: Dict[str, str] = {}
+        headers: dict[str, str] = {}
         auth.apply(req, headers)
         assert "8443" in headers["host"]
 
@@ -63,7 +63,7 @@ class TestAWSSigV4Coverage:
         req.url = "https://s3.amazonaws.com"
         req.method = "GET"
         req.body = None
-        headers: Dict[str, str] = {}
+        headers: dict[str, str] = {}
         auth.apply(req, headers)
         assert "Authorization" in headers
 
@@ -77,15 +77,15 @@ class _ConcreteAuth(AuthStrategy):
     AUTH_TYPE = "test_concrete_auth_coverage"
     DISPLAY_NAME = "Test Concrete Auth Coverage"
 
-    def apply(self, request: Any, headers: Dict[str, str]) -> None:
+    def apply(self, request: Any, headers: dict[str, str]) -> None:
         super().apply(request, headers)
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         result = super().to_dict()
         return result
 
     @classmethod
-    def from_dict(cls, data: Dict[str, Any], **kwargs: Any) -> "AuthStrategy":
+    def from_dict(cls, data: dict[str, Any], **kwargs: Any) -> "AuthStrategy":
         result = cls()
         return result
 
@@ -165,7 +165,7 @@ class TestOAuth2Coverage:
                 "access_token": "stored-tok",
                 "refresh_token": "stored-rt",
                 "expires_at": "2099-01-01T00:00:00",
-            }
+            },
         )
         auth = OAuth2Auth(
             client_id="c",
@@ -385,7 +385,7 @@ class TestOAuth2Coverage:
                 "client_id": "client-id",
                 "client_secret": "client-secret",
                 "scope": "read write",
-            }
+            },
         )
 
         assert response is resp

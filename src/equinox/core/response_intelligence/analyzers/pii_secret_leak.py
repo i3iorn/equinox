@@ -3,7 +3,9 @@
 import logging
 import re
 from re import Pattern
-from typing import Any, Callable, Optional
+from typing import Any, Optional
+
+from collections.abc import Callable
 
 from equinox.core.response_intelligence.base import Analyzer
 from equinox.core.response_intelligence.models import (
@@ -41,7 +43,10 @@ def _luhn_valid(candidate: str) -> bool:
 
 
 def _looks_like_high_entropy_secret(
-    candidate: str, body: str, start_idx: int, end_idx: int
+    candidate: str,
+    body: str,
+    start_idx: int,
+    end_idx: int,
 ) -> bool:
     """Check if a token looks like a high-entropy secret."""
     if len(candidate) < 24:
@@ -226,7 +231,7 @@ class PIILeakDetectionAnalyzer(Analyzer):
                     "type": "High entropy secret-like token",
                     "count": entropy_hits,
                     "severity": Severity.WARNING.value,
-                }
+                },
             )
             if _SEVERITY_RANK[Severity.WARNING] > _SEVERITY_RANK[highest]:
                 highest = Severity.WARNING
@@ -253,6 +258,6 @@ class PIILeakDetectionAnalyzer(Analyzer):
                 analyzer_id=self.analyzer_id,
                 recommendation="Remove or mask sensitive fields in API responses and rotate any exposed credentials.",
                 details={"detected": detected},
-            )
+            ),
         )
         return findings

@@ -1,4 +1,5 @@
 """Session variables section for VariablesPanel."""
+
 from __future__ import annotations
 
 import logging
@@ -90,7 +91,7 @@ class _SessionVarsMixin:
     def _build_session_count_label(self) -> QLabel:
         """Create the label showing the number of captured variables."""
         self._session_count_label = create_muted_label("No captured variables")
-        return cast(QLabel, self._session_count_label)
+        return self._session_count_label
 
     def _build_session_copy_button(self) -> QPushButton:
         """Create the 'Copy All' button."""
@@ -419,7 +420,9 @@ class _SessionVarsMixin:
             menu.addAction(
                 label,
                 lambda aid=action_id, cb=callback: self._run_context_action(
-                    "variables_session", aid, cb,
+                    "variables_session",
+                    aid,
+                    cb,
                 ),
             )
         viewport = self._session_table.viewport()

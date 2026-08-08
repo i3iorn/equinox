@@ -34,9 +34,9 @@ class GroupDialogs:
     def confirm_delete_group(self, name: str) -> bool:
         return bool(
             confirm_yes_no(
-            self.parent,
-            "Confirm Delete",
-            f"Delete variable group '{name}' and all its variables?",
+                self.parent,
+                "Confirm Delete",
+                f"Delete variable group '{name}' and all its variables?",
             ),
         )
 

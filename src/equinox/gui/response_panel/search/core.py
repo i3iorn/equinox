@@ -2,6 +2,7 @@
 Pure search engine logic.
 No Qt imports. No UI. Fully testable.
 """
+
 from __future__ import annotations
 
 import json
@@ -92,6 +93,7 @@ class SearchEngine:
     def _search_regex(self, cfg: SearchJobConfig) -> SearchResult:
         try:
             import re
+
             flags = 0 if cfg.case_sensitive else re.IGNORECASE
             pattern = re.compile(cfg.term, flags)
         except Exception:

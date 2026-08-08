@@ -73,7 +73,7 @@ class _AddCookieDialog(QDialog):
         layout.addWidget(self._error_label)
 
         buttons = QDialogButtonBox(
-            QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
+            QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel,
         )
         buttons.accepted.connect(self._validate_and_accept)
         buttons.rejected.connect(self.reject)
@@ -200,7 +200,9 @@ class CookiesPanel(QWidget):
                 self.table.setItem(row, 2, QTableWidgetItem(cookie.get("domain", "")))
                 self.table.setItem(row, 3, QTableWidgetItem(cookie.get("path", "/")))
                 self.table.setItem(
-                    row, 4, QTableWidgetItem("Yes" if cookie.get("secure") else "No")
+                    row,
+                    4,
+                    QTableWidgetItem("Yes" if cookie.get("secure") else "No"),
                 )
         finally:
             self.table.setUpdatesEnabled(True)

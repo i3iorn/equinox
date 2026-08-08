@@ -1,4 +1,5 @@
 """History loading and response reconstruction mixin for MainWindow."""
+
 # mypy: disable-error-code=attr-defined
 from __future__ import annotations
 

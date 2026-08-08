@@ -1,4 +1,5 @@
 """Architecture guard tests for service and plugin boundaries."""
+
 from __future__ import annotations
 
 import ast

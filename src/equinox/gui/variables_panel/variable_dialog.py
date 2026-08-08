@@ -42,7 +42,7 @@ class VariableDialog(QDialog):
         layout.addRow("Description:", self.description_input)
 
         buttons = QDialogButtonBox(
-            QDialogButtonBox.StandardButton.Save | QDialogButtonBox.StandardButton.Cancel
+            QDialogButtonBox.StandardButton.Save | QDialogButtonBox.StandardButton.Cancel,
         )
         buttons.accepted.connect(self.accept)
         buttons.rejected.connect(self.reject)

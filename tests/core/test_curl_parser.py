@@ -49,7 +49,7 @@ class TestParseCurlHeaders:
         assert result["headers"]["Accept"] == "application/json"
 
     def test_multiple_headers(self):
-        cmd = 'curl -H "Accept: text/html" ' '-H "X-Custom: value" ' "https://example.com"
+        cmd = 'curl -H "Accept: text/html" -H "X-Custom: value" https://example.com'
         result = parse_curl(cmd)
         assert result["headers"]["Accept"] == "text/html"
         assert result["headers"]["X-Custom"] == "value"

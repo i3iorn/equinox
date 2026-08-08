@@ -161,7 +161,7 @@ class CredentialSecretResolver:
                 for key in json_keys:
                     if key not in secret_dict:
                         raise StorageError(
-                            f"Required key '{key}' not found in secret '{secret_ref}'"
+                            f"Required key '{key}' not found in secret '{secret_ref}'",
                         )
 
                 # Return the entire dict as JSON string if multiple keys needed
@@ -244,7 +244,8 @@ class CredentialSecretResolver:
 
 
 def load_credential_with_secrets(
-    credential_row: dict[str, Any], resolver: CredentialSecretResolver | None = None
+    credential_row: dict[str, Any],
+    resolver: CredentialSecretResolver | None = None,
 ) -> dict[str, Any]:
     """Load a credential and resolve any external secrets.
 

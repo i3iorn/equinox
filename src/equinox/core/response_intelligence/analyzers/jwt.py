@@ -1,4 +1,5 @@
 """JWT decoding and expiry validation analyzer."""
+
 import base64
 import json
 import logging
@@ -21,7 +22,7 @@ _SEVERITY_RANK = {
 }
 
 
-class JWTDecodeAnalyzer(Analyzer):  # type: ignore[misc]
+class JWTDecodeAnalyzer(Analyzer):
     """Decodes JWTs found in responses and checks for security issues."""
 
     analyzer_id = "security.jwt_decode"

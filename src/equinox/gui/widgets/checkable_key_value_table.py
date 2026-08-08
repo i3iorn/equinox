@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import logging
-from typing import Any, Generator
+from typing import Any
+
+from collections.abc import Generator
 
 from PyQt6.QtCore import QModelIndex, QStringListModel, Qt, pyqtSignal
 from PyQt6.QtWidgets import (
@@ -124,7 +126,10 @@ class CheckableKeyValueTable(QTableWidget):
     _COL_VALUE: int = 2
 
     def __init__(
-        self, parent: QWidget | None = None, *, enable_key_completer: bool = False
+        self,
+        parent: QWidget | None = None,
+        *,
+        enable_key_completer: bool = False,
     ) -> None:
         super().__init__(parent)
         self._updating = False  # reentrancy guard for _on_item_changed
@@ -163,7 +168,7 @@ class CheckableKeyValueTable(QTableWidget):
         self.setItem(row, self._COL_KEY, QTableWidgetItem(key))
         self.setItem(row, self._COL_VALUE, QTableWidgetItem(value))
 
-    def _iter_non_empty_rows(self) -> Generator[tuple[str, str, bool], None, None]:
+    def _iter_non_empty_rows(self) -> Generator[tuple[str, str, bool]]:
         """Yield ``(key, value, enabled)`` for every row with a non-empty key.
 
         Skips the trailing empty sentinel row transparently so callers never

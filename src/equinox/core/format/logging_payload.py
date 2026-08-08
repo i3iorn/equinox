@@ -33,7 +33,10 @@ def request_payload(request: Request, include_body: bool = False) -> dict[str, A
 
 
 def response_payload(
-    request: Request, response: Response | None, elapsed_time: float, include_body: bool = False
+    request: Request,
+    response: Response | None,
+    elapsed_time: float,
+    include_body: bool = False,
 ) -> dict[str, Any]:
     payload = {
         "method": request.method,

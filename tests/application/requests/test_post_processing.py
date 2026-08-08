@@ -31,7 +31,9 @@ class _ResponseStub:
 
 def test_apply_captures_returns_session_updates_and_display_lines() -> None:
     req = type(
-        "Req", (), {"captures": [{"variable": "token", "source": "json", "path": "token"}]}
+        "Req",
+        (),
+        {"captures": [{"variable": "token", "source": "json", "path": "token"}]},
     )()
     resp = _ResponseStub(200, {"content-type": "application/json"}, '{"token":"abc"}', req)
 
@@ -133,7 +135,9 @@ def test_build_error_handling_plan_includes_hint_and_deferred_plan() -> None:
 def test_build_success_handling_plan_formats_status_and_url() -> None:
     request = type("Req", (), {"url": "https://api.example.com/x", "id": 1, "collection_id": 2})()
     response = type(
-        "Resp", (), {"elapsed": 0.125, "status_code": 201, "reason": "Created", "request": request}
+        "Resp",
+        (),
+        {"elapsed": 0.125, "status_code": 201, "reason": "Created", "request": request},
     )()
 
     plan = build_success_handling_plan(

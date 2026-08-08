@@ -1,4 +1,5 @@
 """Body search and highlight helpers for ``RequestPanel``."""
+
 from __future__ import annotations
 
 import json
@@ -45,17 +46,26 @@ class BodySearchMixin:
         """Return the live body editor widget and its current text when available."""
         has_widget = getattr(self.body_text, "_has_widget", lambda: False)()
         target = getattr(self.body_text, "_widget", None) if has_widget else None
-        text = target.toPlainText() if target is not None else getattr(self.body_text, "_buffer", "")
+        text = (
+            target.toPlainText() if target is not None else getattr(self.body_text, "_buffer", "")
+        )
         return target, text
 
     @property
     def _re_flags(self) -> int:
         """Return regex flags based on the case-sensitive search toggle."""
-        case_sensitive = bool(getattr(self, "_body_case_cb", None) and self._body_case_cb.isChecked())
+        case_sensitive = bool(
+            getattr(self, "_body_case_cb", None) and self._body_case_cb.isChecked(),
+        )
         return 0 if case_sensitive else re.IGNORECASE
 
     @staticmethod
-    def _make_extra_selection(target: Any, start: int, end: int, fmt: QTextCharFormat) -> QTextEdit.ExtraSelection | None:
+    def _make_extra_selection(
+        target: Any,
+        start: int,
+        end: int,
+        fmt: QTextCharFormat,
+    ) -> QTextEdit.ExtraSelection | None:
         """Build an extra selection spanning ``[start, end)`` when valid."""
         try:
             document = target.document()
@@ -99,7 +109,9 @@ class BodySearchMixin:
 
     def _highlight_jsonpath_match(self, term: str, target: Any) -> bool:
         """Highlight the first JSONPath result when JSONPath search mode is active."""
-        jsonpath_mode = bool(getattr(self, "_body_jsonpath_cb", None) and self._body_jsonpath_cb.isChecked())
+        jsonpath_mode = bool(
+            getattr(self, "_body_jsonpath_cb", None) and self._body_jsonpath_cb.isChecked(),
+        )
         if not jsonpath_mode or not term:
             return False
         positions = self._find_jsonpath_positions(term)
@@ -108,7 +120,12 @@ class BodySearchMixin:
             self._select_range(target, start, start + length)
         return True
 
-    def _collect_search_selections(self, term: str, target: Any, doc_text: str) -> list[QTextEdit.ExtraSelection]:
+    def _collect_search_selections(
+        self,
+        term: str,
+        target: Any,
+        doc_text: str,
+    ) -> list[QTextEdit.ExtraSelection]:
         """Collect highlight selections for plain-text or regex searches."""
         if target is None:
             return []
@@ -132,7 +149,12 @@ class BodySearchMixin:
         selections: list[QTextEdit.ExtraSelection] = []
         try:
             for match in re.finditer(term, doc_text, self._re_flags):
-                selection = self._make_extra_selection(target, match.start(), match.end(), formatter)
+                selection = self._make_extra_selection(
+                    target,
+                    match.start(),
+                    match.end(),
+                    formatter,
+                )
                 if selection is not None:
                     selections.append(selection)
                 if len(selections) >= _MAX_HIGHLIGHTS:
@@ -151,7 +173,9 @@ class BodySearchMixin:
         """Collect highlight selections for a plain-text search."""
         if not term:
             return []
-        case_sensitive = bool(getattr(self, "_body_case_cb", None) and self._body_case_cb.isChecked())
+        case_sensitive = bool(
+            getattr(self, "_body_case_cb", None) and self._body_case_cb.isChecked(),
+        )
         haystack = doc_text if case_sensitive else doc_text.lower()
         needle = term if case_sensitive else term.lower()
         selections: list[QTextEdit.ExtraSelection] = []
@@ -226,7 +250,12 @@ class BodySearchMixin:
         if start is not None and end is not None:
             self._select_range(target, start, end)
 
-    def _regex_next(self, term: str, doc_text: str, current_position: int) -> tuple[int | None, int | None]:
+    def _regex_next(
+        self,
+        term: str,
+        doc_text: str,
+        current_position: int,
+    ) -> tuple[int | None, int | None]:
         """Return the next regex match relative to the cursor position."""
         match = re.search(term, doc_text[current_position:], self._re_flags)
         if match:
@@ -236,9 +265,18 @@ class BodySearchMixin:
             return match.start(), match.end()
         return None, None
 
-    def _regex_prev(self, term: str, doc_text: str, current_position: int) -> tuple[int | None, int | None]:
+    def _regex_prev(
+        self,
+        term: str,
+        doc_text: str,
+        current_position: int,
+    ) -> tuple[int | None, int | None]:
         """Return the previous regex match relative to the cursor position."""
-        matches = [match for match in re.finditer(term, doc_text, self._re_flags) if match.start() < current_position]
+        matches = [
+            match
+            for match in re.finditer(term, doc_text, self._re_flags)
+            if match.start() < current_position
+        ]
         if not matches:
             matches = list(re.finditer(term, doc_text, self._re_flags))
         if not matches:
@@ -339,7 +377,12 @@ class BodySearchMixin:
             current = current[step]
         return current
 
-    def _locate_unique_json_fragment(self, text: str, value: Any, path: str) -> list[tuple[int, int]]:
+    def _locate_unique_json_fragment(
+        self,
+        text: str,
+        value: Any,
+        path: str,
+    ) -> list[tuple[int, int]]:
         """Locate a uniquely matching JSON fragment within the source body text."""
         try:
             fragment = json.dumps(value, ensure_ascii=False)

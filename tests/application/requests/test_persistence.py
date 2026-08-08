@@ -108,7 +108,8 @@ def test_request_persistence_facade_persists_oauth2_tokens_only_when_valid() -> 
     )
     assert (
         facade.persist_request_oauth2_token(
-            Request(method="GET", url="https://example.com"), own_auth
+            Request(method="GET", url="https://example.com"),
+            own_auth,
         )
         is False
     )

@@ -1,4 +1,5 @@
 """Menu bar, command palette, and dialogs mixin for MainWindow."""
+
 # mypy: disable-error-code=attr-defined
 from __future__ import annotations
 
@@ -136,7 +137,10 @@ class _MenuActionsMixin:
             self._cmd("new_request", "New Request", "Ctrl+N", self._new_request),
             self._cmd("send_request", "Send Request", "Ctrl+Enter", self.request_panel.send),
             self._cmd(
-                "save_request", "Save Request", "Ctrl+S", self.request_panel.save_current_request,
+                "save_request",
+                "Save Request",
+                "Ctrl+S",
+                self.request_panel.save_current_request,
             ),
             self._cmd("focus_url", "Focus URL", "Ctrl+L", self.request_panel._focus_url_input),
             self._cmd("import_postman", "Import Postman", "", self._import_postman),
@@ -239,7 +243,9 @@ class _MenuActionsMixin:
         except Exception:
             logger.error("Command palette command failed: %s", selected_id, exc_info=True)
             QMessageBox.warning(
-                self._as_qwidget(), "Command Failed", f"Could not execute command: {selected_id}",
+                self._as_qwidget(),
+                "Command Failed",
+                f"Could not execute command: {selected_id}",
             )
 
     def _show_shortcuts_dialog(self) -> None:
@@ -295,7 +301,9 @@ class _MenuActionsMixin:
         tracker = getattr(self, "_ui_usage_tracker", None)
         if tracker is None:
             QMessageBox.information(
-                self._as_qwidget(), "UI Usage", "Usage tracking is not available yet.",
+                self._as_qwidget(),
+                "UI Usage",
+                "Usage tracking is not available yet.",
             )
             return
 

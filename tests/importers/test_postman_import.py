@@ -94,7 +94,7 @@ class TestPostmanImporter:
                 {
                     "name": "Simple Request",
                     "request": {"method": "GET", "url": "https://api.example.com/test"},
-                }
+                },
             ],
         }
 
@@ -293,11 +293,11 @@ class TestPostmanImporter:
                                         "method": "GET",
                                         "url": "https://api.example.com/2",
                                     },
-                                }
+                                },
                             ],
                         },
                     ],
-                }
+                },
             ],
         }
 
@@ -327,7 +327,7 @@ class TestPostmanImporter:
                             ],
                         },
                     },
-                }
+                },
             ],
         }
 
@@ -401,7 +401,7 @@ class TestPostmanImporter:
                 {
                     "name": "Variable Test",
                     "request": {"method": "GET", "url": "https://{{host}}/users/{{userId}}"},
-                }
+                },
             ],
         }
 
@@ -472,7 +472,7 @@ class TestPostmanImporter:
                         "method": "GET",
                         "url": "https://api.example.com/users/:userId",
                     },
-                }
+                },
             ],
         }
 
@@ -498,7 +498,7 @@ class TestPostmanImporter:
                             "path": ["users", "{userId}"],
                         },
                     },
-                }
+                },
             ],
         }
 

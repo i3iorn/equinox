@@ -4,6 +4,7 @@ Manages named, reusable auth credentials of any supported type
 (OAuth 2.0, API Key, Basic Auth, Bearer Token).  Replaces the OAuth2-only
 OAuthClientsDialog as the primary credential manager opened from AuthDialog.
 """
+
 from __future__ import annotations
 
 import json
@@ -718,7 +719,14 @@ class SavedCredentialsView(QDialog):
         self.test_btn.setEnabled(self._current_id is not None and auth_type == "oauth2")
 
     def _set_form_enabled(self, enabled: bool) -> None:
-        for w in (self.f_name, self.f_description, self.f_type, self.stack, self.default_btn, self.save_btn):
+        for w in (
+            self.f_name,
+            self.f_description,
+            self.f_type,
+            self.stack,
+            self.default_btn,
+            self.save_btn,
+        ):
             w.setEnabled(enabled)
         if not enabled:
             self.test_btn.setEnabled(False)

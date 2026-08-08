@@ -7,6 +7,7 @@ triggering the GUI package chain (which would create a circular import).
 ``gui/request_panel/builder.py`` re-exports these symbols for backward
 compatibility with existing call sites.
 """
+
 from __future__ import annotations
 
 import json as _json

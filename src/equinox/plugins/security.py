@@ -14,7 +14,7 @@ import time
 from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
-from typing import Any, Optional, cast
+from typing import Any, cast
 
 from equinox.core.audit import get_audit_logger
 from equinox.core.exceptions import SecurityError
@@ -51,7 +51,7 @@ _DANGEROUS_MODULES = frozenset(
         "webbrowser",
         "zipimport",
         "runpy",
-    }
+    },
 )
 
 _OS_FORBIDDEN = frozenset(
@@ -65,7 +65,7 @@ _OS_FORBIDDEN = frozenset(
         "spawnl",
         "spawnle",
         "fork",
-    }
+    },
 )
 
 _DANGEROUS_FUNCTIONS = frozenset(
@@ -75,7 +75,7 @@ _DANGEROUS_FUNCTIONS = frozenset(
         "compile",
         "__import__",
         "breakpoint",
-    }
+    },
 )
 
 
@@ -121,7 +121,7 @@ class PluginManifest:
     permissions: set[Permission] = field(default_factory=set)
     homepage: str = ""
     license: str = ""
-    checksum: Optional[str] = None
+    checksum: str | None = None
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "PluginManifest":
@@ -205,7 +205,7 @@ class PluginSandbox:
     provide process-level isolation.
     """
 
-    def __init__(self, manifest: PluginManifest, limits: Optional[ResourceLimits] = None):
+    def __init__(self, manifest: PluginManifest, limits: ResourceLimits | None = None):
         """Initialize plugin execution guard.
 
         Args:
@@ -218,7 +218,7 @@ class PluginSandbox:
         # Tracking
         self._network_requests = 0
         self._storage_operations = 0
-        self._start_time: Optional[float] = None
+        self._start_time: float | None = None
 
         # Audit
         audit_logger.log_plugin_event(manifest.name, "loaded", user="system")
@@ -254,7 +254,7 @@ class PluginSandbox:
         if self._network_requests > self.limits.max_network_requests:
             raise SecurityError(
                 f"Plugin '{self.manifest.name}' exceeded network request limit: "
-                f"{self.limits.max_network_requests}"
+                f"{self.limits.max_network_requests}",
             )
 
     def check_storage_operation(self) -> None:
@@ -268,7 +268,7 @@ class PluginSandbox:
         if self._storage_operations > self.limits.max_storage_operations:
             raise SecurityError(
                 f"Plugin '{self.manifest.name}' exceeded storage operation limit: "
-                f"{self.limits.max_storage_operations}"
+                f"{self.limits.max_storage_operations}",
             )
 
     def check_execution_time(self) -> None:
@@ -285,7 +285,7 @@ class PluginSandbox:
         if elapsed_ms > self.limits.max_execution_time_ms:
             raise SecurityError(
                 f"Plugin '{self.manifest.name}' exceeded execution time limit: "
-                f"{self.limits.max_execution_time_ms}ms"
+                f"{self.limits.max_execution_time_ms}ms",
             )
 
     def check_file_size(self, size_bytes: int) -> None:
@@ -348,9 +348,9 @@ class SecurePluginContext:
     def __init__(
         self,
         sandbox: PluginSandbox,
-        storage: Optional[Any] = None,
-        http_client: Optional[Any] = None,
-        config: Optional[dict[str, Any]] = None,
+        storage: Any | None = None,
+        http_client: Any | None = None,
+        config: dict[str, Any] | None = None,
     ):
         """Initialize secure context.
 
@@ -644,7 +644,8 @@ def _iter_local_import_targets(node: ast.AST, current_file: Path, plugin_root: P
 
 
 def validate_plugin_dependency_graph(
-    entry_file: Path, plugin_root: Optional[Path] = None
+    entry_file: Path,
+    plugin_root: Path | None = None,
 ) -> set[Path]:
     """Validate *entry_file* and all locally imported plugin modules.
 
@@ -719,7 +720,7 @@ def verify_checksum(plugin_path: Path, expected_checksum: str) -> bool:
 
     if actual != expected_checksum:
         raise SecurityError(
-            f"Plugin checksum mismatch. Expected: {expected_checksum}, Got: {actual}"
+            f"Plugin checksum mismatch. Expected: {expected_checksum}, Got: {actual}",
         )
 
     return True

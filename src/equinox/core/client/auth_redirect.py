@@ -2,6 +2,7 @@
 
 Internal module — consumed by :mod:`equinox.core.client.dispatcher`.
 """
+
 from __future__ import annotations
 
 import logging
@@ -13,7 +14,7 @@ from equinox.security import redact_url
 logger = logging.getLogger(__name__)
 
 
-class _RedirectSafeAuth(httpx.Auth):  # type: ignore[misc]
+class _RedirectSafeAuth(httpx.Auth):
     """httpx ``Auth`` adapter that re-injects auth headers on every request leg.
 
     httpx strips ``Authorization`` (and ``Cookie``) headers when following
@@ -37,7 +38,7 @@ class _RedirectSafeAuth(httpx.Auth):  # type: ignore[misc]
     def __init__(self, auth_headers: dict[str, str]) -> None:
         if not auth_headers:
             raise ValueError(
-                "auth_headers required for redirect-safe auth " "(must contain at least one header)",
+                "auth_headers required for redirect-safe auth (must contain at least one header)",
             )
         # Defensive copy prevents external modification of stored headers
         self._auth_headers = dict(auth_headers)

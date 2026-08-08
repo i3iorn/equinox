@@ -1,4 +1,5 @@
 """Reusable GUI widgets extracted for single-responsibility."""
+
 from equinox.gui.widgets.checkable_key_value_table import CheckableKeyValueTable
 from equinox.gui.widgets.copyable_message_box import CopyableMessageBox
 from equinox.gui.widgets.drag_drop_tree import DragDropTree

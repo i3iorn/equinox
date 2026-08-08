@@ -83,7 +83,7 @@ class MissingSecurityHeadersAnalyzer(Analyzer):
                         "header": "strict-transport-security",
                         "description": "HSTS missing max-age directive.",
                         "severity": Severity.WARNING.value,
-                    }
+                    },
                 )
             elif max_age < 31536000:
                 invalid.append(
@@ -91,7 +91,7 @@ class MissingSecurityHeadersAnalyzer(Analyzer):
                         "header": "strict-transport-security",
                         "description": "HSTS max-age is below recommended 31536000 seconds.",
                         "severity": Severity.WARNING.value,
-                    }
+                    },
                 )
 
         csp = headers.get("content-security-policy", "")
@@ -103,7 +103,7 @@ class MissingSecurityHeadersAnalyzer(Analyzer):
                         "header": "content-security-policy",
                         "description": "CSP includes unsafe directives (unsafe-inline or unsafe-eval).",
                         "severity": Severity.WARNING.value,
-                    }
+                    },
                 )
 
         x_content_type = headers.get("x-content-type-options", "")
@@ -113,7 +113,7 @@ class MissingSecurityHeadersAnalyzer(Analyzer):
                     "header": "x-content-type-options",
                     "description": "X-Content-Type-Options should be 'nosniff'.",
                     "severity": Severity.WARNING.value,
-                }
+                },
             )
 
         x_frame_options = headers.get("x-frame-options", "")
@@ -123,7 +123,7 @@ class MissingSecurityHeadersAnalyzer(Analyzer):
                     "header": "x-frame-options",
                     "description": "X-Frame-Options should be DENY or SAMEORIGIN.",
                     "severity": Severity.INFO.value,
-                }
+                },
             )
 
         referrer = headers.get("referrer-policy", "")
@@ -135,7 +135,7 @@ class MissingSecurityHeadersAnalyzer(Analyzer):
                         "header": "referrer-policy",
                         "description": f"Unrecognized Referrer-Policy value: {policy}",
                         "severity": Severity.INFO.value,
-                    }
+                    },
                 )
 
         return invalid
@@ -153,7 +153,7 @@ class MissingSecurityHeadersAnalyzer(Analyzer):
                         "header": header,
                         "description": description,
                         "severity": severity.value,
-                    }
+                    },
                 )
 
         if not missing and not invalid:
@@ -173,6 +173,6 @@ class MissingSecurityHeadersAnalyzer(Analyzer):
                 analyzer_id=self.analyzer_id,
                 recommendation="Add HSTS, CSP, and related browser hardening headers at your API gateway or app middleware.",
                 details={"missing": missing, "invalid": invalid},
-            )
+            ),
         )
         return findings

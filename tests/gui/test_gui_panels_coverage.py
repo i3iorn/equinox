@@ -630,7 +630,12 @@ class TestHistoryPanel:
         for i in range(3):
             req = Request(method="GET", url=f"https://example.com/api/{i}")
             resp = Response(
-                status_code=200, reason="OK", headers={}, body=b"{}", elapsed=0.1, request=req
+                status_code=200,
+                reason="OK",
+                headers={},
+                body=b"{}",
+                elapsed=0.1,
+                request=req,
             )
             mgr.save_history(req, resp)
         p = HistoryPanel(db)
@@ -647,10 +652,20 @@ class TestHistoryPanel:
         req_get = Request(method="GET", url="https://example.com/get")
         req_post = Request(method="POST", url="https://example.com/post")
         resp_get = Response(
-            status_code=200, reason="OK", headers={}, body=b"{}", elapsed=0.1, request=req_get
+            status_code=200,
+            reason="OK",
+            headers={},
+            body=b"{}",
+            elapsed=0.1,
+            request=req_get,
         )
         resp_post = Response(
-            status_code=201, reason="Created", headers={}, body=b"{}", elapsed=0.2, request=req_post
+            status_code=201,
+            reason="Created",
+            headers={},
+            body=b"{}",
+            elapsed=0.2,
+            request=req_post,
         )
         mgr.save_history(req_get, resp_get)
         mgr.save_history(req_post, resp_post)

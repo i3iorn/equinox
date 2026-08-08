@@ -21,7 +21,8 @@ def test_try_open_current_log_file_missing(monkeypatch: pytest.MonkeyPatch) -> N
 
 
 def test_try_open_current_log_file_rejects_non_log(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
 ) -> None:
     bad = tmp_path / "not_a_log.txt"
     bad.write_text("x", encoding="utf-8")
@@ -53,7 +54,8 @@ def test_try_open_current_log_file_opened(monkeypatch: pytest.MonkeyPatch, tmp_p
 
 
 def test_try_open_current_log_file_open_failed(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
 ) -> None:
     log = tmp_path / "equinox.log"
     log.write_text("line", encoding="utf-8")
@@ -90,7 +92,8 @@ def test_show_log_file_open_result_missing(monkeypatch: pytest.MonkeyPatch) -> N
 
 
 def test_show_log_file_open_result_open_failed(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
 ) -> None:
     calls = []
     log = tmp_path / "equinox.log"
