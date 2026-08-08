@@ -199,6 +199,7 @@ referencing==0.37.0
     # via
     #   jsonschema
     #   jsonschema-specifications
+    #   types-jsonschema
 requests==2.34.2
     # via
     #   cachecontrol
@@ -223,6 +224,10 @@ tomli==2.4.1
     # via pip-audit
 tomli-w==1.2.0
     # via pip-audit
+types-jsonschema==4.26.0.20260518
+    # via equinox (pyproject.toml)
+types-requests==2.33.0.20260712
+    # via equinox (pyproject.toml)
 typing-extensions==4.16.0
     # via
     #   anyio
@@ -233,7 +238,9 @@ typing-extensions==4.16.0
     #   pytest-qt
     #   referencing
 urllib3==2.7.0
-    # via requests
+    # via
+    #   requests
+    #   types-requests
 urlps==0.5.1
     # via equinox (pyproject.toml)
 virtualenv==21.7.3

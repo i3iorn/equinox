@@ -56,7 +56,7 @@ class VaultManager(SecretManager):
             SecretManagerError: If configuration is invalid
         """
         try:
-            import requests  # type: ignore[import-untyped]
+            import requests
         except ImportError:
             raise SecretManagerError(
                 "requests is required for Vault. Install with: pip install requests",

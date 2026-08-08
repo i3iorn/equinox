@@ -74,10 +74,15 @@ class AnalysisEngine:
                 # project supports 3.10, so guard the call itself rather than
                 # rely on a pre-filter that CPython doesn't guarantee.
                 try:
-                    is_analyzer = issubclass(obj, Analyzer)
+                    if not issubclass(obj, Analyzer):
+                        continue
                 except TypeError:
                     continue
-                if is_analyzer and obj is not Analyzer and obj.__module__ == module_name:
+                # issubclass() used directly above (not via an intermediate
+                # bool) so mypy narrows obj to type[Analyzer] for the rest of
+                # this iteration - storing the result in a variable first
+                # doesn't reliably preserve that narrowing across versions.
+                if obj is not Analyzer and obj.__module__ == module_name:
                     try:
                         analyzers.append(obj())
                     except Exception:

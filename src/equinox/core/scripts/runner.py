@@ -33,7 +33,7 @@ def _apply_resource_limits() -> None:
         # Cap virtual address space — catches runaway allocations before they
         # affect the host process or other concurrent scripts.
         resource.setrlimit(
-            resource.RLIMIT_AS,  # type: ignore[attr-defined]
+            resource.RLIMIT_AS,
             (_SCRIPT_MEMORY_LIMIT_BYTES, _SCRIPT_MEMORY_LIMIT_BYTES),
         )
     except (ImportError, AttributeError, ValueError, OSError):

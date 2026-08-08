@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from typing import Any
+from typing import cast
 from typing import Literal
 
 from equinox.auth import OAuth2Auth
@@ -147,7 +148,9 @@ class OAuth2TokenController(QObject):
         value_str = self._as_optional_str(value)
         if value_str not in self._ALLOWED_TOKEN_AUTH:
             raise AuthError("Invalid token_auth: must be 'basic' or 'body'.")
-        return value_str  # type: ignore[return-value]
+        # `in` narrowing against a set[Literal[...]] isn't guaranteed across
+        # mypy versions - cast explicitly rather than depend on it.
+        return cast(TokenAuthMode, value_str)
 
     def _load_interpolation_variables(self) -> dict[str, str]:
         if not self._db:
