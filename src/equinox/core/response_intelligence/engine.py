@@ -66,11 +66,18 @@ class AnalysisEngine:
                 continue
 
             for _, obj in inspect.getmembers(module, inspect.isclass):
-                if (
-                    issubclass(obj, Analyzer)
-                    and obj is not Analyzer
-                    and obj.__module__ == module_name
-                ):
+                # Neither inspect.isclass() nor isinstance(obj, type) reliably
+                # excludes PEP 585 generic aliases (e.g. a module-level
+                # `Foo = tuple[str, int]` type alias) - on Python 3.10 both
+                # return True for such an alias, and issubclass() then raises
+                # "arg 1 must be a class". Not reproducible on 3.11+, but this
+                # project supports 3.10, so guard the call itself rather than
+                # rely on a pre-filter that CPython doesn't guarantee.
+                try:
+                    is_analyzer = issubclass(obj, Analyzer)
+                except TypeError:
+                    continue
+                if is_analyzer and obj is not Analyzer and obj.__module__ == module_name:
                     try:
                         analyzers.append(obj())
                     except Exception:

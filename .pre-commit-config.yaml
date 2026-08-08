@@ -99,7 +99,11 @@ repos:
     rev: v3.21.2
     hooks:
       - id: pyupgrade
-        args: ["--py311-plus"]
+        # Must match pyproject.toml's requires-python floor (>=3.10), not a
+        # higher one - pyupgrade will happily emit syntax that's only valid
+        # on the newer target, silently breaking the older versions CI still
+        # tests (see the log_setup.py fix this comment accompanies).
+        args: ["--py310-plus"]
 
   - repo: https://github.com/asottile/yesqa
     rev: v1.5.0

@@ -226,8 +226,10 @@ class _FramelessMixin:
             and event.type() == QEvent.Type.MouseMove
             and self._drag_menu_active
         ):
-            pressed_buttons = {b.value for b in event.buttons()}
-            if Qt.MouseButton.LeftButton.value in pressed_buttons:
+            # Bitwise AND against the flag, not iteration: iterating a
+            # combined Flag value (`for b in event.buttons()`) only works on
+            # Python 3.11+, but this project supports 3.10.
+            if event.buttons() & Qt.MouseButton.LeftButton:
                 self.move(event.globalPosition().toPoint() - self._drag_menu_offset)
                 return True
             self._drag_menu_active = False
