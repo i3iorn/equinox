@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import logging
 from typing import Any
-from typing import cast
 from typing import Literal
 from typing import TYPE_CHECKING
 
@@ -407,7 +406,7 @@ class OAuthClientManager:
             return secret
         if is_encrypted_value(secret):
             return secret
-        return cast(str, encrypt_auth_storage_value(secret))
+        return encrypt_auth_storage_value(secret)
 
     @classmethod
     def _decrypt_client_secret(cls, stored: str | None) -> str:

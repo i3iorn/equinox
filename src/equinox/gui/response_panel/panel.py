@@ -55,9 +55,9 @@ _KEY_ACTIVE_TAB = "response/active_tab"
 
 
 class ResponsePanel(
-    ResponseBuilderMixin,  # type: ignore[misc]
-    ResponseDisplayMixin,  # type: ignore[misc]
-    ResponseActionsMixin,  # type: ignore[misc]
+    ResponseBuilderMixin,
+    ResponseDisplayMixin,
+    ResponseActionsMixin,
     QWidget,
 ):
     """Panel for displaying HTTP responses and the request that was sent.

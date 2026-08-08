@@ -14,7 +14,7 @@ import sys
 import traceback
 import types
 from pathlib import Path
-from typing import Any, NoReturn
+from typing import NoReturn
 
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QColor, QPixmap
@@ -26,7 +26,7 @@ from equinox.gui.theme import apply_theme
 from equinox.gui.widgets import CopyableMessageBox
 from equinox.gui.window import MainWindow
 from equinox.security.secrets_password import set_master_password_prompt
-from equinox.storage import get_db
+from equinox.storage import Database, get_db
 from equinox.versioning import get_app_version
 
 __all__ = ["main"]
@@ -204,7 +204,7 @@ def _init_qt_application(app_version: str) -> QApplication:
     return app
 
 
-def _init_database(splash: _SplashScreen) -> Any:
+def _init_database(splash: _SplashScreen) -> Database:
     """Initialize the database (may run migrations on first launch).
 
     Args:
@@ -233,7 +233,7 @@ def _configure_master_password_gui_prompt(app: QApplication) -> None:
     set_master_password_prompt(_prompt)
 
 
-def _init_main_window(splash: _SplashScreen, db: object) -> MainWindow:
+def _init_main_window(splash: _SplashScreen, db: Database) -> MainWindow:
     """Initialize the main application window.
 
     Args:
@@ -327,7 +327,9 @@ def main() -> NoReturn:
 
     # Step 7: Initialize main window
     window = _init_main_window(splash, db)
-    window.statusBar().showMessage(f"Ready  |  Log: {log_file}", 6000)
+    status_bar = window.statusBar()
+    if status_bar is not None:
+        status_bar.showMessage(f"Ready  |  Log: {log_file}", 6000)
 
     # Step 8: Connect shutdown logging
     app.aboutToQuit.connect(lambda: logger.info("Equinox GUI shutting down"))

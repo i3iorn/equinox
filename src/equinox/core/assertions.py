@@ -2,7 +2,9 @@
 
 import logging
 from datetime import timedelta
-from typing import Any, Callable, Protocol, Union
+from typing import Any, Protocol
+
+from collections.abc import Callable
 
 logger = logging.getLogger(__name__)
 
@@ -10,7 +12,7 @@ logger = logging.getLogger(__name__)
 class _ResponseLike(Protocol):
     status_code: int
     headers: dict[str, str]
-    elapsed: Union[timedelta, float]
+    elapsed: timedelta | float
 
     @property
     def text(self) -> str: ...
@@ -38,7 +40,7 @@ def _header_value_assert(field: str, expected: str, response: _ResponseLike) -> 
 
 def _jsonpath_assert(field: str, expected: str, response: _ResponseLike) -> tuple[bool, str]:
     try:
-        import jsonpath_ng.ext as _jpe  # type: ignore
+        import jsonpath_ng.ext as _jpe
 
         expr = _jpe.parse(field)
         body_json = response.json()

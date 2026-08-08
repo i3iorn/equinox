@@ -98,7 +98,7 @@ class _RequestValidationMixin:
             if hasattr(self, "_set_url_fix_suggestion"):
                 self._set_url_fix_suggestion(None)
             self._url_valid = True
-            logger.debug("URL validation passed: %s", redact_url(url_text)[:50])
+            logger.debug("URL validation passed: %s", (redact_url(url_text) or "")[:50])
         except ValidationError as exc:
             err_msg = str(exc)
             self._set_field_valid(self.url_input, "error", err_msg)

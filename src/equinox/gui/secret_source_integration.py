@@ -9,6 +9,7 @@ import logging
 from typing import Any
 
 from PyQt6.QtWidgets import (
+    QBoxLayout,
     QComboBox,
     QDialog,
     QFormLayout,
@@ -181,9 +182,10 @@ class SecretSourceIntegration:
             layout = dialog.layout()
             if layout is None:
                 return widget
-            # Add before buttons if possible
+            # Add before buttons if possible - insertWidget is QBoxLayout-only,
+            # other layout types (e.g. QFormLayout) only support addWidget.
             widget_count = layout.count()
-            if widget_count > 0:
+            if widget_count > 0 and isinstance(layout, QBoxLayout):
                 layout.insertWidget(widget_count - 1, widget)
             else:
                 layout.addWidget(widget)

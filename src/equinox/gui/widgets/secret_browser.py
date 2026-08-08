@@ -98,7 +98,7 @@ class SecretBrowserWidget(QWidget):
         config: dict[str, Any],
         enable_cache: bool = True,
         cache_ttl: int = 300,
-        parent=None,
+        parent: QWidget | None = None,
     ):
         """Initialize the secret browser.
 
@@ -260,7 +260,9 @@ class SecretBrowserWidget(QWidget):
             return
 
         value = self._current_secret.get(self._selected_key, "")
-        QApplication.clipboard().setText(str(value))
+        clipboard = QApplication.clipboard()
+        if clipboard is not None:
+            clipboard.setText(str(value))
         QMessageBox.information(self, "Copied", "Value copied to clipboard")
 
     def _use_secret(self) -> None:

@@ -2,7 +2,6 @@
 
 import logging
 from typing import Any
-from typing import cast
 
 from equinox.core.exceptions import DuplicateError
 from equinox.core.exceptions import SecurityError
@@ -69,7 +68,7 @@ class VariableGroupManager:
         group = self.db.fetchone("SELECT * FROM variable_groups WHERE id = ?", (group_id,))
         if not group:
             raise StorageError(f"Variable group with ID {group_id} does not exist")
-        return cast(dict[str, Any], group)
+        return group
 
     # ── Group CRUD ────────────────────────────────────────────────────────────
 

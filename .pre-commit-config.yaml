@@ -49,7 +49,13 @@ repos:
 
       - id: mypy-strict
         name: "Check: mypy strict (CI-aligned)"
-        entry: python -m mypy --strict --follow-imports=silent --ignore-missing-imports
+        # --strict now comes from pyproject.toml's [tool.mypy] (strict = true),
+        # not this flag, so both this hook and `mypy src` agree by construction.
+        # --follow-imports=silent/--ignore-missing-imports stay: this hook runs
+        # per-staged-file, and without them a single-file check would cascade
+        # strict analysis into every transitively imported module instead of
+        # scoping to what's actually being committed.
+        entry: python -m mypy --follow-imports=silent --ignore-missing-imports
         language: system
         pass_filenames: true
         stages: [pre-commit]

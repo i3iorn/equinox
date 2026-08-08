@@ -23,10 +23,17 @@ from PyQt6.QtWidgets import (
 from equinox.storage import CollectionManager, Database, VariableGroupManager
 
 
+def _item_text(table: QTableWidget, row: int, col: int) -> str:
+    """Read a cell's text, given the row was populated by this dialog's own refresh."""
+    item = table.item(row, col)
+    assert item is not None
+    return item.text()
+
+
 class AddVariableGroupDialog(QDialog):
     """Dialog for adding a variable group to collection."""
 
-    def __init__(self, db: Database, collection_id: int, parent=None):
+    def __init__(self, db: Database, collection_id: int, parent: QWidget | None = None):
         super().__init__(parent)
         self._db = db
         self._collection_id = collection_id
@@ -81,11 +88,11 @@ class AddVariableGroupDialog(QDialog):
                 item.setToolTip(group["description"])
             self.groups_list.addItem(item)
 
-    def get_selected_group(self) -> tuple:
-        """Return ``(group_id, priority)`` or ``(None, None)`` if nothing selected."""
+    def get_selected_group(self) -> tuple[int, int] | None:
+        """Return ``(group_id, priority)``, or ``None`` if nothing selected."""
         selected = self.groups_list.selectedItems()
         if not selected:
-            return None, None
+            return None
         return selected[0].data(Qt.ItemDataRole.UserRole), self.priority_spin.value()
 
 
@@ -97,7 +104,7 @@ class CollectionVariablesDialog(QDialog):
         db: Database,
         collection_id: int,
         collection_name: str,
-        parent=None,
+        parent: QWidget | None = None,
     ):
         super().__init__(parent)
         self._mgr = CollectionManager(db)
@@ -151,6 +158,7 @@ class CollectionVariablesDialog(QDialog):
         self.variables_table.setColumnCount(3)
         self.variables_table.setHorizontalHeaderLabels(["Key", "Value", "Description"])
         hdr = self.variables_table.horizontalHeader()
+        assert hdr is not None
         hdr.setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
         hdr.setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
         hdr.setSectionResizeMode(2, QHeaderView.ResizeMode.Stretch)
@@ -181,6 +189,7 @@ class CollectionVariablesDialog(QDialog):
         self.groups_table.setColumnCount(3)
         self.groups_table.setHorizontalHeaderLabels(["Group", "Priority", "Description"])
         hdr = self.groups_table.horizontalHeader()
+        assert hdr is not None
         hdr.setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
         hdr.setSectionResizeMode(1, QHeaderView.ResizeMode.ResizeToContents)
         hdr.setSectionResizeMode(2, QHeaderView.ResizeMode.Stretch)
@@ -203,6 +212,7 @@ class CollectionVariablesDialog(QDialog):
         self.all_variables_table.setColumnCount(2)
         self.all_variables_table.setHorizontalHeaderLabels(["Key", "Value"])
         hdr = self.all_variables_table.horizontalHeader()
+        assert hdr is not None
         hdr.setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
         hdr.setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
         self.all_variables_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
@@ -294,9 +304,9 @@ class CollectionVariablesDialog(QDialog):
         if row < 0:
             return
 
-        key = self.variables_table.item(row, 0).text()
-        value = self.variables_table.item(row, 1).text()
-        description = self.variables_table.item(row, 2).text()
+        key = _item_text(self.variables_table, row, 0)
+        value = _item_text(self.variables_table, row, 1)
+        description = _item_text(self.variables_table, row, 2)
 
         # Deferred to avoid circular import (variables_panel imports from dialogs).
         from equinox.gui.variables_panel import VariableDialog
@@ -320,7 +330,7 @@ class CollectionVariablesDialog(QDialog):
         row = self.variables_table.currentRow()
         if row < 0:
             return
-        key = self.variables_table.item(row, 0).text()
+        key = _item_text(self.variables_table, row, 0)
         reply = QMessageBox.question(
             self,
             "Confirm Delete",
@@ -339,10 +349,11 @@ class CollectionVariablesDialog(QDialog):
         dialog = AddVariableGroupDialog(self.db, self._collection_id, self)
         if dialog.exec() != QDialog.DialogCode.Accepted:
             return
-        group_id, priority = dialog.get_selected_group()
-        if group_id is None:
+        selection = dialog.get_selected_group()
+        if selection is None:
             QMessageBox.warning(self, "Error", "Please select a group")
             return
+        group_id, priority = selection
         try:
             self._mgr.add_variable_group(self._collection_id, group_id, priority)
             self.refresh()
@@ -353,8 +364,10 @@ class CollectionVariablesDialog(QDialog):
         row = self.groups_table.currentRow()
         if row < 0:
             return
-        group_name = self.groups_table.item(row, 0).text()
-        group_id = self.groups_table.item(row, 0).data(Qt.ItemDataRole.UserRole)
+        group_item = self.groups_table.item(row, 0)
+        assert group_item is not None
+        group_name = group_item.text()
+        group_id = group_item.data(Qt.ItemDataRole.UserRole)
         reply = QMessageBox.question(
             self,
             "Confirm Remove",

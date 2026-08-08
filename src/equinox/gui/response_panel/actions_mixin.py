@@ -239,7 +239,7 @@ class ResponseActionsMixin:
 
             req = self.current_response.request
             entries = HistoryManager(db).search_history(query=req.url, method=req.method, limit=30)
-            return [cast(dict[str, Any], entry) for entry in entries]
+            return entries
         except Exception:
             logger.exception("Failed to fetch history entries for diff")
             return []

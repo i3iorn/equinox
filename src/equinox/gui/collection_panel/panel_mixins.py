@@ -868,7 +868,7 @@ class _CollectionsApiSpecMixin:
 
     def _show_spec_dialog(self, title: str, variants: dict[str, str]) -> None:
         """Show API spec dialog and track lifecycle to avoid GC issues."""
-        dlg = ApiSpecDialog(self, title=title)
+        dlg = ApiSpecDialog(cast(QWidget, self), title=title)
         dlg.set_variants(variants)
         self._dialog_registry.register(dlg)
         dlg.show()
@@ -886,14 +886,18 @@ class _CollectionsApiSpecMixin:
         try:
             payload = self._api_spec_service.build_collection_payload(collection_id)
         except ValueError as exc:
-            ErrorPresenter.warning(self, str(exc), title="Invalid Collection")
+            ErrorPresenter.warning(cast(QWidget, self), str(exc), title="Invalid Collection")
             return
         except Exception as exc:
             logger.exception(
                 "CollectionsPanel: failed to build collection API spec id=%s",
                 collection_id,
             )
-            ErrorPresenter.warning(self, f"Failed to load collection: {exc}", title="Export Error")
+            ErrorPresenter.warning(
+                cast(QWidget, self),
+                f"Failed to load collection: {exc}",
+                title="Export Error",
+            )
             return
 
         self._show_spec_dialog(payload.title, payload.variants)
@@ -903,14 +907,18 @@ class _CollectionsApiSpecMixin:
         try:
             payload = self._api_spec_service.build_request_payload(request_id)
         except ValueError as exc:
-            ErrorPresenter.warning(self, str(exc), title="Not Found")
+            ErrorPresenter.warning(cast(QWidget, self), str(exc), title="Not Found")
             return
         except Exception as exc:
             logger.exception(
                 "CollectionsPanel: failed to build request API spec id=%s",
                 request_id,
             )
-            ErrorPresenter.warning(self, f"Failed to load request: {exc}", title="Export Error")
+            ErrorPresenter.warning(
+                cast(QWidget, self),
+                f"Failed to load request: {exc}",
+                title="Export Error",
+            )
             return
 
         self._show_spec_dialog(payload.title, payload.variants)

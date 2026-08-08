@@ -16,7 +16,7 @@ from equinox.core.response_intelligence.models import Severity
 logger = logging.getLogger(__name__)
 
 
-class StatusBodyMismatchAnalyzer(Analyzer):  # type: ignore[misc]
+class StatusBodyMismatchAnalyzer(Analyzer):
     analyzer_id = "consistency.status_body"
     category = Category.CONSISTENCY
     display_name = "Status Code vs Body Mismatch"
@@ -108,7 +108,7 @@ class StatusBodyMismatchAnalyzer(Analyzer):  # type: ignore[misc]
         return found
 
 
-class ContentTypeMismatchAnalyzer(Analyzer):  # type: ignore[misc]
+class ContentTypeMismatchAnalyzer(Analyzer):
     analyzer_id = "consistency.content_type"
     category = Category.CONSISTENCY
     display_name = "Content-Type vs Body Mismatch"
@@ -207,7 +207,7 @@ class ContentTypeMismatchAnalyzer(Analyzer):  # type: ignore[misc]
         return findings
 
 
-class DuplicateJsonKeysAnalyzer(Analyzer):  # type: ignore[misc]
+class DuplicateJsonKeysAnalyzer(Analyzer):
     analyzer_id = "consistency.duplicate_keys"
     category = Category.CONSISTENCY
     display_name = "Duplicate JSON Keys"
@@ -274,7 +274,7 @@ class DuplicateJsonKeysAnalyzer(Analyzer):  # type: ignore[misc]
         return findings
 
 
-class RedirectLocationAnalyzer(Analyzer):  # type: ignore[misc]
+class RedirectLocationAnalyzer(Analyzer):
     analyzer_id = "consistency.redirect_location"
     category = Category.CONSISTENCY
     display_name = "Redirect Location Header"
@@ -315,7 +315,7 @@ _DATE_PATTERNS: list[tuple[str, re.Pattern[str]]] = [
 ]
 
 
-class DateFormatInconsistencyAnalyzer(Analyzer):  # type: ignore[misc]
+class DateFormatInconsistencyAnalyzer(Analyzer):
     analyzer_id = "consistency.date_formats"
     category = Category.CONSISTENCY
     display_name = "Date Format Inconsistency"
@@ -348,7 +348,7 @@ class DateFormatInconsistencyAnalyzer(Analyzer):  # type: ignore[misc]
         return findings
 
 
-class NullVsMissingAnalyzer(Analyzer):  # type: ignore[misc]
+class NullVsMissingAnalyzer(Analyzer):
     analyzer_id = "consistency.null_vs_missing"
     category = Category.CONSISTENCY
     display_name = "Null vs Missing Field Patterns"
@@ -414,7 +414,7 @@ class NullVsMissingAnalyzer(Analyzer):  # type: ignore[misc]
         return []
 
 
-class SchemaDriftAnalyzer(Analyzer):  # type: ignore[misc]
+class SchemaDriftAnalyzer(Analyzer):
     analyzer_id = "consistency.schema_drift"
     category = Category.CONSISTENCY
     display_name = "Schema Drift Detection"

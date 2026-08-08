@@ -5,7 +5,9 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import Callable
 from pathlib import Path
+from typing import Any, cast
 
 from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import (
@@ -13,6 +15,7 @@ from PyQt6.QtWidgets import (
     QInputDialog,
     QMessageBox,
     QProgressDialog,
+    QWidget,
 )
 
 from equinox.storage import CollectionManager
@@ -31,7 +34,12 @@ class _ImportExportMixin:
         success_msg: str,
     ) -> None:
         """Generic import handler with background execution and retry."""
-        file_path, _ = QFileDialog.getOpenFileName(self, dialog_title, "", file_filter)
+        file_path, _ = QFileDialog.getOpenFileName(
+            cast(QWidget, self),
+            dialog_title,
+            "",
+            file_filter,
+        )
         if not file_path:
             return
         self._start_import(importer_class, Path(file_path), success_msg)
@@ -67,17 +75,17 @@ class _ImportExportMixin:
 
     def _run_background_task(
         self,
-        operation,
+        operation: Callable[..., Any],
         operation_name: str,
         success_msg: str,
         error_title: str,
-        on_success=None,
-        retry_operation=None,
+        on_success: Callable[[Any], None] | None = None,
+        retry_operation: Callable[[], None] | None = None,
     ) -> None:
         """Execute a blocking operation on a worker thread with progress UX."""
         from equinox.gui.workers import BackgroundTaskWorker
 
-        progress = QProgressDialog(operation_name, "Cancel", 0, 0, self)
+        progress = QProgressDialog(operation_name, "Cancel", 0, 0, cast(QWidget, self))
         progress.setWindowTitle("Working")
         progress.setWindowModality(Qt.WindowModality.WindowModal)
         progress.setMinimumDuration(0)
@@ -113,7 +121,7 @@ class _ImportExportMixin:
             retry_btn = QMessageBox.StandardButton.Retry
             cancel_btn = QMessageBox.StandardButton.Cancel
             choice = QMessageBox.question(
-                self,
+                cast(QWidget, self),
                 error_title,
                 f"{error_text}\n\nRetry the operation?",
                 retry_btn | cancel_btn,
@@ -167,15 +175,16 @@ class _ImportExportMixin:
         )
 
     def _export_collection(self, format_type: str) -> None:
+        parent = cast(QWidget, self)
         mgr = CollectionManager(self.db)
         collections = mgr.list_collections()
         if not collections:
-            QMessageBox.warning(self, "No Collections", "No collections to export.")
+            QMessageBox.warning(parent, "No Collections", "No collections to export.")
             return
 
         col_names = [col["name"] for col in collections]
         col_name, ok = QInputDialog.getItem(
-            self,
+            parent,
             "Select Collection",
             "Choose collection to export:",
             col_names,
@@ -187,7 +196,7 @@ class _ImportExportMixin:
 
         collection_id = next((c["id"] for c in collections if c["name"] == col_name), None)
         if collection_id is None:
-            QMessageBox.warning(self, "Export Error", f"Collection '{col_name}' not found.")
+            QMessageBox.warning(parent, "Export Error", f"Collection '{col_name}' not found.")
             return
         collection_id = int(collection_id)
 
@@ -198,7 +207,7 @@ class _ImportExportMixin:
         )
 
         file_path, _ = QFileDialog.getSaveFileName(
-            self,
+            parent,
             f"Export as {format_type.title()}",
             "",
             file_filter,
@@ -208,7 +217,7 @@ class _ImportExportMixin:
 
         openapi_title = col_name
         if format_type == "openapi":
-            title, ok = QInputDialog.getText(self, "OpenAPI Title", "API Title:", text=col_name)
+            title, ok = QInputDialog.getText(parent, "OpenAPI Title", "API Title:", text=col_name)
             if not ok:
                 return
             openapi_title = title
@@ -230,7 +239,7 @@ class _ImportExportMixin:
         """Run collection export in the background with retry support."""
         from equinox.exporters import InsomniaExporter, OpenAPIExporter, PostmanExporter
 
-        def _operation(cancel_event=None) -> str:
+        def _operation(cancel_event: object | None = None) -> str:
             if cancel_event is not None and cancel_event.is_set():
                 raise RuntimeError("Export cancelled")
             if format_type == "postman":

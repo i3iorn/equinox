@@ -190,7 +190,8 @@ class ResponseBuilderMixin:
         menu = QMenu(btn)
         for fmt in GENERATORS:
             act = menu.addAction(fmt)
-            act.triggered.connect(lambda _, f=fmt: self._copy_as_code(f))
+            if act is not None:
+                act.triggered.connect(lambda _, f=fmt: self._copy_as_code(f))
 
         menu.addSeparator()
         view_act = menu.addAction("View…")

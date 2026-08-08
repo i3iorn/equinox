@@ -91,7 +91,7 @@ class _SessionVarsMixin:
     def _build_session_count_label(self) -> QLabel:
         """Create the label showing the number of captured variables."""
         self._session_count_label = create_muted_label("No captured variables")
-        return cast(QLabel, self._session_count_label)
+        return self._session_count_label
 
     def _build_session_copy_button(self) -> QPushButton:
         """Create the 'Copy All' button."""

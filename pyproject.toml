@@ -120,6 +120,13 @@ equinox = ["py.typed"]
 
 [tool.mypy]
 python_version = "3.10"
+# CI runs `mypy --strict src` (ci.yml); CONTRIBUTING.md/WORKFLOW.md document
+# the bare `mypy src` command for local use. Without `strict = true` here,
+# those two only agreed on the settings explicitly listed below, and the
+# local command was measurably weaker than CI's gate (70 vs 93 errors found
+# on the same tree at one point). Declaring it here makes both commands
+# identical, so "passes locally" actually means "passes in CI".
+strict = true
 warn_return_any = true
 warn_unused_configs = true
 disallow_untyped_defs = true
@@ -129,6 +136,10 @@ no_implicit_optional = true
 warn_redundant_casts = true
 warn_unreachable = true
 strict_optional = true
+
+[[tool.mypy.overrides]]
+module = ["defusedxml.*", "jsonpath_ng.*"]
+ignore_missing_imports = true
 
 [[tool.mypy.overrides]]
 module = ["tests.*"]

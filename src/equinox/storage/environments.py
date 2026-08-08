@@ -5,7 +5,6 @@ from __future__ import annotations
 import logging
 import re
 from typing import Any
-from typing import cast
 
 from equinox.core.exceptions import DuplicateError
 from equinox.core.exceptions import SecurityError
@@ -441,7 +440,8 @@ class EnvironmentManager:
         if not variables:
             return text
 
-        return cast(
-            str,
-            VariableInterpolator.interpolate(text, variables, max_iterations=max_iterations),
+        return VariableInterpolator.interpolate(
+            text,
+            variables,
+            max_iterations=max_iterations,
         )

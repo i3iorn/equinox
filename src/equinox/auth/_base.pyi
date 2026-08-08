@@ -1,8 +1,11 @@
 from __future__ import annotations
 from typing import Any, Callable, Dict, Optional
+from equinox.core.exceptions import AuthError as AuthError
 
-class AuthError(Exception): ...
-class CredentialValidationError(Exception): ...
+class CredentialValidationError(AuthError):
+    field_name: str
+    reason: str
+    def __init__(self, field_name: str, reason: str) -> None: ...
 
 AUTH_TYPES: Dict[str, str]
 

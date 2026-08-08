@@ -94,7 +94,7 @@ class _NewRequestDialog(QDialog):
 
 
 class CollectionsPanel(
-    _CollectionsActionsMixin,  # type: ignore[misc]
+    _CollectionsActionsMixin,
     _CollectionsSelectionFilterMixin,
     _CollectionsRefreshTreeMixin,
     _CollectionsContextMenuMixin,

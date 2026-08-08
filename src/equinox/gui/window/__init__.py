@@ -74,13 +74,13 @@ def _is_deleted_qobject(obj: Any) -> bool:
 
 
 class MainWindow(
-    _LayoutMixin,  # type: ignore[misc]
-    _PanelsMixin,  # type: ignore[misc]
-    _HistoryMixin,  # type: ignore[misc]
-    _ImportExportMixin,  # type: ignore[misc]
-    _EnvironmentMixin,  # type: ignore[misc]
-    _MenuMixin,  # type: ignore[misc]
-    _FramelessMixin,  # type: ignore[misc]
+    _LayoutMixin,
+    _PanelsMixin,
+    _HistoryMixin,
+    _ImportExportMixin,
+    _EnvironmentMixin,
+    _MenuMixin,
+    _FramelessMixin,
     QMainWindow,
 ):
     """Main application window."""

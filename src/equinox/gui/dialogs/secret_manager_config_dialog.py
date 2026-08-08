@@ -22,6 +22,7 @@ from PyQt6.QtWidgets import (
     QPushButton,
     QSpinBox,
     QVBoxLayout,
+    QWidget,
 )
 
 from equinox.core.secret_managers import (
@@ -56,7 +57,7 @@ class SecretManagerConfigDialog(QDialog):
     config_saved = pyqtSignal(str, dict)  # manager_type, config_dict
     _VAULT_MANAGER_TYPES = ("vault", "hashicorp_vault")
 
-    def __init__(self, parent=None) -> None:
+    def __init__(self, parent: QWidget | None = None) -> None:
         """Initialize the configuration dialog.
 
         Args:
@@ -67,7 +68,7 @@ class SecretManagerConfigDialog(QDialog):
         self.setMinimumWidth(500)
         self.setMinimumHeight(300)
 
-        self._config_widgets: dict[str, list] = {}
+        self._config_widgets: dict[str, list[QWidget]] = {}
         self._vault_warning_label: QLabel | None = None
         self._init_ui()
 
@@ -291,7 +292,7 @@ class SecretManagerConfigDialog(QDialog):
         Returns:
             Configuration dictionary
         """
-        config = {}
+        config: dict[str, Any] = {}
 
         for key, widgets in self._config_widgets.items():
             if not widgets:
