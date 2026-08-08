@@ -1,6 +1,6 @@
 import logging
 from collections.abc import Callable
-from typing import Any
+from typing import Any, Literal
 
 from PyQt6.QtCore import pyqtSignal
 from PyQt6.QtWidgets import (
@@ -16,10 +16,20 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
-from equinox.auth import AUTH_TYPES, AuthStrategy
+from equinox.auth import (
+    AUTH_TYPES,
+    APIKeyAuth,
+    AuthStrategy,
+    AWSSigV4Auth,
+    BasicAuth,
+    BearerAuth,
+    OAuth2Auth,
+)
+from equinox.core.exceptions import AuthError
 from equinox.storage import Database, SavedCredentialsManager
 
 from .oauth2.controller import OAuth2TokenController
+from .tabs.base import AuthDialogTab
 from .tabs.api_key import ApiKeyAuthTab
 from .tabs.aws import AwsSigV4AuthTab
 from .tabs.basic import BasicAuthTab
@@ -27,6 +37,21 @@ from .tabs.bearer import BearerAuthTab
 from .tabs.oauth2 import OAuth2AuthTab
 
 LOGGER = logging.getLogger(__name__)
+
+
+def _sanitize_field(text: str) -> str:
+    """Strip CR/LF characters that password managers may paste into fields.
+
+    Prevents ``AuthError`` (CRLF-injection check) from firing on values
+    that are merely copy-paste artefacts rather than real attacks.
+    """
+    return text.replace("\r", "").replace("\n", "")
+
+
+# Sentinel returned by the tab builders when a required-field check fails and
+# a QMessageBox has already been shown.  Distinct from ``None``, which is the
+# legitimate "No Auth" result.
+_MISSING: Any = object()
 
 
 class AuthType:
@@ -94,6 +119,7 @@ class AuthDialog(QDialog):
         super().__init__(parent)
         self.db = db
         self.current_auth = current_auth
+        self._saved_auth: AuthStrategy | None = None
         self._auth_type_to_tab: dict[str, int] = {}
         self._auth_config_appliers: dict[str, Callable[[dict[str, Any]], None]] = {}
 
@@ -101,7 +127,13 @@ class AuthDialog(QDialog):
         self.setMinimumSize(self._MINIMUM_WIDTH, self._MINIMUM_HEIGHT)
         self._init_ui()
         self._init_auth_config_appliers()
+        self._load_current_auth()
         self._refresh_client_picker()
+
+    @property
+    def _last_fetched_auth(self) -> OAuth2Auth | None:
+        """The OAuth2 strategy from the most recent successful "Fetch Token…"."""
+        return self.oauth2_controller.last_fetched_auth
 
     def _init_ui(self) -> None:
         layout = QVBoxLayout(self)
@@ -167,6 +199,81 @@ class AuthDialog(QDialog):
             AuthType.BEARER: self._apply_bearer_config,
             AuthType.AWS_SIGV4: self._apply_aws_sigv4_config,
         }
+
+    def _load_current_auth(self) -> None:
+        """Populate the tabs from the auth strategy the caller passed in.
+
+        Without this, opening the dialog on an already-configured request shows
+        blank fields and saving silently discards the existing credentials.
+        """
+        auth = self.current_auth
+        if auth is None:
+            self._select_tab(AuthType.NO_AUTH)
+            return
+
+        loaders: dict[type, Callable[[Any], None]] = {
+            BasicAuth: self._load_basic_auth,
+            BearerAuth: self._load_bearer_auth,
+            OAuth2Auth: self._load_oauth2_auth,
+            APIKeyAuth: self._load_api_key_auth,
+            AWSSigV4Auth: self._load_aws_sigv4_auth,
+        }
+        for auth_class, load in loaders.items():
+            if isinstance(auth, auth_class):
+                load(auth)
+                return
+
+        LOGGER.warning("Unsupported auth strategy type: %s", type(auth).__name__)
+        self._select_tab(AuthType.NO_AUTH)
+
+    def _select_tab(self, auth_type: str) -> None:
+        """Switch to the tab registered for ``auth_type``."""
+        tab_index = self._auth_type_to_tab.get(auth_type)
+        if tab_index is not None:
+            self.tabs.setCurrentIndex(tab_index)
+
+    @staticmethod
+    def _auth_text(auth: Any, attribute: str) -> str:
+        """Read an optional string attribute off an auth strategy."""
+        return str(getattr(auth, attribute, "") or "")
+
+    def _load_basic_auth(self, auth: BasicAuth) -> None:
+        self._select_tab(AuthType.BASIC)
+        self.basic.username.setText(self._auth_text(auth, AuthConfigKey.USERNAME))
+        self.basic.password.setText(self._auth_text(auth, AuthConfigKey.PASSWORD))
+
+    def _load_bearer_auth(self, auth: BearerAuth) -> None:
+        self._select_tab(AuthType.BEARER)
+        self.bearer.token.setText(self._auth_text(auth, AuthConfigKey.TOKEN))
+
+    def _load_oauth2_auth(self, auth: OAuth2Auth) -> None:
+        self._select_tab(AuthType.OAUTH2)
+        self.oauth2.token_url.setText(self._auth_text(auth, AuthConfigKey.TOKEN_URL))
+        self.oauth2.client_id.setText(self._auth_text(auth, AuthConfigKey.CLIENT_ID))
+        self.oauth2.client_secret.setText(self._auth_text(auth, AuthConfigKey.CLIENT_SECRET))
+        self.oauth2.scope.setText(self._auth_text(auth, AuthConfigKey.SCOPE))
+        self.oauth2.access_token.setText(self._auth_text(auth, "access_token"))
+        self.oauth2.refresh_token.setText(self._auth_text(auth, "refresh_token"))
+        self.oauth2.verify_ssl.setChecked(getattr(auth, AuthConfigKey.VERIFY_SSL, True) is not False)
+
+        token_auth = self._auth_text(auth, AuthConfigKey.TOKEN_AUTH) or self._DEFAULT_TOKEN_AUTH
+        token_auth_index = self.oauth2.token_auth.findData(token_auth)
+        self.oauth2.token_auth.setCurrentIndex(max(token_auth_index, 0))
+
+    def _load_api_key_auth(self, auth: APIKeyAuth) -> None:
+        self._select_tab(AuthType.API_KEY)
+        self.api_key.key_name.setText(self._auth_text(auth, AuthConfigKey.KEY))
+        self.api_key.key_value.setText(self._auth_text(auth, AuthConfigKey.VALUE))
+        location = self._auth_text(auth, AuthConfigKey.LOCATION).lower()
+        self.api_key.location.setCurrentIndex(1 if location == ApiKeyLocation.QUERY else 0)
+
+    def _load_aws_sigv4_auth(self, auth: AWSSigV4Auth) -> None:
+        self._select_tab(AuthType.AWS_SIGV4)
+        self.aws.access_key.setText(self._auth_text(auth, AuthConfigKey.ACCESS_KEY))
+        self.aws.secret_key.setText(self._auth_text(auth, AuthConfigKey.SECRET_KEY))
+        self.aws.region.setText(self._auth_text(auth, AuthConfigKey.REGION))
+        self.aws.service.setText(self._auth_text(auth, AuthConfigKey.SERVICE))
+        self.aws.session_token.setText(self._auth_text(auth, AuthConfigKey.SESSION_TOKEN))
 
     def _refresh_client_picker(self) -> None:
         """Reload the saved-credential combo from the database."""
@@ -246,9 +353,7 @@ class AuthDialog(QDialog):
 
     def _select_and_apply_config(self, auth_type: str, config: dict[str, Any]) -> None:
         """Switch to the relevant tab and apply saved configuration."""
-        tab_index = self._auth_type_to_tab.get(auth_type)
-        if tab_index is not None:
-            self.tabs.setCurrentIndex(tab_index)
+        self._select_tab(auth_type)
 
         apply_config = self._auth_config_appliers.get(auth_type)
         if apply_config is None:
@@ -332,15 +437,155 @@ class AuthDialog(QDialog):
             return
 
         dlg = SavedCredentialsDialog(self.db, self)
+        # The manager emits this on every mutation; an unconditional refresh
+        # afterwards could re-select the default and overwrite typed-in fields.
         dlg.credentials_changed.connect(self._refresh_client_picker)
         dlg.exec()
 
+    # ── Saving ────────────────────────────────────────────────────────
+
     def _save_auth(self) -> None:
-        tab = self.tabs.currentWidget()
-        if tab is None:
+        """Build an auth strategy from the active tab and hand it to the caller.
+
+        The result is published two ways: on ``_saved_auth`` for callers that
+        read it after ``exec()``, and via the ``auth_configured`` signal.
+        """
+        try:
+            auth = self._build_auth_from_tab()
+        except AuthError as exc:
+            QMessageBox.warning(
+                self,
+                "Invalid Credentials",
+                f"Could not save authentication:\n{exc}",
+            )
             return
 
-        if hasattr(tab, "get_auth_config"):
-            config = tab.get_auth_config()
-            self.accept()
-            self.auth_configured.emit(config)
+        if auth is _MISSING:
+            # A required-field check failed; the warning has already been shown.
+            return
+
+        self._saved_auth = auth
+        self.accept()
+        self.auth_configured.emit(auth)
+
+    def _build_auth_from_tab(self) -> AuthStrategy | None | Any:
+        """Construct an auth strategy from the current tab's fields.
+
+        Returns:
+            An auth strategy, ``None`` for "No Auth", or :data:`_MISSING` when a
+            required field is empty (a warning has already been shown).
+
+        Raises:
+            AuthError: When credential validation fails (CRLF, length, etc.).
+        """
+        builders: dict[str, Callable[[dict[str, Any]], AuthStrategy | None | Any]] = {
+            AuthType.BASIC: self._build_basic_auth,
+            AuthType.BEARER: self._build_bearer_auth,
+            AuthType.OAUTH2: self._build_oauth2_auth,
+            AuthType.API_KEY: self._build_api_key_auth,
+            AuthType.AWS_SIGV4: self._build_aws_sigv4_auth,
+        }
+
+        tab = self.tabs.currentWidget()
+        auth_type = self._current_auth_type()
+        build = builders.get(auth_type or "")
+        if build is None or not isinstance(tab, AuthDialogTab):
+            return None
+        return build(self._sanitized_config(dict(tab.get_auth_config())))
+
+    def _current_auth_type(self) -> str | None:
+        """Return the auth-type identifier for the currently selected tab."""
+        current_index = self.tabs.currentIndex()
+        for auth_type, tab_index in self._auth_type_to_tab.items():
+            if tab_index == current_index:
+                return auth_type
+        return None
+
+    @staticmethod
+    def _sanitized_config(config: dict[str, Any]) -> dict[str, Any]:
+        """Strip stray CR/LF from every string value in a tab's config."""
+        return {
+            key: _sanitize_field(value).strip() if isinstance(value, str) else value
+            for key, value in config.items()
+        }
+
+    def _warn_missing(self, message: str) -> Any:
+        QMessageBox.warning(self, "Missing Fields", message)
+        return _MISSING
+
+    def _build_basic_auth(self, cfg: dict[str, Any]) -> AuthStrategy | Any:
+        username = cfg.get(AuthConfigKey.USERNAME) or ""
+        password = cfg.get(AuthConfigKey.PASSWORD) or ""
+        if not username or not password:
+            return self._warn_missing("Enter both username and password.")
+        return BasicAuth(username=username, password=password)
+
+    def _build_bearer_auth(self, cfg: dict[str, Any]) -> AuthStrategy | Any:
+        token = cfg.get(AuthConfigKey.TOKEN) or ""
+        if not token:
+            return self._warn_missing("Enter a bearer token.")
+        return BearerAuth(token=token)
+
+    def _build_oauth2_auth(self, cfg: dict[str, Any]) -> AuthStrategy | Any:
+        token_url = cfg.get(AuthConfigKey.TOKEN_URL) or ""
+        client_id = cfg.get(AuthConfigKey.CLIENT_ID) or ""
+        if not token_url or not client_id:
+            return self._warn_missing("Token URL and Client ID are required.")
+
+        token_auth: Literal["body", "basic"] = (
+            "basic" if cfg.get(AuthConfigKey.TOKEN_AUTH) == "basic" else "body"
+        )
+        auth = OAuth2Auth(
+            token_url=token_url,
+            client_id=client_id,
+            client_secret=cfg.get(AuthConfigKey.CLIENT_SECRET) or None,
+            scope=cfg.get(AuthConfigKey.SCOPE) or None,
+            access_token=cfg.get("access_token") or None,
+            refresh_token=cfg.get("refresh_token") or None,
+            verify_ssl=bool(cfg.get(AuthConfigKey.VERIFY_SSL, True)),
+            token_auth=token_auth,
+        )
+        self._carry_forward_expiry(auth)
+        return auth
+
+    def _carry_forward_expiry(self, auth: OAuth2Auth) -> None:
+        """Copy ``expires_at`` from a just-fetched token so it isn't eternal.
+
+        The token fields only carry the token string, so a token obtained via
+        "Fetch Token…" would otherwise be saved without its expiry and never
+        refreshed.
+        """
+        fetched = self._last_fetched_auth
+        if fetched is None or fetched.expires_at is None:
+            return
+        if auth.access_token and auth.access_token == fetched.access_token:
+            auth.expires_at = fetched.expires_at
+
+    def _build_api_key_auth(self, cfg: dict[str, Any]) -> AuthStrategy | Any:
+        key = cfg.get(AuthConfigKey.KEY) or ""
+        value = cfg.get(AuthConfigKey.VALUE) or ""
+        if not key or not value:
+            return self._warn_missing("Enter both key name and value.")
+        location: Literal["header", "query"] = (
+            "query"
+            if str(cfg.get(AuthConfigKey.LOCATION, "")).lower() == ApiKeyLocation.QUERY
+            else "header"
+        )
+        return APIKeyAuth(key=key, value=value, location=location)
+
+    def _build_aws_sigv4_auth(self, cfg: dict[str, Any]) -> AuthStrategy | Any:
+        access_key = cfg.get(AuthConfigKey.ACCESS_KEY) or ""
+        secret_key = cfg.get(AuthConfigKey.SECRET_KEY) or ""
+        region = cfg.get(AuthConfigKey.REGION) or ""
+        service = cfg.get(AuthConfigKey.SERVICE) or ""
+        if not access_key or not secret_key or not region or not service:
+            return self._warn_missing(
+                "Access Key, Secret Key, Region and Service are required.",
+            )
+        return AWSSigV4Auth(
+            access_key=access_key,
+            secret_key=secret_key,
+            region=region,
+            service=service,
+            session_token=cfg.get(AuthConfigKey.SESSION_TOKEN) or None,
+        )

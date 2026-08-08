@@ -9,6 +9,8 @@ from __future__ import annotations
 
 import json
 import logging
+from collections.abc import Iterator
+from typing import Any
 
 from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtWidgets import (
@@ -67,14 +69,14 @@ class OAuthClientsDialog(OAuthConnectionTestMixin, ListFormDialogMixin, QDialog)
     # Emitted whenever the client list changes so callers can refresh pickers
     clients_changed = pyqtSignal()
 
-    def __init__(self, db: Database, parent=None) -> None:
+    def __init__(self, db: Database, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self.db = db
         self.mgr = OAuthClientManager(db)
         self._current_id: int | None = None
         self._dirty = False
         self._tester: OAuthTokenTester | None = None  # kept alive until worker completion
-        self._last_test_response: dict | None = None
+        self._last_test_response: dict[str, Any] | None = None
         self._test_btn_idle_text = "🔌  Test Connection"
         self._test_btn_busy_text = "Testing…"
 
@@ -160,6 +162,13 @@ class OAuthClientsDialog(OAuthConnectionTestMixin, ListFormDialogMixin, QDialog)
         form.setLabelAlignment(Qt.AlignmentFlag.AlignRight)
         form.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.ExpandingFieldsGrow)
 
+        self._create_form_widgets()
+        self._populate_form_rows(form)
+
+        return form
+
+    def _create_form_widgets(self) -> None:
+        """Create every input widget used by the client configuration form."""
         self.f_name = QLineEdit()
         self.f_name.setPlaceholderText("My Service")
 
@@ -194,6 +203,8 @@ class OAuthClientsDialog(OAuthConnectionTestMixin, ListFormDialogMixin, QDialog)
         self.f_extra.setMaximumHeight(80)
         self.f_extra.setFont(get_mono_font())
 
+    def _populate_form_rows(self, form: QFormLayout) -> None:
+        """Add the previously created widgets to ``form`` in display order."""
         form.addRow("Name:*", self.f_name)
         form.addRow("Description:", self.f_description)
         form.addRow("Token URL:*", self.f_token_url)
@@ -209,12 +220,10 @@ class OAuthClientsDialog(OAuthConnectionTestMixin, ListFormDialogMixin, QDialog)
             f"<small style='color:{Colors.FG_MUTED};'>"
             f"Extra Params: JSON object merged into the token request body "
             f'(e.g. <tt>{{"audience": "…"}}</tt>).'
-            f"</small>"
+            f"</small>",
         )
         info.setWordWrap(True)
         form.addRow("", info)
-
-        return form
 
     def _build_separator(self) -> QFrame:
         """Create a horizontal separator line."""
@@ -285,7 +294,7 @@ class OAuthClientsDialog(OAuthConnectionTestMixin, ListFormDialogMixin, QDialog)
 
     # ── List management (ListFormDialogMixin template methods) ────────
 
-    def _build_list_items(self):
+    def _build_list_items(self) -> Iterator[tuple[int, str, dict[str, Any]]]:
         """Yield (item_id, label, kwargs) for each client."""
         from PyQt6.QtGui import QFont
 
@@ -294,7 +303,7 @@ class OAuthClientsDialog(OAuthConnectionTestMixin, ListFormDialogMixin, QDialog)
         for c in self.mgr.list_clients():
             tag = " ★" if c["is_default"] else ""
             label = f"{c['name']}{tag}  [{c['grant_type']}]"
-            kwargs = {}
+            kwargs: dict[str, Any] = {}
             if c["is_default"]:
                 kwargs["fg_color"] = Colors.GREEN
                 font = QFont()
@@ -494,7 +503,7 @@ class OAuthClientsDialog(OAuthConnectionTestMixin, ListFormDialogMixin, QDialog)
         )
 
     def _view_test_response(self) -> None:
-        self._view_oauth_test_response()
+        self._open_token_response()
 
     # ── Close guard ───────────────────────────────────────────────────
     # _on_close is inherited from DirtyDialogMixin

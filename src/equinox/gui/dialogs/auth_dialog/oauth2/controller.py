@@ -35,10 +35,19 @@ class OAuth2TokenController(QObject):
         self._tab = tab
         self._db = db
         self._last_response: dict[str, Any] | None = None
+        self._last_fetched_auth: OAuth2Auth | None = None
         self._worker: OAuth2TokenFetchWorker | None = None
 
         tab.fetch_btn.clicked.connect(self.fetch_token)
         tab.view_btn.clicked.connect(self.show_response)
+
+    @property
+    def last_fetched_auth(self) -> OAuth2Auth | None:
+        """The strategy returned by the most recent successful fetch.
+
+        Carries ``expires_at``, which the token text fields cannot represent.
+        """
+        return self._last_fetched_auth
 
     def fetch_token(self) -> None:
         """Validate inputs, build OAuth2Auth, and start background fetch."""
@@ -113,6 +122,7 @@ class OAuth2TokenController(QObject):
             self._tab.status.setText("Error: Invalid auth response")
             return
 
+        self._last_fetched_auth = auth
         self._tab.access_token.setText(auth.access_token or "")
         if auth.refresh_token:
             self._tab.refresh_token.setText(auth.refresh_token)
