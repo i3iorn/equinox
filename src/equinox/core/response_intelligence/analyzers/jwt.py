@@ -1,4 +1,5 @@
 """JWT decoding and expiry validation analyzer."""
+
 import base64
 import json
 import logging

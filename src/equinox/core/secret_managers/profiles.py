@@ -63,7 +63,7 @@ class SecretManagerProfile:
                 "config": dict(config),
                 "enable_cache": enable_cache,
                 "cache_ttl": cache_ttl,
-            }
+            },
         )
 
     def to_payload(self) -> dict[str, Any]:

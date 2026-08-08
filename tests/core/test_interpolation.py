@@ -414,7 +414,7 @@ class TestCollectInterpolationVariables:
             mock_env.return_value.get_active_environment.return_value = None
             with patch("equinox.storage.collections.CollectionManager") as mock_col:
                 mock_col.return_value.get_all_collection_variables.return_value = {
-                    "BASE_URL": "https://collection.example"
+                    "BASE_URL": "https://collection.example",
                 }
                 variables, sources = collect_interpolation_variables_detailed(db, collection_id=25)
 
@@ -426,7 +426,7 @@ class TestCollectInterpolationVariables:
 
         with patch("equinox.storage.environments.EnvironmentManager") as mock_env:
             mock_env.return_value.get_active_environment.return_value = {
-                "variables": {"BASE_URL": "https://env.example"}
+                "variables": {"BASE_URL": "https://env.example"},
             }
             variables, sources = collect_interpolation_variables_detailed(
                 db,

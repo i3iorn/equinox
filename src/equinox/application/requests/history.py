@@ -5,6 +5,7 @@ history interactions so GUI code does not construct ``HistoryManager``
 directly. It currently covers URL-completer lookups and deferred request
 history persistence.
 """
+
 from __future__ import annotations
 
 import logging

@@ -169,7 +169,11 @@ class TestDeleteFolderSync:
         from equinox.core.request import Request
 
         req = Request(
-            method="GET", url="https://example.com", name="R", collection_id=col_id, folder="Auth"
+            method="GET",
+            url="https://example.com",
+            name="R",
+            collection_id=col_id,
+            folder="Auth",
         )
         mgr.save_request(req, collection_id=col_id)
         mgr.create_folder(col_id, "Auth")
@@ -184,7 +188,11 @@ class TestDeleteFolderSync:
         from equinox.core.request import Request
 
         req = Request(
-            method="GET", url="https://example.com", name="R", collection_id=col_id, folder="Auth"
+            method="GET",
+            url="https://example.com",
+            name="R",
+            collection_id=col_id,
+            folder="Auth",
         )
         mgr.save_request(req, collection_id=col_id)
         mgr.create_folder(col_id, "Auth")

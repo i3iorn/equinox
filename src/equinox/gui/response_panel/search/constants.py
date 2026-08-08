@@ -2,6 +2,7 @@
 Immutable configuration constants for the search system.
 No side effects. No runtime mutation.
 """
+
 from __future__ import annotations
 
 # Limits

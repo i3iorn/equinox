@@ -5,6 +5,7 @@ at rest, replacing the previous file-based Fernet key approach when a master
 password is configured. It also provides a lightweight rotation helper to
 re-encrypt plaintext secrets with a new master password.
 """
+
 from __future__ import annotations
 
 import base64
@@ -232,7 +233,10 @@ def _build_encrypt_fn(fernet: Fernet) -> Callable[[str | None], str | None]:
     return encrypt
 
 
-def _rotate_oauth_client_secrets(conn: Connection, encrypt: Callable[[str | None], str | None]) -> None:
+def _rotate_oauth_client_secrets(
+    conn: Connection,
+    encrypt: Callable[[str | None], str | None],
+) -> None:
     for row in conn.execute("SELECT id, client_secret FROM oauth_clients"):
         uid, secret = row["id"], row["client_secret"]
         if secret is None:
@@ -246,7 +250,10 @@ def _rotate_oauth_client_secrets(conn: Connection, encrypt: Callable[[str | None
             )
 
 
-def _rotate_saved_credentials(conn: Connection, encrypt: Callable[[str | None], str | None]) -> None:
+def _rotate_saved_credentials(
+    conn: Connection,
+    encrypt: Callable[[str | None], str | None],
+) -> None:
     for row in conn.execute("SELECT id, config FROM saved_credentials"):
         sid, cfg = row["id"], row["config"]
         if cfg is None:

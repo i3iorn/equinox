@@ -22,7 +22,7 @@ class XmlHighlighter(RegexHighlighterBase):
             RegexRule(
                 pattern=re.compile(r"<!--.*?-->", re.DOTALL),
                 fmt=comment_fmt,
-            )
+            ),
         )
 
         # CDATA section
@@ -31,7 +31,7 @@ class XmlHighlighter(RegexHighlighterBase):
             RegexRule(
                 pattern=re.compile(r"<!\[CDATA\[.*?\]\]>", re.DOTALL),
                 fmt=cdata_fmt,
-            )
+            ),
         )
 
         # DOCTYPE / processing instruction
@@ -40,7 +40,7 @@ class XmlHighlighter(RegexHighlighterBase):
             RegexRule(
                 pattern=re.compile(r"<[?!][^>]*>"),
                 fmt=pi_fmt,
-            )
+            ),
         )
 
         # Tag name  <tagName  or  </tagName
@@ -49,13 +49,13 @@ class XmlHighlighter(RegexHighlighterBase):
             RegexRule(
                 pattern=re.compile(r"</?[\w:-]+"),
                 fmt=tag_fmt,
-            )
+            ),
         )
         rules.append(
             RegexRule(
                 pattern=re.compile(r"/?>"),
                 fmt=tag_fmt,
-            )
+            ),
         )
 
         # Attribute name
@@ -64,7 +64,7 @@ class XmlHighlighter(RegexHighlighterBase):
             RegexRule(
                 pattern=re.compile(r"\b[\w:-]+="),
                 fmt=attr_fmt,
-            )
+            ),
         )
 
         # Attribute value (double or single quoted)
@@ -73,13 +73,13 @@ class XmlHighlighter(RegexHighlighterBase):
             RegexRule(
                 pattern=re.compile(r'"[^"]*"'),
                 fmt=val_fmt,
-            )
+            ),
         )
         rules.append(
             RegexRule(
                 pattern=re.compile(r"'[^']*'"),
                 fmt=val_fmt,
-            )
+            ),
         )
 
         return rules

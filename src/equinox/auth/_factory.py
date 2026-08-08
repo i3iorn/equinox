@@ -14,7 +14,9 @@ Display names and labels are derived from the classes themselves
 """
 
 import logging
-from typing import Any, Callable, Optional, Tuple, Type, cast
+from typing import Any, cast
+
+from collections.abc import Callable
 
 from equinox.auth._base import AuthError, AuthStrategy
 
@@ -26,41 +28,41 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 
 
-def _get_bearer() -> Type[AuthStrategy]:
+def _get_bearer() -> type[AuthStrategy]:
     from equinox.auth._bearer import BearerAuth
 
-    return cast(Type[AuthStrategy], BearerAuth)
+    return cast(type[AuthStrategy], BearerAuth)
 
 
-def _get_basic() -> Type[AuthStrategy]:
+def _get_basic() -> type[AuthStrategy]:
     from equinox.auth._basic import BasicAuth
 
-    return cast(Type[AuthStrategy], BasicAuth)
+    return cast(type[AuthStrategy], BasicAuth)
 
 
-def _get_api_key() -> Type[AuthStrategy]:
+def _get_api_key() -> type[AuthStrategy]:
     from equinox.auth._api_key import APIKeyAuth
 
-    return cast(Type[AuthStrategy], APIKeyAuth)
+    return cast(type[AuthStrategy], APIKeyAuth)
 
 
-def _get_oauth2() -> Type[AuthStrategy]:
+def _get_oauth2() -> type[AuthStrategy]:
     from equinox.auth._oauth2 import OAuth2Auth
 
-    return cast(Type[AuthStrategy], OAuth2Auth)
+    return cast(type[AuthStrategy], OAuth2Auth)
 
 
-def _get_aws_sigv4() -> Type[AuthStrategy]:
+def _get_aws_sigv4() -> type[AuthStrategy]:
     from equinox.auth._aws_sigv4 import AWSSigV4Auth
 
-    return cast(Type[AuthStrategy], AWSSigV4Auth)
+    return cast(type[AuthStrategy], AWSSigV4Auth)
 
 
 # ---------------------------------------------------------------------------
 # Unified registry: maps every known type identifier → lazy class loader
 # ---------------------------------------------------------------------------
 
-AUTH_REGISTRY: dict[str, Callable[[], Type[AuthStrategy]]] = {
+AUTH_REGISTRY: dict[str, Callable[[], type[AuthStrategy]]] = {
     # Short names used in to_dict()["type"]
     "bearer": _get_bearer,
     "basic": _get_basic,
@@ -77,7 +79,7 @@ AUTH_REGISTRY: dict[str, Callable[[], Type[AuthStrategy]]] = {
 
 # Canonical ordering for UI display (tab order, picker order).
 # Each entry is a short type name that can be resolved via AUTH_REGISTRY.
-AUTH_TYPE_ORDER: Tuple[str, ...] = ("basic", "bearer", "oauth2", "api_key", "aws_sigv4")
+AUTH_TYPE_ORDER: tuple[str, ...] = ("basic", "bearer", "oauth2", "api_key", "aws_sigv4")
 
 
 # ---------------------------------------------------------------------------
@@ -85,7 +87,7 @@ AUTH_TYPE_ORDER: Tuple[str, ...] = ("basic", "bearer", "oauth2", "api_key", "aws
 # ---------------------------------------------------------------------------
 
 
-def auth_from_dict(*args: object, **kwargs: Any) -> Optional[AuthStrategy]:
+def auth_from_dict(*args: object, **kwargs: Any) -> AuthStrategy | None:
     """Return an auth object reconstructed from *auth_type* and *data*.
 
     Accepts both short type names (``"bearer"``) and class names
@@ -102,7 +104,7 @@ def auth_from_dict(*args: object, **kwargs: Any) -> Optional[AuthStrategy]:
             candidate = kwargs.get("data")
             if kwargs is not None and not isinstance(candidate, dict):
                 raise AuthError(
-                    "Invalid arguments to auth_from_dict: missing 'data' when called as (auth_type)"
+                    "Invalid arguments to auth_from_dict: missing 'data' when called as (auth_type)",
                 )
             data = candidate
         elif isinstance(arg, dict):
@@ -110,7 +112,7 @@ def auth_from_dict(*args: object, **kwargs: Any) -> Optional[AuthStrategy]:
             data = arg
         else:
             raise AuthError(
-                f"Invalid arguments to auth_from_dict: expected (auth_type) or (data)\ngot {type(args)}"
+                f"Invalid arguments to auth_from_dict: expected (auth_type) or (data)\ngot {type(args)}",
             )
     elif len(args) == 2:
         raw_auth_type, raw_data = args
@@ -133,7 +135,7 @@ def auth_from_dict(*args: object, **kwargs: Any) -> Optional[AuthStrategy]:
     return None
 
 
-def get_auth_class(auth_type: str) -> Optional[Type[AuthStrategy]]:
+def get_auth_class(auth_type: str) -> type[AuthStrategy] | None:
     """Return the auth class for *auth_type*, or ``None`` if unknown."""
     loader = AUTH_REGISTRY.get(auth_type)
     if loader is None:
@@ -156,6 +158,6 @@ def get_auth_type_labels() -> dict[str, str]:
     return labels
 
 
-def get_auth_types() -> Tuple[str, ...]:
+def get_auth_types() -> tuple[str, ...]:
     """Return the canonical tuple of auth-type short names."""
     return AUTH_TYPE_ORDER

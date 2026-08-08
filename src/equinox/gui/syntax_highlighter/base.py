@@ -1,4 +1,5 @@
 """Base classes and utilities for syntax highlighters."""
+
 from __future__ import annotations
 
 import re

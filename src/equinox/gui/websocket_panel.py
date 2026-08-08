@@ -1,4 +1,5 @@
 """WebSocket panel — connect, send, and receive WebSocket messages."""
+
 from __future__ import annotations
 
 import asyncio
@@ -249,7 +250,11 @@ class WebSocketPanel(QWidget):
     def _on_error(self, msg: str) -> None:
         logger.warning("WebSocket error: %s", msg)
         self._append_row(
-            "⚠", datetime.now().strftime("%H:%M:%S"), "—", f"Error: {msg}", fg=Colors.RED,
+            "⚠",
+            datetime.now().strftime("%H:%M:%S"),
+            "—",
+            f"Error: {msg}",
+            fg=Colors.RED,
         )
 
     # ── Messaging ─────────────────────────────────────────────────────────────

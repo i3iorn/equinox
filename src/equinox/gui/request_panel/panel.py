@@ -5,6 +5,7 @@ Logging strategy:
 - Context: method, URL, request_id for structured logs
 - Errors: full exception context with request details
 """
+
 from __future__ import annotations
 
 import logging

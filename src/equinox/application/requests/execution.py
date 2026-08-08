@@ -23,7 +23,7 @@ This module must never import Qt types.
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING, Any, Dict, Optional, Tuple, cast
+from typing import TYPE_CHECKING, Any, cast
 
 from equinox.application.requests._assembly import (
     apply_default_headers,
@@ -183,10 +183,10 @@ def _build_request(
 def prepare_send(
     snapshot: RequestEditorSnapshot,
     db: Any,
-    collection_manager: Optional[Any],
-    own_auth: Optional[Any],
-    inherited_auth: Optional[Any],
-    inherited_auth_source: Optional[str],
+    collection_manager: Any | None,
+    own_auth: Any | None,
+    inherited_auth: Any | None,
+    inherited_auth_source: str | None,
     policy_profile: str,
 ) -> SendOrchestratorResult:
     """Prepare a snapshot for HTTP dispatch using strict, testable steps."""
@@ -232,7 +232,13 @@ def prepare_send(
     )
 
     interpolation_result = _step_interpolate_fields(
-        url, headers, params, body, path_params, variables, variable_sources
+        url,
+        headers,
+        params,
+        body,
+        path_params,
+        variables,
+        variable_sources,
     )
     if isinstance(interpolation_result, SendOrchestratorResult):
         return interpolation_result
@@ -270,14 +276,14 @@ def prepare_send(
             pre_script_result=pre_script_result,
             inherited_auth_source=resolved_source,
             is_auth_inherited=is_auth_inherited,
-        )
+        ),
     )
 
 
 def _step_collect_variables(
     snapshot: RequestEditorSnapshot,
     db: Any,
-) -> Tuple[Dict[str, Any], Dict[str, str]] | SendOrchestratorResult:
+) -> tuple[dict[str, Any], dict[str, str]] | SendOrchestratorResult:
     try:
         return collect_interpolation_variables_detailed(
             db,
@@ -293,7 +299,7 @@ def _step_collect_variables(
                     message=f"Failed to collect variables: {exc}",
                     severity="error",
                 ),
-            )
+            ),
         )
 
 
@@ -301,9 +307,9 @@ def _step_resolve_auth(
     snapshot: RequestEditorSnapshot,
     own_auth: Any | None,
     inherited_auth: Any | None,
-    inherited_auth_source: Optional[str],
-    collection_manager: Optional[Any],
-) -> Tuple[Any | None, str | None, bool]:
+    inherited_auth_source: str | None,
+    collection_manager: Any | None,
+) -> tuple[Any | None, str | None, bool]:
     effective_auth, resolved_source = _resolve_send_auth(
         own_auth=own_auth,
         inherited_auth=inherited_auth,
@@ -319,14 +325,14 @@ def _step_resolve_auth(
 def _step_assemble_body(
     snapshot: RequestEditorSnapshot,
 ) -> (
-    Tuple[
+    tuple[
         str,
-        Dict[str, str],
-        Dict[str, str],
+        dict[str, str],
+        dict[str, str],
         list[dict[str, Any]],
         str | None,
         list[Any] | None,
-        Dict[str, str],
+        dict[str, str],
     ]
     | SendOrchestratorResult
 ):
@@ -366,7 +372,7 @@ def _step_assemble_body(
                     severity="error",
                     field_name="body",
                 ),
-            )
+            ),
         )
 
 
@@ -374,12 +380,12 @@ def _step_run_pre_script(
     snapshot: RequestEditorSnapshot,
     method: str,
     url: str,
-    headers: Dict[str, str],
-    params: Dict[str, Any],
+    headers: dict[str, str],
+    params: dict[str, Any],
     body: str | None,
-    variables: Dict[str, Any],
+    variables: dict[str, Any],
     policy_profile: str,
-) -> Tuple[Dict[str, Any], Any]:
+) -> tuple[dict[str, Any], Any]:
     return _run_pre_script(
         pre_script=snapshot.pre_script,
         method=method,
@@ -395,25 +401,30 @@ def _step_run_pre_script(
 
 def _step_interpolate_fields(
     url: str,
-    headers: Dict[str, str],
-    params: Dict[str, Any],
+    headers: dict[str, str],
+    params: dict[str, Any],
     body: str | None,
-    path_params: Dict[str, Any],
-    variables: Dict[str, Any],
-    variable_sources: Dict[str, str],
+    path_params: dict[str, Any],
+    variables: dict[str, Any],
+    variable_sources: dict[str, str],
 ) -> (
-    Tuple[
+    tuple[
         str,
-        Dict[str, str],
-        Dict[str, str],
+        dict[str, str],
+        dict[str, str],
         str | None,
-        Dict[str, str],
+        dict[str, str],
     ]
     | SendOrchestratorResult
 ):
     try:
         url, headers, params, body, path_params = interpolate_request_fields(
-            url, headers, params, body, path_params, variables
+            url,
+            headers,
+            params,
+            body,
+            path_params,
+            variables,
         )
     except Exception as exc:
         logger.warning("Variable interpolation failed: %s", exc)
@@ -424,7 +435,7 @@ def _step_interpolate_fields(
                     message=f"Failed to expand variables: {exc}",
                     severity="error",
                 ),
-            )
+            ),
         )
 
     if path_params:
@@ -444,7 +455,7 @@ def _step_interpolate_fields(
                     severity="error",
                     field_name="url",
                 ),
-            )
+            ),
         )
 
     return url, headers, params, body, path_params
@@ -452,8 +463,8 @@ def _step_interpolate_fields(
 
 def _format_unresolved(
     unresolved: set[str],
-    variables: Dict[str, Any],
-    variable_sources: Dict[str, str],
+    variables: dict[str, Any],
+    variable_sources: dict[str, str],
 ) -> list[str]:
     details = []
     for name in unresolved:
@@ -461,14 +472,14 @@ def _format_unresolved(
         details.append(
             f"{name}(source={variable_sources.get(name, 'missing')}, "
             f"value_type={type(value).__name__ if value is not None else 'missing'}, "
-            f"value_is_template={bool(isinstance(value, str) and VariableInterpolator.has_variables(value))})"
+            f"value_is_template={bool(isinstance(value, str) and VariableInterpolator.has_variables(value))})",
         )
     return details
 
 
 def _step_interpolate_auth(
     effective_auth: Any,
-    variables: Dict[str, Any],
+    variables: dict[str, Any],
 ) -> Any | SendOrchestratorResult:
     try:
         return interpolate_auth(
@@ -485,7 +496,7 @@ def _step_interpolate_auth(
                     severity="error",
                     field_name="auth",
                 ),
-            )
+            ),
         )
 
 
@@ -493,13 +504,13 @@ def _step_build_request(
     snapshot: RequestEditorSnapshot,
     method: str,
     url: str,
-    headers: Dict[str, str],
-    params: Dict[str, str],
+    headers: dict[str, str],
+    params: dict[str, str],
     params_list: list[dict[str, Any]],
     body: str | None,
     effective_auth: Any,
     multipart_data: list[Any] | None,
-    path_params: Dict[str, str],
+    path_params: dict[str, str],
 ) -> Any | SendOrchestratorResult:
     try:
         request = _build_request(
@@ -526,5 +537,5 @@ def _step_build_request(
                     message=f"Failed to build request: {exc}",
                     severity="error",
                 ),
-            )
+            ),
         )

@@ -1,4 +1,5 @@
 """Autosave and dirty-state helpers for RequestPanel."""
+
 from __future__ import annotations
 
 import logging
@@ -105,13 +106,21 @@ class RequestAutosaveMixin:
             )
             self._request_persistence.autosave_request(updated)
             self._clear_dirty()
-            logger.debug("Autosaved request id=%s %s %s", req.id, updated.method, redact_url(updated.url))
+            logger.debug(
+                "Autosaved request id=%s %s %s",
+                req.id,
+                updated.method,
+                redact_url(updated.url),
+            )
         except Exception:
             logger.error(
-                "Autosave failed for request id=%s", getattr(req, "id", None), exc_info=True,
+                "Autosave failed for request id=%s",
+                getattr(req, "id", None),
+                exc_info=True,
             )
             self._status_message(
-                "Autosave failed - click Save to preserve changes", STATUS_DURATION_LONG,
+                "Autosave failed - click Save to preserve changes",
+                STATUS_DURATION_LONG,
             )
 
     def save_current_request(self) -> bool:

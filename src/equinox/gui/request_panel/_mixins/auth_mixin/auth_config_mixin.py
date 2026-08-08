@@ -1,4 +1,5 @@
 """Auth configuration and auth-tab UI helpers for ``RequestPanel``."""
+
 from __future__ import annotations
 
 import logging

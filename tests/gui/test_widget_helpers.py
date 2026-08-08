@@ -2,6 +2,7 @@
 
 These functions have no PyQt6 dependency so they run headless.
 """
+
 import pytest
 from equinox.application.requests._assembly import apply_default_headers
 from equinox.application.requests._assembly import assemble_body

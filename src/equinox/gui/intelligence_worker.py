@@ -1,4 +1,5 @@
 """Background worker for Response Intelligence analysis."""
+
 from __future__ import annotations
 
 import logging

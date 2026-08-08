@@ -20,7 +20,7 @@ _DANGEROUS_ATTRS = frozenset(
         "__init_subclass__",
         "__reduce__",
         "__reduce_ex__",
-    }
+    },
 )
 
 
@@ -43,7 +43,7 @@ def _validate_ast(source: str, filename: str) -> ast.Module:
             "staticmethod",
             "property",
             "super",
-        }
+        },
     )
 
     for node in ast.walk(tree):
@@ -51,7 +51,7 @@ def _validate_ast(source: str, filename: str) -> ast.Module:
             if node.attr in _DANGEROUS_ATTRS:
                 raise SecurityError(
                     f"Access to '{node.attr}' is blocked in scripts "
-                    f"(line {getattr(node, 'lineno', '?')})"
+                    f"(line {getattr(node, 'lineno', '?')})",
                 )
         if isinstance(node, ast.Call):
             func = node.func
@@ -60,13 +60,12 @@ def _validate_ast(source: str, filename: str) -> ast.Module:
                 if func.id == "type" and len(node.args) == 3:
                     raise SecurityError(
                         f"type() with 3 arguments (class creation) is blocked in scripts "
-                        f"(line {getattr(node, 'lineno', '?')})"
+                        f"(line {getattr(node, 'lineno', '?')})",
                     )
                 # Block introspection / attribute manipulation builtins
                 if func.id in _BLOCKED_CALLS:
                     raise SecurityError(
-                        f"'{func.id}()' is blocked in scripts "
-                        f"(line {getattr(node, 'lineno', '?')})"
+                        f"'{func.id}()' is blocked in scripts (line {getattr(node, 'lineno', '?')})",
                     )
                 # Block getattr with dangerous attr names
                 if func.id == "getattr" and len(node.args) >= 2:
@@ -75,7 +74,7 @@ def _validate_ast(source: str, filename: str) -> ast.Module:
                         if arg.value in _DANGEROUS_ATTRS:
                             raise SecurityError(
                                 f"getattr() with '{arg.value}' is blocked in scripts "
-                                f"(line {getattr(node, 'lineno', '?')})"
+                                f"(line {getattr(node, 'lineno', '?')})",
                             )
 
     return tree

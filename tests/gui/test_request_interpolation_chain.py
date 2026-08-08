@@ -1,4 +1,5 @@
 """Regression tests for chained URL/path-param interpolation in send mixin."""
+
 from types import SimpleNamespace
 
 from equinox.application.requests import collect_unresolved_placeholders

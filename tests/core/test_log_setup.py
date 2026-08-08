@@ -18,7 +18,8 @@ class TestLogSetup:
         log_file = log_setup.configure_logging(log_dir=log_dir)
         logger = logging.getLogger("test_json_fmt")
         logger.info(
-            "Test message", extra={"method": "GET", "url": "https://example.com", "status": 200}
+            "Test message",
+            extra={"method": "GET", "url": "https://example.com", "status": 200},
         )
         # Flush
         for h in logging.getLogger().handlers:

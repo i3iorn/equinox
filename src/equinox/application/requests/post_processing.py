@@ -131,12 +131,12 @@ def build_deferred_persistence_plan(
         isinstance(send_inherited_auth, OAuth2Auth)
         and bool(getattr(send_inherited_auth, "access_token", ""))
         and bool(send_inherited_source)
-        and bool(getattr(request, "collection_id", None))
+        and bool(getattr(request, "collection_id", None)),
     )
     persist_own = bool(
         isinstance(own_auth, OAuth2Auth)
         and bool(getattr(own_auth, "access_token", ""))
-        and bool(getattr(request, "id", None))
+        and bool(getattr(request, "id", None)),
     )
     return DeferredPersistencePlan(
         save_history=True,

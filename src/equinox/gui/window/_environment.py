@@ -1,4 +1,5 @@
 """Environment switching and status bar mixin for MainWindow."""
+
 # mypy: disable-error-code=attr-defined
 from __future__ import annotations
 
@@ -28,9 +29,9 @@ class _EnvironmentMixin:
         try:
             return int(
                 tracker.get_count(
-                category="environment",
-                context="quick_switch",
-                element_id=f"env.{int(env_id)}",
+                    category="environment",
+                    context="quick_switch",
+                    element_id=f"env.{int(env_id)}",
                 ),
             )
         except Exception:
@@ -38,7 +39,9 @@ class _EnvironmentMixin:
             return 0
 
     def _rank_environments(
-        self, envs: list[dict[str, Any]], active_id: object,
+        self,
+        envs: list[dict[str, Any]],
+        active_id: object,
     ) -> list[dict[str, Any]]:
         """Order envs by UX-friendly rules: active first, then usage, then name."""
         ranked: list[tuple[bool, int, str, dict[str, Any]]] = []

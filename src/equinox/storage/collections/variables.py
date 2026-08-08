@@ -50,7 +50,7 @@ class CollectionVariablesMixin:
             raise ValidationError("Variable description must be a string")
         if len(description) > self.MAX_DESCRIPTION_LENGTH:
             raise ValidationError(
-                f"Variable description too long (max {self.MAX_DESCRIPTION_LENGTH} characters)"
+                f"Variable description too long (max {self.MAX_DESCRIPTION_LENGTH} characters)",
             )
 
         try:

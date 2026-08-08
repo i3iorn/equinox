@@ -64,7 +64,7 @@ class DeprecatedAPIAnalyzer(Analyzer):
                 analyzer_id=self.analyzer_id,
                 recommendation="Plan migration to the replacement endpoint/version before the sunset date.",
                 details=details,
-            )
+            ),
         )
         return findings
 
@@ -99,7 +99,7 @@ class SuggestedEncodingAnalyzer(Analyzer):
                 analyzer_id=self.analyzer_id,
                 recommendation="Send Accept-Encoding: gzip, br on clients calling large text-based endpoints.",
                 details={"body_size": size, "content_type": content_type},
-            )
+            ),
         )
         return findings
 
@@ -192,7 +192,7 @@ class NPlusOneDetectionAnalyzer(Analyzer):
                         "n_max": n_max,
                         "total_calls": total_calls,
                     },
-                )
+                ),
             )
         return findings
 
@@ -253,7 +253,7 @@ class ResponseEncodingIssuesAnalyzer(Analyzer):
                 analyzer_id=self.analyzer_id,
                 recommendation="Standardize response encoding to UTF-8 and ensure Content-Type charset matches payload bytes.",
                 details=details,
-            )
+            ),
         )
         return findings
 
@@ -287,6 +287,6 @@ class LinkHeaderParsingAnalyzer(Analyzer):
                 analyzer_id=self.analyzer_id,
                 recommendation="Use Link headers consistently for pagination and include rel=next/prev where applicable.",
                 details={"links": links},
-            )
+            ),
         )
         return findings

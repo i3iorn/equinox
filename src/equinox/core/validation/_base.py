@@ -25,7 +25,7 @@ VALID_HTTP_METHODS: frozenset[str] = frozenset(
         "OPTIONS",
         "TRACE",
         "CONNECT",
-    }
+    },
 )
 
 

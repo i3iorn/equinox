@@ -148,7 +148,8 @@ class HARExporter:
             "content": {
                 "size": len(response.body) if response.body else 0,
                 "mimeType": (response.headers or {}).get(
-                    "Content-Type", "application/octet-stream"
+                    "Content-Type",
+                    "application/octet-stream",
                 ),
                 "text": resp_body,
             },
@@ -193,7 +194,7 @@ class HARExporter:
                 "version": "1.2",
                 "creator": {"name": "Equinox", "version": get_app_version()},
                 "entries": entries,
-            }
+            },
         }
 
     @staticmethod

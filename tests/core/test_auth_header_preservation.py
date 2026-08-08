@@ -21,7 +21,10 @@ class DummyAuth(AuthStrategy):
 def test_auth_header_preserved_in_sent_headers():
     client = HTTPClient()
     request = Request(
-        method="GET", url="https://httpbin.org/get", auth=DummyAuth(), verify_ssl=False
+        method="GET",
+        url="https://httpbin.org/get",
+        auth=DummyAuth(),
+        verify_ssl=False,
     )
     response = client.send(request)
 

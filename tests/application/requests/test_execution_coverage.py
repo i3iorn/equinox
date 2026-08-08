@@ -114,21 +114,45 @@ class TestResolveSendAuth:
 class TestRunPreScript:
     def test_strict_policy_skips_script(self) -> None:
         vars_, result = _run_pre_script(
-            "env['x'] = 'y'", "GET", "https://example.com", {}, {}, None, {"K": "V"}, {}, "strict"
+            "env['x'] = 'y'",
+            "GET",
+            "https://example.com",
+            {},
+            {},
+            None,
+            {"K": "V"},
+            {},
+            "strict",
         )
         assert vars_ == {"K": "V"}
         assert result is None
 
     def test_empty_script_returns_unchanged_vars(self) -> None:
         vars_, result = _run_pre_script(
-            "", "GET", "https://example.com", {}, {}, None, {"K": "V"}, {}, "balanced"
+            "",
+            "GET",
+            "https://example.com",
+            {},
+            {},
+            None,
+            {"K": "V"},
+            {},
+            "balanced",
         )
         assert vars_ == {"K": "V"}
         assert result is None
 
     def test_whitespace_script_skipped(self) -> None:
         vars_, result = _run_pre_script(
-            "   \n\t  ", "GET", "https://example.com", {}, {}, None, {"K": "V"}, {}, "balanced"
+            "   \n\t  ",
+            "GET",
+            "https://example.com",
+            {},
+            {},
+            None,
+            {"K": "V"},
+            {},
+            "balanced",
         )
         assert vars_ == {"K": "V"}
         assert result is None
@@ -136,7 +160,15 @@ class TestRunPreScript:
     def test_script_with_env_changes_updates_vars(self) -> None:
         script = "env['DYNAMIC'] = 'injected'"
         vars_, result = _run_pre_script(
-            script, "GET", "https://example.com", {}, {}, None, {}, {}, "balanced"
+            script,
+            "GET",
+            "https://example.com",
+            {},
+            {},
+            None,
+            {},
+            {},
+            "balanced",
         )
         assert vars_.get("DYNAMIC") == "injected"
         assert result is not None
@@ -144,7 +176,15 @@ class TestRunPreScript:
     def test_script_without_env_changes_returns_original_vars(self) -> None:
         script = "assert True"
         vars_, result = _run_pre_script(
-            script, "GET", "https://example.com", {}, {}, None, {"K": "V"}, {}, "balanced"
+            script,
+            "GET",
+            "https://example.com",
+            {},
+            {},
+            None,
+            {"K": "V"},
+            {},
+            "balanced",
         )
         # No env changes → original vars unchanged
         assert "K" in vars_

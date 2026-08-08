@@ -56,7 +56,7 @@ def test_normalize_lock_text_removes_environment_specific_variance(lock_script: 
             "#    pip-compile --extra=dev --output-file='C:\\tmp\\requirements-lock.txt' 'C:\\repo\\pyproject.toml'",
             "typing-extensions==4.15.0",
             "    # via equinox (C:/repo/pyproject.toml)",
-        ]
+        ],
     )
 
     normalized = lock_script._normalize_lock_text(raw)

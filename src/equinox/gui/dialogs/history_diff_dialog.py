@@ -34,7 +34,7 @@ class HistoryDiffDialog(QDialog):
         self._entry_b = entry_b
         self.setWindowTitle(
             f"Compare  [{entry_a.get('method')} {entry_a.get('url', '')[:40]}]  "
-            f"vs  [{entry_b.get('method')} {entry_b.get('url', '')[:40]}]"
+            f"vs  [{entry_b.get('method')} {entry_b.get('url', '')[:40]}]",
         )
         self.setMinimumSize(980, 640)
         self._init_ui()
@@ -138,7 +138,7 @@ class HistoryDiffDialog(QDialog):
                 fromfile=f"Entry #{self._entry_a.get('id')}",
                 tofile=f"Entry #{self._entry_b.get('id')}",
                 lineterm="",
-            )
+            ),
         )
 
         w = QWidget()

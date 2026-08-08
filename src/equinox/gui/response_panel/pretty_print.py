@@ -3,6 +3,7 @@
 Provides off-thread pretty-printing and content-type to syntax highlighter mapping.
 Uses the centralized formatting module for actual formatting logic.
 """
+
 from __future__ import annotations
 
 import logging

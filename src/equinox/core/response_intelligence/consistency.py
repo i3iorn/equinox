@@ -1,4 +1,5 @@
 """Consistency & Correctness analyzers."""
+
 from __future__ import annotations
 
 import json
@@ -79,7 +80,10 @@ class StatusBodyMismatchAnalyzer(Analyzer):  # type: ignore[misc]
                             ),
                         )
             except Exception:
-                logger.exception("StatusBodyMismatchAnalyzer: failed to parse JSON body", exc_info=True)
+                logger.exception(
+                    "StatusBodyMismatchAnalyzer: failed to parse JSON body",
+                    exc_info=True,
+                )
 
         return findings
 
@@ -248,7 +252,10 @@ class DuplicateJsonKeysAnalyzer(Analyzer):  # type: ignore[misc]
         try:
             json.loads(text, object_pairs_hook=detect_duplicates)
         except Exception:
-            logger.exception("DuplicateJsonKeysAnalyzer: invalid JSON payload, skipping", exc_info=True)
+            logger.exception(
+                "DuplicateJsonKeysAnalyzer: invalid JSON payload, skipping",
+                exc_info=True,
+            )
             return findings
 
         if duplicate_keys:

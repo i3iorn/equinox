@@ -59,7 +59,7 @@ class VaultManager(SecretManager):
             import requests  # type: ignore[import-untyped]
         except ImportError:
             raise SecretManagerError(
-                "requests is required for Vault. Install with: pip install requests"
+                "requests is required for Vault. Install with: pip install requests",
             )
 
         url = kwargs.get("url")
@@ -75,7 +75,7 @@ class VaultManager(SecretManager):
         allow_insecure_http = bool(kwargs.get("allow_insecure_http", False))
         if raw_url.lower().startswith("http://") and not allow_insecure_http:
             raise SecretManagerError(
-                "Vault URL must use https:// (set allow_insecure_http=True only for local testing)"
+                "Vault URL must use https:// (set allow_insecure_http=True only for local testing)",
             )
 
         try:

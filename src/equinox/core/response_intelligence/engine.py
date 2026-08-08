@@ -75,7 +75,9 @@ class AnalysisEngine:
                         analyzers.append(obj())
                     except Exception:
                         logger.error(
-                            "Failed to instantiate analyzer %s", obj.__name__, exc_info=True
+                            "Failed to instantiate analyzer %s",
+                            obj.__name__,
+                            exc_info=True,
                         )
 
         return analyzers
@@ -92,12 +94,15 @@ class AnalysisEngine:
             analyzer_id = (analyzer.analyzer_id or "").strip()
             if not analyzer_id:
                 logger.warning(
-                    "Skipping analyzer with empty analyzer_id: %s", type(analyzer).__name__
+                    "Skipping analyzer with empty analyzer_id: %s",
+                    type(analyzer).__name__,
                 )
                 continue
             if analyzer_id in unique:
                 logger.warning(
-                    "Duplicate analyzer_id %r ignored (%s)", analyzer_id, type(analyzer).__name__
+                    "Duplicate analyzer_id %r ignored (%s)",
+                    analyzer_id,
+                    type(analyzer).__name__,
                 )
                 continue
             unique[analyzer_id] = analyzer
@@ -147,7 +152,7 @@ class AnalysisEngine:
                 results = analyzer.analyze(ctx)
                 if not isinstance(results, list):
                     raise TypeError(
-                        f"Analyzer returned {type(results).__name__}; expected list[Finding]"
+                        f"Analyzer returned {type(results).__name__}; expected list[Finding]",
                     )
                 for item in results:
                     if not isinstance(item, Finding):
@@ -155,13 +160,15 @@ class AnalysisEngine:
                 findings.extend(results)
             except Exception as exc:
                 logger.warning(
-                    "Analyzer %s raised and was skipped", analyzer.analyzer_id, exc_info=True
+                    "Analyzer %s raised and was skipped",
+                    analyzer.analyzer_id,
+                    exc_info=True,
                 )
                 findings.append(
                     self._failure_finding(
                         analyzer.analyzer_id,
                         f"Analyzer raised {type(exc).__name__}: {exc}",
-                    )
+                    ),
                 )
 
         findings.sort(
@@ -170,7 +177,7 @@ class AnalysisEngine:
                 finding.category.value,
                 finding.title.lower(),
                 finding.analyzer_id,
-            )
+            ),
         )
         return findings
 

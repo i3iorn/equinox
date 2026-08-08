@@ -67,7 +67,9 @@ class TestInputValidation:
         malicious_value = "value\r\nX-Injected: evil"
 
         request = Request(
-            method="GET", url="https://example.com", headers={"X-Custom": malicious_value}
+            method="GET",
+            url="https://example.com",
+            headers={"X-Custom": malicious_value},
         )
 
         with pytest.raises(ValidationError, match="CRLF"):

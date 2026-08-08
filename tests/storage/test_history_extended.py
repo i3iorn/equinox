@@ -89,7 +89,7 @@ class TestSaveHistoryEdgeCases:
                 "Authorization": "Bearer my-secret",
                 "X-Api-Key": "key-value",
                 "Content-Type": "application/json",
-            }
+            },
         )
         hid = mgr.save_history(req)
         row = mgr.get_history(hid)

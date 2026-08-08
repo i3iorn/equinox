@@ -72,7 +72,11 @@ class RequestSaveFlowMixin:
         snapshot = self._build_request_editor_snapshot()
 
         if not _is_valid_url(snapshot.url):
-            QMessageBox.warning(self._as_qwidget(), "Missing URL", "Please enter a URL before saving.")
+            QMessageBox.warning(
+                self._as_qwidget(),
+                "Missing URL",
+                "Please enter a URL before saving.",
+            )
             return False
 
         logger.debug(

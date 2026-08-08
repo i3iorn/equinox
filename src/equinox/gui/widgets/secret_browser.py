@@ -125,7 +125,7 @@ class SecretBrowserWidget(QWidget):
 
         self.secret_input = QLineEdit()
         self.secret_input.setPlaceholderText(
-            "Enter secret name, path, or ID (e.g., db-password or secret/data/db)"
+            "Enter secret name, path, or ID (e.g., db-password or secret/data/db)",
         )
         self.secret_input.returnPressed.connect(self._retrieve_secret)
         search_layout.addWidget(self.secret_input)
@@ -187,7 +187,11 @@ class SecretBrowserWidget(QWidget):
 
         # Create worker thread
         worker = SecretRetrievalWorker(
-            self.manager_type, self.config, self.enable_cache, self.cache_ttl, secret_name
+            self.manager_type,
+            self.config,
+            self.enable_cache,
+            self.cache_ttl,
+            secret_name,
         )
 
         self._retrieval_thread = QThread()

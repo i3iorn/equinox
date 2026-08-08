@@ -1,4 +1,5 @@
 """Scripts-tab UI builder helpers for RequestPanel."""
+
 from __future__ import annotations
 
 from typing import Any
@@ -82,10 +83,13 @@ def create_scripts_tab(panel: Any, cheat_text: str) -> QWidget:
     cheat_label.setWordWrap(True)
     cheat_label.setContentsMargins(8, 2, 8, 4)
     layout.addWidget(cheat_label)
+
     def _toggle_cheatsheet(checked: bool) -> None:
         cheat_label.setVisible(checked)
         cheat_toggle.setText(
-            "Hide available variables & modules" if checked else "Show available variables & modules",
+            "Hide available variables & modules"
+            if checked
+            else "Show available variables & modules",
         )
 
     cheat_toggle.toggled.connect(_toggle_cheatsheet)

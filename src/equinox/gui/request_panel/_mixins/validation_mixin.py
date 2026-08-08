@@ -1,4 +1,5 @@
 """Real-time validation helpers for request-panel editor fields."""
+
 from __future__ import annotations
 
 import json

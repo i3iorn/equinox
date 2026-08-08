@@ -101,7 +101,9 @@ class ApiSpecExportService:
         return {"name": f"Collection {collection_id}", "items": coll}
 
     def _export_collection_variants(
-        self, collection_id: int, coll: dict[str, Any]
+        self,
+        collection_id: int,
+        coll: dict[str, Any],
     ) -> dict[str, str]:
         variants: dict[str, str] = {}
         errors: list[str] = []
@@ -116,7 +118,8 @@ class ApiSpecExportService:
             variants["OpenAPI 3 (JSON)"] = json.dumps(oa, indent=2, ensure_ascii=False)
         except Exception as exc:
             self._logger.exception(
-                "spec_export.collection.openapi_failed collection_id=%s", collection_id
+                "spec_export.collection.openapi_failed collection_id=%s",
+                collection_id,
             )
             variants["OpenAPI 3 (JSON)"] = json.dumps(
                 self._fallback_openapi(coll, reqs),
@@ -130,7 +133,8 @@ class ApiSpecExportService:
             variants["Postman v2.1 (JSON)"] = json.dumps(pm, indent=2, ensure_ascii=False)
         except Exception as exc:
             self._logger.exception(
-                "spec_export.collection.postman_failed collection_id=%s", collection_id
+                "spec_export.collection.postman_failed collection_id=%s",
+                collection_id,
             )
             variants["Postman v2.1 (JSON)"] = json.dumps(
                 self._fallback_postman(coll, reqs),
@@ -184,7 +188,7 @@ class ApiSpecExportService:
                         "method": row.get("method") or "GET",
                         "url": self._request_url(row) or "",
                     },
-                }
+                },
             )
 
         return {

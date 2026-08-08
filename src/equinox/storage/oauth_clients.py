@@ -1,4 +1,5 @@
 """OAuth2 client management — named, reusable OAuth2 credentials."""
+
 from __future__ import annotations
 
 import logging
@@ -124,7 +125,10 @@ class OAuthClientManager:
         client_id = _require_str(client_id, "client_id", self.MAX_ID_LEN, required=False)
 
         raw_secret = _require_str(
-            client_secret, "client_secret", self.MAX_SECRET_LEN, required=False,
+            client_secret,
+            "client_secret",
+            self.MAX_SECRET_LEN,
+            required=False,
         )
         encrypted_secret = self._encrypt_client_secret(raw_secret)
 

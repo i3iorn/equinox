@@ -1,4 +1,5 @@
 """Capture-table helpers for ``RequestPanel``."""
+
 from __future__ import annotations
 
 from typing import cast

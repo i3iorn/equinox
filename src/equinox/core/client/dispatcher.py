@@ -3,6 +3,7 @@
 Owns the shared ``httpx.Client`` lifecycle, multipart file handling,
 SSL context construction, and response wrapping.
 """
+
 from __future__ import annotations
 
 import logging

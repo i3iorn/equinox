@@ -1,4 +1,5 @@
 """Context-menu usage-tracking helpers for VariablesPanel."""
+
 # Ignore [attr-defined] errors as this will be mixed into a QWidget subclass that has the necessary attributes.
 # mypy: disable-error-code="attr-defined"
 from __future__ import annotations

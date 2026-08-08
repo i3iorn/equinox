@@ -1,4 +1,5 @@
 """SQL filter construction and Python post-filters for history search."""
+
 from __future__ import annotations
 
 import logging
@@ -154,7 +155,8 @@ class _HistorySearcher:
 
         while len(result) < limit:
             batch = self._db.fetchall(
-                sql_template, tuple(params_list) + (batch_size, cursor_offset),
+                sql_template,
+                tuple(params_list) + (batch_size, cursor_offset),
             )
             if not batch:
                 break
@@ -166,7 +168,9 @@ class _HistorySearcher:
                 if compiled_regex and not self._matches_body_regex(decoded, compiled_regex):
                     continue
                 if parsed_jsonpath and not self._matches_jsonpath(
-                    decoded, parsed_jsonpath, jsonpath_value,
+                    decoded,
+                    parsed_jsonpath,
+                    jsonpath_value,
                 ):
                     continue
                 if header_name and not self._matches_header(decoded, header_name, header_val):
@@ -217,8 +221,7 @@ class _HistorySearcher:
         if query and isinstance(query, str):
             like = f"%{self._escape_like(query)}%"
             conditions.append(
-                f"(url LIKE ? {_LIKE_ESCAPE_CLAUSE}"
-                f" OR request_body LIKE ? {_LIKE_ESCAPE_CLAUSE})",
+                f"(url LIKE ? {_LIKE_ESCAPE_CLAUSE} OR request_body LIKE ? {_LIKE_ESCAPE_CLAUSE})",
             )
             params.extend([like, like])
 

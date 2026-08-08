@@ -41,7 +41,8 @@ def test_rotation_encrypts_plaintext_secret(tmp_path):
     rotate_all_secrets(db_path, new_password="NewMasterPassword123!")
     with sqlite3.connect(db_path) as conn:
         row = conn.execute(
-            "SELECT id, client_secret FROM oauth_clients WHERE id=?", (client_id,)
+            "SELECT id, client_secret FROM oauth_clients WHERE id=?",
+            (client_id,),
         ).fetchone()
         assert row is not None
         assert isinstance(row[1], str)
@@ -55,7 +56,8 @@ def test_rotation_keeps_enc_blobs_unchanged(tmp_path):
     rotate_all_secrets(db_path, new_password="FirstPass")
     with sqlite3.connect(db_path) as conn:
         row = conn.execute(
-            "SELECT id, client_secret FROM oauth_clients WHERE id=?", (client_id,)
+            "SELECT id, client_secret FROM oauth_clients WHERE id=?",
+            (client_id,),
         ).fetchone()
         assert row[1].startswith("enc:")
         first_enc = row[1]
@@ -63,7 +65,8 @@ def test_rotation_keeps_enc_blobs_unchanged(tmp_path):
     rotate_all_secrets(db_path, new_password="SecondPass")
     with sqlite3.connect(db_path) as conn:
         row = conn.execute(
-            "SELECT id, client_secret FROM oauth_clients WHERE id=?", (client_id,)
+            "SELECT id, client_secret FROM oauth_clients WHERE id=?",
+            (client_id,),
         ).fetchone()
         assert row[1] == first_enc
 

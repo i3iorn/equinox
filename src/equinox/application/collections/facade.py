@@ -98,7 +98,10 @@ class CollectionFacade:
         self._manager.move_request_to_folder(request_id, folder)
 
     def move_request_to_collection(
-        self, request_id: int, collection_id: int, folder: str | None
+        self,
+        request_id: int,
+        collection_id: int,
+        folder: str | None,
     ) -> None:
         self._manager.move_request_to_collection(request_id, collection_id, folder)
 

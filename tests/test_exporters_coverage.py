@@ -61,7 +61,7 @@ class TestOpenAPIBuildSecurityScheme:
 
     def test_apikey_scheme(self) -> None:
         scheme = OpenAPIExporter._build_security_scheme(
-            {"type": "apikey", "key": "X-API-Key", "in": "header"}
+            {"type": "apikey", "key": "X-API-Key", "in": "header"},
         )
         assert scheme["type"] == "apiKey"
         assert scheme["name"] == "X-API-Key"
@@ -77,7 +77,7 @@ class TestOpenAPIBuildSecurityScheme:
                 "type": "oauth2",
                 "auth_url": "https://auth.example.com",
                 "token_url": "https://token.example.com",
-            }
+            },
         )
         assert scheme["type"] == "oauth2"
         assert "flows" in scheme
@@ -182,7 +182,7 @@ class TestPostmanBuildAuth:
                 "type": "oauth2",
                 "grant_type": "authorization_code",
                 "token_url": "https://token.example.com",
-            }
+            },
         )
         assert result["type"] == "oauth2"
         items = {e["key"]: e["value"] for e in result["oauth2"]}

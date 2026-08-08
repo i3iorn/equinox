@@ -126,7 +126,7 @@ class TestV2Security:
         )
         payload = (
             base64.urlsafe_b64encode(
-                json.dumps({"sub": "u1", "exp": int(time.time()) + 600}).encode()
+                json.dumps({"sub": "u1", "exp": int(time.time()) + 600}).encode(),
             )
             .rstrip(b"=")
             .decode()
@@ -168,7 +168,7 @@ class TestV2ServerAndHints:
         values = [100, 105, 98, 110, 102, 99, 103, 107, 101, 104]
         stats = {"elapsed_values": json.dumps(values), "call_count": 10}
         findings = ResponseTimeAnomalyAnalyzer().analyze(
-            _make_ctx(endpoint_stats=stats, elapsed=0.5, body=b"{}")
+            _make_ctx(endpoint_stats=stats, elapsed=0.5, body=b"{}"),
         )
         assert len(findings) == 1
         assert findings[0].severity == Severity.WARNING

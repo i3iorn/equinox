@@ -68,7 +68,7 @@ class ServerFingerprintAnalyzer(Analyzer):
                 analyzer_id=self.analyzer_id,
                 recommendation="Avoid exposing detailed server fingerprint headers in production unless required.",
                 details=detected,
-            )
+            ),
         )
         return findings
 
@@ -151,7 +151,7 @@ class RateLimitDashboardAnalyzer(Analyzer):
                 analyzer_id=self.analyzer_id,
                 recommendation="Back off or retry later when near limit, and consider client-side throttling.",
                 details=details,
-            )
+            ),
         )
         return findings
 
@@ -208,7 +208,7 @@ class CachingBehaviorAnalyzer(Analyzer):
                 analyzer_id=self.analyzer_id,
                 recommendation="Set explicit Cache-Control directives and validators (ETag/Last-Modified) for predictable caching.",
                 details=details,
-            )
+            ),
         )
         return findings
 
@@ -253,7 +253,7 @@ class APIVersionDetectionAnalyzer(Analyzer):
                 analyzer_id=self.analyzer_id,
                 recommendation="Use one canonical API versioning strategy (path, header, or media type) across endpoints.",
                 details=versions,
-            )
+            ),
         )
         return findings
 
@@ -313,7 +313,7 @@ class ResponseTimeAnomalyAnalyzer(Analyzer):
                     analyzer_id=self.analyzer_id,
                     recommendation="Inspect recent backend dependencies and slow queries for this endpoint.",
                     details=details,
-                )
+                ),
             )
         else:
             findings.append(
@@ -325,7 +325,7 @@ class ResponseTimeAnomalyAnalyzer(Analyzer):
                     analyzer_id=self.analyzer_id,
                     recommendation="Track whether the improvement is sustained and capture what changed.",
                     details=details,
-                )
+                ),
             )
 
         return findings

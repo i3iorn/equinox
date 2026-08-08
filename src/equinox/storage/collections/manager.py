@@ -229,7 +229,8 @@ class CollectionManager(
 
         try:
             collection_id = self.db.insert(
-                "INSERT INTO collections (name, description) VALUES (?, ?)", (name, description)
+                "INSERT INTO collections (name, description) VALUES (?, ?)",
+                (name, description),
             )
             logger.info("Created collection %r with ID %d", name, collection_id)
             return collection_id
@@ -396,13 +397,16 @@ class CollectionManager(
             self.db.execute("DELETE FROM collections WHERE id = ?", (collection_id,))
             logger.warning(
                 f"Deleted collection '{collection['name']}' (ID: {collection_id}) "
-                f"and {request_count} request(s)"
+                f"and {request_count} request(s)",
             )
         except Exception as exc:
             raise StorageError(f"Failed to delete collection: {exc}")
 
     def save_request(
-        self, request: Request, collection_id: int | None = None, name: str | None = None
+        self,
+        request: Request,
+        collection_id: int | None = None,
+        name: str | None = None,
     ) -> int:
         """Save request to collection.
 
@@ -428,7 +432,10 @@ class CollectionManager(
         try:
             req_id = self.insert_request_row(request, coll_id, name_override=effective_name)
             logger.info(
-                "Saved request %r with ID %d to collection %s", effective_name, req_id, coll_id
+                "Saved request %r with ID %d to collection %s",
+                effective_name,
+                req_id,
+                coll_id,
             )
             return req_id
         except StorageError:

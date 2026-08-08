@@ -1,4 +1,5 @@
 """Security primitives for auth credential encryption and decryption."""
+
 from __future__ import annotations
 
 import logging

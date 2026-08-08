@@ -1,4 +1,5 @@
 """QMessageBox subclass with a built-in *Copy* button."""
+
 from __future__ import annotations
 
 import logging
@@ -45,7 +46,8 @@ class CopyableMessageBox(QMessageBox):
         # not "fall back to the visible message".
         self._copy_text = copy_text if copy_text is not None else text
         self._copy_btn: QPushButton = self.addButton(
-            self._COPY_LABEL, QMessageBox.ButtonRole.ActionRole,
+            self._COPY_LABEL,
+            QMessageBox.ButtonRole.ActionRole,
         )  # type: ignore[assignment]
 
         # Single reusable timer so repeated Copy clicks just restart the countdown.
@@ -101,7 +103,7 @@ class CopyableMessageBox(QMessageBox):
     # ── Convenience class methods (mirror QMessageBox API) ────────────
 
     @classmethod
-    def critical( # type: ignore[override]
+    def critical(  # type: ignore[override]
         cls,
         parent: QWidget | None,
         title: str,
@@ -112,7 +114,7 @@ class CopyableMessageBox(QMessageBox):
         return cls._show(QMessageBox.Icon.Critical, parent, title, text, copy_text)
 
     @classmethod
-    def warning( # type: ignore[override]
+    def warning(  # type: ignore[override]
         cls,
         parent: QWidget | None,
         title: str,
@@ -123,7 +125,7 @@ class CopyableMessageBox(QMessageBox):
         return cls._show(QMessageBox.Icon.Warning, parent, title, text, copy_text)
 
     @classmethod
-    def information( # type: ignore[override]
+    def information(  # type: ignore[override]
         cls,
         parent: QWidget | None,
         title: str,

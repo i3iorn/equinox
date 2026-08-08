@@ -9,7 +9,8 @@ any values the user has already entered for unchanged parameters.
 import logging
 import re
 from contextlib import contextmanager
-from typing import Iterator, Optional
+
+from collections.abc import Iterator
 
 from PyQt6.QtCore import QObject, Qt, pyqtSignal
 from PyQt6.QtWidgets import (
@@ -100,7 +101,7 @@ class PathParamsTable(QTableWidget):
 
     paramsChanged = pyqtSignal()
 
-    def __init__(self, parent: Optional[QWidget] = None) -> None:
+    def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(0, self._COL_COUNT, parent)
         self.setHorizontalHeaderLabels(["Parameter", "Value"])
         h_header = self.horizontalHeader()
@@ -181,7 +182,7 @@ class PathParamsTable(QTableWidget):
 
                 param_item = QTableWidgetItem(name)
                 param_item.setFlags(
-                    Qt.ItemFlag.ItemIsSelectable | Qt.ItemFlag.ItemIsEnabled
+                    Qt.ItemFlag.ItemIsSelectable | Qt.ItemFlag.ItemIsEnabled,
                 )  # read-only
                 self.setItem(row, self._COL_PARAM, param_item)
                 self.setItem(row, self._COL_VALUE, QTableWidgetItem(self._params.get(name, "")))

@@ -1,4 +1,5 @@
 """Environment management"""
+
 from __future__ import annotations
 
 import logging
@@ -161,7 +162,10 @@ class EnvironmentManager:
         return validated
 
     def create_environment(
-        self, name: str, variables: dict[str, str], description: str = "",
+        self,
+        name: str,
+        variables: dict[str, str],
+        description: str = "",
     ) -> int:
         """Create a new environment.
 
@@ -219,7 +223,9 @@ class EnvironmentManager:
         """
         row["variables"] = safe_json_loads(row.get("variables"), row_id=row.get("id"))
         secret_keys = safe_json_loads(
-            row.get("secret_keys") or "[]", default=[], row_id=row.get("id"),
+            row.get("secret_keys") or "[]",
+            default=[],
+            row_id=row.get("id"),
         )
         if not isinstance(secret_keys, list):
             logger.error("Failed to parse secret_keys for environment %s", row.get("id"))
@@ -435,4 +441,7 @@ class EnvironmentManager:
         if not variables:
             return text
 
-        return cast(str, VariableInterpolator.interpolate(text, variables, max_iterations=max_iterations))
+        return cast(
+            str,
+            VariableInterpolator.interpolate(text, variables, max_iterations=max_iterations),
+        )

@@ -1,4 +1,5 @@
 """Collections management panel"""
+
 import logging
 from typing import Any
 
@@ -39,7 +40,10 @@ class _NewRequestDialog(QDialog):
     METHODS = ["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"]
 
     def __init__(
-        self, parent: QWidget | None = None, title: str = "New Request", folder_hint: str = "",
+        self,
+        parent: QWidget | None = None,
+        title: str = "New Request",
+        folder_hint: str = "",
     ) -> None:
         super().__init__(parent)
         self.setWindowTitle(title)

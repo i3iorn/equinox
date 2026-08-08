@@ -99,7 +99,7 @@ def test_suggestions_to_findings_maps_to_hints_category():
             "suggested_value": "abc-123",
             "confidence": 0.9,
             "based_on": 4,
-        }
+        },
     ]
     findings = recommender.suggestions_to_findings(suggestions)
     assert len(findings) == 1

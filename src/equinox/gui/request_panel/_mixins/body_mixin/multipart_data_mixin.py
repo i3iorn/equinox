@@ -1,4 +1,5 @@
 """Multipart table data helpers for ``RequestPanel``."""
+
 from __future__ import annotations
 
 import logging

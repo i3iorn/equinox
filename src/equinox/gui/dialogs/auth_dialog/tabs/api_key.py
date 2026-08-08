@@ -5,6 +5,7 @@ from PyQt6.QtWidgets import QFormLayout
 from PyQt6.QtWidgets import QLineEdit
 from PyQt6.QtWidgets import QWidget
 
+
 class ApiKeyAuthTab(AuthDialogTab, QWidget):
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)

@@ -18,7 +18,7 @@ def test_secret_manager_config_store_round_trip(tmp_path: Path) -> None:
             },
             "enable_cache": True,
             "cache_ttl": 120,
-        }
+        },
     }
 
     store.save_all(payload)

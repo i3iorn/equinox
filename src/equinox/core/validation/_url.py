@@ -70,8 +70,7 @@ class _UrlValidator:
                 extra={"scheme": scheme, "allowed_schemes": sorted(cls.VALID_SCHEMES)},
             )
             raise ValidationError(
-                f"Invalid URL scheme '{scheme}'. "
-                f"Allowed: {', '.join(sorted(cls.VALID_SCHEMES))}"
+                f"Invalid URL scheme '{scheme}'. Allowed: {', '.join(sorted(cls.VALID_SCHEMES))}",
             )
 
         if not netloc:

@@ -1,4 +1,5 @@
 """Context menu rendering and ranking helpers for collections tree."""
+
 from __future__ import annotations
 
 import logging
@@ -51,6 +52,7 @@ class CollectionsPanelProtocol(Protocol):
     _col_id_for_item: Callable[[QTreeWidgetItem], int | None]
     _show_api_spec_for_request: Callable[[int], None]
 
+
 class _CollectionsContextMenuMixin(CollectionsPanelProtocol):
     """Behavior for collection-tree context menus and usage-based ranking."""
 
@@ -99,7 +101,10 @@ class _CollectionsContextMenuMixin(CollectionsPanelProtocol):
         return data
 
     def _build_collection_menu(
-        self, menu: QMenu, item: QTreeWidgetItem, data: dict[str, Any],
+        self,
+        menu: QMenu,
+        item: QTreeWidgetItem,
+        data: dict[str, Any],
     ) -> None:
         col_id = data.get("id")
         if not isinstance(col_id, int):
@@ -144,7 +149,10 @@ class _CollectionsContextMenuMixin(CollectionsPanelProtocol):
         self._add_ranked_context_actions(menu, "collections_collection", specs)
 
     def _add_collection_manage_actions(
-        self, menu: QMenu, col_id: int, item: QTreeWidgetItem,
+        self,
+        menu: QMenu,
+        col_id: int,
+        item: QTreeWidgetItem,
     ) -> None:
         specs: list[ContextAction] = []
 
@@ -153,7 +161,7 @@ class _CollectionsContextMenuMixin(CollectionsPanelProtocol):
                 (
                     "show_api_spec",
                     "Show API Spec...",
-                    lambda cid=col_id: self._show_api_spec_for_collection(cid), # type: ignore[misc]
+                    lambda cid=col_id: self._show_api_spec_for_collection(cid),  # type: ignore[misc]
                     False,
                 ),
             )
@@ -230,7 +238,11 @@ class _CollectionsContextMenuMixin(CollectionsPanelProtocol):
         self._add_ranked_context_actions(menu, "collections_folder", specs)
 
     def _add_folder_manage_actions(
-        self, menu: QMenu, col_id: int, folder_path: str, item: QTreeWidgetItem,
+        self,
+        menu: QMenu,
+        col_id: int,
+        folder_path: str,
+        item: QTreeWidgetItem,
     ) -> None:
         specs = [
             (
@@ -286,7 +298,7 @@ class _CollectionsContextMenuMixin(CollectionsPanelProtocol):
                 (
                     "show_api_spec",
                     "Show API Spec...",
-                    lambda r=req_id: self._show_api_spec_for_request(r), # type: ignore[misc]
+                    lambda r=req_id: self._show_api_spec_for_request(r),  # type: ignore[misc]
                     False,
                 ),
             )
@@ -350,7 +362,8 @@ class _CollectionsContextMenuMixin(CollectionsPanelProtocol):
             return 0
         try:
             return cast(
-                int, tracker.get_count(
+                int,
+                tracker.get_count(
                     category="context_menu",
                     context=context,
                     element_id=f"action.{action_id}",
@@ -358,7 +371,10 @@ class _CollectionsContextMenuMixin(CollectionsPanelProtocol):
             )
         except Exception:
             logger.exception(
-                "Failed to get context action usage for %s/%s", context, action_id, exc_info=True,
+                "Failed to get context action usage for %s/%s",
+                context,
+                action_id,
+                exc_info=True,
             )
             return 0
 
@@ -374,17 +390,25 @@ class _CollectionsContextMenuMixin(CollectionsPanelProtocol):
             )
         except Exception:
             logger.exception(
-                "Failed to record context action usage for %s/%s", context, action_id, exc_info=True,
+                "Failed to record context action usage for %s/%s",
+                context,
+                action_id,
+                exc_info=True,
             )
 
     def _run_context_action(
-        self, context: str, action_id: str, callback: Callable[[], None],
+        self,
+        context: str,
+        action_id: str,
+        callback: Callable[[], None],
     ) -> None:
         self._record_context_action_usage(context, action_id)
         callback()
 
     def _ordered_context_actions(
-        self, context: str, action_specs: list[ContextAction],
+        self,
+        context: str,
+        action_specs: list[ContextAction],
     ) -> list[ContextAction]:
         """Sort non-destructive actions by usage while keeping destructive actions last."""
         safe: list[tuple[int, int, ContextAction]] = []
@@ -400,11 +424,15 @@ class _CollectionsContextMenuMixin(CollectionsPanelProtocol):
         return [row[2] for row in safe] + [row[1] for row in destructive]
 
     def _add_ranked_context_actions(
-        self, menu: QMenu, context: str, action_specs: list[ContextAction],
+        self,
+        menu: QMenu,
+        context: str,
+        action_specs: list[ContextAction],
     ) -> None:
         added_destructive_separator = False
         for action_id, label, callback, is_destructive in self._ordered_context_actions(
-            context, action_specs,
+            context,
+            action_specs,
         ):
             if is_destructive and not added_destructive_separator:
                 menu.addSeparator()
@@ -412,7 +440,9 @@ class _CollectionsContextMenuMixin(CollectionsPanelProtocol):
             action = QAction(label, cast(QWidget, self))
             action.triggered.connect(
                 lambda _checked=False, aid=action_id, cb=callback: self._run_context_action(
-                    context, aid, cb,
+                    context,
+                    aid,
+                    cb,
                 ),
             )
             menu.addAction(action)

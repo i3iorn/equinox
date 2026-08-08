@@ -207,5 +207,5 @@ class SecretManager(ABC):
         """
         if len(value) > _MAX_SECRET_LENGTH:
             raise SecretManagerError(
-                f"Secret '{_safe_secret_ref(secret_name)}' exceeds maximum length ({_MAX_SECRET_LENGTH})"
+                f"Secret '{_safe_secret_ref(secret_name)}' exceeds maximum length ({_MAX_SECRET_LENGTH})",
             )

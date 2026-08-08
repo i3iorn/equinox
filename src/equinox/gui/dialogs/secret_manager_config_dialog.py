@@ -189,7 +189,7 @@ class SecretManagerConfigDialog(QDialog):
         allow_insecure_check = QCheckBox("Allow insecure HTTP for local testing only")
         allow_insecure_check.setChecked(False)
         allow_insecure_check.setToolTip(
-            "Only enable this when connecting to a trusted local/dev Vault instance over HTTP."
+            "Only enable this when connecting to a trusted local/dev Vault instance over HTTP.",
         )
         self.config_layout.addRow("HTTP Override:", allow_insecure_check)
         self._config_widgets["allow_insecure_http"] = [allow_insecure_check]
@@ -221,7 +221,7 @@ class SecretManagerConfigDialog(QDialog):
         if url.lower().startswith("http://") and allow_insecure:
             label.setText(
                 "Warning: insecure Vault HTTP override is enabled. Tokens and secrets may be exposed "
-                "to interception. Use only for trusted local development."
+                "to interception. Use only for trusted local development.",
             )
             label.setVisible(True)
             return
@@ -229,7 +229,7 @@ class SecretManagerConfigDialog(QDialog):
         if url.lower().startswith("http://"):
             label.setText(
                 "Vault secret manager connections require HTTPS by default. This HTTP URL will be rejected "
-                "unless you explicitly enable the local-testing override."
+                "unless you explicitly enable the local-testing override.",
             )
             label.setVisible(True)
             return
@@ -237,7 +237,7 @@ class SecretManagerConfigDialog(QDialog):
         if allow_insecure:
             label.setText(
                 "Warning: insecure Vault HTTP override is enabled but not currently needed because the URL "
-                "uses HTTPS. Consider disabling the override."
+                "uses HTTPS. Consider disabling the override.",
             )
             label.setVisible(True)
             return
@@ -246,7 +246,10 @@ class SecretManagerConfigDialog(QDialog):
         label.setVisible(False)
 
     def _confirm_insecure_vault_http(
-        self, manager_type: str, config: dict[str, Any], action: str
+        self,
+        manager_type: str,
+        config: dict[str, Any],
+        action: str,
     ) -> bool:
         """Warn before testing or saving an insecure Vault HTTP configuration."""
         if manager_type not in self._VAULT_MANAGER_TYPES:
@@ -278,7 +281,7 @@ class SecretManagerConfigDialog(QDialog):
         info_label = QLabel(
             "Ensure Bitwarden CLI is installed and you are logged in:\n"
             "  bw login your-email@example.com\n"
-            "  bw unlock your-password"
+            "  bw unlock your-password",
         )
         self.config_layout.addRow("", info_label)
 

@@ -195,7 +195,7 @@ def _init_qt_application(app_version: str) -> QApplication:
         Configured QApplication instance
     """
     QApplication.setHighDpiScaleFactorRoundingPolicy(
-        Qt.HighDpiScaleFactorRoundingPolicy.PassThrough
+        Qt.HighDpiScaleFactorRoundingPolicy.PassThrough,
     )
     app = QApplication(sys.argv)
     app.setApplicationName("Equinox")

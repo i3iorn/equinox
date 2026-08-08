@@ -4,6 +4,7 @@ This module provides a deterministic, auditable, and security‑focused
 implementation of assertion table management for the GUI. All functions
 follow zero‑trust principles and avoid hidden side effects.
 """
+
 from __future__ import annotations
 
 from typing import Any
@@ -49,6 +50,7 @@ BUTTON_REMOVE_WIDTH: int = 80
 # ─────────────────────────────────────────────────────────────────────────────
 # Assertions Mixin
 # ─────────────────────────────────────────────────────────────────────────────
+
 
 class AssertionsMixin:
     """Create, populate, and evaluate response assertions.

@@ -108,7 +108,7 @@ class CookieFlagsAnalyzer(Analyzer):
 
                 if problems:
                     issues.append(
-                        {"cookie": name, "problems": problems, "severity": severity.value}
+                        {"cookie": name, "problems": problems, "severity": severity.value},
                     )
                     if _SEVERITY_RANK[severity] > _SEVERITY_RANK[highest]:
                         highest = severity
@@ -123,6 +123,6 @@ class CookieFlagsAnalyzer(Analyzer):
                     analyzer_id=self.analyzer_id,
                     recommendation="Set Secure, HttpOnly, and SameSite=Strict or Lax for all session cookies.",
                     details={"cookies": issues},
-                )
+                ),
             )
         return findings

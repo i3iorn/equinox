@@ -275,7 +275,9 @@ class TestScopePreservedAcrossRefreshes:
 
         # First call: client_credentials returns a refresh_token
         mock_client.post.return_value = _mock_token_response(
-            access_token="tok1", expires_in=1, refresh_token="rt1"
+            access_token="tok1",
+            expires_in=1,
+            refresh_token="rt1",
         )
 
         auth = OAuth2Auth(
@@ -294,7 +296,9 @@ class TestScopePreservedAcrossRefreshes:
         auth.expires_at = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(seconds=60)
 
         mock_client.post.return_value = _mock_token_response(
-            access_token="tok2", expires_in=3600, refresh_token="rt2"
+            access_token="tok2",
+            expires_in=3600,
+            refresh_token="rt2",
         )
 
         auth.apply(Mock(), {})

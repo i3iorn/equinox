@@ -2,6 +2,7 @@
 Qt UI layer for the search bar.
 Depends on search.core but core does NOT depend on Qt.
 """
+
 from __future__ import annotations
 
 import logging
@@ -43,6 +44,7 @@ logger = logging.getLogger(__name__)
 # Qt Runnable Wrapper
 # ─────────────────────────────────────────────────────────────────────
 
+
 class _SearchSignals(QObject):
     result = pyqtSignal(int, object)
 
@@ -62,6 +64,7 @@ class _SearchRunnable(QRunnable):
 # ─────────────────────────────────────────────────────────────────────
 # SearchBar UI
 # ─────────────────────────────────────────────────────────────────────
+
 
 class SearchBar(QWidget):
     """Qt search bar widget wrapping the pure search engine."""
@@ -156,13 +159,13 @@ class SearchBar(QWidget):
         layout.addLayout(row)
         layout.addWidget(self._jp_label)
 
-    def _make_button(self, text: str, slot: Callable) -> QToolButton: # type: ignore[type-arg]
+    def _make_button(self, text: str, slot: Callable) -> QToolButton:  # type: ignore[type-arg]
         btn = QToolButton()
         btn.setText(text)
         btn.clicked.connect(slot)
         return btn
 
-    def _make_toggle(self, text: str, slot: Callable) -> QToolButton: # type: ignore[type-arg]
+    def _make_toggle(self, text: str, slot: Callable) -> QToolButton:  # type: ignore[type-arg]
         btn = QToolButton()
         btn.setText(text)
         btn.setCheckable(True)
@@ -244,7 +247,7 @@ class SearchBar(QWidget):
         runnable.signals.result.connect(self._on_result)
 
         if len(cfg.doc_text) >= ASYNC_MIN_DOC_CHARS:
-            self._thread_pool.start(runnable) # type: ignore[union-attr]
+            self._thread_pool.start(runnable)  # type: ignore[union-attr]
         else:
             runnable.run()
 
@@ -260,14 +263,12 @@ class SearchBar(QWidget):
         self._clear_state()
         self._match_label.setText(STATUS_CANCELLED)
 
-    def _on_result(self, job_id: int, result) -> None: # type: ignore[no-untyped-def]
+    def _on_result(self, job_id: int, result) -> None:  # type: ignore[no-untyped-def]
         if job_id != self._current_job_id:
             return
 
         self._offsets = result.offsets
-        self._matches = [
-            self._target.toPlainText()[s:e] for s, e in self._offsets
-        ]
+        self._matches = [self._target.toPlainText()[s:e] for s, e in self._offsets]
         self._current_idx = 0 if self._offsets else -1
 
         self._update_labels(result)
@@ -277,7 +278,7 @@ class SearchBar(QWidget):
     # UI Updates
     # ────────────────────────────────────────────────────────────────
 
-    def _update_labels(self, result) -> None: # type: ignore[no-untyped-def]
+    def _update_labels(self, result) -> None:  # type: ignore[no-untyped-def]
         if result.preview.startswith("⚠"):
             self._match_label.setText("expression error")
         elif result.preview == "invalid regex":

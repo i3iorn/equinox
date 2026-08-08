@@ -1,4 +1,5 @@
 """HistoryManager — public orchestrator for request/response history."""
+
 from __future__ import annotations
 
 import logging

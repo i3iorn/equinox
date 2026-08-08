@@ -79,7 +79,12 @@ def test_toggle_word_wrap(panel):
 def test_download_body(panel):
     req = Request(method="GET", url="http://test.com")
     resp = Response(
-        status_code=200, reason="OK", headers={}, body=b"save me", request=req, elapsed=0.1
+        status_code=200,
+        reason="OK",
+        headers={},
+        body=b"save me",
+        request=req,
+        elapsed=0.1,
     )
     panel.current_response = resp
     panel.body_text.setPlainText("save me")
@@ -136,5 +141,7 @@ def test_diff_with_history_empty(panel):
         with patch("equinox.gui.response_panel.actions_mixin.QMessageBox.information") as mock_info:
             panel._diff_with_history()
             mock_info.assert_called_with(
-                panel, "Diff vs. History", "No matching history entries found for this request."
+                panel,
+                "Diff vs. History",
+                "No matching history entries found for this request.",
             )

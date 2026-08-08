@@ -1,4 +1,5 @@
 """Coverage-boosting tests for GUI widgets."""
+
 from PyQt6.QtCore import QCoreApplication
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QKeyEvent
@@ -288,7 +289,10 @@ class TestJsonBodyEditor:
         ed = JsonBodyEditor()
         ed.setPlainText("")
         ev = QKeyEvent(
-            QKeyEvent.Type.KeyPress, Qt.Key.Key_BraceLeft, Qt.KeyboardModifier.NoModifier, "{",
+            QKeyEvent.Type.KeyPress,
+            Qt.Key.Key_BraceLeft,
+            Qt.KeyboardModifier.NoModifier,
+            "{",
         )
         ed.keyPressEvent(ev)
         text = ed.toPlainText()

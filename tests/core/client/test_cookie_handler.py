@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional, cast
+from typing import Any, cast
 
 from equinox.core.client.cookie_handler import CookieHandler
 from equinox.core.request import Request, Response
@@ -8,33 +8,34 @@ from equinox.core.request import Request, Response
 
 class _ManagerWithRecords:
     def __init__(self) -> None:
-        self.calls: List[tuple] = []
+        self.calls: list[tuple] = []
 
-    def to_httpx_cookies(self) -> Dict[str, str]:
+    def to_httpx_cookies(self) -> dict[str, str]:
         return {"session": "abc"}
 
-    def to_httpx_cookie_records(self) -> List[Dict[str, str]]:
+    def to_httpx_cookie_records(self) -> list[dict[str, str]]:
         return [{"name": "session", "value": "abc", "domain": "example.com", "path": "/"}]
 
-    def update_from_set_cookie_headers(self, headers: List[str], url: str) -> None:
+    def update_from_set_cookie_headers(self, headers: list[str], url: str) -> None:
         self.calls.append(("repeat", headers, url))
 
-    def update_from_response(self, headers: Dict[str, str], url: str) -> None:
+    def update_from_response(self, headers: dict[str, str], url: str) -> None:
         self.calls.append(("single", headers, url))
 
 
 class _ManagerWithoutRecords:
-    def to_httpx_cookies(self) -> Dict[str, str]:
+    def to_httpx_cookies(self) -> dict[str, str]:
         return {"token": "xyz"}
 
 
 class _ManagerThatFails(_ManagerWithRecords):
-    def update_from_response(self, headers: Dict[str, str], url: str) -> None:
+    def update_from_response(self, headers: dict[str, str], url: str) -> None:
         raise RuntimeError("cookie parse failed")
 
 
 def _make_response(
-    headers: Dict[str, str], set_cookie_headers: Optional[List[str]] = None
+    headers: dict[str, str],
+    set_cookie_headers: list[str] | None = None,
 ) -> Response:
     return Response(
         status_code=200,

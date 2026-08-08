@@ -14,7 +14,7 @@ from .parsing import _parse_url
 logger = logging.getLogger(__name__)
 
 _UUID_RE = re.compile(
-    r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}" r"-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
+    r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}" r"-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
 )
 _NUMERIC_RE = re.compile(r"^\d+$")
 _HEX_RE = re.compile(r"^[0-9a-fA-F]{8,}$")

@@ -1,4 +1,5 @@
 """Frameless window, resize, cursor, and zoom/theme mixin for MainWindow."""
+
 # mypy: disable-error-code=attr-defined
 from __future__ import annotations
 

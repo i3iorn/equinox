@@ -1,7 +1,7 @@
 """Extended tests for core HTTP client functionality."""
 
 import threading
-from typing import Any, List, cast
+from typing import Any, cast
 
 import pytest
 
@@ -163,7 +163,7 @@ class TestHTTPClientValidation:
 
         direct = client._resolve_content_type({"Content-Type": "application/json"})
         fallback = client._resolve_content_type(
-            cast(dict[str, Any], _HeaderMapping({"content-type": "text/plain"}))
+            cast(dict[str, Any], _HeaderMapping({"content-type": "text/plain"})),
         )
 
         assert direct == "application/json"
@@ -348,12 +348,14 @@ class TestHTTPClientBody:
 
     def test_multipart_body(self):
         """Test multipart form data."""
-        multipart_data: List[MultipartField] = [
+        multipart_data: list[MultipartField] = [
             MultipartField(key="field1", type="text", value="value1"),
             MultipartField(key="file", type="file", value="/path/to/file.txt"),
         ]
         req = Request(
-            method="POST", url="https://example.com/upload", multipart_data=multipart_data
+            method="POST",
+            url="https://example.com/upload",
+            multipart_data=multipart_data,
         )
         assert req.multipart_data == multipart_data
 

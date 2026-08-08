@@ -1,4 +1,5 @@
 """Session variables section for VariablesPanel."""
+
 from __future__ import annotations
 
 import logging
@@ -419,7 +420,9 @@ class _SessionVarsMixin:
             menu.addAction(
                 label,
                 lambda aid=action_id, cb=callback: self._run_context_action(
-                    "variables_session", aid, cb,
+                    "variables_session",
+                    aid,
+                    cb,
                 ),
             )
         viewport = self._session_table.viewport()

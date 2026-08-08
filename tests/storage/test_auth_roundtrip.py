@@ -65,7 +65,7 @@ def test_folder_auth_is_used_for_effective_auth_resolution(tmp_path) -> None:
             name="folder request",
             folder="team",
             collection_id=collection_id,
-        )
+        ),
     )
     request = mgr.get_request(request_id)
     assert request is not None

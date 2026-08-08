@@ -3,6 +3,7 @@
 Phase 2 introduces the request-service seam here without importing Qt.
 Phase 5 adds the send orchestration service (``prepare_send``).
 """
+
 from ._assembly import detect_body_type
 from .execution import prepare_send
 from .history import RequestHistoryService

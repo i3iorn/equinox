@@ -2,6 +2,7 @@
 
 This module keeps high-level orchestration only.
 """
+
 from __future__ import annotations
 
 import json
@@ -117,7 +118,6 @@ class MainWindow(
         self._install_navigation_shortcuts()
         self._restore_layout()
         QTimer.singleShot(0, self._maybe_run_setup_wizard)
-
 
     def _init_usage_tracking(self) -> None:
         """Attach lightweight usage tracking to menus, tabs, and tracked buttons."""
@@ -318,7 +318,8 @@ class MainWindow(
             return {str(item) for item in raw}
         except Exception:
             logger.exception(
-                "Invalid disabled-analyzers setting, defaulting to empty set", exc_info=True,
+                "Invalid disabled-analyzers setting, defaulting to empty set",
+                exc_info=True,
             )
             return set()
 

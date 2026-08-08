@@ -99,7 +99,7 @@ class TestCollectionFacadeReorder:
             fetchone_values=[
                 {"collection_id": 10, "folder": "A"},  # target
                 None,  # dragged → not found
-            ]
+            ],
         )
         facade.reorder_request_before_target(dragged_id=99, target_id=10)
         manager.reorder_requests.assert_not_called()

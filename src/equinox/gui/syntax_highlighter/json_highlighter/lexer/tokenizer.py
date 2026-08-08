@@ -34,7 +34,10 @@ class JsonLexer:
         while index < length:
             if state == State.STRING:
                 index, tok, state, string_opened = self._lex_string(
-                    text, index, string_start, string_opened,
+                    text,
+                    index,
+                    string_start,
+                    string_opened,
                 )
                 yield tok
                 if state == State.STRING and index >= length:
@@ -50,7 +53,11 @@ class JsonLexer:
                 continue
 
             index, state, normal_tok, string_opened, string_start = self._lex_normal(
-                text, index, state, string_opened, string_start,
+                text,
+                index,
+                state,
+                string_opened,
+                string_start,
             )
             if normal_tok is not None:
                 yield normal_tok
@@ -58,7 +65,12 @@ class JsonLexer:
         return state
 
     def _lex_normal(
-        self, text: str, index: int, state: State, opened: bool, start: int,
+        self,
+        text: str,
+        index: int,
+        state: State,
+        opened: bool,
+        start: int,
     ) -> tuple[int, State, Token | None, bool, int]:
         ch = text[index]
 
@@ -94,7 +106,11 @@ class JsonLexer:
         return index + 1, state, Token("ERROR", index, index + 1, ch), opened, start
 
     def _lex_string(
-        self, text: str, index: int, start: int, opened: bool,
+        self,
+        text: str,
+        index: int,
+        start: int,
+        opened: bool,
     ) -> tuple[int, Token, State, bool]:
         length = len(text)
         while index < length:

@@ -55,7 +55,7 @@ class InsomniaExporter(_BaseCollectionExporter):
                 "environment": {},
                 "environmentPropertyOrder": None,
                 "metaSortKey": -1,
-            }
+            },
         )
 
         return {

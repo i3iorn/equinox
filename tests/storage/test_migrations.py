@@ -95,7 +95,7 @@ class TestMigrationRunner:
             tables = {
                 row[0]
                 for row in conn.execute(
-                    "SELECT name FROM sqlite_master WHERE type='table'"
+                    "SELECT name FROM sqlite_master WHERE type='table'",
                 ).fetchall()
             }
         expected = {
@@ -267,7 +267,7 @@ class TestMigrationIntegrationWithDatabase:
 
             with db.get_connection() as verify_conn:
                 row = verify_conn.execute(
-                    "SELECT method, url, status_code, request_correlation_id FROM history"
+                    "SELECT method, url, status_code, request_correlation_id FROM history",
                 ).fetchone()
                 assert row is not None
                 assert row["method"] == "GET"

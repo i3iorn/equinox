@@ -52,7 +52,7 @@ class AddVariableGroupDialog(QDialog):
         layout.addWidget(QLabel("<i>Lower priority number = higher precedence</i>"))
 
         buttons = QDialogButtonBox(
-            QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
+            QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel,
         )
         ok_btn = buttons.button(QDialogButtonBox.StandardButton.Ok)
         if ok_btn:

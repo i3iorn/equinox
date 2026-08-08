@@ -67,7 +67,11 @@ def temp_db(tmp_path):
 
 
 def _mock_response(
-    status=200, body=b'{"ok":true}', method="GET", url="https://example.com", headers=None
+    status=200,
+    body=b'{"ok":true}',
+    method="GET",
+    url="https://example.com",
+    headers=None,
 ):
     req = Request(method=method, url=url)
     return Response(
@@ -256,7 +260,7 @@ class TestOAuth2Coverage:
                 "access_token": "stored-tok",
                 "refresh_token": "stored-rt",
                 "expires_at": "2030-01-01T00:00:00",
-            }
+            },
         )
         auth = OAuth2Auth(
             client_id="c",
@@ -441,7 +445,8 @@ class TestOpenAPICoverage:
     @pytest.fixture
     def importer(self, db):
         return __import__(
-            "equinox.importers.openapi", fromlist=["OpenAPIImporter"]
+            "equinox.importers.openapi",
+            fromlist=["OpenAPIImporter"],
         ).OpenAPIImporter(CollectionManager(db))
 
     def test_validate_file_not_found(self, importer, tmp_path):
@@ -546,7 +551,7 @@ class TestOpenAPICoverage:
 
         assert (
             OpenAPIImporter._resolve_schema_type(
-                {"oneOf": [{"type": "string"}, {"type": "integer"}]}
+                {"oneOf": [{"type": "string"}, {"type": "integer"}]},
             )
             == "string"
         )
@@ -659,7 +664,7 @@ class TestOpenAPICoverage:
                             {"name": "q", "in": "query", "schema": {"type": "string"}},
                             {"name": "X-Trace", "in": "header", "schema": {"type": "string"}},
                         ],
-                    }
+                    },
                 },
             },
         }

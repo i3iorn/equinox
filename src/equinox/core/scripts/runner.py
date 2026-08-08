@@ -53,9 +53,9 @@ def _subprocess_exec_target(
         globs: dict[str, Any] = {"__builtins__": get_safe_builtins()}
         locs: dict[str, Any] = {"env": dict(session_vars)}
         locs.update(extra_locals)
-        exec(compile(source, filename, "exec"), globs, locs)  # noqa: S102
+        exec(compile(source, filename, "exec"), globs, locs)
         q.put(("ok", locs.get("env", {})))
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         q.put(("error", str(exc)))
 
 
@@ -75,7 +75,7 @@ def _terminate_process(p: multiprocessing.Process | None) -> None:
             # Escalate to SIGKILL / TerminateProcess on Windows
             p.kill()
             p.join(timeout=1.0)
-    except Exception:  # noqa: BLE001
+    except Exception:
         pass
 
 
@@ -84,7 +84,7 @@ def _close_queue(q: multiprocessing.Queue[tuple[str, Any]]) -> None:
     try:
         q.close()
         q.join_thread()
-    except Exception:  # noqa: BLE001
+    except Exception:
         pass
 
 
@@ -149,13 +149,13 @@ class ScriptRunner:
 
         if len(script) > cls.MAX_SOURCE_LENGTH:
             return ScriptResult(
-                error=f"Script too long ({len(script)} chars, max {cls.MAX_SOURCE_LENGTH})"
+                error=f"Script too long ({len(script)} chars, max {cls.MAX_SOURCE_LENGTH})",
             )
 
         try:
             tree = _validate_ast(script, filename)
             compile(tree, filename, "exec")
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             return ScriptResult(error=str(exc))
 
         start_time = time.time()
@@ -165,7 +165,8 @@ class ScriptRunner:
             p: multiprocessing.Process | None = None
         except Exception as e:
             return ScriptResult(
-                error=f"Failed to start script execution: {e}", duration=time.time() - start_time
+                error=f"Failed to start script execution: {e}",
+                duration=time.time() - start_time,
             )
 
         try:
@@ -178,7 +179,8 @@ class ScriptRunner:
         except Exception as e:
             _close_queue(q)
             return ScriptResult(
-                error=f"Failed to start script execution: {e}", duration=time.time() - start_time
+                error=f"Failed to start script execution: {e}",
+                duration=time.time() - start_time,
             )
 
         try:
@@ -224,7 +226,7 @@ class ScriptRunner:
                 entry_size = len(k.encode("utf-8")) + len(sv.encode("utf-8"))
                 if total_bytes + entry_size > cls.MAX_OUTPUT_TOTAL_BYTES:
                     raise ValueError(
-                        f"Total environment size too large (max {cls.MAX_OUTPUT_TOTAL_BYTES} bytes)"
+                        f"Total environment size too large (max {cls.MAX_OUTPUT_TOTAL_BYTES} bytes)",
                     )
 
                 changed[k] = sv

@@ -88,8 +88,7 @@ def get_or_create_raw_key(key_path: Path | None = None) -> bytes:
                 len(key),
             )
             raise RuntimeError(
-                f"Corrupt encryption key at {key_path} "
-                f"(expected {KEY_SIZE} bytes, got {len(key)})"
+                f"Corrupt encryption key at {key_path} (expected {KEY_SIZE} bytes, got {len(key)})",
             )
         logger.debug("Encryption key loaded successfully (%d bytes)", KEY_SIZE)
         return key

@@ -56,7 +56,9 @@ class OAuth2TokenResponseDialog(QDialog):
         view = QTextEdit()
         view.setReadOnly(True)
         view.setFont(get_mono_font())
-        view.setPlainText("\n".join(f"{self._safe_str(k)}: {self._safe_str(v)}" for k, v in headers.items()))
+        view.setPlainText(
+            "\n".join(f"{self._safe_str(k)}: {self._safe_str(v)}" for k, v in headers.items()),
+        )
         return view
 
     def _build_body_view(self) -> QTextEdit:

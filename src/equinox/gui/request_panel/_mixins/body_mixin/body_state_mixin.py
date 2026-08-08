@@ -1,4 +1,5 @@
 """Body-type switching and request-tab badge helpers for ``RequestPanel``."""
+
 from __future__ import annotations
 
 import logging
@@ -85,8 +86,14 @@ class BodyStateMixin:
         query_param_count = len(self.params_table.get_all_rows())
         path_param_count = self.path_params_table.rowCount()
         total_params = query_param_count + path_param_count
-        self._set_tab_text_by_base_label("Headers", f"Headers ({header_count})" if header_count else "Headers")
-        self._set_tab_text_by_base_label("Params", f"Params ({total_params})" if total_params else "Params")
+        self._set_tab_text_by_base_label(
+            "Headers",
+            f"Headers ({header_count})" if header_count else "Headers",
+        )
+        self._set_tab_text_by_base_label(
+            "Params",
+            f"Params ({total_params})" if total_params else "Params",
+        )
 
     def _update_body_tab_label(self: Any) -> None:
         """Refresh the Body tab badge for the selected body mode."""

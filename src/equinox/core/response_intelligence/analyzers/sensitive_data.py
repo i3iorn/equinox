@@ -84,7 +84,7 @@ class SensitiveDataCachingAnalyzer(Analyzer):
         severity = Severity.WARNING
         if "public" in cache_control:
             issues.append(
-                "Cache-Control includes 'public' for a response that appears to include sensitive data."
+                "Cache-Control includes 'public' for a response that appears to include sensitive data.",
             )
             severity = Severity.CRITICAL
         if "no-store" not in cache_control:
@@ -108,6 +108,6 @@ class SensitiveDataCachingAnalyzer(Analyzer):
                     "cache_control": cache_control,
                     "pragma": pragma,
                 },
-            )
+            ),
         )
         return findings

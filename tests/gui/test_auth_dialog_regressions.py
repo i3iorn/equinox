@@ -4,6 +4,7 @@ Each test here covers a defect that was silent in the GUI: the dialogs still
 opened, but credentials were dropped, never persisted, or the form stayed
 disabled.  Unit coverage existed for the storage layer, so nothing failed.
 """
+
 from unittest.mock import patch
 
 import pytest
@@ -461,8 +462,7 @@ class TestOAuthTestResponseDialog:
         dialog._last_test_response = {"access_token": "secret", "expires_in": 3600}
 
         with patch(
-            "equinox.gui.dialogs.auth_dialog.oauth2.response_dialog"
-            ".OAuth2TokenResponseDialog.exec",
+            "equinox.gui.dialogs.auth_dialog.oauth2.response_dialog.OAuth2TokenResponseDialog.exec",
         ) as shown:
             dialog._view_test_response()
 

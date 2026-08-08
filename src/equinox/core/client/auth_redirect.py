@@ -2,6 +2,7 @@
 
 Internal module — consumed by :mod:`equinox.core.client.dispatcher`.
 """
+
 from __future__ import annotations
 
 import logging
@@ -37,7 +38,7 @@ class _RedirectSafeAuth(httpx.Auth):  # type: ignore[misc]
     def __init__(self, auth_headers: dict[str, str]) -> None:
         if not auth_headers:
             raise ValueError(
-                "auth_headers required for redirect-safe auth " "(must contain at least one header)",
+                "auth_headers required for redirect-safe auth (must contain at least one header)",
             )
         # Defensive copy prevents external modification of stored headers
         self._auth_headers = dict(auth_headers)

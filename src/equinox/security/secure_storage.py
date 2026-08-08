@@ -1,4 +1,5 @@
 """Secure credential storage using encryption (refactored, single-module)"""
+
 from __future__ import annotations
 
 import base64

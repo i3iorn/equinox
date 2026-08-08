@@ -1,4 +1,5 @@
 """History panel"""
+
 from __future__ import annotations
 
 import logging
@@ -562,7 +563,9 @@ class HistoryPanel(QWidget):
                 action.setToolTip("Load into editor for modification before sending")
             action.triggered.connect(
                 lambda _checked=False, aid=action_id, cb=callback: self._run_context_action(
-                    "history_item", aid, cb,
+                    "history_item",
+                    aid,
+                    cb,
                 ),
             )
             menu.addAction(action)
@@ -578,14 +581,17 @@ class HistoryPanel(QWidget):
         try:
             return int(
                 tracker.get_count(
-                category="context_menu",
-                context=context,
-                element_id=f"action.{action_id}",
+                    category="context_menu",
+                    context=context,
+                    element_id=f"action.{action_id}",
                 ),
             )
         except Exception:
             logger.exception(
-                "Failed to get context action usage for %s/%s", context, action_id, exc_info=True,
+                "Failed to get context action usage for %s/%s",
+                context,
+                action_id,
+                exc_info=True,
             )
             return 0
 
@@ -601,17 +607,25 @@ class HistoryPanel(QWidget):
             )
         except Exception:
             logger.exception(
-                "Failed to record context action usage for %s/%s", context, action_id, exc_info=True,
+                "Failed to record context action usage for %s/%s",
+                context,
+                action_id,
+                exc_info=True,
             )
 
     def _run_context_action(
-        self, context: str, action_id: str, callback: Callable[[], None],
+        self,
+        context: str,
+        action_id: str,
+        callback: Callable[[], None],
     ) -> None:
         self._record_context_action_usage(context, action_id)
         callback()
 
     def _ordered_context_actions(
-        self, context: str, action_specs: list[ContextActionSpec],
+        self,
+        context: str,
+        action_specs: list[ContextActionSpec],
     ) -> list[ContextActionSpec]:
         """Sort non-destructive actions by usage while keeping destructive actions last."""
         safe = []

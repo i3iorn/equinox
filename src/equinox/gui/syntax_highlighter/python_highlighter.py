@@ -29,7 +29,7 @@ class PythonHighlighter(RegexHighlighterBase):
             RegexRule(
                 pattern=re.compile(kw_pattern),
                 fmt=kw_fmt,
-            )
+            ),
         )
 
         # Built-in functions
@@ -45,7 +45,7 @@ class PythonHighlighter(RegexHighlighterBase):
             RegexRule(
                 pattern=re.compile(builtin_pattern),
                 fmt=builtin_fmt,
-            )
+            ),
         )
 
         # Double-quoted strings
@@ -54,14 +54,14 @@ class PythonHighlighter(RegexHighlighterBase):
             RegexRule(
                 pattern=re.compile(r'"[^"\\]*(?:\\.[^"\\]*)*"'),
                 fmt=str_fmt,
-            )
+            ),
         )
         # Single-quoted strings
         rules.append(
             RegexRule(
                 pattern=re.compile(r"'[^'\\]*(?:\\.[^'\\]*)*'"),
                 fmt=str_fmt,
-            )
+            ),
         )
 
         # Numbers
@@ -70,7 +70,7 @@ class PythonHighlighter(RegexHighlighterBase):
             RegexRule(
                 pattern=re.compile(r"\b\d+\.?\d*\b"),
                 fmt=num_fmt,
-            )
+            ),
         )
 
         # Comments — must come last so they override other formats
@@ -79,7 +79,7 @@ class PythonHighlighter(RegexHighlighterBase):
             RegexRule(
                 pattern=re.compile(r"#[^\n]*"),
                 fmt=comment_fmt,
-            )
+            ),
         )
 
         return rules

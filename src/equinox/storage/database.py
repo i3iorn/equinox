@@ -9,7 +9,9 @@ import threading
 from collections.abc import Iterator, Mapping
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Any, Callable, Union, cast
+from typing import Any, Union, cast
+
+from collections.abc import Callable
 
 from equinox.core.exceptions import DuplicateError, StorageError, ValidationError
 
@@ -132,7 +134,9 @@ def _validate_sql(query: str, params: _SqlParams) -> None:
 
 
 def _run_sqlite(
-    fn: Callable[..., sqlite3.Cursor], query: str, params: _SqlParams
+    fn: Callable[..., sqlite3.Cursor],
+    query: str,
+    params: _SqlParams,
 ) -> sqlite3.Cursor:
     """Call *fn(query, params)* and map ``sqlite3`` errors to app exceptions.
 
@@ -378,7 +382,7 @@ class Database:
             yield self._require_conn()
 
     @contextmanager
-    def transaction(self) -> Iterator["_TransactionHelper"]:
+    def transaction(self) -> Iterator[_TransactionHelper]:
         """Context manager for multi-statement atomic transactions.
 
         All statements executed on the yielded :class:`_TransactionHelper` run
@@ -495,7 +499,7 @@ class Database:
             if conn is not None:
                 conn.close()
                 self._conn = None
-        except Exception:  # noqa: BLE001
+        except Exception:
             pass
 
     def __enter__(self) -> Database:

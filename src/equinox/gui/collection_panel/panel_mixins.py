@@ -1,4 +1,5 @@
 """Mixins for collections panel tree behavior, context menus, and API-spec dialogs."""
+
 # mypy: disable-error-code=attr-defined
 from __future__ import annotations
 
@@ -182,7 +183,11 @@ class _CollectionsSelectionFilterMixin:
             if cdata.get("type") == "folder":
                 key = f"{col_id}:{cdata.get('path', '')}"
                 child.setExpanded(key in folder_set)
-                _CollectionsSelectionFilterMixin._restore_folder_expansion(child, col_id, folder_set)
+                _CollectionsSelectionFilterMixin._restore_folder_expansion(
+                    child,
+                    col_id,
+                    folder_set,
+                )
 
     def _on_item_expanded(self, item: QTreeWidgetItem) -> None:
         if self._programmatic_expand or self._pre_filter_expansion is None:
@@ -671,7 +676,12 @@ class _CollectionsContextMenuMixin:
     ) -> None:
         specs: list[tuple[str, str, Any, bool]] = [
             ("set_auth", "Set Auth…", lambda: self._set_folder_auth(col_id, folder_path), False),
-            ("clear_auth", "Clear Auth", lambda: self._clear_folder_auth(col_id, folder_path), False),
+            (
+                "clear_auth",
+                "Clear Auth",
+                lambda: self._clear_folder_auth(col_id, folder_path),
+                False,
+            ),
             (
                 "rename_folder",
                 "Rename Folder…",
@@ -774,9 +784,9 @@ class _CollectionsContextMenuMixin:
         try:
             return int(
                 tracker.get_count(
-                category="context_menu",
-                context=context,
-                element_id=f"action.{action_id}",
+                    category="context_menu",
+                    context=context,
+                    element_id=f"action.{action_id}",
                 ),
             )
         except Exception:

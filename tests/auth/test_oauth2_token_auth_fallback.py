@@ -41,7 +41,7 @@ def test_post_token_request_retries_with_basic_on_invalid_client(monkeypatch) ->
             "grant_type": "client_credentials",
             "client_id": "client-id",
             "client_secret": "client-secret",
-        }
+        },
     )
 
     assert response.status_code == 200
@@ -71,7 +71,7 @@ def test_post_token_request_keeps_mode_when_error_is_not_invalid_client(monkeypa
                 "grant_type": "client_credentials",
                 "client_id": "client-id",
                 "client_secret": "client-secret",
-            }
+            },
         )
 
     assert calls == ["body"]
@@ -102,7 +102,7 @@ def test_post_token_request_maps_failed_auth_mode_fallback_to_auth_error(monkeyp
                 "grant_type": "client_credentials",
                 "client_id": "client-id",
                 "client_secret": "client-secret",
-            }
+            },
         )
 
     assert calls == ["body", "basic"]
@@ -140,7 +140,7 @@ def test_post_token_request_retries_client_credentials_when_refresh_grant_invali
             "grant_type": "refresh_token",
             "refresh_token": "stale-refresh-token",
             "scope": "read",
-        }
+        },
     )
 
     assert response.status_code == 200

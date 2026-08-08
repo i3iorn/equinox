@@ -549,24 +549,24 @@ class TestGUIInheritedAuth:
         # Token was fetched from *inherited* config that still matches the
         # collection — it must be saved to the collection, NOT to the request.
         assert panel._auth is None, (
-            "_auth must stay None: the token belongs to the collection, " "not to this request row"
+            "_auth must stay None: the token belongs to the collection, not to this request row"
         )
         # In-memory inherited auth should reflect the new token
         assert panel._inherited_auth is not None
-        assert (
-            panel._inherited_auth.access_token == "new-fetched-token"
-        ), "In-memory _inherited_auth must be updated with the fetched token"
+        assert panel._inherited_auth.access_token == "new-fetched-token", (
+            "In-memory _inherited_auth must be updated with the fetched token"
+        )
         # DB: the collection's auth should now carry the new token
         col_auth_in_db = mgr.get_collection_auth(col_id)
         if col_auth_in_db is not None:
-            assert (
-                col_auth_in_db.access_token == "new-fetched-token"
-            ), "Collection DB auth must be updated with the fetched token"
+            assert col_auth_in_db.access_token == "new-fetched-token", (
+                "Collection DB auth must be updated with the fetched token"
+            )
         # DB: the request row must NOT have own auth stored
         req_reloaded = mgr.get_request(req_id)
-        assert (
-            req_reloaded.auth is None
-        ), "Request row must have auth=None — it should inherit, not own, the auth"
+        assert req_reloaded.auth is None, (
+            "Request row must have auth=None — it should inherit, not own, the auth"
+        )
 
     def test_configure_auth_guard_still_skips_when_no_fetch(self, panel, mgr, col_id):
         """When the user opens the auth dialog on inherited auth and saves
@@ -612,9 +612,9 @@ class TestGUIInheritedAuth:
             panel._configure_auth()
 
         # Guard should fire — self._auth stays None (still inheriting)
-        assert (
-            panel._auth is None
-        ), "Guard clause should keep self._auth = None when no token was fetched"
+        assert panel._auth is None, (
+            "Guard clause should keep self._auth = None when no token was fetched"
+        )
 
 
 # ── Query-params default-unchecked ────────────────────────────────────────────

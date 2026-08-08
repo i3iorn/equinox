@@ -324,7 +324,7 @@ class TestUrls:
 
     def test_normalized_parts_with_uuid_segment(self):
         result = normalized_parts(
-            "https://api.example.com/users/550e8400-e29b-41d4-a716-446655440000/profile"
+            "https://api.example.com/users/550e8400-e29b-41d4-a716-446655440000/profile",
         )
         assert "{id}" in result["path_segments"]
 
@@ -959,10 +959,11 @@ class TestInterpolationCoverage:
         mock_db = MagicMock()
         with patch("equinox.storage.environments.EnvironmentManager") as mock_env:
             mock_env.return_value.get_active_environment.return_value = {
-                "variables": {"env_var": "env_val"}
+                "variables": {"env_var": "env_val"},
             }
             result = collect_interpolation_variables(
-                mock_db, session_vars={"session_var": "session_val"}
+                mock_db,
+                session_vars={"session_var": "session_val"},
             )
         assert result["session_var"] == "session_val"
 

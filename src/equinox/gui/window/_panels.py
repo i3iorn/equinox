@@ -3,6 +3,7 @@
 Each left-tab panel is created on first selection and replaces its
 placeholder widget, keeping startup cost near zero.
 """
+
 # mypy: disable-error-code=attr-defined
 from __future__ import annotations
 

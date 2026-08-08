@@ -1,4 +1,5 @@
 """Auto-growing key-value table widget."""
+
 from collections.abc import Iterator
 from contextlib import contextmanager
 

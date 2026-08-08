@@ -24,7 +24,9 @@ def test_http_status_error_message_redacts_sensitive_values(mock_client_class, m
         },
     )
     mock_client.post.side_effect = httpx.HTTPStatusError(
-        "Bad Request", request=request, response=response
+        "Bad Request",
+        request=request,
+        response=response,
     )
 
     auth = OAuth2Auth(

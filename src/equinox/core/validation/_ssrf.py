@@ -73,7 +73,7 @@ class _SsrfGuard:
             "169.254.169.254",  # AWS / GCP / Azure IMDS
             "metadata.google.internal",
             "metadata.goog",
-        }
+        },
     )
 
     _DNS_TIMEOUT: float = 2.0  # seconds
@@ -100,7 +100,7 @@ class _SsrfGuard:
             # Literal IP — check address range; no DNS resolution needed.
             if addr.is_private or addr.is_loopback or addr.is_link_local:
                 raise ValidationError(
-                    f"Requests to private/internal IP '{hostname}' are blocked " "(SSRF protection)"
+                    f"Requests to private/internal IP '{hostname}' are blocked (SSRF protection)",
                 )
             return
         except ValueError:
@@ -118,7 +118,7 @@ class _SsrfGuard:
                 extra={"hostname": normalized},
             )
             raise ValidationError(
-                f"Requests to metadata endpoint '{normalized}' are blocked " "(SSRF protection)"
+                f"Requests to metadata endpoint '{normalized}' are blocked (SSRF protection)",
             )
 
     @classmethod
@@ -128,7 +128,7 @@ class _SsrfGuard:
         if cached is not None:
             if cached:
                 raise ValidationError(
-                    f"Hostname '{original}' resolves to private IP (SSRF protection)"
+                    f"Hostname '{original}' resolves to private IP (SSRF protection)",
                 )
             return
 
@@ -151,7 +151,7 @@ class _SsrfGuard:
             cls._cache_dns_result(normalized, has_private)
             if has_private:
                 raise ValidationError(
-                    f"Hostname '{original}' resolves to private IP (SSRF protection)"
+                    f"Hostname '{original}' resolves to private IP (SSRF protection)",
                 )
         except (socket.gaierror, OSError) as exc:
             if is_ssrf_allow_on_dns_failure_enabled():
@@ -161,7 +161,7 @@ class _SsrfGuard:
                 )
                 return
             raise ValidationError(
-                f"Hostname '{original}' could not be resolved safely (SSRF protection)"
+                f"Hostname '{original}' could not be resolved safely (SSRF protection)",
             ) from exc
         except concurrent.futures.TimeoutError:
             if future is not None:
@@ -173,7 +173,7 @@ class _SsrfGuard:
                 )
                 return
             raise ValidationError(
-                f"Hostname '{original}' DNS resolution timed out (SSRF protection)"
+                f"Hostname '{original}' DNS resolution timed out (SSRF protection)",
             )
 
     @classmethod

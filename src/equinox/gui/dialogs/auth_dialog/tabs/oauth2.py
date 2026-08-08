@@ -9,6 +9,7 @@ from PyQt6.QtWidgets import QLineEdit
 from PyQt6.QtWidgets import QPushButton
 from PyQt6.QtWidgets import QWidget
 
+
 class OAuth2AuthTab(AuthDialogTab, QWidget):
     def __init__(self, parent: QWidget | None = None):
         super().__init__(parent)

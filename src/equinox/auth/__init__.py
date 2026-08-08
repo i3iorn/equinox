@@ -145,7 +145,7 @@ def _validate_all_exports() -> None:
 
     if missing:
         raise ImportError(
-            f"Module equinox.auth exports {missing!r} in __all__ " f"but they are not defined."
+            f"Module equinox.auth exports {missing!r} in __all__ but they are not defined.",
         )
 
 

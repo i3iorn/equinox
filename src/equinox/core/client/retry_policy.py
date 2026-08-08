@@ -5,7 +5,9 @@ from __future__ import annotations
 import logging
 import threading
 import time
-from typing import AbstractSet, Any, Callable
+from typing import AbstractSet, Any
+
+from collections.abc import Callable
 
 from equinox.core.exceptions import RequestTimeoutError
 from equinox.core.request import Response
@@ -63,7 +65,7 @@ class RetryPolicy:
     ) -> None:
         if retry_after_cap_seconds <= 0:
             raise ValueError(
-                f"retry_after_cap_seconds must be positive, got {retry_after_cap_seconds!r}"
+                f"retry_after_cap_seconds must be positive, got {retry_after_cap_seconds!r}",
             )
         self._timeout_retries: int = max(1, int(timeout_retries))
         self._http_retries: int = max(0, int(http_retries))
@@ -167,7 +169,7 @@ class RetryPolicy:
                             "attempt": attempt + 1,
                             "total_attempts": self._timeout_retries,
                             "wait_seconds": wait_seconds,
-                        }
+                        },
                     )
                     self._sleep_backoff(attempt)
                 else:
@@ -181,7 +183,7 @@ class RetryPolicy:
         # Unreachable: __init__ clamps _timeout_retries to ≥ 1 so the loop
         # always executes and either returns or raises above.
         raise AssertionError(
-            "RetryPolicy.execute: loop exited without returning"
+            "RetryPolicy.execute: loop exited without returning",
         )  # pragma: no cover
 
     def execute_with_http_overload(self, func: Callable[[], Response]) -> Response:
@@ -230,7 +232,7 @@ class RetryPolicy:
                     "total_attempts": self._http_retries,
                     "status": response.status_code,
                     "wait_seconds": retry_after,
-                }
+                },
             )
             self._sleep(retry_after)
             response = func()
@@ -309,5 +311,5 @@ class RetryPolicy:
                 self._http_retries,
                 self._retryable_status_codes,
                 self._retry_after_cap_seconds,
-            )
+            ),
         )

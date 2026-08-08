@@ -37,7 +37,7 @@ def _minimal_har(entries=None, title="My API") -> dict:
             "title": title,
             "creator": {"name": "test", "version": "1"},
             "entries": entries or [],
-        }
+        },
     }
 
 

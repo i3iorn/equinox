@@ -50,9 +50,7 @@ def validate_import_file(
         suffix = path.suffix.lower()
         if suffix not in allowed_extensions:
             exts = ", ".join(allowed_extensions)
-            raise ValidationError(
-                f"{label} has unsupported extension '{suffix}'. " f"Allowed: {exts}"
-            )
+            raise ValidationError(f"{label} has unsupported extension '{suffix}'. Allowed: {exts}")
 
     size = path.stat().st_size
     if size > max_bytes:

@@ -97,7 +97,8 @@ class _HistoryIndexer:
             if hasattr(response_obj, "body") and isinstance(response_obj.body, (bytes, bytearray)):
                 raw = bytes(response_obj.body)
             elif hasattr(response_obj, "content") and isinstance(
-                response_obj.content, (bytes, bytearray)
+                response_obj.content,
+                (bytes, bytearray),
             ):
                 raw = bytes(response_obj.content)
             else:

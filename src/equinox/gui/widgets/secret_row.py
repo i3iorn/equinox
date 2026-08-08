@@ -46,7 +46,7 @@ def make_secret_row(line_edit: QLineEdit) -> QHBoxLayout:
     def _on_toggle(checked: bool) -> None:
         try:
             line_edit.setEchoMode(
-                QLineEdit.EchoMode.Normal if checked else QLineEdit.EchoMode.Password
+                QLineEdit.EchoMode.Normal if checked else QLineEdit.EchoMode.Password,
             )
         except RuntimeError:
             # line_edit's underlying C++ object was already destroyed (unusual

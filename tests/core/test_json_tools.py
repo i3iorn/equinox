@@ -119,7 +119,7 @@ def test_json_utils_tag_strip_and_walk_nested_structures() -> None:
 
 
 def test_iter_json_lines_ignores_blank_lines() -> None:
-    text = " \n{\"a\":1}\n\n[1,2]\n"
+    text = ' \n{"a":1}\n\n[1,2]\n'
     assert list(iter_json_lines(text)) == ['{"a":1}', "[1,2]"]
 
 
@@ -152,17 +152,17 @@ def test_json_lexer_rejects_invalid_input_types_and_state_types() -> None:
 def test_json_lexer_emits_error_tokens_for_string_edge_cases() -> None:
     lexer = JsonLexer()
 
-    unterminated_escape = "\"bad\\"
+    unterminated_escape = '"bad\\'
     tokens, _state = lexer.tokenize_line(unterminated_escape, LexerState.NORMAL)
     assert any(token.type == "ERROR_STRING" for token in tokens)
 
-    tokens, _state = lexer.tokenize_line("\"\\u12GZ\"", LexerState.NORMAL)
+    tokens, _state = lexer.tokenize_line('"\\u12GZ"', LexerState.NORMAL)
     assert any(token.type == "ERROR_STRING" for token in tokens)
 
-    tokens, _state = lexer.tokenize_line("\"\\x\"", LexerState.NORMAL)
+    tokens, _state = lexer.tokenize_line('"\\x"', LexerState.NORMAL)
     assert any(token.type == "ERROR_STRING" for token in tokens)
 
-    tokens, _state = lexer.tokenize_line("\"\x01\"", LexerState.NORMAL)
+    tokens, _state = lexer.tokenize_line('"\x01"', LexerState.NORMAL)
     assert any(token.type == "ERROR_STRING" for token in tokens)
 
 

@@ -4,6 +4,7 @@ This module holds the pure rules that prepare editor state for request send
 and save flows. It intentionally avoids Qt imports so the helpers can be unit
 tested in isolation.
 """
+
 from __future__ import annotations
 
 import logging
@@ -146,13 +147,15 @@ def interpolate_request_fields(
     resolved_url = VariableInterpolator.interpolate(url, merged_vars)
     resolved_headers = {
         VariableInterpolator.interpolate(key, merged_vars): VariableInterpolator.interpolate(
-            value, merged_vars,
+            value,
+            merged_vars,
         )
         for key, value in headers.items()
     }
     resolved_params = {
         VariableInterpolator.interpolate(key, merged_vars): VariableInterpolator.interpolate(
-            value, merged_vars,
+            value,
+            merged_vars,
         )
         for key, value in params.items()
     }

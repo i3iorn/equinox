@@ -23,7 +23,9 @@ from __future__ import annotations
 
 import logging
 from abc import ABC, abstractmethod
-from typing import Any, Callable
+from typing import Any
+
+from collections.abc import Callable
 
 from equinox.core.exceptions import AuthError, CredentialValidationError
 
@@ -67,13 +69,15 @@ def _validate_credential(value: str, field_name: str) -> str:
 
     if len(value) > _MAX_CREDENTIAL_LENGTH:
         raise CredentialValidationError(
-            field_name, f"exceeds maximum length ({len(value)} > {_MAX_CREDENTIAL_LENGTH})"
+            field_name,
+            f"exceeds maximum length ({len(value)} > {_MAX_CREDENTIAL_LENGTH})",
         )
 
     if "\r" in value or "\n" in value:
         logger.warning("CRLF injection attempt detected in %s", field_name)
         raise CredentialValidationError(
-            field_name, "contains invalid characters (CRLF injection attempt)"
+            field_name,
+            "contains invalid characters (CRLF injection attempt)",
         )
 
     return value

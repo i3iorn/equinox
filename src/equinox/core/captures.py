@@ -85,7 +85,7 @@ class CaptureEngine:
                         value=cap.default,
                         success=False,
                         error=err_msg,
-                    )
+                    ),
                 )
         return results
 
@@ -152,7 +152,7 @@ class CaptureEngine:
         for key, idx in segments:
             if not isinstance(current, dict):
                 raise TypeError(
-                    f"Expected a JSON object at key {key!r}, got {type(current).__name__}"
+                    f"Expected a JSON object at key {key!r}, got {type(current).__name__}",
                 )
             if key not in current:
                 raise KeyError(f"Key {key!r} not found in JSON object")
@@ -161,7 +161,7 @@ class CaptureEngine:
             if idx is not None:
                 if not isinstance(current, list):
                     raise TypeError(
-                        f"Expected a JSON array for index [{idx}], got {type(current).__name__}"
+                        f"Expected a JSON array for index [{idx}], got {type(current).__name__}",
                     )
                 if idx >= len(current):
                     raise IndexError(f"Index [{idx}] is out of range (array length {len(current)})")
@@ -217,7 +217,7 @@ class CaptureEngine:
         if len(pattern) > CaptureEngine.MAX_REGEX_PATTERN_LENGTH:
             raise ValueError(
                 f"Regex pattern too long ({len(pattern)} chars, "
-                f"max {CaptureEngine.MAX_REGEX_PATTERN_LENGTH})"
+                f"max {CaptureEngine.MAX_REGEX_PATTERN_LENGTH})",
             )
         try:
             compiled = re.compile(pattern)
@@ -244,7 +244,7 @@ class CaptureEngine:
         if t.is_alive():
             raise ValueError(
                 f"Regex pattern timed out after {CaptureEngine._REGEX_TIMEOUT_SECONDS}s "
-                f"(possible catastrophic backtracking)"
+                f"(possible catastrophic backtracking)",
             )
         if error_container[0] is not None:
             raise ValueError(f"Regex execution error: {error_container[0]}")
@@ -282,7 +282,7 @@ class CaptureEngine:
                     source=d.get("source", "json"),
                     path=d.get("path", ""),
                     default=d.get("default", ""),
-                )
+                ),
             )
         return captures
 

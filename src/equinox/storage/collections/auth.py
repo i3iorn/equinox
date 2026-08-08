@@ -22,7 +22,7 @@ logger = logging.getLogger(__name__)
 class CollectionAuthMixin:
     """Mixin providing auth configuration for CollectionManager."""
 
-    db: "Database"
+    db: Database
 
     # ── Serialization helpers ──────────────────────────────────────────
 
@@ -144,8 +144,7 @@ class CollectionAuthMixin:
     def get_folder_auth(self, collection_id: int, folder_path: str) -> Any | None:
         """Return the auth strategy set on a folder, or ``None``."""
         row = self.db.fetchone(
-            "SELECT auth_type, auth_data FROM collection_folders "
-            "WHERE collection_id=? AND path=?",
+            "SELECT auth_type, auth_data FROM collection_folders WHERE collection_id=? AND path=?",
             (collection_id, folder_path),
         )
         if not row:
@@ -154,7 +153,7 @@ class CollectionAuthMixin:
 
     # ── Resolve effective auth (request → folders → collection) ───────
 
-    def resolve_effective_auth(self, request: "Request") -> tuple[Any | None, str | None]:
+    def resolve_effective_auth(self, request: Request) -> tuple[Any | None, str | None]:
         """Walk the auth hierarchy and return the first auth found.
 
         Resolution order:

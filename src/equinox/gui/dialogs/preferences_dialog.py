@@ -1,4 +1,5 @@
 """Preferences dialog — user-configurable appearance settings."""
+
 from __future__ import annotations
 
 import json as _json
@@ -200,7 +201,9 @@ class PreferencesDialog(QDialog):
 
         for info in AnalysisEngine().get_all_analyzer_info():
             current_category = self._maybe_add_category_header(
-                layout, current_category, info["category"],
+                layout,
+                current_category,
+                info["category"],
             )
             self._add_analyzer_checkbox(layout, info)
             analyzer_ids.add(str(info.get("id") or ""))

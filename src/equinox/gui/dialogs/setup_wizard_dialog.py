@@ -29,7 +29,7 @@ class SetupWizardDialog(QDialog):
         layout = QVBoxLayout(self)
         intro = QLabel(
             "Configure your initial workspace settings. "
-            "You can change all of these later in Preferences."
+            "You can change all of these later in Preferences.",
         )
         intro.setWordWrap(True)
         layout.addWidget(intro)

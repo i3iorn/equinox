@@ -1,4 +1,5 @@
 """Editor-state and session-variable helpers for ``RequestPanel``."""
+
 from __future__ import annotations
 
 import logging

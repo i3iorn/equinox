@@ -1,4 +1,5 @@
 """Secret Manager settings and configuration panel."""
+
 from __future__ import annotations
 
 import logging
@@ -185,7 +186,9 @@ class SecretManagerSettingsPanel(QWidget):
         from PyQt6.QtWidgets import QInputDialog
 
         name, ok = QInputDialog.getText(
-            self, "Save Configuration", "Enter a name for this configuration:",
+            self,
+            "Save Configuration",
+            "Enter a name for this configuration:",
         )
 
         if not ok or not name:
@@ -338,7 +341,8 @@ Configuration:
         result = test_secret_manager_connection(manager_type, config)
         messages = SecretManagerConnectionMessages(
             success=_PANEL_CONNECTION_MESSAGES.success.format(
-                profile_name=self._current_config_name, manager_type="{manager_type}",
+                profile_name=self._current_config_name,
+                manager_type="{manager_type}",
             ),
             unavailable=_PANEL_CONNECTION_MESSAGES.unavailable.format(
                 profile_name=self._current_config_name,
@@ -386,7 +390,9 @@ Configuration:
             return
 
         reply = QMessageBox.question(
-            self, "Confirm Delete", f"Delete configuration '{current_name}'?",
+            self,
+            "Confirm Delete",
+            f"Delete configuration '{current_name}'?",
         )
 
         if reply != QMessageBox.StandardButton.Yes:

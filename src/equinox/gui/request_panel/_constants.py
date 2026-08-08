@@ -8,6 +8,7 @@ Auth display and preflight checks are now derived from the strategy
 classes themselves (via ``get_display_summary`` / ``get_preflight_warning``),
 eliminating the need for parallel isinstance dispatch tables.
 """
+
 from __future__ import annotations
 
 import re
@@ -120,5 +121,5 @@ _HEADER_PRESETS = [
     ("User-Agent: Equinox/1.0", "User-Agent", "Equinox/1.0"),
 ]
 _SCRIPTS_CHEAT_TEXT = (
-    "<h3>Pre/Post Scripts</h3>" "<p>Use Python helpers to mutate the request/response context.</p>"
+    "<h3>Pre/Post Scripts</h3><p>Use Python helpers to mutate the request/response context.</p>"
 )

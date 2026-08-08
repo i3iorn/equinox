@@ -1,4 +1,5 @@
 """RequestPanel layout and UI-construction mixin."""
+
 # mypy: disable-error-code="attr-defined"
 from __future__ import annotations
 
@@ -68,8 +69,7 @@ _HEADER_PRESETS = [
 ]
 
 _SCRIPTS_CHEAT_TEXT = (
-    "<h3>Pre/Post Scripts</h3>"
-    "<p>Use Python helpers to mutate the request/response context.</p>"
+    "<h3>Pre/Post Scripts</h3><p>Use Python helpers to mutate the request/response context.</p>"
 )
 
 
@@ -86,7 +86,7 @@ class RequestPanelLayoutMixin:
     """Layout and UI-construction helpers for RequestPanel."""
 
     def _init_ui(self) -> None:
-        layout = QVBoxLayout(self) # type: ignore[call-overload]
+        layout = QVBoxLayout(self)  # type: ignore[call-overload]
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(4)
 

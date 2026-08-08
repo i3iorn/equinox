@@ -1,4 +1,5 @@
 """Tests for local GUI usage tracking and compact request toolbar behavior."""
+
 from __future__ import annotations
 
 from PyQt6.QtCore import QCoreApplication
@@ -187,7 +188,8 @@ def test_history_context_actions_rank_by_usage_and_keep_delete_last(tmp_path, mo
 
 
 def test_variables_session_context_actions_rank_by_usage_and_keep_delete_last(
-    tmp_path, monkeypatch,
+    tmp_path,
+    monkeypatch,
 ):
     from equinox.gui.variables_panel import VariablesPanel
     from equinox.gui.window import MainWindow
@@ -218,7 +220,8 @@ def test_variables_session_context_actions_rank_by_usage_and_keep_delete_last(
 
 
 def test_collections_request_context_actions_rank_by_usage_and_keep_delete_last(
-    tmp_path, monkeypatch,
+    tmp_path,
+    monkeypatch,
 ):
     from equinox.gui.collection_panel import CollectionsPanel
     from equinox.gui.window import MainWindow

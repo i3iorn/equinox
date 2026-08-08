@@ -6,7 +6,6 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
-from typing import Optional
 
 from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import (
@@ -40,7 +39,7 @@ class _ImportExportMixin:
     def _start_import(self, importer_class: type, file_path: Path, success_msg: str) -> None:
         """Run selected importer in background with retry on error."""
 
-        def _operation(cancel_event: Optional[object] = None) -> bool:
+        def _operation(cancel_event: object | None = None) -> bool:
             if cancel_event is not None and cancel_event.is_set():
                 raise RuntimeError("Import cancelled")
             mgr = CollectionManager(self.db)
@@ -176,7 +175,12 @@ class _ImportExportMixin:
 
         col_names = [col["name"] for col in collections]
         col_name, ok = QInputDialog.getItem(
-            self, "Select Collection", "Choose collection to export:", col_names, 0, False
+            self,
+            "Select Collection",
+            "Choose collection to export:",
+            col_names,
+            0,
+            False,
         )
         if not ok or not isinstance(col_name, str) or not col_name:
             return
@@ -194,7 +198,10 @@ class _ImportExportMixin:
         )
 
         file_path, _ = QFileDialog.getSaveFileName(
-            self, f"Export as {format_type.title()}", "", file_filter
+            self,
+            f"Export as {format_type.title()}",
+            "",
+            file_filter,
         )
         if not isinstance(file_path, str) or not file_path:
             return

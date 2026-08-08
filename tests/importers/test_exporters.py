@@ -316,7 +316,9 @@ class TestHARExporter:
     def test_export_request_response(self):
         """Improvement #7, #12: HAR entry with body decoding and timestamp."""
         req = Request(
-            method="GET", url="https://example.com/api", headers={"Accept": "application/json"}
+            method="GET",
+            url="https://example.com/api",
+            headers={"Accept": "application/json"},
         )
         resp = Response(
             status_code=200,

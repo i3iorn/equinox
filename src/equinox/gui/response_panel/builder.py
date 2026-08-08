@@ -3,6 +3,7 @@
 Contains all ``_build_*`` methods that create the widget tree.  Has no
 ``__init__`` — relies on ``self.*`` attributes set by ``ResponsePanel.__init__``.
 """
+
 # mypy: disable-error-code=attr-defined
 from __future__ import annotations
 
@@ -72,7 +73,10 @@ def _make_muted_label(text: str = "") -> QLabel:
 
 
 def _make_button(
-    text: str, width: int, tooltip: str = "", parent: QWidget | None = None,
+    text: str,
+    width: int,
+    tooltip: str = "",
+    parent: QWidget | None = None,
 ) -> QPushButton:
     """Create a button with minimum width and optional tooltip."""
     btn = QPushButton(text, parent)
@@ -83,7 +87,8 @@ def _make_button(
 
 
 def _make_container(
-    margins: tuple[int, int, int, int], spacing: int,
+    margins: tuple[int, int, int, int],
+    spacing: int,
 ) -> tuple[QWidget, QVBoxLayout]:
     """Create a QWidget with QVBoxLayout (contents margins and spacing pre-set).
 
@@ -152,7 +157,9 @@ class ResponseBuilderMixin:
         self._redact_btn.toggled.connect(self._on_redaction_toggled)
 
         diff_btn = _make_button(
-            "Diff…", _BTN_WIDTH_SMALL, "Compare response body with a history entry",
+            "Diff…",
+            _BTN_WIDTH_SMALL,
+            "Compare response body with a history entry",
         )
         diff_btn.clicked.connect(self._diff_with_history)
 
@@ -434,7 +441,9 @@ class ResponseBuilderMixin:
         self.sent_url_label.setFont(get_mono_font())
 
         copy_curl_btn = _make_button(
-            "Copy as cURL", _BTN_WIDTH_XLARGE, "Copy the request as a cURL command",
+            "Copy as cURL",
+            _BTN_WIDTH_XLARGE,
+            "Copy the request as a cURL command",
         )
         copy_curl_btn.clicked.connect(self._copy_as_curl)
 

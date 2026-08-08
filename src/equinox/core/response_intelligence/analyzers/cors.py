@@ -39,22 +39,22 @@ class CORSMisconfigAnalyzer(Analyzer):
 
         if "," in allow_origin or " " in allow_origin:
             issues.append(
-                "Access-Control-Allow-Origin should be a single origin value, not a list."
+                "Access-Control-Allow-Origin should be a single origin value, not a list.",
             )
 
         if allow_origin == "*":
             issues.append(
-                "Access-Control-Allow-Origin is wildcard (*) - any origin can read the response."
+                "Access-Control-Allow-Origin is wildcard (*) - any origin can read the response.",
             )
             if allow_credentials.lower() == "true":
                 issues.append(
-                    "Combined with Allow-Credentials: true this is a critical misconfiguration."
+                    "Combined with Allow-Credentials: true this is a critical misconfiguration.",
                 )
                 severity = Severity.CRITICAL
 
         if allow_origin.lower() == "null":
             issues.append(
-                "Access-Control-Allow-Origin is 'null' which can unintentionally trust sandboxed/file origins."
+                "Access-Control-Allow-Origin is 'null' which can unintentionally trust sandboxed/file origins.",
             )
 
         if (
@@ -64,7 +64,7 @@ class CORSMisconfigAnalyzer(Analyzer):
             and "origin" not in vary
         ):
             issues.append(
-                "Credentialed CORS with reflected origin should include Vary: Origin to avoid cache poisoning."
+                "Credentialed CORS with reflected origin should include Vary: Origin to avoid cache poisoning.",
             )
 
         if not issues:
@@ -84,6 +84,6 @@ class CORSMisconfigAnalyzer(Analyzer):
                     "request_origin": request_origin,
                     "vary": vary,
                 },
-            )
+            ),
         )
         return findings

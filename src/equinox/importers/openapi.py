@@ -113,7 +113,7 @@ def _resolve_servers_openapi3(spec_data: dict[str, Any]) -> list[ServerInfo]:
                 url=expanded,
                 description=entry.get("description", ""),
                 variables=resolved_vars,
-            )
+            ),
         )
 
     return result or [ServerInfo(url="/")]
@@ -286,7 +286,10 @@ class OpenAPIImporter:
                 pass
 
             logger.info(
-                "Created collection '%s' (ID %d) for server %s", col_name, collection_id, server.url
+                "Created collection '%s' (ID %d) for server %s",
+                col_name,
+                collection_id,
+                server.url,
             )
 
             paths = spec_data.get("paths") or {}
@@ -351,7 +354,7 @@ class OpenAPIImporter:
                 if major_minor not in self.SUPPORTED_VERSIONS:
                     raise ValidationError(
                         f"Unsupported OpenAPI version: {version}. "
-                        f"Supported: {', '.join(sorted(self.SUPPORTED_VERSIONS))}"
+                        f"Supported: {', '.join(sorted(self.SUPPORTED_VERSIONS))}",
                     )
             else:
                 raise ValidationError(f"Invalid version format: {version}")
@@ -365,12 +368,13 @@ class OpenAPIImporter:
         # Count total operations (paths + webhooks for OAS 3.1)
         webhooks = spec_data.get("webhooks") or {}
         operation_count = _count_operations(
-            paths, extra=webhooks if isinstance(webhooks, dict) else None
+            paths,
+            extra=webhooks if isinstance(webhooks, dict) else None,
         )
 
         if operation_count > self.MAX_OPERATIONS:
             raise ValidationError(
-                f"Too many operations: {operation_count} (max: {self.MAX_OPERATIONS})"
+                f"Too many operations: {operation_count} (max: {self.MAX_OPERATIONS})",
             )
 
     def _get_version(self, spec_data: dict[str, Any]) -> str:
@@ -433,7 +437,12 @@ class OpenAPIImporter:
                     operation = path_item[method]
                     try:
                         request = self._parse_operation(
-                            path, method, operation, base_url, spec_data, version
+                            path,
+                            method,
+                            operation,
+                            base_url,
+                            spec_data,
+                            version,
                         )
                         ops.append(request)
                         if request.folder:
@@ -461,7 +470,9 @@ class OpenAPIImporter:
                         count += 1
             except Exception as exc:
                 logger.error(
-                    "Failed to insert imported requests in transaction: %s", exc, exc_info=True
+                    "Failed to insert imported requests in transaction: %s",
+                    exc,
+                    exc_info=True,
                 )
                 # Fall back to returning number parsed so far
         return count
@@ -607,7 +618,8 @@ class OpenAPIImporter:
 
         # Resolve type — prefer schema.type (3.x style) over param.type (2.0 style)
         raw_type = (schema.get("type") if isinstance(schema, dict) else None) or param.get(
-            "type", "string"
+            "type",
+            "string",
         )
 
         if isinstance(raw_type, list):
@@ -692,7 +704,7 @@ class OpenAPIImporter:
                     example[prop_name] = prop_schema["default"]
                 else:
                     example[prop_name] = self._get_type_example(
-                        self._resolve_schema_type(prop_schema)
+                        self._resolve_schema_type(prop_schema),
                     )
             return json.dumps(example)
 

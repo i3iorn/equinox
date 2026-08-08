@@ -2,7 +2,9 @@
 
 import logging
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
+
+from collections.abc import Callable
 
 from equinox.core.request import Request
 from equinox.importers._utils import normalize_path_variables, validate_import_file
@@ -94,7 +96,7 @@ class InsomniaImporter:
         request_resources = [r for r in resources if r.get("_type") == "request"]
         if len(request_resources) > self.MAX_REQUESTS:
             raise ValueError(
-                f"Too many requests: {len(request_resources)} (max {self.MAX_REQUESTS})"
+                f"Too many requests: {len(request_resources)} (max {self.MAX_REQUESTS})",
             )
 
         imported = 0

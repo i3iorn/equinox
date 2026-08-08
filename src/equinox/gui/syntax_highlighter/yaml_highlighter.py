@@ -22,7 +22,7 @@ class YamlHighlighter(RegexHighlighterBase):
             RegexRule(
                 pattern=re.compile(r"#[^\n]*"),
                 fmt=comment_fmt,
-            )
+            ),
         )
 
         # Document separator (--- or ...)
@@ -31,7 +31,7 @@ class YamlHighlighter(RegexHighlighterBase):
             RegexRule(
                 pattern=re.compile(r"^(---|\.\.\.)\s*$"),
                 fmt=sep_fmt,
-            )
+            ),
         )
 
         # Anchor (&name) and alias (*name)
@@ -40,7 +40,7 @@ class YamlHighlighter(RegexHighlighterBase):
             RegexRule(
                 pattern=re.compile(r"[&*][\w]+"),
                 fmt=anchor_fmt,
-            )
+            ),
         )
 
         # Tag  !!type / !type
@@ -49,7 +49,7 @@ class YamlHighlighter(RegexHighlighterBase):
             RegexRule(
                 pattern=re.compile(r"![\w/]+"),
                 fmt=tag_fmt,
-            )
+            ),
         )
 
         # Mapping key  key:
@@ -58,7 +58,7 @@ class YamlHighlighter(RegexHighlighterBase):
             RegexRule(
                 pattern=re.compile(r"[\w.\-/]+(?=\s*:)"),
                 fmt=key_fmt,
-            )
+            ),
         )
 
         # Quoted string values
@@ -67,13 +67,13 @@ class YamlHighlighter(RegexHighlighterBase):
             RegexRule(
                 pattern=re.compile(r'"[^"\\]*(?:\\.[^"\\]*)*"'),
                 fmt=str_fmt,
-            )
+            ),
         )
         rules.append(
             RegexRule(
                 pattern=re.compile(r"'[^']*'"),
                 fmt=str_fmt,
-            )
+            ),
         )
 
         # Boolean / null
@@ -81,10 +81,10 @@ class YamlHighlighter(RegexHighlighterBase):
         rules.append(
             RegexRule(
                 pattern=re.compile(
-                    r"\b(?:true|false|yes|no|null|~|" r"True|False|Yes|No|Null|NULL|TRUE|FALSE)\b"
+                    r"\b(?:true|false|yes|no|null|~|" r"True|False|Yes|No|Null|NULL|TRUE|FALSE)\b",
                 ),
                 fmt=kw_fmt,
-            )
+            ),
         )
 
         # Number
@@ -93,10 +93,10 @@ class YamlHighlighter(RegexHighlighterBase):
             RegexRule(
                 pattern=re.compile(
                     r"\b-?(?:0[xX][0-9a-fA-F]+|0[oO][0-7]+|"
-                    r"[0-9]+(?:\.[0-9]+)?(?:[eE][+-]?[0-9]+)?)\b"
+                    r"[0-9]+(?:\.[0-9]+)?(?:[eE][+-]?[0-9]+)?)\b",
                 ),
                 fmt=num_fmt,
-            )
+            ),
         )
 
         # List indicator
@@ -105,7 +105,7 @@ class YamlHighlighter(RegexHighlighterBase):
             RegexRule(
                 pattern=re.compile(r"^[ \t]*-(?= )"),
                 fmt=list_fmt,
-            )
+            ),
         )
 
         return rules

@@ -79,7 +79,11 @@ class TestOAuthClientManager:
         mgr = OAuthClientManager(db)
         with pytest.raises(ValidationError):
             mgr.create_client(
-                name="Bad", token_url="", client_id="", client_secret="", grant_type="invalid_grant"
+                name="Bad",
+                token_url="",
+                client_id="",
+                client_secret="",
+                grant_type="invalid_grant",
             )
 
     def test_get_nonexistent(self, db):
@@ -89,7 +93,10 @@ class TestOAuthClientManager:
     def test_get_client_by_name(self, db):
         mgr = OAuthClientManager(db)
         mgr.create_client(
-            name="ByName", token_url="https://t.com/token", client_id="cid", client_secret="sec"
+            name="ByName",
+            token_url="https://t.com/token",
+            client_id="cid",
+            client_secret="sec",
         )
         client = mgr.get_client_by_name("ByName")
         assert client is not None
@@ -241,7 +248,10 @@ class TestOAuthClientManager:
     def test_client_secret_is_encrypted_at_rest(self, db):
         mgr = OAuthClientManager(db)
         cid = mgr.create_client(
-            name="EncSecret", token_url="", client_id="", client_secret="top-secret"
+            name="EncSecret",
+            token_url="",
+            client_id="",
+            client_secret="top-secret",
         )
         row = db.fetchone("SELECT client_secret FROM oauth_clients WHERE id = ?", (cid,))
         assert row is not None
@@ -250,7 +260,10 @@ class TestOAuthClientManager:
     def test_legacy_plaintext_secret_is_migrated_on_read(self, db):
         mgr = OAuthClientManager(db)
         legacy_id: int = mgr.create_client(
-            name="LegacyPlain", token_url="", client_id="", client_secret="temp-secret"
+            name="LegacyPlain",
+            token_url="",
+            client_id="",
+            client_secret="temp-secret",
         )
         with sqlite3.connect(str(db.db_path)) as conn:
             conn.execute(

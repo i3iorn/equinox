@@ -29,7 +29,9 @@ class TestSecureStorage:
     def test_store_with_metadata(self, storage):
         """Test storing credential with metadata."""
         storage.store(
-            "oauth_token", "token-abc-123", metadata={"expires": "2024-12-31", "scope": "read:user"}
+            "oauth_token",
+            "token-abc-123",
+            metadata={"expires": "2024-12-31", "scope": "read:user"},
         )
         retrieved = storage.retrieve("oauth_token")
         assert retrieved == "token-abc-123"

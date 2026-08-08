@@ -116,7 +116,8 @@ class TestJsonpathAssertion:
 
         resp = _mock_response(body_json={"data": {"id": 42}})
         passed, msg = evaluate_assertion(
-            {"type": "jsonpath", "field": "$.data.id", "expected": "42"}, resp
+            {"type": "jsonpath", "field": "$.data.id", "expected": "42"},
+            resp,
         )
         assert passed is True
 
@@ -128,7 +129,8 @@ class TestJsonpathAssertion:
 
         resp = _mock_response(body_json={"data": {"id": 99}})
         passed, msg = evaluate_assertion(
-            {"type": "jsonpath", "field": "$.data.id", "expected": "42"}, resp
+            {"type": "jsonpath", "field": "$.data.id", "expected": "42"},
+            resp,
         )
         assert passed is False
         assert "99" in msg
@@ -141,7 +143,8 @@ class TestJsonpathAssertion:
 
         resp = _mock_response(body_json={"other": "value"})
         passed, msg = evaluate_assertion(
-            {"type": "jsonpath", "field": "$.missing.path", "expected": "x"}, resp
+            {"type": "jsonpath", "field": "$.missing.path", "expected": "x"},
+            resp,
         )
         assert passed is False
 
@@ -157,7 +160,8 @@ class TestJsonpathAssertion:
         try:
             resp = _mock_response(text='{"data": "hello"}')
             passed, msg = evaluate_assertion(
-                {"type": "jsonpath", "field": "$.data", "expected": "hello"}, resp
+                {"type": "jsonpath", "field": "$.data", "expected": "hello"},
+                resp,
             )
             assert passed is True
             assert "fallback" in msg.lower()

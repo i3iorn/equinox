@@ -9,6 +9,7 @@ JSON body editor with:
 - Line numbers
 - Structural bracket matching ({}, [], ())
 """
+
 import json as _json
 import logging
 from collections.abc import Iterator
@@ -177,7 +178,10 @@ class JsonBodyEditor(QPlainTextEdit):
             self._line_number_area.scroll(0, dy)
         else:
             self._line_number_area.update(
-                0, rect.y(), self._line_number_area.width(), rect.height(),
+                0,
+                rect.y(),
+                self._line_number_area.width(),
+                rect.height(),
             )
         viewport = self.viewport()
         if viewport is not None and rect.contains(viewport.rect()):
@@ -187,7 +191,10 @@ class JsonBodyEditor(QPlainTextEdit):
         super().resizeEvent(event)
         cr = self.contentsRect()
         self._line_number_area.setGeometry(
-            cr.left(), cr.top(), self.line_number_area_width(), cr.height(),
+            cr.left(),
+            cr.top(),
+            self.line_number_area_width(),
+            cr.height(),
         )
 
     # ------------------------------------------------------------------
@@ -230,7 +237,11 @@ class JsonBodyEditor(QPlainTextEdit):
                 self.setExtraSelections(sels)
 
     def _find_matching_forward(
-        self, doc: QTextDocument, start: int, open_char: str, close_char: str,
+        self,
+        doc: QTextDocument,
+        start: int,
+        open_char: str,
+        close_char: str,
     ) -> int | None:
         """Return the position of the closing bracket matching *open_char* at *start*."""
         depth = 1
@@ -246,7 +257,11 @@ class JsonBodyEditor(QPlainTextEdit):
         return None
 
     def _find_matching_backward(
-        self, doc: QTextDocument, start: int, open_char: str, close_char: str,
+        self,
+        doc: QTextDocument,
+        start: int,
+        open_char: str,
+        close_char: str,
     ) -> int | None:
         """Return the position of the opening bracket matching *close_char* at *start*."""
         depth = 1
@@ -273,7 +288,8 @@ class JsonBodyEditor(QPlainTextEdit):
         cursor = QTextCursor(doc)
         cursor.setPosition(pos)
         cursor.movePosition(
-            QTextCursor.MoveOperation.NextCharacter, QTextCursor.MoveMode.KeepAnchor,
+            QTextCursor.MoveOperation.NextCharacter,
+            QTextCursor.MoveMode.KeepAnchor,
         )
         sel = QTextEdit.ExtraSelection()
         sel.cursor = cursor
@@ -474,7 +490,9 @@ class JsonBodyEditor(QPlainTextEdit):
         indent = len(block.text()) - len(block.text().lstrip())
         cursor = QTextCursor(block)
         cursor.movePosition(
-            QTextCursor.MoveOperation.Right, QTextCursor.MoveMode.MoveAnchor, indent,
+            QTextCursor.MoveOperation.Right,
+            QTextCursor.MoveMode.MoveAnchor,
+            indent,
         )
         cursor.insertText(_LINE_COMMENT + " ")
 
@@ -493,7 +511,9 @@ class JsonBodyEditor(QPlainTextEdit):
 
         cursor = QTextCursor(block)
         cursor.movePosition(
-            QTextCursor.MoveOperation.Right, QTextCursor.MoveMode.MoveAnchor, indent,
+            QTextCursor.MoveOperation.Right,
+            QTextCursor.MoveMode.MoveAnchor,
+            indent,
         )
         for _ in range(remove):
             cursor.deleteChar()

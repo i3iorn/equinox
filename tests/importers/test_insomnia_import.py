@@ -52,7 +52,7 @@ class TestImportDataBasics:
                     "method": "GET",
                     "url": "https://api.example.com/users",
                 },
-            ]
+            ],
         }
         importer._import_data(data)
 
@@ -75,7 +75,7 @@ class TestImportDataBasics:
                     "method": "POST",
                     "url": "https://example.com",
                 },
-            ]
+            ],
         }
         importer._import_data(data)
         mock_manager.create_collection.assert_called_once_with("Insomnia Import")
@@ -95,7 +95,7 @@ class TestImportDataFolders:
                     "method": "POST",
                     "url": "https://api.example.com/login",
                 },
-            ]
+            ],
         }
         importer._import_data(data)
         req = mock_manager.save_request.call_args[0][0]
@@ -115,7 +115,7 @@ class TestImportDataFolders:
                     "method": "POST",
                     "url": "https://api.example.com/oauth/token",
                 },
-            ]
+            ],
         }
         importer._import_data(data)
         req = mock_manager.save_request.call_args[0][0]
@@ -133,7 +133,7 @@ class TestImportDataFolders:
                     "method": "GET",
                     "url": "https://api.example.com/health",
                 },
-            ]
+            ],
         }
         importer._import_data(data)
         req = mock_manager.save_request.call_args[0][0]
@@ -161,7 +161,7 @@ class TestImportRequestDetails:
                         {"name": "", "value": "empty-name"},
                     ],
                 },
-            ]
+            ],
         }
         importer._import_data(data)
         req = mock_manager.save_request.call_args[0][0]
@@ -183,7 +183,7 @@ class TestImportRequestDetails:
                         {"name": "disabled_param", "value": "x", "disabled": True},
                     ],
                 },
-            ]
+            ],
         }
         importer._import_data(data)
         req = mock_manager.save_request.call_args[0][0]
@@ -202,7 +202,7 @@ class TestImportRequestDetails:
                     "url": "https://example.com",
                     "body": {"text": '{"name":"test"}'},
                 },
-            ]
+            ],
         }
         importer._import_data(data)
         req = mock_manager.save_request.call_args[0][0]
@@ -224,10 +224,10 @@ class TestImportRequestDetails:
                             {"name": "user", "value": "alice"},
                             {"name": "pass", "value": "secret"},
                             {"name": "off", "value": "x", "disabled": True},
-                        ]
+                        ],
                     },
                 },
-            ]
+            ],
         }
         importer._import_data(data)
         req = mock_manager.save_request.call_args[0][0]
@@ -248,7 +248,7 @@ class TestImportRequestDetails:
                     "headers": [{"name": "Content-Type", "value": "multipart/form-data"}],
                     "body": {"params": [{"name": "k", "value": "v"}]},
                 },
-            ]
+            ],
         }
         importer._import_data(data)
         req = mock_manager.save_request.call_args[0][0]
@@ -270,7 +270,7 @@ class TestImportRequestDetails:
                         "text": "{ users { id name } }",
                     },
                 },
-            ]
+            ],
         }
         importer._import_data(data)
         req = mock_manager.save_request.call_args[0][0]
@@ -288,7 +288,7 @@ class TestImportRequestDetails:
                     "method": "GET",
                     "url": "https://example.com",
                 },
-            ]
+            ],
         }
         importer._import_data(data)
         req = mock_manager.save_request.call_args[0][0]
@@ -305,7 +305,7 @@ class TestImportRequestDetails:
                     "method": "GET",
                     "url": "https://example.com",
                 },
-            ]
+            ],
         }
         importer._import_data(data)
         req = mock_manager.save_request.call_args[0][0]
@@ -323,7 +323,7 @@ class TestImportRequestDetails:
                     "method": "patch",
                     "url": "https://example.com",
                 },
-            ]
+            ],
         }
         importer._import_data(data)
         req = mock_manager.save_request.call_args[0][0]
@@ -341,7 +341,7 @@ class TestImportRequestDetails:
                     "method": "GET",
                     "url": "https://example.com/users/:userId",
                 },
-            ]
+            ],
         }
         importer._import_data(data)
         req = mock_manager.save_request.call_args[0][0]
@@ -364,7 +364,7 @@ class TestImportFile:
                     "method": "GET",
                     "url": "https://example.com/ping",
                 },
-            ]
+            ],
         }
         path = _write_export(tmp_path, data)
         importer.import_file(path)
@@ -439,7 +439,7 @@ class TestMultipleRequests:
                     "method": "DELETE",
                     "url": "https://example.com/3",
                 },
-            ]
+            ],
         }
         importer._import_data(data)
         assert mock_manager.save_request.call_count == 3

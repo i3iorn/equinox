@@ -1,4 +1,5 @@
 """User-command and shortcut mixin for RequestPanel."""
+
 # mypy: disable-error-code=arg-type
 from __future__ import annotations
 
@@ -125,7 +126,7 @@ class RequestCommandsMixin:
 
         text, ok = QInputDialog.getMultiLineText(
             self._as_qwidget(),
-            "Import from cURL" "Paste a cURL command:",
+            "Import from cURLPaste a cURL command:",
             prefill,
         )
         if not ok or not text.strip():
@@ -137,7 +138,9 @@ class RequestCommandsMixin:
         except Exception as exc:
             logger.warning("Failed to parse cURL command (len=%d): %s", len(text), exc)
             QMessageBox.warning(
-                self._as_qwidget(), "Parse Error", f"Could not parse cURL command:\n{exc}",
+                self._as_qwidget(),
+                "Parse Error",
+                f"Could not parse cURL command:\n{exc}",
             )
             return
 
@@ -172,7 +175,9 @@ class RequestCommandsMixin:
         url = self.url_input.text().strip()
         if not url:
             QMessageBox.warning(
-                self._as_qwidget(), "No Request", "Enter a URL before running a benchmark.",
+                self._as_qwidget(),
+                "No Request",
+                "Enter a URL before running a benchmark.",
             )
             return
 

@@ -1,4 +1,5 @@
 """Send orchestration mixin for ``RequestPanel``."""
+
 from __future__ import annotations
 
 import logging
@@ -124,7 +125,12 @@ class _RequestSendMixin(SendWorkerMixin, SendResponseMixin):
         self._track_prepared_auth_state(package)
         request = package.request
         self.current_request = request
-        logger.info("Sending %s %s", request.method, request.url, extra={"method": request.method, "url": redact_url(request.url)})
+        logger.info(
+            "Sending %s %s",
+            request.method,
+            request.url,
+            extra={"method": request.method, "url": redact_url(request.url)},
+        )
         notify_log_panel(self._logging_panel, "log_request", request)
         self.request_sent.emit(request)
         self._set_sending_state(True)

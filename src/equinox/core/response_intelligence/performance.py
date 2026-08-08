@@ -49,7 +49,7 @@ class CompressionAnalyzer(Analyzer):
                     analyzer_id=self.analyzer_id,
                     recommendation="Keep compression enabled for text payloads and monitor CPU impact on high-traffic endpoints.",
                     details={"encoding": encoding, "body_size": size},
-                )
+                ),
             )
             return findings
 
@@ -80,7 +80,7 @@ class CompressionAnalyzer(Analyzer):
                     "content_type": content_type,
                     "accept_encoding_sent": bool(sent_accept),
                 },
-            )
+            ),
         )
         return findings
 
@@ -137,7 +137,7 @@ class TimingBreakdownAnalyzer(Analyzer):
                 analyzer_id=self.analyzer_id,
                 recommendation="Investigate the slowest timing phase first (DNS/connect/TLS/TTFB/transfer) to reduce latency.",
                 details=details,
-            )
+            ),
         )
         return findings
 
@@ -193,7 +193,7 @@ class ResponseTimePercentileAnalyzer(Analyzer):
                 analyzer_id=self.analyzer_id,
                 recommendation="Prioritize reducing P95/P99 latency by profiling slow code paths and backend dependencies.",
                 details=details,
-            )
+            ),
         )
         return findings
 
@@ -275,6 +275,6 @@ class PaginationDetectionAnalyzer(Analyzer):
                 analyzer_id=self.analyzer_id,
                 recommendation="Expose consistent pagination metadata (page, size, total, next cursor) across similar endpoints.",
                 details=detected,
-            )
+            ),
         )
         return findings

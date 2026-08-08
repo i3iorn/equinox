@@ -6,7 +6,9 @@ Provides a unified interface for getting secret manager instances.
 from __future__ import annotations
 
 import logging
-from typing import Callable, cast
+from typing import cast
+
+from collections.abc import Callable
 
 from equinox.core.secret_managers.base import SecretManager, SecretManagerError
 
@@ -101,7 +103,7 @@ def get_secret_manager(
     if manager_type_lower not in _SECRET_MANAGERS:
         available = ", ".join(sorted(_SECRET_MANAGERS.keys()))
         raise SecretManagerError(
-            f"Unknown secret manager type: {manager_type}. " f"Available: {available}"
+            f"Unknown secret manager type: {manager_type}. Available: {available}",
         )
 
     # Check if we already have an instance with the same configuration

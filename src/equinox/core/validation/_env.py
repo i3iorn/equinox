@@ -23,7 +23,7 @@ class _EnvVarValidator:
             raise ValidationError(
                 f"Invalid variable name '{name}'. "
                 "Must start with a letter or underscore and contain only "
-                "letters, digits, and underscores."
+                "letters, digits, and underscores.",
             )
 
         if len(name) > _Limits.MAX_VARIABLE_NAME_LENGTH:

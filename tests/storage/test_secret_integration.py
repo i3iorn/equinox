@@ -126,20 +126,31 @@ def test_resolve_secret_value_raises_when_named_key_missing() -> None:
     with pytest.raises(StorageError, match="Failed to retrieve secret"):
         resolver.resolve_secret_value(
             "env",
-            {_SECRET_NAME_KEY: "prod/service/credentials", "key": "password"},  # pragma: allowlist secret
+            {
+                _SECRET_NAME_KEY: "prod/service/credentials",
+                "key": "password",
+            },  # pragma: allowlist secret
         )
 
 
 def test_resolve_secret_value_validates_json_keys_and_returns_json_payload() -> None:
     resolver = secret_integration_module.CredentialSecretResolver()
-    resolver._managers["env"] = _FakeManager(secret_dict={"username": "alice", "password": "s3cr3t"})
+    resolver._managers["env"] = _FakeManager(
+        secret_dict={"username": "alice", "password": "s3cr3t"},
+    )
 
     result = resolver.resolve_secret_value(
         "env",
-        {_SECRET_NAME_KEY: "prod/service/db", "json_keys": ["username", "password"]},  # pragma: allowlist secret
+        {
+            _SECRET_NAME_KEY: "prod/service/db",
+            "json_keys": ["username", "password"],
+        },  # pragma: allowlist secret
     )
 
-    assert json.loads(result) == {"username": "alice", "password": "s3cr3t"}  # pragma: allowlist secret
+    assert json.loads(result) == {
+        "username": "alice",
+        "password": "s3cr3t",
+    }  # pragma: allowlist secret
 
 
 def test_resolve_secret_value_raises_when_required_json_key_missing() -> None:
@@ -149,7 +160,10 @@ def test_resolve_secret_value_raises_when_required_json_key_missing() -> None:
     with pytest.raises(StorageError, match="Failed to retrieve secret"):
         resolver.resolve_secret_value(
             "env",
-            {_SECRET_NAME_KEY: "prod/service/db", "json_keys": ["username", "password"]},  # pragma: allowlist secret
+            {
+                _SECRET_NAME_KEY: "prod/service/db",
+                "json_keys": ["username", "password"],
+            },  # pragma: allowlist secret
         )
 
 
@@ -158,7 +172,10 @@ def test_resolve_secret_value_propagates_secret_not_found() -> None:
     resolver._managers["env"] = _FakeManager(secret_error=SecretNotFoundError("missing"))
 
     with pytest.raises(SecretNotFoundError):
-        resolver.resolve_secret_value("env", {_SECRET_NAME_KEY: "missing-secret"})  # pragma: allowlist secret
+        resolver.resolve_secret_value(
+            "env",
+            {_SECRET_NAME_KEY: "missing-secret"},
+        )  # pragma: allowlist secret
 
 
 def test_resolve_secret_value_wraps_unexpected_errors() -> None:
@@ -166,7 +183,10 @@ def test_resolve_secret_value_wraps_unexpected_errors() -> None:
     resolver._managers["env"] = _FakeManager(secret_error=RuntimeError("backend exploded"))
 
     with pytest.raises(StorageError, match="Failed to retrieve secret"):
-        resolver.resolve_secret_value("env", {_SECRET_NAME_KEY: "prod/failing"})  # pragma: allowlist secret
+        resolver.resolve_secret_value(
+            "env",
+            {_SECRET_NAME_KEY: "prod/failing"},
+        )  # pragma: allowlist secret
 
 
 def test_hydrate_credential_without_secret_source_returns_original_row() -> None:
@@ -207,7 +227,9 @@ def test_hydrate_credential_merges_json_secret_values(monkeypatch: pytest.Monkey
     monkeypatch.setattr(
         resolver,
         "resolve_secret_value",
-        lambda manager_type, config: '{"username": "alice", "password": "masked-value"}',  # pragma: allowlist secret
+        lambda manager_type, config: (
+            '{"username": "alice", "password": "masked-value"}'
+        ),  # pragma: allowlist secret
     )
 
     credential_row = {
@@ -248,7 +270,9 @@ def test_hydrate_credential_reraises_resolution_errors(monkeypatch: pytest.Monke
         resolver.hydrate_credential(credential_row)
 
 
-def test_load_credential_with_secrets_creates_default_resolver(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_load_credential_with_secrets_creates_default_resolver(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     class _Resolver:
         def hydrate_credential(self, credential_row: dict[str, object]) -> dict[str, object]:
             return {"hydrated": True, **credential_row}
@@ -320,4 +344,7 @@ def test_clear_global_cache_clears_all_manager_caches() -> None:
 def test_security_secret_integration_wrapper_reexports_storage_symbols() -> None:
     import equinox.security.secret_integration as security_wrapper
 
-    assert security_wrapper.CredentialSecretResolver is secret_integration_module.CredentialSecretResolver
+    assert (
+        security_wrapper.CredentialSecretResolver
+        is secret_integration_module.CredentialSecretResolver
+    )
