@@ -10,7 +10,6 @@ from typing import TYPE_CHECKING
 from equinox.gui.error_presenter import ErrorPresenter
 from equinox.gui.request_panel._constants import PREFLIGHT_SEPARATOR
 from equinox.gui.request_panel._constants import STATUS_DURATION_SHORT
-from equinox.gui.request_panel._constants import WORKER_WAIT_MS
 from equinox.gui.workers import RequestWorker
 from PyQt6.QtCore import QTimer
 from PyQt6.QtWidgets import QWidget
@@ -102,11 +101,20 @@ class SendWorkerMixin:
         self._worker.start()
 
     def _cancel_request(self) -> None:
-        """Cancel the active worker and reset the send state."""
+        """Cancel the active worker and reset the send state immediately.
+
+        Cancellation is cooperative — the worker keeps running in the
+        background until it notices ``cancel()`` was called — so this must
+        not block on ``worker.wait()`` (that would freeze the whole GUI,
+        including this Cancel button, for up to its wait timeout). We don't
+        need to wait for the worker to actually stop before resetting the
+        UI: ``RequestWorker._emit_if_active`` already suppresses its
+        ``finished`` signal once cancelled, so a late-arriving result can
+        never reach ``_handle_response`` and corrupt this now-idle state.
+        """
         worker = self._worker
         if worker is not None:
             worker.cancel()
-            worker.wait(WORKER_WAIT_MS)
             self._worker = None
         self._set_sending_state(False)
         self._status_message(_MSG_CANCELLED, STATUS_DURATION_SHORT)

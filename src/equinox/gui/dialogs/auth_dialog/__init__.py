@@ -9,7 +9,6 @@ from PyQt6.QtWidgets import (
     QFrame,
     QHBoxLayout,
     QLabel,
-    QMessageBox,
     QPushButton,
     QTabWidget,
     QVBoxLayout,
@@ -26,6 +25,7 @@ from equinox.auth import (
     OAuth2Auth,
 )
 from equinox.core.exceptions import AuthError
+from equinox.gui.error_presenter import ErrorPresenter
 from equinox.storage import Database, SavedCredentialsManager
 
 from .oauth2.controller import OAuth2TokenController
@@ -335,10 +335,10 @@ class AuthDialog(QDialog):
             saved_credential = SavedCredentialsManager(self.db).get(credential_id)
         except RuntimeError:
             LOGGER.exception("Failed to retrieve saved credential.")
-            QMessageBox.warning(
+            ErrorPresenter.warning(
                 self,
-                "Credential unavailable",
                 "The selected credential could not be loaded.",
+                title="Credential unavailable",
             )
             return
 
@@ -420,10 +420,10 @@ class AuthDialog(QDialog):
     def _open_client_manager(self) -> None:
         """Open the saved-credentials manager dialog."""
         if not self.db:
-            QMessageBox.information(
+            ErrorPresenter.info(
                 self,
-                "Not available",
                 "The credential manager is not available in this context.",
+                title="Not available",
             )
             return
 
@@ -431,10 +431,10 @@ class AuthDialog(QDialog):
             from equinox.gui.dialogs.saved_credentials_dialog import SavedCredentialsDialog
         except ImportError:
             LOGGER.exception("Failed to import saved credentials dialog.")
-            QMessageBox.warning(
+            ErrorPresenter.warning(
                 self,
-                "Credential manager unavailable",
                 "The credential manager could not be opened.",
+                title="Credential manager unavailable",
             )
             return
 
@@ -455,10 +455,10 @@ class AuthDialog(QDialog):
         try:
             auth = self._build_auth_from_tab()
         except AuthError as exc:
-            QMessageBox.warning(
+            ErrorPresenter.warning(
                 self,
-                "Invalid Credentials",
                 f"Could not save authentication:\n{exc}",
+                title="Invalid Credentials",
             )
             return
 
@@ -512,7 +512,7 @@ class AuthDialog(QDialog):
         }
 
     def _warn_missing(self, message: str) -> Any:
-        QMessageBox.warning(self, "Missing Fields", message)
+        ErrorPresenter.warning(self, message, title="Missing Fields")
         return _MISSING
 
     def _build_basic_auth(self, cfg: dict[str, Any]) -> AuthStrategy | Any:

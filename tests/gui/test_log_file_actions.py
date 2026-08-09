@@ -76,7 +76,7 @@ def test_show_log_file_open_result_missing(monkeypatch: pytest.MonkeyPatch) -> N
     calls = []
 
     monkeypatch.setattr(
-        "equinox.gui.log_file_actions.QMessageBox.information",
+        "equinox.gui.error_presenter.QMessageBox.information",
         lambda *args: calls.append(args),
     )
 
@@ -91,6 +91,35 @@ def test_show_log_file_open_result_missing(monkeypatch: pytest.MonkeyPatch) -> N
     assert calls[0][2] == "No log file yet."
 
 
+def test_show_log_file_open_result_invalid_path(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """INVALID_PATH must give the user visible feedback, not just a log
+    line — regression test for a previously-silent no-op."""
+    calls = []
+    suspicious = tmp_path / "equinox.exe"
+
+    monkeypatch.setattr(
+        "equinox.gui.error_presenter.QMessageBox.information",
+        lambda *args: calls.append(args),
+    )
+
+    opened = show_log_file_open_result(
+        None,
+        LogOpenResult(
+            status=LogOpenStatus.INVALID_PATH,
+            log_path=suspicious,
+            resolved_path=suspicious,
+        ),
+        "ignored",
+    )
+
+    assert opened is False
+    assert calls
+    assert str(suspicious) in calls[0][2]
+
+
 def test_show_log_file_open_result_open_failed(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
@@ -100,7 +129,7 @@ def test_show_log_file_open_result_open_failed(
     log.write_text("x", encoding="utf-8")
 
     monkeypatch.setattr(
-        "equinox.gui.log_file_actions.QMessageBox.information",
+        "equinox.gui.error_presenter.QMessageBox.information",
         lambda *args: calls.append(args),
     )
 

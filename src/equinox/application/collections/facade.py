@@ -23,6 +23,19 @@ class CollectionFacade:
     ) -> None:
         self._manager = collection_manager or CollectionManager(db)
 
+    @property
+    def manager(self) -> CollectionManager:
+        """The underlying manager, for callers needing its full API surface.
+
+        E.g. importer classes (``PostmanImporter`` et al.) operate directly
+        on ``CollectionManager`` since they're shared with the CLI and use
+        methods this facade doesn't (yet) expose. Going through this
+        property still means GUI code has exactly one place that
+        constructs a manager, instead of ad-hoc ``CollectionManager(db)``
+        calls scattered across dialogs/panels.
+        """
+        return self._manager
+
     # ── Read helpers ──────────────────────────────────────────────────
 
     def list_collections(self) -> list[dict[str, Any]]:

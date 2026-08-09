@@ -29,6 +29,7 @@ from equinox.core.secret_managers import (
     list_available_managers,
     test_secret_manager_connection,
 )
+from equinox.gui.error_presenter import ErrorPresenter
 from equinox.gui.secret_manager_feedback import (
     SecretManagerConnectionMessages,
     show_secret_manager_connection_feedback,
@@ -333,7 +334,7 @@ class SecretManagerConfigDialog(QDialog):
 
         # Validate required fields
         if not manager_type:
-            QMessageBox.warning(self, "Validation", "Please select a manager type")
+            ErrorPresenter.warning(self, "Please select a manager type", title="Validation")
             return
 
         if not self._confirm_insecure_vault_http(manager_type, config, "Save"):

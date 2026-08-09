@@ -5,8 +5,9 @@ from __future__ import annotations
 import logging
 from typing import Any, cast
 
-from PyQt6.QtWidgets import QComboBox, QFileDialog, QMessageBox, QTableWidgetItem, QWidget
+from PyQt6.QtWidgets import QComboBox, QFileDialog, QTableWidgetItem, QWidget
 
+from equinox.gui.error_presenter import ErrorPresenter
 from equinox.gui.file_ops import validate_selected_path
 
 logger = logging.getLogger(__name__)
@@ -71,7 +72,7 @@ class MultipartDataMixin:
             try:
                 selected_path = validate_selected_path(raw_path, must_exist=True)
             except ValueError as exc:
-                QMessageBox.warning(self._as_qwidget(), "Invalid File", str(exc))
+                ErrorPresenter.warning(self._as_qwidget(), str(exc), title="Invalid File")
                 return
             item = table.item(selected_row, 2)
             if item is None:

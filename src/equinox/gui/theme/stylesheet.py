@@ -36,6 +36,6 @@ def build_stylesheet(base_pt: int, colors: dict[str, str]) -> str:
         pattern = "{" + name + "}"
         stylesheet = stylesheet.replace(pattern, c[name])
 
-    stylesheet.replace("{SM}", str(sm)).replace("{ME}", str(me))
+    stylesheet = stylesheet.replace("{SM}", str(sm)).replace("{ME}", str(me))
 
     return stylesheet

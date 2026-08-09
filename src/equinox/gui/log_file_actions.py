@@ -9,9 +9,10 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 
-from PyQt6.QtWidgets import QMessageBox, QWidget
+from PyQt6.QtWidgets import QWidget
 
 from equinox.core.log_setup import get_log_file
+from equinox.gui.error_presenter import ErrorPresenter
 
 logger = logging.getLogger(__name__)
 
@@ -40,9 +41,9 @@ def open_path_in_os(path: Path) -> None:
     if sys.platform == "win32":
         os.startfile(str(path))
     elif sys.platform == "darwin":
-        subprocess.Popen(["open", str(path)])  # noqa: S603
+        subprocess.Popen(["open", str(path)])
     else:
-        subprocess.Popen(["xdg-open", str(path)])  # noqa: S603
+        subprocess.Popen(["xdg-open", str(path)])
 
 
 def try_open_current_log_file() -> LogOpenResult:
@@ -86,18 +87,24 @@ def show_log_file_open_result(
     Returns ``True`` when the file was opened successfully, ``False`` otherwise.
     """
     if result.status == LogOpenStatus.MISSING:
-        QMessageBox.information(parent, "Log File", missing_message)
+        ErrorPresenter.info(parent, missing_message, title="Log File")
         return False
 
     if result.status == LogOpenStatus.INVALID_PATH:
         logger.warning("Refusing to open non-log file: %s", result.resolved_path)
+        ErrorPresenter.info(
+            parent,
+            f"Refusing to open unexpected file:\n{result.resolved_path}\n\n"
+            "The configured log path does not end in '.log'.",
+            title="Log File",
+        )
         return False
 
     if result.status == LogOpenStatus.OPEN_FAILED:
-        QMessageBox.information(
+        ErrorPresenter.info(
             parent,
-            "Log File",
             f"Log file:\n{result.log_path}\n\n(Could not open automatically: {result.error})",
+            title="Log File",
         )
         return False
 

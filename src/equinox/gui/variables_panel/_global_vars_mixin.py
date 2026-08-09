@@ -14,7 +14,6 @@ from PyQt6.QtWidgets import QDialog
 from PyQt6.QtWidgets import QGroupBox
 from PyQt6.QtWidgets import QHBoxLayout
 from PyQt6.QtWidgets import QHeaderView
-from PyQt6.QtWidgets import QMessageBox
 from PyQt6.QtWidgets import QPushButton
 from PyQt6.QtWidgets import QSizePolicy
 from PyQt6.QtWidgets import QTableWidget
@@ -23,6 +22,7 @@ from PyQt6.QtWidgets import QVBoxLayout
 from PyQt6.QtWidgets import QWidget
 
 from ...core.interpolation import magic_variables
+from ..error_presenter import ErrorPresenter
 from ..ui_common import confirm_yes_no
 from ..ui_common import create_muted_label
 from .variable_dialog import VariableDialog
@@ -160,10 +160,10 @@ class _GlobalVarsMixin:
             self.refresh_global_vars()
             self.variables_changed.emit()
         except ValidationError as exc:
-            QMessageBox.warning(parent, "Validation", str(exc))
+            ErrorPresenter.warning(parent, str(exc), title="Validation")
         except Exception as exc:
             logger.error("Failed to add global variable %r: %s", key, exc, exc_info=True)
-            QMessageBox.critical(parent, "Error", f"Failed to add global variable: {exc}")
+            ErrorPresenter.error(parent, f"Failed to add global variable: {exc}", title="Error")
 
     def _edit_global_var(self) -> None:
         row = self._global_table.currentRow()
@@ -190,10 +190,10 @@ class _GlobalVarsMixin:
             self.refresh_global_vars()
             self.variables_changed.emit()
         except ValidationError as exc:
-            QMessageBox.warning(parent, "Validation", str(exc))
+            ErrorPresenter.warning(parent, str(exc), title="Validation")
         except Exception as exc:
             logger.error("Failed to edit global variable %r: %s", key, exc, exc_info=True)
-            QMessageBox.critical(parent, "Error", f"Failed to edit global variable: {exc}")
+            ErrorPresenter.error(parent, f"Failed to edit global variable: {exc}", title="Error")
 
     def _delete_global_var(self) -> None:
         row = self._global_table.currentRow()
@@ -213,4 +213,4 @@ class _GlobalVarsMixin:
             self.variables_changed.emit()
         except Exception as exc:
             logger.error("Failed to delete global variable %r: %s", key, exc, exc_info=True)
-            QMessageBox.critical(parent, "Error", f"Failed to delete global variable: {exc}")
+            ErrorPresenter.error(parent, f"Failed to delete global variable: {exc}", title="Error")

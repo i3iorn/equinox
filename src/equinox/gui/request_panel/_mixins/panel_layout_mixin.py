@@ -10,6 +10,12 @@ from typing import Any
 from typing import cast
 from typing import NamedTuple
 
+from equinox.gui.request_panel._constants import _HEADER_PRESETS
+from equinox.gui.request_panel._constants import _KEY_ACTIVE_TAB
+from equinox.gui.request_panel._constants import _POLICY_BALANCED
+from equinox.gui.request_panel._constants import _POLICY_PERMISSIVE
+from equinox.gui.request_panel._constants import _POLICY_STRICT
+from equinox.gui.request_panel._constants import _SCRIPTS_CHEAT_TEXT
 from equinox.gui.request_panel._constants import BROWSE_BTN_WIDTH
 from equinox.gui.request_panel._constants import FMT_JSON_BTN_WIDTH
 from equinox.gui.theme import get_mono_font
@@ -40,37 +46,6 @@ from ...ui_common import configure_tab_persistence
 from .scripts_tab_builder import create_scripts_tab
 
 logger = logging.getLogger(__name__)
-
-_KEY_ACTIVE_TAB = "request/active_tab"
-_POLICY_STRICT = "Strict"
-_POLICY_BALANCED = "Balanced"
-_POLICY_PERMISSIVE = "Permissive"
-
-_HEADER_PRESETS = [
-    ("Content-Type: application/json", "Content-Type", "application/json"),
-    ("Content-Type: application/xml", "Content-Type", "application/xml"),
-    (
-        "Content-Type: application/x-www-form-urlencoded",
-        "Content-Type",
-        "application/x-www-form-urlencoded",
-    ),
-    ("Content-Type: multipart/form-data", "Content-Type", "multipart/form-data"),
-    ("Content-Type: text/plain", "Content-Type", "text/plain"),
-    None,
-    ("Accept: application/json", "Accept", "application/json"),
-    ("Accept: application/xml", "Accept", "application/xml"),
-    ("Accept: */*", "Accept", "*/*"),
-    None,
-    ("Authorization: Bearer ...", "Authorization", "Bearer "),
-    ("X-API-Key: ...", "X-API-Key", ""),
-    None,
-    ("Cache-Control: no-cache", "Cache-Control", "no-cache"),
-    ("User-Agent: Equinox/1.0", "User-Agent", "Equinox/1.0"),
-]
-
-_SCRIPTS_CHEAT_TEXT = (
-    "<h3>Pre/Post Scripts</h3><p>Use Python helpers to mutate the request/response context.</p>"
-)
 
 
 class _KvTabResult(NamedTuple):

@@ -10,9 +10,10 @@ from PyQt6.QtWidgets import (
     QFormLayout,
     QLabel,
     QLineEdit,
-    QMessageBox,
     QWidget,
 )
+
+from equinox.gui.error_presenter import ErrorPresenter
 
 
 class MasterPasswordDialog(QDialog):
@@ -63,10 +64,10 @@ def prompt_master_password(parent: QWidget | None = None) -> str | None:
 
     password = dialog.password()
     if not password:
-        QMessageBox.warning(
+        ErrorPresenter.warning(
             parent,
-            "Master Password Required",
             "A non-empty master password is required to decrypt secrets.",
+            title="Master Password Required",
         )
         return None
     return password

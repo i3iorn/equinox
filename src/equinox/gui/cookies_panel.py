@@ -17,7 +17,6 @@ from PyQt6.QtWidgets import (
     QLabel,
     QLineEdit,
     QMenu,
-    QMessageBox,
     QPushButton,
     QTableWidget,
     QTableWidgetItem,
@@ -27,6 +26,7 @@ from PyQt6.QtWidgets import (
 
 from equinox.core.exceptions import ValidationError
 from equinox.core.validation import Validator
+from equinox.gui.error_presenter import ErrorPresenter
 from equinox.storage import Database
 from equinox.storage.cookies import CookieJarManager
 
@@ -247,7 +247,7 @@ class CookiesPanel(QWidget):
         try:
             vals = dialog.values()
         except ValidationError as exc:
-            QMessageBox.warning(self, "Validation", str(exc))
+            ErrorPresenter.warning(self, str(exc), title="Validation")
             return
         logger.debug("Adding cookie: name=%r domain=%r", vals["name"], vals["domain"])
         try:
@@ -260,7 +260,7 @@ class CookiesPanel(QWidget):
             )
         except Exception as exc:
             logger.error("Failed to add cookie %r: %s", vals["name"], exc, exc_info=True)
-            QMessageBox.warning(self, "Error", str(exc))
+            ErrorPresenter.warning(self, str(exc), title="Error")
             return
         self.refresh()
 
@@ -300,10 +300,10 @@ class CookiesPanel(QWidget):
         self.refresh()
 
         if errors:
-            QMessageBox.warning(
+            ErrorPresenter.warning(
                 self,
-                "Delete Errors",
                 f"{len(errors)} deletion(s) failed:\n\n" + "\n".join(errors),
+                title="Delete Errors",
             )
 
     def _clear_all(self) -> None:
@@ -313,7 +313,7 @@ class CookiesPanel(QWidget):
             self._mgr.clear_cookies()
         except Exception as exc:
             logger.error("Failed to clear cookies: %s", exc, exc_info=True)
-            QMessageBox.warning(self, "Error", str(exc))
+            ErrorPresenter.warning(self, str(exc), title="Error")
             return
         self.refresh()
 

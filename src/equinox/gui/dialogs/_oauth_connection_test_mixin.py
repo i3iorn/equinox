@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any
 
 from equinox.gui.dialogs._oauth_form_utils import parse_json_object_field_lenient
+from equinox.gui.error_presenter import ErrorPresenter
 from equinox.gui.workers import OAuthTokenTester
 
 if TYPE_CHECKING:
@@ -84,9 +85,7 @@ class OAuthConnectionTestMixin:
         """Start an asynchronous OAuth token test from form values."""
         missing = self._require_token_fields(token_url, client_id)
         if missing:
-            from PyQt6.QtWidgets import QMessageBox
-
-            QMessageBox.warning(self._dialog_parent(), "Missing Fields", missing)
+            ErrorPresenter.warning(self._dialog_parent(), missing, title="Missing Fields")
             return
 
         extra_params = parse_json_object_field_lenient(extra_raw)

@@ -18,14 +18,15 @@ from collections.abc import Callable
 from typing import Any
 from typing import cast
 
+from equinox.application.requests import RequestHistoryService
 from equinox.core.request import Response
 from equinox.gui import ui_common
+from equinox.gui.error_presenter import ErrorPresenter
 from equinox.gui.response_panel.actions_mixin import ResponseActionsMixin
 from equinox.gui.response_panel.builder import ResponseBuilderMixin
 from equinox.gui.response_panel.display_mixin import ResponseDisplayMixin
 from PyQt6.QtCore import QThreadPool
 from PyQt6.QtWidgets import QLabel
-from PyQt6.QtWidgets import QMessageBox
 from PyQt6.QtWidgets import QVBoxLayout
 from PyQt6.QtWidgets import QWidget
 
@@ -79,13 +80,23 @@ class ResponsePanel(
         current_response: Currently displayed Response object
     """
 
-    def __init__(self, parent: QWidget | None = None) -> None:
+    def __init__(
+        self,
+        parent: QWidget | None = None,
+        request_history: RequestHistoryService | None = None,
+    ) -> None:
         """Initialize ResponsePanel.
 
         Args:
             parent: Parent widget (for PyQt6 ownership)
+            request_history: History facade for "Diff vs. History" lookups.
+                Optional so existing call sites/tests that construct a bare
+                ``ResponsePanel()`` keep working; when omitted, the feature
+                lazily builds one from ``self.window().db`` on first use
+                (see ``ResponseActionsMixin._fetch_history_entries``).
         """
         super().__init__(parent)
+        self._request_history: RequestHistoryService | None = request_history
         # Response state
         self.current_response: Response | None = None
 
@@ -498,7 +509,7 @@ class ResponsePanel(
             message: Error message to display
         """
         try:
-            QMessageBox.critical(self, title, message)
+            ErrorPresenter.error(self, message, title=title)
         except Exception:
             logger.exception(
                 "show_error_dialog: failed to display dialog (title=%r)",

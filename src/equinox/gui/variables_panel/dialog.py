@@ -2,9 +2,9 @@ from __future__ import annotations
 
 from PyQt6.QtWidgets import QDialog
 from PyQt6.QtWidgets import QInputDialog
-from PyQt6.QtWidgets import QMessageBox
 from PyQt6.QtWidgets import QWidget
 
+from ..error_presenter import ErrorPresenter
 from ..ui_common import confirm_yes_no
 from .variable_dialog import VariableDialog
 
@@ -74,7 +74,7 @@ class GroupDialogs:
     # ÔöÇÔöÇ Messages ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ
 
     def show_success(self, message: str) -> None:
-        QMessageBox.information(self.parent, "Success", message)
+        ErrorPresenter.info(self.parent, message, title="Success")
 
     def show_error(self, message: str) -> None:
-        QMessageBox.critical(self.parent, "Error", message)
+        ErrorPresenter.error(self.parent, message, title="Error")

@@ -200,7 +200,7 @@ class TestVariablesPanelRefresh:
                 "equinox.gui.variables_panel._session_vars_mixin.QInputDialog.getText",
             ) as mock_get_text,
             patch(
-                "equinox.gui.variables_panel._session_vars_mixin.QMessageBox.warning",
+                "equinox.gui.error_presenter.QMessageBox.warning",
             ) as mock_warn,
         ):
             mock_get_text.return_value = ("bad key", True)
@@ -225,6 +225,55 @@ class TestVariablesPanelRefresh:
 
 
 # ── Capture engine integration ────────────────────────────────────────────────
+
+
+class TestSessionVarDeleteConfirmation:
+    """Deleting a session variable must prompt, like global vars/groups do —
+    regression tests for a previously-silent, unconfirmed delete."""
+
+    def test_delete_prompts_and_cancel_keeps_var(self, variables_panel):
+        vp = variables_panel
+        vp.refresh_session_vars({"TOKEN": "abc"})
+        vp._session_table.selectRow(0)
+
+        with patch(
+            "equinox.gui.variables_panel._session_vars_mixin.confirm_yes_no",
+            return_value=False,
+        ) as mock_confirm:
+            vp._delete_session_var()
+
+        mock_confirm.assert_called_once()
+        assert vp._session_table.rowCount() == 1
+
+    def test_delete_confirmed_removes_var(self, variables_panel):
+        vp = variables_panel
+        rp = _make_mock_panel()
+        rp._session_vars = {"TOKEN": "abc"}
+        vp._resolve_request_panel = lambda: rp
+        vp.refresh_session_vars({"TOKEN": "abc"})
+        vp._session_table.selectRow(0)
+
+        with patch(
+            "equinox.gui.variables_panel._session_vars_mixin.confirm_yes_no",
+            return_value=True,
+        ) as mock_confirm:
+            vp._delete_session_var()
+
+        mock_confirm.assert_called_once()
+        assert "TOKEN" not in rp._session_vars
+
+    def test_delete_at_row_from_context_menu_also_prompts(self, variables_panel):
+        vp = variables_panel
+        vp.refresh_session_vars({"TOKEN": "abc"})
+
+        with patch(
+            "equinox.gui.variables_panel._session_vars_mixin.confirm_yes_no",
+            return_value=False,
+        ) as mock_confirm:
+            vp._delete_session_var_at_row(0)
+
+        mock_confirm.assert_called_once()
+        assert vp._session_table.rowCount() == 1
 
 
 class TestCaptureIntegration:

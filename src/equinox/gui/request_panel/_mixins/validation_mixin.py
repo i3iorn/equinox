@@ -199,9 +199,8 @@ class _RequestValidationMixin:
                 self._headers_valid,
                 self._body_valid,
             )
-            if not self._body_valid:
-                self.send_button.setEnabled(False)
-                return
+            self.send_button.setEnabled(False)
+            return
 
         self.send_button.setEnabled(True)
 

@@ -111,6 +111,48 @@ def test_load_large_body_over_hard_cap_uses_preview_only() -> None:
     assert "omitted" in text
 
 
+def test_display_body_dispatches_pretty_print_off_thread(monkeypatch) -> None:
+    """Pretty-printing a normal (under-threshold) body must run on the
+    thread pool, not synchronously inline — regression test for a body
+    render that could stall the UI thread on every response."""
+    panel = ResponsePanel()
+    resp = _mk_response(json.dumps({"a": 1}).encode(), "application/json")
+
+    called = {"start": False}
+
+    class _Pool:
+        @staticmethod
+        def start(runnable):
+            called["start"] = True
+            assert isinstance(runnable, PrettyPrintRunnable)
+
+    panel._thread_pool = _Pool()
+    panel.current_response = resp
+    panel._display_body(resp)
+
+    assert called["start"] is True
+
+
+def test_display_body_renders_correctly_after_async_roundtrip() -> None:
+    """End-to-end: the real thread pool must still produce correct,
+    pretty-printed content in body_text once the background job completes."""
+    from PyQt6.QtCore import QCoreApplication
+    from PyQt6.QtCore import QThreadPool
+
+    panel = ResponsePanel()
+    resp = _mk_response(json.dumps({"a": 1}).encode(), "application/json")
+    panel.current_response = resp
+
+    panel._display_body(resp)
+    QThreadPool.globalInstance().waitForDone(2000)
+    for _ in range(20):
+        QCoreApplication.processEvents()
+
+    text = panel.body_text.toPlainText()
+    assert '"a"' in text
+    assert "1" in text
+
+
 def test_searchbar_dispatches_async_for_large_document(monkeypatch) -> None:
     editor = QTextEdit()
     editor.setPlainText("A" * 30_000)

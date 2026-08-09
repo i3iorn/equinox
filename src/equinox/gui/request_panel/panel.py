@@ -14,6 +14,8 @@ from equinox.application.requests import RequestHistoryService
 from equinox.application.requests import RequestPersistenceFacade
 from equinox.core.http.cookies import CookieManager
 from equinox.core.request import Request
+from equinox.gui.request_panel._constants import _KEY_POLICY_PROFILE
+from equinox.gui.request_panel._constants import _POLICY_BALANCED
 from equinox.gui.request_panel._mixins import _RequestAuthMixin
 from equinox.gui.request_panel._mixins import _RequestSendMixin
 from equinox.gui.request_panel._mixins.autosave_mixin import RequestAutosaveMixin
@@ -38,10 +40,6 @@ from PyQt6.QtWidgets import QWidget
 from ..ui_common import get_gui_settings
 
 logger = logging.getLogger(__name__)
-_KEY_POLICY_PROFILE = "request/policy_profile"
-_POLICY_STRICT = "Strict"
-_POLICY_BALANCED = "Balanced"
-_POLICY_PERMISSIVE = "Permissive"
 
 
 __all__ = ["RequestPanel"]

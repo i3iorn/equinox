@@ -93,7 +93,7 @@ def test_secret_manager_panel_clear_cache_uses_profile_cache_settings(
         _fake_get_secret_manager,
     )
     monkeypatch.setattr(
-        "equinox.gui.secret_manager_panel.QMessageBox.information",
+        "equinox.gui.error_presenter.QMessageBox.information",
         lambda *args, **kwargs: None,
     )
 

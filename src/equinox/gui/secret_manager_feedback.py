@@ -4,9 +4,10 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from PyQt6.QtWidgets import QMessageBox, QWidget
+from PyQt6.QtWidgets import QWidget
 
 from equinox.core.secret_managers import SecretManagerConnectionResult
+from equinox.gui.error_presenter import ErrorPresenter
 
 
 @dataclass(frozen=True)
@@ -31,19 +32,27 @@ def show_secret_manager_connection_feedback(
         "error": result.error_message,
     }
     if result.ok:
-        QMessageBox.information(parent, "Connection Successful", messages.success.format(**values))
+        ErrorPresenter.info(
+            parent,
+            messages.success.format(**values),
+            title="Connection Successful",
+        )
         return
 
     if result.error_kind == "unavailable":
-        QMessageBox.warning(parent, "Connection Failed", messages.unavailable.format(**values))
+        ErrorPresenter.warning(
+            parent,
+            messages.unavailable.format(**values),
+            title="Connection Failed",
+        )
         return
 
     if result.error_kind == "auth":
-        QMessageBox.critical(parent, "Authentication Error", messages.auth.format(**values))
+        ErrorPresenter.error(parent, messages.auth.format(**values), title="Authentication Error")
         return
 
     if result.error_kind == "config":
-        QMessageBox.critical(parent, "Configuration Error", messages.config.format(**values))
+        ErrorPresenter.error(parent, messages.config.format(**values), title="Configuration Error")
         return
 
-    QMessageBox.critical(parent, "Error", messages.unexpected.format(**values))
+    ErrorPresenter.error(parent, messages.unexpected.format(**values), title="Error")

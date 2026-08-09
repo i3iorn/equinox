@@ -39,6 +39,15 @@ def apply_theme(app: QApplication | None = None) -> None:
         _ss_cache[cache_key] = build_stylesheet(base_pt, palette)
     qt_app.setStyleSheet(_ss_cache[cache_key])
 
+    # Deferred import: equinox.gui.syntax_highlighter.base imports Colors
+    # from this package, so importing it at module level here would be
+    # circular. Already-open editors' highlighters otherwise keep whatever
+    # colors were active when they were constructed — the QSS stylesheet
+    # above re-applies instantly, but QSyntaxHighlighter formats do not.
+    from equinox.gui.syntax_highlighter.base import notify_theme_changed
+
+    notify_theme_changed()
+
 
 def is_dark() -> bool:
     """Return True when current resolved theme is dark."""
