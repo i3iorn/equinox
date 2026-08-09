@@ -17,7 +17,6 @@ from PyQt6.QtWidgets import QHeaderView
 from PyQt6.QtWidgets import QInputDialog
 from PyQt6.QtWidgets import QLabel
 from PyQt6.QtWidgets import QMenu
-from PyQt6.QtWidgets import QMessageBox
 from PyQt6.QtWidgets import QPushButton
 from PyQt6.QtWidgets import QSizePolicy
 from PyQt6.QtWidgets import QTableWidget
@@ -26,6 +25,7 @@ from PyQt6.QtWidgets import QTabWidget
 from PyQt6.QtWidgets import QVBoxLayout
 from PyQt6.QtWidgets import QWidget
 
+from ..error_presenter import ErrorPresenter
 from ..ui_common import confirm_yes_no
 from ..ui_common import create_muted_label
 
@@ -303,7 +303,7 @@ class _SessionVarsMixin:
             return
         key = key.strip()
         if not key:
-            QMessageBox.warning(parent, "Error", "Variable name is required")
+            ErrorPresenter.warning(parent, "Variable name is required", title="Error")
             return
         value, ok = QInputDialog.getText(parent, "Add Session Variable", "Value:")
         if not ok:
@@ -311,7 +311,7 @@ class _SessionVarsMixin:
         try:
             key = Validator.validate_variable_name(key)
         except ValidationError as exc:
-            QMessageBox.warning(parent, "Invalid Variable Name", str(exc))
+            ErrorPresenter.warning(parent, str(exc), title="Invalid Variable Name")
             return
         rp = self._resolve_request_panel()
         if rp is not None and self._publish_session_var(rp, key, value):
@@ -329,6 +329,12 @@ class _SessionVarsMixin:
         if not key_item:
             return
         key = key_item.text()
+        if not confirm_yes_no(
+            cast(QWidget, self),
+            "Confirm Delete",
+            f"Delete session variable '{key}'?",
+        ):
+            return
         try:
             rp = self._resolve_request_panel()
             if rp is not None:

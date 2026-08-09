@@ -352,10 +352,12 @@ class _CollectionsActionsMixin(QWidget):
         dialog = AuthDialog(current_auth, self._as_qwidget(), db=self.db)
         if dialog.exec() == QDialog.DialogCode.Accepted and hasattr(dialog, "_saved_auth"):
             self._collection_facade.set_collection_auth(col_id, dialog._saved_auth)
+            self.refresh()
             self.collections_changed.emit()
 
     def _clear_collection_auth(self, col_id: int) -> None:
         self._collection_facade.set_collection_auth(col_id, None)
+        self.refresh()
         self.collections_changed.emit()
 
     def _set_folder_auth(self, col_id: int, folder_path: str) -> None:
@@ -366,8 +368,10 @@ class _CollectionsActionsMixin(QWidget):
         dialog = AuthDialog(current_auth, self._as_qwidget(), db=self.db)
         if dialog.exec() == QDialog.DialogCode.Accepted and hasattr(dialog, "_saved_auth"):
             self._collection_facade.set_folder_auth(col_id, folder_path, dialog._saved_auth)
+            self.refresh()
             self.collections_changed.emit()
 
     def _clear_folder_auth(self, col_id: int, folder_path: str) -> None:
         self._collection_facade.set_folder_auth(col_id, folder_path, None)
+        self.refresh()
         self.collections_changed.emit()

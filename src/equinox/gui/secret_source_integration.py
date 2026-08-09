@@ -58,7 +58,6 @@ class SecretSourceConfigWidget(QGroupBox):
         manager_label.setVisible(False)
         layout.addRow(manager_label, self.manager_combo)
         self._manager_label = manager_label
-        self._manager_combo_label = manager_label
 
         # Secret identifier
         secret_label = QLabel("Secret ID/Path:")
@@ -68,7 +67,6 @@ class SecretSourceConfigWidget(QGroupBox):
         secret_label.setVisible(False)
         layout.addRow(secret_label, self.secret_input)
         self._secret_label = secret_label
-        self._secret_input_label = secret_label
 
         # JSON keys (for structured secrets)
         keys_label = QLabel("JSON Keys:")
@@ -80,7 +78,6 @@ class SecretSourceConfigWidget(QGroupBox):
         keys_label.setVisible(False)
         layout.addRow(keys_label, self.keys_input)
         self._keys_label = keys_label
-        self._keys_input_label = keys_label
 
         # Info text
         info_label = QLabel(

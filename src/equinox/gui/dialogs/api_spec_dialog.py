@@ -21,6 +21,8 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
+from equinox.gui.error_presenter import ErrorPresenter
+
 logger = logging.getLogger(__name__)
 
 # Size limits (bytes)
@@ -183,10 +185,10 @@ class ApiSpecDialog(QDialog):
             return
 
         if not self._allow_clipboard:
-            QMessageBox.warning(
+            ErrorPresenter.warning(
                 self,
-                "Copy blocked",
                 "Copying to clipboard is disabled for this dialog.",
+                title="Copy blocked",
             )
             logger.info("Clipboard copy blocked by policy")
             return
@@ -247,7 +249,7 @@ class ApiSpecDialog(QDialog):
         # on supported platforms, but reject proactively).
         if "\x00" in path:
             logger.warning("Rejecting save path containing null byte")
-            QMessageBox.critical(self, "Save failed", "The selected file path is invalid.")
+            ErrorPresenter.error(self, "The selected file path is invalid.", title="Save failed")
             return
 
         size = len(text.encode("utf-8"))
@@ -278,7 +280,11 @@ class ApiSpecDialog(QDialog):
             logger.info("Spec saved to %s (size=%d)", path, size)
         except OSError as exc:
             logger.exception("Failed to save spec to %s", path)
-            QMessageBox.critical(self, "Save failed", f"Failed to save file: {exc}")
+            ErrorPresenter.error(self, f"Failed to save file: {exc}", title="Save failed")
         except Exception:
             logger.exception("Unexpected error saving spec to %s", path)
-            QMessageBox.critical(self, "Save failed", "An unexpected error occurred while saving.")
+            ErrorPresenter.error(
+                self,
+                "An unexpected error occurred while saving.",
+                title="Save failed",
+            )

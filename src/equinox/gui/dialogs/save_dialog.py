@@ -15,13 +15,13 @@ Non-UI responsibilities intentionally left to the caller / facade:
 from collections.abc import Iterable
 from typing import TypedDict
 
+from equinox.gui.error_presenter import ErrorPresenter
 from PyQt6.QtWidgets import QComboBox
 from PyQt6.QtWidgets import QDialog
 from PyQt6.QtWidgets import QDialogButtonBox
 from PyQt6.QtWidgets import QHBoxLayout
 from PyQt6.QtWidgets import QLabel
 from PyQt6.QtWidgets import QLineEdit
-from PyQt6.QtWidgets import QMessageBox
 from PyQt6.QtWidgets import QVBoxLayout
 from PyQt6.QtWidgets import QWidget
 
@@ -109,10 +109,10 @@ class SaveRequestDialog(QDialog):
             does not reach into storage, create collections, or persist data.
         """
         if self._col_combo.currentData() is None:
-            QMessageBox.warning(
+            ErrorPresenter.warning(
                 self,
-                "No Collection",
                 "Please select or create a collection first.",
+                title="No Collection",
             )
             return False
         return True

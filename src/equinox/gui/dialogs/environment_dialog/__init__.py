@@ -29,6 +29,7 @@ from equinox.gui.dialogs.environment_dialog.dotenv_importer import (
     DotenvImporter,
     DotenvImportResult,
 )
+from equinox.gui.error_presenter import ErrorPresenter
 from equinox.gui.theme import Colors
 from equinox.storage import Database, EnvironmentManager
 
@@ -310,7 +311,11 @@ class EnvironmentDialog(ListFormDialogMixin, QDialog):
     def _remove_selected_variable(self) -> None:
         rows = sorted({i.row() for i in self.var_table.selectedItems()}, reverse=True)
         if not rows:
-            QMessageBox.information(self, "No Selection", "Select one or more rows to remove.")
+            ErrorPresenter.info(
+                self,
+                "Select one or more rows to remove.",
+                title="No Selection",
+            )
             return
         self.var_table.blockSignals(True)
         for row in rows:
@@ -341,7 +346,7 @@ class EnvironmentDialog(ListFormDialogMixin, QDialog):
                     secret_keys.append(key)
 
         if errors:
-            QMessageBox.warning(self, "Duplicate Keys", "\n".join(errors))
+            ErrorPresenter.warning(self, "\n".join(errors), title="Duplicate Keys")
             return False
 
         try:
@@ -363,12 +368,14 @@ class EnvironmentDialog(ListFormDialogMixin, QDialog):
                 pass
             return True
         except Exception as exc:
-            QMessageBox.critical(self, "Save Failed", str(exc))
+            ErrorPresenter.error(self, str(exc), title="Save Failed")
             return False
 
     # ── Environment management ────────────────────────────────────────
 
     def _create_environment(self) -> None:
+        if self._dirty and not self._prompt_unsaved(self._current_id):
+            return
         name, ok = QInputDialog.getText(self, "New Environment", "Environment name:")
         if not ok or not name.strip():
             return
@@ -377,13 +384,19 @@ class EnvironmentDialog(ListFormDialogMixin, QDialog):
             self.environment_changed.emit()
             self._refresh_list(select_id=env_id)
         except Exception as exc:
-            QMessageBox.critical(self, "Error", f"Failed to create environment: {exc}")
+            ErrorPresenter.error(self, f"Failed to create environment: {exc}", title="Error")
 
     def _rename_environment(self, _item: Any = None) -> None:
         items = self.env_list.selectedItems()
         if not items:
             return
         env_id = items[0].data(Qt.ItemDataRole.UserRole)
+        # _refresh_list(select_id=env_id) below reloads this same (already
+        # selected) item via the no-prompt _apply_selection() path, since
+        # env_id matches what's already selected — so any unsaved variable
+        # edits must be resolved *before* that reload, not left to it.
+        if self._dirty and not self._prompt_unsaved(self._current_id):
+            return
         old_name = items[0].text().lstrip("✓").strip()
         new_name, ok = QInputDialog.getText(self, "Rename Environment", "New name:", text=old_name)
         if not ok or not new_name.strip() or new_name.strip() == old_name:
@@ -393,20 +406,24 @@ class EnvironmentDialog(ListFormDialogMixin, QDialog):
             self.environment_changed.emit()
             self._refresh_list(select_id=env_id)
         except Exception as exc:
-            QMessageBox.critical(self, "Error", f"Failed to rename: {exc}")
+            ErrorPresenter.error(self, f"Failed to rename: {exc}", title="Error")
 
     def _activate_environment(self) -> None:
         items = self.env_list.selectedItems()
         if not items:
             return
         env_id = items[0].data(Qt.ItemDataRole.UserRole)
+        # See _rename_environment: resolve unsaved edits before the reload
+        # that _refresh_list(select_id=env_id) triggers.
+        if self._dirty and not self._prompt_unsaved(self._current_id):
+            return
         try:
             self.env_manager.set_active_environment(env_id)
             self.environment_changed.emit()
             self._refresh_list(select_id=env_id)
             self._load_variables(env_id)  # refresh active tag in header
         except Exception as exc:
-            QMessageBox.critical(self, "Error", f"Failed to activate: {exc}")
+            ErrorPresenter.error(self, f"Failed to activate: {exc}", title="Error")
 
     def _delete_environment(self) -> None:
         items = self.env_list.selectedItems()
@@ -429,7 +446,7 @@ class EnvironmentDialog(ListFormDialogMixin, QDialog):
             self.environment_changed.emit()
             self._refresh_list()
         except Exception as exc:
-            QMessageBox.critical(self, "Error", f"Failed to delete: {exc}")
+            ErrorPresenter.error(self, f"Failed to delete: {exc}", title="Error")
 
     def _import_dotenv(self) -> None:
         if self._current_env_id is None:
@@ -450,7 +467,7 @@ class EnvironmentDialog(ListFormDialogMixin, QDialog):
             content = importer.load_file(path)
             new_vars = importer.parse(content)
         except Exception as exc:
-            QMessageBox.critical(self, "Import Error", str(exc))
+            ErrorPresenter.error(self, str(exc), title="Import Error")
             return
 
         existing = self._get_existing_keys_with_values()
@@ -490,45 +507,12 @@ class EnvironmentDialog(ListFormDialogMixin, QDialog):
                 return r
         return None
 
-    def _get_existing_keys(self) -> dict[str, int]:
-        """Retrieves the current variables already stored in the table."""
-        existing_keys: dict[str, int] = {}
-        for r in range(self.var_table.rowCount()):
-            k_item = self.var_table.item(r, 0)
-            if k_item:
-                existing_keys[k_item.text()] = r
-        return existing_keys
-
-    def _update_table_with_variables(
-        self,
-        new_vars: dict[str, str],
-        existing_keys: dict[str, int],
-    ) -> None:
-        """Updates or appends rows in the QTableWidget based on new variables."""
-        self.var_table.blockSignals(True)
-        self.var_table.setUpdatesEnabled(False)
-
-        added = 0
-        updated = 0
-        for key, value in new_vars.items():
-            if key in existing_keys:
-                r = existing_keys[key]
-                v_item = self.var_table.item(r, 1)
-                if v_item:
-                    v_item.setText(value)
-                updated += 1
-            else:
-                self._append_var_row(key, value)
-                added += 1
-
-        self.var_table.setUpdatesEnabled(True)
-        self.var_table.blockSignals(False)
-
     def _show_import_summary(self, imported: DotenvImportResult) -> None:
         """Displays a summary message to the user after the import operation."""
-        QMessageBox.information(
+        ErrorPresenter.info(
             self,
-            "Import .env",
-            f"Imported {imported.added} variable(s): {imported.added} new, {imported.updated} updated.\n\n"
+            f"Imported {len(imported.added)} new variable(s), "
+            f"{len(imported.updated)} updated.\n\n"
             "Click 'Save Variables' to persist the changes.",
+            title="Import .env",
         )

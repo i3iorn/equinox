@@ -760,3 +760,34 @@ class TestVariablesPanel:
         p = VariablesPanel(db)
         assert hasattr(p, "variables_changed")
         assert hasattr(p, "clear_session_requested")
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# ApiSpecExportService
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+class TestApiSpecExportService:
+    def test_uses_collection_facade_not_raw_manager(self, db):
+        """Architecture-boundary regression test: this service must build a
+        CollectionFacade (which itself owns the one CollectionManager
+        construction), not construct CollectionManager directly."""
+        from equinox.application.collections import CollectionFacade
+        from equinox.gui.collection_panel._spec_export_service import ApiSpecExportService
+
+        service = ApiSpecExportService(db)
+        assert isinstance(service._mgr, CollectionFacade)
+
+    def test_build_collection_payload(self, db):
+        from equinox.gui.collection_panel._spec_export_service import ApiSpecExportService
+        from equinox.storage import CollectionManager
+
+        mgr = CollectionManager(db)
+        collection_id = mgr.create_collection("My Collection")
+
+        service = ApiSpecExportService(db)
+        payload = service.build_collection_payload(collection_id)
+
+        assert "My Collection" in payload.title
+        assert "OpenAPI 3 (JSON)" in payload.variants
+        assert "Postman v2.1 (JSON)" in payload.variants

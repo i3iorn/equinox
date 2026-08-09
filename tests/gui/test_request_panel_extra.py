@@ -28,6 +28,36 @@ def process_events():
     QCoreApplication.processEvents()
 
 
+def test_curl_import_restores_verify_ssl_when_not_insecure(tmp_db_path):
+    """A prior insecure (-k) cURL import must not silently persist once a
+    secure command is imported afterward — the checkbox must track the new
+    command's value both ways, not just turn off."""
+    from unittest.mock import patch
+
+    ensure_qapp()
+    from equinox.gui.request_panel.panel import RequestPanel
+    from equinox.storage import get_db
+
+    db = get_db()
+    panel = RequestPanel(db)
+
+    with patch(
+        "equinox.gui.request_panel._mixins.commands_mixin.QInputDialog.getMultiLineText",
+        return_value=("curl -k https://example.com", True),
+    ):
+        panel._import_from_curl()
+    process_events()
+    assert panel.verify_ssl_check.isChecked() is False
+
+    with patch(
+        "equinox.gui.request_panel._mixins.commands_mixin.QInputDialog.getMultiLineText",
+        return_value=("curl https://example.com", True),
+    ):
+        panel._import_from_curl()
+    process_events()
+    assert panel.verify_ssl_check.isChecked() is True
+
+
 def test_insert_header_preset_does_not_create_extra_rows(tmp_db_path):
     ensure_qapp()
     from equinox.gui.request_panel.panel import RequestPanel
@@ -511,7 +541,7 @@ def test_save_dialog_cancel_is_non_error(monkeypatch):
         _FakeDialog,
     )
     monkeypatch.setattr(
-        "equinox.gui.request_panel._mixins.save_flow_mixin.QMessageBox.critical",
+        "equinox.gui.error_presenter.QMessageBox.critical",
         lambda *args, **kwargs: critical_calls.append((args, kwargs)),
     )
 

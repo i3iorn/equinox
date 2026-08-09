@@ -313,10 +313,19 @@ class WebSocketPanel(QWidget):
 
     # ── Cleanup ───────────────────────────────────────────────────────────────
 
-    def closeEvent(self, event: QCloseEvent | None) -> None:
+    def shutdown(self) -> None:
+        """Stop any live WebSocket connection and wait briefly for the thread to exit.
+
+        ``closeEvent`` below only fires when this widget is a top-level
+        window; embedded as a sidebar tab, Qt never delivers it on app
+        shutdown. The main window's ``closeEvent`` must call this directly.
+        """
         if self._thread is not None and self._thread.isRunning():
             self._thread.stop()
             # Wait briefly so the asyncio loop can close cleanly.
             # We do NOT block longer than 1 s to avoid freezing the shutdown.
             self._thread.wait(1_000)
+
+    def closeEvent(self, event: QCloseEvent | None) -> None:
+        self.shutdown()
         super().closeEvent(event)

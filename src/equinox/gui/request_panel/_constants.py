@@ -55,9 +55,6 @@ PREFLIGHT_SEPARATOR = "  ·  "
 STATUS_DURATION_SHORT = 4000
 STATUS_DURATION_LONG = 8000
 
-# Worker cancellation wait time (ms)
-WORKER_WAIT_MS = 2000
-
 # ──────────────────────────────────────────────────────────────────────────────
 # Recommender
 # ──────────────────────────────────────────────────────────────────────────────

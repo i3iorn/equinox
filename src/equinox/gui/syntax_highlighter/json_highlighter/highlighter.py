@@ -6,8 +6,9 @@ from equinox.core.json_tools.tokens import Token
 from PyQt6.QtGui import QSyntaxHighlighter
 from PyQt6.QtGui import QTextDocument
 
-from ..base import _VARIABLE_FMT
+from ..base import _variable_fmt
 from ..base import _VARIABLE_PATTERN
+from ..base import register_highlighter
 from .formats import build_token_formats
 
 
@@ -28,6 +29,18 @@ class JsonHighlighter(QSyntaxHighlighter):
         super().__init__(document)
         self.lexer = JsonLexer(JsonLexerConfig(allow_comments=True, detect_timestamps=True))
         self.formats = build_token_formats()
+        register_highlighter(self)
+
+    def refresh_theme(self) -> None:
+        """Rebuild token formats for the current theme and repaint.
+
+        ``build_token_formats()`` reads ``Colors.*`` at call time, but
+        ``self.formats`` is otherwise only built once in ``__init__`` — so
+        without this, an already-open JSON body keeps stale colors after a
+        theme switch. Called by ``base.notify_theme_changed()``.
+        """
+        self.formats = build_token_formats()
+        self.rehighlight()
 
     def highlightBlock(self, text: str | None) -> None:
         text = text or ""
@@ -57,5 +70,6 @@ class JsonHighlighter(QSyntaxHighlighter):
         """Apply {{variable}} placeholder highlighting with highest precedence."""
         if "{{" not in text:
             return
+        fmt = _variable_fmt()
         for match in _VARIABLE_PATTERN.finditer(text):
-            self.setFormat(match.start(), match.end() - match.start(), _VARIABLE_FMT)
+            self.setFormat(match.start(), match.end() - match.start(), fmt)

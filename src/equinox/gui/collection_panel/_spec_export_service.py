@@ -7,8 +7,9 @@ import logging
 from dataclasses import dataclass
 from typing import Any
 
+from equinox.application.collections import CollectionFacade
 from equinox.exporters import CurlExporter, OpenAPIExporter, PostmanExporter
-from equinox.storage import CollectionManager, Database
+from equinox.storage import Database
 
 
 @dataclass(frozen=True)
@@ -25,7 +26,7 @@ class ApiSpecExportService:
     def __init__(self, db: Database, logger_: logging.Logger | None = None):
         self._db = db
         self._logger = logger_ or logging.getLogger(__name__)
-        self._mgr = CollectionManager(db)
+        self._mgr = CollectionFacade(db)
 
     def build_collection_payload(self, collection_id: int) -> ApiSpecPayload:
         if isinstance(collection_id, bool) or not (

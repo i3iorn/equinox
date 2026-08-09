@@ -10,6 +10,7 @@ from typing import cast
 from typing import TYPE_CHECKING
 from typing import TypedDict
 
+from equinox.gui.error_presenter import ErrorPresenter
 from equinox.gui.log_file_actions import show_log_file_open_result
 from equinox.gui.log_file_actions import try_open_current_log_file
 from equinox.gui.logging_utils import log_gui_event
@@ -242,10 +243,10 @@ class _MenuActionsMixin:
                     )
         except Exception:
             logger.error("Command palette command failed: %s", selected_id, exc_info=True)
-            QMessageBox.warning(
+            ErrorPresenter.warning(
                 self._as_qwidget(),
-                "Command Failed",
                 f"Could not execute command: {selected_id}",
+                title="Command Failed",
             )
 
     def _show_shortcuts_dialog(self) -> None:
@@ -300,10 +301,10 @@ class _MenuActionsMixin:
     def _show_ui_usage_snapshot(self) -> None:
         tracker = getattr(self, "_ui_usage_tracker", None)
         if tracker is None:
-            QMessageBox.information(
+            ErrorPresenter.info(
                 self._as_qwidget(),
-                "UI Usage",
                 "Usage tracking is not available yet.",
+                title="UI Usage",
             )
             return
 
