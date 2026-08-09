@@ -49,7 +49,9 @@ def run_scan() -> int:
         "json",
         "--progress-spinner",
         "off",
-        "--strict",
+        # Equinox itself is always installed editable (`pip install -e .`) and
+        # is never published to PyPI, so pip-audit can't look it up.
+        "--skip-editable",
     ]
     result = subprocess.run(
         command,
