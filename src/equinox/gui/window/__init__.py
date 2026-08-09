@@ -157,6 +157,7 @@ class MainWindow(
         self._left_tabs.setTabPosition(QTabWidget.TabPosition.South)
         for label in _LEFT_TAB_LABELS:
             self._left_tabs.addTab(QWidget(), label)
+        self._configure_left_tab_bar()
         self._left_tabs.setMinimumWidth(_MIN_LEFT_W)
         self._left_tabs.currentChanged.connect(self._ensure_tab_initialized)
         self._left_tabs.currentChanged.connect(self._on_left_tab_changed)
@@ -201,6 +202,40 @@ class MainWindow(
         )
         self._main_splitter.splitterMoved.connect(self._on_splitter_moved)
         self._req_resp_splitter.splitterMoved.connect(self._on_splitter_moved)
+
+    def _configure_left_tab_bar(self) -> None:
+        """Keep all six sidebar destinations reachable at any sidebar width.
+
+        The six labels need roughly 430px of tab bar, but the sidebar defaults
+        to 300px. With Qt's default behaviour that hides the overflowing tabs
+        behind small ``‹ ›`` scroll arrows, so half the app's primary
+        navigation silently disappears. Eliding instead keeps every tab
+        visible and clickable — shortened, but with the full name (and its
+        Alt+N shortcut) in a tooltip.
+        """
+        bar = self._left_tabs.tabBar()
+        if bar is None:  # pragma: no cover - defensive, Qt always builds one
+            return
+        bar.setUsesScrollButtons(False)
+        bar.setExpanding(False)
+        bar.setElideMode(Qt.TextElideMode.ElideRight)
+        for index in range(len(_LEFT_TAB_LABELS)):
+            self.apply_left_tab_tooltip(index)
+
+    def apply_left_tab_tooltip(self, index: int) -> None:
+        """(Re-)apply the canonical tooltip for sidebar tab *index*.
+
+        Must be re-applied whenever the tab is replaced: lazy panel creation
+        swaps the placeholder via ``removeTab``/``insertTab``, which drops the
+        tooltip — and it did so exactly when the user first opened that tab,
+        i.e. precisely when the elided label most needed explaining. Uses the
+        canonical label rather than ``tabText`` so a badge suffix (e.g.
+        "Variables (3)") never leaks into the tooltip.
+        """
+        if not 0 <= index < len(_LEFT_TAB_LABELS):
+            return
+        label = _LEFT_TAB_LABELS[index]
+        self._left_tabs.setTabToolTip(index, f"{label}  (Alt+{index + 1})")
 
     def _install_navigation_shortcuts(self) -> None:
         """Register keyboard shortcuts for the left sidebar tabs."""

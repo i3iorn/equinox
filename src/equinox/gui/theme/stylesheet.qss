@@ -148,6 +148,13 @@ QTabBar::tab:hover:!selected {
     color: {FG};
     background: {BG_ALT};
 }
+/* The left sidebar is narrow (~300px) and carries six tabs, so the default
+   16px side padding alone would overflow it. Tighten it there only, so more
+   of each label survives elision. */
+QTabWidget#leftSidebarTabs > QTabBar::tab {
+    padding: 6px 7px;
+    margin-right: 1px;
+}
 
 /* -- Sidebar -- */
 QWidget#sidebar {

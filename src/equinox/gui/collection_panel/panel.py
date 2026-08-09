@@ -131,19 +131,33 @@ class CollectionsPanel(
         layout.setContentsMargins(4, 4, 4, 4)
         layout.setSpacing(4)
 
+        # This toolbar lives in the left sidebar, which is only ~300px wide by
+        # default. Full-length labels ("New Collection", "Import
+        # Openapi/Swagger") overflow that badly enough that Qt elides them into
+        # unreadable stubs ("w Collecti", "Openapi/S"), so keep the visible
+        # text short and put the full wording in tooltips.
         toolbar = QHBoxLayout()
-        self.new_collection_btn = QPushButton("New Collection")
+        self.new_collection_btn = QPushButton("+ New")
+        self.new_collection_btn.setToolTip("New collection")
         self.new_collection_btn.clicked.connect(self.create_collection)
-        self.import_btn = QPushButton("Import Openapi/Swagger")
+
+        self.import_btn = QPushButton("Import…")
+        self.import_btn.setToolTip("Import an OpenAPI/Swagger spec")
         parent_widget = self.parent()
         if parent_widget is not None and hasattr(parent_widget, "_import_openapi"):
             self.import_btn.clicked.connect(parent_widget._import_openapi)
         else:
+            # Still reachable from File ▸ Import, so explain the disabled state
+            # rather than leaving a dead-looking button.
             self.import_btn.setEnabled(False)
+            self.import_btn.setToolTip("Use File ▸ Import to import a spec")
+
         self.refresh_btn = QPushButton("Refresh")
+        self.refresh_btn.setToolTip("Reload collections from the database (F5)")
         self.refresh_btn.clicked.connect(self.refresh)
 
-        self.auto_refresh_checkbox = QCheckBox("Auto-refresh")
+        self.auto_refresh_checkbox = QCheckBox("Auto")
+        self.auto_refresh_checkbox.setToolTip("Auto-refresh collections when they change")
         self.auto_refresh_checkbox.setChecked(self.auto_refresh_enabled)
         self.auto_refresh_checkbox.stateChanged.connect(self._toggle_auto_refresh)
 
