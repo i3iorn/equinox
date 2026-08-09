@@ -34,11 +34,11 @@ class TestSecretCacheEntry:
         assert not entry.is_expired()
 
     def test_expired_after_zero_ttl(self) -> None:
-        from datetime import datetime, timedelta
+        from datetime import datetime, timedelta, timezone
 
         entry = SecretCacheEntry("val", ttl_seconds=0)
         # Force retrieved_at to old time
-        entry.retrieved_at = datetime.utcnow() - timedelta(seconds=1)
+        entry.retrieved_at = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(seconds=1)
         assert entry.is_expired()
 
 

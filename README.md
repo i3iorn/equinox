@@ -174,13 +174,7 @@ bandit -r src/equinox --severity-level=medium -s "B102,B113,B318,B608"
 
 # Run dependency vulnerability gate (blocking)
 python scripts/check_dependency_vulnerabilities.py
-
-# Lockfile maintenance
-python scripts/manage_requirements_lock.py --check
-python scripts/manage_requirements_lock.py --write
 ```
-
-`requirements-lock.txt` is a committed artifact. `--check` validates lockfile consistency (no writes), and `--write` regenerates it intentionally when dependency updates are made.
 
 ## Performance & Observability
 

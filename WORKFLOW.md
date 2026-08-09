@@ -202,20 +202,16 @@ GitHub Actions runs on every push to `dev`:
 2. **Tests:** full suite with ≥ 87% coverage requirement
 3. **Security:** bandit + blocking dependency vulnerability scan (`scripts/check_dependency_vulnerabilities.py`)
 4. **Type checking:** mypy strict mode
-5. **Dependency lock check:** `scripts/manage_requirements_lock.py --check` (validate-only; no CI writes)
 
 **Simulate locally:**
 ```bash
 pre-commit run --all-files
 python scripts/run_affected_tests.py
-python scripts/manage_requirements_lock.py --check
 python scripts/check_dependency_vulnerabilities.py
 pytest --cov=equinox --cov-report=term
 mypy src tests
 bandit -r src/equinox --severity-level=medium -s "B102,B113,B318,B608"
 ```
-
-`requirements-lock.txt` is committed. Regenerate it intentionally with `python scripts/manage_requirements_lock.py --write` when dependency changes are made.
 
 ---
 

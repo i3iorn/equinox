@@ -170,12 +170,9 @@ equinox rotate-secrets --db-path ./equinox.db  # rotate plaintext secrets to enc
 ```bash
 pre-commit run --all-files  # Format, lint, type-check, security scan
 python scripts/run_affected_tests.py  # Fast changed-module test/coverage gate
-python scripts/manage_requirements_lock.py --check  # Validate lockfile consistency (no writes)
 python scripts/check_dependency_vulnerabilities.py  # Blocking dependency CVE gate
 pytest --no-cov             # Run tests (fast)
 ```
-
-`requirements-lock.txt` is a committed artifact. Use `scripts/manage_requirements_lock.py --write` only when intentionally regenerating lock artifacts.
 
 **Before opening a PR:**
 
