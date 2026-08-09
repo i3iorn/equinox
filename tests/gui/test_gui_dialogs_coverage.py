@@ -91,12 +91,23 @@ class TestPreferencesDialog:
         dlg._accept()
         _process()
 
-    def test_update_preview(self):
-        from equinox.gui.dialogs.preferences_dialog import PreferencesDialog
+    def test_reject_reverts(self):
+        """reject() (Escape / native close) must revert like _cancel() does.
 
+        Unlike the Cancel button, Escape and the window-close button call
+        QDialog.reject() directly, bypassing _cancel() entirely — this
+        guards against that path leaving the live-previewed theme/font
+        size applied after the dialog is dismissed.
+        """
+        from equinox.gui.dialogs.preferences_dialog import PreferencesDialog
+        from equinox.gui.theme import get_font_size
+
+        original = get_font_size()
         dlg = PreferencesDialog()
-        dlg._update_preview(14)
+        dlg._spin.setValue(original + 2)
         _process()
+        dlg.reject()
+        assert get_font_size() == original
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -451,6 +462,95 @@ class TestSavedCredentialsDialog:
         assert dlg.cred_list.count() == 1
         dlg.cred_list.setCurrentRow(0)
         _process()
+
+    def test_switch_with_unsaved_changes_prompts_and_discards(self, db):
+        """Selecting a different credential while dirty must prompt, and
+        Discard must proceed to the newly-clicked item (regression test for
+        the missing dirty guard: previously selection switched silently)."""
+        from PyQt6.QtWidgets import QMessageBox
+
+        from equinox.gui.dialogs.saved_credentials_dialog import SavedCredentialsDialog
+        from equinox.storage.saved_credentials import SavedCredentialsManager
+
+        mgr = SavedCredentialsManager(db)
+        mgr.create("First", "bearer", {"token": "one"})
+        mgr.create("Second", "bearer", {"token": "two"})
+        dlg = SavedCredentialsDialog(db)
+        _process()
+        assert dlg.cred_list.count() == 2
+
+        dlg.cred_list.setCurrentRow(0)
+        _process()
+        dlg.f_description.setText("unsaved edit")
+        _process()
+        assert dlg._dirty is True
+
+        with patch(
+            "equinox.gui.dialogs._dirty_dialog_mixin.QMessageBox.question",
+            return_value=QMessageBox.StandardButton.Discard,
+        ):
+            dlg.cred_list.setCurrentRow(1)
+            _process()
+
+        assert dlg._dirty is False
+        assert dlg.f_name.text() == "Second"
+
+    def test_switch_with_unsaved_changes_cancel_stays(self, db):
+        """Cancelling the unsaved-changes prompt must keep the original
+        item selected and its edit intact, not switch away."""
+        from PyQt6.QtWidgets import QMessageBox
+
+        from equinox.gui.dialogs.saved_credentials_dialog import SavedCredentialsDialog
+        from equinox.storage.saved_credentials import SavedCredentialsManager
+
+        mgr = SavedCredentialsManager(db)
+        mgr.create("First", "bearer", {"token": "one"})
+        mgr.create("Second", "bearer", {"token": "two"})
+        dlg = SavedCredentialsDialog(db)
+        _process()
+
+        dlg.cred_list.setCurrentRow(0)
+        _process()
+        dlg.f_description.setText("unsaved edit")
+        _process()
+
+        with patch(
+            "equinox.gui.dialogs._dirty_dialog_mixin.QMessageBox.question",
+            return_value=QMessageBox.StandardButton.Cancel,
+        ):
+            dlg.cred_list.setCurrentRow(1)
+            _process()
+
+        assert dlg._dirty is True
+        assert dlg.f_name.text() == "First"
+        assert dlg.f_description.text() == "unsaved edit"
+
+    def test_close_with_unsaved_changes_prompts(self, db):
+        """The Close button must not discard unsaved edits silently."""
+        from PyQt6.QtWidgets import QDialog, QMessageBox
+
+        from equinox.gui.dialogs.saved_credentials_dialog import SavedCredentialsDialog
+        from equinox.storage.saved_credentials import SavedCredentialsManager
+
+        mgr = SavedCredentialsManager(db)
+        mgr.create("First", "bearer", {"token": "one"})
+        dlg = SavedCredentialsDialog(db)
+        _process()
+        dlg.cred_list.setCurrentRow(0)
+        _process()
+        dlg.f_description.setText("unsaved edit")
+        _process()
+
+        with patch(
+            "equinox.gui.dialogs._dirty_dialog_mixin.QMessageBox.question",
+            return_value=QMessageBox.StandardButton.Cancel,
+        ) as mock_question:
+            dlg._on_close()
+            _process()
+        mock_question.assert_called_once()
+        # Cancelling the prompt must leave the edit in place, not accept/close.
+        assert dlg._dirty is True
+        assert dlg.result() != QDialog.DialogCode.Accepted
 
     def test_type_switch_changes_stack(self, db):
         from equinox.gui.dialogs.saved_credentials_dialog import SavedCredentialsDialog

@@ -7,8 +7,8 @@ from typing import cast
 from typing import TYPE_CHECKING
 
 from equinox.gui.dialogs.save_dialog import SaveRequestDialog
+from equinox.gui.error_presenter import ErrorPresenter
 from PyQt6.QtWidgets import QDialog
-from PyQt6.QtWidgets import QMessageBox
 from PyQt6.QtWidgets import QWidget
 
 logger = logging.getLogger(__name__)
@@ -72,10 +72,10 @@ class RequestSaveFlowMixin:
         snapshot = self._build_request_editor_snapshot()
 
         if not _is_valid_url(snapshot.url):
-            QMessageBox.warning(
+            ErrorPresenter.warning(
                 self._as_qwidget(),
-                "Missing URL",
                 "Please enter a URL before saving.",
+                title="Missing URL",
             )
             return False
 
@@ -98,7 +98,7 @@ class RequestSaveFlowMixin:
 
         except SaveRequestError as exc:
             logger.error("Failed to save request", exc_info=True)
-            QMessageBox.critical(self._as_qwidget(), "Save Failed", str(exc))
+            ErrorPresenter.error(self._as_qwidget(), str(exc), title="Save Failed")
             return False
 
 

@@ -38,6 +38,7 @@ from equinox.gui.dialogs._oauth_connection_test_mixin import OAuthConnectionTest
 from equinox.gui.dialogs._oauth_form_utils import (
     parse_json_object_field,
 )
+from equinox.gui.error_presenter import ErrorPresenter
 from equinox.gui.theme import Colors, get_mono_font
 from equinox.gui.widgets import make_secret_row
 from equinox.gui.workers import OAuthTokenTester
@@ -385,7 +386,7 @@ class OAuthClientsDialog(OAuthConnectionTestMixin, ListFormDialogMixin, QDialog)
             self.clients_changed.emit()
             self._refresh_list(select_id=new_id)
         except Exception as exc:
-            QMessageBox.critical(self, "Error", str(exc))
+            ErrorPresenter.error(self, str(exc), title="Error")
 
     def _delete_client(self) -> None:
         if self._current_id is None:
@@ -408,7 +409,7 @@ class OAuthClientsDialog(OAuthConnectionTestMixin, ListFormDialogMixin, QDialog)
             self.clients_changed.emit()
             self._refresh_list()
         except Exception as exc:
-            QMessageBox.critical(self, "Error", str(exc))
+            ErrorPresenter.error(self, str(exc), title="Error")
 
     def _save_client(self) -> bool:
         """Validate and persist the current form.  Returns True on success."""
@@ -425,18 +426,22 @@ class OAuthClientsDialog(OAuthConnectionTestMixin, ListFormDialogMixin, QDialog)
         extra_raw = self.f_extra.toPlainText().strip()
 
         if not name:
-            QMessageBox.warning(self, "Validation", "Name is required.")
+            ErrorPresenter.warning(self, "Name is required.", title="Validation")
             return False
         if not token_url:
-            QMessageBox.warning(self, "Validation", "Token URL is required.")
+            ErrorPresenter.warning(self, "Token URL is required.", title="Validation")
             return False
         if not client_id:
-            QMessageBox.warning(self, "Validation", "Client ID is required.")
+            ErrorPresenter.warning(self, "Client ID is required.", title="Validation")
             return False
 
         extra_params, error = parse_json_object_field(extra_raw)
         if extra_params is None:
-            QMessageBox.warning(self, "Invalid Extra Params", error or "Invalid Extra Params")
+            ErrorPresenter.warning(
+                self,
+                error or "Invalid Extra Params",
+                title="Invalid Extra Params",
+            )
             return False
 
         try:
@@ -460,7 +465,7 @@ class OAuthClientsDialog(OAuthConnectionTestMixin, ListFormDialogMixin, QDialog)
             self._set_status("✓ Saved", ok=True)
             return True
         except Exception as exc:
-            QMessageBox.critical(self, "Save Failed", str(exc))
+            ErrorPresenter.error(self, str(exc), title="Save Failed")
             return False
 
     def _set_default(self) -> None:
@@ -474,7 +479,7 @@ class OAuthClientsDialog(OAuthConnectionTestMixin, ListFormDialogMixin, QDialog)
             self._refresh_list(select_id=self._current_id)
             self._set_status("✓ Set as default client", ok=True)
         except Exception as exc:
-            QMessageBox.critical(self, "Error", str(exc))
+            ErrorPresenter.error(self, str(exc), title="Error")
 
     # ── Test connection ───────────────────────────────────────────────
 

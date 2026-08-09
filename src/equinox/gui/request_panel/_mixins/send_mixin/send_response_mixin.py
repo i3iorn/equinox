@@ -15,6 +15,7 @@ from equinox.application.requests import (
 )
 from equinox.core.log_setup import get_log_file
 from equinox.gui.error_presenter import ErrorPresenter
+from equinox.gui.request_panel._mixins.assertions_mixin import LABEL_EMPTY
 from equinox.gui.logging_utils import notify_log_panel
 from equinox.gui.request_panel._constants import STATUS_DURATION_LONG
 
@@ -150,7 +151,7 @@ class SendResponseMixin:
         if outcome.session_updates:
             self._session_vars.update(outcome.session_updates)
             self.session_vars_changed.emit(dict(self._session_vars))
-        lines = "\n".join(outcome.display_lines) if outcome.display_lines else "ÔÇö"
+        lines = "\n".join(outcome.display_lines) if outcome.display_lines else LABEL_EMPTY
         self.captures_results_label.setText(lines)
 
     def _run_post_script(self, response: Any) -> None:

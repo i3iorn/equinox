@@ -16,13 +16,16 @@ from tempfile import NamedTemporaryFile
 from typing import Any
 from typing import cast
 
+from equinox.auth import redact_token_value
 from equinox.core.client import HTTPClient
 from equinox.core.format.error_enrichment import enrich_exception
 from equinox.core.http.cookies import CookieManager
 from equinox.core.request import Request
 from equinox.core.validation import Validator
+from equinox.gui.error_presenter import ErrorPresenter
 from equinox.gui.theme import get_mono_font
 from equinox.security import redact_body
+from equinox.security import sanitize_details
 from PyQt6.QtCore import pyqtSignal
 from PyQt6.QtCore import QThread
 from PyQt6.QtWidgets import QDialog
@@ -30,7 +33,6 @@ from PyQt6.QtWidgets import QDialogButtonBox
 from PyQt6.QtWidgets import QFileDialog
 from PyQt6.QtWidgets import QFormLayout
 from PyQt6.QtWidgets import QHBoxLayout
-from PyQt6.QtWidgets import QMessageBox
 from PyQt6.QtWidgets import QPlainTextEdit
 from PyQt6.QtWidgets import QProgressBar
 from PyQt6.QtWidgets import QPushButton
@@ -169,9 +171,12 @@ class OAuthTokenTester(QThread):
     def run(self) -> None:
         """Execute the OAuth token request workflow."""
         try:
-            self._validate_token_url()
+            if not self._validate_token_url():
+                return
             data = self._build_request_data()
             headers = self._build_request_headers()
+            if headers is None:
+                return
 
             response = self._perform_token_request(data, headers)
             self._last_response = self._snapshot_response(response)
@@ -185,14 +190,20 @@ class OAuthTokenTester(QThread):
             if not self._cancelled:
                 self.done.emit(False, redact_body(str(exc)), self._last_response)
 
-    def _validate_token_url(self) -> None:
-        """Validate the token URL using the shared validator."""
+    def _validate_token_url(self) -> bool:
+        """Validate the token URL using the shared validator.
+
+        Returns False (after emitting ``done``) on failure rather than
+        raising, so ``run()``'s outer handler never re-emits for the same
+        failure.
+        """
         try:
             Validator.validate_resolved_url(self.token_url)
+            return True
         except Exception as exc:
             if not self._cancelled:
                 self.done.emit(False, f"Invalid token URL: {exc}", None)
-            raise
+            return False
 
     def _build_request_data(self) -> dict[str, str]:
         """Construct the POST body for the OAuth token request."""
@@ -211,8 +222,13 @@ class OAuthTokenTester(QThread):
         data.update(self.extra_params)
         return data
 
-    def _build_request_headers(self) -> dict[str, str]:
-        """Construct the HTTP headers for the OAuth token request."""
+    def _build_request_headers(self) -> dict[str, str] | None:
+        """Construct the HTTP headers for the OAuth token request.
+
+        Returns None (after emitting ``done``) on failure rather than
+        raising, so ``run()``'s outer handler never re-emits for the same
+        failure.
+        """
         if self.token_auth != "basic":
             return {}
 
@@ -226,7 +242,7 @@ class OAuthTokenTester(QThread):
         except Exception as exc:
             if not self._cancelled:
                 self.done.emit(False, str(exc), None)
-            raise
+            return None
 
     def _perform_token_request(
         self,
@@ -270,15 +286,26 @@ class OAuthTokenTester(QThread):
             )
 
     @staticmethod
-    def _snapshot_response(resp: Response) -> dict[str, int | str | dict[str, str]]:
+    def _snapshot_response(resp: Response) -> dict[str, int | str | dict[str, str] | Any]:
+        """Return a redacted snapshot of the raw token response for display.
+
+        Mirrors ``OAuth2Auth._snapshot_response_body``: access/refresh/id
+        tokens are shortened to a preview, and any remaining sensitive keys
+        (e.g. an echoed ``client_secret``) are fully redacted via
+        ``sanitize_details``. Without this, the "Test Connection" dialog —
+        captioned "tokens redacted" — would show them in plaintext.
+        """
         try:
             headers = {
                 k: v for k, v in resp.headers.items() if k.lower() not in {"set-cookie", "cookie"}
             }
         except Exception:
             headers = {}
+        body: Any
         try:
-            body = resp.json()
+            raw_body = resp.json()
+            redacted = {k: redact_token_value(k, v) for k, v in raw_body.items()}
+            body = sanitize_details(redacted)
         except Exception:
             body = resp.text[:200] if getattr(resp, "text", None) else ""
         return {
@@ -450,7 +477,21 @@ class BenchmarkWorker(QThread):
         # and gives accurate latency numbers for keep-alive endpoints.
         # Passing cancel_event allows an in-flight request to be aborted
         # immediately when cancel() is called, not just between iterations.
-        client = _build_client(self._request, self._cookie_manager, self._proxy, self._cancel_event)
+        try:
+            client = _build_client(
+                self._request,
+                self._cookie_manager,
+                self._proxy,
+                self._cancel_event,
+            )
+        except Exception:
+            # Unlike a per-iteration failure (counted below), a client that
+            # can't even be constructed means every iteration is an error —
+            # emit immediately so the dialog doesn't hang on "Running..."
+            # forever with a Cancel button that has nothing to cancel.
+            logger.debug("Benchmark client construction failed", exc_info=True)
+            self.finished.emit(times, self._n)
+            return
 
         for i in range(self._n):
             if self._cancel_event.is_set():
@@ -656,17 +697,26 @@ class BenchmarkDialog(QDialog):
         already-destroyed dialog widgets and cause a segfault.
         """
         if self._worker is not None:
+            worker, self._worker = self._worker, None
             # Disconnect first so no callbacks fire into the closing dialog.
             try:
-                self._worker.progress.disconnect()
-                self._worker.finished.disconnect()
+                worker.progress.disconnect()
+                worker.finished.disconnect()
             except RuntimeError:
                 pass  # signals were already disconnected
-            self._worker.cancel()
-            if not self._worker.wait(1000):
-                # Didn't finish in time — log and move on; don't block the UI.
-                logger.debug("BenchmarkWorker did not stop within 1 s on dialog close")
-            self._worker = None
+            worker.cancel()
+            if not worker.wait(1000):
+                # Cancellation is cooperative (checked between/within HTTP
+                # calls), so a request blocked in a slow connect() can still
+                # be running here. Detach it from this dialog (its Qt
+                # parent) so the dialog's own teardown can't destroy a
+                # still-running QThread — Qt treats that as fatal ("QThread:
+                # Destroyed while thread is still running"). The thread
+                # keeps cancelling in the background and cleans itself up
+                # once it actually exits.
+                logger.debug("BenchmarkWorker did not stop within 1 s on dialog close; detaching")
+                worker.setParent(None)
+                worker.finished.connect(worker.deleteLater)
         super().reject()
 
     def _export_results(self) -> None:
@@ -701,7 +751,7 @@ class BenchmarkDialog(QDialog):
 
         target = _validate_export_path(path)
         if target is None:
-            QMessageBox.warning(self, "Export Failed", "Invalid export path selected.")
+            ErrorPresenter.warning(self, "Invalid export path selected.", title="Export Failed")
             return
 
         try:
@@ -717,4 +767,4 @@ class BenchmarkDialog(QDialog):
             else:
                 _atomic_write_text(target, _json.dumps(summary, indent=2))
         except Exception as exc:
-            QMessageBox.warning(self, "Export Failed", f"Could not write file: {exc}")
+            ErrorPresenter.warning(self, f"Could not write file: {exc}", title="Export Failed")

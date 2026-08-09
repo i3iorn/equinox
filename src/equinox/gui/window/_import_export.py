@@ -18,7 +18,8 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
-from equinox.storage import CollectionManager
+from equinox.application.collections import CollectionFacade
+from equinox.gui.error_presenter import ErrorPresenter
 
 logger = logging.getLogger(__name__)
 
@@ -50,8 +51,11 @@ class _ImportExportMixin:
         def _operation(cancel_event: object | None = None) -> bool:
             if cancel_event is not None and cancel_event.is_set():
                 raise RuntimeError("Import cancelled")
-            mgr = CollectionManager(self.db)
-            importer = importer_class(mgr)
+            # Importer classes need the full CollectionManager API (shared
+            # with the CLI), not just the GUI-facing facade subset — but
+            # going through CollectionFacade.manager still means this is
+            # the one place that constructs it, not an ad-hoc call.
+            importer = importer_class(CollectionFacade(self.db).manager)
             importer.import_file(file_path)
             if cancel_event is not None and cancel_event.is_set():
                 raise RuntimeError("Import cancelled")
@@ -176,10 +180,9 @@ class _ImportExportMixin:
 
     def _export_collection(self, format_type: str) -> None:
         parent = cast(QWidget, self)
-        mgr = CollectionManager(self.db)
-        collections = mgr.list_collections()
+        collections = CollectionFacade(self.db).list_collections()
         if not collections:
-            QMessageBox.warning(parent, "No Collections", "No collections to export.")
+            ErrorPresenter.warning(parent, "No collections to export.", title="No Collections")
             return
 
         col_names = [col["name"] for col in collections]
@@ -196,7 +199,11 @@ class _ImportExportMixin:
 
         collection_id = next((c["id"] for c in collections if c["name"] == col_name), None)
         if collection_id is None:
-            QMessageBox.warning(parent, "Export Error", f"Collection '{col_name}' not found.")
+            ErrorPresenter.warning(
+                parent,
+                f"Collection '{col_name}' not found.",
+                title="Export Error",
+            )
             return
         collection_id = int(collection_id)
 

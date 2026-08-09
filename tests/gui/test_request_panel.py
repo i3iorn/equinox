@@ -123,6 +123,55 @@ def test_request_panel_restores_last_active_tab(tmp_db_path):
     settings.sync()
 
 
+def test_cancel_request_does_not_block_ui_thread(tmp_db_path):
+    """Cancel must call worker.cancel() and reset UI state immediately,
+    without blocking on worker.wait() (regression test for a Cancel button
+    that could freeze the whole GUI for up to 2 seconds)."""
+    from unittest.mock import MagicMock
+
+    ensure_qapp()
+    from equinox.gui.request_panel.panel import RequestPanel
+    from equinox.storage import get_db
+
+    db = get_db()
+    panel = RequestPanel(db)
+
+    worker = MagicMock()
+    panel._worker = worker
+    panel._set_sending_state(True)
+
+    panel._cancel_request()
+
+    worker.cancel.assert_called_once()
+    worker.wait.assert_not_called()
+    assert panel._worker is None
+    assert panel.send_button.isEnabled() is True
+    assert panel.cancel_button.isVisible() is False
+
+
+def test_send_button_disabled_when_headers_invalid(tmp_db_path):
+    """Invalid headers must actually disable Send, not just show an error
+    style — regression test for a dead-code branch that let Send stay
+    enabled whenever body validation happened to still be True."""
+    ensure_qapp()
+    from equinox.gui.request_panel.panel import RequestPanel
+    from equinox.storage import get_db
+
+    db = get_db()
+    panel = RequestPanel(db)
+    panel.url_input.setText("https://example.com")
+    panel._url_valid = True
+    panel._body_valid = True
+
+    panel._headers_valid = True
+    panel._update_send_button_state()
+    assert panel.send_button.isEnabled() is True
+
+    panel._headers_valid = False
+    panel._update_send_button_state()
+    assert panel.send_button.isEnabled() is False
+
+
 def test_request_panel_builds_canonical_editor_snapshot(tmp_db_path):
     """The snapshot helper should capture the editor state without Qt types."""
     ensure_qapp()

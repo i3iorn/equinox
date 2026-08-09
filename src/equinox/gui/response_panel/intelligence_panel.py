@@ -475,11 +475,21 @@ class IntelligencePanel(QWidget):
             if finding.analyzer_id == "security.missing_headers":
                 missing = list((finding.details or {}).get("missing") or [])
                 template = _missing_headers_template(missing)
+                added = False
                 for line in template.splitlines():
                     if ":" not in line:
                         continue
                     key, header_value = (p.strip() for p in line.split(":", 1))
                     rp.headers_table.add_row(key, header_value, enabled=True)
+                    added = True
+                if added:
+                    # add_row() blocks signals while inserting, so
+                    # DirtyTrackingMixin's itemChanged listener never fires —
+                    # without this, the edit is applied but never marked
+                    # unsaved (matches request_panel's own add-row helpers,
+                    # e.g. commands_mixin._insert_header_preset).
+                    rp._mark_dirty()
+                    rp._update_tab_labels()
                 return
 
             if finding.analyzer_id == "recommender":
@@ -488,9 +498,13 @@ class IntelligencePanel(QWidget):
                 suggested_value: Any | None = (finding.details or {}).get("suggested_value")
                 if ftype == "header" and key:
                     rp.headers_table.add_row(key, str(suggested_value or ""), enabled=True)
+                    rp._mark_dirty()
+                    rp._update_tab_labels()
                     return
                 if ftype == "query" and key:
                     rp.params_table.add_row(key, str(suggested_value or ""), enabled=True)
+                    rp._mark_dirty()
+                    rp._update_tab_labels()
                     return
 
             self._copy_finding_template(finding)

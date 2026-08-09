@@ -79,7 +79,7 @@ from equinox.auth._factory import (
     get_auth_type_labels,
     get_auth_types,
 )
-from equinox.auth._oauth2 import OAuth2Auth, make_oauth2_basic_auth_header
+from equinox.auth._oauth2 import OAuth2Auth, make_oauth2_basic_auth_header, redact_token_value
 
 __all__ = [
     "AuthStrategy",
@@ -89,6 +89,7 @@ __all__ = [
     "OAuth2Auth",
     "AWSSigV4Auth",
     "make_oauth2_basic_auth_header",
+    "redact_token_value",
     "auth_from_dict",
     "get_auth_type",
     "list_auth_types",

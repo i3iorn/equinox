@@ -17,8 +17,8 @@ from equinox.core import urls
 from equinox.core.request import Response
 from equinox.gui.response_panel._formatting import format_size
 from equinox.gui.response_panel._formatting import parse_cookies
-from equinox.gui.response_panel._formatting import pretty_print_body
 from equinox.gui.response_panel.pretty_print import CT_HIGHLIGHTERS
+from equinox.gui.response_panel.pretty_print import PrettyPrintRunnable
 from equinox.gui.theme import Colors
 from equinox.security import redact_body
 from equinox.security import redact_headers
@@ -146,23 +146,19 @@ class ResponseDisplayMixin:
             self._body_warning.setVisible(False)
             self._body_load_btn.setEnabled(True)
             self._body_load_btn.setToolTip("")
-            self._raw_body_text = self._decode_response_body(response)
-            self._pretty_body_text = pretty_print_body(response)
-            self._render_body_by_mode(getattr(self, "_readability_mode", "pretty"))
-            # Verify it was set
-            actual_text = (
-                self.body_text.toPlainText() if hasattr(self.body_text, "toPlainText") else "(N/A)"
-            )
-            logger.debug(
-                "_display_body: rendered mode=%s body_text now contains %d chars",
-                getattr(self, "_readability_mode", "pretty"),
-                len(actual_text),
-            )
-
-            # Force Qt to refresh the text widget after content change
-            logger.debug("_display_body: forcing body_text widget refresh")
-            self.body_text.update()
-            self.body_text.viewport().update()
+            # Pretty-printing (JSON parse + re-serialize, or an XML DOM
+            # pretty-print) ran synchronously on the UI thread here, which
+            # could noticeably stall the GUI for a complex body well under
+            # the "large body" threshold. Route through the same off-thread
+            # PrettyPrintRunnable already used by the "Load Full" flow
+            # (_load_large_body/_on_pretty_result in actions_mixin.py)
+            # instead of duplicating that formatting inline.
+            self._loading_label.setVisible(True)
+            marker = self._get_current_request_marker()
+            runnable = PrettyPrintRunnable(response, marker)
+            runnable.signals.result.connect(self._on_pretty_result)
+            self._thread_pool.start(runnable)
+            logger.debug("_display_body: dispatched off-thread pretty-print")
 
     @staticmethod
     def _decode_response_body(response: Response) -> str:

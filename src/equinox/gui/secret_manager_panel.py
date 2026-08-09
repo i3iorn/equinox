@@ -10,6 +10,7 @@ from equinox.core.json_tools import safe_json_dumps
 from equinox.core.secret_managers import SecretManagerProfile
 from equinox.core.secret_managers import test_secret_manager_connection
 from equinox.gui.dialogs.secret_manager_config_dialog import SecretManagerConfigDialog
+from equinox.gui.error_presenter import ErrorPresenter
 from equinox.gui.secret_manager_feedback import SecretManagerConnectionMessages
 from equinox.gui.secret_manager_feedback import show_secret_manager_connection_feedback
 from equinox.gui.widgets.secret_browser import SecretBrowserWidget
@@ -161,7 +162,7 @@ class SecretManagerSettingsPanel(QWidget):
             logger.debug("Saved secret manager configurations")
         except Exception as exc:
             logger.error("Failed to save configurations: %s", exc)
-            QMessageBox.critical(self, "Save Error", f"Failed to save: {exc}")
+            ErrorPresenter.error(self, f"Failed to save: {exc}", title="Save Error")
 
     def _create_new_config(self) -> None:
         """Create a new secret manager configuration."""
@@ -331,7 +332,7 @@ Configuration:
         """Test connection to the configured secret manager."""
         profile = self._current_profile()
         if profile is None:
-            QMessageBox.warning(self, "Configuration", "No configuration selected")
+            ErrorPresenter.warning(self, "No configuration selected", title="Configuration")
             return
 
         manager_type = profile.manager_type
@@ -378,7 +379,7 @@ Configuration:
             mgr = profile.get_manager()
             mgr.clear_cache()
 
-            QMessageBox.information(self, "Cache Cleared", "Secret cache has been cleared")
+            ErrorPresenter.info(self, "Secret cache has been cleared", title="Cache Cleared")
             logger.info("Cleared secret cache for %s", manager_type)
         except Exception as exc:
             logger.error("Failed to clear cache: %s", exc)

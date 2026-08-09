@@ -527,7 +527,10 @@ class _CollectionsContextMenuMixin:
             return
 
         handler(menu, item, data)
-        menu.exec(self.tree.viewport().mapToGlobal(position))
+        viewport = self.tree.viewport()
+        if viewport is None:
+            return
+        menu.exec(viewport.mapToGlobal(position))
 
     def _safe_item_lookup(self, position: QPoint) -> QTreeWidgetItem | None:
         item = self.tree.itemAt(position)

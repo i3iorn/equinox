@@ -5,6 +5,7 @@ from __future__ import annotations
 import json as _json
 from typing import Any
 
+from equinox.gui.error_presenter import ErrorPresenter
 from equinox.gui.theme import DEFAULT_FONT_SIZE
 from equinox.gui.theme import get_font_size
 from equinox.gui.theme import get_theme_mode
@@ -26,7 +27,6 @@ from PyQt6.QtWidgets import QGroupBox
 from PyQt6.QtWidgets import QHBoxLayout
 from PyQt6.QtWidgets import QLabel
 from PyQt6.QtWidgets import QLineEdit
-from PyQt6.QtWidgets import QMessageBox
 from PyQt6.QtWidgets import QScrollArea
 from PyQt6.QtWidgets import QSlider
 from PyQt6.QtWidgets import QSpinBox
@@ -119,10 +119,12 @@ class PreferencesDialog(QDialog):
         size_row.addWidget(self._spin)
         form.addRow("Font size:", size_row)
 
-        # Live preview
+        # Live preview — the label's actual size/theme comes from the
+        # app-wide stylesheet, which set_font_size()/set_theme_mode() below
+        # re-apply immediately (QApplication.setFont + stylesheet), so this
+        # widget needs no dedicated per-value refresh hook.
         self._preview = QLabel(_PREVIEW_TEXT)
         self._preview.setWordWrap(True)
-        self._update_preview(self._original_size)
         form.addRow("Preview:", self._preview)
 
         return group
@@ -246,14 +248,9 @@ class PreferencesDialog(QDialog):
 
     def _on_theme_changed(self, _index: int) -> None:
         set_theme_mode(self._theme_combo.currentData())
-        self._update_preview(self._spin.value())
 
     def _on_size_changed(self, size: int) -> None:
         set_font_size(size)
-        self._update_preview(size)
-
-    def _update_preview(self, size: int) -> None:
-        pass
 
     def _restore_defaults(self) -> None:
         self._spin.setValue(DEFAULT_FONT_SIZE)
@@ -267,11 +264,11 @@ class PreferencesDialog(QDialog):
 
         # Require both host and port, or neither — flag any half-configured state
         if bool(proxy_host) != bool(proxy_port):
-            QMessageBox.warning(
+            ErrorPresenter.warning(
                 self,
-                "Incomplete Proxy Configuration",
                 "To enable a proxy, enter both a host and a port.\n\n"
                 "Leave both fields empty to disable the proxy.",
+                title="Incomplete Proxy Configuration",
             )
             return
 
@@ -285,6 +282,18 @@ class PreferencesDialog(QDialog):
         self.accept()
 
     def _cancel(self) -> None:
+        self.reject()
+
+    def reject(self) -> None:
+        """Revert the live-previewed theme/font size before closing.
+
+        The theme combo and font-size slider apply immediately as the user
+        interacts with them (see ``_on_theme_changed``/``_on_size_changed``),
+        so cancelling must restore the original values. This must live in
+        ``reject()`` rather than only in ``_cancel()``, since Escape and the
+        native window-close button call ``QDialog.reject()`` directly and
+        never go through the Cancel button's ``rejected`` signal.
+        """
         set_font_size(self._original_size)
         set_theme_mode(self._original_theme)
-        self.reject()
+        super().reject()

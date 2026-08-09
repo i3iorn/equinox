@@ -18,7 +18,6 @@ from PyQt6.QtWidgets import QLabel
 from PyQt6.QtWidgets import QListWidget
 from PyQt6.QtWidgets import QListWidgetItem
 from PyQt6.QtWidgets import QMenu
-from PyQt6.QtWidgets import QMessageBox
 from PyQt6.QtWidgets import QPushButton
 from PyQt6.QtWidgets import QSplitter
 from PyQt6.QtWidgets import QTableWidget
@@ -26,6 +25,7 @@ from PyQt6.QtWidgets import QTableWidgetItem
 from PyQt6.QtWidgets import QVBoxLayout
 from PyQt6.QtWidgets import QWidget
 
+from ..error_presenter import ErrorPresenter
 from ..ui_common import configure_splitter_persistence
 from ..ui_common import confirm_yes_no
 from .variable_dialog import VariableDialog
@@ -269,10 +269,10 @@ class _GroupsMixin(QWidget):
             self._mgr.create_group(name, description or "")
             self.refresh_groups()
             self.variables_changed.emit()
-            QMessageBox.information(parent, "Success", f"Variable group '{name}' created")
+            ErrorPresenter.info(parent, f"Variable group '{name}' created", title="Success")
         except Exception as exc:
             logger.error("Failed to create group %r: %s", name, exc, exc_info=True)
-            QMessageBox.critical(parent, "Error", f"Failed to create group: {exc}")
+            ErrorPresenter.error(parent, f"Failed to create group: {exc}", title="Error")
 
     def delete_group(self) -> None:
         if not self.current_group_id:
@@ -294,7 +294,11 @@ class _GroupsMixin(QWidget):
             self.variables_changed.emit()
         except Exception as exc:
             logger.error("Failed to delete group %s: %s", self.current_group_id, exc, exc_info=True)
-            QMessageBox.critical(cast(QWidget, self), "Error", f"Failed to delete group: {exc}")
+            ErrorPresenter.error(
+                cast(QWidget, self),
+                f"Failed to delete group: {exc}",
+                title="Error",
+            )
 
     def _show_group_context_menu(self, position: Any) -> None:
         item = self.groups_list.itemAt(position)
@@ -341,7 +345,7 @@ class _GroupsMixin(QWidget):
             self.variables_changed.emit()
         except Exception as exc:
             logger.error("Failed to rename group %s: %s", group_id, exc, exc_info=True)
-            QMessageBox.critical(self, "Error", f"Failed to rename group: {exc}")
+            ErrorPresenter.error(self, f"Failed to rename group: {exc}", title="Error")
 
     # ── Variable slots ────────────────────────────────────────────────────────
 
@@ -358,7 +362,7 @@ class _GroupsMixin(QWidget):
             return
         key, value, description = dialog.get_values()
         if not key:
-            QMessageBox.warning(cast(QWidget, self), "Error", "Variable key is required")
+            ErrorPresenter.warning(cast(QWidget, self), "Variable key is required", title="Error")
             return
         try:
             self._mgr.add_variable(self.current_group_id, key, value, description)
@@ -366,7 +370,11 @@ class _GroupsMixin(QWidget):
             self.variables_changed.emit()
         except Exception as exc:
             logger.error("Failed to add variable %r: %s", key, exc, exc_info=True)
-            QMessageBox.critical(cast(QWidget, self), "Error", f"Failed to add variable: {exc}")
+            ErrorPresenter.error(
+                cast(QWidget, self),
+                f"Failed to add variable: {exc}",
+                title="Error",
+            )
 
     def edit_variable(self) -> None:
         if not self.current_group_id:
@@ -387,7 +395,7 @@ class _GroupsMixin(QWidget):
             return
         new_key, new_value, new_description = dialog.get_values()
         if not new_key:
-            QMessageBox.warning(cast(QWidget, self), "Error", "Variable key is required")
+            ErrorPresenter.warning(cast(QWidget, self), "Variable key is required", title="Error")
             return
         try:
             if new_key != key:
@@ -397,7 +405,11 @@ class _GroupsMixin(QWidget):
             self.variables_changed.emit()
         except Exception as exc:
             logger.error("Failed to update variable %r: %s", key, exc, exc_info=True)
-            QMessageBox.critical(cast(QWidget, self), "Error", f"Failed to update variable: {exc}")
+            ErrorPresenter.error(
+                cast(QWidget, self),
+                f"Failed to update variable: {exc}",
+                title="Error",
+            )
 
     def remove_variable(self) -> None:
         if not self.current_group_id:
@@ -421,4 +433,8 @@ class _GroupsMixin(QWidget):
             self.variables_changed.emit()
         except Exception as exc:
             logger.error("Failed to remove variable %r: %s", key, exc, exc_info=True)
-            QMessageBox.critical(cast(QWidget, self), "Error", f"Failed to remove variable: {exc}")
+            ErrorPresenter.error(
+                cast(QWidget, self),
+                f"Failed to remove variable: {exc}",
+                title="Error",
+            )

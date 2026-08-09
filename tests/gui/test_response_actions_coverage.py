@@ -122,7 +122,7 @@ def test_diff_with_history_no_db(panel):
     # If no DB, _fetch_history_entries returns []
     # And then _diff_with_history shows an INFORMATION box (not warning)
     panel._get_database = MagicMock(return_value=None)
-    with patch("equinox.gui.response_panel.actions_mixin.QMessageBox.information") as mock_info:
+    with patch("equinox.gui.error_presenter.QMessageBox.information") as mock_info:
         panel.current_response = MagicMock()
         panel._diff_with_history()
         mock_info.assert_called()
@@ -138,10 +138,55 @@ def test_diff_with_history_empty(panel):
     # Mock HistoryManager to return empty list
     with patch("equinox.storage.history.manager.HistoryManager.search_history") as mock_search:
         mock_search.return_value = []
-        with patch("equinox.gui.response_panel.actions_mixin.QMessageBox.information") as mock_info:
+        with patch("equinox.gui.error_presenter.QMessageBox.information") as mock_info:
             panel._diff_with_history()
             mock_info.assert_called_with(
                 panel,
                 "Diff vs. History",
                 "No matching history entries found for this request.",
             )
+
+
+def test_diff_with_history_uses_injected_facade(app):
+    """ResponsePanel must route history lookups through RequestHistoryService,
+    not construct HistoryManager/Database directly (architecture-boundary
+    regression test)."""
+    from equinox.application.requests import RequestHistoryService
+
+    facade = MagicMock(spec=RequestHistoryService)
+    facade.search_recent.return_value = [
+        {"url": "http://test.com", "method": "GET", "response_body": "old"},
+    ]
+    panel = ResponsePanel(request_history=facade)
+    panel.current_response = MagicMock()
+    panel.current_response.request.url = "http://test.com"
+    panel.current_response.request.method = "GET"
+
+    entries = panel._fetch_history_entries()
+
+    facade.search_recent.assert_called_once_with(query="http://test.com", method="GET", limit=30)
+    assert entries == [{"url": "http://test.com", "method": "GET", "response_body": "old"}]
+
+
+def test_fetch_history_entries_builds_facade_lazily_when_not_injected(panel):
+    """When no facade was injected (e.g. a bare ResponsePanel()), a fallback
+    RequestHistoryService must be built from the window's db rather than a
+    raw HistoryManager — and reused on subsequent calls."""
+    db = MagicMock()
+    panel._get_database = MagicMock(return_value=db)
+    panel.current_response = MagicMock()
+    panel.current_response.request.url = "http://test.com"
+    panel.current_response.request.method = "GET"
+
+    with patch("equinox.storage.history.manager.HistoryManager.search_history", return_value=[]):
+        panel._fetch_history_entries()
+
+    from equinox.application.requests import RequestHistoryService
+
+    assert isinstance(panel._request_history, RequestHistoryService)
+    panel._get_database.assert_called_once()
+
+    # A second call must reuse the cached facade instead of rebuilding it.
+    with patch("equinox.storage.history.manager.HistoryManager.search_history", return_value=[]):
+        panel._fetch_history_entries()
+    panel._get_database.assert_called_once()

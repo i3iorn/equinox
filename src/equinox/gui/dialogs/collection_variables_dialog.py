@@ -20,6 +20,7 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
+from equinox.gui.error_presenter import ErrorPresenter
 from equinox.storage import CollectionManager, Database, VariableGroupManager
 
 
@@ -291,13 +292,13 @@ class CollectionVariablesDialog(QDialog):
             return
         key, value, description = dialog.get_values()
         if not key:
-            QMessageBox.warning(self, "Error", "Variable key is required")
+            ErrorPresenter.warning(self, "Variable key is required", title="Error")
             return
         try:
             self._mgr.add_variable(self._collection_id, key, value, description)
             self.refresh()
         except Exception as exc:
-            QMessageBox.critical(self, "Error", f"Failed to add variable: {exc}")
+            ErrorPresenter.error(self, f"Failed to add variable: {exc}", title="Error")
 
     def edit_variable(self) -> None:
         row = self.variables_table.currentRow()
@@ -316,15 +317,39 @@ class CollectionVariablesDialog(QDialog):
             return
         new_key, new_value, new_description = dialog.get_values()
         if not new_key:
-            QMessageBox.warning(self, "Error", "Variable key is required")
+            ErrorPresenter.warning(self, "Variable key is required", title="Error")
             return
+
+        key_changed = new_key != key
+        if key_changed and self._key_exists_in_table(new_key, exclude_row=row):
+            reply = QMessageBox.question(
+                self,
+                "Key Already Exists",
+                f"A variable named '{new_key}' already exists. Overwrite it?",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            )
+            if reply != QMessageBox.StandardButton.Yes:
+                return
+
         try:
-            if new_key != key:
-                self._mgr.remove_variable(self._collection_id, key)
+            # add_variable() is an upsert — do it before removing the old
+            # key so a failure here leaves the original variable intact
+            # instead of deleting it and losing the value.
             self._mgr.add_variable(self._collection_id, new_key, new_value, new_description)
+            if key_changed:
+                self._mgr.remove_variable(self._collection_id, key)
             self.refresh()
         except Exception as exc:
-            QMessageBox.critical(self, "Error", f"Failed to update variable: {exc}")
+            ErrorPresenter.error(self, f"Failed to update variable: {exc}", title="Error")
+
+    def _key_exists_in_table(self, key: str, *, exclude_row: int) -> bool:
+        """Return True if *key* is used by a different row already in the table."""
+        for row in range(self.variables_table.rowCount()):
+            if row == exclude_row:
+                continue
+            if _item_text(self.variables_table, row, 0) == key:
+                return True
+        return False
 
     def remove_variable(self) -> None:
         row = self.variables_table.currentRow()
@@ -343,7 +368,7 @@ class CollectionVariablesDialog(QDialog):
             self._mgr.remove_variable(self._collection_id, key)
             self.refresh()
         except Exception as exc:
-            QMessageBox.critical(self, "Error", f"Failed to remove variable: {exc}")
+            ErrorPresenter.error(self, f"Failed to remove variable: {exc}", title="Error")
 
     def add_group(self) -> None:
         dialog = AddVariableGroupDialog(self.db, self._collection_id, self)
@@ -351,14 +376,14 @@ class CollectionVariablesDialog(QDialog):
             return
         selection = dialog.get_selected_group()
         if selection is None:
-            QMessageBox.warning(self, "Error", "Please select a group")
+            ErrorPresenter.warning(self, "Please select a group", title="Error")
             return
         group_id, priority = selection
         try:
             self._mgr.add_variable_group(self._collection_id, group_id, priority)
             self.refresh()
         except Exception as exc:
-            QMessageBox.critical(self, "Error", f"Failed to add group: {exc}")
+            ErrorPresenter.error(self, f"Failed to add group: {exc}", title="Error")
 
     def remove_group(self) -> None:
         row = self.groups_table.currentRow()
@@ -380,4 +405,4 @@ class CollectionVariablesDialog(QDialog):
             self._mgr.remove_variable_group(self._collection_id, group_id)
             self.refresh()
         except Exception as exc:
-            QMessageBox.critical(self, "Error", f"Failed to remove group: {exc}")
+            ErrorPresenter.error(self, f"Failed to remove group: {exc}", title="Error")

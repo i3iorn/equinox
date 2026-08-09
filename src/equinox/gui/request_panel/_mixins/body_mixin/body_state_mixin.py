@@ -104,7 +104,7 @@ class BodyStateMixin:
             self._set_tab_text_by_base_label("Body", label)
             return
         has_text_body = body_type != "none" and bool(self.body_text.toPlainText().strip())
-        self._set_tab_text_by_base_label("Body", "Body ÔùÅ" if has_text_body else "Body")
+        self._set_tab_text_by_base_label("Body", "Body ●" if has_text_body else "Body")
 
     def _update_capture_tab_label(self: Any) -> None:
         """Refresh the Captures tab badge based on non-empty capture rules."""
@@ -119,8 +119,8 @@ class BodyStateMixin:
             or self.post_script_editor.toPlainText().strip(),
         )
         has_notes = bool(self.notes_editor.toPlainText().strip())
-        self._set_tab_text_by_base_label("Scripts", "Scripts ÔùÅ" if has_scripts else "Scripts")
-        self._set_tab_text_by_base_label("Notes", "Notes ÔùÅ" if has_notes else "Notes")
+        self._set_tab_text_by_base_label("Scripts", "Scripts ●" if has_scripts else "Scripts")
+        self._set_tab_text_by_base_label("Notes", "Notes ●" if has_notes else "Notes")
 
     @staticmethod
     def _detect_body_type(body: str, headers: dict[str, str] | None = None) -> str:

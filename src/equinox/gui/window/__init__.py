@@ -165,7 +165,10 @@ class MainWindow(
         right_layout.setContentsMargins(0, 0, 0, 0)
         self._req_resp_splitter = QSplitter(Qt.Orientation.Vertical)
         self.request_panel = RequestPanel(self.db, self, cookie_manager=self._cookie_manager)
-        self.response_panel = ResponsePanel(self)
+        self.response_panel = ResponsePanel(
+            self,
+            request_history=self.request_panel._request_history,
+        )
         self.request_panel.setMinimumHeight(_MIN_REQ_H)
         self.response_panel.setMinimumHeight(_MIN_RESP_H)
         self._req_resp_splitter.addWidget(self.request_panel)
@@ -229,6 +232,15 @@ class MainWindow(
 
     def closeEvent(self, event: Any | None) -> None:
         self.request_panel.autosave_current()
+        if self.websocket_panel is not None:
+            # WebSocketPanel is a sidebar tab, not a top-level window, so Qt
+            # never delivers QCloseEvent to it on app shutdown — without
+            # this, an open connection's background thread outlives the
+            # window.
+            try:
+                self.websocket_panel.shutdown()
+            except Exception:
+                logger.exception("Error stopping WebSocket panel on close", exc_info=True)
         if self._intelligence_worker is not None:
             worker = self._intelligence_worker
             self._intelligence_worker = None

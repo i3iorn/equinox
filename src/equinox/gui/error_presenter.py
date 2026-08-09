@@ -7,21 +7,40 @@ headings, optional log-file hints, and copyable technical details.
 
 from __future__ import annotations
 
+import logging
+
 from PyQt6.QtWidgets import QMessageBox, QWidget
 
 from equinox.gui.widgets import CopyableMessageBox
 
+logger = logging.getLogger(__name__)
+
 
 class ErrorPresenter:
-    """Tiny facade for warning/error/info dialogs and request-failure UX."""
+    """Tiny facade for warning/error/info/confirm dialogs and request-failure UX."""
 
     TITLE_WARNING = "Warning"
     TITLE_ERROR = "Error"
     TITLE_INFO = "Information"
+    TITLE_CONFIRM = "Confirm"
     TITLE_REQUEST_FAILED = "Request Failed"
 
     @staticmethod
-    def warning(parent: QWidget | None, message: str, *, title: str | None = None) -> None:
+    def warning(
+        parent: QWidget | None,
+        message: str,
+        *,
+        title: str | None = None,
+        details: str | None = None,
+    ) -> None:
+        if details:
+            CopyableMessageBox.warning(
+                parent,
+                title or ErrorPresenter.TITLE_WARNING,
+                message,
+                copy_text=details,
+            )
+            return
         QMessageBox.warning(parent, title or ErrorPresenter.TITLE_WARNING, message)
 
     @staticmethod
@@ -32,6 +51,12 @@ class ErrorPresenter:
         title: str | None = None,
         details: str | None = None,
     ) -> None:
+        logger.error(
+            "%s: %s%s",
+            title or ErrorPresenter.TITLE_ERROR,
+            message,
+            f" ({details})" if details else "",
+        )
         if details:
             CopyableMessageBox.critical(
                 parent,
@@ -43,8 +68,40 @@ class ErrorPresenter:
         QMessageBox.critical(parent, title or ErrorPresenter.TITLE_ERROR, message)
 
     @staticmethod
-    def info(parent: QWidget | None, message: str, *, title: str | None = None) -> None:
+    def info(
+        parent: QWidget | None,
+        message: str,
+        *,
+        title: str | None = None,
+        details: str | None = None,
+    ) -> None:
+        if details:
+            CopyableMessageBox.information(
+                parent,
+                title or ErrorPresenter.TITLE_INFO,
+                message,
+                copy_text=details,
+            )
+            return
         QMessageBox.information(parent, title or ErrorPresenter.TITLE_INFO, message)
+
+    @staticmethod
+    def confirm(parent: QWidget | None, message: str, *, title: str | None = None) -> bool:
+        """Ask a yes/no question. Returns True only when the user picks Yes.
+
+        Companion to warning/error/info so callers migrating off ad-hoc
+        ``QMessageBox`` calls have a single presenter for the whole
+        warning/error/info/confirm family, not a separate helper
+        (``ui_common.confirm_yes_no``, still available directly) to
+        remember for just this one case.
+        """
+        reply = QMessageBox.question(
+            parent,
+            title or ErrorPresenter.TITLE_CONFIRM,
+            message,
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+        )
+        return reply == QMessageBox.StandardButton.Yes
 
     @staticmethod
     def request_failure(
@@ -56,6 +113,7 @@ class ErrorPresenter:
         details: str | None = None,
         log_file_path: str | None = None,
     ) -> None:
+        logger.error("Request failed (%s): %s", exc_type, message)
         log_hint = f"\n\nFull details in: {log_file_path}" if log_file_path else ""
         dialog_text = f"{message}{log_hint}"
         if hint:

@@ -3,7 +3,12 @@ from __future__ import annotations
 import re
 from collections.abc import Iterable
 
-from equinox.gui.syntax_highlighter.base import RegexHighlighterBase, RegexRule, _make_format
+from equinox.gui.syntax_highlighter.base import (
+    DOUBLE_QUOTED_STRING_RE,
+    RegexHighlighterBase,
+    RegexRule,
+    _make_format,
+)
 from equinox.gui.theme import Colors
 
 
@@ -65,7 +70,7 @@ class YamlHighlighter(RegexHighlighterBase):
         str_fmt = _make_format(foreground=Colors.GREEN)
         rules.append(
             RegexRule(
-                pattern=re.compile(r'"[^"\\]*(?:\\.[^"\\]*)*"'),
+                pattern=DOUBLE_QUOTED_STRING_RE,
                 fmt=str_fmt,
             ),
         )

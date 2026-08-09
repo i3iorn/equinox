@@ -8,6 +8,7 @@ from typing import Any, cast
 from PyQt6.QtWidgets import QWidget
 
 from equinox.core.request import Request
+from equinox.gui.request_panel._mixins.assertions_mixin import LABEL_EMPTY
 from equinox.gui.workers import DEFAULT_TIMEOUT
 
 logger = logging.getLogger(__name__)
@@ -186,9 +187,9 @@ class RequestLoadingMixin:
         self._gql_vars.clear()
         self.body_type_combo.setCurrentIndex(0)
         self.captures_table.setRowCount(0)
-        self.captures_results_label.setText("ÔÇö")
+        self.captures_results_label.setText(LABEL_EMPTY)
         self.assertions_table.setRowCount(0)
-        self.assertions_results_label.setText("ÔÇö")
+        self.assertions_results_label.setText(LABEL_EMPTY)
         self._reset_assertions_tab_title()
         self.pre_script_editor.clear()
         self.post_script_editor.clear()

@@ -16,10 +16,13 @@ from typing import Any
 from PyQt6.QtGui import QFont, QColor
 
 from equinox.auth import AUTH_TYPES
+from equinox.gui.dialogs._dirty_dialog_mixin import DirtyDialogMixin
 from equinox.gui.dialogs._oauth_connection_test_mixin import OAuthConnectionTestMixin
-from equinox.gui.dialogs._oauth_form_utils import (
-    parse_json_object_field,
+from equinox.gui.dialogs._saved_credentials_auth_collector import (
+    AuthConfigCollector,
+    AuthConfigResult,
 )
+from equinox.gui.error_presenter import ErrorPresenter
 from equinox.gui.theme import Colors
 from equinox.gui.theme import get_mono_font
 from equinox.gui.widgets.secret_row import make_secret_row as _secret_row
@@ -102,137 +105,6 @@ class TestResult:
     response: dict[str, Any] | None = None
 
 
-@dataclass(frozen=True)
-class AuthConfigResult:
-    config: dict[str, Any] | None
-    error: str | None
-
-
-class AuthConfigCollector:
-    """Collects and validates authentication configuration from GUI widgets."""
-
-    def __init__(self, dialog: Any) -> None:
-        # Dependency injection: dialog supplies the widgets
-        self._d = dialog
-
-    def collect(self, auth_type: str) -> AuthConfigResult:
-        handlers: dict[str, Callable[[], AuthConfigResult]] = {
-            "oauth2": self._collect_oauth2,
-            "api_key": self._collect_api_key,
-            "basic": self._collect_basic,
-            "bearer": self._collect_bearer,
-            "aws_sigv4": self._collect_aws_sigv4,
-        }
-        handler = handlers.get(auth_type)
-        if handler is None:
-            return AuthConfigResult(None, f"Unsupported authentication type: {auth_type}")
-        return handler()
-
-    # --- OAuth2 -------------------------------------------------------
-
-    def _collect_oauth2(self) -> AuthConfigResult:
-        d = self._d
-        token_url = d.o_token_url.text().strip()
-        client_id = d.o_client_id.text().strip()
-
-        if not token_url:
-            return AuthConfigResult(None, "Token URL is required for OAuth 2.0.")
-        if not client_id:
-            return AuthConfigResult(None, "Client ID is required for OAuth 2.0.")
-
-        extra_params, error = parse_json_object_field(d.o_extra.toPlainText())
-        if extra_params is None:
-            return AuthConfigResult(None, error)
-
-        return AuthConfigResult(
-            {
-                "token_url": token_url,
-                "client_id": client_id,
-                "client_secret": d.o_client_secret.text() or None,
-                "scope": d.o_scope.text().strip() or None,
-                "token_auth": d.o_token_auth.currentData() or "body",
-                "grant_type": d.o_grant_type.currentText(),
-                "extra_params": extra_params,
-            },
-            None,
-        )
-
-    # --- API Key ------------------------------------------------------
-
-    def _collect_api_key(self) -> AuthConfigResult:
-        d = self._d
-        key = d.ak_key.text().strip()
-        value = d.ak_value.text()
-
-        if not key:
-            return AuthConfigResult(None, "Header/Param Name is required for API Key.")
-        if not value:
-            return AuthConfigResult(None, "Key Value is required for API Key.")
-
-        return AuthConfigResult(
-            {
-                "key": key,
-                "value": value,
-                "location": d.ak_location.currentText(),
-            },
-            None,
-        )
-
-    # --- Basic --------------------------------------------------------
-
-    def _collect_basic(self) -> AuthConfigResult:
-        d = self._d
-        username = d.ba_username.text().strip()
-        password = d.ba_password.text()
-
-        if not username:
-            return AuthConfigResult(None, "Username is required for Basic Auth.")
-        if not password:
-            return AuthConfigResult(None, "Password is required for Basic Auth.")
-
-        return AuthConfigResult({"username": username, "password": password}, None)
-
-    # --- Bearer -------------------------------------------------------
-
-    def _collect_bearer(self) -> AuthConfigResult:
-        d = self._d
-        token = d.bt_token.text().strip()
-        if not token:
-            return AuthConfigResult(None, "Token is required for Bearer Token.")
-        return AuthConfigResult({"token": token}, None)
-
-    # --- AWS SigV4 ----------------------------------------------------
-
-    def _collect_aws_sigv4(self) -> AuthConfigResult:
-        d = self._d
-        access_key = d.aws_access_key.text().strip()
-        secret_key = d.aws_secret_key.text().strip()
-        region = d.aws_region.text().strip()
-        service = d.aws_service.text().strip()
-
-        if not access_key:
-            return AuthConfigResult(None, "Access Key ID is required for AWS SigV4.")
-        if not secret_key:
-            return AuthConfigResult(None, "Secret Access Key is required for AWS SigV4.")
-        if not region:
-            return AuthConfigResult(None, "Region is required for AWS SigV4.")
-        if not service:
-            return AuthConfigResult(None, "Service is required for AWS SigV4.")
-
-        cfg = {
-            "access_key": access_key,
-            "secret_key": secret_key,
-            "region": region,
-            "service": service,
-        }
-
-        session_token = d.aws_session_token.text().strip()
-        if session_token:
-            cfg["session_token"] = session_token
-
-        return AuthConfigResult(cfg, None)
-
-
 class SavedCredentialsService:
     """Business logic for saved credentials."""
 
@@ -287,7 +159,7 @@ class SavedCredentialsService:
         )
 
 
-class SavedCredentialsView(QDialog):
+class SavedCredentialsView(DirtyDialogMixin, QDialog):
     """View for managing saved credentials."""
 
     credentials_changed = pyqtSignal()
@@ -305,6 +177,10 @@ class SavedCredentialsView(QDialog):
         self._current_id: int | None = None
         self._dirty = False
         self._last_test_response: dict[str, Any] | None = None
+        # DirtyDialogMixin requirement — overwritten with the real save
+        # method once a controller exists (the view/controller split means
+        # the view alone has nothing to save with).
+        self._save_callback: Callable[[], bool] = lambda: False
 
         self.setWindowTitle("Saved Credentials")
         self.setMinimumSize(960, 580)
@@ -326,7 +202,7 @@ class SavedCredentialsView(QDialog):
         root.addWidget(splitter, 1)
 
         close_btns = QDialogButtonBox(QDialogButtonBox.StandardButton.Close)
-        close_btns.rejected.connect(self.close)
+        close_btns.rejected.connect(self._on_close)
         root.addWidget(close_btns)
 
         self._set_form_enabled(False)
@@ -663,10 +539,10 @@ class SavedCredentialsView(QDialog):
             logger.warning("No form page for auth type %r", auth_type)
 
     def show_validation_error(self, message: str) -> None:
-        QMessageBox.warning(self, "Validation", message)
+        ErrorPresenter.warning(self, message, title="Validation")
 
     def show_save_error(self, message: str) -> None:
-        QMessageBox.critical(self, "Save Failed", message)
+        ErrorPresenter.error(self, message, title="Save Failed")
 
     def set_status(self, text: str, ok: bool | None = True) -> None:
         self.status_label.setText(self._format_status(text, ok))
@@ -704,9 +580,22 @@ class SavedCredentialsView(QDialog):
         if current is None:
             self.set_current_id(None)
             return
-        cred_id = current.data(Qt.ItemDataRole.UserRole)
-        self.set_current_id(int(cred_id))
-        self.selection_changed.emit(int(cred_id))
+        cred_id = int(current.data(Qt.ItemDataRole.UserRole))
+        if cred_id == self._current_id:
+            # Same item re-selected, or a reentrant call triggered by the
+            # list rebuild that _prompt_unsaved's Save path runs below —
+            # nothing to switch to.
+            return
+        if self._dirty and self._current_id is not None:
+            if not self._prompt_unsaved(self._current_id):
+                return
+            # The Save path above just rebuilt the list and re-selected the
+            # previously-current item (see SavedCredentialsController._on_save)
+            # — resync the visual selection to the item the user actually
+            # clicked before loading its form.
+            self._reselect_item(cred_id)
+        self.set_current_id(cred_id)
+        self.selection_changed.emit(cred_id)
 
     def _on_type_changed(self, index: int) -> None:
         auth_type = self.f_type.itemData(index)
@@ -768,6 +657,10 @@ class SavedCredentialsController(OAuthConnectionTestMixin):
         # The collector reads live widget values, so it can only be built once
         # a view exists.
         service.bind_collector(AuthConfigCollector(view))
+
+        # DirtyDialogMixin's close/switch guards call this to persist the
+        # form; the view alone has no save logic (that's this controller).
+        view._save_callback = self._on_save
 
         self._connect_signals()
         self._refresh_list()

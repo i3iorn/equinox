@@ -23,6 +23,7 @@ from PyQt6.QtWidgets import QApplication, QSplashScreen
 from equinox.core.log_setup import configure_logging
 from equinox.gui.dialogs.master_password_dialog import prompt_master_password
 from equinox.gui.theme import apply_theme
+from equinox.gui.theme import Colors
 from equinox.gui.widgets import CopyableMessageBox
 from equinox.gui.window import MainWindow
 from equinox.security.secrets_password import set_master_password_prompt
@@ -39,8 +40,6 @@ logger = logging.getLogger(__name__)
 
 _SPLASH_WIDTH: int = 420
 _SPLASH_HEIGHT: int = 100
-_SPLASH_BG_COLOR: str = "#1e1e2e"
-_SPLASH_TEXT_COLOR: str = "#cdd6f4"
 _SPLASH_ALIGN = Qt.AlignmentFlag.AlignBottom | Qt.AlignmentFlag.AlignHCenter
 _SPLASH_INITIAL_MSG: str = "Starting Equinox…"
 
@@ -129,14 +128,20 @@ class _SplashScreen:
     """
 
     def __init__(self) -> None:
-        """Create and initialize the splash screen."""
+        """Create and initialize the splash screen.
+
+        Reads colors from the active theme (``apply_theme(app)`` has
+        already run by the time this is constructed — see ``main()``) so a
+        light-theme user doesn't see a dark-branded splash flash before the
+        real, correctly-themed window appears.
+        """
         pixmap = QPixmap(_SPLASH_WIDTH, _SPLASH_HEIGHT)
-        pixmap.fill(QColor(_SPLASH_BG_COLOR))
+        pixmap.fill(QColor(Colors.BG))
         self.screen = QSplashScreen(pixmap, Qt.WindowType.WindowStaysOnTopHint)
 
     def show(self) -> None:
         """Display the splash screen and pump events for responsiveness."""
-        self.screen.showMessage(_SPLASH_INITIAL_MSG, _SPLASH_ALIGN, QColor(_SPLASH_TEXT_COLOR))
+        self.screen.showMessage(_SPLASH_INITIAL_MSG, _SPLASH_ALIGN, QColor(Colors.FG))
         self.screen.show()
         QApplication.processEvents()
 
@@ -146,7 +151,7 @@ class _SplashScreen:
         Args:
             text: Message text to display
         """
-        self.screen.showMessage(text, _SPLASH_ALIGN, QColor(_SPLASH_TEXT_COLOR))
+        self.screen.showMessage(text, _SPLASH_ALIGN, QColor(Colors.FG))
         QApplication.processEvents()
 
     def close(self) -> None:

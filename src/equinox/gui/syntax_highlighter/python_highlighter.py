@@ -3,7 +3,12 @@ from __future__ import annotations
 import re
 from collections.abc import Iterable
 
-from equinox.gui.syntax_highlighter.base import RegexHighlighterBase, RegexRule, _make_format
+from equinox.gui.syntax_highlighter.base import (
+    DOUBLE_QUOTED_STRING_RE,
+    RegexHighlighterBase,
+    RegexRule,
+    _make_format,
+)
 from equinox.gui.theme import Colors
 
 
@@ -15,6 +20,20 @@ class PythonHighlighter(RegexHighlighterBase):
 
     def _build_rules(self) -> Iterable[RegexRule]:
         rules: list[RegexRule] = []
+
+        # Comments — must come first so string rules below can override a
+        # '#' that appears inside a string literal (e.g. a URL fragment
+        # like "https://x.com/page#frag"); rules are applied in order and
+        # each later match overwrites the format of any earlier one, so
+        # whichever rule is added last wins on overlap. Matches
+        # yaml_highlighter.py's rule ordering for the same reason.
+        comment_fmt = _make_format(foreground=Colors.FG_MUTED, italic=True)
+        rules.append(
+            RegexRule(
+                pattern=re.compile(r"#[^\n]*"),
+                fmt=comment_fmt,
+            ),
+        )
 
         # Keywords
         kw_fmt = _make_format(foreground=Colors.BLUE, bold=True)
@@ -52,7 +71,7 @@ class PythonHighlighter(RegexHighlighterBase):
         str_fmt = _make_format(foreground=Colors.GREEN)
         rules.append(
             RegexRule(
-                pattern=re.compile(r'"[^"\\]*(?:\\.[^"\\]*)*"'),
+                pattern=DOUBLE_QUOTED_STRING_RE,
                 fmt=str_fmt,
             ),
         )
@@ -70,15 +89,6 @@ class PythonHighlighter(RegexHighlighterBase):
             RegexRule(
                 pattern=re.compile(r"\b\d+\.?\d*\b"),
                 fmt=num_fmt,
-            ),
-        )
-
-        # Comments — must come last so they override other formats
-        comment_fmt = _make_format(foreground=Colors.FG_MUTED, italic=True)
-        rules.append(
-            RegexRule(
-                pattern=re.compile(r"#[^\n]*"),
-                fmt=comment_fmt,
             ),
         )
 

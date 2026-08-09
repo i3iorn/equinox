@@ -15,8 +15,10 @@ from typing import Any
 from typing import cast
 from typing import TYPE_CHECKING
 
+from equinox.application.requests import RequestHistoryService
 from equinox.core.codegen import generate_code
 from equinox.core.codegen import GENERATORS
+from equinox.gui.error_presenter import ErrorPresenter
 from equinox.gui.file_ops import atomic_write_bytes
 from equinox.gui.file_ops import validate_selected_path
 from equinox.gui.response_panel._formatting import pretty_print_body
@@ -31,7 +33,6 @@ from PyQt6.QtWidgets import QHBoxLayout
 from PyQt6.QtWidgets import QLabel
 from PyQt6.QtWidgets import QListWidget
 from PyQt6.QtWidgets import QListWidgetItem
-from PyQt6.QtWidgets import QMessageBox
 from PyQt6.QtWidgets import QPlainTextEdit
 from PyQt6.QtWidgets import QPushButton
 from PyQt6.QtWidgets import QTextEdit
@@ -65,6 +66,12 @@ class ResponseActionsMixin:
 
     if TYPE_CHECKING:
         _as_qwidget: Callable[[], QWidget]
+        # Declared here (Optional) so it matches ResponsePanel.__init__'s
+        # annotation — without this, mypy infers a non-Optional type from
+        # _get_request_history()'s cache-fill assignment below and flags
+        # __init__'s `request_history: RequestHistoryService | None`
+        # default as incompatible with this mixin's inferred attribute type.
+        _request_history: RequestHistoryService | None
 
     # ------------------------------------------------------------------
     # Private helpers — encapsulation
@@ -94,6 +101,24 @@ class ResponseActionsMixin:
             return cast(Database, self.window().db)
         except Exception:
             return None
+
+    def _get_request_history(self) -> RequestHistoryService | None:
+        """Return the injected history facade, or build one on first use.
+
+        Prefers the instance passed to ``ResponsePanel.__init__`` (shared
+        with ``RequestPanel`` when constructed by the main window); falls
+        back to building one from the window's ``db`` for callers that
+        construct a bare ``ResponsePanel()`` (e.g. tests).
+        """
+        existing = getattr(self, "_request_history", None)
+        if existing is not None:
+            return cast(RequestHistoryService, existing)
+        db = self._get_database()
+        if db is None:
+            return None
+        service = RequestHistoryService(db)
+        self._request_history = service
+        return service
 
     def _get_current_request_marker(self) -> object:
         """Return a unique identifier for the current response's request URL.
@@ -210,10 +235,10 @@ class ResponseActionsMixin:
 
         history_entries = self._fetch_history_entries()
         if not history_entries:
-            QMessageBox.information(
+            ErrorPresenter.info(
                 self._as_qwidget(),
-                "Diff vs. History",
                 "No matching history entries found for this request.",
+                title="Diff vs. History",
             )
             return
 
@@ -230,19 +255,12 @@ class ResponseActionsMixin:
 
         Returns an empty list if the database is unavailable or the query fails.
         """
-        db = self._get_database()
-        if db is None or self.current_response is None:
+        history = self._get_request_history()
+        if history is None or self.current_response is None:
             return []
 
-        try:
-            from equinox.storage import HistoryManager
-
-            req = self.current_response.request
-            entries = HistoryManager(db).search_history(query=req.url, method=req.method, limit=30)
-            return entries
-        except Exception:
-            logger.exception("Failed to fetch history entries for diff")
-            return []
+        req = self.current_response.request
+        return history.search_recent(query=req.url, method=req.method, limit=30)
 
     def _format_history_entry(self, entry: dict[str, Any]) -> str:
         """Format a history entry for display in the picker list."""
@@ -358,10 +376,14 @@ class ResponseActionsMixin:
             )
         except ValueError as exc:
             logger.warning("response_panel.download_body_invalid_path path=%s error=%s", path, exc)
-            QMessageBox.warning(self._as_qwidget(), "Save Failed", str(exc))
+            ErrorPresenter.warning(self._as_qwidget(), str(exc), title="Save Failed")
         except Exception as exc:
             logger.warning("response_panel.download_body_failed path=%s error=%s", path, exc)
-            QMessageBox.warning(self._as_qwidget(), "Save Failed", f"Could not save file:\n{exc}")
+            ErrorPresenter.warning(
+                self._as_qwidget(),
+                f"Could not save file:\n{exc}",
+                title="Save Failed",
+            )
 
     def _response_bytes_for_download(self) -> bytes:
         """Return exact response bytes for file download, with safe text fallback."""
@@ -391,7 +413,7 @@ class ResponseActionsMixin:
         """Generate client code for this request and copy to clipboard."""
         code = self._generate_code_snippet(fmt)
         if code.startswith("# Error"):
-            QMessageBox.warning(self._as_qwidget(), "Code Generation Failed", code)
+            ErrorPresenter.warning(self._as_qwidget(), code, title="Code Generation Failed")
         else:
             clipboard = QApplication.clipboard()
             if clipboard is not None:

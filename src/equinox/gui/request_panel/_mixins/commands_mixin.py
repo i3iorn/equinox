@@ -8,6 +8,7 @@ from typing import Any
 from typing import TYPE_CHECKING
 
 from equinox.core.request import Request
+from equinox.gui.error_presenter import ErrorPresenter
 from equinox.gui.workers import BenchmarkDialog
 from equinox.security import redact_url
 from PyQt6.QtCore import QObject
@@ -19,7 +20,6 @@ from PyQt6.QtWidgets import QCheckBox
 from PyQt6.QtWidgets import QComboBox
 from PyQt6.QtWidgets import QInputDialog
 from PyQt6.QtWidgets import QLineEdit
-from PyQt6.QtWidgets import QMessageBox
 from PyQt6.QtWidgets import QWidget
 
 logger = logging.getLogger(__name__)
@@ -137,10 +137,10 @@ class RequestCommandsMixin:
             parsed = parse_curl(text.strip())
         except Exception as exc:
             logger.warning("Failed to parse cURL command (len=%d): %s", len(text), exc)
-            QMessageBox.warning(
+            ErrorPresenter.warning(
                 self._as_qwidget(),
-                "Parse Error",
                 f"Could not parse cURL command:\n{exc}",
+                title="Parse Error",
             )
             return
 
@@ -163,8 +163,10 @@ class RequestCommandsMixin:
             self.body_text.clear()
             self.body_type_combo.setCurrentIndex(0)
 
-        if not parsed.get("verify_ssl", True):
-            self.verify_ssl_check.setChecked(False)
+        # Unconditional, not just "turn off if insecure": a prior insecure
+        # (-k) import must not silently persist once a secure command is
+        # imported afterward.
+        self.verify_ssl_check.setChecked(bool(parsed.get("verify_ssl", True)))
 
         self._mark_dirty()
         self._status_message("Request imported from cURL command")
@@ -174,10 +176,10 @@ class RequestCommandsMixin:
         """Open the benchmark dialog for the currently configured request."""
         url = self.url_input.text().strip()
         if not url:
-            QMessageBox.warning(
+            ErrorPresenter.warning(
                 self._as_qwidget(),
-                "No Request",
                 "Enter a URL before running a benchmark.",
+                title="No Request",
             )
             return
 

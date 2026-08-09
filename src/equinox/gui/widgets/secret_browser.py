@@ -13,7 +13,6 @@ from PyQt6.QtWidgets import (
     QLineEdit,
     QListWidget,
     QListWidgetItem,
-    QMessageBox,
     QProgressBar,
     QPushButton,
     QVBoxLayout,
@@ -25,6 +24,7 @@ from equinox.core.secret_managers import (
     SecretManagerProfile,
     SecretNotFoundError,
 )
+from equinox.gui.error_presenter import ErrorPresenter
 
 logger = logging.getLogger(__name__)
 
@@ -130,9 +130,9 @@ class SecretBrowserWidget(QWidget):
         self.secret_input.returnPressed.connect(self._retrieve_secret)
         search_layout.addWidget(self.secret_input)
 
-        retrieve_btn = QPushButton("Retrieve")
-        retrieve_btn.clicked.connect(self._retrieve_secret)
-        search_layout.addWidget(retrieve_btn)
+        self.retrieve_btn = QPushButton("Retrieve")
+        self.retrieve_btn.clicked.connect(self._retrieve_secret)
+        search_layout.addWidget(self.retrieve_btn)
 
         layout.addLayout(search_layout)
 
@@ -173,11 +173,21 @@ class SecretBrowserWidget(QWidget):
 
     def _retrieve_secret(self) -> None:
         """Retrieve the secret from the manager."""
-        secret_name = self.secret_input.text().strip()
-        if not secret_name:
-            QMessageBox.warning(self, "Input", "Please enter a secret name or ID")
+        if self._retrieval_thread is not None:
+            # A retrieval is already in flight — a second click (or Enter)
+            # here would drop the only reference to the still-running
+            # QThread when we overwrite self._retrieval_thread below, which
+            # is a known PyQt crash pattern ("QThread destroyed while
+            # thread is still running"), and could let a stale response
+            # overwrite a newer one in the UI.
             return
 
+        secret_name = self.secret_input.text().strip()
+        if not secret_name:
+            ErrorPresenter.warning(self, "Please enter a secret name or ID", title="Input")
+            return
+
+        self.retrieve_btn.setEnabled(False)
         self.progress.setVisible(True)
         self.progress.setValue(0)
         self.results_list.clear()
@@ -231,12 +241,13 @@ class SecretBrowserWidget(QWidget):
         Args:
             error_msg: Error message
         """
-        QMessageBox.critical(self, "Retrieval Error", error_msg)
+        ErrorPresenter.error(self, error_msg, title="Retrieval Error")
         logger.error("Failed to retrieve secret: %s", error_msg)
 
     def _on_retrieval_finished(self) -> None:
         """Handle retrieval completion."""
         self.progress.setVisible(False)
+        self.retrieve_btn.setEnabled(True)
         if self._retrieval_thread:
             self._retrieval_thread.quit()
             self._retrieval_thread.wait()
@@ -256,19 +267,19 @@ class SecretBrowserWidget(QWidget):
     def _copy_selected(self) -> None:
         """Copy the selected field value to clipboard."""
         if not self._current_secret or not self._selected_key:
-            QMessageBox.warning(self, "Selection", "Please select a field first")
+            ErrorPresenter.warning(self, "Please select a field first", title="Selection")
             return
 
         value = self._current_secret.get(self._selected_key, "")
         clipboard = QApplication.clipboard()
         if clipboard is not None:
             clipboard.setText(str(value))
-        QMessageBox.information(self, "Copied", "Value copied to clipboard")
+        ErrorPresenter.info(self, "Value copied to clipboard", title="Copied")
 
     def _use_secret(self) -> None:
         """Emit signal to use the current secret."""
         if not self._current_secret:
-            QMessageBox.warning(self, "Selection", "Please retrieve a secret first")
+            ErrorPresenter.warning(self, "Please retrieve a secret first", title="Selection")
             return
 
         secret_name = self.secret_input.text().strip()
