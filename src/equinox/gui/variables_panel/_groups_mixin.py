@@ -65,6 +65,7 @@ class _GroupsMixin(QWidget):
         """Create the left-side groups panel."""
         container = QWidget()
         layout = QVBoxLayout(container)
+        layout.setContentsMargins(2, 4, 2, 4)
 
         layout.addWidget(QLabel("<b>Groups</b>"))
         layout.addLayout(self._build_groups_toolbar())
@@ -76,10 +77,12 @@ class _GroupsMixin(QWidget):
         """Create toolbar with group actions."""
         toolbar = QHBoxLayout()
 
-        self.new_group_btn = QPushButton("New Group")
+        self.new_group_btn = QPushButton("+ New")
+        self.new_group_btn.setToolTip("New Group")
         self.new_group_btn.clicked.connect(self.create_group)
 
-        self.delete_group_btn = QPushButton("Delete Group")
+        self.delete_group_btn = QPushButton("Delete")
+        self.delete_group_btn.setToolTip("Delete Group")
         self.delete_group_btn.clicked.connect(self.delete_group)
         self.delete_group_btn.setEnabled(False)
 
@@ -101,6 +104,7 @@ class _GroupsMixin(QWidget):
         """Create the right-side variables panel."""
         container = QWidget()
         layout = QVBoxLayout(container)
+        layout.setContentsMargins(2, 4, 2, 4)
 
         layout.addWidget(QLabel("<b>Variables</b>"))
         layout.addLayout(self._build_variables_toolbar())
@@ -112,15 +116,18 @@ class _GroupsMixin(QWidget):
         """Create toolbar with variable actions."""
         toolbar = QHBoxLayout()
 
-        self.add_var_btn = QPushButton("Add Variable")
+        self.add_var_btn = QPushButton("Add")
+        self.add_var_btn.setToolTip("Add Variable")
         self.add_var_btn.clicked.connect(self.add_variable)
         self.add_var_btn.setEnabled(False)
 
         self.edit_var_btn = QPushButton("Edit")
+        self.edit_var_btn.setToolTip("Edit selected variable")
         self.edit_var_btn.clicked.connect(self.edit_variable)
         self.edit_var_btn.setEnabled(False)
 
-        self.remove_var_btn = QPushButton("Remove")
+        self.remove_var_btn = QPushButton("Del")
+        self.remove_var_btn.setToolTip("Remove selected variable")
         self.remove_var_btn.clicked.connect(self.remove_variable)
         self.remove_var_btn.setEnabled(False)
 

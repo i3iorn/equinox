@@ -49,6 +49,9 @@ class _PanelsMixin:
         self._left_tabs.blockSignals(True)
         self._left_tabs.removeTab(index)
         self._left_tabs.insertTab(index, panel, label)
+        # insertTab starts from a blank tab, so the tooltip set at construction
+        # is gone — restore it, or the elided label loses its only explanation.
+        self.apply_left_tab_tooltip(index)
         self._left_tabs.setCurrentIndex(index)
         self._left_tabs.blockSignals(False)
         self._flush_pending_panel_refresh(index)

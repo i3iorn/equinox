@@ -94,8 +94,8 @@ class _SessionVarsMixin:
         return self._session_count_label
 
     def _build_session_copy_button(self) -> QPushButton:
-        """Create the 'Copy All' button."""
-        self._session_copy_btn = QPushButton("Copy All")
+        """Create the 'Copy' (copy-all) button."""
+        self._session_copy_btn = QPushButton("Copy")
         self._session_copy_btn.setToolTip(
             "Copy all session variables to clipboard as KEY=VALUE lines",
         )
@@ -119,8 +119,8 @@ class _SessionVarsMixin:
         return self._session_delete_btn
 
     def _build_session_clear_button(self) -> QPushButton:
-        """Create the 'Clear All' button."""
-        self._session_clear_btn = QPushButton("Clear All")
+        """Create the 'Clear' (clear-all) button."""
+        self._session_clear_btn = QPushButton("Clear")
         self._session_clear_btn.setToolTip("Remove all captured session variables")
         self._session_clear_btn.clicked.connect(self._on_clear_session)
         self._session_clear_btn.setEnabled(False)
