@@ -220,7 +220,7 @@ urllib3==2.7.0
     # via
     #   requests
     #   types-requests
-urlps==0.5.1
+urlps==0.6.1
     # via equinox (pyproject.toml)
 virtualenv==21.7.3
     # via pre-commit
