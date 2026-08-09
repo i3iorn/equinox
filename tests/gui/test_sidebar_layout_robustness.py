@@ -199,3 +199,61 @@ def qapp_collections_panel(db):
     panel = CollectionsPanel(db)
     yield panel
     panel.close()
+
+
+class TestVariablesPanelFitsSidebar:
+    """The Groups/Variables split toolbars must fit a 300px sidebar tab.
+
+    Each toolbar gets roughly half of an already-narrow sidebar, so its
+    buttons must be meaningfully shorter than the labels that used to
+    overflow there. Measured as a font-metric ratio rather than a live
+    layout pixel count: actual widget geometry under the offscreen platform
+    is sensitive to show()/processEvents timing (real widths observed for
+    the same code ranged from ~30px to ~600px across runs), which the
+    Collections toolbar test below already works around the same way.
+    """
+
+    def _groups_buttons(self, panel):
+        return [panel.new_group_btn, panel.delete_group_btn]
+
+    def _variables_buttons(self, panel):
+        return [panel.add_var_btn, panel.edit_var_btn, panel.remove_var_btn]
+
+    _PRE_FIX_GROUPS_LABELS = ("New Group", "Delete Group")
+    _PRE_FIX_VARIABLES_LABELS = ("Add Variable", "Edit", "Remove")
+
+    def test_toolbar_labels_are_far_narrower_than_the_labels_they_replaced(
+        self,
+        qapp_variables_panel,
+    ):
+        from PyQt6.QtGui import QFontMetrics
+
+        panel = qapp_variables_panel
+        fm = QFontMetrics(panel.font())
+
+        for buttons, pre_fix_labels in (
+            (self._groups_buttons(panel), self._PRE_FIX_GROUPS_LABELS),
+            (self._variables_buttons(panel), self._PRE_FIX_VARIABLES_LABELS),
+        ):
+            new_text_px = sum(fm.horizontalAdvance(w.text()) for w in buttons)
+            old_text_px = sum(fm.horizontalAdvance(t) for t in pre_fix_labels)
+            assert new_text_px < old_text_px * 0.75, (
+                f"toolbar label text is {new_text_px}px vs {old_text_px}px before "
+                "the fix — not a meaningful reduction; it will clip again in a "
+                "narrow sidebar column"
+            )
+
+    def test_every_toolbar_button_has_a_tooltip(self, qapp_variables_panel):
+        """Short labels are only acceptable if the full meaning is recoverable."""
+        panel = qapp_variables_panel
+        for widget in self._groups_buttons(panel) + self._variables_buttons(panel):
+            assert widget.toolTip().strip(), f"{widget.text()!r} has no tooltip"
+
+
+@pytest.fixture()
+def qapp_variables_panel(db):
+    from equinox.gui.variables_panel import VariablesPanel
+
+    panel = VariablesPanel(db)
+    yield panel
+    panel.close()
