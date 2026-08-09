@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-"""Run a blocking dependency vulnerability scan against the committed lockfile."""
+"""Run a blocking dependency vulnerability scan against the installed environment."""
 
 from __future__ import annotations
 
@@ -7,10 +7,9 @@ import json
 import subprocess
 import sys
 from pathlib import Path
-from typing import Any, Dict, List, Tuple
+from typing import Any
 
 ROOT = Path(__file__).resolve().parents[1]
-LOCK_PATH = ROOT / "requirements-lock.txt"
 
 
 def _extract_json_payload(raw_output: str) -> str:
@@ -26,9 +25,9 @@ def _extract_json_payload(raw_output: str) -> str:
     return ""
 
 
-def _parse_findings(payload: Dict[str, Any]) -> List[Tuple[str, str, str, str]]:
+def _parse_findings(payload: dict[str, Any]) -> list[tuple[str, str, str, str]]:
     """Return normalized vulnerability rows: package, version, vuln_id, fixed_versions."""
-    findings: List[Tuple[str, str, str, str]] = []
+    findings: list[tuple[str, str, str, str]] = []
     for dependency in payload.get("dependencies", []):
         package = str(dependency.get("name", "<unknown>"))
         version = str(dependency.get("version", "<unknown>"))
@@ -41,18 +40,11 @@ def _parse_findings(payload: Dict[str, Any]) -> List[Tuple[str, str, str, str]]:
 
 
 def run_scan() -> int:
-    """Execute pip-audit for requirements-lock.txt and fail on known vulnerabilities."""
-    if not LOCK_PATH.exists():
-        print("Dependency vulnerability scan FAILED: missing requirements-lock.txt")
-        print("Generate it with: py -3 scripts/manage_requirements_lock.py --write")
-        return 1
-
+    """Execute pip-audit against the currently installed environment and fail on known vulnerabilities."""
     command = [
         sys.executable,
         "-m",
         "pip_audit",
-        "-r",
-        str(LOCK_PATH),
         "--format",
         "json",
         "--progress-spinner",
@@ -70,7 +62,7 @@ def run_scan() -> int:
     payload_text = _extract_json_payload(result.stdout) or _extract_json_payload(result.stderr)
     if not payload_text:
         print(
-            "Dependency vulnerability scan FAILED: pip-audit did not return parseable JSON output."
+            "Dependency vulnerability scan FAILED: pip-audit did not return parseable JSON output.",
         )
         if result.stdout.strip():
             print(result.stdout.strip())
@@ -93,8 +85,7 @@ def run_scan() -> int:
         print("Dependency vulnerability scan FAILED: known vulnerabilities detected.")
         for package, version, vuln_id, fixed in findings:
             print(f"  - {package}=={version}: {vuln_id} (fixed in: {fixed})")
-        print("Resolve by updating dependency bounds in pyproject.toml, then regenerate lockfile.")
-        print("  py -3 scripts/manage_requirements_lock.py --write")
+        print("Resolve by updating dependency bounds in pyproject.toml and reinstalling.")
         return 1
 
     if result.returncode != 0:
@@ -105,9 +96,7 @@ def run_scan() -> int:
             print(result.stderr.strip())
         return 1
 
-    print(
-        "Dependency vulnerability scan PASSED: no known vulnerabilities in requirements-lock.txt."
-    )
+    print("Dependency vulnerability scan PASSED: no known vulnerabilities in installed packages.")
     return 0
 
 

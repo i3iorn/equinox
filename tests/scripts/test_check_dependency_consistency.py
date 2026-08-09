@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import importlib.util
-import subprocess
 import sys
 from pathlib import Path
 
@@ -22,38 +21,33 @@ def consistency_script() -> object:
     return module
 
 
-def test_is_git_tracked_skips_check_outside_git_repo(
-    consistency_script: object,
-    tmp_path: Path,
-) -> None:
-    assert consistency_script.is_git_tracked(tmp_path, "requirements-lock.txt") is True
+def test_check_pyproject_passes_on_valid_manifest(consistency_script: object) -> None:
+    text = """
+[project]
+dependencies = [
+    "httpx",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest",
+]
+"""
+    assert consistency_script.check_pyproject(text) == []
 
 
-def test_is_git_tracked_returns_false_for_untracked_file(
-    consistency_script: object,
-    monkeypatch: pytest.MonkeyPatch,
-    tmp_path: Path,
-) -> None:
-    (tmp_path / ".git").mkdir()
-
-    def fake_run(command, cwd=None, text=None, capture_output=None, check=None):
-        return subprocess.CompletedProcess(command, 1, stdout="", stderr="")
-
-    monkeypatch.setattr(consistency_script.subprocess, "run", fake_run)
-
-    assert consistency_script.is_git_tracked(tmp_path, "requirements-lock.txt") is False
+def test_check_pyproject_flags_missing_sections(consistency_script: object) -> None:
+    errors = consistency_script.check_pyproject("")
+    assert len(errors) == 4
 
 
-def test_is_git_tracked_returns_true_for_tracked_file(
-    consistency_script: object,
-    monkeypatch: pytest.MonkeyPatch,
-    tmp_path: Path,
-) -> None:
-    (tmp_path / ".git").mkdir()
+def test_check_setup_py_passes_on_thin_shim(consistency_script: object) -> None:
+    text = "from setuptools import setup\n\nsetup()\n"
+    assert consistency_script.check_setup_py(text) == []
 
-    def fake_run(command, cwd=None, text=None, capture_output=None, check=None):
-        return subprocess.CompletedProcess(command, 0, stdout="requirements-lock.txt\n", stderr="")
 
-    monkeypatch.setattr(consistency_script.subprocess, "run", fake_run)
-
-    assert consistency_script.is_git_tracked(tmp_path, "requirements-lock.txt") is True
+def test_check_setup_py_flags_forbidden_tokens(consistency_script: object) -> None:
+    text = 'from setuptools import setup\n\nsetup(name="equinox", install_requires=[])\n'
+    errors = consistency_script.check_setup_py(text)
+    assert any("install_requires" in err for err in errors)
+    assert any("name=" in err for err in errors)

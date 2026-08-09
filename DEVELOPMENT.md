@@ -314,20 +314,12 @@ pip list | grep equinox
 # Run full test suite
 pytest --cov=equinox
 
-# Validate lockfile consistency (CI-safe)
-python scripts/manage_requirements_lock.py --check
-
-# Regenerate lockfile intentionally
-python scripts/manage_requirements_lock.py --write
-
 # Verify dependency vulnerabilities are resolved
 python scripts/check_dependency_vulnerabilities.py
 
 # Commit
 git commit -m "chore: update dependencies"
 ```
-
-`requirements-lock.txt` is committed. Use `--check` for validation and `--write` only for intentional regeneration.
 
 ---
 

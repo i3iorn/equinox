@@ -51,31 +51,15 @@ def test_parse_findings_formats_fix_versions(vulnerability_script: object) -> No
     ]
 
 
-def test_run_scan_fails_when_lockfile_missing(
-    vulnerability_script: object,
-    monkeypatch: pytest.MonkeyPatch,
-    tmp_path: Path,
-) -> None:
-    missing_lock = tmp_path / "requirements-lock.txt"
-    monkeypatch.setattr(vulnerability_script, "LOCK_PATH", missing_lock)
-
-    assert vulnerability_script.run_scan() == 1
-
-
 def test_run_scan_passes_without_findings(
     vulnerability_script: object,
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    lock_path = tmp_path / "requirements-lock.txt"
-    lock_path.write_text("# lock\n", encoding="utf-8")
-
-    monkeypatch.setattr(vulnerability_script, "LOCK_PATH", lock_path)
     monkeypatch.setattr(vulnerability_script, "ROOT", tmp_path)
 
     def fake_run(command, cwd=None, text=None, capture_output=None, check=None):
-        assert str(lock_path) in command
         assert cwd == str(tmp_path)
         return subprocess.CompletedProcess(
             command,
@@ -96,10 +80,6 @@ def test_run_scan_fails_on_vulnerabilities(
     tmp_path: Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    lock_path = tmp_path / "requirements-lock.txt"
-    lock_path.write_text("# lock\n", encoding="utf-8")
-
-    monkeypatch.setattr(vulnerability_script, "LOCK_PATH", lock_path)
     monkeypatch.setattr(vulnerability_script, "ROOT", tmp_path)
 
     def fake_run(command, cwd=None, text=None, capture_output=None, check=None):

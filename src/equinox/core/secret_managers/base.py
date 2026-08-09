@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import logging
 from abc import ABC, abstractmethod
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any
 
 from equinox.security import mask_secret
@@ -57,12 +57,12 @@ class SecretCacheEntry:
 
     def __init__(self, value: Any, ttl_seconds: int = _DEFAULT_CACHE_TTL) -> None:
         self.value = value
-        self.retrieved_at = datetime.utcnow()
+        self.retrieved_at = datetime.now(timezone.utc).replace(tzinfo=None)
         self.ttl_seconds = ttl_seconds
 
     def is_expired(self) -> bool:
         """Check if the cached entry has expired."""
-        age = (datetime.utcnow() - self.retrieved_at).total_seconds()
+        age = (datetime.now(timezone.utc).replace(tzinfo=None) - self.retrieved_at).total_seconds()
         return age > self.ttl_seconds
 
 

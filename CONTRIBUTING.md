@@ -260,7 +260,6 @@ When opening a PR, include:
    - [ ] Type hints are correct (`mypy src tests`)
    - [ ] Security implications considered (secrets not logged, inputs validated)
    - [ ] Dependency vulnerabilities pass (`python scripts/check_dependency_vulnerabilities.py`)
-   - [ ] Lockfile policy respected (`requirements-lock.txt` regenerated intentionally and committed when dependencies change)
    - [ ] Changelog/docs updated (if user-facing)
    - [ ] No breaking changes (or explicitly noted)
 
