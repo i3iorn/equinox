@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 import logging
-from typing import Any, Callable, NamedTuple
+from collections.abc import Callable
+from typing import Any, NamedTuple
 from urllib.parse import parse_qsl, urlparse
 
 logger = logging.getLogger(__name__)
@@ -18,16 +19,29 @@ class URLComponents(NamedTuple):
     query: str
 
 
+def _stdlib_parse(url: str) -> URLComponents:
+    parsed = urlparse(url)
+    return URLComponents(parsed.scheme, parsed.netloc, parsed.path, parsed.query)
+
+
 def _build_parser() -> Callable[[str], URLComponents]:
     """Return the best available URL parser as a single callable."""
     try:
-        import urlps  # type: ignore[import-not-found]
+        import urlps
+        from urlps.exceptions import URLpError
 
-        _probe = urlps.parse("https://example.com")
+        _probe = urlps.parse_url_unsafe("https://example.com")
         _ = _probe.scheme, _probe.netloc, _probe.path, _probe.query
 
         def _urlps_parse(url: str) -> URLComponents:
-            parsed = urlps.parse(url)
+            # parse_url_unsafe() raises on malformed/incomplete input (e.g. "",
+            # "http://"), unlike urlparse(); callers of this module rely on a
+            # parser that always returns best-effort components, so fall back
+            # to the stdlib splitter for whatever urlps refuses to parse.
+            try:
+                parsed = urlps.parse_url_unsafe(url)
+            except URLpError:
+                return _stdlib_parse(url)
             return URLComponents(
                 scheme=parsed.scheme or "",
                 netloc=parsed.netloc or "",
@@ -39,10 +53,6 @@ def _build_parser() -> Callable[[str], URLComponents]:
         return _urlps_parse
     except Exception:
         pass
-
-    def _stdlib_parse(url: str) -> URLComponents:
-        parsed = urlparse(url)
-        return URLComponents(parsed.scheme, parsed.netloc, parsed.path, parsed.query)
 
     return _stdlib_parse
 
