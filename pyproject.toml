@@ -1,5 +1,9 @@
 [build-system]
-requires = ["setuptools>=65.0", "wheel"]
+# >=83.0.0: fixes PYSEC-2026-3447 / CVE-2026-59890 (MANIFEST.in exclusion
+# bypass on Unicode-normalizing filesystems). Without a lockfile pinning an
+# exact version, pip resolves to whatever satisfies this floor, so it must
+# stay at or above the fixed release.
+requires = ["setuptools>=83.0.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]

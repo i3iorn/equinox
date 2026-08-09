@@ -46,6 +46,11 @@ jobs:
           # Cap pip until pip-tools ships a fix; safe to drop this ceiling once
           # https://github.com/jazzband/pip-tools import breakage is resolved.
           python -m pip install --upgrade "pip<26.2"
+          # setuptools ships bundled with the venv, not via pyproject.toml
+          # dependencies, and check_dependency_vulnerabilities.py audits the
+          # installed environment - an unpatched bundled version fails that
+          # check regardless of anything pinned in pyproject.toml.
+          python -m pip install --upgrade "setuptools>=83.0.0"
           pip install -e ".[dev]"
 
       - name: Verify dependency manifest consistency
@@ -178,6 +183,7 @@ jobs:
       - name: Install security tools
         run: |
           python -m pip install --upgrade pip
+          python -m pip install --upgrade "setuptools>=83.0.0"
           pip install -e ".[dev]"
 
       - name: Dependency vulnerabilities - blocking
