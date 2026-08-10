@@ -51,9 +51,6 @@ jobs:
       - name: Verify dependency manifest consistency
         run: python scripts/check_dependency_consistency.py
 
-      - name: Verify requirements lockfile is current
-        run: python scripts/manage_requirements_lock.py --check
-
       - name: Block known dependency vulnerabilities
         run: python scripts/check_dependency_vulnerabilities.py
 

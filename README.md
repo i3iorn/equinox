@@ -4,7 +4,7 @@ Equinox is a secure, local-first API testing tool with GUI and CLI workflows. Bu
 
 > **Getting started?** See [WORKFLOW.md](WORKFLOW.md) for a complete documentation map and quick navigation guide.
 >
-> **Latest release notes:** [changelog/CHANGELOG_v0.4.12.md](changelog/CHANGELOG_v0.4.12.md) ([full history](changelog/))
+> **Latest release notes:** [changelog/CHANGELOG_v0.5.0.md](changelog/CHANGELOG_v0.5.0.md) ([full history](changelog/))
 
 ## Highlights
 
@@ -174,13 +174,7 @@ bandit -r src/equinox --severity-level=medium -s "B102,B113,B318,B608"
 
 # Run dependency vulnerability gate (blocking)
 python scripts/check_dependency_vulnerabilities.py
-
-# Lockfile maintenance
-python scripts/manage_requirements_lock.py --check
-python scripts/manage_requirements_lock.py --write
 ```
-
-`requirements-lock.txt` is a committed artifact. `--check` validates lockfile consistency (no writes), and `--write` regenerates it intentionally when dependency updates are made.
 
 ## Performance & Observability
 

@@ -51,15 +51,37 @@ def test_parse_findings_formats_fix_versions(vulnerability_script: object) -> No
     ]
 
 
-def test_run_scan_fails_when_lockfile_missing(
+def test_run_scan_skips_editable_installs_without_strict(
     vulnerability_script: object,
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    missing_lock = tmp_path / "requirements-lock.txt"
-    monkeypatch.setattr(vulnerability_script, "LOCK_PATH", missing_lock)
+    """Regression: --strict treats the always-editable local package as fatal.
 
-    assert vulnerability_script.run_scan() == 1
+    Equinox itself is always installed editable (``pip install -e .``), so
+    pip-audit can never look it up on PyPI. --skip-editable tells it to
+    ignore that package rather than erroring - but combined with --strict,
+    pip-audit treats the skip itself as fatal and exits before producing any
+    JSON output, regardless of whether real vulnerabilities exist.
+    """
+    monkeypatch.setattr(vulnerability_script, "ROOT", tmp_path)
+    captured_command = {}
+
+    def fake_run(command, cwd=None, text=None, capture_output=None, check=None):
+        captured_command["value"] = command
+        return subprocess.CompletedProcess(
+            command,
+            0,
+            stdout='{"dependencies": []}',
+            stderr="",
+        )
+
+    monkeypatch.setattr(vulnerability_script.subprocess, "run", fake_run)
+
+    vulnerability_script.run_scan()
+
+    assert "--skip-editable" in captured_command["value"]
+    assert "--strict" not in captured_command["value"]
 
 
 def test_run_scan_passes_without_findings(
@@ -68,14 +90,9 @@ def test_run_scan_passes_without_findings(
     tmp_path: Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    lock_path = tmp_path / "requirements-lock.txt"
-    lock_path.write_text("# lock\n", encoding="utf-8")
-
-    monkeypatch.setattr(vulnerability_script, "LOCK_PATH", lock_path)
     monkeypatch.setattr(vulnerability_script, "ROOT", tmp_path)
 
     def fake_run(command, cwd=None, text=None, capture_output=None, check=None):
-        assert str(lock_path) in command
         assert cwd == str(tmp_path)
         return subprocess.CompletedProcess(
             command,
@@ -96,10 +113,6 @@ def test_run_scan_fails_on_vulnerabilities(
     tmp_path: Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    lock_path = tmp_path / "requirements-lock.txt"
-    lock_path.write_text("# lock\n", encoding="utf-8")
-
-    monkeypatch.setattr(vulnerability_script, "LOCK_PATH", lock_path)
     monkeypatch.setattr(vulnerability_script, "ROOT", tmp_path)
 
     def fake_run(command, cwd=None, text=None, capture_output=None, check=None):
