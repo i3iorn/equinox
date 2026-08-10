@@ -98,9 +98,11 @@ addopts = "-v --cov=equinox --cov-report=html --cov-report=term"
 asyncio_mode = "auto"
 
 [tool.coverage.run]
+# gui/ and plugins/ were previously omitted here. Between them that hid
+# ~57% of all statements - gui/ alone is the single largest package in the
+# project - so the coverage percentage described barely half the codebase
+# while reading as a whole-project number. Both are measured now.
 omit = [
-    "src/equinox/plugins/*",
-    "src/equinox/gui/*",
     "tests/*",
 ]
 branch = true
@@ -119,7 +121,14 @@ precision = 1
 skip_covered = true
 skip_empty = true
 show_missing = true
-fail_under = 87
+# 74, not 87, because this now measures the whole project rather than the
+# ~43% of statements left after omitting gui/ and plugins/. It is not a
+# drop in tested code - the previously-measured packages still sit near
+# 90% - it is the first honest figure. Measured baseline was 74.6%
+# (gui 68.5%, plugins 71.6%, everything else ~89.7%).
+# Raise this as gui/ and plugins/ coverage improves; do not restore the
+# omits to make the number look better.
+fail_under = 74
 
 [tool.setuptools.package-data]
 equinox = ["py.typed"]
