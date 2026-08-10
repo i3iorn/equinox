@@ -258,6 +258,10 @@ class ResponseDisplayMixin:
     # ------------------------------------------------------------------
 
     def _display_json_tree(self, response: Response) -> None:
+        # A newly-displayed response is a new document to search: any
+        # query, match count, or highlight left over from the previous
+        # body must not silently keep pointing at it.
+        self._search_bar.reset()
         try:
             can_show_json = bool(response.is_json and response.size <= self._LARGE_BODY_THRESHOLD)
             logger.debug(
