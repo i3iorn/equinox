@@ -118,6 +118,24 @@ class SearchBar(QWidget):
         self._clear_state()
         self._target.setFocus()
 
+    def reset(self) -> None:
+        """Clear query, results, and highlights for a newly-displayed document.
+
+        set_json_doc() alone leaves the previous query text, match count,
+        and highlights in place - they describe the old body, not the one
+        just loaded. Call this whenever the target document changes,
+        whether or not the search bar is currently visible.
+        """
+        self._debounce_timer.stop()
+        self._job_counter += 1
+        self._current_job_id = self._job_counter
+        self._pending_text = ""
+        self._input.blockSignals(True)
+        self._input.clear()
+        self._input.blockSignals(False)
+        self._match_label.setText("")
+        self._clear_state()
+
     # ────────────────────────────────────────────────────────────────
     # UI Construction
     # ────────────────────────────────────────────────────────────────
