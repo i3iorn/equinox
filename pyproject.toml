@@ -7,7 +7,12 @@ requires = ["setuptools>=83.0.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "equinox"
+# "equinox" on PyPI belongs to an unrelated project (Patrick Kidger's JAX
+# neural-network library). This is the *distribution* name only - it is
+# independent of the importable package name, so `import equinox` is
+# unaffected and no source changes are needed for this rename. See
+# docs/packaging.md for why the import package cannot follow suit yet.
+name = "equinox-api"
 dynamic = ["version"]
 description = "A local-first API testing tool with GUI"
 readme = "README.md"
