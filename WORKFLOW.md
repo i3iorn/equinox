@@ -15,6 +15,7 @@ Your question likely falls into one of these categories. Find the right doc:
 | Work day-to-day on features | [DEVELOPMENT.md](DEVELOPMENT.md) | Step-by-step workflow, common tasks, debugging tips, git commands |
 | Understand GUI service boundaries | [AGENTS.md](AGENTS.md#boundary-placement-rules-for-new-code) | Service boundary placement rules, application/GUI/storage separation |
 | Learn about security & plugin trust | [docs/security_policy.md](docs/security_policy.md) | Encryption, master passwords, secret rotation, plugin trust model |
+| Understand the PyPI name & public-release status | [docs/packaging.md](docs/packaging.md) | Distribution name, the import-package rename blocking public release, what's deliberately not set up yet |
 | Get started quickly | [README.md](README.md) | Installation, quick start, highlights, troubleshooting |
 | View release notes | [changelog/](changelog/) | Version history, changes per release |
 
