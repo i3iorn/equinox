@@ -88,13 +88,18 @@ jobs:
         run: pytest -q --no-cov
 
   # ──────────────────────────────────────────────────────────────────────────
-  # Publish to PyPI and create a GitHub Release
+  # Create a GitHub Release carrying the built artifacts
   # ──────────────────────────────────────────────────────────────────────────
   publish:
-    name: Publish to PyPI & GitHub
+    name: Publish GitHub Release
     runs-on: ubuntu-latest
     needs: test-release
-    environment: release   # Requires "release" environment approval in repo settings
+    # No `environment:` here. This previously referenced a "release"
+    # environment that does not exist in this repo - GitHub silently
+    # auto-creates a missing environment with no protection rules, so it
+    # looked like an approval gate while providing none. If a real gate is
+    # wanted, create the environment in repo settings with required
+    # reviewers and re-add the key.
     steps:
       - uses: actions/checkout@v4
 
@@ -104,44 +109,51 @@ jobs:
           name: dist-${{ github.ref_name }}
           path: dist/
 
-      - name: Publish to PyPI
-        uses: pypa/gh-action-pypi-publish@release/v1
-        with:
-          # Uses PYPI_API_TOKEN secret stored in the "release" environment.
-          password: ${{ secrets.PYPI_API_TOKEN }}
-          skip-existing: true
+      # NOTE: There is deliberately no PyPI publish step.
+      # The distribution name `equinox` on PyPI belongs to an unrelated
+      # project (Patrick Kidger's JAX neural-network library), so this
+      # package cannot be published under that name. The step that used to
+      # live here referenced a PYPI_API_TOKEN secret that was never
+      # configured, so tagging produced a failed job - and because the
+      # GitHub Release was created later in that same job, the release was
+      # never created either. Publishing to PyPI requires first choosing an
+      # unclaimed distribution name in pyproject.toml.
 
       - name: Extract changelog entry for this version
         id: changelog
         run: |
+          # Strip the leading "v" and any pre-release suffix, so both
+          # v0.5.0 and v0.5.0-rc1 resolve to CHANGELOG_v0.5.0.md.
           VERSION="${GITHUB_REF_NAME#v}"
-          CHANGELOG_FILE="changelog/CHANGELOG_v${VERSION%.*.*}.${VERSION#*.*.}.md"
-          # Fallback to any matching CHANGELOG file
+          CHANGELOG_FILE="changelog/CHANGELOG_v${VERSION%%-*}.md"
+          # Fallback to the newest changelog if this version has no entry.
           if [ ! -f "$CHANGELOG_FILE" ]; then
             CHANGELOG_FILE=$(ls changelog/CHANGELOG_v*.md 2>/dev/null | sort -V | tail -1)
           fi
           if [ -f "$CHANGELOG_FILE" ]; then
-            echo "BODY<<EOF" >> "$GITHUB_OUTPUT"
+            echo "Using changelog: $CHANGELOG_FILE"
+            echo "BODY<<CHANGELOG_EOF" >> "$GITHUB_OUTPUT"
             cat "$CHANGELOG_FILE" >> "$GITHUB_OUTPUT"
-            echo "EOF" >> "$GITHUB_OUTPUT"
+            echo "CHANGELOG_EOF" >> "$GITHUB_OUTPUT"
           else
             echo "BODY=No changelog entry found for ${GITHUB_REF_NAME}." >> "$GITHUB_OUTPUT"
           fi
 
       - name: Create GitHub Release
-        uses: actions/github-script@v7
-        with:
-          script: |
-            const tag = context.ref.replace('refs/tags/', '');
-            const isPreRelease = tag.includes('-rc') || tag.includes('-alpha') || tag.includes('-beta');
-            await github.rest.repos.createRelease({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              tag_name: tag,
-              name: `Equinox ${tag}`,
-              body: process.env.RELEASE_BODY,
-              prerelease: isPreRelease,
-              generate_release_notes: false,
-            });
         env:
+          GH_TOKEN: ${{ github.token }}
           RELEASE_BODY: ${{ steps.changelog.outputs.BODY }}
+        run: |
+          TAG="${GITHUB_REF_NAME}"
+          case "$TAG" in
+            *-rc*|*-alpha*|*-beta*) PRERELEASE="--prerelease" ;;
+            *) PRERELEASE="" ;;
+          esac
+          printf '%s' "$RELEASE_BODY" > release-notes.md
+          # Attach the built sdist/wheel so the release carries the
+          # artifacts the build and smoke-test jobs already validated.
+          gh release create "$TAG" \
+            --title "Equinox $TAG" \
+            --notes-file release-notes.md \
+            $PRERELEASE \
+            dist/*
