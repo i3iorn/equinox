@@ -19,6 +19,12 @@ jobs:
     permissions:
       contents: read
       security-events: write
+      # Required by the "Comment PR with security results" step below. Without
+      # it the GITHUB_TOKEN gets a 403 ("Resource not accessible by
+      # integration") when posting, which failed the whole security job even
+      # though the scans themselves passed.
+      pull-requests: write
+      issues: write
 
     steps:
       - uses: actions/checkout@v4
@@ -87,9 +93,17 @@ jobs:
             comment += '_Full report available in the [workflow artifacts](' +
               `https://github.com/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId})._`;
 
-            github.rest.issues.createComment({
-              issue_number: context.issue.number,
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              body: comment,
-            });
+            // Posting the summary is a convenience, not the security verdict -
+            // the blocking Bandit and dependency steps above already decided
+            // that. Swallow failures here so a comment problem can never turn
+            // a passing security scan red (or a failing one green).
+            try {
+              await github.rest.issues.createComment({
+                issue_number: context.issue.number,
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                body: comment,
+              });
+            } catch (e) {
+              core.warning(`Could not post security summary comment: ${e.message}`);
+            }
