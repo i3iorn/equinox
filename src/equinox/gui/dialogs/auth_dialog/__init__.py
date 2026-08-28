@@ -3,6 +3,7 @@ from collections.abc import Callable
 from typing import Any, Literal
 
 from PyQt6.QtCore import pyqtSignal
+from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import (
     QComboBox,
     QDialog,
@@ -103,7 +104,11 @@ class AuthDialog(QDialog):
     auth_configured = pyqtSignal(object)
 
     _WINDOW_TITLE = "Configure Authentication"
-    _MINIMUM_WIDTH = 540
+    # The six auth-type tab labels need ~520px of tab bar. 540 left only ~20px
+    # of margin for the dialog's own layout, which wasn't quite enough: Qt
+    # fell back to hiding "AWS SigV4" behind a scroll arrow instead of
+    # showing it, on a dialog with plenty of room to simply be wider.
+    _MINIMUM_WIDTH = 600
     _MINIMUM_HEIGHT = 480
     _PICKER_MINIMUM_WIDTH = 220
     _PICKER_PLACEHOLDER = "— fill in manually —"
@@ -176,6 +181,7 @@ class AuthDialog(QDialog):
             AuthType.AWS_SIGV4: self.tabs.addTab(self.aws, "AWS SigV4"),
         }
 
+        self._configure_auth_tab_bar()
         layout.addWidget(self.tabs)
 
         self.oauth2_controller = OAuth2TokenController(self.oauth2, db=self.db, parent=self)
@@ -189,6 +195,24 @@ class AuthDialog(QDialog):
         btns.addWidget(cancel)
         btns.addWidget(save)
         layout.addLayout(btns)
+
+    def _configure_auth_tab_bar(self) -> None:
+        """Keep every auth-type tab visible instead of behind scroll arrows.
+
+        _MINIMUM_WIDTH is sized to fit all six labels, but this is still a
+        user-resizable dialog: shrinking it (or a future seventh auth type)
+        would put Qt back into hide-behind-``‹ ›``-arrows mode, silently
+        making some auth types unreachable. Eliding keeps every tab visible
+        and clickable, matching the sidebar's tab bar fix.
+        """
+        bar = self.tabs.tabBar()
+        if bar is None:  # pragma: no cover - defensive, Qt always builds one
+            return
+        bar.setUsesScrollButtons(False)
+        bar.setExpanding(False)
+        bar.setElideMode(Qt.TextElideMode.ElideRight)
+        for index in range(self.tabs.count()):
+            self.tabs.setTabToolTip(index, self.tabs.tabText(index))
 
     def _init_auth_config_appliers(self) -> None:
         """Register handlers used to apply saved authentication configuration."""

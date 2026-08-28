@@ -130,13 +130,18 @@ jobs:
 
       - name: Run tests with coverage
         run: |
+          # --cov-fail-under must stay in sync with fail_under in
+          # pyproject.toml: this literal overrides it, so a mismatch
+          # silently turns one of the two into fiction. 74 (not 87) because
+          # coverage now measures gui/ and plugins/ too - see the comment on
+          # fail_under in pyproject.toml.
           pytest -q \
             --durations=20 \
             --cov=equinox \
             --cov-report=xml \
             --cov-report=html \
             --cov-report=term-missing \
-            --cov-fail-under=87
+            --cov-fail-under=74
         env:
           QT_QPA_PLATFORM: offscreen
           DISPLAY: ""
