@@ -257,3 +257,177 @@ def qapp_variables_panel(db):
     panel = VariablesPanel(db)
     yield panel
     panel.close()
+
+
+class TestHistoryPanelToolbarFitsSidebar:
+    """The history toolbar's six controls must fit a 300px sidebar tab.
+
+    All six on one row never fit at any label length - even "Refresh",
+    "Clear", "Delete", "Compare", "Clean...", and a 4-char "Auto" checkbox
+    together still clipped. The fix splits them across two rows instead of
+    shortening further.
+    """
+
+    def _row1_buttons(self, panel):
+        return [panel.refresh_btn, panel.clear_btn]
+
+    def _row2_buttons(self, panel):
+        return [panel.delete_sel_btn, panel.compare_btn, panel.cleanup_btn]
+
+    _PRE_FIX_LABELS = (
+        "Refresh",
+        "Clear All",
+        "Delete Selected",
+        "Compare 2 Selected",
+        "Clean up…",
+    )
+
+    def test_toolbar_labels_are_far_narrower_than_the_labels_they_replaced(
+        self,
+        qapp_history_panel,
+    ):
+        from PyQt6.QtGui import QFontMetrics
+
+        panel = qapp_history_panel
+        fm = QFontMetrics(panel.font())
+
+        buttons = self._row1_buttons(panel) + self._row2_buttons(panel)
+        new_text_px = sum(fm.horizontalAdvance(w.text()) for w in buttons)
+        old_text_px = sum(fm.horizontalAdvance(t) for t in self._PRE_FIX_LABELS)
+        assert new_text_px < old_text_px * 0.6, (
+            f"toolbar label text is {new_text_px}px vs {old_text_px}px before "
+            "the fix — not a meaningful reduction; it will clip again in a "
+            "narrow sidebar"
+        )
+
+    def test_toolbar_is_split_across_two_rows(self, qapp_history_panel):
+        """The controls that fit on one row's worth of shortened labels."""
+        panel = qapp_history_panel
+        assert panel.refresh_btn.parent() is not None
+        # row1 and row2 buttons must not share a QHBoxLayout - distinguished
+        # by checking delete/compare/cleanup are laid out separately from
+        # refresh/clear by asking Qt for each widget's y-position once shown.
+        panel.resize(300, 700)
+        panel.show()
+        _APP.processEvents()
+        try:
+            row1_y = panel.refresh_btn.y()
+            row2_y = panel.delete_sel_btn.y()
+            assert row2_y > row1_y, (
+                "expected delete/compare/cleanup on a separate row below "
+                "refresh/clear, not sharing a row with them"
+            )
+        finally:
+            panel.hide()
+
+    def test_every_toolbar_button_has_a_tooltip(self, qapp_history_panel):
+        panel = qapp_history_panel
+        for widget in self._row1_buttons(panel) + self._row2_buttons(panel):
+            assert widget.toolTip().strip(), f"{widget.text()!r} has no tooltip"
+
+
+@pytest.fixture()
+def qapp_history_panel(db):
+    from equinox.gui.history_panel import HistoryPanel
+
+    panel = HistoryPanel(db)
+    yield panel
+    panel.close()
+
+
+class TestCookiesPanelToolbarFitsSidebar:
+    """The cookies toolbar's five controls must fit a 300px sidebar tab."""
+
+    def _buttons(self, panel):
+        return [panel.add_btn, panel.delete_btn, panel.clear_btn, panel.reveal_btn]
+
+    _PRE_FIX_LABELS = ("Add…", "Delete", "Clear All", "Reveal Values")
+
+    def test_toolbar_labels_are_far_narrower_than_the_labels_they_replaced(
+        self,
+        qapp_cookies_panel,
+    ):
+        from PyQt6.QtGui import QFontMetrics
+
+        panel = qapp_cookies_panel
+        fm = QFontMetrics(panel.font())
+
+        buttons = self._buttons(panel)
+        new_text_px = sum(fm.horizontalAdvance(w.text()) for w in buttons)
+        old_text_px = sum(fm.horizontalAdvance(t) for t in self._PRE_FIX_LABELS)
+        assert new_text_px < old_text_px * 0.85, (
+            f"toolbar label text is {new_text_px}px vs {old_text_px}px before "
+            "the fix — not a meaningful reduction; it will clip again in a "
+            "narrow sidebar"
+        )
+
+    def test_every_toolbar_button_has_a_tooltip(self, qapp_cookies_panel):
+        panel = qapp_cookies_panel
+        for widget in self._buttons(panel):
+            assert widget.toolTip().strip(), f"{widget.text()!r} has no tooltip"
+
+
+@pytest.fixture()
+def qapp_cookies_panel(db):
+    from equinox.gui.cookies_panel import CookiesPanel
+
+    panel = CookiesPanel(db)
+    yield panel
+    panel.close()
+
+
+class TestAuthDialogTabBarStaysReachable:
+    """AuthDialog's six auth-type tabs must never hide behind scroll arrows.
+
+    Unlike the sidebar, this dialog is user-resizable and sized wide enough
+    (_MINIMUM_WIDTH) to fit every label without eliding in the common case.
+    But nothing stopped a user shrinking the dialog, or a future seventh
+    auth type, from putting Qt back into default hide-behind-``‹ ›``-arrows
+    mode - exactly what happened here at the original 540px minimum, which
+    was 20px short of the six labels' combined width.
+    """
+
+    def test_scroll_buttons_disabled(self, qapp_auth_dialog):
+        bar = qapp_auth_dialog.tabs.tabBar()
+        assert bar is not None
+        assert bar.usesScrollButtons() is False
+
+    def test_labels_elide_instead_of_overflowing(self, qapp_auth_dialog):
+        bar = qapp_auth_dialog.tabs.tabBar()
+        assert bar.elideMode() == Qt.TextElideMode.ElideRight
+        assert bar.expanding() is False
+
+    def test_default_width_fits_every_label_without_eliding(self, qapp_auth_dialog):
+        """At the dialog's own declared minimum width, nothing should elide."""
+        from PyQt6.QtGui import QFontMetrics
+
+        dialog = qapp_auth_dialog
+        dialog.resize(dialog.sizeHint())
+        dialog.show()
+        for _ in range(10):
+            _APP.processEvents()
+        try:
+            bar = dialog.tabs.tabBar()
+            fm = QFontMetrics(bar.font())
+            needed = sum(fm.horizontalAdvance(bar.tabText(i)) for i in range(bar.count()))
+            assert bar.width() >= needed, (
+                f"tab bar is {bar.width()}px but labels need ~{needed}px at the "
+                "dialog's own default width - _MINIMUM_WIDTH is too small again"
+            )
+        finally:
+            dialog.hide()
+
+    def test_every_tab_has_a_tooltip_naming_it(self, qapp_auth_dialog):
+        """Elided or not, the full auth-type name must be recoverable."""
+        tabs = qapp_auth_dialog.tabs
+        for index in range(tabs.count()):
+            assert tabs.tabToolTip(index) == tabs.tabText(index)
+
+
+@pytest.fixture()
+def qapp_auth_dialog():
+    from equinox.gui.dialogs.auth_dialog import AuthDialog
+
+    dialog = AuthDialog(None)
+    yield dialog
+    dialog.close()

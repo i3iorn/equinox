@@ -130,15 +130,20 @@ class CookiesPanel(QWidget):
 
         toolbar = QHBoxLayout()
         self.add_btn = QPushButton("Add…")
+        self.add_btn.setToolTip("Add Cookie")
         self.delete_btn = QPushButton("Delete")
-        self.clear_btn = QPushButton("Clear All")
+        self.delete_btn.setToolTip("Delete Selected")
+        self.clear_btn = QPushButton("Clear")
+        self.clear_btn.setToolTip("Clear All")
         self.refresh_btn = QPushButton("Refresh")
+        self.refresh_btn.setToolTip("Refresh Cookies")
 
         self.add_btn.clicked.connect(self._add_cookie)
         self.delete_btn.clicked.connect(self._delete_selected)
         self.clear_btn.clicked.connect(self._clear_all)
         self.refresh_btn.clicked.connect(self.refresh)
-        self.reveal_btn = QCheckBox("Reveal Values")
+        self.reveal_btn = QCheckBox("Reveal")
+        self.reveal_btn.setToolTip("Reveal Values")
         self.reveal_btn.setChecked(False)
         self.reveal_btn.toggled.connect(self.refresh)
 

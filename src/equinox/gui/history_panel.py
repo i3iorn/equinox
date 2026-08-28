@@ -83,7 +83,8 @@ class HistoryPanel(QWidget):
         """Initialize the full UI layout."""
         layout = create_panel_layout(self)
 
-        layout.addLayout(self._build_toolbar())
+        layout.addLayout(self._build_toolbar_row1())
+        layout.addLayout(self._build_toolbar_row2())
         layout.addLayout(self._build_search_row())
         layout.addWidget(self._build_advanced_toggle())
         layout.addWidget(self._build_advanced_filters())
@@ -94,41 +95,55 @@ class HistoryPanel(QWidget):
 
         self.list_widget.itemSelectionChanged.connect(self._on_selection_changed)
 
-    def _build_toolbar(self) -> QHBoxLayout:
-        """Create the top toolbar with refresh, clear, delete, compare, cleanup, and auto‑refresh."""
+    def _build_toolbar_row1(self) -> QHBoxLayout:
+        """Refresh, clear, and auto-refresh — the controls used most often."""
         toolbar = QHBoxLayout()
 
         self.refresh_btn = QPushButton("Refresh")
+        self.refresh_btn.setToolTip("Refresh History")
         self.refresh_btn.clicked.connect(self.refresh)
 
-        self.clear_btn = QPushButton("Clear All")
+        self.clear_btn = QPushButton("Clear")
+        self.clear_btn.setToolTip("Clear All History")
         self.clear_btn.clicked.connect(self._clear_history)
 
-        self.delete_sel_btn = QPushButton("Delete Selected")
-        self.delete_sel_btn.setEnabled(False)
-        self.delete_sel_btn.clicked.connect(self._delete_selected)
-
-        self.compare_btn = QPushButton("Compare 2 Selected")
-        self.compare_btn.setEnabled(False)
-        self.compare_btn.setToolTip("Open a side-by-side diff of two selected history entries")
-        self.compare_btn.clicked.connect(self._compare_selected)
-
-        self.cleanup_btn = QPushButton("Clean up…")
-        self.cleanup_btn.setToolTip("Delete history entries older than N days")
-        self.cleanup_btn.clicked.connect(self._cleanup_history)
-
-        self.auto_refresh_checkbox = QCheckBox("Auto-refresh")
+        self.auto_refresh_checkbox = QCheckBox("Auto")
+        self.auto_refresh_checkbox.setToolTip("Auto-refresh")
         self.auto_refresh_checkbox.setChecked(self.auto_refresh_enabled)
         self.auto_refresh_checkbox.stateChanged.connect(self._toggle_auto_refresh)
 
-        for widget in (
-            self.refresh_btn,
-            self.clear_btn,
-            self.delete_sel_btn,
-            self.compare_btn,
-            self.cleanup_btn,
-            self.auto_refresh_checkbox,
-        ):
+        for widget in (self.refresh_btn, self.clear_btn, self.auto_refresh_checkbox):
+            toolbar.addWidget(widget)
+
+        toolbar.addStretch()
+        return toolbar
+
+    def _build_toolbar_row2(self) -> QHBoxLayout:
+        """Selection-dependent actions: delete, compare, and cleanup.
+
+        Split from row 1 because six controls (the two rows combined) never
+        fit one row in the sidebar's ~300px width, even with every label
+        shortened to a single word.
+        """
+        toolbar = QHBoxLayout()
+
+        self.delete_sel_btn = QPushButton("Delete")
+        self.delete_sel_btn.setToolTip("Delete Selected")
+        self.delete_sel_btn.setEnabled(False)
+        self.delete_sel_btn.clicked.connect(self._delete_selected)
+
+        self.compare_btn = QPushButton("Compare")
+        self.compare_btn.setEnabled(False)
+        self.compare_btn.setToolTip(
+            "Compare 2 Selected: open a side-by-side diff of two selected history entries",
+        )
+        self.compare_btn.clicked.connect(self._compare_selected)
+
+        self.cleanup_btn = QPushButton("Clean…")
+        self.cleanup_btn.setToolTip("Clean up: delete history entries older than N days")
+        self.cleanup_btn.clicked.connect(self._cleanup_history)
+
+        for widget in (self.delete_sel_btn, self.compare_btn, self.cleanup_btn):
             toolbar.addWidget(widget)
 
         toolbar.addStretch()
