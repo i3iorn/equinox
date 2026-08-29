@@ -32,6 +32,7 @@ from PyQt6.QtWidgets import QSlider
 from PyQt6.QtWidgets import QSpinBox
 from PyQt6.QtWidgets import QVBoxLayout
 from PyQt6.QtWidgets import QWidget
+from equinox.gui.ui_common import create_panel_layout
 
 # ── Module-level constants ────────────────────────────────────────────────────
 _SETTINGS_ORG = "Equinox"
@@ -179,9 +180,7 @@ class PreferencesDialog(QDialog):
         scroll.setMaximumHeight(_ANALYZER_SCROLL_MAX_H)
 
         widget = QWidget()
-        layout = QVBoxLayout(widget)
-        layout.setContentsMargins(4, 4, 4, 4)
-        layout.setSpacing(2)
+        layout = create_panel_layout(widget, spacing=2)
 
         widget.setUpdatesEnabled(False)
         try:

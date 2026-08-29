@@ -28,6 +28,7 @@ from ..error_presenter import ErrorPresenter
 from ..ui_common import confirm_yes_no
 from ..ui_common import create_muted_label
 from equinox.gui.ui_common import copy_to_clipboard
+from equinox.gui.ui_common import create_panel_layout
 
 logger = logging.getLogger(__name__)
 
@@ -69,10 +70,7 @@ class _SessionVarsMixin:
 
     def _create_session_layout(self, parent: QGroupBox) -> QVBoxLayout:
         """Create the main layout for the session group."""
-        layout = QVBoxLayout(parent)
-        layout.setContentsMargins(4, 4, 4, 4)
-        layout.setSpacing(4)
-        return layout
+        return create_panel_layout(parent)
 
     def _build_session_header(self) -> QHBoxLayout:
         """Create the header row with labels and action buttons."""

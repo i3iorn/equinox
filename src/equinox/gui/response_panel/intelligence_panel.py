@@ -34,6 +34,7 @@ __all__ = ["IntelligencePanel"]
 
 from equinox.gui.ui_common import get_gui_settings
 from equinox.gui.ui_common import copy_to_clipboard
+from equinox.gui.ui_common import create_panel_layout
 
 logger = logging.getLogger(__name__)
 
@@ -313,9 +314,7 @@ class IntelligencePanel(QWidget):
         self._scroll.setFrameShape(QFrame.Shape.NoFrame)
 
         self._scroll_content = QWidget()
-        self._scroll_layout = QVBoxLayout(self._scroll_content)
-        self._scroll_layout.setContentsMargins(4, 4, 4, 4)
-        self._scroll_layout.setSpacing(6)
+        self._scroll_layout = create_panel_layout(self._scroll_content, spacing=6)
         self._scroll_layout.addStretch()  # always kept as the last item
 
         self._scroll.setWidget(self._scroll_content)

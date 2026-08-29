@@ -26,8 +26,8 @@ from PyQt6.QtWidgets import QHBoxLayout
 from PyQt6.QtWidgets import QInputDialog
 from PyQt6.QtWidgets import QLineEdit
 from PyQt6.QtWidgets import QPushButton
-from PyQt6.QtWidgets import QVBoxLayout
 from PyQt6.QtWidgets import QWidget
+from equinox.gui.ui_common import create_panel_layout
 
 logger = logging.getLogger(__name__)
 
@@ -129,9 +129,7 @@ class CollectionsPanel(
         self.refresh()
 
     def _init_ui(self) -> None:
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(4, 4, 4, 4)
-        layout.setSpacing(4)
+        layout = create_panel_layout(self)
 
         # This toolbar lives in the left sidebar, which is only ~300px wide by
         # default. Full-length labels ("New Collection", "Import
