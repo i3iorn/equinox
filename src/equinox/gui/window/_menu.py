@@ -29,6 +29,7 @@ from PyQt6.QtWidgets import QTableWidgetItem
 from PyQt6.QtWidgets import QVBoxLayout
 from PyQt6.QtWidgets import QWidget
 from equinox.gui.ui_common import QWidgetHostMixin
+from equinox.gui.ui_common import confirm_yes_no
 
 if TYPE_CHECKING:
     from equinox.gui.ui_usage_tracker import UIUsageTracker
@@ -324,14 +325,12 @@ class _MenuActionsMixin(QWidgetHostMixin):
         tracker = getattr(self, "_ui_usage_tracker", None)
         if tracker is None:
             return
-        answer = QMessageBox.question(
+        if not confirm_yes_no(
             self._as_qwidget(),
             "Reset UI Usage Data",
             "Clear all tracked UI usage counters for this profile?",
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-            QMessageBox.StandardButton.No,
-        )
-        if answer != QMessageBox.StandardButton.Yes:
+            default_no=True,
+        ):
             return
         tracker.reset()
         self.status_bar.showMessage("UI usage data reset", 3000)

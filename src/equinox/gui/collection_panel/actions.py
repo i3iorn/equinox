@@ -11,6 +11,7 @@ from PyQt6.QtWidgets import QMessageBox
 from PyQt6.QtWidgets import QTreeWidgetItem
 from PyQt6.QtWidgets import QWidget
 from equinox.gui.ui_common import QWidgetHostMixin
+from equinox.gui.ui_common import confirm_yes_no
 # mypy: disable-error-code=attr-defined
 
 
@@ -77,13 +78,11 @@ class _CollectionsActionsMixin(QWidgetHostMixin, QWidget):
     # ── Delete ────────────────────────────────────────────────────────
 
     def _delete_collection(self, collection_id: int) -> None:
-        reply = QMessageBox.question(
+        if confirm_yes_no(
             self,
             "Confirm Delete",
             "Delete this collection and all its requests?",
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-        )
-        if reply == QMessageBox.StandardButton.Yes:
+        ):
             try:
                 self._collection_facade.delete_collection(collection_id)
                 self.refresh()
@@ -92,13 +91,11 @@ class _CollectionsActionsMixin(QWidgetHostMixin, QWidget):
                 ErrorPresenter.error(self._as_qwidget(), f"Failed to delete collection: {e}")
 
     def _delete_request(self, request_id: int) -> None:
-        reply = QMessageBox.question(
+        if confirm_yes_no(
             self,
             "Confirm Delete",
             "Delete this request?",
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-        )
-        if reply == QMessageBox.StandardButton.Yes:
+        ):
             try:
                 self._collection_facade.delete_request(request_id)
                 self.refresh()

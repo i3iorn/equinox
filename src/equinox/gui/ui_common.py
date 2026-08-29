@@ -171,14 +171,21 @@ def create_muted_label(text: str = "") -> QLabel:
     return label
 
 
-def confirm_yes_no(parent: QWidget, title: str, question: str) -> bool:
-    """Show a standard yes/no confirmation dialog."""
-    reply = QMessageBox.question(
-        parent,
-        title,
-        question,
-        QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-    )
+def confirm_yes_no(
+    parent: QWidget,
+    title: str,
+    question: str,
+    *,
+    default_no: bool = False,
+) -> bool:
+    """Show a standard yes/no confirmation dialog.
+
+    ``default_no`` pre-selects No, so an absent-minded Enter cancels rather
+    than confirms. Worth passing for anything destructive.
+    """
+    buttons = QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+    default = QMessageBox.StandardButton.No if default_no else QMessageBox.StandardButton.NoButton
+    reply = QMessageBox.question(parent, title, question, buttons, default)
     return reply == QMessageBox.StandardButton.Yes
 
 
