@@ -116,6 +116,7 @@ class HistoryPanel(QWidget):
             toolbar.addWidget(widget)
 
         toolbar.addStretch()
+        self._toolbar_row1 = toolbar
         return toolbar
 
     def _build_toolbar_row2(self) -> QHBoxLayout:
@@ -147,6 +148,7 @@ class HistoryPanel(QWidget):
             toolbar.addWidget(widget)
 
         toolbar.addStretch()
+        self._toolbar_row2 = toolbar
         return toolbar
 
     def _build_search_row(self) -> QHBoxLayout:

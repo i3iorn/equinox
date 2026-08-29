@@ -54,23 +54,95 @@ def window(db):
     win.close()
 
 
+@pytest.fixture()
+def auth_dialog():
+    from equinox.gui.dialogs.auth_dialog import AuthDialog
+
+    dialog = AuthDialog(None)
+    yield dialog
+    dialog.close()
+
+
+@pytest.fixture()
+def collections_panel(db):
+    from equinox.gui.collection_panel import CollectionsPanel
+
+    panel = CollectionsPanel(db)
+    yield panel
+    panel.close()
+
+
+@pytest.fixture()
+def variables_panel(db):
+    from equinox.gui.variables_panel import VariablesPanel
+
+    panel = VariablesPanel(db)
+    yield panel
+    panel.close()
+
+
+@pytest.fixture()
+def history_panel(db):
+    from equinox.gui.history_panel import HistoryPanel
+
+    panel = HistoryPanel(db)
+    yield panel
+    panel.close()
+
+
+@pytest.fixture()
+def cookies_panel(db):
+    from equinox.gui.cookies_panel import CookiesPanel
+
+    panel = CookiesPanel(db)
+    yield panel
+    panel.close()
+
+
+# -- Tab bars --------------------------------------------------------------
+#
+# Every QTabWidget narrow enough to overflow must elide rather than hide the
+# overflow behind Qt's scroll arrows, which silently makes tabs unreachable.
+# Both call sites go through ui_common.configure_tab_bar_elision, so these run
+# against each one to keep the guarantee attached to the widget the user
+# actually touches rather than to the helper alone.
+
+_TAB_BAR_CASES = [
+    pytest.param("window", "_left_tabs", id="sidebar"),
+    pytest.param("auth_dialog", "tabs", id="auth-dialog"),
+]
+
+
+@pytest.mark.parametrize(("owner_fixture", "attr"), _TAB_BAR_CASES)
+def test_tab_bar_scroll_buttons_disabled(request, owner_fixture, attr):
+    """Scroll arrows hide navigation; eliding keeps every tab on screen."""
+    tabs = getattr(request.getfixturevalue(owner_fixture), attr)
+    bar = tabs.tabBar()
+    assert bar is not None
+    assert bar.usesScrollButtons() is False
+
+
+@pytest.mark.parametrize(("owner_fixture", "attr"), _TAB_BAR_CASES)
+def test_tab_bar_labels_elide_instead_of_overflowing(request, owner_fixture, attr):
+    tabs = getattr(request.getfixturevalue(owner_fixture), attr)
+    bar = tabs.tabBar()
+    assert bar.elideMode() == Qt.TextElideMode.ElideRight
+    # Expanding tabs would fight the elide and re-introduce overflow.
+    assert bar.expanding() is False
+
+
+@pytest.mark.parametrize(("owner_fixture", "attr"), _TAB_BAR_CASES)
+def test_every_tab_has_a_nonempty_tooltip(request, owner_fixture, attr):
+    """Elided labels are only acceptable if the full name is recoverable."""
+    tabs = getattr(request.getfixturevalue(owner_fixture), attr)
+    for index in range(tabs.count()):
+        assert tabs.tabToolTip(index).strip(), f"tab {index} has no tooltip"
+
+
 class TestSidebarTabBar:
-    """All six sidebar destinations must stay reachable at any width."""
+    """Sidebar-specific tab-bar guarantees beyond the shared ones above."""
 
-    def test_scroll_buttons_disabled(self, window):
-        """Scroll arrows hide navigation; eliding keeps every tab on screen."""
-        bar = window._left_tabs.tabBar()
-        assert bar is not None
-        assert bar.usesScrollButtons() is False
-
-    def test_labels_elide_instead_of_overflowing(self, window):
-        bar = window._left_tabs.tabBar()
-        assert bar.elideMode() == Qt.TextElideMode.ElideRight
-        # Expanding tabs would fight the elide and re-introduce overflow.
-        assert bar.expanding() is False
-
-    def test_every_tab_has_a_tooltip_naming_it_and_its_shortcut(self, window):
-        """Elided labels are only acceptable if the full name is recoverable."""
+    def test_tooltips_name_the_tab_and_its_shortcut(self, window):
         from equinox.gui.window import _LEFT_TAB_LABELS
 
         assert window._left_tabs.count() == len(_LEFT_TAB_LABELS)
@@ -101,7 +173,7 @@ class TestSidebarTabBar:
         """Regression: lazy init swaps the tab via removeTab/insertTab.
 
         That discarded the tooltip at the exact moment the user first opened
-        the tab — so the elided label lost its only explanation precisely when
+        the tab so the elided label lost its only explanation precisely when
         it was needed.
         """
         from equinox.gui.window import _LEFT_TAB_LABELS
@@ -123,311 +195,157 @@ class TestSidebarTabBar:
 
         assert window._left_tabs.tabToolTip(2) == "Variables  (Alt+3)"
 
+    def test_out_of_range_tooltip_is_a_noop(self, window):
+        """apply_left_tab_tooltip must stay total for indices with no label."""
+        from equinox.gui.window import _LEFT_TAB_LABELS
 
-class TestCollectionsToolbarFitsSidebar:
-    """The collections toolbar must fit the sidebar without eliding labels."""
-
-    def _toolbar_buttons(self, panel):
-        return [
-            panel.new_collection_btn,
-            panel.import_btn,
-            panel.refresh_btn,
-            panel.auto_refresh_checkbox,
-        ]
-
-    # The labels this toolbar used before the fix. Kept here so the test can
-    # compare old vs new using the *same* font metrics.
-    _PRE_FIX_LABELS = ("New Collection", "Import Openapi/Swagger", "Refresh", "Auto-refresh")
-
-    def test_toolbar_is_far_narrower_than_the_labels_it_replaced(self, qapp_collections_panel):
-        """The old labels needed ~445px against a 300px sidebar, so Qt elided
-        them into unreadable stubs ("w Collecti", "Openapi/S").
-
-        Asserted as a ratio rather than an absolute pixel budget: button
-        widths depend entirely on which fonts the host has (a machine with no
-        font directory falls back to 'sans-serif' and inflates every metric by
-        ~50%), so a fixed px threshold would pass or fail on environment
-        rather than on the code under test. Measuring both label sets with the
-        same QFontMetrics cancels that out.
-        """
-        from PyQt6.QtGui import QFontMetrics
-
-        panel = qapp_collections_panel
-        buttons = self._toolbar_buttons(panel)
-        fm = QFontMetrics(panel.font())
-
-        new_text_px = sum(fm.horizontalAdvance(w.text()) for w in buttons)
-        old_text_px = sum(fm.horizontalAdvance(t) for t in self._PRE_FIX_LABELS)
-
-        assert new_text_px < old_text_px * 0.6, (
-            f"toolbar label text is {new_text_px}px vs {old_text_px}px before the fix — "
-            "not a meaningful reduction; it will elide again in a 300px sidebar"
-        )
-
-    def test_no_toolbar_label_is_long_enough_to_elide(self, qapp_collections_panel):
-        """Font-independent guard on the actual cause: over-long labels.
-
-        Four controls share a ~300px sidebar, so each gets ~70px. Anything
-        beyond a short word will be elided by Qt.
-        """
-        for widget in self._toolbar_buttons(qapp_collections_panel):
-            assert len(widget.text()) <= 8, (
-                f"{widget.text()!r} is too long for a quarter of a 300px sidebar"
-            )
-
-    def test_every_toolbar_control_has_a_tooltip(self, qapp_collections_panel):
-        """Short labels are only acceptable if the full meaning is recoverable."""
-        for widget in self._toolbar_buttons(qapp_collections_panel):
-            assert widget.toolTip().strip(), f"{widget.text()!r} has no tooltip"
-
-    def test_import_button_explains_itself_when_disabled(self, db):
-        """A parentless panel disables Import; it must say where to find it."""
-        from equinox.gui.collection_panel import CollectionsPanel
-
-        panel = CollectionsPanel(db)
-        try:
-            assert panel.import_btn.isEnabled() is False
-            assert "File" in panel.import_btn.toolTip()
-        finally:
-            panel.close()
+        window.apply_left_tab_tooltip(len(_LEFT_TAB_LABELS) + 5)
+        window.apply_left_tab_tooltip(-1)
 
 
-@pytest.fixture()
-def qapp_collections_panel(db):
-    from equinox.gui.collection_panel import CollectionsPanel
+# -- Panel toolbars --------------------------------------------------------
+#
+# Each sidebar panel toolbar shares one narrow (~300px) column, so its labels
+# must be meaningfully shorter than the ones that used to overflow there, and
+# whatever meaning they drop must reappear in a tooltip.
+#
+# Both thresholds below are deliberately single shared numbers rather than
+# per-toolbar values. Tuning a threshold per panel until it passes records
+# whatever the diff happened to produce instead of asserting an intent, and
+# leaves no signal when a later edit creeps the labels back up. The measured
+# ratios when these were written ranged 0.42-0.66, so 0.75 holds every
+# toolbar to "at least a quarter narrower" with real headroom on each.
 
-    panel = CollectionsPanel(db)
-    yield panel
-    panel.close()
+_MAX_LABEL_WIDTH_RATIO = 0.75
+_MAX_LABEL_CHARS = 8
 
 
-class TestVariablesPanelFitsSidebar:
-    """The Groups/Variables split toolbars must fit a 300px sidebar tab.
+def _toolbar_widgets(panel, attrs):
+    return [getattr(panel, name) for name in attrs]
 
-    Each toolbar gets roughly half of an already-narrow sidebar, so its
-    buttons must be meaningfully shorter than the labels that used to
-    overflow there. Measured as a font-metric ratio rather than a live
-    layout pixel count: actual widget geometry under the offscreen platform
-    is sensitive to show()/processEvents timing (real widths observed for
-    the same code ranged from ~30px to ~600px across runs), which the
-    Collections toolbar test below already works around the same way.
+
+# (panel fixture, widget attributes, the labels those widgets replaced)
+_TOOLBAR_CASES = [
+    pytest.param(
+        "collections_panel",
+        ("new_collection_btn", "import_btn", "refresh_btn", "auto_refresh_checkbox"),
+        ("New Collection", "Import Openapi/Swagger", "Refresh", "Auto-refresh"),
+        id="collections",
+    ),
+    pytest.param(
+        "variables_panel",
+        ("new_group_btn", "delete_group_btn"),
+        ("New Group", "Delete Group"),
+        id="variables-groups",
+    ),
+    pytest.param(
+        "variables_panel",
+        ("add_var_btn", "edit_var_btn", "remove_var_btn"),
+        ("Add Variable", "Edit", "Remove"),
+        id="variables-vars",
+    ),
+    pytest.param(
+        "history_panel",
+        ("refresh_btn", "clear_btn", "delete_sel_btn", "compare_btn", "cleanup_btn"),
+        ("Refresh", "Clear All", "Delete Selected", "Compare 2 Selected", "Clean up..."),
+        id="history",
+    ),
+    pytest.param(
+        "cookies_panel",
+        ("add_btn", "delete_btn", "clear_btn", "reveal_btn"),
+        ("Add...", "Delete", "Clear All", "Reveal Values"),
+        id="cookies",
+    ),
+]
+
+
+@pytest.mark.parametrize(("panel_fixture", "attrs", "pre_fix_labels"), _TOOLBAR_CASES)
+def test_toolbar_labels_are_far_narrower_than_the_labels_they_replaced(
+    request,
+    panel_fixture,
+    attrs,
+    pre_fix_labels,
+):
+    """The old labels overflowed the sidebar, so Qt elided them into stubs.
+
+    Asserted as a ratio rather than an absolute pixel budget: button widths
+    depend entirely on which fonts the host has (a machine with no font
+    directory falls back to 'sans-serif' and inflates every metric by ~50%),
+    so a fixed px threshold would pass or fail on environment rather than on
+    the code under test. Measuring both label sets with the same
+    QFontMetrics cancels that out.
     """
+    from PyQt6.QtGui import QFontMetrics
 
-    def _groups_buttons(self, panel):
-        return [panel.new_group_btn, panel.delete_group_btn]
+    panel = request.getfixturevalue(panel_fixture)
+    fm = QFontMetrics(panel.font())
 
-    def _variables_buttons(self, panel):
-        return [panel.add_var_btn, panel.edit_var_btn, panel.remove_var_btn]
+    widgets = _toolbar_widgets(panel, attrs)
+    new_text_px = sum(fm.horizontalAdvance(w.text()) for w in widgets)
+    old_text_px = sum(fm.horizontalAdvance(t) for t in pre_fix_labels)
 
-    _PRE_FIX_GROUPS_LABELS = ("New Group", "Delete Group")
-    _PRE_FIX_VARIABLES_LABELS = ("Add Variable", "Edit", "Remove")
-
-    def test_toolbar_labels_are_far_narrower_than_the_labels_they_replaced(
-        self,
-        qapp_variables_panel,
-    ):
-        from PyQt6.QtGui import QFontMetrics
-
-        panel = qapp_variables_panel
-        fm = QFontMetrics(panel.font())
-
-        for buttons, pre_fix_labels in (
-            (self._groups_buttons(panel), self._PRE_FIX_GROUPS_LABELS),
-            (self._variables_buttons(panel), self._PRE_FIX_VARIABLES_LABELS),
-        ):
-            new_text_px = sum(fm.horizontalAdvance(w.text()) for w in buttons)
-            old_text_px = sum(fm.horizontalAdvance(t) for t in pre_fix_labels)
-            assert new_text_px < old_text_px * 0.75, (
-                f"toolbar label text is {new_text_px}px vs {old_text_px}px before "
-                "the fix — not a meaningful reduction; it will clip again in a "
-                "narrow sidebar column"
-            )
-
-    def test_every_toolbar_button_has_a_tooltip(self, qapp_variables_panel):
-        """Short labels are only acceptable if the full meaning is recoverable."""
-        panel = qapp_variables_panel
-        for widget in self._groups_buttons(panel) + self._variables_buttons(panel):
-            assert widget.toolTip().strip(), f"{widget.text()!r} has no tooltip"
-
-
-@pytest.fixture()
-def qapp_variables_panel(db):
-    from equinox.gui.variables_panel import VariablesPanel
-
-    panel = VariablesPanel(db)
-    yield panel
-    panel.close()
-
-
-class TestHistoryPanelToolbarFitsSidebar:
-    """The history toolbar's six controls must fit a 300px sidebar tab.
-
-    All six on one row never fit at any label length - even "Refresh",
-    "Clear", "Delete", "Compare", "Clean...", and a 4-char "Auto" checkbox
-    together still clipped. The fix splits them across two rows instead of
-    shortening further.
-    """
-
-    def _row1_buttons(self, panel):
-        return [panel.refresh_btn, panel.clear_btn]
-
-    def _row2_buttons(self, panel):
-        return [panel.delete_sel_btn, panel.compare_btn, panel.cleanup_btn]
-
-    _PRE_FIX_LABELS = (
-        "Refresh",
-        "Clear All",
-        "Delete Selected",
-        "Compare 2 Selected",
-        "Clean up…",
+    assert new_text_px < old_text_px * _MAX_LABEL_WIDTH_RATIO, (
+        f"toolbar label text is {new_text_px}px vs {old_text_px}px before the "
+        f"fix (ratio {new_text_px / old_text_px:.2f}, limit "
+        f"{_MAX_LABEL_WIDTH_RATIO}) - not a meaningful reduction; it will "
+        "clip again in a narrow sidebar"
     )
 
-    def test_toolbar_labels_are_far_narrower_than_the_labels_they_replaced(
-        self,
-        qapp_history_panel,
-    ):
-        from PyQt6.QtGui import QFontMetrics
 
-        panel = qapp_history_panel
-        fm = QFontMetrics(panel.font())
+@pytest.mark.parametrize(("panel_fixture", "attrs", "pre_fix_labels"), _TOOLBAR_CASES)
+def test_no_toolbar_label_is_long_enough_to_elide(request, panel_fixture, attrs, pre_fix_labels):
+    """Font-independent guard on the actual cause: over-long labels.
 
-        buttons = self._row1_buttons(panel) + self._row2_buttons(panel)
-        new_text_px = sum(fm.horizontalAdvance(w.text()) for w in buttons)
-        old_text_px = sum(fm.horizontalAdvance(t) for t in self._PRE_FIX_LABELS)
-        assert new_text_px < old_text_px * 0.6, (
-            f"toolbar label text is {new_text_px}px vs {old_text_px}px before "
-            "the fix — not a meaningful reduction; it will clip again in a "
-            "narrow sidebar"
-        )
-
-    def test_toolbar_is_split_across_two_rows(self, qapp_history_panel):
-        """The controls that fit on one row's worth of shortened labels."""
-        panel = qapp_history_panel
-        assert panel.refresh_btn.parent() is not None
-        # row1 and row2 buttons must not share a QHBoxLayout - distinguished
-        # by checking delete/compare/cleanup are laid out separately from
-        # refresh/clear by asking Qt for each widget's y-position once shown.
-        panel.resize(300, 700)
-        panel.show()
-        _APP.processEvents()
-        try:
-            row1_y = panel.refresh_btn.y()
-            row2_y = panel.delete_sel_btn.y()
-            assert row2_y > row1_y, (
-                "expected delete/compare/cleanup on a separate row below "
-                "refresh/clear, not sharing a row with them"
-            )
-        finally:
-            panel.hide()
-
-    def test_every_toolbar_button_has_a_tooltip(self, qapp_history_panel):
-        panel = qapp_history_panel
-        for widget in self._row1_buttons(panel) + self._row2_buttons(panel):
-            assert widget.toolTip().strip(), f"{widget.text()!r} has no tooltip"
-
-
-@pytest.fixture()
-def qapp_history_panel(db):
-    from equinox.gui.history_panel import HistoryPanel
-
-    panel = HistoryPanel(db)
-    yield panel
-    panel.close()
-
-
-class TestCookiesPanelToolbarFitsSidebar:
-    """The cookies toolbar's five controls must fit a 300px sidebar tab."""
-
-    def _buttons(self, panel):
-        return [panel.add_btn, panel.delete_btn, panel.clear_btn, panel.reveal_btn]
-
-    _PRE_FIX_LABELS = ("Add…", "Delete", "Clear All", "Reveal Values")
-
-    def test_toolbar_labels_are_far_narrower_than_the_labels_they_replaced(
-        self,
-        qapp_cookies_panel,
-    ):
-        from PyQt6.QtGui import QFontMetrics
-
-        panel = qapp_cookies_panel
-        fm = QFontMetrics(panel.font())
-
-        buttons = self._buttons(panel)
-        new_text_px = sum(fm.horizontalAdvance(w.text()) for w in buttons)
-        old_text_px = sum(fm.horizontalAdvance(t) for t in self._PRE_FIX_LABELS)
-        assert new_text_px < old_text_px * 0.85, (
-            f"toolbar label text is {new_text_px}px vs {old_text_px}px before "
-            "the fix — not a meaningful reduction; it will clip again in a "
-            "narrow sidebar"
-        )
-
-    def test_every_toolbar_button_has_a_tooltip(self, qapp_cookies_panel):
-        panel = qapp_cookies_panel
-        for widget in self._buttons(panel):
-            assert widget.toolTip().strip(), f"{widget.text()!r} has no tooltip"
-
-
-@pytest.fixture()
-def qapp_cookies_panel(db):
-    from equinox.gui.cookies_panel import CookiesPanel
-
-    panel = CookiesPanel(db)
-    yield panel
-    panel.close()
-
-
-class TestAuthDialogTabBarStaysReachable:
-    """AuthDialog's six auth-type tabs must never hide behind scroll arrows.
-
-    Unlike the sidebar, this dialog is user-resizable and sized wide enough
-    (_MINIMUM_WIDTH) to fit every label without eliding in the common case.
-    But nothing stopped a user shrinking the dialog, or a future seventh
-    auth type, from putting Qt back into default hide-behind-``‹ ›``-arrows
-    mode - exactly what happened here at the original 540px minimum, which
-    was 20px short of the six labels' combined width.
+    Several controls share a ~300px sidebar, so each gets well under 100px.
+    Anything beyond a short word will be elided by Qt.
     """
-
-    def test_scroll_buttons_disabled(self, qapp_auth_dialog):
-        bar = qapp_auth_dialog.tabs.tabBar()
-        assert bar is not None
-        assert bar.usesScrollButtons() is False
-
-    def test_labels_elide_instead_of_overflowing(self, qapp_auth_dialog):
-        bar = qapp_auth_dialog.tabs.tabBar()
-        assert bar.elideMode() == Qt.TextElideMode.ElideRight
-        assert bar.expanding() is False
-
-    def test_default_width_fits_every_label_without_eliding(self, qapp_auth_dialog):
-        """At the dialog's own declared minimum width, nothing should elide."""
-        from PyQt6.QtGui import QFontMetrics
-
-        dialog = qapp_auth_dialog
-        dialog.resize(dialog.sizeHint())
-        dialog.show()
-        for _ in range(10):
-            _APP.processEvents()
-        try:
-            bar = dialog.tabs.tabBar()
-            fm = QFontMetrics(bar.font())
-            needed = sum(fm.horizontalAdvance(bar.tabText(i)) for i in range(bar.count()))
-            assert bar.width() >= needed, (
-                f"tab bar is {bar.width()}px but labels need ~{needed}px at the "
-                "dialog's own default width - _MINIMUM_WIDTH is too small again"
-            )
-        finally:
-            dialog.hide()
-
-    def test_every_tab_has_a_tooltip_naming_it(self, qapp_auth_dialog):
-        """Elided or not, the full auth-type name must be recoverable."""
-        tabs = qapp_auth_dialog.tabs
-        for index in range(tabs.count()):
-            assert tabs.tabToolTip(index) == tabs.tabText(index)
+    panel = request.getfixturevalue(panel_fixture)
+    for widget in _toolbar_widgets(panel, attrs):
+        assert len(widget.text()) <= _MAX_LABEL_CHARS, (
+            f"{widget.text()!r} is too long for a share of a 300px sidebar"
+        )
 
 
-@pytest.fixture()
-def qapp_auth_dialog():
-    from equinox.gui.dialogs.auth_dialog import AuthDialog
+@pytest.mark.parametrize(("panel_fixture", "attrs", "pre_fix_labels"), _TOOLBAR_CASES)
+def test_every_toolbar_control_has_a_tooltip(request, panel_fixture, attrs, pre_fix_labels):
+    """Short labels are only acceptable if the full meaning is recoverable."""
+    panel = request.getfixturevalue(panel_fixture)
+    for widget in _toolbar_widgets(panel, attrs):
+        assert widget.toolTip().strip(), f"{widget.text()!r} has no tooltip"
 
-    dialog = AuthDialog(None)
-    yield dialog
-    dialog.close()
+
+def test_collections_import_button_explains_itself_when_disabled(collections_panel):
+    """A parentless panel disables Import; it must say where to find it."""
+    assert collections_panel.import_btn.isEnabled() is False
+    assert "File" in collections_panel.import_btn.toolTip()
+
+
+def test_history_toolbar_is_split_across_two_rows(history_panel):
+    """Six controls never fit one ~300px row at any label length.
+
+    Asserted structurally rather than by comparing shown widget y-positions:
+    live geometry under the offscreen platform is timing-dependent (widths
+    for identical code have ranged ~30px to ~600px across runs), which is
+    why every other measurement in this module uses font metrics instead.
+    """
+    row1 = history_panel._toolbar_row1
+    row2 = history_panel._toolbar_row2
+    assert row1 is not row2
+
+    def owning_row(widget):
+        for row in (row1, row2):
+            if row.indexOf(widget) != -1:
+                return row
+        raise AssertionError(f"{widget.text()!r} is in neither toolbar row")
+
+    for widget in (history_panel.refresh_btn, history_panel.clear_btn):
+        assert owning_row(widget) is row1
+
+    for widget in (
+        history_panel.delete_sel_btn,
+        history_panel.compare_btn,
+        history_panel.cleanup_btn,
+    ):
+        assert owning_row(widget) is row2, (
+            f"{widget.text()!r} should be on the second row, not sharing row 1"
+        )

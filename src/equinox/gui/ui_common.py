@@ -3,9 +3,9 @@
 from __future__ import annotations
 
 import logging
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
 
-from PyQt6.QtCore import QSettings
+from PyQt6.QtCore import QSettings, Qt
 from PyQt6.QtWidgets import QLabel, QMessageBox, QSplitter, QTabWidget, QVBoxLayout, QWidget
 
 _GUI_SETTINGS_ORG = "Equinox"
@@ -15,6 +15,7 @@ __all__ = [
     "canonical_tab_label",
     "confirm_yes_no",
     "configure_splitter_persistence",
+    "configure_tab_bar_elision",
     "configure_tab_persistence",
     "create_muted_label",
     "create_panel_layout",
@@ -106,6 +107,33 @@ def canonical_tab_label(label: str) -> str:
     if badge_start != -1 and text.endswith(")"):
         text = text[:badge_start].rstrip()
     return text
+
+
+def configure_tab_bar_elision(
+    tab_widget: QTabWidget,
+    *,
+    tooltip_for: Callable[[int], str] | None = None,
+) -> None:
+    """Keep every tab visible and clickable instead of behind scroll arrows.
+
+    Qt's default for a tab bar too narrow for its labels is to hide the
+    overflow behind small ``‹ ›`` arrows, which silently makes some tabs
+    unreachable. Eliding instead keeps every tab on screen — shortened, but
+    with the full name in a tooltip.
+
+    ``tooltip_for`` maps a tab index to its tooltip text, for callers that
+    need something other than the literal tab text (e.g. a canonical label
+    plus a keyboard shortcut, so a badge suffix never leaks into the tooltip).
+    """
+    bar = tab_widget.tabBar()
+    if bar is None:  # pragma: no cover - defensive, Qt always builds one
+        return
+    bar.setUsesScrollButtons(False)
+    bar.setExpanding(False)
+    bar.setElideMode(Qt.TextElideMode.ElideRight)
+    resolve = tooltip_for or tab_widget.tabText
+    for index in range(tab_widget.count()):
+        tab_widget.setTabToolTip(index, resolve(index))
 
 
 def configure_tab_persistence(
