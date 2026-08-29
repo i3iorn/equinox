@@ -32,6 +32,7 @@ __all__ = [
     "create_muted_label",
     "create_panel_layout",
     "get_gui_settings",
+    "reset_gui_settings_handle",
     "resolve_proxy_url",
 ]
 
@@ -128,9 +129,28 @@ def clipboard_text() -> str:
     return clipboard.text()
 
 
+_settings_handle: QSettings | None = None
+
+
 def get_gui_settings() -> QSettings:
-    """Return the app-wide QSettings handle used by GUI components."""
-    return QSettings(_GUI_SETTINGS_ORG, _GUI_SETTINGS_APP)
+    """Return the app-wide QSettings handle used by GUI components.
+
+    The handle is cached deliberately. Building a fresh QSettings per call
+    meant a value written through one instance could still be unflushed when
+    the next instance read it, so ``save_font_size(10)`` followed by
+    ``get_font_size()`` could hand back the old 9 -- which is exactly how the
+    zoom controls intermittently appeared to do nothing.
+    """
+    global _settings_handle
+    if _settings_handle is None:
+        _settings_handle = QSettings(_GUI_SETTINGS_ORG, _GUI_SETTINGS_APP)
+    return _settings_handle
+
+
+def reset_gui_settings_handle() -> None:
+    """Drop the cached QSettings handle. For tests that redirect storage."""
+    global _settings_handle
+    _settings_handle = None
 
 
 def resolve_proxy_url(
