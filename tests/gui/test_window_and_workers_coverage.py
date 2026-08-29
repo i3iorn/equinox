@@ -748,3 +748,28 @@ class TestIntelligenceWorker:
 
         assert win._intelligence_worker is None
         _close_win(win)
+
+
+def test_event_filter_survives_missing_drag_state(db):
+    """eventFilter must not raise when drag state is absent.
+
+    It is installed on the QApplication, so it receives events for every
+    widget in the process, including while a window's __init__ has not yet
+    assigned _drag_handles or after teardown has dropped it. Raising there
+    happens inside the Qt event loop, where nothing can catch it -- it only
+    shows up as "Exceptions caught in Qt event loop", and pytest-qt turns
+    that into a failure in whichever unrelated test happens to be running.
+    """
+    from PyQt6.QtCore import QEvent
+    from PyQt6.QtWidgets import QWidget
+
+    from equinox.gui.window import MainWindow
+
+    win = MainWindow(db)
+    try:
+        del win._drag_handles
+        # Must return a bool rather than raising AttributeError.
+        assert win.eventFilter(QWidget(), QEvent(QEvent.Type.MouseMove)) in (True, False)
+    finally:
+        win._drag_handles = set()
+        _close_win(win)

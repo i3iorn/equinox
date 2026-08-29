@@ -196,11 +196,23 @@ class _FramelessMixin(QWidgetHostMixin):
         """Enable dragging the frameless window from empty menu-bar/title area."""
         if watched is None or event is None:
             return bool(QWidget.eventFilter(self._as_qwidget(), watched, event))
+
+        # This filter is installed on the QApplication, not on this window, so
+        # it sees events for every widget in the process — including ones
+        # delivered while this window's __init__ has not yet assigned its drag
+        # state, or after teardown has dropped it. Reading _drag_handles
+        # unguarded raises inside the Qt event loop, where the exception cannot
+        # propagate to a caller and only surfaces as "Exceptions caught in Qt
+        # event loop". Fall through to the default handler instead.
+        drag_handles = getattr(self, "_drag_handles", None)
+        if drag_handles is None:
+            return bool(QWidget.eventFilter(self._as_qwidget(), watched, event))
+
         if self._handle_frameless_resize_event(watched, event):
             return True
 
         if (
-            watched in self._drag_handles
+            watched in drag_handles
             and event.type() == QEvent.Type.MouseButtonPress
             and event.button() == Qt.MouseButton.LeftButton
         ):
@@ -218,7 +230,7 @@ class _FramelessMixin(QWidgetHostMixin):
             return False
 
         if (
-            watched in self._drag_handles
+            watched in drag_handles
             and event.type() == QEvent.Type.MouseMove
             and self._drag_menu_active
         ):
@@ -231,7 +243,7 @@ class _FramelessMixin(QWidgetHostMixin):
             self._drag_menu_active = False
 
         if (
-            watched in self._drag_handles
+            watched in drag_handles
             and event.type() == QEvent.Type.MouseButtonRelease
             and event.button() == Qt.MouseButton.LeftButton
         ):
