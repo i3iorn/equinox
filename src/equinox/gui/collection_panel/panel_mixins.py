@@ -12,7 +12,6 @@ from equinox.gui.error_presenter import ErrorPresenter
 from equinox.gui.theme import Colors
 from PyQt6.QtCore import QPoint
 from PyQt6.QtCore import Qt
-from PyQt6.QtCore import QTimer
 from PyQt6.QtGui import QAction
 from PyQt6.QtGui import QColor
 from PyQt6.QtGui import QKeySequence
@@ -22,8 +21,6 @@ from PyQt6.QtWidgets import QTreeWidgetItem
 from PyQt6.QtWidgets import QWidget
 
 logger = logging.getLogger(__name__)
-
-_AUTO_REFRESH_INTERVAL_MS = 30_000
 
 
 def _as_qwidget(host: Any) -> QWidget:
@@ -243,26 +240,10 @@ class _CollectionsSelectionFilterMixin:
 
 
 class _CollectionsRefreshTreeMixin:
-    """Auto-refresh and tree materialization behavior."""
+    """Tree materialization behavior (auto-refresh lives in AutoRefreshMixin)."""
 
     _pre_filter_expansion: dict[str, set[Any]] | None
     _programmatic_expand: bool
-
-    def _setup_auto_refresh(self) -> None:
-        self.refresh_timer = QTimer(_as_qwidget(self))
-        self.refresh_timer.timeout.connect(self._refresh_if_visible)
-        self.refresh_timer.start(_AUTO_REFRESH_INTERVAL_MS)
-
-    def _refresh_if_visible(self) -> None:
-        if self.isVisible():
-            self.refresh()
-
-    def _toggle_auto_refresh(self, state: int) -> None:
-        self.auto_refresh_enabled = Qt.CheckState(state) == Qt.CheckState.Checked
-        if self.auto_refresh_enabled:
-            self.refresh_timer.start(_AUTO_REFRESH_INTERVAL_MS)
-            return
-        self.refresh_timer.stop()
 
     def _get_expansion_state(self) -> dict[str, set[Any]]:
         """Return expansion state for collections and folders."""

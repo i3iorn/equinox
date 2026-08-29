@@ -4,14 +4,20 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Callable, Iterable
+from typing import Protocol, cast
 
-from PyQt6.QtCore import QSettings, Qt
+from PyQt6.QtCore import QSettings, Qt, QTimer
 from PyQt6.QtWidgets import QLabel, QMessageBox, QSplitter, QTabWidget, QVBoxLayout, QWidget
 
 _GUI_SETTINGS_ORG = "Equinox"
 _GUI_SETTINGS_APP = "Equinox"
 
+#: How often a sidebar panel re-reads its data when auto-refresh is on.
+AUTO_REFRESH_INTERVAL_MS = 30_000
+
 __all__ = [
+    "AUTO_REFRESH_INTERVAL_MS",
+    "AutoRefreshMixin",
     "canonical_tab_label",
     "confirm_yes_no",
     "configure_splitter_persistence",
@@ -22,6 +28,55 @@ __all__ = [
     "get_gui_settings",
     "resolve_proxy_url",
 ]
+
+
+class _RefreshablePanel(Protocol):
+    """The host contract AutoRefreshMixin relies on (a QWidget with refresh)."""
+
+    # Qt naming, matched so the cast lines up with the real QWidget method.
+    def isVisible(self) -> bool: ...
+
+    def refresh(self) -> None: ...
+
+
+class AutoRefreshMixin:
+    """Periodically re-read a panel's data while it is visible.
+
+    Mix in *before* QWidget on a panel that defines ``refresh()``, set
+    ``auto_refresh_enabled`` before calling ``_setup_auto_refresh()``, and
+    wire a checkbox's ``stateChanged`` to ``_toggle_auto_refresh``.
+
+    Deliberately declares no ``isVisible``/``refresh`` stubs: this sits ahead
+    of QWidget in the MRO, so a stub here would shadow the real Qt method.
+    The host contract is expressed as a Protocol and reached through a cast.
+    """
+
+    auto_refresh_enabled: bool
+    refresh_timer: QTimer
+
+    def _setup_auto_refresh(self) -> None:
+        """Start the periodic refresh timer."""
+        self.refresh_timer = QTimer(cast(QWidget, self))
+        self.refresh_timer.timeout.connect(self._refresh_if_visible)
+        self.refresh_timer.start(AUTO_REFRESH_INTERVAL_MS)
+
+    def _refresh_if_visible(self) -> None:
+        """Refresh only when on screen, so hidden tabs cost nothing."""
+        host = cast(_RefreshablePanel, self)
+        if host.isVisible():
+            host.refresh()
+
+    def _toggle_auto_refresh(self, state: int) -> None:
+        """Start or stop the timer from a checkbox's ``stateChanged``.
+
+        Compares against ``Checked`` rather than testing truthiness, because
+        ``PartiallyChecked`` is 1 and would otherwise read as enabled.
+        """
+        self.auto_refresh_enabled = Qt.CheckState(state) == Qt.CheckState.Checked
+        if self.auto_refresh_enabled:
+            self.refresh_timer.start(AUTO_REFRESH_INTERVAL_MS)
+            return
+        self.refresh_timer.stop()
 
 
 def get_gui_settings() -> QSettings:

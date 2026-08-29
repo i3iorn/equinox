@@ -13,6 +13,7 @@ from equinox.application.history import HistoryFacade
 from equinox.gui.dialogs.history_diff_dialog import HistoryDiffDialog
 from equinox.gui.error_presenter import ErrorPresenter
 from equinox.gui.theme import Colors
+from equinox.gui.ui_common import AutoRefreshMixin
 from equinox.gui.ui_common import confirm_yes_no
 from equinox.gui.ui_common import create_muted_label
 from equinox.gui.ui_common import create_panel_layout
@@ -49,15 +50,11 @@ logger = logging.getLogger(__name__)
 HistoryEntry = dict[str, Any]
 ContextActionSpec = tuple[str, str, Callable[[], None], bool]
 
-# ── Module-level constants ────────────────────────────────────────────────────
-
-_AUTO_REFRESH_INTERVAL_MS = 30_000
-
 
 # ── History panel ─────────────────────────────────────────────────────────────
 
 
-class HistoryPanel(QWidget):
+class HistoryPanel(AutoRefreshMixin, QWidget):
     """Panel for viewing request history."""
 
     history_selected = pyqtSignal(int)  # load into editor
@@ -295,24 +292,6 @@ class HistoryPanel(QWidget):
         """Create the muted stats label."""
         self.stats_label = create_muted_label()
         return self.stats_label
-
-    # ── Auto-refresh ──────────────────────────────────────────────────────────
-
-    def _setup_auto_refresh(self) -> None:
-        self.refresh_timer = QTimer(self)
-        self.refresh_timer.timeout.connect(self._refresh_if_visible)
-        self.refresh_timer.start(_AUTO_REFRESH_INTERVAL_MS)
-
-    def _refresh_if_visible(self) -> None:
-        if self.isVisible():
-            self.refresh()
-
-    def _toggle_auto_refresh(self, state: int) -> None:
-        self.auto_refresh_enabled = bool(state)
-        if self.auto_refresh_enabled:
-            self.refresh_timer.start(_AUTO_REFRESH_INTERVAL_MS)
-        else:
-            self.refresh_timer.stop()
 
     # ── Advanced-filter toggle ────────────────────────────────────────────────
 

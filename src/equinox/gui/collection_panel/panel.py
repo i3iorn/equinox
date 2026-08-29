@@ -12,6 +12,7 @@ from equinox.gui.collection_panel.panel_mixins import _CollectionsContextMenuMix
 from equinox.gui.collection_panel.panel_mixins import _CollectionsRefreshTreeMixin
 from equinox.gui.collection_panel.panel_mixins import _CollectionsSelectionFilterMixin
 from equinox.gui.error_presenter import ErrorPresenter
+from equinox.gui.ui_common import AutoRefreshMixin
 from equinox.gui.widgets.drag_drop_tree import DragDropTree
 from equinox.storage import Database
 from PyQt6.QtCore import pyqtSignal
@@ -94,6 +95,7 @@ class _NewRequestDialog(QDialog):
 
 
 class CollectionsPanel(
+    AutoRefreshMixin,
     _CollectionsActionsMixin,
     _CollectionsSelectionFilterMixin,
     _CollectionsRefreshTreeMixin,
