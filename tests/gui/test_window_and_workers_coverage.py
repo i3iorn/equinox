@@ -3,20 +3,13 @@
 from unittest.mock import MagicMock
 from unittest.mock import patch
 
-import pytest
 from equinox.storage import Database
-from PyQt6.QtCore import QCoreApplication
 from PyQt6.QtCore import QPoint
 from PyQt6.QtCore import QPointF
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QMouseEvent
 from PyQt6.QtWidgets import QApplication
-
-_APP = QApplication.instance() or QApplication([])
-
-
-def _process():
-    QCoreApplication.processEvents()
+from .gui_helpers import process as _process
 
 
 def _close_win(win):
@@ -31,14 +24,6 @@ def _close_win(win):
         pass
     win.close()
     _process()
-
-
-@pytest.fixture()
-def db(tmp_path, monkeypatch):
-    monkeypatch.setenv("EQUINOX_DB_PATH", str(tmp_path / "test.db"))
-    from equinox.storage import get_db
-
-    return get_db()
 
 
 # ─────────────────────────────────────────────────────────────────────────────

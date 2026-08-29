@@ -2,23 +2,7 @@
 
 from unittest.mock import patch
 
-import pytest
-from PyQt6.QtCore import QCoreApplication
-from PyQt6.QtWidgets import QApplication
-
-_APP = QApplication.instance() or QApplication([])
-
-
-def _process():
-    QCoreApplication.processEvents()
-
-
-@pytest.fixture()
-def db(tmp_path, monkeypatch):
-    monkeypatch.setenv("EQUINOX_DB_PATH", str(tmp_path / "test.db"))
-    from equinox.storage import get_db
-
-    return get_db()
+from .gui_helpers import process as _process
 
 
 # ─────────────────────────────────────────────────────────────────────────────

@@ -1,9 +1,6 @@
 """Regression tests for the regex-based syntax highlighters."""
 
 from PyQt6.QtGui import QColor, QTextDocument
-from PyQt6.QtWidgets import QApplication
-
-_APP = QApplication.instance() or QApplication([])
 
 
 def _format_at(doc: QTextDocument, pos: int):

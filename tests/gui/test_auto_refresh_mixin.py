@@ -11,22 +11,8 @@ rather than a fourth transcription of it.
 from __future__ import annotations
 
 import pytest
-from PyQt6.QtCore import QCoreApplication, Qt
-from PyQt6.QtWidgets import QApplication
-
-_APP = QApplication.instance() or QApplication([])
-
-
-def _process():
-    QCoreApplication.processEvents()
-
-
-@pytest.fixture()
-def db(tmp_path, monkeypatch):
-    monkeypatch.setenv("EQUINOX_DB_PATH", str(tmp_path / "test.db"))
-    from equinox.storage import get_db
-
-    return get_db()
+from PyQt6.QtCore import Qt
+from .gui_helpers import process as _process
 
 
 def _history_panel(db):

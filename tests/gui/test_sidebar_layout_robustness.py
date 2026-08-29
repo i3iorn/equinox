@@ -11,9 +11,7 @@ from __future__ import annotations
 
 import pytest
 from PyQt6.QtCore import Qt
-from PyQt6.QtWidgets import QApplication
-
-_APP = QApplication.instance() or QApplication([])
+from .gui_helpers import APP as _APP
 
 
 @pytest.fixture(autouse=True)
@@ -35,14 +33,6 @@ def _themed():
         yield
     finally:
         set_font_size(original)
-
-
-@pytest.fixture()
-def db(tmp_path, monkeypatch):
-    monkeypatch.setenv("EQUINOX_DB_PATH", str(tmp_path / "test.db"))
-    from equinox.storage import get_db
-
-    return get_db()
 
 
 @pytest.fixture()
