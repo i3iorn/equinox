@@ -10,7 +10,6 @@ from typing import TYPE_CHECKING
 from equinox.core.exceptions import ValidationError
 from equinox.core.validation import Validator
 from PyQt6.QtCore import Qt
-from PyQt6.QtWidgets import QApplication
 from PyQt6.QtWidgets import QGroupBox
 from PyQt6.QtWidgets import QHBoxLayout
 from PyQt6.QtWidgets import QHeaderView
@@ -28,6 +27,7 @@ from PyQt6.QtWidgets import QWidget
 from ..error_presenter import ErrorPresenter
 from ..ui_common import confirm_yes_no
 from ..ui_common import create_muted_label
+from equinox.gui.ui_common import copy_to_clipboard
 
 logger = logging.getLogger(__name__)
 
@@ -385,9 +385,7 @@ class _SessionVarsMixin:
                 logger.warning(
                     "Copying session variables with secret-like keys; values were redacted",
                 )
-            clipboard = QApplication.clipboard()
-            if clipboard:
-                clipboard.setText("\n".join(lines))
+            copy_to_clipboard("\n".join(lines))
 
     # ── Context menu ──────────────────────────────────────────────────────────
 
@@ -437,16 +435,14 @@ class _SessionVarsMixin:
         menu.exec(viewport.mapToGlobal(position))
 
     def _copy_session_key_at_row(self, row: int) -> None:
-        clipboard = QApplication.clipboard()
         ki = self._session_table.item(row, 0)
-        if ki and clipboard:
-            clipboard.setText(ki.text())
+        if ki:
+            copy_to_clipboard(ki.text())
 
     def _copy_session_value_at_row(self, row: int) -> None:
-        clipboard = QApplication.clipboard()
         vi = self._session_table.item(row, 1)
         ki = self._session_table.item(row, 0)
-        if not (vi and clipboard and ki):
+        if not (vi and ki):
             return
         if self._is_secret_like(ki.text()):
             if not confirm_yes_no(
@@ -455,7 +451,7 @@ class _SessionVarsMixin:
                 f"Copy the secret value for '{ki.text()}' to the clipboard?",
             ):
                 return
-        clipboard.setText(vi.text())
+        copy_to_clipboard(vi.text())
 
     def _delete_session_var_at_row(self, row: int) -> None:
         self._session_table.setCurrentItem(self._session_table.item(row, 0))

@@ -7,7 +7,6 @@ from typing import Any
 
 from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import (
-    QApplication,
     QCheckBox,
     QDialog,
     QDialogButtonBox,
@@ -31,6 +30,7 @@ from equinox.storage import Database
 from equinox.storage.cookies import CookieJarManager
 
 from .ui_common import confirm_yes_no, create_muted_label, create_panel_layout
+from equinox.gui.ui_common import copy_to_clipboard
 
 __all__ = ["CookiesPanel"]
 
@@ -228,17 +228,14 @@ class CookiesPanel(QWidget):
         if viewport is None:
             return
         action = menu.exec(viewport.mapToGlobal(position))
-        clipboard = QApplication.clipboard()
-        if clipboard is None:
-            return
         if action == copy_name:
             name_item = self.table.item(row, 0)
             if name_item is not None:
-                clipboard.setText(name_item.text())
+                copy_to_clipboard(name_item.text())
         elif action == copy_value:
             value_item = self.table.item(row, 1)
             if value_item is not None:
-                clipboard.setText(value_item.toolTip() or value_item.text())
+                copy_to_clipboard(value_item.toolTip() or value_item.text())
 
     # ── Slots ─────────────────────────────────────────────────────────────────
 

@@ -7,7 +7,6 @@ from typing import Any
 
 from PyQt6.QtCore import QObject, Qt, QThread, pyqtSignal
 from PyQt6.QtWidgets import (
-    QApplication,
     QHBoxLayout,
     QLabel,
     QLineEdit,
@@ -25,6 +24,7 @@ from equinox.core.secret_managers import (
     SecretNotFoundError,
 )
 from equinox.gui.error_presenter import ErrorPresenter
+from equinox.gui.ui_common import copy_to_clipboard
 
 logger = logging.getLogger(__name__)
 
@@ -271,9 +271,7 @@ class SecretBrowserWidget(QWidget):
             return
 
         value = self._current_secret.get(self._selected_key, "")
-        clipboard = QApplication.clipboard()
-        if clipboard is not None:
-            clipboard.setText(str(value))
+        copy_to_clipboard(str(value))
         ErrorPresenter.info(self, "Value copied to clipboard", title="Copied")
 
     def _use_secret(self) -> None:

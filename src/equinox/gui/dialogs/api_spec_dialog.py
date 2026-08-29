@@ -8,7 +8,6 @@ import tempfile
 
 from PyQt6.QtGui import QFont
 from PyQt6.QtWidgets import (
-    QApplication,
     QComboBox,
     QDialog,
     QFileDialog,
@@ -22,6 +21,7 @@ from PyQt6.QtWidgets import (
 )
 
 from equinox.gui.error_presenter import ErrorPresenter
+from equinox.gui.ui_common import copy_to_clipboard
 
 logger = logging.getLogger(__name__)
 
@@ -219,11 +219,8 @@ class ApiSpecDialog(QDialog):
                 logger.info("User cancelled large clipboard copy (size=%d)", size)
                 return
 
-        clipboard = QApplication.clipboard()
-        if clipboard is None:
-            logger.warning("Clipboard is unavailable; skipping copy")
+        if not copy_to_clipboard(text):
             return
-        clipboard.setText(text)
         logger.info("Copied spec to clipboard (size=%d)", size)
 
     def _on_save(self) -> None:

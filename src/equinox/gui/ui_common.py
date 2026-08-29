@@ -7,7 +7,10 @@ from collections.abc import Callable, Iterable
 from typing import Protocol, cast
 
 from PyQt6.QtCore import QSettings, Qt, QTimer
+from PyQt6.QtGui import QGuiApplication
 from PyQt6.QtWidgets import QLabel, QMessageBox, QSplitter, QTabWidget, QVBoxLayout, QWidget
+
+logger = logging.getLogger(__name__)
 
 _GUI_SETTINGS_ORG = "Equinox"
 _GUI_SETTINGS_APP = "Equinox"
@@ -20,10 +23,12 @@ __all__ = [
     "AutoRefreshMixin",
     "QWidgetHostMixin",
     "canonical_tab_label",
+    "clipboard_text",
     "confirm_yes_no",
     "configure_splitter_persistence",
     "configure_tab_bar_elision",
     "configure_tab_persistence",
+    "copy_to_clipboard",
     "create_muted_label",
     "create_panel_layout",
     "get_gui_settings",
@@ -92,6 +97,35 @@ class AutoRefreshMixin:
             self.refresh_timer.start(AUTO_REFRESH_INTERVAL_MS)
             return
         self.refresh_timer.stop()
+
+
+def copy_to_clipboard(text: str) -> bool:
+    """Put *text* on the system clipboard, returning whether it worked.
+
+    Qt hands back ``None`` for the clipboard on a headless or otherwise
+    unusable display. Callers used to open-code that check and mostly
+    swallowed it, so a failed Copy looked identical to a successful one.
+    Log it in one place instead, and let callers that care react to False.
+    """
+    clipboard = QGuiApplication.clipboard()
+    if clipboard is None:
+        logger.warning("gui.clipboard_unavailable op=copy_to_clipboard")
+        return False
+    try:
+        clipboard.setText(text)
+    except Exception:
+        logger.exception("gui.clipboard_copy_failed op=copy_to_clipboard")
+        return False
+    return True
+
+
+def clipboard_text() -> str:
+    """Return the clipboard's current text, or "" when it is unavailable."""
+    clipboard = QGuiApplication.clipboard()
+    if clipboard is None:
+        logger.warning("gui.clipboard_unavailable op=clipboard_text")
+        return ""
+    return clipboard.text()
 
 
 def get_gui_settings() -> QSettings:
