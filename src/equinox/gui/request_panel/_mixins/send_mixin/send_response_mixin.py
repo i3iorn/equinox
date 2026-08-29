@@ -3,9 +3,8 @@
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, Any
 
-from PyQt6.QtWidgets import QWidget
 
 from equinox.application.requests import (
     apply_captures,
@@ -18,6 +17,7 @@ from equinox.gui.error_presenter import ErrorPresenter
 from equinox.gui.request_panel._mixins.assertions_mixin import LABEL_EMPTY
 from equinox.gui.logging_utils import notify_log_panel
 from equinox.gui.request_panel._constants import STATUS_DURATION_LONG
+from equinox.gui.ui_common import QWidgetHostMixin
 
 logger = logging.getLogger(__name__)
 
@@ -25,7 +25,7 @@ _URL_LOG_LIMIT = 80
 _URL_ERROR_LOG_LIMIT = 80
 
 
-class SendResponseMixin:
+class SendResponseMixin(QWidgetHostMixin):
     """Route worker results into success and error handling flows."""
 
     _worker: Any | None = None
@@ -53,9 +53,6 @@ class SendResponseMixin:
         def _display_script_result(self, label: Any, result: Any) -> None: ...
         def _apply_script_vars(self, result: Any) -> None: ...
         def _defer_task(self, fn: Any, *args: Any, **kwargs: Any) -> None: ...
-
-    def _as_qwidget(self) -> QWidget:
-        return cast(QWidget, cast(object, self))
 
     def _handle_response(self, result: object, worker: Any) -> None:
         """Route a worker result to the success or error path."""

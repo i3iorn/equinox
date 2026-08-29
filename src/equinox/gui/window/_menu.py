@@ -6,7 +6,6 @@ from __future__ import annotations
 import logging
 import os
 from collections.abc import Callable
-from typing import cast
 from typing import TYPE_CHECKING
 from typing import TypedDict
 
@@ -29,6 +28,7 @@ from PyQt6.QtWidgets import QTableWidget
 from PyQt6.QtWidgets import QTableWidgetItem
 from PyQt6.QtWidgets import QVBoxLayout
 from PyQt6.QtWidgets import QWidget
+from equinox.gui.ui_common import QWidgetHostMixin
 
 if TYPE_CHECKING:
     from equinox.gui.ui_usage_tracker import UIUsageTracker
@@ -78,12 +78,8 @@ def _require_menu(menu: QMenu | None, label: str) -> QMenu:
     return menu
 
 
-class _MenuActionsMixin:
+class _MenuActionsMixin(QWidgetHostMixin):
     """Command palette, dialogs, and menu-driven action handlers."""
-
-    def _as_qwidget(self) -> QWidget:
-        """Return this mixin host as a QWidget for Qt parent arguments."""
-        return cast(QWidget, self)
 
     def _open_preferences(self) -> None:
         from equinox.gui.dialogs.preferences_dialog import PreferencesDialog
@@ -538,7 +534,7 @@ class _MenuMixin(_MenuActionsMixin):
     def _add_window_controls_to_menu_bar(self, menubar: QMenuBar) -> None:
         """Attach frameless-window controls to the right side of the menu bar."""
         from PyQt6.QtCore import Qt
-        from PyQt6.QtWidgets import QHBoxLayout, QToolButton, QWidget
+        from PyQt6.QtWidgets import QHBoxLayout, QToolButton
 
         title_container = QWidget(menubar)
         title_container.setObjectName("menuBarWindowTitleContainer")

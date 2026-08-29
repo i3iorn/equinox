@@ -18,6 +18,7 @@ AUTO_REFRESH_INTERVAL_MS = 30_000
 __all__ = [
     "AUTO_REFRESH_INTERVAL_MS",
     "AutoRefreshMixin",
+    "QWidgetHostMixin",
     "canonical_tab_label",
     "confirm_yes_no",
     "configure_splitter_persistence",
@@ -28,6 +29,20 @@ __all__ = [
     "get_gui_settings",
     "resolve_proxy_url",
 ]
+
+
+class QWidgetHostMixin:
+    """Supplies ``_as_qwidget()`` to mixins whose host is a QWidget.
+
+    Qt APIs that take a parent want a real QWidget, but a mixin is not one as
+    far as the type checker is concerned. Mix this in rather than restating
+    the cast: it had grown twelve copies in four spellings, including one
+    that reached for ``# type: ignore`` and one that cast twice.
+    """
+
+    def _as_qwidget(self) -> QWidget:
+        """Return this mixin host as a QWidget for Qt parent arguments."""
+        return cast(QWidget, self)
 
 
 class _RefreshablePanel(Protocol):

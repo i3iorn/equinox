@@ -20,12 +20,12 @@ from PyQt6.QtWidgets import QCheckBox
 from PyQt6.QtWidgets import QComboBox
 from PyQt6.QtWidgets import QInputDialog
 from PyQt6.QtWidgets import QLineEdit
-from PyQt6.QtWidgets import QWidget
+from equinox.gui.ui_common import QWidgetHostMixin
 
 logger = logging.getLogger(__name__)
 
 
-class RequestCommandsMixin:
+class RequestCommandsMixin(QWidgetHostMixin):
     """Keyboard shortcuts and action handlers extracted from RequestPanel."""
 
     url_input: QLineEdit
@@ -54,9 +54,6 @@ class RequestCommandsMixin:
         def _update_tab_labels(self, *_args: Any) -> None: ...
 
     def _as_qobject(self) -> QObject:
-        return self  # type: ignore[return-value]
-
-    def _as_qwidget(self) -> QWidget:
         return self  # type: ignore[return-value]
 
     def _setup_shortcuts(self) -> None:

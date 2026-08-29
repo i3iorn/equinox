@@ -23,11 +23,6 @@ from PyQt6.QtWidgets import QWidget
 logger = logging.getLogger(__name__)
 
 
-def _as_qwidget(host: Any) -> QWidget:
-    """Return mixin host as QWidget for Qt APIs requiring QObject/QWidget parent."""
-    return cast(QWidget, host)
-
-
 class _CollectionsSelectionFilterMixin:
     """Selection, keyboard shortcuts, and filter/expansion behavior."""
 
@@ -492,7 +487,7 @@ class _CollectionsContextMenuMixin:
         if data is None:
             return
 
-        menu = QMenu(_as_qwidget(self))
+        menu = QMenu(self._as_qwidget())
         handlers = {
             "collection": self._build_collection_menu,
             "folder": self._build_folder_menu,
@@ -836,7 +831,7 @@ class _CollectionsContextMenuMixin:
             if is_destructive and not added_destructive_separator:
                 menu.addSeparator()
                 added_destructive_separator = True
-            action = QAction(label, _as_qwidget(self))
+            action = QAction(label, self._as_qwidget())
             action.triggered.connect(
                 lambda _checked=False, aid=action_id, cb=callback: self._run_context_action(
                     context,

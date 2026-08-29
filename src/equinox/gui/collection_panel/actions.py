@@ -1,7 +1,6 @@
 """Action methods mixin for CollectionsPanel."""
 
 from typing import Any
-from typing import cast
 
 from equinox.core.request import Request
 from equinox.gui.error_presenter import ErrorPresenter
@@ -11,20 +10,17 @@ from PyQt6.QtWidgets import QInputDialog
 from PyQt6.QtWidgets import QMessageBox
 from PyQt6.QtWidgets import QTreeWidgetItem
 from PyQt6.QtWidgets import QWidget
+from equinox.gui.ui_common import QWidgetHostMixin
 # mypy: disable-error-code=attr-defined
 
 
-class _CollectionsActionsMixin(QWidget):
+class _CollectionsActionsMixin(QWidgetHostMixin, QWidget):
     """Mixin providing all action/handler methods for CollectionsPanel.
 
     Expects ``self.db``, ``self._tree`` (or ``self.tree``), signals
     ``self.request_selected``, ``self.request_run``, and
     ``self.collections_changed`` to be available on the host class.
     """
-
-    def _as_qwidget(self) -> QWidget:
-        """Return the host as a QWidget for Qt parent arguments."""
-        return cast(QWidget, self)
 
     def _load_request(self, request_id: int) -> None:
         request = self._collection_facade.get_request(request_id)
