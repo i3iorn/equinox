@@ -11,6 +11,7 @@ The QApplication itself is built by the root tests/conftest.py; see
 from __future__ import annotations
 
 import pytest
+from PyQt6.QtCore import QSettings
 
 
 @pytest.fixture()
@@ -20,3 +21,28 @@ def db(tmp_path, monkeypatch):
     from equinox.storage import get_db
 
     return get_db()
+
+
+@pytest.fixture(autouse=True)
+def isolated_gui_settings(tmp_path, monkeypatch):
+    """Give every GUI test its own empty settings store. See issue #40.
+
+    QSettings' native backend is the user's registry on Windows, so without
+    this the suite reads and writes real user state: font size, theme, proxy
+    config and saved layout are all rewritten by whatever a test asserted
+    last. It also leaks between test *processes* -- the pre-push hook runs
+    affected files as separate pytest runs -- which made the zoom tests
+    depend on what an earlier run happened to leave behind.
+
+    The root tests/conftest.py's `isolated_environment` does not cover this:
+    it redirects EQUINOX_HOME, which the native QSettings backend ignores.
+
+    Every settings read goes through ui_common.get_gui_settings(), so
+    replacing its cached handle isolates the whole suite in one place.
+    """
+    import equinox.gui.ui_common as ui_common
+
+    handle = QSettings(str(tmp_path / "gui-settings.ini"), QSettings.Format.IniFormat)
+    monkeypatch.setattr(ui_common, "_settings_handle", handle)
+    yield handle
+    ui_common.reset_gui_settings_handle()
