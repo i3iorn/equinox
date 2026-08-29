@@ -14,14 +14,24 @@ import pytest
 
 
 @pytest.fixture()
-def restore_appearance():
-    """Put the real font size and theme mode back after the test."""
-    from equinox.gui.theme import get_font_size, get_theme_mode, set_font_size, set_theme_mode
+def restore_appearance(tmp_path, monkeypatch):
+    """Point GUI settings at a throwaway INI file for the duration of the test.
 
-    font, mode = get_font_size(), get_theme_mode()
-    yield
-    set_font_size(font)
-    set_theme_mode(mode)
+    Deliberately not the real store. QSettings' native backend is the user's
+    registry on Windows, so asserting against it both mutates the developer's
+    own appearance settings and makes the test depend on whatever a previous
+    run left behind -- which is how an earlier version of this file passed
+    locally and then failed inside the pre-push hook, reading back the
+    default instead of the value it had just written.
+    """
+    from PyQt6.QtCore import QSettings
+
+    import equinox.gui.ui_common as ui_common
+
+    handle = QSettings(str(tmp_path / "settings.ini"), QSettings.Format.IniFormat)
+    monkeypatch.setattr(ui_common, "_settings_handle", handle)
+    yield handle
+    ui_common.reset_gui_settings_handle()
 
 
 def test_font_size_is_readable_immediately_after_writing(restore_appearance):
@@ -50,9 +60,10 @@ def test_theme_mode_is_readable_immediately_after_writing(restore_appearance):
         assert get_theme_mode() == mode
 
 
-def test_theme_and_ui_common_share_one_settings_handle():
+def test_theme_and_ui_common_share_one_settings_handle(restore_appearance):
     """Two handles on the same store is how the writes went missing."""
     from equinox.gui.theme.settings import _settings
     from equinox.gui.ui_common import get_gui_settings
 
     assert _settings() is get_gui_settings()
+    assert _settings() is restore_appearance
