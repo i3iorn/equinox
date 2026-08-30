@@ -101,7 +101,14 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python-version: ["3.10", "3.11", "3.12"]
+        # Every stable release from requires-python (>=3.10) upward. 3.15 is
+        # not out yet; add it here once setup-python serves a stable build.
+        #
+        # The binary dependencies all resolve on 3.13/3.14: PyQt6 and
+        # cryptography ship abi3 wheels, and websockets 12.x — pinned below
+        # 13 — has no cp313/cp314 wheel but does publish a py3-none-any
+        # fallback, so it installs without its optional C speedups.
+        python-version: ["3.10", "3.11", "3.12", "3.13", "3.14"]
 
     steps:
       - uses: actions/checkout@v4
