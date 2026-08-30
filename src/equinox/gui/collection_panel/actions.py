@@ -1,7 +1,6 @@
 """Action methods mixin for CollectionsPanel."""
 
 from typing import Any
-from typing import cast
 
 from equinox.core.request import Request
 from equinox.gui.error_presenter import ErrorPresenter
@@ -11,20 +10,18 @@ from PyQt6.QtWidgets import QInputDialog
 from PyQt6.QtWidgets import QMessageBox
 from PyQt6.QtWidgets import QTreeWidgetItem
 from PyQt6.QtWidgets import QWidget
+from equinox.gui.ui_common import QWidgetHostMixin
+from equinox.gui.ui_common import confirm_yes_no
 # mypy: disable-error-code=attr-defined
 
 
-class _CollectionsActionsMixin(QWidget):
+class _CollectionsActionsMixin(QWidgetHostMixin, QWidget):
     """Mixin providing all action/handler methods for CollectionsPanel.
 
     Expects ``self.db``, ``self._tree`` (or ``self.tree``), signals
     ``self.request_selected``, ``self.request_run``, and
     ``self.collections_changed`` to be available on the host class.
     """
-
-    def _as_qwidget(self) -> QWidget:
-        """Return the host as a QWidget for Qt parent arguments."""
-        return cast(QWidget, self)
 
     def _load_request(self, request_id: int) -> None:
         request = self._collection_facade.get_request(request_id)
@@ -81,13 +78,11 @@ class _CollectionsActionsMixin(QWidget):
     # ── Delete ────────────────────────────────────────────────────────
 
     def _delete_collection(self, collection_id: int) -> None:
-        reply = QMessageBox.question(
+        if confirm_yes_no(
             self,
             "Confirm Delete",
             "Delete this collection and all its requests?",
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-        )
-        if reply == QMessageBox.StandardButton.Yes:
+        ):
             try:
                 self._collection_facade.delete_collection(collection_id)
                 self.refresh()
@@ -96,13 +91,11 @@ class _CollectionsActionsMixin(QWidget):
                 ErrorPresenter.error(self._as_qwidget(), f"Failed to delete collection: {e}")
 
     def _delete_request(self, request_id: int) -> None:
-        reply = QMessageBox.question(
+        if confirm_yes_no(
             self,
             "Confirm Delete",
             "Delete this request?",
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-        )
-        if reply == QMessageBox.StandardButton.Yes:
+        ):
             try:
                 self._collection_facade.delete_request(request_id)
                 self.refresh()

@@ -129,7 +129,7 @@ class TestVariablesPanelRefresh:
         vp.refresh_session_vars({"BASE_URL": "https://api.test", "TOKEN": "abc"})
         clipboard_text = []
         with patch(
-            "equinox.gui.variables_panel._session_vars_mixin.QApplication.clipboard",
+            "equinox.gui.ui_common.QGuiApplication.clipboard",
         ) as mock_cb:
             mock_clip = MagicMock()
             mock_cb.return_value = mock_clip

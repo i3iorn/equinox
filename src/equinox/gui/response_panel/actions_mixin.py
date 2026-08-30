@@ -25,7 +25,6 @@ from equinox.gui.response_panel._formatting import pretty_print_body
 from equinox.gui.response_panel.pretty_print import PrettyPrintRunnable
 from equinox.gui.theme import get_mono_font
 from PyQt6.QtCore import Qt
-from PyQt6.QtWidgets import QApplication
 from PyQt6.QtWidgets import QComboBox
 from PyQt6.QtWidgets import QDialog
 from PyQt6.QtWidgets import QFileDialog
@@ -38,6 +37,7 @@ from PyQt6.QtWidgets import QPushButton
 from PyQt6.QtWidgets import QTextEdit
 from PyQt6.QtWidgets import QVBoxLayout
 from PyQt6.QtWidgets import QWidget
+from equinox.gui.ui_common import copy_to_clipboard
 
 if TYPE_CHECKING:
     from equinox.storage import Database
@@ -346,9 +346,7 @@ class ResponseActionsMixin:
         text = self._get_body_text()
         if not text:
             return
-        clipboard = QApplication.clipboard()
-        if clipboard is not None:
-            clipboard.setText(text)
+        copy_to_clipboard(text)
 
     def _download_body(self) -> None:
         """Save the current body text to a file."""
@@ -415,9 +413,7 @@ class ResponseActionsMixin:
         if code.startswith("# Error"):
             ErrorPresenter.warning(self._as_qwidget(), code, title="Code Generation Failed")
         else:
-            clipboard = QApplication.clipboard()
-            if clipboard is not None:
-                clipboard.setText(code)
+            copy_to_clipboard(code)
 
     def _view_code_dialog(self) -> None:
         """Show a dialog with generated client code in multiple languages."""
@@ -458,9 +454,7 @@ class ResponseActionsMixin:
         update_code()
 
         def _copy_generated_code() -> None:
-            clipboard = QApplication.clipboard()
-            if clipboard is not None:
-                clipboard.setText(editor.toPlainText())
+            copy_to_clipboard(editor.toPlainText())
 
         copy_btn.clicked.connect(_copy_generated_code)
         close_btn.clicked.connect(dlg.accept)

@@ -3,13 +3,12 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass
 from typing import Any
-from typing import cast
 from typing import TYPE_CHECKING
 
 from equinox.gui.dialogs.save_dialog import SaveRequestDialog
 from equinox.gui.error_presenter import ErrorPresenter
 from PyQt6.QtWidgets import QDialog
-from PyQt6.QtWidgets import QWidget
+from equinox.gui.ui_common import QWidgetHostMixin
 
 logger = logging.getLogger(__name__)
 
@@ -47,7 +46,7 @@ class SaveDialogCancelled(SaveRequestError):
 # -----------------------------
 
 
-class RequestSaveFlowMixin:
+class RequestSaveFlowMixin(QWidgetHostMixin):
     """Encapsulate save-to-collection workflow and side effects."""
 
     current_request: Any
@@ -59,9 +58,6 @@ class RequestSaveFlowMixin:
         def _build_request_from_editor(self, **overrides: Any) -> Any: ...
         def _clear_dirty(self) -> None: ...
         def _status_message(self, message: str, timeout_ms: int = 5000) -> None: ...
-
-    def _as_qwidget(self) -> QWidget:
-        return cast(QWidget, cast(object, self))
 
     # ============================================================
     # Public Orchestration Method

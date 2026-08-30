@@ -15,7 +15,6 @@ from PyQt6.QtWidgets import (
     QInputDialog,
     QLabel,
     QListWidget,
-    QMessageBox,
     QPushButton,
     QSplitter,
     QTableWidget,
@@ -32,6 +31,7 @@ from equinox.gui.dialogs.environment_dialog.dotenv_importer import (
 from equinox.gui.error_presenter import ErrorPresenter
 from equinox.gui.theme import Colors
 from equinox.storage import Database, EnvironmentManager
+from equinox.gui.ui_common import confirm_yes_no
 
 _MAX_DOTENV_IMPORT_BYTES = 2 * 1024 * 1024
 
@@ -431,13 +431,11 @@ class EnvironmentDialog(ListFormDialogMixin, QDialog):
             return
         name = items[0].text().lstrip("✓").strip()
         env_id = items[0].data(Qt.ItemDataRole.UserRole)
-        reply = QMessageBox.question(
+        if not confirm_yes_no(
             self,
             "Confirm Delete",
             f"Delete environment '{name}'?\n\nThis cannot be undone.",
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-        )
-        if reply != QMessageBox.StandardButton.Yes:
+        ):
             return
         try:
             self.env_manager.delete_environment(env_id)

@@ -2,16 +2,9 @@
 
 from __future__ import annotations
 
-from PyQt6.QtCore import QCoreApplication
 from PyQt6.QtCore import QSettings
-from PyQt6.QtWidgets import QApplication
 from PyQt6.QtWidgets import QToolButton
-
-_APP = QApplication.instance() or QApplication([])
-
-
-def _process() -> None:
-    QCoreApplication.processEvents()
+from .gui_helpers import process as _process
 
 
 def test_ui_usage_tracker_persists_counts(tmp_path):

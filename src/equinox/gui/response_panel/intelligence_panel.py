@@ -19,7 +19,6 @@ from equinox.core.response_intelligence import Severity
 from equinox.gui.theme import Colors
 from equinox.gui.theme import get_mono_font
 from PyQt6.QtCore import Qt
-from PyQt6.QtGui import QGuiApplication
 from PyQt6.QtWidgets import QFrame
 from PyQt6.QtWidgets import QHBoxLayout
 from PyQt6.QtWidgets import QLabel
@@ -34,6 +33,8 @@ from PyQt6.QtWidgets import QWidget
 __all__ = ["IntelligencePanel"]
 
 from equinox.gui.ui_common import get_gui_settings
+from equinox.gui.ui_common import copy_to_clipboard
+from equinox.gui.ui_common import create_panel_layout
 
 logger = logging.getLogger(__name__)
 
@@ -252,9 +253,7 @@ class _FindingCard(QFrame):
 
     def _copy_fix(self) -> None:
         text = self._finding.recommendation or self._finding.description
-        clipboard = QGuiApplication.clipboard()
-        if clipboard is not None:
-            clipboard.setText(text)
+        copy_to_clipboard(text)
 
     def _copy_task(self) -> None:
         task = (
@@ -263,9 +262,7 @@ class _FindingCard(QFrame):
             f"  - Action: {self._finding.recommendation or 'Investigate and remediate'}\n"
             f"  - Analyzer: {self._finding.analyzer_id}"
         )
-        clipboard = QGuiApplication.clipboard()
-        if clipboard is not None:
-            clipboard.setText(task)
+        copy_to_clipboard(task)
 
     def _apply_fix(self) -> None:
         if self._on_apply is not None:
@@ -317,9 +314,7 @@ class IntelligencePanel(QWidget):
         self._scroll.setFrameShape(QFrame.Shape.NoFrame)
 
         self._scroll_content = QWidget()
-        self._scroll_layout = QVBoxLayout(self._scroll_content)
-        self._scroll_layout.setContentsMargins(4, 4, 4, 4)
-        self._scroll_layout.setSpacing(6)
+        self._scroll_layout = create_panel_layout(self._scroll_content, spacing=6)
         self._scroll_layout.addStretch()  # always kept as the last item
 
         self._scroll.setWidget(self._scroll_content)
@@ -518,9 +513,7 @@ class IntelligencePanel(QWidget):
         text = finding.recommendation or finding.description
         if finding.analyzer_id == "security.missing_headers":
             text = _missing_headers_template(list((finding.details or {}).get("missing") or []))
-        clipboard = QGuiApplication.clipboard()
-        if clipboard is not None:
-            clipboard.setText(text)
+        copy_to_clipboard(text)
 
     def _mute_for_seven_days(self, finding: Finding) -> None:
         key = _finding_key(finding)

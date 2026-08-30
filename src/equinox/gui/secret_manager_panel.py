@@ -23,11 +23,11 @@ from PyQt6.QtWidgets import QFormLayout
 from PyQt6.QtWidgets import QGroupBox
 from PyQt6.QtWidgets import QHBoxLayout
 from PyQt6.QtWidgets import QLabel
-from PyQt6.QtWidgets import QMessageBox
 from PyQt6.QtWidgets import QPushButton
 from PyQt6.QtWidgets import QTextEdit
 from PyQt6.QtWidgets import QVBoxLayout
 from PyQt6.QtWidgets import QWidget
+from equinox.gui.ui_common import confirm_yes_no
 
 logger = logging.getLogger(__name__)
 
@@ -390,13 +390,7 @@ Configuration:
         if not current_name:
             return
 
-        reply = QMessageBox.question(
-            self,
-            "Confirm Delete",
-            f"Delete configuration '{current_name}'?",
-        )
-
-        if reply != QMessageBox.StandardButton.Yes:
+        if not confirm_yes_no(self, "Confirm Delete", f"Delete configuration '{current_name}'?"):
             return
 
         self._configs.pop(current_name, None)
