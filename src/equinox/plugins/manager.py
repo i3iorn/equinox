@@ -222,9 +222,18 @@ class PluginManager:
                 logger.error("Failed to create module spec for plugin: %s", plugin_manifest.name)
                 raise PluginError(f"Failed to load plugin: {plugin_manifest.name}")
 
-            logger.debug("Loading plugin module: %s", plugin_manifest.name)
+            # Use a unique module name to avoid sys.modules collision
+            module_name = f"equinox.plugins.{plugin_manifest.name}"
+            if module_name in sys.modules:
+                logger.warning(
+                    "Plugin module name collision, unloading previous: %s",
+                    module_name,
+                )
+                sys.modules.pop(module_name, None)
+
+            logger.debug("Loading plugin module: %s", module_name)
             module = importlib.util.module_from_spec(spec)
-            sys.modules[plugin_manifest.name] = module
+            sys.modules[module_name] = module
 
             # Activate policy guard before module import to apply limits from
             # the first executed statement.

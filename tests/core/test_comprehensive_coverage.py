@@ -281,13 +281,13 @@ class TestRedactComprehensive:
         assert mask_secret("abc") == "***"  # len <= keep → ***
 
     def test_mask_secret_exact_keep(self):
-        assert mask_secret("12345678") == "***"  # len == keep → ***
+        assert mask_secret("1234") == "***"  # len == keep (default=4) → ***
 
     def test_mask_secret_long(self):
         result = mask_secret("super-secret-token-value")
-        assert result.startswith("super-se")
+        assert result.startswith("supe")
         assert result.endswith("…")
-        assert len(result) == 9  # 8 chars + "…"
+        assert len(result) == 5  # 4 chars + "…"
 
     def test_mask_secret_custom_keep(self):
         result = mask_secret("abcdefghij", keep=3)

@@ -267,6 +267,13 @@ class MainWindow(
         self._layout_save_timer.start()
 
     def closeEvent(self, event: Any | None) -> None:
+        # Cancel any in-flight request worker to prevent fatal abort on shutdown
+        try:
+            if hasattr(self.request_panel, "_worker") and self.request_panel._worker is not None:
+                self.request_panel._cancel_request()
+        except Exception:
+            logger.exception("Error cancelling request worker on close", exc_info=True)
+
         self.request_panel.autosave_current()
         if self.websocket_panel is not None:
             # WebSocketPanel is a sidebar tab, not a top-level window, so Qt
