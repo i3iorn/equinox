@@ -3,7 +3,7 @@
 import inspect
 import logging
 from collections.abc import Iterable
-from typing import Callable
+from collections.abc import Callable
 
 from equinox.core.exceptions import EquinoxError, RequestError
 from equinox.core.interceptors.chain import InterceptorChain
@@ -153,7 +153,7 @@ class RequestPipeline:
         if audit_tag:
             self._audit_log_request(
                 request.method,
-                request.url,
+                redact_url(request.url) or "",
                 error=audit_tag,
                 request_id=request.correlation_id,
             )

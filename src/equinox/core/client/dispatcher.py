@@ -10,9 +10,8 @@ import logging
 import ssl
 import threading
 import time
-from io import TextIOWrapper
 from pathlib import Path
-from typing import Any
+from typing import IO, Any
 
 import httpx
 from equinox.core.client.auth_redirect import _RedirectSafeAuth
@@ -167,30 +166,21 @@ class HttpxDispatcher:
             return None, []
 
         files: dict[str, Any] = {}
-        opened_handles: list[Any] = []
+        opened_handles: list[IO[bytes]] = []
 
-        try:
-            request_files = getattr(request, "files", {}) or {}
-            for field, value in request_files.items():
-                if isinstance(value, (str, Path)):
-                    fh = Path(value).open("rb")
-                    opened_handles.append(fh)
-                    files[field] = (Path(value).name, fh)
-                elif isinstance(value, tuple) and len(value) in (2, 3):
-                    files[field] = value
-                else:
-                    raise ValidationError(
-                        f"Unsupported file spec for field {field!r}: "
-                        f"expected a path or (filename, data[, content_type]) tuple",
-                    )
-        except Exception:
-            # Close any handles that were successfully opened before the error.
-            for fh in opened_handles:
-                try:
-                    fh.close()
-                except Exception:
-                    pass
-            raise
+        request_files = getattr(request, "files", {}) or {}
+        for field, value in request_files.items():
+            if isinstance(value, (str, Path)):
+                fh = Path(value).open("rb")
+                opened_handles.append(fh)
+                files[field] = (Path(value).name, fh)
+            elif isinstance(value, tuple) and len(value) in (2, 3):
+                files[field] = value
+            else:
+                raise ValidationError(
+                    f"Unsupported file spec for field {field!r}: "
+                    f"expected a path or (filename, data[, content_type]) tuple",
+                )
 
         return files, opened_handles
 
@@ -229,7 +219,9 @@ class HttpxDispatcher:
             request=request,
             timestamp=utc_now(),
             sent_headers=redacted_sent_headers,
-            sent_url=str(raw.request.url) if getattr(raw, "request", None) is not None else None,
+            sent_url=redact_url(str(raw.request.url))
+            if getattr(raw, "request", None) is not None
+            else None,
             connection_info=self._extract_connection_info(raw, request),
             set_cookie_headers=raw.headers.get_list("set-cookie"),
         )
@@ -308,10 +300,10 @@ class HttpxDispatcher:
         }
 
         try:
-            req_url = str(raw.request.url)
+            req_url = redact_url(str(raw.request.url))
             info["sent_url"] = req_url
         except Exception:
-            req_url = request.url
+            req_url = redact_url(request.url)
             info["sent_url"] = req_url
 
         stream = None
@@ -355,7 +347,10 @@ class HttpxDispatcher:
     def _log_redirect_chain(raw: httpx.Response) -> None:
         if not raw.history:
             return
-        chain = " → ".join(f"{r.status_code} {r.headers.get('location', '?')}" for r in raw.history)
+        chain = " → ".join(
+            f"{r.status_code} {redact_url(r.headers.get('location', '?')) or '?'}"
+            for r in raw.history
+        )
         logger.info(
             "Request followed %d redirect(s): %s → %d",
             len(raw.history),
@@ -466,7 +461,7 @@ class HttpxDispatcher:
             params=request.params,
             content=content,
             files=multipart_files or None,
-            timeout=request.timeout or self._timeout,
+            timeout=request.timeout if request.timeout is not None else self._timeout,
         )
 
         self._strip_auto_content_type(
@@ -494,7 +489,7 @@ class HttpxDispatcher:
             auth=httpx_auth,
         )
 
-    def _close_file_handles(self, handles: list[TextIOWrapper]) -> None:
+    def _close_file_handles(self, handles: list[IO[bytes]]) -> None:
         for fh in handles:
             try:
                 fh.close()
