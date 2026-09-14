@@ -7,6 +7,7 @@ from typing import Any
 
 from equinox.core.http.cookies import CookieManager
 from equinox.core.request import Response
+from equinox.security import redact_url
 
 logger = logging.getLogger(__name__)
 
@@ -62,17 +63,20 @@ class CookieHandler:
             if set_cookie_headers and hasattr(self._manager, "update_from_set_cookie_headers"):
                 logger.debug(
                     "CookieHandler: updating cookie jar from repeated Set-Cookie headers (url=%s)",
-                    url,
+                    redact_url(url),
                 )
                 self._manager.update_from_set_cookie_headers(set_cookie_headers, url)
                 return
 
             headers = dict(response.headers)
             if any(k.lower() == "set-cookie" for k in headers):
-                logger.debug("CookieHandler: updating cookie jar from Set-Cookie (url=%s)", url)
+                logger.debug(
+                    "CookieHandler: updating cookie jar from Set-Cookie (url=%s)",
+                    redact_url(url),
+                )
                 self._manager.update_from_response(headers, url)
         except Exception as exc:
-            logger.debug("CookieHandler: cookie update failed for %s: %s", url, exc)
+            logger.debug("CookieHandler: cookie update failed for %s: %s", redact_url(url), exc)
 
     # ── Dunder helpers ────────────────────────────────────────────────────────
 

@@ -71,6 +71,7 @@ class _SsrfGuard:
     _METADATA_HOSTS: frozenset[str] = frozenset(
         {
             "169.254.169.254",  # AWS / GCP / Azure IMDS
+            "100.100.100.200",  # Alibaba Cloud IMDS
             "metadata.google.internal",
             "metadata.goog",
         },
@@ -98,7 +99,10 @@ class _SsrfGuard:
         try:
             addr = ipaddress.ip_address(normalized)
             # Literal IP — check address range; no DNS resolution needed.
-            if addr.is_private or addr.is_loopback or addr.is_link_local:
+            # `is_global` is False for private, loopback, link-local, multicast,
+            # reserved, CGNAT, and unspecified addresses, so `not is_global`
+            # covers all of them (and avoids the deprecated `is_private`).
+            if not addr.is_global or addr.is_multicast or addr.is_reserved:
                 raise ValidationError(
                     f"Requests to private/internal IP '{hostname}' are blocked (SSRF protection)",
                 )
@@ -144,7 +148,7 @@ class _SsrfGuard:
             )
             for _family, _type, _proto, _canon, sockaddr in future.result(timeout=cls._DNS_TIMEOUT):
                 addr = ipaddress.ip_address(sockaddr[0])
-                if addr.is_private or addr.is_loopback or addr.is_link_local:
+                if not addr.is_global or addr.is_multicast or addr.is_reserved:
                     has_private = True
                     break
 
@@ -175,6 +179,17 @@ class _SsrfGuard:
             raise ValidationError(
                 f"Hostname '{original}' DNS resolution timed out (SSRF protection)",
             )
+        except RuntimeError as exc:
+            # Executor may be shut down during interpreter teardown.
+            if is_ssrf_allow_on_dns_failure_enabled():
+                _logger.warning(
+                    "SSRF DNS pool unavailable, allowing request due to compatibility flag",
+                    extra={"hostname": normalized, "error": str(exc)},
+                )
+                return
+            raise ValidationError(
+                f"Hostname '{original}' could not be resolved safely (SSRF protection)",
+            ) from exc
 
     @classmethod
     def _get_cached_dns_result(cls, hostname: str) -> bool | None:
