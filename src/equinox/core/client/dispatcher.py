@@ -172,8 +172,11 @@ class HttpxDispatcher:
         for field, value in request_files.items():
             if isinstance(value, (str, Path)):
                 fh = Path(value).open("rb")
-                opened_handles.append(fh)
-                files[field] = (Path(value).name, fh)
+                try:
+                    opened_handles.append(fh)
+                    files[field] = (Path(value).name, fh)
+                finally:
+                    fh.close()
             elif isinstance(value, tuple) and len(value) in (2, 3):
                 files[field] = value
             else:
