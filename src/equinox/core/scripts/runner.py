@@ -52,11 +52,14 @@ def _subprocess_exec_target(
     try:
         # get_safe_builtins is reconstructed here inside the child process.
         globs: dict[str, Any] = {"__builtins__": get_safe_builtins()}
-        locs: dict[str, Any] = {"env": dict(session_vars)}
-        locs.update(extra_locals)
+        locs: dict[str, Any] = dict(extra_locals)
+        # `env` is reserved: it must always reference the session-variable copy
+        # so result collection (`locs.get("env", {})`) is never hijacked by a
+        # caller-supplied "env" key in extra_locals.
+        locs["env"] = dict(session_vars)
         exec(compile(source, filename, "exec"), globs, locs)
         q.put(("ok", locs.get("env", {})))
-    except Exception as exc:
+    except BaseException as exc:
         q.put(("error", str(exc)))
 
 
@@ -64,20 +67,35 @@ def _terminate_process(p: BaseProcess | None) -> None:
     """Terminate and join *p*, escalating to kill if it does not exit promptly.
 
     Always no-ops when *p* is ``None`` or already dead so callers can call this
-    unconditionally from ``finally`` blocks.
+    unconditionally from ``finally`` blocks. Each step is guarded separately so
+    a failure in one (e.g. ``terminate()`` raising during teardown) does not
+    skip the subsequent join/kill escalation.
     """
     if p is None:
         return
     try:
-        if p.is_alive():
+        if not p.is_alive():
+            return
+    except Exception:
+        return
+    if p.is_alive():
+        try:
             p.terminate()
+        except Exception:
+            pass
+    try:
         p.join(timeout=2.0)
-        if p.is_alive():
-            # Escalate to SIGKILL / TerminateProcess on Windows
-            p.kill()
-            p.join(timeout=1.0)
     except Exception:
         pass
+    if p.is_alive():
+        try:
+            p.kill()
+        except Exception:
+            pass
+        try:
+            p.join(timeout=1.0)
+        except Exception:
+            pass
 
 
 def _close_queue(q: multiprocessing.Queue[tuple[str, Any]]) -> None:

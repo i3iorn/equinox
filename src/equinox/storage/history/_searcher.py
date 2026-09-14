@@ -282,12 +282,12 @@ class _HistorySearcher:
         if executed_after and isinstance(executed_after, str):
             self._validate_iso_timestamp(executed_after, "executed_after")
             conditions.append("executed_at >= ?")
-            params.append(executed_after)
+            params.append(self._normalize_timestamp_for_compare(executed_after))
 
         if executed_before and isinstance(executed_before, str):
             self._validate_iso_timestamp(executed_before, "executed_before")
             conditions.append("executed_at <= ?")
-            params.append(executed_before)
+            params.append(self._normalize_timestamp_for_compare(executed_before))
 
     # ── Post-filter predicates ────────────────────────────────────────────────
 
@@ -369,6 +369,23 @@ class _HistorySearcher:
             _dt.fromisoformat(timestamp.rstrip("Z"))
         except ValueError:
             raise ValidationError(f"{label} must be in ISO-8601 format (e.g. 2026-03-23T16:20:00Z)")
+
+    @staticmethod
+    def _normalize_timestamp_for_compare(timestamp: str) -> str:
+        """Convert an ISO-8601 input to the ``YYYY-MM-DD HH:MM:SS`` form used by
+        SQLite ``CURRENT_TIMESTAMP`` / the history indexer.
+
+        Naive lexicographic comparison would otherwise differ between the
+        space-separated stored form and the ``T``-separated user input.
+        """
+        try:
+            parsed = _dt.fromisoformat(timestamp.rstrip("Z"))
+        except ValueError:
+            return timestamp
+        if parsed.tzinfo is not None:
+            parsed = parsed.astimezone()
+            parsed = parsed.replace(tzinfo=None)
+        return parsed.strftime("%Y-%m-%d %H:%M:%S")
 
     @staticmethod
     def _escape_like(text: str) -> str:

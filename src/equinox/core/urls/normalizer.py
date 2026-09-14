@@ -5,11 +5,11 @@ from __future__ import annotations
 import logging
 import re
 from typing import Any
-from urllib.parse import parse_qs
+from urllib.parse import parse_qsl, quote
 
 from equinox.core.interpolation import VariableInterpolator
 
-from .parsing import _parse_url
+from .parsing import _lowercase_netloc_host, _parse_url
 
 logger = logging.getLogger(__name__)
 
@@ -32,12 +32,14 @@ def _build_canonical_url(
     scheme: str,
     netloc: str,
     path: str,
-    query_params: dict[str, str],
+    query_pairs: list[tuple[str, str]],
 ) -> str:
     authority = f"{scheme}://{netloc}" if scheme else netloc
-    if not query_params:
+    if not query_pairs:
         return f"{authority}{path}"
-    query = "&".join(f"{key}={query_params[key]}" for key in sorted(query_params))
+    query = "&".join(
+        f"{quote(key, safe='~')}={quote(value, safe='~')}" for key, value in query_pairs
+    )
     return f"{authority}{path}?{query}"
 
 
@@ -61,19 +63,29 @@ def normalized_parts(url: str, variables: dict[str, str] | None = None) -> dict[
     norm_segments: list[str] = [_normalize_segment(segment) for segment in raw_segments]
     normalized_path = "/" + "/".join(norm_segments) if norm_segments else "/"
 
-    parsed_qs = parse_qs(components.query, keep_blank_values=True)
+    # Preserve every key/value pair (duplicates included, input order within a
+    # key) so the canonical URL stays faithful to the original request. The
+    # exposed ``query_params`` dict keeps the first value per key for
+    # consumers that only care about key presence.
+    parsed_pairs = parse_qsl(components.query, keep_blank_values=True)
+    grouped: dict[str, list[str]] = {}
     query_params: dict[str, str] = {}
-    for key, value in sorted(parsed_qs.items()):
+    for key, value in parsed_pairs:
         key_str = str(key)
-        first_value = str(value[0]) if value else ""
-        query_params[key_str] = first_value
+        value_str = str(value)
+        grouped.setdefault(key_str, []).append(value_str)
+        query_params.setdefault(key_str, value_str)
 
-    netloc_lower = components.netloc.lower()
+    query_pairs: list[tuple[str, str]] = []
+    for key in sorted(grouped):
+        query_pairs.extend((key, value) for value in grouped[key])
+
+    netloc = _lowercase_netloc_host(components.netloc)
     normalized_url = _build_canonical_url(
         components.scheme,
-        netloc_lower,
+        netloc,
         normalized_path,
-        query_params,
+        query_pairs,
     )
 
     return {
@@ -81,14 +93,13 @@ def normalized_parts(url: str, variables: dict[str, str] | None = None) -> dict[
         "path_segments": norm_segments,
         "query_params": query_params,
         "scheme": components.scheme,
-        "netloc": netloc_lower,
+        "netloc": netloc,
     }
 
 
 def normalize_url(url: str, variables: dict[str, str] | None = None) -> str:
     """Return canonical normalized URL string."""
-    normalized = normalized_parts(url, variables).get("normalized_url")
-    return str(normalized)
+    return str(normalized_parts(url, variables)["normalized_url"])
 
 
 def base_path(normalized_url: str) -> str:

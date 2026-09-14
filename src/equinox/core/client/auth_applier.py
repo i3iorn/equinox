@@ -175,9 +175,10 @@ class AuthApplier:
         if isinstance(extra_details, dict):
             details.update(extra_details)
         if proxy and _is_proxy_connection_refused(safe_msg):
+            redacted_proxy = redact_url(proxy) or proxy
             return RequestError(
-                f"Authentication failed — proxy ({proxy}) is not reachable. "
+                f"Authentication failed — proxy ({redacted_proxy}) is not reachable. "
                 "Please check your proxy settings under Preferences.",
-                details={**details, "proxy": proxy},
+                details={**details, "proxy": redacted_proxy},
             )
         return RequestError(f"Authentication failed: {safe_msg}", details=details)

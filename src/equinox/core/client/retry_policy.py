@@ -121,7 +121,7 @@ class RetryPolicy:
         if timeout_retries:
             parts.append(f"{len(timeout_retries)}× after timeout")
         if http_retries:
-            # Get the most common status code
+            # Report the first HTTP status seen (kept deterministic).
             statuses = [e.get("status") for e in http_retries if e.get("status")]
             if statuses:
                 main_status = statuses[0]
