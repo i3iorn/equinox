@@ -755,8 +755,8 @@ class TestOAuth2AutoFetch:
         )
         assert auth._needs_refresh() is True
 
-    def test_no_refresh_when_token_present_no_expiry(self):
-        """OAuth2Auth with existing token and no expiry should NOT refresh."""
+    def test_refresh_when_token_present_no_expiry(self):
+        """OAuth2Auth with existing token but no expiry should refresh (safety)."""
         from equinox.auth._oauth2 import OAuth2Auth
 
         auth = OAuth2Auth(
@@ -765,7 +765,7 @@ class TestOAuth2AutoFetch:
             client_secret="secret",
             access_token="valid-token",
         )
-        assert auth._needs_refresh() is False
+        assert auth._needs_refresh() is True
 
     def test_default_expiry_set_after_fetch(self):
         """When token endpoint omits expires_in, a default expiry is set."""
