@@ -128,12 +128,15 @@ def get_fernet_for_password(password: str | None = None) -> Fernet | None:
     master password is configured, returns None.
     """
     global _cached_fernet
-    if _cached_fernet is not None:
+    if password is None and _cached_fernet is not None:
         return _cached_fernet
     if password is None:
         password = get_master_password()
     f = _derive_fernet_from_password(password)
-    _cached_fernet = f
+    if password is None:
+        _cached_fernet = None
+    elif f is not None:
+        _cached_fernet = f
     return f
 
 

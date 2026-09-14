@@ -117,10 +117,8 @@ def _wipe_bytes(b: bytes | None) -> None:
     if not b:
         return
     try:
-        ptr = ctypes.cast(id(b), ctypes.POINTER(ctypes.c_char))
-        offset = bytes.__basicsize__
-        for i in range(len(b)):
-            ptr[offset + i] = b"\x00"
+        size = len(b)
+        ctypes.memmove(id(b) + bytes.__basicsize__, b"\x00" * size, size)
     except Exception:
         logger.exception("_wipe_bytes: ctypes overwrite failed (non-critical)")
     finally:
