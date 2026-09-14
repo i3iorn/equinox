@@ -46,7 +46,8 @@ class RubyNetHttpGenerator:
                 if "Content-Type" not in headers:
                     lines.append("request['Content-Type'] = 'application/json'")
             except (json.JSONDecodeError, ValueError):
-                lines.append(f"request.body = {request.body!r}")
+                escaped_body = _escape_single_quoted(str(request.body) or "")
+                lines.append(f"request.body = '{escaped_body}'")
 
         lines.append("")
         lines.append("response = http.request(request)")
