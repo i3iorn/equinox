@@ -10,7 +10,6 @@ from PyQt6.QtWidgets import (
     QLabel,
     QListWidget,
     QListWidgetItem,
-    QMessageBox,
     QPushButton,
     QSpinBox,
     QTableWidget,
@@ -22,6 +21,7 @@ from PyQt6.QtWidgets import (
 
 from equinox.gui.error_presenter import ErrorPresenter
 from equinox.storage import CollectionManager, Database, VariableGroupManager
+from equinox.gui.ui_common import confirm_yes_no
 
 
 def _item_text(table: QTableWidget, row: int, col: int) -> str:
@@ -322,13 +322,11 @@ class CollectionVariablesDialog(QDialog):
 
         key_changed = new_key != key
         if key_changed and self._key_exists_in_table(new_key, exclude_row=row):
-            reply = QMessageBox.question(
+            if not confirm_yes_no(
                 self,
                 "Key Already Exists",
                 f"A variable named '{new_key}' already exists. Overwrite it?",
-                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-            )
-            if reply != QMessageBox.StandardButton.Yes:
+            ):
                 return
 
         try:
@@ -356,13 +354,11 @@ class CollectionVariablesDialog(QDialog):
         if row < 0:
             return
         key = _item_text(self.variables_table, row, 0)
-        reply = QMessageBox.question(
+        if not confirm_yes_no(
             self,
             "Confirm Delete",
             f"Delete variable '{key}'?",
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-        )
-        if reply != QMessageBox.StandardButton.Yes:
+        ):
             return
         try:
             self._mgr.remove_variable(self._collection_id, key)
@@ -393,13 +389,11 @@ class CollectionVariablesDialog(QDialog):
         assert group_item is not None
         group_name = group_item.text()
         group_id = group_item.data(Qt.ItemDataRole.UserRole)
-        reply = QMessageBox.question(
+        if not confirm_yes_no(
             self,
             "Confirm Remove",
             f"Remove group '{group_name}' from this collection?",
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-        )
-        if reply != QMessageBox.StandardButton.Yes:
+        ):
             return
         try:
             self._mgr.remove_variable_group(self._collection_id, group_id)

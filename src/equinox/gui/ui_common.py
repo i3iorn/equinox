@@ -3,29 +3,154 @@
 from __future__ import annotations
 
 import logging
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
+from typing import Protocol, cast
 
-from PyQt6.QtCore import QSettings
+from PyQt6.QtCore import QSettings, Qt, QTimer
+from PyQt6.QtGui import QGuiApplication
 from PyQt6.QtWidgets import QLabel, QMessageBox, QSplitter, QTabWidget, QVBoxLayout, QWidget
+
+logger = logging.getLogger(__name__)
 
 _GUI_SETTINGS_ORG = "Equinox"
 _GUI_SETTINGS_APP = "Equinox"
 
+#: How often a sidebar panel re-reads its data when auto-refresh is on.
+AUTO_REFRESH_INTERVAL_MS = 30_000
+
 __all__ = [
+    "AUTO_REFRESH_INTERVAL_MS",
+    "AutoRefreshMixin",
+    "QWidgetHostMixin",
     "canonical_tab_label",
+    "clipboard_text",
     "confirm_yes_no",
     "configure_splitter_persistence",
+    "configure_tab_bar_elision",
     "configure_tab_persistence",
+    "copy_to_clipboard",
     "create_muted_label",
     "create_panel_layout",
     "get_gui_settings",
+    "reset_gui_settings_handle",
     "resolve_proxy_url",
 ]
 
 
+class QWidgetHostMixin:
+    """Supplies ``_as_qwidget()`` to mixins whose host is a QWidget.
+
+    Qt APIs that take a parent want a real QWidget, but a mixin is not one as
+    far as the type checker is concerned. Mix this in rather than restating
+    the cast: it had grown twelve copies in four spellings, including one
+    that reached for ``# type: ignore`` and one that cast twice.
+    """
+
+    def _as_qwidget(self) -> QWidget:
+        """Return this mixin host as a QWidget for Qt parent arguments."""
+        return cast(QWidget, self)
+
+
+class _RefreshablePanel(Protocol):
+    """The host contract AutoRefreshMixin relies on (a QWidget with refresh)."""
+
+    # Qt naming, matched so the cast lines up with the real QWidget method.
+    def isVisible(self) -> bool: ...
+
+    def refresh(self) -> None: ...
+
+
+class AutoRefreshMixin:
+    """Periodically re-read a panel's data while it is visible.
+
+    Mix in *before* QWidget on a panel that defines ``refresh()``, set
+    ``auto_refresh_enabled`` before calling ``_setup_auto_refresh()``, and
+    wire a checkbox's ``stateChanged`` to ``_toggle_auto_refresh``.
+
+    Deliberately declares no ``isVisible``/``refresh`` stubs: this sits ahead
+    of QWidget in the MRO, so a stub here would shadow the real Qt method.
+    The host contract is expressed as a Protocol and reached through a cast.
+    """
+
+    auto_refresh_enabled: bool
+    refresh_timer: QTimer
+
+    def _setup_auto_refresh(self) -> None:
+        """Start the periodic refresh timer."""
+        self.refresh_timer = QTimer(cast(QWidget, self))
+        self.refresh_timer.timeout.connect(self._refresh_if_visible)
+        self.refresh_timer.start(AUTO_REFRESH_INTERVAL_MS)
+
+    def _refresh_if_visible(self) -> None:
+        """Refresh only when on screen, so hidden tabs cost nothing."""
+        host = cast(_RefreshablePanel, self)
+        if host.isVisible():
+            host.refresh()
+
+    def _toggle_auto_refresh(self, state: int) -> None:
+        """Start or stop the timer from a checkbox's ``stateChanged``.
+
+        Compares against ``Checked`` rather than testing truthiness, because
+        ``PartiallyChecked`` is 1 and would otherwise read as enabled.
+        """
+        self.auto_refresh_enabled = Qt.CheckState(state) == Qt.CheckState.Checked
+        if self.auto_refresh_enabled:
+            self.refresh_timer.start(AUTO_REFRESH_INTERVAL_MS)
+            return
+        self.refresh_timer.stop()
+
+
+def copy_to_clipboard(text: str) -> bool:
+    """Put *text* on the system clipboard, returning whether it worked.
+
+    Qt hands back ``None`` for the clipboard on a headless or otherwise
+    unusable display. Callers used to open-code that check and mostly
+    swallowed it, so a failed Copy looked identical to a successful one.
+    Log it in one place instead, and let callers that care react to False.
+    """
+    clipboard = QGuiApplication.clipboard()
+    if clipboard is None:
+        logger.warning("gui.clipboard_unavailable op=copy_to_clipboard")
+        return False
+    try:
+        clipboard.setText(text)
+    except Exception:
+        logger.exception("gui.clipboard_copy_failed op=copy_to_clipboard")
+        return False
+    return True
+
+
+def clipboard_text() -> str:
+    """Return the clipboard's current text, or "" when it is unavailable."""
+    clipboard = QGuiApplication.clipboard()
+    if clipboard is None:
+        logger.warning("gui.clipboard_unavailable op=clipboard_text")
+        return ""
+    return clipboard.text()
+
+
+_settings_handle: QSettings | None = None
+
+
 def get_gui_settings() -> QSettings:
-    """Return the app-wide QSettings handle used by GUI components."""
-    return QSettings(_GUI_SETTINGS_ORG, _GUI_SETTINGS_APP)
+    """Return the app-wide QSettings handle used by GUI components.
+
+    The handle is cached deliberately. Building a fresh QSettings per call
+    meant a value written through one instance could still be unflushed when
+    the next instance read it, so ``save_font_size(10)`` followed by
+    ``get_font_size()`` could hand back the old 9 -- which is exactly how the
+    zoom controls intermittently appeared to do nothing.
+    """
+    global _settings_handle
+    if _settings_handle is None:
+        _settings_handle = QSettings(_GUI_SETTINGS_ORG, _GUI_SETTINGS_APP)
+    return _settings_handle
+
+
+def reset_gui_settings_handle() -> None:
+    """Drop the cached QSettings handle. For tests that redirect storage."""
+    global _settings_handle
+    _settings_handle = None
 
 
 def resolve_proxy_url(
@@ -66,14 +191,21 @@ def create_muted_label(text: str = "") -> QLabel:
     return label
 
 
-def confirm_yes_no(parent: QWidget, title: str, question: str) -> bool:
-    """Show a standard yes/no confirmation dialog."""
-    reply = QMessageBox.question(
-        parent,
-        title,
-        question,
-        QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-    )
+def confirm_yes_no(
+    parent: QWidget,
+    title: str,
+    question: str,
+    *,
+    default_no: bool = False,
+) -> bool:
+    """Show a standard yes/no confirmation dialog.
+
+    ``default_no`` pre-selects No, so an absent-minded Enter cancels rather
+    than confirms. Worth passing for anything destructive.
+    """
+    buttons = QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+    default = QMessageBox.StandardButton.No if default_no else QMessageBox.StandardButton.NoButton
+    reply = QMessageBox.question(parent, title, question, buttons, default)
     return reply == QMessageBox.StandardButton.Yes
 
 
@@ -106,6 +238,33 @@ def canonical_tab_label(label: str) -> str:
     if badge_start != -1 and text.endswith(")"):
         text = text[:badge_start].rstrip()
     return text
+
+
+def configure_tab_bar_elision(
+    tab_widget: QTabWidget,
+    *,
+    tooltip_for: Callable[[int], str] | None = None,
+) -> None:
+    """Keep every tab visible and clickable instead of behind scroll arrows.
+
+    Qt's default for a tab bar too narrow for its labels is to hide the
+    overflow behind small ``‹ ›`` arrows, which silently makes some tabs
+    unreachable. Eliding instead keeps every tab on screen — shortened, but
+    with the full name in a tooltip.
+
+    ``tooltip_for`` maps a tab index to its tooltip text, for callers that
+    need something other than the literal tab text (e.g. a canonical label
+    plus a keyboard shortcut, so a badge suffix never leaks into the tooltip).
+    """
+    bar = tab_widget.tabBar()
+    if bar is None:  # pragma: no cover - defensive, Qt always builds one
+        return
+    bar.setUsesScrollButtons(False)
+    bar.setExpanding(False)
+    bar.setElideMode(Qt.TextElideMode.ElideRight)
+    resolve = tooltip_for or tab_widget.tabText
+    for index in range(tab_widget.count()):
+        tab_widget.setTabToolTip(index, resolve(index))
 
 
 def configure_tab_persistence(

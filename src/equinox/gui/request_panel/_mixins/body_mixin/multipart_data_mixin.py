@@ -3,22 +3,19 @@
 from __future__ import annotations
 
 import logging
-from typing import Any, cast
+from typing import Any
 
-from PyQt6.QtWidgets import QComboBox, QFileDialog, QTableWidgetItem, QWidget
+from PyQt6.QtWidgets import QComboBox, QFileDialog, QTableWidgetItem
 
 from equinox.gui.error_presenter import ErrorPresenter
 from equinox.gui.file_ops import validate_selected_path
+from equinox.gui.ui_common import QWidgetHostMixin
 
 logger = logging.getLogger(__name__)
 
 
-class MultipartDataMixin:
+class MultipartDataMixin(QWidgetHostMixin):
     """Manage multipart request rows and file selection."""
-
-    def _as_qwidget(self) -> QWidget:
-        """Return the host panel typed as QWidget for Qt dialog APIs."""
-        return cast(QWidget, cast(object, self))
 
     def _multipart_add_row(self) -> None:
         """Insert a new multipart row."""

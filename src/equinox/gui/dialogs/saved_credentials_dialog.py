@@ -42,13 +42,13 @@ from PyQt6.QtWidgets import QInputDialog
 from PyQt6.QtWidgets import QLabel
 from PyQt6.QtWidgets import QLineEdit
 from PyQt6.QtWidgets import QListWidget
-from PyQt6.QtWidgets import QMessageBox
 from PyQt6.QtWidgets import QPushButton
 from PyQt6.QtWidgets import QSplitter
 from PyQt6.QtWidgets import QStackedWidget
 from PyQt6.QtWidgets import QTextEdit
 from PyQt6.QtWidgets import QVBoxLayout
 from PyQt6.QtWidgets import QWidget
+from equinox.gui.ui_common import confirm_yes_no
 
 logger = logging.getLogger(__name__)
 
@@ -774,13 +774,11 @@ class SavedCredentialsController(OAuthConnectionTestMixin):
         c = self._service.get_credential(current_id)
         if not c:
             return
-        ans = QMessageBox.question(
+        if not confirm_yes_no(
             self._view,
             "Confirm Delete",
             f"Delete credential '{c['name']}'?\n\nThis cannot be undone.",
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-        )
-        if ans != QMessageBox.StandardButton.Yes:
+        ):
             return
         self._service.delete_credential(current_id)
         self._view.clear_form()

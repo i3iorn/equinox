@@ -1,20 +1,14 @@
 """Coverage-boosting tests for GUI widgets."""
 
-from PyQt6.QtCore import QCoreApplication
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QKeyEvent
 from PyQt6.QtTest import QTest
-from PyQt6.QtWidgets import QApplication
 from PyQt6.QtWidgets import QTextEdit
+from .gui_helpers import process as _process
 
-_APP = QApplication.instance() or QApplication([])
 
 # SearchBar debounce is 250 ms — wait slightly longer to let the timer fire.
 _SEARCH_DEBOUNCE_WAIT_MS = 300
-
-
-def _process():
-    QCoreApplication.processEvents()
 
 
 def _process_search():

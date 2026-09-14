@@ -25,7 +25,6 @@ from PyQt6.QtWidgets import (
     QLabel,
     QLineEdit,
     QListWidget,
-    QMessageBox,
     QPushButton,
     QSplitter,
     QTextEdit,
@@ -44,6 +43,7 @@ from equinox.gui.widgets import make_secret_row
 from equinox.gui.workers import OAuthTokenTester
 from equinox.storage import Database, OAuthClientManager
 from equinox.storage.oauth_clients import GRANT_TYPES
+from equinox.gui.ui_common import confirm_yes_no
 
 logger = logging.getLogger(__name__)
 
@@ -394,13 +394,11 @@ class OAuthClientsDialog(OAuthConnectionTestMixin, ListFormDialogMixin, QDialog)
         c = self.mgr.get_client(self._current_id)
         if not c:
             return
-        ans = QMessageBox.question(
+        if not confirm_yes_no(
             self,
             "Confirm Delete",
             f"Delete OAuth2 client '{c['name']}'?\n\nThis cannot be undone.",
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-        )
-        if ans != QMessageBox.StandardButton.Yes:
+        ):
             return
         try:
             self.mgr.delete_client(self._current_id)

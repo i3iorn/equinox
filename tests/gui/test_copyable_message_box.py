@@ -1,7 +1,7 @@
 from unittest.mock import patch
 
 from equinox.gui.widgets.copyable_message_box import CopyableMessageBox
-from PyQt6.QtWidgets import QApplication
+from PyQt6.QtGui import QGuiApplication
 from PyQt6.QtWidgets import QMessageBox
 
 
@@ -21,7 +21,7 @@ def test_done_ignores_clipboard_write_failures() -> None:
     with (
         patch.object(box, "clickedButton", return_value=box._copy_btn),
         patch.object(
-            QApplication,
+            QGuiApplication,
             "clipboard",
             return_value=_FailingClipboard(),
         ),

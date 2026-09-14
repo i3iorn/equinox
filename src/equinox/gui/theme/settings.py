@@ -55,7 +55,15 @@ _UI_FONT_KEY = "appearance/ui_font_family"
 
 
 def _settings() -> QSettings:
-    return QSettings("Equinox", "Equinox")
+    """Return the shared GUI settings handle.
+
+    Delegates rather than constructing its own: this module and ui_common
+    both addressed the same ("Equinox", "Equinox") store, so a write through
+    one could be unflushed when the other read it.
+    """
+    from equinox.gui.ui_common import get_gui_settings
+
+    return get_gui_settings()
 
 
 def _clamp_font_size(size: int) -> int:
@@ -79,7 +87,11 @@ def get_font_size() -> int:
 
 
 def save_font_size(size: int) -> None:
-    _settings().setValue("appearance/font_size", _clamp_font_size(size))
+    settings = _settings()
+    settings.setValue("appearance/font_size", _clamp_font_size(size))
+    # Flush now: the value is read straight back (zoom in/out re-reads it to
+    # compute the next step), and callers in other processes should see it.
+    settings.sync()
 
 
 def get_theme_mode() -> str:
@@ -90,7 +102,9 @@ def get_theme_mode() -> str:
 def save_theme_mode(mode: str) -> None:
     if mode not in THEME_MODES:
         mode = THEME_SYSTEM
-    _settings().setValue("appearance/theme", mode)
+    settings = _settings()
+    settings.setValue("appearance/theme", mode)
+    settings.sync()
 
 
 def get_mono_font(size_override: int | None = None) -> QFont:

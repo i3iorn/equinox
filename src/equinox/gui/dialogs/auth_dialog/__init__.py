@@ -26,6 +26,7 @@ from equinox.auth import (
 )
 from equinox.core.exceptions import AuthError
 from equinox.gui.error_presenter import ErrorPresenter
+from equinox.gui.ui_common import configure_tab_bar_elision
 from equinox.storage import Database, SavedCredentialsManager
 
 from .oauth2.controller import OAuth2TokenController
@@ -103,7 +104,11 @@ class AuthDialog(QDialog):
     auth_configured = pyqtSignal(object)
 
     _WINDOW_TITLE = "Configure Authentication"
-    _MINIMUM_WIDTH = 540
+    # The six auth-type tab labels need ~520px of tab bar. 540 left only ~20px
+    # of margin for the dialog's own layout, which wasn't quite enough: Qt
+    # fell back to hiding "AWS SigV4" behind a scroll arrow instead of
+    # showing it, on a dialog with plenty of room to simply be wider.
+    _MINIMUM_WIDTH = 600
     _MINIMUM_HEIGHT = 480
     _PICKER_MINIMUM_WIDTH = 220
     _PICKER_PLACEHOLDER = "— fill in manually —"
@@ -176,6 +181,11 @@ class AuthDialog(QDialog):
             AuthType.AWS_SIGV4: self.tabs.addTab(self.aws, "AWS SigV4"),
         }
 
+        # _MINIMUM_WIDTH fits all six labels, but this is a user-resizable
+        # dialog: shrinking it (or a future seventh auth type) would put Qt
+        # back into hide-behind-arrows mode, silently making some auth types
+        # unreachable.
+        configure_tab_bar_elision(self.tabs)
         layout.addWidget(self.tabs)
 
         self.oauth2_controller = OAuth2TokenController(self.oauth2, db=self.db, parent=self)

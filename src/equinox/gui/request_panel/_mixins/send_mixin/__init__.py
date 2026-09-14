@@ -3,9 +3,7 @@
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING, Any, cast
-
-from PyQt6.QtWidgets import QWidget
+from typing import TYPE_CHECKING, Any
 
 from equinox.application.requests import build_preflight_issues, issues_to_messages, prepare_send
 from equinox.gui.error_presenter import ErrorPresenter
@@ -37,9 +35,6 @@ class _RequestSendMixin(SendWorkerMixin, SendResponseMixin):
 
         def get_policy_profile(self) -> str: ...
         def _build_request_editor_snapshot(self) -> Any: ...
-
-    def _as_qwidget(self) -> QWidget:
-        return cast(QWidget, cast(object, self))
 
     def _run_preflight_checks(self) -> list[str]:
         """Return advisory warnings for the current editor state."""

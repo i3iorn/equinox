@@ -13,10 +13,11 @@ from __future__ import annotations
 
 import json
 import logging
-from typing import Any, Callable
+from typing import Any
+
+from collections.abc import Callable
 
 from PyQt6.QtWidgets import (
-    QApplication,
     QHBoxLayout,
     QHeaderView,
     QLabel,
@@ -26,6 +27,8 @@ from PyQt6.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
+
+from equinox.gui.ui_common import copy_to_clipboard
 
 logger = logging.getLogger(__name__)
 
@@ -412,9 +415,7 @@ class JsonTree(QWidget):
                 indent=_JSON_INDENT,
                 ensure_ascii=_ENSURE_ASCII,
             )
-            clipboard = QApplication.clipboard()
-            if clipboard is not None:
-                clipboard.setText(text)
+            if copy_to_clipboard(text):
                 logger.debug("JSON copied to clipboard")
         except Exception:
             logger.exception("Failed to copy JSON to clipboard")

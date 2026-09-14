@@ -5,10 +5,10 @@ from __future__ import annotations
 import logging
 
 from PyQt6.QtCore import QTimer
-from PyQt6.QtWidgets import QApplication
 from PyQt6.QtWidgets import QMessageBox
 from PyQt6.QtWidgets import QPushButton
 from PyQt6.QtWidgets import QWidget
+from equinox.gui.ui_common import copy_to_clipboard
 
 logger = logging.getLogger(__name__)
 
@@ -72,14 +72,7 @@ class CopyableMessageBox(QMessageBox):
 
     def _do_copy(self) -> None:
         """Write *copy_text* to the system clipboard with error handling."""
-        clipboard = QApplication.clipboard()
-        if clipboard is None:
-            logger.warning("System clipboard is unavailable; cannot copy text")
-            return
-        try:
-            clipboard.setText(self._copy_text)
-        except Exception:
-            logger.warning("Failed to write text to clipboard", exc_info=True)
+        if not copy_to_clipboard(self._copy_text):
             return
         # Visual confirmation: rename the button, then restore after a short delay.
         self._copy_btn.setText(self._COPIED_LABEL)

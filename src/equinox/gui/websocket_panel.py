@@ -25,8 +25,8 @@ from PyQt6.QtWidgets import QPlainTextEdit
 from PyQt6.QtWidgets import QPushButton
 from PyQt6.QtWidgets import QTableWidget
 from PyQt6.QtWidgets import QTableWidgetItem
-from PyQt6.QtWidgets import QVBoxLayout
 from PyQt6.QtWidgets import QWidget
+from equinox.gui.ui_common import create_panel_layout
 
 __all__ = ["WebSocketPanel"]
 
@@ -145,9 +145,7 @@ class WebSocketPanel(QWidget):
     # ── UI construction ───────────────────────────────────────────────────────
 
     def _init_ui(self) -> None:
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(4, 4, 4, 4)
-        layout.setSpacing(4)
+        layout = create_panel_layout(self)
 
         url_row = QHBoxLayout()
         self.url_input = QLineEdit()

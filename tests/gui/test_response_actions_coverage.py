@@ -1,6 +1,7 @@
 from unittest.mock import MagicMock, patch
 
 import pytest
+from PyQt6.QtGui import QGuiApplication
 from PyQt6.QtWidgets import QApplication
 
 from equinox.core.request import Request, Response
@@ -62,7 +63,7 @@ def test_suggest_filename(panel):
 
 def test_copy_body(panel):
     panel.body_text.setPlainText("clipboard content")
-    with patch.object(QApplication, "clipboard") as mock_clipboard:
+    with patch.object(QGuiApplication, "clipboard") as mock_clipboard:
         clipboard = MagicMock()
         mock_clipboard.return_value = clipboard
         panel._copy_body()
@@ -108,7 +109,7 @@ def test_copy_as_curl(panel):
     resp = Response(status_code=200, reason="OK", headers={}, body=b"", request=req, elapsed=0.1)
     panel.current_response = resp
 
-    with patch.object(QApplication, "clipboard") as mock_clipboard:
+    with patch.object(QGuiApplication, "clipboard") as mock_clipboard:
         clipboard = MagicMock()
         mock_clipboard.return_value = clipboard
         panel._copy_as_curl()

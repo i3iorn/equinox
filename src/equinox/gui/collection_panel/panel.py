@@ -12,6 +12,7 @@ from equinox.gui.collection_panel.panel_mixins import _CollectionsContextMenuMix
 from equinox.gui.collection_panel.panel_mixins import _CollectionsRefreshTreeMixin
 from equinox.gui.collection_panel.panel_mixins import _CollectionsSelectionFilterMixin
 from equinox.gui.error_presenter import ErrorPresenter
+from equinox.gui.ui_common import AutoRefreshMixin
 from equinox.gui.widgets.drag_drop_tree import DragDropTree
 from equinox.storage import Database
 from PyQt6.QtCore import pyqtSignal
@@ -25,8 +26,8 @@ from PyQt6.QtWidgets import QHBoxLayout
 from PyQt6.QtWidgets import QInputDialog
 from PyQt6.QtWidgets import QLineEdit
 from PyQt6.QtWidgets import QPushButton
-from PyQt6.QtWidgets import QVBoxLayout
 from PyQt6.QtWidgets import QWidget
+from equinox.gui.ui_common import create_panel_layout
 
 logger = logging.getLogger(__name__)
 
@@ -94,6 +95,7 @@ class _NewRequestDialog(QDialog):
 
 
 class CollectionsPanel(
+    AutoRefreshMixin,
     _CollectionsActionsMixin,
     _CollectionsSelectionFilterMixin,
     _CollectionsRefreshTreeMixin,
@@ -127,9 +129,7 @@ class CollectionsPanel(
         self.refresh()
 
     def _init_ui(self) -> None:
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(4, 4, 4, 4)
-        layout.setSpacing(4)
+        layout = create_panel_layout(self)
 
         # This toolbar lives in the left sidebar, which is only ~300px wide by
         # default. Full-length labels ("New Collection", "Import

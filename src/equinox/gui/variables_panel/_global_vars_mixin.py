@@ -18,7 +18,6 @@ from PyQt6.QtWidgets import QPushButton
 from PyQt6.QtWidgets import QSizePolicy
 from PyQt6.QtWidgets import QTableWidget
 from PyQt6.QtWidgets import QTableWidgetItem
-from PyQt6.QtWidgets import QVBoxLayout
 from PyQt6.QtWidgets import QWidget
 
 from ...core.interpolation import magic_variables
@@ -26,6 +25,7 @@ from ..error_presenter import ErrorPresenter
 from ..ui_common import confirm_yes_no
 from ..ui_common import create_muted_label
 from .variable_dialog import VariableDialog
+from equinox.gui.ui_common import create_panel_layout
 
 logger = logging.getLogger(__name__)
 
@@ -48,9 +48,7 @@ class _GlobalVarsMixin:
         """
         self._global_group = QGroupBox("Global Variables")
         self._global_group.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Maximum)
-        global_layout = QVBoxLayout(self._global_group)
-        global_layout.setContentsMargins(4, 4, 4, 4)
-        global_layout.setSpacing(4)
+        global_layout = create_panel_layout(self._global_group)
 
         self._magic_hint = create_muted_label(
             "Built-in magic vars: " + ", ".join(k for k in magic_variables().keys()),

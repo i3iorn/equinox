@@ -13,6 +13,7 @@ from equinox.application.history import HistoryFacade
 from equinox.gui.dialogs.history_diff_dialog import HistoryDiffDialog
 from equinox.gui.error_presenter import ErrorPresenter
 from equinox.gui.theme import Colors
+from equinox.gui.ui_common import AutoRefreshMixin
 from equinox.gui.ui_common import confirm_yes_no
 from equinox.gui.ui_common import create_muted_label
 from equinox.gui.ui_common import create_panel_layout
@@ -49,15 +50,11 @@ logger = logging.getLogger(__name__)
 HistoryEntry = dict[str, Any]
 ContextActionSpec = tuple[str, str, Callable[[], None], bool]
 
-# ── Module-level constants ────────────────────────────────────────────────────
-
-_AUTO_REFRESH_INTERVAL_MS = 30_000
-
 
 # ── History panel ─────────────────────────────────────────────────────────────
 
 
-class HistoryPanel(QWidget):
+class HistoryPanel(AutoRefreshMixin, QWidget):
     """Panel for viewing request history."""
 
     history_selected = pyqtSignal(int)  # load into editor
@@ -83,7 +80,8 @@ class HistoryPanel(QWidget):
         """Initialize the full UI layout."""
         layout = create_panel_layout(self)
 
-        layout.addLayout(self._build_toolbar())
+        layout.addLayout(self._build_toolbar_row1())
+        layout.addLayout(self._build_toolbar_row2())
         layout.addLayout(self._build_search_row())
         layout.addWidget(self._build_advanced_toggle())
         layout.addWidget(self._build_advanced_filters())
@@ -94,44 +92,60 @@ class HistoryPanel(QWidget):
 
         self.list_widget.itemSelectionChanged.connect(self._on_selection_changed)
 
-    def _build_toolbar(self) -> QHBoxLayout:
-        """Create the top toolbar with refresh, clear, delete, compare, cleanup, and auto‑refresh."""
+    def _build_toolbar_row1(self) -> QHBoxLayout:
+        """Refresh, clear, and auto-refresh — the controls used most often."""
         toolbar = QHBoxLayout()
 
         self.refresh_btn = QPushButton("Refresh")
+        self.refresh_btn.setToolTip("Refresh History")
         self.refresh_btn.clicked.connect(self.refresh)
 
-        self.clear_btn = QPushButton("Clear All")
+        self.clear_btn = QPushButton("Clear")
+        self.clear_btn.setToolTip("Clear All History")
         self.clear_btn.clicked.connect(self._clear_history)
 
-        self.delete_sel_btn = QPushButton("Delete Selected")
-        self.delete_sel_btn.setEnabled(False)
-        self.delete_sel_btn.clicked.connect(self._delete_selected)
-
-        self.compare_btn = QPushButton("Compare 2 Selected")
-        self.compare_btn.setEnabled(False)
-        self.compare_btn.setToolTip("Open a side-by-side diff of two selected history entries")
-        self.compare_btn.clicked.connect(self._compare_selected)
-
-        self.cleanup_btn = QPushButton("Clean up…")
-        self.cleanup_btn.setToolTip("Delete history entries older than N days")
-        self.cleanup_btn.clicked.connect(self._cleanup_history)
-
-        self.auto_refresh_checkbox = QCheckBox("Auto-refresh")
+        self.auto_refresh_checkbox = QCheckBox("Auto")
+        self.auto_refresh_checkbox.setToolTip("Auto-refresh")
         self.auto_refresh_checkbox.setChecked(self.auto_refresh_enabled)
         self.auto_refresh_checkbox.stateChanged.connect(self._toggle_auto_refresh)
 
-        for widget in (
-            self.refresh_btn,
-            self.clear_btn,
-            self.delete_sel_btn,
-            self.compare_btn,
-            self.cleanup_btn,
-            self.auto_refresh_checkbox,
-        ):
+        for widget in (self.refresh_btn, self.clear_btn, self.auto_refresh_checkbox):
             toolbar.addWidget(widget)
 
         toolbar.addStretch()
+        self._toolbar_row1 = toolbar
+        return toolbar
+
+    def _build_toolbar_row2(self) -> QHBoxLayout:
+        """Selection-dependent actions: delete, compare, and cleanup.
+
+        Split from row 1 because six controls (the two rows combined) never
+        fit one row in the sidebar's ~300px width, even with every label
+        shortened to a single word.
+        """
+        toolbar = QHBoxLayout()
+
+        self.delete_sel_btn = QPushButton("Delete")
+        self.delete_sel_btn.setToolTip("Delete Selected")
+        self.delete_sel_btn.setEnabled(False)
+        self.delete_sel_btn.clicked.connect(self._delete_selected)
+
+        self.compare_btn = QPushButton("Compare")
+        self.compare_btn.setEnabled(False)
+        self.compare_btn.setToolTip(
+            "Compare 2 Selected: open a side-by-side diff of two selected history entries",
+        )
+        self.compare_btn.clicked.connect(self._compare_selected)
+
+        self.cleanup_btn = QPushButton("Clean…")
+        self.cleanup_btn.setToolTip("Clean up: delete history entries older than N days")
+        self.cleanup_btn.clicked.connect(self._cleanup_history)
+
+        for widget in (self.delete_sel_btn, self.compare_btn, self.cleanup_btn):
+            toolbar.addWidget(widget)
+
+        toolbar.addStretch()
+        self._toolbar_row2 = toolbar
         return toolbar
 
     def _build_search_row(self) -> QHBoxLayout:
@@ -278,24 +292,6 @@ class HistoryPanel(QWidget):
         """Create the muted stats label."""
         self.stats_label = create_muted_label()
         return self.stats_label
-
-    # ── Auto-refresh ──────────────────────────────────────────────────────────
-
-    def _setup_auto_refresh(self) -> None:
-        self.refresh_timer = QTimer(self)
-        self.refresh_timer.timeout.connect(self._refresh_if_visible)
-        self.refresh_timer.start(_AUTO_REFRESH_INTERVAL_MS)
-
-    def _refresh_if_visible(self) -> None:
-        if self.isVisible():
-            self.refresh()
-
-    def _toggle_auto_refresh(self, state: int) -> None:
-        self.auto_refresh_enabled = bool(state)
-        if self.auto_refresh_enabled:
-            self.refresh_timer.start(_AUTO_REFRESH_INTERVAL_MS)
-        else:
-            self.refresh_timer.stop()
 
     # ── Advanced-filter toggle ────────────────────────────────────────────────
 

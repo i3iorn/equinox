@@ -3,26 +3,22 @@
 from __future__ import annotations
 
 import logging
-from typing import Any, cast
+from typing import Any
 
-from PyQt6.QtWidgets import QWidget
 
 from equinox.core.request import Request
 from equinox.gui.request_panel._mixins.assertions_mixin import LABEL_EMPTY
 from equinox.gui.workers import DEFAULT_TIMEOUT
+from equinox.gui.ui_common import QWidgetHostMixin
 
 logger = logging.getLogger(__name__)
 
 
-class RequestLoadingMixin:
+class RequestLoadingMixin(QWidgetHostMixin):
     """Load persisted requests into the editor and reset the editor state."""
 
     current_request: Request | None
     _inherited_auth_source: str | None
-
-    def _as_qwidget(self) -> QWidget:
-        """Return ``self`` typed as ``QWidget`` for Qt APIs."""
-        return cast(QWidget, cast(object, self))
 
     @staticmethod
     def _try_ui(fn: Any, *args: Any, **kwargs: Any) -> None:

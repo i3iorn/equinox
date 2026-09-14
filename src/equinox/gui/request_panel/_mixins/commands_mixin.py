@@ -15,17 +15,17 @@ from PyQt6.QtCore import QObject
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QKeySequence
 from PyQt6.QtGui import QShortcut
-from PyQt6.QtWidgets import QApplication
 from PyQt6.QtWidgets import QCheckBox
 from PyQt6.QtWidgets import QComboBox
 from PyQt6.QtWidgets import QInputDialog
 from PyQt6.QtWidgets import QLineEdit
-from PyQt6.QtWidgets import QWidget
+from equinox.gui.ui_common import QWidgetHostMixin
+from equinox.gui.ui_common import clipboard_text
 
 logger = logging.getLogger(__name__)
 
 
-class RequestCommandsMixin:
+class RequestCommandsMixin(QWidgetHostMixin):
     """Keyboard shortcuts and action handlers extracted from RequestPanel."""
 
     url_input: QLineEdit
@@ -54,9 +54,6 @@ class RequestCommandsMixin:
         def _update_tab_labels(self, *_args: Any) -> None: ...
 
     def _as_qobject(self) -> QObject:
-        return self  # type: ignore[return-value]
-
-    def _as_qwidget(self) -> QWidget:
         return self  # type: ignore[return-value]
 
     def _setup_shortcuts(self) -> None:
@@ -120,9 +117,8 @@ class RequestCommandsMixin:
         from equinox.core.io.curl_parser import parse_curl
 
         logger.debug("cURL import dialog opened")
-        clipboard = QApplication.clipboard()
-        clipboard_text = clipboard.text().strip() if clipboard is not None else ""
-        prefill = clipboard_text if clipboard_text.lower().startswith("curl ") else ""
+        pasted = clipboard_text().strip()
+        prefill = pasted if pasted.lower().startswith("curl ") else ""
 
         text, ok = QInputDialog.getMultiLineText(
             self._as_qwidget(),

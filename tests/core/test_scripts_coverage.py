@@ -6,7 +6,12 @@ import pytest
 
 from equinox.core.exceptions import SecurityError
 from equinox.core.scripts.runner import ScriptRunner
-from equinox.core.scripts.sandbox import _BLOCKED, _safe_import, get_safe_builtins
+from equinox.core.scripts.sandbox import (
+    _BLOCKED,
+    _SafeModule,
+    _safe_import,
+    get_safe_builtins,
+)
 from equinox.core.scripts.validation import _validate_ast
 
 # ── sandbox.py ───────────────────────────────────────────────────────────────
@@ -14,10 +19,21 @@ from equinox.core.scripts.validation import _validate_ast
 
 class TestSafeImport:
     def test_allowed_module_imports(self) -> None:
-        mod = _safe_import("json")
+        """Allowed modules come back wrapped, not raw.
+
+        This used to assert identity with the real module. Handing the real
+        module to a script is what let `uuid.os` and `codecs.builtins` reach
+        os/builtins, so _safe_import now returns a _SafeModule proxy; the
+        contract is that the module stays *usable*, not that it is the same
+        object. See test_scripts_module_escape.py.
+        """
         import json as _json
 
-        assert mod is _json
+        mod = _safe_import("json")
+
+        assert isinstance(mod, _SafeModule)
+        assert mod is not _json
+        assert mod.dumps({"a": 1}) == _json.dumps({"a": 1})
 
     def test_disallowed_module_raises(self) -> None:
         with pytest.raises(ImportError, match="not allowed"):

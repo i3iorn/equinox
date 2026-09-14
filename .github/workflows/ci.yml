@@ -41,11 +41,13 @@ jobs:
 
       - name: Install dev dependencies
         run: |
-          # pip>=26.2 dropped the internal `stdlib_pkgs` symbol that pip-tools
-          # (through at least 7.6.0) still imports, breaking `piptools compile`.
-          # Cap pip until pip-tools ships a fix; safe to drop this ceiling once
-          # https://github.com/jazzband/pip-tools import breakage is resolved.
-          python -m pip install --upgrade "pip<26.2"
+          # No pip ceiling here. It used to be capped below 26.2 because
+          # pip-tools imports a symbol that release removed, but nothing in
+          # this repo runs `pip-compile`/`pip-sync` any more -- the lockfile
+          # tooling was dropped in v0.5.0 and only the unused dev dependency
+          # survived. Meanwhile PYSEC-2026-3721 is fixed in exactly 26.2, so
+          # the cap guaranteed the vulnerability gate below would fail.
+          python -m pip install --upgrade pip
           pip install -e ".[dev]"
 
       - name: Verify dependency manifest consistency
@@ -99,7 +101,14 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python-version: ["3.10", "3.11", "3.12"]
+        # Every stable release from requires-python (>=3.10) upward. 3.15 is
+        # not out yet; add it here once setup-python serves a stable build.
+        #
+        # The binary dependencies all resolve on 3.13/3.14: PyQt6 and
+        # cryptography ship abi3 wheels, and websockets 12.x — pinned below
+        # 13 — has no cp313/cp314 wheel but does publish a py3-none-any
+        # fallback, so it installs without its optional C speedups.
+        python-version: ["3.10", "3.11", "3.12", "3.13", "3.14"]
 
     steps:
       - uses: actions/checkout@v4

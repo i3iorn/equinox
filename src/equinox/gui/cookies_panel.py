@@ -7,7 +7,6 @@ from typing import Any
 
 from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import (
-    QApplication,
     QCheckBox,
     QDialog,
     QDialogButtonBox,
@@ -31,6 +30,7 @@ from equinox.storage import Database
 from equinox.storage.cookies import CookieJarManager
 
 from .ui_common import confirm_yes_no, create_muted_label, create_panel_layout
+from equinox.gui.ui_common import copy_to_clipboard
 
 __all__ = ["CookiesPanel"]
 
@@ -130,15 +130,20 @@ class CookiesPanel(QWidget):
 
         toolbar = QHBoxLayout()
         self.add_btn = QPushButton("Add…")
+        self.add_btn.setToolTip("Add Cookie")
         self.delete_btn = QPushButton("Delete")
-        self.clear_btn = QPushButton("Clear All")
+        self.delete_btn.setToolTip("Delete Selected")
+        self.clear_btn = QPushButton("Clear")
+        self.clear_btn.setToolTip("Clear All")
         self.refresh_btn = QPushButton("Refresh")
+        self.refresh_btn.setToolTip("Refresh Cookies")
 
         self.add_btn.clicked.connect(self._add_cookie)
         self.delete_btn.clicked.connect(self._delete_selected)
         self.clear_btn.clicked.connect(self._clear_all)
         self.refresh_btn.clicked.connect(self.refresh)
-        self.reveal_btn = QCheckBox("Reveal Values")
+        self.reveal_btn = QCheckBox("Reveal")
+        self.reveal_btn.setToolTip("Reveal Values")
         self.reveal_btn.setChecked(False)
         self.reveal_btn.toggled.connect(self.refresh)
 
@@ -223,17 +228,14 @@ class CookiesPanel(QWidget):
         if viewport is None:
             return
         action = menu.exec(viewport.mapToGlobal(position))
-        clipboard = QApplication.clipboard()
-        if clipboard is None:
-            return
         if action == copy_name:
             name_item = self.table.item(row, 0)
             if name_item is not None:
-                clipboard.setText(name_item.text())
+                copy_to_clipboard(name_item.text())
         elif action == copy_value:
             value_item = self.table.item(row, 1)
             if value_item is not None:
-                clipboard.setText(value_item.toolTip() or value_item.text())
+                copy_to_clipboard(value_item.toolTip() or value_item.text())
 
     # ── Slots ─────────────────────────────────────────────────────────────────
 

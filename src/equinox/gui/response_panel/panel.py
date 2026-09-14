@@ -16,7 +16,6 @@ import json
 import logging
 from collections.abc import Callable
 from typing import Any
-from typing import cast
 
 from equinox.application.requests import RequestHistoryService
 from equinox.core.request import Response
@@ -29,6 +28,7 @@ from PyQt6.QtCore import QThreadPool
 from PyQt6.QtWidgets import QLabel
 from PyQt6.QtWidgets import QVBoxLayout
 from PyQt6.QtWidgets import QWidget
+from equinox.gui.ui_common import QWidgetHostMixin
 
 logger = logging.getLogger(__name__)
 
@@ -56,6 +56,7 @@ _KEY_ACTIVE_TAB = "response/active_tab"
 
 
 class ResponsePanel(
+    QWidgetHostMixin,
     ResponseBuilderMixin,
     ResponseDisplayMixin,
     ResponseActionsMixin,
@@ -124,10 +125,6 @@ class ResponsePanel(
 
         # Initialize UI
         self._init_ui()
-
-    def _as_qwidget(self) -> QWidget:
-        """Return this panel cast as QWidget for Qt dialog APIs."""
-        return cast(QWidget, self)
 
     # ------------------------------------------------------------------
     # Initialization & Setup

@@ -8,13 +8,11 @@ import tempfile
 
 from PyQt6.QtGui import QFont
 from PyQt6.QtWidgets import (
-    QApplication,
     QComboBox,
     QDialog,
     QFileDialog,
     QHBoxLayout,
     QLabel,
-    QMessageBox,
     QPushButton,
     QTextEdit,
     QVBoxLayout,
@@ -22,6 +20,8 @@ from PyQt6.QtWidgets import (
 )
 
 from equinox.gui.error_presenter import ErrorPresenter
+from equinox.gui.ui_common import copy_to_clipboard
+from equinox.gui.ui_common import confirm_yes_no
 
 logger = logging.getLogger(__name__)
 
@@ -196,34 +196,27 @@ class ApiSpecDialog(QDialog):
         # Heuristic secret detection
         lowered = text.lower()
         if any(k in lowered for k in _SECRET_KEYWORDS):
-            reply = QMessageBox.question(
+            if not confirm_yes_no(
                 self,
                 "Possible secrets detected",
                 "The content may contain secrets (tokens or keys). "
                 "Copying to the system clipboard could expose them to other applications. Continue?",
-                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-            )
-            if reply != QMessageBox.StandardButton.Yes:
+            ):
                 logger.info("User declined copying content that may contain secrets")
                 return
 
         size = len(text.encode("utf-8"))
         if size > _CLIPBOARD_MAX:
-            reply = QMessageBox.question(
+            if not confirm_yes_no(
                 self,
                 "Large content",
                 f"The content is {size:,} bytes. Copying may be slow. Continue?",
-                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-            )
-            if reply != QMessageBox.StandardButton.Yes:
+            ):
                 logger.info("User cancelled large clipboard copy (size=%d)", size)
                 return
 
-        clipboard = QApplication.clipboard()
-        if clipboard is None:
-            logger.warning("Clipboard is unavailable; skipping copy")
+        if not copy_to_clipboard(text):
             return
-        clipboard.setText(text)
         logger.info("Copied spec to clipboard (size=%d)", size)
 
     def _on_save(self) -> None:
@@ -254,25 +247,21 @@ class ApiSpecDialog(QDialog):
 
         size = len(text.encode("utf-8"))
         if size > _SAVE_MAX:
-            reply = QMessageBox.question(
+            if not confirm_yes_no(
                 self,
                 "Large file",
                 f"The file is {size:,} bytes and may take time to save. Continue?",
-                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-            )
-            if reply != QMessageBox.StandardButton.Yes:
+            ):
                 logger.info("User cancelled saving large spec (size=%d)", size)
                 return
 
         # Confirm overwrite when QFileDialog did not already handle it (Linux).
         if os.path.exists(path):
-            reply = QMessageBox.question(
+            if not confirm_yes_no(
                 self,
                 "Overwrite file?",
                 f"'{os.path.basename(path)}' already exists. Overwrite?",
-                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-            )
-            if reply != QMessageBox.StandardButton.Yes:
+            ):
                 return
 
         try:

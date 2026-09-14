@@ -8,22 +8,10 @@ disabled.  Unit coverage existed for the storage layer, so nothing failed.
 from unittest.mock import patch
 
 import pytest
-from PyQt6.QtCore import QCoreApplication
 from PyQt6.QtWidgets import QMessageBox
 
 from equinox.auth import APIKeyAuth, AWSSigV4Auth, BasicAuth, BearerAuth, OAuth2Auth
-
-
-def _process():
-    QCoreApplication.processEvents()
-
-
-@pytest.fixture()
-def db(tmp_path, monkeypatch):
-    monkeypatch.setenv("EQUINOX_DB_PATH", str(tmp_path / "test.db"))
-    from equinox.storage import get_db
-
-    return get_db()
+from .gui_helpers import process as _process
 
 
 # ─────────────────────────────────────────────────────────────────────────────

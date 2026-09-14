@@ -58,12 +58,6 @@ dev = [
     "pip-audit>=2.9.0",
     "pip-tools>=7.5.0,<8.0.0",
     "pre-commit>=3.0.0",
-    # setuptools is bundled by `python -m venv`, not pulled in as a dependency,
-    # so it can sit at whatever version the interpreter shipped. Since
-    # check_dependency_vulnerabilities.py audits the installed environment,
-    # an unpatched bundled copy fails that gate. Pinning it here upgrades it
-    # via the normal `pip install -e ".[dev]"` path on every machine and in
-    # every CI job. >=83.0.0 fixes PYSEC-2026-3447 / CVE-2026-59890.
     "setuptools>=83.0.0",
 ]
 

@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import logging
 from typing import Any
-from typing import cast
 from typing import TYPE_CHECKING
 
 from equinox.gui.error_presenter import ErrorPresenter
@@ -12,7 +11,7 @@ from equinox.gui.request_panel._constants import PREFLIGHT_SEPARATOR
 from equinox.gui.request_panel._constants import STATUS_DURATION_SHORT
 from equinox.gui.workers import RequestWorker
 from PyQt6.QtCore import QTimer
-from PyQt6.QtWidgets import QWidget
+from equinox.gui.ui_common import QWidgetHostMixin
 
 logger = logging.getLogger(__name__)
 
@@ -20,7 +19,7 @@ _MSG_MISSING_URL = "Please enter a request URL."
 _MSG_CANCELLED = "Request cancelled"
 
 
-class SendWorkerMixin:
+class SendWorkerMixin(QWidgetHostMixin):
     """Manage worker dispatch, preflight banner rendering, and send UI state."""
 
     _worker: RequestWorker | None
@@ -41,9 +40,6 @@ class SendWorkerMixin:
         def _run_preflight_checks(self) -> list[str]: ...
         def _handle_response(self, result: object, worker: Any) -> None: ...
         def _status_message(self, message: str, timeout_ms: int = ...) -> None: ...
-
-    def _as_qwidget(self) -> QWidget:
-        return cast(QWidget, cast(object, self))
 
     def _ensure_sendable_url(self, url: str) -> bool:
         """Warn and abort when the request URL is empty."""
