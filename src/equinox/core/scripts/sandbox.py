@@ -17,9 +17,23 @@ _FORBIDDEN_MODULE_ATTRS: frozenset[str] = frozenset(
         "exec",
         "execv",
         "execve",
+        "execl",
+        "execle",
+        "execlp",
+        "execlpe",
+        "execvp",
+        "execvpe",
         "spawn",
         "spawnl",
         "spawnle",
+        "spawnlp",
+        "spawnv",
+        "spawnve",
+        "spawnvp",
+        "spawnvpe",
+        "posix_spawn",
+        "posix_spawnp",
+        "startfile",
         "fork",
         "kill",
         "remove",
@@ -32,6 +46,14 @@ _FORBIDDEN_MODULE_ATTRS: frozenset[str] = frozenset(
         "putenv",
     },
 )
+
+
+# Storage name for the wrapped module. It is sealed by ``__getattribute__`` so
+# scripts can never read it through normal attribute lookup (``getattr`` /
+# ``hasattr`` are also removed from the sandbox builtins, and
+# ``__getattribute__`` itself is on the AST danger list), closing the
+# ``uuid._wrapped.os.system`` style of escape.
+_WRAPPED = "_wrapped"
 
 
 class _SafeModule:
@@ -52,14 +74,23 @@ class _SafeModule:
     __slots__ = ("_wrapped",)
 
     def __init__(self, module: types.ModuleType) -> None:
-        object.__setattr__(self, "_wrapped", module)
+        object.__setattr__(self, _WRAPPED, module)
 
     def __repr__(self) -> str:
-        wrapped: types.ModuleType = object.__getattribute__(self, "_wrapped")
+        wrapped: types.ModuleType = object.__getattribute__(self, _WRAPPED)
         return f"<sandboxed module {wrapped.__name__!r}>"
 
-    def __getattr__(self, name: str) -> Any:
-        wrapped: types.ModuleType = object.__getattribute__(self, "_wrapped")
+    def __getattribute__(self, name: str) -> Any:
+        wrapped: types.ModuleType = object.__getattribute__(self, _WRAPPED)
+        # Never forward underscore-prefixed names. The wrapped module's
+        # ``_wrapped`` reference must stay sealed, and other dunder/private
+        # names are implementation details of the wrapped module (a script
+        # reading ``module.__dict__`` or ``module.__class__`` would otherwise
+        # learn about internals it has no business touching).
+        if name.startswith("_"):
+            raise AttributeError(
+                f"'{wrapped.__name__}.{name}' is not allowed in scripts",
+            )
         if name in _FORBIDDEN_MODULE_ATTRS:
             raise AttributeError(
                 f"'{wrapped.__name__}.{name}' is not available in scripts",
@@ -73,6 +104,22 @@ class _SafeModule:
                 f"'{value.__name__}', which is not allowed in scripts",
             )
         return value
+
+    def __dir__(self) -> list[str]:
+        wrapped: types.ModuleType = object.__getattribute__(self, _WRAPPED)
+        safe = []
+        for name in dir(wrapped):
+            if name in _FORBIDDEN_MODULE_ATTRS or name.startswith("_"):
+                continue
+            try:
+                value = getattr(wrapped, name)
+            except Exception:
+                continue
+            if isinstance(value, types.ModuleType):
+                if value.__name__ not in ALLOWED_MODULES:
+                    continue
+            safe.append(name)
+        return safe
 
     def __setattr__(self, name: str, value: Any) -> None:
         raise AttributeError("Sandboxed modules are read-only")
@@ -134,6 +181,6 @@ def get_safe_builtins() -> dict[str, Any]:
         if name not in _BLOCKED and not name.startswith("_")
     }
     safe_builtins["__import__"] = _safe_import
-    # print is a no-op in the sandbox; ScriptRunner captures sys.stdout
+    # print is a no-op in the sandbox (stdout is not captured).
     safe_builtins["print"] = lambda *args, **kwargs: None
     return safe_builtins
