@@ -20,7 +20,7 @@ from equinox.core.client.auth_applier import AuthApplier
 from equinox.core.client.concurrency_guard import ConcurrencyGuard
 from equinox.core.client.cookie_handler import CookieHandler
 from equinox.core.client.dispatcher import HttpxDispatcher
-from equinox.core.client.pipeline import RequestPipeline, _ErrorHandlerEntry
+from equinox.core.client.pipeline import RequestPipeline, AuditLogger, _ErrorHandlerEntry
 from equinox.core.client.retry_policy import RetryPolicy
 from equinox.core.exceptions import RequestError, ValidationError
 from equinox.core.format import error_mapper
@@ -34,12 +34,40 @@ from equinox.core.log_setup import (
     set_current_request_id,
 )
 from equinox.core.request import Request, Response
-from equinox.core.validation import Validator
+from equinox.core.validation import Sanitizer, Validator
 from equinox.security import redact_url
 
 logger = logging.getLogger(__name__)
 
-__all__ = ["HTTPClient"]
+__all__ = ["HTTPClient", "ClientComponents"]
+
+
+class ClientComponents:
+    """Extracted component container to support dependency injection."""
+
+    def __init__(
+        self,
+        interceptors: InterceptorChain,
+        logger: RequestResponseLogger,
+        audit: AuditLogger,
+        rate_limiter: RateLimiter,
+        dispatcher: HttpxDispatcher,
+        concurrency: ConcurrencyGuard,
+        auth_applier: AuthApplier,
+        retry_policy: RetryPolicy,
+        pipeline: RequestPipeline,
+        error_handlers: list[_ErrorHandlerEntry],
+    ) -> None:
+        self.interceptors = interceptors
+        self.logger = logger
+        self.audit = audit
+        self.rate_limiter = rate_limiter
+        self.dispatcher = dispatcher
+        self.concurrency = concurrency
+        self.auth_applier = auth_applier
+        self.retry_policy = retry_policy
+        self.pipeline = pipeline
+        self.error_handlers = error_handlers
 
 
 class HTTPClient:
@@ -124,37 +152,59 @@ class HTTPClient:
         site here.
         """
         self._active_requests: int = 0  # legacy compatibility mirror of ConcurrencyGuard.active
-        self.interceptors = InterceptorChain()
-        self.logger = RequestResponseLogger()
-        self._audit = get_audit_logger()
-        self._rate_limiter = RateLimiter(
+        interceptors = InterceptorChain()
+        logger_obj = RequestResponseLogger()
+        audit: AuditLogger = get_audit_logger()
+        rate_limiter = RateLimiter(
             self.max_rate_per_minute,
             window_seconds=self.RATE_LIMIT_WINDOW_SECONDS,
-            audit_logger=self._audit,
+            audit_logger=audit,
         )
-        self._dispatcher = HttpxDispatcher(
+        dispatcher = HttpxDispatcher(
             timeout=self.timeout,
             follow_redirects=self.follow_redirects,
             verify_ssl=self.verify_ssl,
             proxy=self.proxy,
             cookie_handler=CookieHandler(cookie_manager),
         )
-        self._concurrency = ConcurrencyGuard(self.max_concurrent_requests)
-        self._auth_applier = AuthApplier()
-        self._retry_policy = RetryPolicy(
+        concurrency = ConcurrencyGuard(self.max_concurrent_requests)
+        auth_applier = AuthApplier()
+        retry_policy = RetryPolicy(
             timeout_retries=self.MAX_RETRIES,
             http_retries=self.MAX_HTTP_RETRIES,
             retryable_status_codes=self.RETRYABLE_STATUS_CODES,
             retry_after_cap_seconds=self.RETRY_AFTER_CAP_SECONDS,
             interruptible_sleep=self._interruptible_sleep,
         )
-        self._error_handlers = error_mapper.build_error_handlers(self)
-        typed_error_handlers = cast(list[_ErrorHandlerEntry], self._error_handlers)
-        self._pipeline = RequestPipeline(
-            interceptors=self.interceptors,
-            audit_logger=self._audit,
+        error_handlers = error_mapper.build_error_handlers(self)
+        typed_error_handlers = cast(list[_ErrorHandlerEntry], error_handlers)
+        pipeline = RequestPipeline(
+            interceptors=interceptors,
+            audit_logger=audit,
             error_handlers=typed_error_handlers,
         )
+        self.components = ClientComponents(
+            interceptors=interceptors,
+            logger=logger_obj,
+            audit=audit,
+            rate_limiter=rate_limiter,
+            dispatcher=dispatcher,
+            concurrency=concurrency,
+            auth_applier=auth_applier,
+            retry_policy=retry_policy,
+            pipeline=pipeline,
+            error_handlers=typed_error_handlers,
+        )
+        # Keep legacy direct attribute access for backward compatibility.
+        self.interceptors = self.components.interceptors
+        self.logger = self.components.logger
+        self._audit = self.components.audit
+        self._rate_limiter = self.components.rate_limiter
+        self._dispatcher = self.components.dispatcher
+        self._concurrency = self.components.concurrency
+        self._auth_applier = self.components.auth_applier
+        self._retry_policy = self.components.retry_policy
+        self._pipeline = self.components.pipeline
 
     # ── Properties ────────────────────────────────────────────────────────────
 
@@ -350,7 +400,7 @@ class HTTPClient:
         logger.info(
             "HTTPClient.send(): method=%s url=%s auth=%s",
             request.method,
-            Validator.sanitize_for_display(request.url, 80),
+            Sanitizer.sanitize_for_display(request.url, 80),
             type(effective_auth).__name__ if effective_auth else "None",
             extra={
                 "request_id": req_id,

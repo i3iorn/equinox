@@ -98,6 +98,8 @@ class RequestPanel(
         self.db = db
         self._cookie_manager: CookieManager | None = cookie_manager
 
+        # Dependency injection preferred: facades should be injected by callers.
+        # Direct concrete construction is kept for backward compatibility only.
         self._request_persistence: RequestPersistenceFacade = (
             request_persistence or RequestPersistenceFacade(db)
         )

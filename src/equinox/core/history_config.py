@@ -1,7 +1,8 @@
 """Runtime toggle for history body capture.
 
 Allows enabling/disabling storage of request/response bodies in history
-for privacy and data-retention purposes.
+for privacy and data-retention purposes.  The module-level functions
+retain backward compatibility; new code should inject ``HistoryConfig``.
 """
 
 from __future__ import annotations
@@ -13,12 +14,16 @@ from equinox.core.config import flags
 _CAPTURE_BODIES_DEFAULT = True
 
 
-class _HistoryCaptureState:
-    """Thread-safe holder for runtime history-capture overrides."""
+class HistoryConfig:
+    """Injectable history-capture configuration.
 
-    def __init__(self) -> None:
+    Replaces the process-global ``_HistoryCaptureState`` with an explicit
+    instance that can be shared or isolated per test / service.
+    """
+
+    def __init__(self, capture_bodies: bool | None = None) -> None:
         self._lock = threading.Lock()
-        self._capture_bodies: bool | None = None
+        self._capture_bodies: bool | None = capture_bodies
 
     def get(self) -> bool:
         with self._lock:
@@ -37,23 +42,18 @@ class _HistoryCaptureState:
             self._capture_bodies = None
 
 
-_STATE = _HistoryCaptureState()
+# Default instance for backward-compatible module-level API.
+_DEFAULT_CONFIG = HistoryConfig()
 
 
 def should_capture_bodies() -> bool:
-    """Return whether history should store request/response bodies.
-
-    The default is to capture bodies. If EQUINOX_HISTORY_CAPTURE_BODIES is
-    set to a truthy value (1/true/yes), bodies are captured; if set to a
-    falsey value (0/no), bodies are omitted from history.
-    """
-    return _STATE.get()
+    return _DEFAULT_CONFIG.get()
 
 
 def set_capture_bodies(value: bool) -> None:
-    _STATE.set(value)
+    _DEFAULT_CONFIG.set(value)
 
 
 def reset_capture_bodies() -> None:
     """Reset runtime override so next read uses environment/default value."""
-    _STATE.reset()
+    _DEFAULT_CONFIG.reset()

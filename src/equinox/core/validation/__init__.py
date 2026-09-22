@@ -36,12 +36,25 @@ from ._path import _PathValidator
 from ._ssrf import _SsrfGuard
 from ._url import _UrlValidator
 
-__all__ = ["VALID_HTTP_METHODS", "Validator"]
+__all__ = ["VALID_HTTP_METHODS", "Validator", "Sanitizer"]
 
 
 # ---------------------------------------------------------------------------
 # Validator — public façade (backward-compatible API)
 # ---------------------------------------------------------------------------
+
+
+class Sanitizer:
+    """Display sanitization facade (separated from structural validation)."""
+
+    @classmethod
+    def sanitize_for_display(cls, text: Any, max_length: int = 1000) -> str:
+        if not isinstance(text, str):
+            text = str(text)
+        if len(text) > max_length:
+            text = text[:max_length] + "..."
+        # Strip control characters while preserving newlines (\n) and tabs (\t).
+        return re.sub(r"[\x00-\x08\x0B-\x0C\x0E-\x1F\x7F]", "", text)
 
 
 class Validator:
@@ -171,17 +184,6 @@ class Validator:
 
             raise ValidationError(f"Invalid HTTP method: {method}")
         return method
-
-    # -- Display sanitization -------------------------------------------------
-
-    @classmethod
-    def sanitize_for_display(cls, text: Any, max_length: int = 1000) -> str:
-        if not isinstance(text, str):
-            text = str(text)
-        if len(text) > max_length:
-            text = text[:max_length] + "..."
-        # Strip control characters while preserving newlines (\n) and tabs (\t).
-        return re.sub(r"[\x00-\x08\x0B-\x0C\x0E-\x1F\x7F]", "", text)
 
     # -- SSRF (Hostname validation) -------------------------------------------
 
