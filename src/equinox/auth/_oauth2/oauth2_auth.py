@@ -67,6 +67,10 @@ class OAuth2Auth(AuthStrategy):
         verify_ssl: bool = True,
         token_auth: Literal["body", "basic"] = "body",
         extra_params: dict[str, Any] | None = None,
+        token_field_name: str = "access_token",
+        token_body_format: Literal["form", "json"] = "form",
+        token_request_headers: dict[str, str] | None = None,
+        default_token_ttl_seconds: int = 3600,
     ):
         """Initialize OAuth2 auth with optional secure storage."""
         initialize_oauth2_auth(
@@ -83,6 +87,10 @@ class OAuth2Auth(AuthStrategy):
             verify_ssl=verify_ssl,
             token_auth=token_auth,
             extra_params=extra_params,
+            token_field_name=token_field_name,
+            token_body_format=token_body_format,
+            token_request_headers=token_request_headers,
+            default_token_ttl_seconds=default_token_ttl_seconds,
         )
 
     def apply(self, request: Any, headers: dict[str, str]) -> None:
@@ -137,6 +145,10 @@ class OAuth2Auth(AuthStrategy):
             "verify_ssl": self._verify_ssl,
             "token_auth": self.token_auth,
             "extra_params": self.extra_params,
+            "token_field_name": self.token_field_name,
+            "token_body_format": self.token_body_format,
+            "token_request_headers": self.token_request_headers,
+            "default_token_ttl_seconds": self.default_token_ttl_seconds,
         }
 
     @classmethod
@@ -155,6 +167,10 @@ class OAuth2Auth(AuthStrategy):
             verify_ssl=data.get("verify_ssl", True),
             token_auth=data.get("token_auth", "body"),
             extra_params=data.get("extra_params") if data.get("extra_params") is not None else None,
+            token_field_name=data.get("token_field_name", "access_token"),
+            token_body_format=data.get("token_body_format", "form"),
+            token_request_headers=data.get("token_request_headers"),
+            default_token_ttl_seconds=data.get("default_token_ttl_seconds", 3600),
         )
         instance.expires_at = cls._parse_expires_at(data.get("expires_at"))
         return instance
@@ -172,6 +188,17 @@ class OAuth2Auth(AuthStrategy):
             verify_ssl=self._verify_ssl,
             token_auth=self.token_auth,
             extra_params=self.extra_params,
+            token_field_name=self.token_field_name,
+            token_body_format=self.token_body_format,
+            token_request_headers=(
+                {
+                    k: _interpolate_field(v, interp) or ""
+                    for k, v in self.token_request_headers.items()
+                }
+                if self.token_request_headers
+                else None
+            ),
+            default_token_ttl_seconds=self.default_token_ttl_seconds,
         )
         new_auth.expires_at = self.expires_at
         return new_auth
@@ -342,9 +369,9 @@ class OAuth2Auth(AuthStrategy):
         except (ValueError, TypeError):
             return None
 
-    @staticmethod
-    def _parse_expires_in(raw_expires: Any) -> int:
+    def _parse_expires_in(self, raw_expires: Any) -> int:
         """Return a valid ``expires_in`` seconds value from token response."""
+        default_ttl = getattr(self, "default_token_ttl_seconds", _DEFAULT_TOKEN_EXPIRY_SECONDS)
         try:
             value = int(float(raw_expires)) if raw_expires is not None else 0
             if value > 0:
@@ -353,9 +380,9 @@ class OAuth2Auth(AuthStrategy):
             logger.warning(
                 "Invalid expires_in value %r, using default %ds",
                 raw_expires,
-                _DEFAULT_TOKEN_EXPIRY_SECONDS,
+                default_ttl,
             )
-        return _DEFAULT_TOKEN_EXPIRY_SECONDS
+        return default_ttl
 
     def _refresh_access_token(
         self,
