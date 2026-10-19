@@ -85,9 +85,18 @@ class Validator:
         return _UrlValidator.validate(url)
 
     @classmethod
-    def validate_resolved_url(cls, url: str) -> str:
-        """Full structural URL validation after placeholder expansion."""
-        return _UrlValidator.validate_resolved(url)
+    def validate_resolved_url(
+        cls,
+        url: str,
+        *,
+        tolerate_dns_failure: bool = False,
+    ) -> str:
+        """Full structural URL validation after placeholder expansion.
+
+        ``tolerate_dns_failure`` relaxes only the SSRF guard's DNS step; see
+        :meth:`_SsrfGuard.check`.
+        """
+        return _UrlValidator.validate_resolved(url, tolerate_dns_failure=tolerate_dns_failure)
 
     # -- Headers --------------------------------------------------------------
 

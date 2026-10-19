@@ -397,7 +397,7 @@ class TestRedactComprehensive:
 # 3. Validation — CRLF, SSRF, XSS, command-injection, fuzz
 # ═══════════════════════════════════════════════════════════════════════════════
 
-from equinox.core.validation import VALID_HTTP_METHODS, Validator
+from equinox.core.validation import VALID_HTTP_METHODS, Sanitizer, Validator
 
 
 class TestValidationComprehensive:
@@ -659,25 +659,25 @@ class TestValidationComprehensive:
 
     def test_sanitize_for_display_truncates(self):
         long_text = "x" * 2000
-        result = Validator.sanitize_for_display(long_text, max_length=100)
+        result = Sanitizer.sanitize_for_display(long_text, max_length=100)
         assert len(result) == 103  # 100 + "..."
         assert result.endswith("...")
 
     def test_sanitize_for_display_strips_control_chars(self):
         text = "hello\x00world\x07test"
-        result = Validator.sanitize_for_display(text)
+        result = Sanitizer.sanitize_for_display(text)
         assert "\x00" not in result
         assert "\x07" not in result
         assert "hello" in result
 
     def test_sanitize_for_display_preserves_newlines_tabs(self):
         text = "line1\nline2\ttab"
-        result = Validator.sanitize_for_display(text)
+        result = Sanitizer.sanitize_for_display(text)
         assert "\n" in result
         assert "\t" in result
 
     def test_sanitize_for_display_non_string(self):
-        result = Validator.sanitize_for_display(12345)
+        result = Sanitizer.sanitize_for_display(12345)
         assert result == "12345"
 
     # ── Fuzz tests ────────────────────────────────────────────────────────

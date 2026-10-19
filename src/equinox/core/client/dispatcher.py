@@ -21,7 +21,7 @@ from equinox.core.exceptions import ValidationError
 from equinox.core.request import Request
 from equinox.core.request import Response
 from equinox.core.util.time import utc_now
-from equinox.core.validation import Validator
+from equinox.core.validation import Sanitizer, Validator
 from equinox.security import redact_headers
 from equinox.security import redact_url
 
@@ -80,6 +80,10 @@ class HttpxDispatcher:
                 follow_redirects=self._follow_redirects,
                 verify=self._build_ssl_context() if client_key else False,
                 proxy=self._proxy,
+                # The pipeline validates the URL the user supplied, but httpx
+                # follows redirects internally. Request hooks fire for every
+                # hop, so re-validating there closes the redirect SSRF hole.
+                event_hooks={"request": [self._validate_outbound_request]},
             )
             self._apply_cookie_records_to_client(created)
             self._clients[client_key] = created
@@ -99,6 +103,18 @@ class HttpxDispatcher:
                 client.close()
             except Exception as exc:
                 logger.debug("HttpxDispatcher: failed to close client cleanly: %s", exc)
+
+    @staticmethod
+    def _validate_outbound_request(request: httpx.Request) -> None:
+        """Re-run SSRF validation for every outbound hop, redirects included.
+
+        ``HTTPClient._validate_request`` only sees the URL the caller supplied.
+        With automatic redirects httpx issues further requests that never pass
+        through it, so a public host could bounce the client to
+        ``169.254.169.254`` or another internal address. httpx invokes request
+        hooks once per hop, which makes this the correct interception point.
+        """
+        Validator.validate_resolved_url(str(request.url))
 
     # ── Cookie sync ───────────────────────────────────────────────────────────
 
@@ -419,7 +435,7 @@ class HttpxDispatcher:
         logger.debug(
             "HttpxDispatcher: sending %s %s",
             request.method,
-            Validator.sanitize_for_display(request.url, 100),
+            Sanitizer.sanitize_for_display(request.url, 100),
         )
 
     def _log_request_complete(self, response: httpx.Response, elapsed: float) -> None:

@@ -83,13 +83,25 @@ class _SsrfGuard:
     _dns_cache: OrderedDict[str, tuple[float, bool]] = OrderedDict()
 
     @classmethod
-    def check(cls, hostname: str) -> None:
+    def check(
+        cls,
+        hostname: str,
+        *,
+        tolerate_dns_failure: bool = False,
+    ) -> None:
         """Raise ``ValidationError`` if *hostname* targets a private network.
 
         Check order:
         1. Known cloud-metadata hostnames (exact match).
         2. Literal IP addresses (private, loopback, link-local).
         3. DNS resolution with a tight timeout for hostnames.
+
+        ``tolerate_dns_failure`` relaxes *only* step 3: when DNS cannot be
+        resolved (offline/CI environments) the hostname is allowed through
+        instead of failing closed. Steps 1-2 always run, so this can never
+        permit ``169.254.169.254``, a metadata hostname, or a literal private
+        IP. The Vault backend uses it for explicit insecure-http mode so local
+        testing stays deterministic without losing internal-host protection.
         """
         normalized = hostname.lower().rstrip(".")
 
@@ -106,7 +118,7 @@ class _SsrfGuard:
         except ValueError:
             pass  # Not a literal IP — fall through to DNS resolution.
 
-        cls._resolve_and_check(normalized, hostname)
+        cls._resolve_and_check(normalized, hostname, tolerate_dns_failure)
 
     # -- private helpers -----------------------------------------------------
 
@@ -122,8 +134,19 @@ class _SsrfGuard:
             )
 
     @classmethod
-    def _resolve_and_check(cls, normalized: str, original: str) -> None:
-        """DNS-resolve *normalized* and reject any private addresses found."""
+    def _resolve_and_check(
+        cls,
+        normalized: str,
+        original: str,
+        tolerate_dns_failure: bool = False,
+    ) -> None:
+        """DNS-resolve *normalized* and reject any private addresses found.
+
+        A resolution failure only fails open when *tolerate_dns_failure* is
+        set; the metadata and literal-IP checks in :meth:`check` have already
+        run by this point, so tolerating DNS failure cannot reach an internal
+        address that is expressible without DNS.
+        """
         cached = cls._get_cached_dns_result(normalized)
         if cached is not None:
             if cached:
@@ -154,7 +177,7 @@ class _SsrfGuard:
                     f"Hostname '{original}' resolves to private IP (SSRF protection)",
                 )
         except (socket.gaierror, OSError) as exc:
-            if is_ssrf_allow_on_dns_failure_enabled():
+            if tolerate_dns_failure or is_ssrf_allow_on_dns_failure_enabled():
                 _logger.warning(
                     "SSRF DNS resolution failed, allowing request due to compatibility flag",
                     extra={"hostname": normalized, "error": str(exc)},
@@ -166,7 +189,7 @@ class _SsrfGuard:
         except concurrent.futures.TimeoutError:
             if future is not None:
                 future.cancel()
-            if is_ssrf_allow_on_dns_failure_enabled():
+            if tolerate_dns_failure or is_ssrf_allow_on_dns_failure_enabled():
                 _logger.warning(
                     "SSRF DNS resolution timed out, allowing request due to compatibility flag",
                     extra={"hostname": normalized, "timeout_seconds": cls._DNS_TIMEOUT},
