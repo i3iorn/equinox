@@ -107,7 +107,7 @@ def issues_to_messages(issues: tuple[PreparationIssue, ...]) -> list[str]:
     messages: list[str] = []
     for issue in issues:
         if issue.field_name:
-            messages.append(f"{issue.message}")
+            messages.append(f"{issue.field_name}: {issue.message}")
         else:
             messages.append(issue.message)
     return messages
