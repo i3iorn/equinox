@@ -1,10 +1,8 @@
 """Request/response pipeline: interceptors, audit logging, and error mapping."""
 
 import logging
-from collections.abc import Iterable
-from typing import Any
-
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
+from typing import Any, Protocol, TypedDict
 
 from equinox.core.exceptions import EquinoxError, RequestError
 from equinox.core.interceptors.chain import InterceptorChain
@@ -17,11 +15,6 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 # Collaborator contracts (structural types)
 # ---------------------------------------------------------------------------
-
-try:
-    from typing import Protocol, TypedDict
-except ImportError:  # pragma: no cover — Python < 3.8 safety net
-    from typing_extensions import Protocol, TypedDict
 
 
 class AuditLogger(Protocol):
