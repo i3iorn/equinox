@@ -65,6 +65,66 @@ def test_codecs_open_is_blocked(tmp_path):
     assert "TOP-SECRET" not in str(result.env_changes)
 
 
+# ── Introspection escapes ─────────────────────────────────────────────────────
+#
+# The module proxy intercepts attribute *misses*, but ``__getattr__`` only runs
+# after normal lookup fails — so anything reachable as a class attribute on the
+# proxy (``__getattribute__``, ``__class__``) or as an attribute of a non-module
+# object (a loader's ``get_data``) needs the AST scan and the proxy denylist to
+# agree. These pin the escapes that slipped past both.
+
+_STATIC_ESCAPES = [
+    # A traceback's deepest frame belongs to a stdlib module, whose f_builtins
+    # is the *real* builtins — ``__import__`` there imports anything.
+    (
+        "traceback-f_builtins",
+        "import json\n"
+        "try:\n"
+        "    json.loads('{')\n"
+        "except Exception as exc:\n"
+        "    tb = exc.__traceback__\n"
+        "    while tb.tb_next:\n"
+        "        tb = tb.tb_next\n"
+        "    env['r'] = str(tb.tb_frame.f_builtins['__import__'])",
+    ),
+    ("spec-loader", "import json\nenv['r'] = str(json.__spec__.loader)"),
+    (
+        "from-import-loader",
+        "from json import __loader__ as ld\nenv['r'] = str(ld)",
+    ),
+    (
+        "from-import-getattribute",
+        "from json import __getattribute__ as ga\nenv['r'] = str(ga('_wrapped'))",
+    ),
+]
+
+
+@pytest.mark.parametrize(
+    ("label", "script"),
+    _STATIC_ESCAPES,
+    ids=[e[0] for e in _STATIC_ESCAPES],
+)
+def test_introspection_escapes_are_blocked(label, script):
+    from equinox.core.scripts import ScriptRunner
+
+    result = ScriptRunner.run_pre(script, {}, {})
+    assert not result.ok, f"{label} escaped the sandbox: {result.env_changes}"
+
+
+def test_loader_get_data_cannot_read_files(tmp_path):
+    """A module's ``__loader__`` reads any path via ``get_data`` — block it."""
+    from equinox.core.scripts import ScriptRunner
+
+    secret = tmp_path / "secret.txt"
+    secret.write_text("TOP-SECRET")
+
+    script = f"import json\nenv['r'] = str(json.__loader__.get_data(r'{secret}'))"
+    result = ScriptRunner.run_pre(script, {}, {})
+
+    assert not result.ok
+    assert "TOP-SECRET" not in str(result.env_changes)
+
+
 def test_no_allowlisted_module_leaks_any_module():
     """Exhaustive: no attribute of any allowlisted module yields a module.
 
