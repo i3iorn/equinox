@@ -225,6 +225,15 @@ class HTTPClient:
     def __exit__(self, exc_type: object, exc_val: object, exc_tb: object) -> None:
         self._dispatcher.close()
 
+    def close(self) -> None:
+        """Close the transport and release pooled connections.
+
+        For callers that build a client without a ``with`` block (the GUI send
+        worker). Do not switch them to ``with``: ``__enter__`` runs a
+        synchronous proxy probe on the calling thread.
+        """
+        self._dispatcher.close()
+
     # ── Private helpers ───────────────────────────────────────────────────────
 
     def _interruptible_sleep(self, seconds: float) -> None:
