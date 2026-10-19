@@ -70,6 +70,9 @@ def get_or_create_raw_key(key_path: Path | None = None) -> bytes:
         key_path = default_key_path()
 
     # Prefers OS-keyring key when enabled; otherwise fall back to local key file.
+    # A keyring that is enabled but unreadable raises KeystoreUnavailableError
+    # rather than falling back, so a transient keychain failure can never cause
+    # a silent switch to (and overwrite of) the file key.
     if get_or_create_os_key is not None:
         os_key = get_or_create_os_key()
         if os_key is not None:
