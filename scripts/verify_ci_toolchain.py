@@ -20,6 +20,7 @@ Integration:
               stages: [commit]
               files: '(\\.github/workflows|pyproject\\.toml|setup\\.py)'
 """
+
 import re
 import sys
 from pathlib import Path

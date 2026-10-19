@@ -1,5 +1,5 @@
 import logging
-from typing import Protocol, Union
+from typing import Protocol
 
 from equinox.core.request import Request, Response
 from equinox.security import redact_url
@@ -35,7 +35,7 @@ _GENERATORS: dict[str, _GeneratorType] = {
 GENERATORS = _GENERATORS
 
 
-def generate_code(fmt: str, request_or_response: Union[Request, Response]) -> str:
+def generate_code(fmt: str, request_or_response: Request | Response) -> str:
     """Generate client code for the given response/request."""
     gen_cls = _GENERATORS.get(fmt)
     if gen_cls is None:

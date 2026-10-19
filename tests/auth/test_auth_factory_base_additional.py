@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any, Dict
+from typing import Any
 
 import pytest
 
@@ -47,14 +47,14 @@ class _RoundTripAuth(AuthStrategy):
         self.token = token
         self.note = note
 
-    def apply(self, request: Any, headers: Dict[str, str]) -> None:
+    def apply(self, request: Any, headers: dict[str, str]) -> None:
         headers["authorization"] = self.token
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return {"type": self.AUTH_TYPE, "token": self.token, "note": self.note}
 
     @classmethod
-    def from_dict(cls, data: Dict[str, Any], **kwargs: Any) -> _RoundTripAuth:
+    def from_dict(cls, data: dict[str, Any], **kwargs: Any) -> _RoundTripAuth:
         try:
             return cls(token=data.get("token", ""), note=data.get("note", ""))
         except AttributeError as err:
@@ -66,14 +66,14 @@ class _FailingToDictAuth(AuthStrategy):
     AUTH_TYPE = "failing_repr_auth"
     DISPLAY_NAME = "Failing"
 
-    def apply(self, request: Any, headers: Dict[str, str]) -> None:
+    def apply(self, request: Any, headers: dict[str, str]) -> None:
         return None
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         raise RuntimeError("boom")
 
     @classmethod
-    def from_dict(cls, data: Dict[str, Any], **kwargs: Any) -> _FailingToDictAuth:
+    def from_dict(cls, data: dict[str, Any], **kwargs: Any) -> _FailingToDictAuth:
         super().from_dict(data)
         return cls()
 
@@ -124,14 +124,14 @@ def test_concrete_subclass_requires_auth_type_and_display_name() -> None:
         class _MissingAuthType(AuthStrategy):
             DISPLAY_NAME = "Missing Type"
 
-            def apply(self, request: Any, headers: Dict[str, str]) -> None:
+            def apply(self, request: Any, headers: dict[str, str]) -> None:
                 return None
 
-            def to_dict(self) -> Dict[str, Any]:
+            def to_dict(self) -> dict[str, Any]:
                 return {"type": "x"}
 
             @classmethod
-            def from_dict(cls, data: Dict[str, Any], **kwargs: Any) -> _MissingAuthType:
+            def from_dict(cls, data: dict[str, Any], **kwargs: Any) -> _MissingAuthType:
                 super().from_dict(data)
                 return cls()
 
@@ -140,13 +140,13 @@ def test_concrete_subclass_requires_auth_type_and_display_name() -> None:
         class _MissingDisplayName(AuthStrategy):
             AUTH_TYPE = "missing_display"
 
-            def apply(self, request: Any, headers: Dict[str, str]) -> None:
+            def apply(self, request: Any, headers: dict[str, str]) -> None:
                 return None
 
-            def to_dict(self) -> Dict[str, Any]:
+            def to_dict(self) -> dict[str, Any]:
                 return {"type": "x"}
 
             @classmethod
-            def from_dict(cls, data: Dict[str, Any], **kwargs: Any) -> _MissingDisplayName:
+            def from_dict(cls, data: dict[str, Any], **kwargs: Any) -> _MissingDisplayName:
                 super().from_dict(data)
                 return cls()

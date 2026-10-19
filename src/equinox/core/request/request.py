@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 import shlex
 from dataclasses import dataclass, field
-from typing import Any, Union
+from typing import Any
 
 from equinox.core import urls
 from equinox.core.exceptions import ValidationError
@@ -28,7 +28,7 @@ logger = logging.getLogger(__name__)
 # ── Private helpers ───────────────────────────────────────────────────────────
 
 
-def _decode_body(body: Union[str, bytes] | None, encoding: str = "utf-8") -> str:
+def _decode_body(body: str | bytes | None, encoding: str = "utf-8") -> str:
     """Decode *body* to ``str``, handling both ``str`` and ``bytes`` input.
 
     Args:
@@ -92,7 +92,7 @@ class Request:
 
     headers: dict[str, str] = field(default_factory=dict)
     params: dict[str, str] = field(default_factory=dict)
-    body: Union[str, bytes] | None = None
+    body: str | bytes | None = None
 
     auth: Any | None = None
 

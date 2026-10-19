@@ -6,7 +6,7 @@ Sub-modules
 - ``actions`` – Context-menu / keyboard action handlers (mixin)
 """
 
-from equinox.gui.collection_panel.panel import (  # noqa: F401 – public API
+from equinox.gui.collection_panel.panel import (  # – public API
     CollectionsPanel,
     _NewRequestDialog,
 )

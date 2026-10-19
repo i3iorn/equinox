@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from typing import Dict, List, Optional
 
 import pytest
 
@@ -9,7 +8,7 @@ from equinox.core.exceptions import RequestTimeoutError
 from equinox.core.request import Request, Response
 
 
-def _make_response(status_code: int, headers: Optional[Dict[str, str]] = None) -> Response:
+def _make_response(status_code: int, headers: dict[str, str] | None = None) -> Response:
     return Response(
         status_code=status_code,
         reason="OK",
@@ -26,7 +25,7 @@ def test_init_rejects_non_positive_retry_after_cap() -> None:
 
 
 def test_execute_retries_timeout_and_records_summary() -> None:
-    sleeps: List[float] = []
+    sleeps: list[float] = []
     policy = RetryPolicy(
         timeout_retries=3,
         http_retries=0,
@@ -57,7 +56,7 @@ def test_execute_raises_on_final_timeout() -> None:
 
 
 def test_execute_with_http_overload_honors_retry_after_and_cap() -> None:
-    sleeps: List[float] = []
+    sleeps: list[float] = []
     policy = RetryPolicy(
         timeout_retries=1,
         http_retries=3,

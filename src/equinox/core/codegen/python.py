@@ -38,11 +38,6 @@ class PythonGeneratorBase:
         return lines
 
     def generate(self, response_or_request: Response | Request) -> str:
-        request = (
-            response_or_request.request
-            if isinstance(response_or_request, Response)
-            else response_or_request
-        )
         raise NotImplementedError("Subclasses must implement generate")
 
 

@@ -9,6 +9,7 @@ Behavior:
 - Coverage is restricted ONLY to the affected source files.
 - A temporary .coveragerc is generated automatically.
 """
+
 import subprocess
 import sys
 import tempfile

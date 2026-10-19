@@ -7,7 +7,7 @@ HTTPClient._error_handlers entries.
 
 import logging
 import ssl
-from typing import Any, Optional
+from typing import Any
 
 from equinox.core.exceptions import CertificateError, RequestError, RequestTimeoutError
 from equinox.security import redact_url
@@ -123,7 +123,7 @@ def _timeout_handler_factory(timeout: float) -> Any:
     return _handler
 
 
-def _connect_handler_factory(proxy: Optional[str]) -> Any:
+def _connect_handler_factory(proxy: str | None) -> Any:
     """Build connect error handler that distinguishes SSL/proxy/generic cases."""
 
     def _handler(exc: Exception, req: Any) -> dict[str, Any]:

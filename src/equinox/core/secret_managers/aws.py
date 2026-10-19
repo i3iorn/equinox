@@ -50,7 +50,7 @@ class AWSSecretsManagerBackend(SecretManager):
             SecretManagerError: If boto3 is not installed
         """
         try:
-            import boto3  # type: ignore[import-not-found]
+            import boto3
         except ImportError as exc:
             raise SecretManagerError(
                 "boto3 is required for AWS Secrets Manager. Install with: pip install boto3",

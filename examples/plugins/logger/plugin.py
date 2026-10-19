@@ -51,7 +51,7 @@ class PluginClass(Plugin):
         self.logger.info(
             f"→ {request.method} {request.url} | "
             f"Headers: {len(request.headers)} | "
-            f"Body: {len(request.body) if request.body else 0} bytes"
+            f"Body: {len(request.body) if request.body else 0} bytes",
         )
         return None
 
@@ -60,7 +60,7 @@ class PluginClass(Plugin):
         self.logger.info(
             f"← {response.status_code} {response.reason} | "
             f"Time: {response.elapsed:.3f}s | "
-            f"Size: {response.size} bytes"
+            f"Size: {response.size} bytes",
         )
 
         # Log errors
