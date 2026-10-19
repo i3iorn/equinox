@@ -156,7 +156,12 @@ class TestImportErrors:
 
     def test_import_nonexistent_name_raises(self) -> None:
         with pytest.raises(ImportError):
-            pass
+            from equinox.core.client import NonExistentClass  # type: ignore[attr-defined]
+
+            # Referencing the name keeps the import from reading as unused
+            # (ruff would auto-fix it away, leaving a bare `pass`); the line
+            # itself is unreachable because the import raised first.
+            assert NonExistentClass is not None  # pragma: no cover
 
     def test_getattr_nonexistent_raises_attribute_error(self) -> None:
         import equinox.core.client as pkg

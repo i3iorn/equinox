@@ -20,13 +20,14 @@ class _AuditRecorder:
     def __init__(self) -> None:
         self.events = []
 
-    def log_request(self, method, url, *, status_code=None, error=None) -> None:
+    def log_request(self, method, url, *, status_code=None, error=None, request_id=None) -> None:
         self.events.append(
             {
                 "method": method,
                 "url": url,
                 "status_code": status_code,
                 "error": error,
+                "request_id": request_id,
             },
         )
 

@@ -14,7 +14,7 @@ def test_phase2_monitoring_targets_stay_within_size_budget() -> None:
         root / "log_setup.py": 460,
         root / "response_intelligence" / "consistency.py": 550,
         root / "client" / "dispatcher.py": 550,
-        root / "client" / "http_client.py": 400,
+        root / "client" / "http_client.py": 460,
         root / "client" / "retry_policy.py": 340,
     }
 

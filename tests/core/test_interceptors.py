@@ -100,17 +100,17 @@ class TestInterceptorChain:
     def test_add_request_interceptor(self):
         chain = InterceptorChain()
         chain.add_request_interceptor(RequestInterceptor())
-        assert len(chain.request_interceptors) == 1
+        assert len(chain._request_interceptors) == 1
 
     def test_add_response_interceptor(self):
         chain = InterceptorChain()
         chain.add_response_interceptor(ResponseInterceptor())
-        assert len(chain.response_interceptors) == 1
+        assert len(chain._response_interceptors) == 1
 
     def test_add_error_interceptor(self):
         chain = InterceptorChain()
         chain.add_error_interceptor(ErrorInterceptor())
-        assert len(chain.error_interceptors) == 1
+        assert len(chain._error_interceptors) == 1
 
     def test_process_request_no_interceptors(self):
         chain = InterceptorChain()
