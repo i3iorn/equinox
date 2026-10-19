@@ -59,7 +59,11 @@ def rotate_secrets(db_path: str, new_password: str | None) -> None:
     if not new_password:
         click.echo("No password provided; aborting.", err=True)
         raise SystemExit(1)
-    rotate_all_secrets(db_path, new_password=new_password)
+    try:
+        rotate_all_secrets(db_path, new_password=new_password)
+    except Exception as exc:
+        click.echo(f"Error: {exc}", err=True)
+        raise SystemExit(1)
     click.echo("Secret rotation completed.")
 
 

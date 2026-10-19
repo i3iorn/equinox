@@ -294,20 +294,24 @@ def try_alternate_client_auth_mode(
         return None
 
     auth.token_auth = alternate_mode
-    logger.warning(
-        "Token endpoint invalid_client with token_auth=%s; retrying with token_auth=%s",
-        current_mode,
-        alternate_mode,
-        extra={"token_url": redact_url(auth.token_url)},
-    )
-    return _run_auth_mode_fallback(
-        auth,
-        grant_data,
-        current_mode,
-        alternate_mode,
-        proxy,
-        verify_ssl,
-    )
+    try:
+        logger.warning(
+            "Token endpoint invalid_client with token_auth=%s; retrying with token_auth=%s",
+            current_mode,
+            alternate_mode,
+            extra={"token_url": redact_url(auth.token_url)},
+        )
+        return _run_auth_mode_fallback(
+            auth,
+            grant_data,
+            current_mode,
+            alternate_mode,
+            proxy,
+            verify_ssl,
+        )
+    except Exception:
+        auth.token_auth = current_mode
+        raise
 
 
 def _run_auth_mode_fallback(

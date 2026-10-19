@@ -10,8 +10,8 @@ class HARGenerator:
 
         har = {
             "log": {
-                "version": get_app_version(),
-                "creator": {"name": "Equinox", "version": "2.0"},
+                "version": "1.2",
+                "creator": {"name": "Equinox", "version": get_app_version()},
                 "entries": [
                     {
                         "startedDateTime": response.timestamp.isoformat(),

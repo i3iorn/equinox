@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import Any
 
 from equinox.core import urls
-from equinox.core.exceptions import SecurityError
+from equinox.core.exceptions import SecurityError, StorageError
 from equinox.core.exceptions import ValidationError
 from equinox.core.request import Request
 from equinox.core.validation import Validator
@@ -143,6 +143,7 @@ class PostmanImporter:
             col_variables=col_variables,
         )
 
+        col_id = None
         try:
             with self.collection_manager.db.transaction() as tx:
                 # Create collection inside same transaction
@@ -210,6 +211,8 @@ class PostmanImporter:
                     )
             return int(collection_id)
 
+        if col_id is None:
+            raise StorageError("Failed to create collection during import")
         return int(col_id)
 
     def _validate_file(self, file_path: Path) -> None:

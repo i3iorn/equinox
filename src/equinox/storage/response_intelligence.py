@@ -70,7 +70,7 @@ class ResponseIntelligenceManager:
             if existing is None:
                 vals = safe_json_dumps([round(elapsed_ms, 2)], max_len=self._MAX_ELAPSED_JSON_LEN)
                 tx.execute(
-                    """INSERT INTO endpoint_stats
+                    """INSERT OR IGNORE INTO endpoint_stats
                        (url_pattern, method, call_count, total_elapsed,
                         min_elapsed, max_elapsed, elapsed_values, updated_at)
                        VALUES (?, ?, 1, ?, ?, ?, ?, CURRENT_TIMESTAMP)""",
