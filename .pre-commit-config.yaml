@@ -34,6 +34,12 @@ repos:
         entry: python scripts/run_affected_tests.py
         language: system
         pass_filenames: true
+        # Serial invocation is required: the runner maps files to one pytest
+        # pass over a shared coverage data area. Without this, pre-commit
+        # chunks filenames across CPU cores and the concurrent pytest
+        # processes race each other's .coverage.* SQLite files at combine
+        # time (PermissionError WinError 32 / "no such table" on Windows).
+        require_serial: true
         stages: [pre-push]
         files: ^(src/equinox/.*\.py|tests/.*\.py|pyproject\.toml)$
         exclude: ^(docs/|README\.md)
