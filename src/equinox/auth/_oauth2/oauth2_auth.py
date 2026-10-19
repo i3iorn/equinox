@@ -226,7 +226,7 @@ class OAuth2Auth(AuthStrategy):
         if not self.access_token:
             return True
         if not self.expires_at:
-            return False
+            return True
 
         expiry = self.expires_at
         if expiry.tzinfo is not None:
@@ -335,7 +335,10 @@ class OAuth2Auth(AuthStrategy):
             return None
         try:
             parsed = datetime.fromisoformat(expires_at_str)
-            return parsed.replace(tzinfo=None) if parsed.tzinfo else parsed
+            if parsed.tzinfo is not None:
+                # Convert to UTC and strip tzinfo to match naive convention
+                return parsed.astimezone(timezone.utc).replace(tzinfo=None)
+            return parsed
         except (ValueError, TypeError):
             return None
 

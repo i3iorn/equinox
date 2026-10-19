@@ -15,20 +15,20 @@ logger = logging.getLogger(__name__)
 
 class InterceptorChain:
     def __init__(self) -> None:
-        self.request_interceptors: list[RequestInterceptor] = []
-        self.response_interceptors: list[ResponseInterceptor] = []
-        self.error_interceptors: list[ErrorInterceptor] = []
+        self._request_interceptors: list[RequestInterceptor] = []
+        self._response_interceptors: list[ResponseInterceptor] = []
+        self._error_interceptors: list[ErrorInterceptor] = []
 
     def add_request_interceptor(self, interceptor: RequestInterceptor) -> None:
-        self.request_interceptors.append(interceptor)
+        self._request_interceptors.append(interceptor)
         logger.debug("Request interceptor registered: %s", type(interceptor).__name__)
 
     def add_response_interceptor(self, interceptor: ResponseInterceptor) -> None:
-        self.response_interceptors.append(interceptor)
+        self._response_interceptors.append(interceptor)
         logger.debug("Response interceptor registered: %s", type(interceptor).__name__)
 
     def add_error_interceptor(self, interceptor: ErrorInterceptor) -> None:
-        self.error_interceptors.append(interceptor)
+        self._error_interceptors.append(interceptor)
         logger.debug("Error interceptor registered: %s", type(interceptor).__name__)
 
     # -------- Request --------
@@ -37,11 +37,11 @@ class InterceptorChain:
         context = InterceptorContext(request=request)
         logger.debug(
             "Processing request through %d interceptor(s)",
-            len(self.request_interceptors),
+            len(self._request_interceptors),
             extra={"method": request.method, "url": redact_url(request.url)},
         )
 
-        for interceptor in self.request_interceptors:
+        for interceptor in self._request_interceptors:
             if context.request is None or not interceptor.can_intercept(context.request):
                 continue
 
@@ -90,11 +90,11 @@ class InterceptorChain:
         context = InterceptorContext(request=request, response=response)
         logger.debug(
             "Processing response through %d interceptor(s)",
-            len(self.response_interceptors),
+            len(self._response_interceptors),
             extra={"status_code": response.status_code},
         )
 
-        for interceptor in self.response_interceptors:
+        for interceptor in self._response_interceptors:
             if context.response is None or not interceptor.can_intercept(context.response):
                 continue
 
@@ -143,11 +143,11 @@ class InterceptorChain:
         context = InterceptorContext(request=request, error=error)
         logger.debug(
             "Processing error through %d interceptor(s): %s",
-            len(self.error_interceptors),
+            len(self._error_interceptors),
             type(error).__name__,
         )
 
-        for interceptor in self.error_interceptors:
+        for interceptor in self._error_interceptors:
             if context.error is None or not interceptor.can_intercept(
                 context.error,
                 context.request,

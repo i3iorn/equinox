@@ -1,6 +1,6 @@
 """100% coverage tests for equinox.auth.base"""
 
-from typing import Any, Dict
+from typing import Any
 
 import pytest
 
@@ -20,14 +20,14 @@ class ConcreteAuth(AuthStrategy):
     def __init__(self, token: str = "tok") -> None:
         self.token = token
 
-    def apply(self, request: Any, headers: Dict[str, str]) -> None:
+    def apply(self, request: Any, headers: dict[str, str]) -> None:
         headers["Authorization"] = f"Bearer {self.token}"
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return {"type": "concrete", "token": self.token}
 
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> "ConcreteAuth":
+    def from_dict(cls, data: dict[str, Any]) -> "ConcreteAuth":
         return cls(token=data["token"])
 
 
@@ -212,7 +212,7 @@ class TestConcreteAuth:
 
     def test_apply_sets_header(self):
         auth = ConcreteAuth("abc123")
-        headers: Dict[str, str] = {}
+        headers: dict[str, str] = {}
         auth.apply(request=None, headers=headers)
         assert headers["Authorization"] == "Bearer abc123"
 

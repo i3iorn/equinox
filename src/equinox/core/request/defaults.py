@@ -9,7 +9,9 @@ for backward compatibility.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Callable, Union
+from typing import TYPE_CHECKING
+
+from collections.abc import Callable
 from uuid import uuid4
 
 from equinox.versioning import get_app_version
@@ -19,7 +21,7 @@ if TYPE_CHECKING:
 
 # ── Registry of system defaults ───────────────────────────────────────────────
 
-_SYSTEM_DEFAULTS: dict[str, Union[str, Callable[[], str]]] = {
+_SYSTEM_DEFAULTS: dict[str, str | Callable[[], str]] = {
     # Unique identifier for each outbound request — useful for distributed
     # tracing and server-side correlation logs.
     "X-Request-ID": lambda: str(uuid4()),

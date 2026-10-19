@@ -36,12 +36,25 @@ from ._path import _PathValidator
 from ._ssrf import _SsrfGuard
 from ._url import _UrlValidator
 
-__all__ = ["VALID_HTTP_METHODS", "Validator"]
+__all__ = ["VALID_HTTP_METHODS", "Validator", "Sanitizer"]
 
 
 # ---------------------------------------------------------------------------
 # Validator — public façade (backward-compatible API)
 # ---------------------------------------------------------------------------
+
+
+class Sanitizer:
+    """Display sanitization facade (separated from structural validation)."""
+
+    @classmethod
+    def sanitize_for_display(cls, text: Any, max_length: int = 1000) -> str:
+        if not isinstance(text, str):
+            text = str(text)
+        if len(text) > max_length:
+            text = text[:max_length] + "..."
+        # Strip control characters while preserving newlines (\n) and tabs (\t).
+        return re.sub(r"[\x00-\x08\x0B-\x0C\x0E-\x1F\x7F]", "", text)
 
 
 class Validator:
@@ -72,9 +85,18 @@ class Validator:
         return _UrlValidator.validate(url)
 
     @classmethod
-    def validate_resolved_url(cls, url: str) -> str:
-        """Full structural URL validation after placeholder expansion."""
-        return _UrlValidator.validate_resolved(url)
+    def validate_resolved_url(
+        cls,
+        url: str,
+        *,
+        tolerate_dns_failure: bool = False,
+    ) -> str:
+        """Full structural URL validation after placeholder expansion.
+
+        ``tolerate_dns_failure`` relaxes only the SSRF guard's DNS step; see
+        :meth:`_SsrfGuard.check`.
+        """
+        return _UrlValidator.validate_resolved(url, tolerate_dns_failure=tolerate_dns_failure)
 
     # -- Headers --------------------------------------------------------------
 
@@ -171,17 +193,6 @@ class Validator:
 
             raise ValidationError(f"Invalid HTTP method: {method}")
         return method
-
-    # -- Display sanitization -------------------------------------------------
-
-    @classmethod
-    def sanitize_for_display(cls, text: Any, max_length: int = 1000) -> str:
-        if not isinstance(text, str):
-            text = str(text)
-        if len(text) > max_length:
-            text = text[:max_length] + "..."
-        # Strip control characters while preserving newlines (\n) and tabs (\t).
-        return re.sub(r"[\x00-\x08\x0B-\x0C\x0E-\x1F\x7F]", "", text)
 
     # -- SSRF (Hostname validation) -------------------------------------------
 

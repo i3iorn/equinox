@@ -30,16 +30,16 @@ def _build_parser() -> Callable[[str], URLComponents]:
         import urlps
         from urlps.exceptions import URLpError
 
-        _probe = urlps.parse_url_unsafe("https://example.com")
+        _probe = urlps.parse_url_local("https://example.com")
         _ = _probe.scheme, _probe.netloc, _probe.path, _probe.query
 
         def _urlps_parse(url: str) -> URLComponents:
-            # parse_url_unsafe() raises on malformed/incomplete input (e.g. "",
+            # parse_url_local() raises on malformed/incomplete input (e.g. "",
             # "http://"), unlike urlparse(); callers of this module rely on a
             # parser that always returns best-effort components, so fall back
             # to the stdlib splitter for whatever urlps refuses to parse.
             try:
-                parsed = urlps.parse_url_unsafe(url)
+                parsed = urlps.parse_url_local(url)
             except URLpError:
                 return _stdlib_parse(url)
             return URLComponents(

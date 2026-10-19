@@ -51,6 +51,12 @@ _DANGEROUS_MODULES = frozenset(
         "webbrowser",
         "zipimport",
         "runpy",
+        "posix",
+        "nt",
+        "_winapi",
+        "msvcrt",
+        "sys",
+        "platform",
     },
 )
 
@@ -75,6 +81,14 @@ _DANGEROUS_FUNCTIONS = frozenset(
         "compile",
         "__import__",
         "breakpoint",
+        # Introspection primitives used to reach the real builtins or module
+        # namespace and sidestep the checks above.
+        "getattr",
+        "setattr",
+        "delattr",
+        "globals",
+        "locals",
+        "vars",
     },
 )
 
@@ -525,6 +539,18 @@ def _find_dangerous_imports(tree: "ast.AST") -> list[str]:
             top = node.module.split(".")[0]
             if top in _DANGEROUS_MODULES:
                 violations.append(f"Forbidden import: {node.module} (line {node.lineno})")
+                continue
+            # ``from os import system`` binds a bare Name, so the attribute
+            # check in _find_dangerous_os_calls never sees the call. Flag
+            # forbidden names pulled straight out of ``os``, and treat a
+            # wildcard as importing all of them.
+            if top == "os":
+                for alias in node.names:
+                    if alias.name == "*" or alias.name in _OS_FORBIDDEN:
+                        violations.append(
+                            f"Forbidden import: from {node.module} import {alias.name} "
+                            f"(line {node.lineno})",
+                        )
 
     return violations
 
@@ -539,6 +565,14 @@ def _find_dangerous_os_calls(tree: "ast.AST") -> list[str]:
     return violations
 
 
+def _subscript_string_key(node: "ast.Subscript") -> str | None:
+    """Return the literal string key of *node*, or None when it is dynamic."""
+    slice_node = node.slice
+    if isinstance(slice_node, ast.Constant) and isinstance(slice_node.value, str):
+        return slice_node.value
+    return None
+
+
 def _find_dangerous_functions(tree: "ast.AST") -> list[str]:
     violations = []
     for node in ast.walk(tree):
@@ -546,6 +580,19 @@ def _find_dangerous_functions(tree: "ast.AST") -> list[str]:
             func = node.func
             if isinstance(func, ast.Name) and func.id in _DANGEROUS_FUNCTIONS:
                 violations.append(f"Forbidden function: {func.id}() (line {node.lineno})")
+                continue
+            # ``builtins.eval(x)`` / ``obj.getattr(x, y)``: the callee is an
+            # attribute, so the bare-Name check above misses it.
+            if isinstance(func, ast.Attribute) and func.attr in _DANGEROUS_FUNCTIONS:
+                violations.append(f"Forbidden call: .{func.attr}() (line {node.lineno})")
+                continue
+            # ``d["__import__"](name)``: a subscript hides the name from both
+            # checks above. Only literal string keys are detectable, but that
+            # is the form an attacker reaches for first.
+            if isinstance(func, ast.Subscript):
+                key = _subscript_string_key(func)
+                if key is not None and key in _DANGEROUS_FUNCTIONS:
+                    violations.append(f"Forbidden call: [{key!r}]() (line {node.lineno})")
     return violations
 
 

@@ -11,6 +11,19 @@ from typing import Any
 
 ROOT = Path(__file__).resolve().parents[1]
 
+# Advisories with no upstream fix, whose vulnerable code path this project
+# demonstrably never exercises. Keep this minimal: each entry must carry the
+# reason, and a waiver only applies while the advisory is genuinely unpatched
+# ("fixed in: none listed") -- once a fix is published the entry stops
+# applying and the scan fails until the dependency is upgraded.
+_WAIVED_VULNS: dict[str, str] = {
+    "PYSEC-2026-3740": (
+        "nltk pathsec model import/export sandbox bypass (CVE-2026-81726, "
+        "GHSA-8mgp-746c-j5xp): no upstream fix; equally, this project never "
+        "imports nltk, so the vulnerable APIs are unreachable"
+    ),
+}
+
 
 def _extract_json_payload(raw_output: str) -> str:
     """Extract the JSON object from pip-audit output."""
@@ -83,14 +96,30 @@ def run_scan() -> int:
         return 1
 
     findings = _parse_findings(report)
-    if findings:
+    waived: list[tuple[str, str, str, str]] = []
+    blocking: list[tuple[str, str, str, str]] = []
+    for row in findings:
+        package, version, vuln_id, fixed = row
+        reason = _WAIVED_VULNS.get(vuln_id)
+        if reason is not None and fixed == "none listed":
+            waived.append(row)
+        else:
+            blocking.append(row)
+
+    for package, version, vuln_id, _fixed in waived:
+        print(f"WAIVED (not blocking): {package}=={version}: {vuln_id} - {_WAIVED_VULNS[vuln_id]}")
+
+    if blocking:
         print("Dependency vulnerability scan FAILED: known vulnerabilities detected.")
-        for package, version, vuln_id, fixed in findings:
+        for package, version, vuln_id, fixed in blocking:
             print(f"  - {package}=={version}: {vuln_id} (fixed in: {fixed})")
         print("Resolve by updating dependency bounds in pyproject.toml and reinstalling.")
         return 1
 
-    if result.returncode != 0:
+    # pip-audit exits non-zero whenever it reports any vulnerability, so a
+    # non-zero exit is only an audit-tool failure when it produced no findings
+    # at all. If every finding was waived, the output above explains why.
+    if result.returncode != 0 and not findings:
         print("Dependency vulnerability scan FAILED: pip-audit exited non-zero without findings.")
         if result.stdout.strip():
             print(result.stdout.strip())

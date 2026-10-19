@@ -15,6 +15,11 @@ from equinox.security import crypto
 logger = logging.getLogger(__name__)
 
 _fernet: Fernet | None = None
+# Whether _fernet was derived from a master password rather than the file key.
+# A file-key instance must not shadow a loader that supplies the master
+# password, or auth data stays encrypted under ~/.equinox/.key while the user
+# believes the master password protects it.
+_fernet_from_master_password = False
 _fernet_lock = threading.Lock()
 
 
@@ -29,40 +34,69 @@ def get_or_create_key(key_path: Path | None = None) -> bytes:
 def get_fernet(
     master_password_loader: Callable[[], Fernet | None] | None = None,
 ) -> Fernet:
-    """Return a cached Fernet instance with optional master-password override."""
-    global _fernet
+    """Return a cached Fernet instance with optional master-password override.
+
+    A cached master-password Fernet always wins. A cached *file-key* Fernet,
+    however, must not shadow *master_password_loader*: when that loader is
+    given and can produce a key, its result takes precedence. Otherwise a
+    Fernet cached early in startup would keep auth data encrypted under the
+    file key even though a master password is configured.
+    """
+    global _fernet, _fernet_from_master_password
     cached = _fernet
-    if cached is not None:
+    if cached is not None and (_fernet_from_master_password or master_password_loader is None):
         return cached
 
     with _fernet_lock:
         cached = _fernet
-        if cached is not None:
+        if cached is not None and (_fernet_from_master_password or master_password_loader is None):
             return cached
 
         loaded = _load_master_password_fernet(master_password_loader)
         if loaded is not None:
             _fernet = loaded
+            _fernet_from_master_password = True
             return _fernet
+
+        # The loader was absent or reported "no master password configured".
+        # An existing cache is already the file key, so reuse it; only build a
+        # new file-key Fernet when nothing has been cached yet.
+        if cached is not None:
+            return cached
 
         key = get_or_create_key()
         fernet_obj = crypto.make_fernet(key)
         if not isinstance(fernet_obj, Fernet):
             raise SecurityError("Crypto backend returned invalid Fernet instance")
         _fernet = fernet_obj
+        _fernet_from_master_password = False
         return _fernet
 
 
 def _load_master_password_fernet(
     master_password_loader: Callable[[], Fernet | None] | None,
 ) -> Fernet | None:
-    """Load Fernet from a master-password callback when available."""
+    """Load a Fernet from a master-password callback when one is available.
+
+    A loader returning ``None`` means "no master password configured" and is a
+    normal fallback to the file key. A loader that *raises*, by contrast, is
+    surfaced rather than swallowed: silently falling back would encrypt data
+    under the file key while the user believes the master password protects it.
+    """
     if master_password_loader is None:
         return None
     try:
         return master_password_loader()
-    except Exception:
-        return None
+    except Exception as exc:
+        logger.error(
+            "Master password loader failed; refusing to fall back to the file key",
+            exc_info=True,
+        )
+        raise SecurityError(
+            "Master password could not be loaded; secret encryption aborted.",
+            details={"error": type(exc).__name__},
+            hint_key="auth_failed",
+        ) from exc
 
 
 def encrypt_utf8(
@@ -141,5 +175,6 @@ def decode_utf8(plaintext_bytes: bytes, field_name: str) -> str:
 
 def reset_fernet_cache() -> None:
     """Clear cached Fernet instance (used by tests)."""
-    global _fernet
+    global _fernet, _fernet_from_master_password
     _fernet = None
+    _fernet_from_master_password = False

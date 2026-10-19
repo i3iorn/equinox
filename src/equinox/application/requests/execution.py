@@ -23,7 +23,7 @@ This module must never import Qt types.
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, Any, Protocol, cast
 
 from equinox.application.requests._assembly import (
     apply_default_headers,
@@ -52,6 +52,22 @@ if TYPE_CHECKING:
     from equinox.application.requests.models import RequestEditorSnapshot
 
 logger = logging.getLogger(__name__)
+
+
+# ---------------------------------------------------------------------------
+# Pipeline stage interface (OCP — new stages injectable without editing prepare_send)
+# ---------------------------------------------------------------------------
+
+
+class SendPipelineStage(Protocol):
+    """A single step in the send-preparation pipeline."""
+
+    def execute(
+        self,
+        snapshot: RequestEditorSnapshot,
+        variables: dict[str, Any],
+        variable_sources: dict[str, str],
+    ) -> tuple[dict[str, Any], dict[str, str], Any] | SendOrchestratorResult: ...
 
 
 # ── Auth resolution ───────────────────────────────────────────────────────────

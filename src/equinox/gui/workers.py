@@ -378,7 +378,14 @@ class RequestWorker(QThread):
                 self._proxy,
                 self._cancel_event,
             )
-            response = client.send(self.request)
+            # Close deterministically rather than leaving the connection pool to
+            # the garbage collector: each send builds its own client, so an
+            # unclosed one strands sockets until GC runs. Not a ``with`` block —
+            # ``__enter__`` would run a synchronous proxy probe first.
+            try:
+                response = client.send(self.request)
+            finally:
+                client.close()
             self._emit_if_active(response)
         except Exception as exc:
             self._emit_if_active(enrich_exception(exc))
@@ -493,17 +500,21 @@ class BenchmarkWorker(QThread):
             self.finished.emit(times, self._n)
             return
 
-        for i in range(self._n):
-            if self._cancel_event.is_set():
-                break
-            try:
-                t0 = time.monotonic()
-                client.send(self._request)
-                times.append(time.monotonic() - t0)
-            except Exception:
-                errors += 1
-                logger.debug("Benchmark iteration %d/%d failed", i + 1, self._n, exc_info=True)
-            self.progress.emit(i + 1)
+        try:
+            for i in range(self._n):
+                if self._cancel_event.is_set():
+                    break
+                try:
+                    t0 = time.monotonic()
+                    client.send(self._request)
+                    times.append(time.monotonic() - t0)
+                except Exception:
+                    errors += 1
+                    logger.debug("Benchmark iteration %d/%d failed", i + 1, self._n, exc_info=True)
+                self.progress.emit(i + 1)
+        finally:
+            # The worker owns this client; release its pooled connections.
+            client.close()
 
         self.finished.emit(times, errors)
 

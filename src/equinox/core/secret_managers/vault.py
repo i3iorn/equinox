@@ -8,6 +8,7 @@ from __future__ import annotations
 import json
 import logging
 from typing import Any
+from urllib.parse import urlsplit
 
 from equinox.core import urls
 from equinox.core.secret_managers.base import (
@@ -79,12 +80,28 @@ class VaultManager(SecretManager):
             )
 
         try:
-            # In explicit insecure-http mode, avoid DNS-dependent SSRF checks so
-            # local/offline test environments remain deterministic.
-            if allow_insecure_http and raw_url.lower().startswith("http://"):
+            # ``allow_insecure_http`` relaxes *transport* only. The SSRF guard
+            # must still run: these requests carry the Vault token in an
+            # ``X-Vault-Token`` header, so an internal/metadata host would leak
+            # it. A previous version skipped the guard for *any* host in
+            # insecure mode, so enabling local HTTP testing silently removed
+            # internal-host protection too.
+            #
+            # Two things stay relaxed in insecure mode, and nothing else:
+            #   * loopback, so a local Vault (http://127.0.0.1:8200) works;
+            #   * DNS failure, so offline/CI environments whose hostname does
+            #     not resolve remain deterministic.
+            # Metadata hostnames and literal private IPs are still rejected,
+            # because the guard checks those before it ever resolves DNS.
+            _host = urlsplit(raw_url).hostname or ""
+            _is_loopback = _host in {"127.0.0.1", "::1", "localhost"}
+            if allow_insecure_http and _is_loopback:
                 validated_url = Validator.validate_url(raw_url)
             else:
-                validated_url = Validator.validate_resolved_url(raw_url)
+                validated_url = Validator.validate_resolved_url(
+                    raw_url,
+                    tolerate_dns_failure=allow_insecure_http,
+                )
         except Exception as exc:
             raise SecretManagerError(f"Invalid Vault URL: {exc}")
 

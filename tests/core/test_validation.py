@@ -3,7 +3,7 @@
 import pytest
 
 from equinox.core.exceptions import ValidationError
-from equinox.core.validation import Validator
+from equinox.core.validation import Sanitizer, Validator
 
 
 class TestURLValidation:
@@ -230,12 +230,12 @@ class TestSanitization:
     def test_sanitize_long_text(self):
         """Test sanitizing long text."""
         long_text = "x" * 2000
-        sanitized = Validator.sanitize_for_display(long_text, max_length=100)
+        sanitized = Sanitizer.sanitize_for_display(long_text, max_length=100)
         assert len(sanitized) <= 103  # 100 + "..."
 
     def test_sanitize_control_chars(self):
         """Test sanitizing control characters."""
         text_with_control = "Hello\x00\x01World"
-        sanitized = Validator.sanitize_for_display(text_with_control)
+        sanitized = Sanitizer.sanitize_for_display(text_with_control)
         assert "\x00" not in sanitized
         assert "\x01" not in sanitized

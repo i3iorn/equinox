@@ -44,10 +44,17 @@ class _UrlValidator:
         return url
 
     @classmethod
-    def validate_resolved(cls, url: str) -> str:
+    def validate_resolved(
+        cls,
+        url: str,
+        *,
+        tolerate_dns_failure: bool = False,
+    ) -> str:
         """Full structural validation after all ``{{placeholders}}`` are expanded.
 
         Call this at send-time when the URL is fully resolved.
+        ``tolerate_dns_failure`` is forwarded to the SSRF guard; see
+        :meth:`_SsrfGuard.check` for exactly what it does and does not relax.
         """
         url = cls.validate(url)
 
@@ -79,7 +86,7 @@ class _UrlValidator:
 
         parsed_host = urls.url_metadata(expanded).get("hostname")
         if parsed_host:
-            _SsrfGuard.check(parsed_host)
+            _SsrfGuard.check(parsed_host, tolerate_dns_failure=tolerate_dns_failure)
 
         _logger.debug(
             "URL validation passed",

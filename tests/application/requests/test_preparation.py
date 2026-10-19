@@ -91,11 +91,11 @@ def test_build_preflight_issues_returns_structured_warnings() -> None:
         "auth.preflight_warning",
     ]
     assert issues_to_messages(issues) == [
-        "Strict policy blocks insecure HTTP requests; use https://",
-        "Strict policy requires SSL verification",
-        "Strict policy recommends disabling redirects",
-        "Strict policy disables pre/post scripts",
-        "auth-warning:x",
+        "url: Strict policy blocks insecure HTTP requests; use https://",
+        "verify_ssl: Strict policy requires SSL verification",
+        "follow_redirects: Strict policy recommends disabling redirects",
+        "scripts: Strict policy disables pre/post scripts",
+        "auth: auth-warning:x",
     ]
 
 

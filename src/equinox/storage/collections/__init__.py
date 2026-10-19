@@ -9,11 +9,11 @@ Sub-modules
 - ``variables``  – Collection-variable and variable-group mixin
 """
 
-from equinox.storage.collections.auth import CollectionAuthMixin  # noqa: F401
-from equinox.storage.collections.folders import CollectionFoldersMixin  # noqa: F401
-from equinox.storage.collections.manager import CollectionManager  # noqa: F401 – public API
-from equinox.storage.collections.ordering import CollectionOrderingMixin  # noqa: F401
-from equinox.storage.collections.variables import CollectionVariablesMixin  # noqa: F401
+from equinox.storage.collections.auth import CollectionAuthMixin
+from equinox.storage.collections.folders import CollectionFoldersMixin
+from equinox.storage.collections.manager import CollectionManager  # – public API
+from equinox.storage.collections.ordering import CollectionOrderingMixin
+from equinox.storage.collections.variables import CollectionVariablesMixin
 
 __all__ = [
     "CollectionManager",

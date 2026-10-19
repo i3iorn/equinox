@@ -34,7 +34,13 @@ logger = logging.getLogger(__name__)
 
 
 def _read_or_create_salt() -> bytes:
-    """Return the salt used for deriving the key; create it if missing."""
+    """Return the salt used for deriving the key; create it if missing.
+
+    The salt is not secret, but the file is created ``0o600`` like the key
+    file so other users on a shared host cannot read or replace it. The salt
+    is not recoverable — losing it makes every master-password blob
+    undecryptable — so creation uses ``O_EXCL`` to avoid a concurrent clobber.
+    """
     _salt_dir = _SALT_FILE.parent
     _salt_dir.mkdir(parents=True, exist_ok=True)
     if _SALT_FILE.exists():
@@ -43,7 +49,17 @@ def _read_or_create_salt() -> bytes:
     import secrets as _secrets
 
     s = _secrets.token_bytes(16)
-    _SALT_FILE.write_bytes(s)
+    try:
+        fd = os.open(str(_SALT_FILE), os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    except FileExistsError:
+        # Another process created the salt first; use that one.
+        return _SALT_FILE.read_bytes()
+    with os.fdopen(fd, "wb") as fh:
+        fh.write(s)
+    try:
+        os.chmod(_SALT_FILE, 0o600)
+    except (OSError, NotImplementedError):
+        logger.warning("Could not set restrictive permissions on %s", _SALT_FILE)
     return s
 
 
@@ -124,17 +140,23 @@ def _derive_fernet_from_password(password: str | None) -> Fernet | None:
 def get_fernet_for_password(password: str | None = None) -> Fernet | None:
     """Return a Fernet instance derived from the given password.
 
-    If password is None, attempts to load a configured master password. If no
-    master password is configured, returns None.
+    An explicit *password* always wins. Startup caches a Fernet for the
+    configured master password; a later rotation passes the *new* password
+    here, and returning the cached instance silently re-encrypted under the
+    old key. Only fall back to the cache when no password was supplied.
+
+    If *password* is None, reuse the cached instance or derive from the
+    configured master password. If no master password is configured, returns
+    None.
     """
     global _cached_fernet
+    if password is not None:
+        _cached_fernet = _derive_fernet_from_password(password)
+        return _cached_fernet
     if _cached_fernet is not None:
         return _cached_fernet
-    if password is None:
-        password = get_master_password()
-    f = _derive_fernet_from_password(password)
-    _cached_fernet = f
-    return f
+    _cached_fernet = _derive_fernet_from_password(get_master_password())
+    return _cached_fernet
 
 
 def ensure_master_password_initialized() -> Fernet | None:

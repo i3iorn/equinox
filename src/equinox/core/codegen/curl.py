@@ -1,5 +1,4 @@
 import shlex
-from typing import List, Union
 
 from equinox.core.request import Request, Response
 
@@ -8,7 +7,7 @@ from .utils import _build_url_with_params
 
 
 class CurlGenerator:
-    def generate(self, response_or_request: Union[Response, Request]) -> str:
+    def generate(self, response_or_request: Response | Request) -> str:
         request = (
             response_or_request.request
             if isinstance(response_or_request, Response)
@@ -16,7 +15,7 @@ class CurlGenerator:
         )
         url = _build_url_with_params(request.url, request.params or {})
 
-        parts: List[str] = ["curl", "-X", request.method]
+        parts: list[str] = ["curl", "-X", request.method]
 
         headers = dict(request.headers or {})
         _inject_auth_into_headers(request, headers)
@@ -31,4 +30,4 @@ class CurlGenerator:
 
         parts.append(url)
 
-        return " ".join(shlex.quote(p) for p in parts)
+        return shlex.join(parts)

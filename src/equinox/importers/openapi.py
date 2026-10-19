@@ -13,7 +13,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-import yaml  # type: ignore[import-untyped]
+import yaml
 
 from equinox.core.exceptions import SecurityError, ValidationError
 from equinox.core.request import Request
@@ -579,7 +579,7 @@ class OpenAPIImporter:
         # Composites: delegate to first sub-schema
         for kw in ("oneOf", "anyOf", "allOf"):
             sub = schema.get(kw)
-            if sub and isinstance(sub, list) and isinstance(sub[0], dict):
+            if sub and isinstance(sub, list) and len(sub) > 0 and isinstance(sub[0], dict):
                 return OpenAPIImporter._resolve_schema_type(sub[0])
 
         schema_type = schema.get("type", "object")

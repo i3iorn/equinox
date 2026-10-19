@@ -7,10 +7,10 @@ redaction logic.
 
 from __future__ import annotations
 
-from .crypto import get_or_create_fernet, get_or_create_raw_key, make_fernet  # noqa: F401
+from .crypto import get_or_create_fernet, get_or_create_raw_key, make_fernet
 
 # Re-export the main redaction wrappers
-from .redactor import (  # noqa: F401  # noqa: F401
+from .redactor import (  #
     SENSITIVE_HEADER_NAMES,
     SENSITIVE_PAYLOAD_KEYS,
     mask_secret,

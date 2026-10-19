@@ -1,9 +1,8 @@
 """Request/response pipeline: interceptors, audit logging, and error mapping."""
 
-import inspect
 import logging
-from collections.abc import Iterable
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
+from typing import Any, Protocol, TypedDict
 
 from equinox.core.exceptions import EquinoxError, RequestError
 from equinox.core.interceptors.chain import InterceptorChain
@@ -17,14 +16,13 @@ logger = logging.getLogger(__name__)
 # Collaborator contracts (structural types)
 # ---------------------------------------------------------------------------
 
-try:
-    from typing import Protocol, TypedDict
-except ImportError:  # pragma: no cover — Python < 3.8 safety net
-    from typing_extensions import Protocol, TypedDict
 
+class AuditLogger(Protocol):
+    """Explicit structural interface for audit loggers.
 
-class _AuditLogger(Protocol):
-    """Minimal structural interface required of the audit logger."""
+    All implementations must accept ``request_id``; no runtime signature
+    inspection is required.
+    """
 
     def log_request(
         self,
@@ -34,6 +32,13 @@ class _AuditLogger(Protocol):
         status_code: int | None = None,
         error: str | None = None,
         request_id: str | None = None,
+    ) -> None: ...
+
+    def log_security_violation(
+        self,
+        violation_type: str,
+        details: dict[str, Any],
+        user: str | None = None,
     ) -> None: ...
 
 
@@ -88,30 +93,18 @@ class RequestPipeline:
       :class:`~equinox.core.exceptions.RequestError`.
     """
 
-    __slots__ = ("_interceptors", "_audit", "_error_handlers", "_audit_supports_request_id")
+    __slots__ = ("_interceptors", "_audit", "_error_handlers")
 
     def __init__(
         self,
         interceptors: InterceptorChain,
-        audit_logger: "_AuditLogger",
+        audit_logger: "AuditLogger",
         error_handlers: "Iterable[_ErrorHandlerEntry]",
     ) -> None:
         self._interceptors = interceptors
-        self._audit: _AuditLogger = audit_logger
+        self._audit: AuditLogger = audit_logger
         # Materialise once so iteration is always O(n) without re-wrapping.
         self._error_handlers: list[_ErrorHandlerEntry] = list(error_handlers)
-        self._audit_supports_request_id = self._supports_request_id(audit_logger)
-
-    @staticmethod
-    def _supports_request_id(audit_logger: "_AuditLogger") -> bool:
-        """Return True when ``audit_logger.log_request`` accepts ``request_id``."""
-        try:
-            params = inspect.signature(audit_logger.log_request).parameters
-        except (TypeError, ValueError):
-            return False
-        return "request_id" in params or any(
-            param.kind == inspect.Parameter.VAR_KEYWORD for param in params.values()
-        )
 
     def _audit_log_request(
         self,
@@ -122,17 +115,14 @@ class RequestPipeline:
         error: str | None = None,
         request_id: str | None = None,
     ) -> None:
-        """Call the audit logger while remaining compatible with legacy signatures."""
-        if self._audit_supports_request_id:
-            self._audit.log_request(
-                method,
-                url,
-                status_code=status_code,
-                error=error,
-                request_id=request_id,
-            )
-            return
-        self._audit.log_request(method, url, status_code=status_code, error=error)
+        """Call the audit logger using the explicit AuditLogger interface."""
+        self._audit.log_request(
+            method,
+            url,
+            status_code=status_code,
+            error=error,
+            request_id=request_id,
+        )
 
     # ── Error-handling helpers ────────────────────────────────────────────────
 
@@ -153,7 +143,7 @@ class RequestPipeline:
         if audit_tag:
             self._audit_log_request(
                 request.method,
-                redact_url(request.url) or "",
+                request.url,
                 error=audit_tag,
                 request_id=request.correlation_id,
             )

@@ -25,7 +25,7 @@ class TestHTTPClientImport:
     """HTTPClient is importable from the package's public API."""
 
     def test_http_client_importable_from_package(self) -> None:
-        from equinox.core.client import HTTPClient  # noqa: F401 — import must not raise
+        from equinox.core.client import HTTPClient  # — import must not raise
 
         assert HTTPClient is not None
 
@@ -126,7 +126,7 @@ class TestReImportIdempotency:
 
     def test_repeated_import_returns_same_class(self) -> None:
         from equinox.core.client import HTTPClient as first
-        from equinox.core.client import HTTPClient as second  # noqa: PLC0415
+        from equinox.core.client import HTTPClient as second
 
         assert first is second
 
@@ -156,9 +156,12 @@ class TestImportErrors:
 
     def test_import_nonexistent_name_raises(self) -> None:
         with pytest.raises(ImportError):
-            from equinox.core.client import (
-                NonExistentClass,  # type: ignore[attr-defined]  # noqa: F401
-            )
+            from equinox.core.client import NonExistentClass  # type: ignore[attr-defined]
+
+            # Referencing the name keeps the import from reading as unused
+            # (ruff would auto-fix it away, leaving a bare `pass`); the line
+            # itself is unreachable because the import raised first.
+            assert NonExistentClass is not None  # pragma: no cover
 
     def test_getattr_nonexistent_raises_attribute_error(self) -> None:
         import equinox.core.client as pkg

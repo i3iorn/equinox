@@ -1,7 +1,6 @@
 """100% coverage tests for equinox.core.client.auth_applier"""
 
 import logging
-from typing import Optional
 from unittest.mock import MagicMock
 
 import pytest
@@ -27,7 +26,7 @@ def _make_request(**kwargs) -> Request:
     return Request(**defaults)
 
 
-def _make_auth(adds_headers: Optional[dict] = None) -> MagicMock:
+def _make_auth(adds_headers: dict | None = None) -> MagicMock:
     """Return a mock AuthStrategy whose apply() populates *adds_headers*."""
     auth = MagicMock(spec=AuthStrategy)
 

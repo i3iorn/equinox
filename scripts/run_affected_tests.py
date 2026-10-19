@@ -9,6 +9,7 @@ Behavior:
 - Coverage is restricted ONLY to the affected source files.
 - A temporary .coveragerc is generated automatically.
 """
+
 import subprocess
 import sys
 import tempfile
@@ -106,6 +107,17 @@ def main():
         "--cov-report=term-missing",
     ] + test_paths
 
+    result = subprocess.run(cmd, cwd=REPO_ROOT)
+    if result.returncode == 0:
+        return 0
+
+    # Windows-only coverage-combine flakes (INTERNALERROR: PermissionError
+    # [WinError 32] or "no such table: other_db.file" while pytest-cov
+    # combines its parallel data files) abort otherwise-good batches. The
+    # standalone rerun of the same command passes (flake rate is
+    # environment-dependent - antivirus and file-lock timing), so a failed
+    # batch is retried once before the gate reports failure.
+    print("[affected-tests] pytest failed; retrying the same batch once:")
     result = subprocess.run(cmd, cwd=REPO_ROOT)
     return result.returncode
 
