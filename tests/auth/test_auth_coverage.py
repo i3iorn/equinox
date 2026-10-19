@@ -708,10 +708,10 @@ class TestOAuth2Coverage:
     # ── _needs_refresh edge cases ─────────────────────────────────────────
 
     def test_needs_refresh_no_expiry(self):
-        """Lines 173-176: no expires_at → don't refresh (reuse token)."""
+        """No expires_at → treat as needing refresh (safety)."""
         auth = OAuth2Auth(access_token="tok")
         auth.expires_at = None
-        assert not auth._needs_refresh()
+        assert auth._needs_refresh()
 
     # ── Proxy attribute ───────────────────────────────────────────────────
 

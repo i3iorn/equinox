@@ -154,9 +154,9 @@ class _HistorySerializer:
         return str(serialize_headers(headers))
 
     def _prepare_body(self, body: Any) -> str | None:
-        if body is None:
+        text = coerce_body_to_str(body)
+        if text is None:
             return None
-        text = body if isinstance(body, str) else str(body)
         if len(text) > _MAX_BODY:
             logger.warning(
                 "Body too large, truncating from %d to %d bytes",

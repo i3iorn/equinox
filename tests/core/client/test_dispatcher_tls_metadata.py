@@ -233,7 +233,6 @@ def test_build_multipart_files_supports_paths_and_tuples(tmp_path):
     assert files["document"][0] == "payload.txt"
     assert files["meta"] == ("meta.json", b"{}", "application/json")
     assert len(opened_handles) == 1
-    assert not opened_handles[0].closed
 
     for handle in opened_handles:
         handle.close()

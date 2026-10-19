@@ -14,7 +14,7 @@ _MASKED_SHORT: str = "***"
 _TRUNCATION_SUFFIX: str = "… [TRUNCATED]"
 _ELLIPSIS: str = "…"
 
-_DEFAULT_MASK_KEEP_CHARS: int = 8
+_DEFAULT_MASK_KEEP_CHARS: int = 4
 _DEFAULT_MAX_STRING_LEN: int = 200
 
 _SENSITIVE_KEY_PATTERNS: frozenset[str] = frozenset(

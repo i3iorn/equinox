@@ -226,7 +226,7 @@ class OAuth2Auth(AuthStrategy):
         if not self.access_token:
             return True
         if not self.expires_at:
-            return False
+            return True
 
         expiry = self.expires_at
         if expiry.tzinfo is not None:

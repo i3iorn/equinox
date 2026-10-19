@@ -111,7 +111,8 @@ class TestOAuth2Coverage:
         auth = OAuth2Auth(client_id="cid", access_token="tok12345678", refresh_token="rt")
         info = auth.get_token_info()
         assert info["has_refresh_token"] is True
-        assert info["needs_refresh"] is False  # has token, no expiry
+        # Token with no expiry is considered needing refresh (safety)
+        assert info["needs_refresh"] is True
 
     def test_get_token_info_no_token(self):
         from equinox.auth._oauth2 import OAuth2Auth

@@ -36,6 +36,15 @@ def _validate_folder_path(path: str, label: str = "Folder") -> str:
     return path
 
 
+def _escape_like(text: str) -> str:
+    """Escape SQL LIKE metacharacters so they match literally (with ``ESCAPE '\\'``).
+
+    Folder paths may legally contain ``%`` / ``_`` — without escaping they
+    would cross-match sibling folders during prefix searches.
+    """
+    return text.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+
+
 class CollectionFoldersMixin:
     """Mixin providing folder management for CollectionManager."""
 
@@ -108,6 +117,7 @@ class CollectionFoldersMixin:
         require_positive_int(collection_id, "Collection ID")
         old_path = _validate_folder_path(old_path, "Old folder")
         new_path = _validate_folder_path(new_path, "New folder")
+        escaped_old = _escape_like(old_path)
 
         with self.db.transaction() as tx:
             # Batch-update request folders: replace old_path prefix with new_path.
@@ -119,7 +129,7 @@ class CollectionFoldersMixin:
                 "  ELSE ? || SUBSTR(folder, ?) "
                 "END, "
                 "updated_at = CURRENT_TIMESTAMP "
-                "WHERE collection_id = ? AND (folder = ? OR folder LIKE ?)",
+                "WHERE collection_id = ? AND (folder = ? OR folder LIKE ? ESCAPE '\\')",
                 (
                     old_path,
                     new_path,  # exact match
@@ -127,7 +137,7 @@ class CollectionFoldersMixin:
                     len(old_path) + 1,  # prefix replacement
                     collection_id,
                     old_path,
-                    f"{old_path}/%",  # WHERE
+                    f"{escaped_old}/%",  # WHERE
                 ),
             )
 
@@ -138,7 +148,7 @@ class CollectionFoldersMixin:
                 "  WHEN path = ? THEN ? "
                 "  ELSE ? || SUBSTR(path, ?) "
                 "END "
-                "WHERE collection_id = ? AND (path = ? OR path LIKE ?)",
+                "WHERE collection_id = ? AND (path = ? OR path LIKE ? ESCAPE '\\')",
                 (
                     old_path,
                     new_path,
@@ -146,7 +156,7 @@ class CollectionFoldersMixin:
                     len(old_path) + 1,
                     collection_id,
                     old_path,
-                    f"{old_path}/%",
+                    f"{escaped_old}/%",
                 ),
             )
 
@@ -180,32 +190,33 @@ class CollectionFoldersMixin:
         """
         require_positive_int(collection_id, "Collection ID")
         folder_path = _validate_folder_path(folder_path)
+        escaped_path = _escape_like(folder_path)
 
         with self.db.transaction() as tx:
             # Count affected requests for logging (inside transaction for consistency)
             count_row = tx.fetchone(
                 "SELECT COUNT(*) AS cnt FROM requests WHERE collection_id=? AND "
-                "(folder=? OR folder LIKE ?)",
-                (collection_id, folder_path, f"{folder_path}/%"),
+                "(folder=? OR folder LIKE ? ESCAPE '\\')",
+                (collection_id, folder_path, f"{escaped_path}/%"),
             )
             request_count = (count_row or {}).get("cnt", 0)
             if request_count:
                 if move_to_root:
                     tx.execute(
                         "UPDATE requests SET folder=NULL, updated_at=CURRENT_TIMESTAMP "
-                        "WHERE collection_id=? AND (folder=? OR folder LIKE ?)",
-                        (collection_id, folder_path, f"{folder_path}/%"),
+                        "WHERE collection_id=? AND (folder=? OR folder LIKE ? ESCAPE '\\')",
+                        (collection_id, folder_path, f"{escaped_path}/%"),
                     )
                 else:
                     tx.execute(
                         "DELETE FROM requests WHERE collection_id=? AND "
-                        "(folder=? OR folder LIKE ?)",
-                        (collection_id, folder_path, f"{folder_path}/%"),
+                        "(folder=? OR folder LIKE ? ESCAPE '\\')",
+                        (collection_id, folder_path, f"{escaped_path}/%"),
                     )
             # Always clean up explicit folder records (handles empty folders too)
             tx.execute(
-                "DELETE FROM collection_folders WHERE collection_id=? AND (path=? OR path LIKE ?)",
-                (collection_id, folder_path, f"{folder_path}/%"),
+                "DELETE FROM collection_folders WHERE collection_id=? AND (path=? OR path LIKE ? ESCAPE '\\')",
+                (collection_id, folder_path, f"{escaped_path}/%"),
             )
 
         if request_count:
