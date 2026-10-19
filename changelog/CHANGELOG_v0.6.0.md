@@ -80,6 +80,11 @@ refuses. The two behavior changes to plan for are listed under Upgrade Notes.
 - **Change:** The `keyring.*` module override replaces an inline `# type: ignore[import-not-found]` that went unused whenever keyring was installed (and would have broken any environment without it).
 - **Benefit:** Strict type-checking passes the same way whether or not the optional keyring dependency is present.
 
+#### Added: Explicit waivers for unpatched advisories in the CVE gate
+- **Files:** `scripts/check_dependency_vulnerabilities.py`, `tests/scripts/test_check_dependency_vulnerabilities.py`
+- **Change:** The dependency scan now supports a minimal, documented waiver map. A waiver applies only to advisories with no published upstream fix ("fixed in: none listed"), each entry must carry its justification, and every waived advisory is printed to the scan output. Once upstream ships a fix, the entry stops applying and the scan fails until the dependency is upgraded.
+- **Benefit:** PYSEC-2026-3740 (nltk model import/export sandbox bypass, unpatched upstream and unreachable from Equinox, which never imports nltk) no longer wedges the release gate, without weakening the scan: everything with an available fix still blocks.
+
 #### Updated: `AGENTS.md` rewritten as an agent-facing repo guide
 - **Files:** `AGENTS.md`
 - **Change:** Replaced stale claims (outdated coverage floor, Python matrix) with the verified quality gate, documented pre-commit-vs-CI divergences (the swallowing `ruff --fix --exit-zero` hook, `detect-secrets` baseline policy), and called out high-mistake areas such as the dirty/autosave invariant and history reconstruction.

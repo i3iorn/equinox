@@ -134,3 +134,104 @@ def test_run_scan_fails_on_vulnerabilities(
     output = capsys.readouterr().out
     assert "known vulnerabilities detected" in output
     assert "cryptography==42.0.8: CVE-2026-26007" in output
+
+
+def test_run_scan_waives_unpatched_entries(
+    vulnerability_script: object,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """A waiver entry silences an advisory only while no fix is published.
+
+    pip-audit exits non-zero whenever it finds anything, so the fake audit
+    run below reports rc=1 with exactly one (waived) finding. The scan must
+    still pass and print the waiver with its justification.
+    """
+    monkeypatch.setattr(vulnerability_script, "ROOT", tmp_path)
+    monkeypatch.setattr(
+        vulnerability_script,
+        "_WAIVED_VULNS",
+        {"CVE-TEST-1": "no upstream fix; vulnerable path unreachable in this project"},
+    )
+
+    def fake_run(command, cwd=None, text=None, capture_output=None, check=None):
+        return subprocess.CompletedProcess(
+            command,
+            1,
+            stdout=(
+                '{"dependencies": ['
+                '{"name": "demo", "version": "1.0.0", "vulns": ['
+                '{"id": "CVE-TEST-1", "fix_versions": []}'
+                "]}]}"
+            ),
+            stderr="Found vulnerabilities",
+        )
+
+    monkeypatch.setattr(vulnerability_script.subprocess, "run", fake_run)
+
+    assert vulnerability_script.run_scan() == 0
+    output = capsys.readouterr().out
+    assert "PASSED" in output
+    assert "WAIVED (not blocking): demo==1.0.0: CVE-TEST-1" in output
+    assert "vulnerable path unreachable" in output
+
+
+def test_waiver_stops_applying_once_a_fix_is_published(
+    vulnerability_script: object,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """A listed advisory WITH a published fix must keep failing the scan."""
+    monkeypatch.setattr(vulnerability_script, "ROOT", tmp_path)
+    monkeypatch.setattr(
+        vulnerability_script,
+        "_WAIVED_VULNS",
+        {"CVE-TEST-1": "stale justification"},
+    )
+
+    def fake_run(command, cwd=None, text=None, capture_output=None, check=None):
+        return subprocess.CompletedProcess(
+            command,
+            1,
+            stdout=(
+                '{"dependencies": ['
+                '{"name": "demo", "version": "1.0.0", "vulns": ['
+                '{"id": "CVE-TEST-1", "fix_versions": ["2.0.0"]}'
+                "]}]}"
+            ),
+            stderr="",
+        )
+
+    monkeypatch.setattr(vulnerability_script.subprocess, "run", fake_run)
+
+    assert vulnerability_script.run_scan() == 1
+    output = capsys.readouterr().out
+    assert "known vulnerabilities detected" in output
+    assert "demo==1.0.0: CVE-TEST-1" in output
+    assert "WAIVED" not in output
+
+
+def test_run_scan_fails_when_audit_tool_fails_without_findings(
+    vulnerability_script: object,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """A non-zero audit exit with no findings is a tool failure, not a pass."""
+    monkeypatch.setattr(vulnerability_script, "ROOT", tmp_path)
+
+    def fake_run(command, cwd=None, text=None, capture_output=None, check=None):
+        return subprocess.CompletedProcess(
+            command,
+            3,
+            stdout='{"dependencies": []}',
+            stderr="pip-audit crashed",
+        )
+
+    monkeypatch.setattr(vulnerability_script.subprocess, "run", fake_run)
+
+    assert vulnerability_script.run_scan() == 1
+    output = capsys.readouterr().out
+    assert "pip-audit exited non-zero without findings" in output
