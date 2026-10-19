@@ -50,6 +50,10 @@ def initialize_oauth2_auth(
     verify_ssl: bool,
     token_auth: Literal["body", "basic"],
     extra_params: dict[str, Any] | None,
+    token_field_name: str = "access_token",
+    token_body_format: Literal["form", "json"] = "form",
+    token_request_headers: dict[str, str] | None = None,
+    default_token_ttl_seconds: int = 3600,
 ) -> None:
     """Initialize OAuth2Auth state and storage-backed token metadata."""
     auth.access_token = access_token
@@ -63,6 +67,10 @@ def initialize_oauth2_auth(
 
     _validate_token_auth(token_auth)
     auth.token_auth = token_auth
+    auth.token_field_name = _validated_token_field_name(token_field_name)
+    auth.token_body_format = _validated_body_format(token_body_format)
+    auth.token_request_headers = _validated_request_headers(token_request_headers)
+    auth.default_token_ttl_seconds = _validated_ttl_seconds(default_token_ttl_seconds)
 
     auth.token_timeout = _validated_timeout(token_timeout, auth.DEFAULT_TOKEN_TIMEOUT)
     auth._verify_ssl = bool(verify_ssl)
@@ -82,6 +90,49 @@ def initialize_oauth2_auth(
 def _validate_token_auth(token_auth: Literal["body", "basic"]) -> None:
     if token_auth not in ("body", "basic"):
         raise AuthError(f"Invalid token_auth {token_auth!r}. Must be 'body' or 'basic'.")
+
+
+def _validated_token_field_name(name: str) -> str:
+    """Return a sanitized token response field name (default: access_token)."""
+    if not isinstance(name, str) or not name.strip():
+        logger.warning("Invalid token_field_name %r, using 'access_token'", name)
+        return "access_token"
+    return name.strip()
+
+
+def _validated_body_format(fmt: Any) -> Literal["form", "json"]:
+    """Return the validated token request body format (default: form)."""
+    if fmt not in ("form", "json"):
+        logger.warning("Invalid token_body_format %r, using 'form'", fmt)
+        return "form"
+    return cast(Literal["form", "json"], fmt)
+
+
+def _validated_request_headers(headers: Any) -> dict[str, str] | None:
+    """Return a cleaned custom token-request headers mapping, or None."""
+    if headers is None:
+        return None
+    if not isinstance(headers, dict):
+        logger.warning("Invalid token_request_headers %r (must be a dict), ignoring", headers)
+        return None
+    cleaned: dict[str, str] = {}
+    for key, value in headers.items():
+        if not isinstance(key, str) or not key.strip():
+            logger.warning("Skipping invalid token_request_headers key %r", key)
+            continue
+        if not isinstance(value, str):
+            logger.warning("Skipping non-string token_request_headers value for %r", key)
+            continue
+        cleaned[key.strip()] = value
+    return cleaned or None
+
+
+def _validated_ttl_seconds(seconds: Any) -> int:
+    """Return a validated default token TTL in seconds (default: 3600)."""
+    if not isinstance(seconds, int) or isinstance(seconds, bool) or seconds <= 0:
+        logger.warning("Invalid default_token_ttl_seconds %r, using 3600", seconds)
+        return 3600
+    return seconds
 
 
 def _validated_timeout(raw_timeout: float, default_timeout: float) -> float:
@@ -211,7 +262,10 @@ def execute_token_post(
         proxy=proxy if proxy is not None else auth._proxy_for_httpx,
         verify=auth._verify_ssl if verify_ssl is None else bool(verify_ssl),
     ) as client:
-        response = client.post(auth.token_url, data=body, headers=headers)
+        if auth.token_body_format == "json":
+            response = client.post(auth.token_url, json=body, headers=headers)
+        else:
+            response = client.post(auth.token_url, data=body, headers=headers)
     response.raise_for_status()
     return response
 
@@ -229,6 +283,9 @@ def _build_token_post_payload(
         )
         body.pop("client_id", None)
         body.pop("client_secret", None)
+    custom_headers = auth.token_request_headers
+    if custom_headers:
+        headers.update(custom_headers)
     return headers, body
 
 
@@ -610,19 +667,22 @@ def apply_post_token_request(
 def apply_token_response(auth: Any, response: httpx.Response) -> None:
     """Update OAuth2 state from a successful token endpoint response."""
     token_data = _parse_token_json(auth, response)
-    raw_access = token_data.get("access_token")
+    field_name = auth.token_field_name
+    raw_access = token_data.get(field_name)
     if not raw_access:
         logger.error(
-            "Token endpoint response missing access_token field",
+            "Token endpoint response missing %s field",
+            field_name,
             extra={
                 "token_url": redact_url(auth.token_url),
                 "status_code": response.status_code,
+                "token_field_name": field_name,
                 "response_keys": list(token_data.keys()),
             },
         )
-        raise AuthError("Token endpoint did not return access_token")
+        raise AuthError(f"Token endpoint did not return {field_name}")
 
-    auth.access_token = auth._validate_token_from_endpoint(raw_access, "access_token")
+    auth.access_token = auth._validate_token_from_endpoint(raw_access, field_name)
     expires_in_seconds = auth._parse_expires_in(token_data.get("expires_in"))
     auth.expires_at = utc_now() + timedelta(seconds=expires_in_seconds)
     _maybe_update_refresh_token(auth, token_data)
