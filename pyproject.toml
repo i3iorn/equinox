@@ -159,7 +159,7 @@ warn_unreachable = true
 strict_optional = true
 
 [[tool.mypy.overrides]]
-module = ["defusedxml.*", "jsonpath_ng.*", "urlps.*"]
+module = ["defusedxml.*", "jsonpath_ng.*", "keyring.*", "urlps.*"]
 ignore_missing_imports = true
 
 [[tool.mypy.overrides]]
