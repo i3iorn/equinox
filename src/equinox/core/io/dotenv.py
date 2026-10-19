@@ -31,8 +31,22 @@ def parse_dotenv(text: str) -> dict[str, str]:
         key, _, value = line.partition("=")
         key = key.strip()
         value = value.strip()
-        if len(value) >= 2 and value[0] == value[-1] and value[0] in ('"', "'"):
-            value = value[1:-1]
+        if value.startswith('"') or value.startswith("'"):
+            # Handle quoted values, including an inline comment after the
+            # closing quote: KEY="value" # note  →  value
+            quote = value[0]
+            end = 1
+            while end < len(value):
+                if value[end] == quote and value[end - 1] != "\\":
+                    break
+                end += 1
+            if end < len(value):
+                value = value[1:end]
+            # Unterminated quote: fall back to the unquoted handling below.
+            else:
+                comment_idx = value.find(" #")
+                if comment_idx >= 0:
+                    value = value[:comment_idx].rstrip()
         else:
             # Strip inline comments for unquoted values: KEY=value # comment
             # Only strip if there's a space before the #, so values like

@@ -20,6 +20,19 @@ _DANGEROUS_ATTRS = frozenset(
         "__init_subclass__",
         "__reduce__",
         "__reduce_ex__",
+        "__traceback__",
+        "__context__",
+        "__cause__",
+        "tb_frame",
+        "tb_next",
+        "f_back",
+        "f_builtins",
+        "f_globals",
+        "f_locals",
+        "f_code",
+        "gi_frame",
+        "cr_frame",
+        "ag_frame",
     },
 )
 
@@ -43,6 +56,13 @@ def _validate_ast(source: str, filename: str) -> ast.Module:
             "staticmethod",
             "property",
             "super",
+            "exec",
+            "eval",
+            "compile",
+            "__import__",
+            "input",
+            "breakpoint",
+            "help",
         },
     )
 

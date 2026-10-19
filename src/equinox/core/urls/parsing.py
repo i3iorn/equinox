@@ -85,8 +85,37 @@ def _split_host_port(netloc: str) -> tuple[str, int | None]:
                 return host.lower(), int(port_text)
             except Exception:
                 return host.lower(), None
+        return host.lower(), None
 
     return right.lower(), None
+
+
+def _lowercase_netloc_host(netloc: str) -> str:
+    """Lowercase only the host component of a netloc, preserving userinfo.
+
+    The userinfo (``user:pass@...``) is case-sensitive and must not be
+    lowercased. Non-numeric port suffixes and IPv6 literals are preserved
+    verbatim.
+    """
+    raw = netloc or ""
+    userinfo, sep, host_part = raw.rpartition("@")
+    if not host_part:
+        return raw
+    if host_part.startswith("["):
+        end = host_part.find("]")
+        if end == -1:
+            return raw
+        return (
+            f"{userinfo}@{'[' + host_part[1:end].lower() + host_part[end + 1 :]}"
+            if sep
+            else ("[" + host_part[1:end].lower() + host_part[end + 1 :])
+        )
+    if host_part.count(":") == 1:
+        host, tail = host_part.split(":", 1)
+        lower = f"{host.lower()}:{tail}"
+    else:
+        lower = host_part.lower()
+    return f"{userinfo}@{lower}" if sep else lower
 
 
 def url_metadata(url: str) -> dict[str, Any]:

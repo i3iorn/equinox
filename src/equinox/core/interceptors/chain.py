@@ -45,7 +45,14 @@ class InterceptorChain:
             if context.request is None or not interceptor.can_intercept(context.request):
                 continue
 
-            result = interceptor.intercept(context)
+            try:
+                result = interceptor.intercept(context)
+            except Exception:
+                logger.exception(
+                    "Request interceptor %s raised; skipping it",
+                    type(interceptor).__name__,
+                )
+                continue
             logger.debug(
                 "Request interceptor %s returned %s",
                 type(interceptor).__name__,
@@ -55,6 +62,19 @@ class InterceptorChain:
             if result.action == InterceptorAction.REPLACE:
                 if isinstance(result.value, Request):
                     context.replace_request(result.value)
+                else:
+                    logger.warning(
+                        "Request interceptor %s returned REPLACE with a "
+                        "non-Request value; ignoring it",
+                        type(interceptor).__name__,
+                    )
+
+            elif result.action == InterceptorAction.SUPPRESS:
+                logger.warning(
+                    "Request interceptor %s returned SUPPRESS; SUPPRESS only "
+                    "applies to the error chain, continuing",
+                    type(interceptor).__name__,
+                )
 
             elif result.action == InterceptorAction.STOP:
                 logger.debug("Request interceptor chain stopped by %s", type(interceptor).__name__)
@@ -78,7 +98,14 @@ class InterceptorChain:
             if context.response is None or not interceptor.can_intercept(context.response):
                 continue
 
-            result = interceptor.intercept(context)
+            try:
+                result = interceptor.intercept(context)
+            except Exception:
+                logger.exception(
+                    "Response interceptor %s raised; skipping it",
+                    type(interceptor).__name__,
+                )
+                continue
             logger.debug(
                 "Response interceptor %s returned %s",
                 type(interceptor).__name__,
@@ -88,6 +115,19 @@ class InterceptorChain:
             if result.action == InterceptorAction.REPLACE:
                 if isinstance(result.value, Response):
                     context.replace_response(result.value)
+                else:
+                    logger.warning(
+                        "Response interceptor %s returned REPLACE with a "
+                        "non-Response value; ignoring it",
+                        type(interceptor).__name__,
+                    )
+
+            elif result.action == InterceptorAction.SUPPRESS:
+                logger.warning(
+                    "Response interceptor %s returned SUPPRESS; SUPPRESS only "
+                    "applies to the error chain, continuing",
+                    type(interceptor).__name__,
+                )
 
             elif result.action == InterceptorAction.STOP:
                 logger.debug("Response interceptor chain stopped by %s", type(interceptor).__name__)
@@ -114,7 +154,16 @@ class InterceptorChain:
             ):
                 continue
 
-            result = interceptor.intercept(context)
+            try:
+                result = interceptor.intercept(context)
+            except Exception:
+                # An error interceptor that raises must not replace the
+                # original error; keep processing the remaining chain.
+                logger.exception(
+                    "Error interceptor %s raised; skipping it",
+                    type(interceptor).__name__,
+                )
+                continue
             logger.debug(
                 "Error interceptor %s returned %s",
                 type(interceptor).__name__,
@@ -128,6 +177,12 @@ class InterceptorChain:
             if result.action == InterceptorAction.REPLACE:
                 if isinstance(result.value, Exception):
                     context.replace_error(result.value)
+                else:
+                    logger.warning(
+                        "Error interceptor %s returned REPLACE with a "
+                        "non-Exception value; ignoring it",
+                        type(interceptor).__name__,
+                    )
 
             elif result.action == InterceptorAction.STOP:
                 logger.debug("Error interceptor chain stopped by %s", type(interceptor).__name__)

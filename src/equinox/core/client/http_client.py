@@ -323,7 +323,7 @@ class HTTPClient:
         Raises:
             RateLimitError: If the rate limit is exceeded.
         """
-        logger.debug("HTTPClient: checking rate limit (max=%d/min", self.max_rate_per_minute)
+        logger.debug("HTTPClient: checking rate limit (max=%d/min)", self.max_rate_per_minute)
         self._rate_limiter.try_acquire()
         self._active_requests = self._concurrency.active
         return self._active_requests
@@ -350,7 +350,7 @@ class HTTPClient:
         logger.info(
             "HTTPClient.send(): method=%s url=%s auth=%s",
             request.method,
-            Validator.sanitize_for_display(request.url, 80),
+            redact_url(request.url),
             type(effective_auth).__name__ if effective_auth else "None",
             extra={
                 "request_id": req_id,
@@ -358,14 +358,14 @@ class HTTPClient:
                 "url": redact_url(request.url),
                 "auth_type": type(effective_auth).__name__ if effective_auth else "none",
                 "verify_ssl": request.verify_ssl if hasattr(request, "verify_ssl") else True,
-                "proxy": self.proxy or "none",
+                "proxy": redact_url(self.proxy) if self.proxy else "none",
                 "active_requests": self._concurrency.active,
                 "max_concurrent": self.max_concurrent_requests,
             },
         )
 
-        self._validate_request(request)
         try:
+            self._validate_request(request)
             with self._concurrency.slot():
                 self._active_requests = self._concurrency.active
                 self.check_rate_limit()
