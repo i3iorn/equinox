@@ -310,7 +310,8 @@ pytest tests/core/test_my_component.py -v
 # Check current state
 pip list | grep equinox
 
-# Bump version in pyproject.toml
+# Update the dependency in pyproject.toml, then resync the environment
+pip install -e ".[dev]"
 # Run full test suite
 pytest --cov=equinox
 
