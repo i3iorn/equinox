@@ -291,7 +291,7 @@ pytest -k "my_test" # Specific test
 ## Version & Release Info
 
 - **Current Version:** `equinox.__version__` in `src/equinox/__init__.py` is authoritative — check there for the exact in-tree version
-- **Latest Changelog:** [changelog/CHANGELOG_v0.7.0.md](changelog/CHANGELOG_v0.7.0.md)
+- **Latest Changelog:** [changelog/CHANGELOG_v0.7.1.md](changelog/CHANGELOG_v0.7.1.md)
 - **Release History:** [changelog/](changelog/)
 
 ---

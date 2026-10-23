@@ -1,19 +1,22 @@
 """Saved credentials manager dialog.
 
 Manages named, reusable auth credentials of any supported type
-(OAuth 2.0, API Key, Basic Auth, Bearer Token).  Replaces the OAuth2-only
-OAuthClientsDialog as the primary credential manager opened from AuthDialog.
+(OAuth 2.0, API Key, Basic Auth, Bearer Token, AWS SigV4).
+
+The per-type forms are the *shared* tab widgets from
+``equinox.gui.dialogs.auth_dialog.tabs`` — the very same widget classes the
+request editor's "Configure Authentication" dialog embeds.  Adding or
+changing a field there automatically appears here; this module only adds
+credential-management chrome (the name/description/type header, the
+credential list, and persistence).
 """
 
 from __future__ import annotations
 
-import json
 import logging
 from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
-
-from PyQt6.QtGui import QFont, QColor
 
 from equinox.auth import AUTH_TYPES
 from equinox.gui.dialogs._dirty_dialog_mixin import DirtyDialogMixin
@@ -22,31 +25,26 @@ from equinox.gui.dialogs._saved_credentials_auth_collector import (
     AuthConfigCollector,
     AuthConfigResult,
 )
+from equinox.gui.dialogs.auth_dialog.tabs import (
+    ApiKeyAuthTab,
+    AuthDialogTab,
+    AwsSigV4AuthTab,
+    BasicAuthTab,
+    BearerAuthTab,
+    OAuth2AuthTab,
+)
 from equinox.gui.error_presenter import ErrorPresenter
 from equinox.gui.theme import Colors
-from equinox.gui.theme import get_mono_font
-from equinox.gui.widgets.secret_row import make_secret_row as _secret_row
 from equinox.gui.workers import OAuthTokenTester
 from equinox.storage import Database
-from equinox.storage.oauth_clients import GRANT_TYPES
 from equinox.storage.saved_credentials import SavedCredentialsManager
 from PyQt6.QtCore import pyqtSignal
 from PyQt6.QtCore import Qt
-from PyQt6.QtWidgets import QComboBox, QListWidgetItem
-from PyQt6.QtWidgets import QDialog
-from PyQt6.QtWidgets import QDialogButtonBox
-from PyQt6.QtWidgets import QFormLayout
-from PyQt6.QtWidgets import QFrame
+from PyQt6.QtGui import QColor, QFont
+from PyQt6.QtWidgets import QComboBox, QDialog, QDialogButtonBox, QFormLayout, QFrame
 from PyQt6.QtWidgets import QHBoxLayout
-from PyQt6.QtWidgets import QInputDialog
-from PyQt6.QtWidgets import QLabel
-from PyQt6.QtWidgets import QLineEdit
-from PyQt6.QtWidgets import QListWidget
-from PyQt6.QtWidgets import QPushButton
-from PyQt6.QtWidgets import QSplitter
-from PyQt6.QtWidgets import QStackedWidget
-from PyQt6.QtWidgets import QTextEdit
-from PyQt6.QtWidgets import QVBoxLayout
+from PyQt6.QtWidgets import QInputDialog, QLabel, QLineEdit, QListWidget, QListWidgetItem
+from PyQt6.QtWidgets import QPushButton, QSplitter, QStackedWidget, QTextEdit, QVBoxLayout
 from PyQt6.QtWidgets import QWidget
 from equinox.gui.ui_common import confirm_yes_no
 
@@ -73,16 +71,6 @@ _TYPE_COLOUR = {
 _PAGE_ORDER = ("oauth2", "api_key", "basic", "bearer", "aws_sigv4")
 
 
-def _text(cfg: dict[str, Any], key: str, default: str = "") -> str:
-    """Read a config value as text.
-
-    Optional fields are persisted as ``None`` rather than omitted, and
-    ``QLineEdit.setText(None)`` raises, so ``None`` must fall back too.
-    """
-    value = cfg.get(key)
-    return default if value is None else str(value)
-
-
 def _hline() -> QFrame:
     """A horizontal rule used to separate form sections."""
     line = QFrame()
@@ -96,13 +84,6 @@ class CredentialConfig:
     name: str
     description: str
     config: dict[str, Any]
-
-
-@dataclass(frozen=True)
-class TestResult:
-    ok: bool
-    message: str
-    response: dict[str, Any] | None = None
 
 
 class SavedCredentialsService:
@@ -279,17 +260,30 @@ class SavedCredentialsView(DirtyDialogMixin, QDialog):
         return top_form
 
     def _build_type_pages(self) -> QStackedWidget:
-        """Build the per-auth-type form pages, in ``_PAGE_ORDER``."""
-        builders = {
-            "oauth2": self._build_oauth2_page,
-            "api_key": self._build_api_key_page,
-            "basic": self._build_basic_page,
-            "bearer": self._build_bearer_page,
-            "aws_sigv4": self._build_aws_sigv4_page,
+        """Build the per-auth-type form pages from the shared auth tabs."""
+        self.oauth2_page = OAuth2AuthTab()
+        self.api_key_page = ApiKeyAuthTab()
+        self.basic_page = BasicAuthTab()
+        self.bearer_page = BearerAuthTab()
+        self.aws_page = AwsSigV4AuthTab()
+        self._type_pages: dict[str, AuthDialogTab] = {
+            "oauth2": self.oauth2_page,
+            "api_key": self.api_key_page,
+            "basic": self.basic_page,
+            "bearer": self.bearer_page,
+            "aws_sigv4": self.aws_page,
         }
+        # The credential manager has its own Test Connection button and
+        # status line; the shared tab's inline fetch controls would
+        # duplicate them.
+        self.oauth2_page.set_fetch_ui_visible(False)
+
+        for tab in self._type_pages.values():
+            tab.connect_form_changed(self._mark_dirty)
+
         stack = QStackedWidget()
         for auth_type in _PAGE_ORDER:
-            stack.addWidget(builders[auth_type]())
+            stack.addWidget(self._type_pages[auth_type])
         return stack
 
     def _build_action_row(self) -> QHBoxLayout:
@@ -311,139 +305,86 @@ class SavedCredentialsView(DirtyDialogMixin, QDialog):
         self.save_btn.clicked.connect(self.save_requested.emit)
         return act_row
 
-        # ── Type-specific form pages ──────────────────────────────────────
+    @property
+    def auth_tabs(self) -> dict[str, AuthDialogTab]:
+        """The shared per-type tab widgets, keyed by auth type."""
+        return self._type_pages
 
-    def _build_oauth2_page(self) -> QWidget:
-        w = QWidget()
-        lay = QFormLayout(w)
-        lay.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.ExpandingFieldsGrow)
+    # --- Backwards-compatible aliases to the shared tab widgets --------
+    # Tests and controllers reach the form fields through these historic
+    # names; the widgets themselves now live in the shared auth tabs.
 
-        self.o_token_url = QLineEdit()
-        self.o_token_url.setPlaceholderText("https://auth.example.com/oauth/token")
-        self.o_client_id = QLineEdit()
-        self.o_client_id.setPlaceholderText("client_id")
-        self.o_client_secret = QLineEdit()
-        self.o_client_secret.setEchoMode(QLineEdit.EchoMode.Password)
-        self.o_client_secret.setPlaceholderText("client_secret")
-        self.o_scope = QLineEdit()
-        self.o_scope.setPlaceholderText("read write  (optional)")
-        self.o_token_auth = QComboBox()
-        self.o_token_auth.addItem("Body (RFC 6749 default)", userData="body")
-        self.o_token_auth.addItem("HTTP Basic Auth (D&B Direct+, GitHub…)", userData="basic")
-        self.o_token_auth.setToolTip(
-            "How client credentials are sent to the token endpoint.\n"
-            "• Body — client_id/client_secret in the POST body (default, RFC 6749 §2.3.1)\n"
-            "• Basic — Base64-encoded Authorization header (required by some providers)",
-        )
-        self.o_grant_type = QComboBox()
-        self.o_grant_type.addItems(list(GRANT_TYPES))
-        self.o_extra = QTextEdit()
-        self.o_extra.setPlaceholderText('{ "audience": "https://api.example.com" }')
-        self.o_extra.setMaximumHeight(70)
-        self.o_extra.setFont(get_mono_font())
+    @property
+    def o_token_url(self) -> QLineEdit:
+        return self.oauth2_page.token_url
 
-        lay.addRow("Token URL:*", self.o_token_url)
-        lay.addRow("Client ID:*", self.o_client_id)
-        lay.addRow("Client Secret:", _secret_row(self.o_client_secret))
-        lay.addRow("Scope:", self.o_scope)
-        lay.addRow("Client Auth:", self.o_token_auth)
-        lay.addRow("Grant Type:", self.o_grant_type)
-        lay.addRow("Extra Params:", self.o_extra)
+    @property
+    def o_client_id(self) -> QLineEdit:
+        return self.oauth2_page.client_id
 
-        for w2 in (self.o_token_url, self.o_client_id, self.o_client_secret, self.o_scope):
-            w2.textChanged.connect(self._mark_dirty)
-        self.o_token_auth.currentIndexChanged.connect(self._mark_dirty)
-        self.o_grant_type.currentIndexChanged.connect(self._mark_dirty)
-        self.o_extra.textChanged.connect(self._mark_dirty)
-        return w
+    @property
+    def o_client_secret(self) -> QLineEdit:
+        return self.oauth2_page.client_secret
 
-    def _build_api_key_page(self) -> QWidget:
-        w = QWidget()
-        lay = QFormLayout(w)
-        lay.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.ExpandingFieldsGrow)
+    @property
+    def o_scope(self) -> QLineEdit:
+        return self.oauth2_page.scope
 
-        self.ak_key = QLineEdit()
-        self.ak_key.setPlaceholderText("X-API-Key")
-        self.ak_value = QLineEdit()
-        self.ak_value.setEchoMode(QLineEdit.EchoMode.Password)
-        self.ak_value.setPlaceholderText("your-api-key")
-        self.ak_location = QComboBox()
-        self.ak_location.addItems(["header", "query"])
+    @property
+    def o_token_auth(self) -> QComboBox:
+        return self.oauth2_page.token_auth
 
-        lay.addRow("Header/Param Name:*", self.ak_key)
-        lay.addRow("Key Value:*", _secret_row(self.ak_value))
-        lay.addRow("Add To:", self.ak_location)
+    @property
+    def o_grant_type(self) -> QComboBox:
+        return self.oauth2_page.grant_type
 
-        for w2 in (self.ak_key, self.ak_value):
-            w2.textChanged.connect(self._mark_dirty)
-        self.ak_location.currentIndexChanged.connect(self._mark_dirty)
-        return w
+    @property
+    def o_extra(self) -> QTextEdit:
+        return self.oauth2_page.extra_params
 
-    def _build_basic_page(self) -> QWidget:
-        w = QWidget()
-        lay = QFormLayout(w)
-        lay.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.ExpandingFieldsGrow)
+    @property
+    def ak_key(self) -> QLineEdit:
+        return self.api_key_page.key_name
 
-        self.ba_username = QLineEdit()
-        self.ba_username.setPlaceholderText("username")
-        self.ba_password = QLineEdit()
-        self.ba_password.setEchoMode(QLineEdit.EchoMode.Password)
-        self.ba_password.setPlaceholderText("password")
+    @property
+    def ak_value(self) -> QLineEdit:
+        return self.api_key_page.key_value
 
-        lay.addRow("Username:*", self.ba_username)
-        lay.addRow("Password:*", _secret_row(self.ba_password))
+    @property
+    def ak_location(self) -> QComboBox:
+        return self.api_key_page.location
 
-        for w2 in (self.ba_username, self.ba_password):
-            w2.textChanged.connect(self._mark_dirty)
-        return w
+    @property
+    def ba_username(self) -> QLineEdit:
+        return self.basic_page.username
 
-    def _build_bearer_page(self) -> QWidget:
-        w = QWidget()
-        lay = QFormLayout(w)
-        lay.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.ExpandingFieldsGrow)
+    @property
+    def ba_password(self) -> QLineEdit:
+        return self.basic_page.password
 
-        self.bt_token = QLineEdit()
-        self.bt_token.setEchoMode(QLineEdit.EchoMode.Password)
-        self.bt_token.setPlaceholderText("Bearer token")
+    @property
+    def bt_token(self) -> QLineEdit:
+        return self.bearer_page.token
 
-        lay.addRow("Token:*", _secret_row(self.bt_token))
+    @property
+    def aws_access_key(self) -> QLineEdit:
+        return self.aws_page.access_key
 
-        self.bt_token.textChanged.connect(self._mark_dirty)
-        return w
+    @property
+    def aws_secret_key(self) -> QLineEdit:
+        return self.aws_page.secret_key
 
-    def _build_aws_sigv4_page(self) -> QWidget:
-        w = QWidget()
-        lay = QFormLayout(w)
-        lay.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.ExpandingFieldsGrow)
+    @property
+    def aws_region(self) -> QLineEdit:
+        return self.aws_page.region
 
-        self.aws_access_key = QLineEdit()
-        self.aws_access_key.setPlaceholderText("AKIAIOSFODNN7EXAMPLE")
-        self.aws_secret_key = QLineEdit()
-        self.aws_secret_key.setEchoMode(QLineEdit.EchoMode.Password)
-        self.aws_secret_key.setPlaceholderText("wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY")
-        self.aws_region = QLineEdit()
-        self.aws_region.setPlaceholderText("us-east-1")
-        self.aws_service = QLineEdit()
-        self.aws_service.setPlaceholderText("execute-api")
-        self.aws_session_token = QLineEdit()
-        self.aws_session_token.setEchoMode(QLineEdit.EchoMode.Password)
-        self.aws_session_token.setPlaceholderText("Optional — STS session token")
+    @property
+    def aws_service(self) -> QLineEdit:
+        return self.aws_page.service
 
-        lay.addRow("Access Key ID:*", self.aws_access_key)
-        lay.addRow("Secret Access Key:*", _secret_row(self.aws_secret_key))
-        lay.addRow("Region:*", self.aws_region)
-        lay.addRow("Service:*", self.aws_service)
-        lay.addRow("Session Token:", _secret_row(self.aws_session_token))
-
-        for w2 in (
-            self.aws_access_key,
-            self.aws_secret_key,
-            self.aws_region,
-            self.aws_service,
-            self.aws_session_token,
-        ):
-            w2.textChanged.connect(self._mark_dirty)
-        return w
+    @property
+    def aws_session_token(self) -> QLineEdit:
+        return self.aws_page.session_token
 
     # --- public helpers used by controller ----------------------------
 
@@ -466,26 +407,10 @@ class SavedCredentialsView(DirtyDialogMixin, QDialog):
 
     def clear_form(self) -> None:
         """Blank every field and return the form to its idle, disabled state."""
-        for field in (
-            self.f_name,
-            self.f_description,
-            self.o_token_url,
-            self.o_client_id,
-            self.o_client_secret,
-            self.o_scope,
-            self.ak_key,
-            self.ak_value,
-            self.ba_username,
-            self.ba_password,
-            self.bt_token,
-            self.aws_access_key,
-            self.aws_secret_key,
-            self.aws_region,
-            self.aws_service,
-            self.aws_session_token,
-        ):
-            field.clear()
-        self.o_extra.clear()
+        self.f_name.clear()
+        self.f_description.clear()
+        for tab in self._type_pages.values():
+            tab.clear()
         self.set_current_id(None)
         self.mark_clean()
 
@@ -500,35 +425,11 @@ class SavedCredentialsView(DirtyDialogMixin, QDialog):
         self._show_page_for(auth_type)
         self.form_header.setText(f"<b>Credential Details</b> — {c['name']}")
 
-        if auth_type == "oauth2":
-            self.o_token_url.setText(_text(cfg, "token_url"))
-            self.o_client_id.setText(_text(cfg, "client_id"))
-            self.o_client_secret.setText(_text(cfg, "client_secret"))
-            self.o_scope.setText(_text(cfg, "scope"))
-            ta_idx = self.o_token_auth.findData(cfg.get("token_auth") or "body")
-            self.o_token_auth.setCurrentIndex(max(ta_idx, 0))
-            gt_idx = self.o_grant_type.findText(cfg.get("grant_type") or "client_credentials")
-            self.o_grant_type.setCurrentIndex(max(gt_idx, 0))
-            extra = cfg.get("extra_params") or {}
-            self.o_extra.setPlainText(json.dumps(extra, indent=2) if extra else "")
-        elif auth_type == "api_key":
-            self.ak_key.setText(_text(cfg, "key"))
-            self.ak_value.setText(_text(cfg, "value"))
-            loc_idx = self.ak_location.findText(cfg.get("location") or "header")
-            self.ak_location.setCurrentIndex(max(loc_idx, 0))
-        elif auth_type == "basic":
-            self.ba_username.setText(_text(cfg, "username"))
-            self.ba_password.setText(_text(cfg, "password"))
-        elif auth_type == "bearer":
-            self.bt_token.setText(_text(cfg, "token"))
-        elif auth_type == "aws_sigv4":
-            self.aws_access_key.setText(_text(cfg, "access_key"))
-            self.aws_secret_key.setText(_text(cfg, "secret_key"))
-            self.aws_region.setText(_text(cfg, "region", "us-east-1"))
-            self.aws_service.setText(_text(cfg, "service", "execute-api"))
-            self.aws_session_token.setText(_text(cfg, "session_token"))
+        tab = self._type_pages.get(auth_type)
+        if tab is not None:
+            tab.set_auth_config(cfg)
 
-        # Populating the widgets fires textChanged, so clear the flag last.
+        # Populating the widgets fires change signals, so clear the flag last.
         self.mark_clean()
 
     def _show_page_for(self, auth_type: str) -> None:
@@ -654,9 +555,9 @@ class SavedCredentialsController(OAuthConnectionTestMixin):
         self._service = service
         self._tester: OAuthTokenTester | None = None
 
-        # The collector reads live widget values, so it can only be built once
-        # a view exists.
-        service.bind_collector(AuthConfigCollector(view))
+        # The collector reads live widget values, so it can only be built
+        # once a view exists.
+        service.bind_collector(AuthConfigCollector(view.auth_tabs))
 
         # DirtyDialogMixin's close/switch guards call this to persist the
         # form; the view alone has no save logic (that's this controller).
@@ -667,8 +568,9 @@ class SavedCredentialsController(OAuthConnectionTestMixin):
 
     # ── Widgets the OAuth test mixin operates on live on the view ─────
 
-    # The mixin declares these as plain attributes because dialog hosts assign
-    # them directly; here they are owned by the view, so expose them read-only.
+    # The mixin declares these as plain attributes because dialog hosts
+    # assign them directly; here they are owned by the view, so expose
+    # them read-only.
     @property
     def test_btn(self) -> QPushButton:  # type: ignore[override]
         return self._view.test_btn
@@ -778,6 +680,7 @@ class SavedCredentialsController(OAuthConnectionTestMixin):
             self._view,
             "Confirm Delete",
             f"Delete credential '{c['name']}'?\n\nThis cannot be undone.",
+            default_no=True,
         ):
             return
         self._service.delete_credential(current_id)
@@ -809,8 +712,8 @@ class SavedCredentialsController(OAuthConnectionTestMixin):
         )
         try:
             self._service.update_credential(current_id, cfg)
-        except Exception as exc:
-            logger.error("Failed to save credential", exc_info=True)
+        except Exception as exc:  # pragma: no cover - defensive
+            logger.exception("Failed to save credential")
             self._view.show_save_error(f"An error occurred: {exc}")
             return False
 
@@ -829,26 +732,19 @@ class SavedCredentialsController(OAuthConnectionTestMixin):
             return
         self._service.set_default(current_id)
         self._refresh_list(select_id=current_id)
-        self._view.set_status("\u2713 Set as default credential", ok=True)
+        self._view.set_status("\u2713 Default credential updated", ok=True)
         self._view.credentials_changed.emit()
 
     def _on_test(self) -> None:
-        token_url = self._view.o_token_url.text().strip()
-        client_id = self._view.o_client_id.text().strip()
-        secret = self._view.o_client_secret.text()
-        scope = self._view.o_scope.text().strip()
-        token_auth = self._view.o_token_auth.currentData() or "body"
-        grant_type = self._view.o_grant_type.currentText()
-        extra_raw = self._view.o_extra.toPlainText().strip()
-
+        oauth2 = self._view.oauth2_page
         self._start_oauth_test(
-            token_url=token_url,
-            client_id=client_id,
-            secret=secret,
-            scope=scope,
-            grant_type=grant_type,
-            extra_raw=extra_raw,
-            token_auth=token_auth,
+            token_url=oauth2.token_url.text().strip(),
+            client_id=oauth2.client_id.text().strip(),
+            secret=oauth2.client_secret.text(),
+            scope=oauth2.scope.text().strip(),
+            grant_type=oauth2.grant_type.currentText(),
+            extra_raw=oauth2.extra_params.toPlainText().strip(),
+            token_auth=oauth2.token_auth.currentData(),
         )
 
 
