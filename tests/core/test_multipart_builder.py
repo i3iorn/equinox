@@ -1,5 +1,8 @@
 from pathlib import Path
 
+import pytest
+
+from equinox.core.exceptions import ValidationError
 from equinox.core.io.multipart import build_multipart_files
 
 
@@ -25,8 +28,7 @@ def test_build_multipart_files_with_text_and_file(tmp_path: Path):
 
 
 def test_build_multipart_files_missing_file(tmp_path: Path):
+    """Missing files fail fast instead of silently uploading an empty part."""
     multipart_data = [{"key": "file1", "type": "file", "value": str(tmp_path / "nofile.txt")}]
-    files, handles = build_multipart_files(multipart_data)
-    assert files is not None
-    assert len(files) == 1
-    assert handles == []
+    with pytest.raises(ValidationError, match="file1"):
+        build_multipart_files(multipart_data)

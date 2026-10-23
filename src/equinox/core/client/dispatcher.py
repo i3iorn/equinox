@@ -16,7 +16,9 @@ from typing import IO, Any
 import httpx
 from equinox.core.client.auth_redirect import _RedirectSafeAuth
 from equinox.core.client.cookie_handler import CookieHandler
+from equinox.core.exceptions import RequestTimeoutError
 from equinox.core.exceptions import ValidationError
+from equinox.core.io.multipart import build_multipart_files
 from equinox.core.request import Request
 from equinox.core.request import Response
 from equinox.core.util.time import utc_now
@@ -165,34 +167,43 @@ class HttpxDispatcher:
 
     # ── Multipart ─────────────────────────────────────────────────────────────
 
-    def _build_multipart_files(self, request: Request) -> tuple[dict[str, Any] | None, list[Any]]:
-        """Build httpx-compatible multipart files from ``request.files``.
+    def _build_multipart_files(
+        self,
+        request: Request,
+    ) -> tuple[dict[str, Any] | list[tuple[str, Any]] | None, list[Any]]:
+        """Build httpx-compatible multipart files for *request*.
 
-        Accepted shapes per field::
+        Two input shapes are supported::
 
-            "field": ("filename", file_bytes_or_fileobj, "content/type")
-            "field": Path("/path/to/file")      # opened and closed automatically
-            "field": "/path/to/file"            # opened and closed automatically
+            request.files            legacy dict of ``field -> path/tuple``
+                                     entries (programmatic/test callers)
+            request.multipart_data   list of ``{key, type, value}`` dicts as
+                                     produced by the GUI/application layer,
+                                     converted via
+                                     :func:`equinox.core.io.multipart.build_multipart_files`
 
         Returns:
-            A ``(files_dict, opened_handles)`` tuple.  The caller is
-            responsible for closing every handle in *opened_handles*.
+            A ``(files, opened_handles)`` tuple.  ``files`` is ``None`` when
+            the request carries no uploads.  The caller is responsible for
+            closing every handle in *opened_handles*.
         """
-        if not getattr(request, "files", None):
-            return None, []
+        request_files = getattr(request, "files", None) or {}
+        if not request_files:
+            # Production requests carry uploads in ``multipart_data``; the
+            # legacy ``files`` attribute does not exist on ``Request``.
+            multipart_data = getattr(request, "multipart_data", None)
+            if not multipart_data:
+                return None, []
+            return build_multipart_files(multipart_data)
 
         files: dict[str, Any] = {}
         opened_handles: list[IO[bytes]] = []
 
-        request_files = getattr(request, "files", {}) or {}
         for field, value in request_files.items():
             if isinstance(value, (str, Path)):
-                fh = Path(value).open("rb")
-                try:
+                with Path(value).open("rb") as fh:
                     opened_handles.append(fh)
                     files[field] = (Path(value).name, fh)
-                finally:
-                    fh.close()
             elif isinstance(value, tuple) and len(value) in (2, 3):
                 files[field] = value
             else:
@@ -319,13 +330,10 @@ class HttpxDispatcher:
         }
 
         try:
-            req_url = redact_url(str(raw.request.url))
-            info["sent_url"] = req_url
+            info["sent_url"] = redact_url(str(raw.request.url))
         except Exception:
-            req_url = redact_url(request.url)
-            info["sent_url"] = req_url
+            info["sent_url"] = redact_url(request.url)
 
-        stream = None
         try:
             ext = getattr(raw, "extensions", {}) or {}
             stream = ext.get("network_stream") or ext.get("stream")
@@ -464,7 +472,7 @@ class HttpxDispatcher:
         client: httpx.Client,
         request: Request,
         headers: dict[str, str],
-        multipart_files: dict[str, Any] | None,
+        multipart_files: dict[str, Any] | list[tuple[str, Any]] | None,
         user_set_content_type: bool,
     ) -> httpx.Request:
         content = None
@@ -498,15 +506,30 @@ class HttpxDispatcher:
         request: Request,
         httpx_auth: _RedirectSafeAuth | None,
     ) -> httpx.Response:
-        return client.send(
-            httpx_request,
-            follow_redirects=(
-                request.follow_redirects
-                if request.follow_redirects is not None
-                else self._follow_redirects
-            ),
-            auth=httpx_auth,
-        )
+        try:
+            return client.send(
+                httpx_request,
+                follow_redirects=(
+                    request.follow_redirects
+                    if request.follow_redirects is not None
+                    else self._follow_redirects
+                ),
+                auth=httpx_auth,
+            )
+        except httpx.TimeoutException as exc:
+            # Translate raw httpx timeouts into the domain error so the retry
+            # loop in ``RetryPolicy.execute`` (which wraps this dispatch) can
+            # act on them; unmapped, they would bypass retries entirely.
+            url = redact_url(request.url) or "unknown URL"
+            message = {
+                httpx.ConnectTimeout: "Connection timed out",
+                httpx.ReadTimeout: "Server response timed out",
+            }.get(type(exc), "Request timed out")
+            raise RequestTimeoutError(
+                message,
+                details={"url": url},
+                hint_key="timeout",
+            ) from exc
 
     def _close_file_handles(self, handles: list[IO[bytes]]) -> None:
         for fh in handles:
@@ -520,8 +543,8 @@ class HttpxDispatcher:
     def __repr__(self) -> str:
         with self._client_lock:
             state = "open" if self._clients else "closed"
-            client_count = len(self._clients)
         return (
             f"HttpxDispatcher(state={state!r}, timeout={self._timeout}, "
-            f"verify_ssl={self._verify_ssl}, proxy={redact_url(self._proxy)!r}, clients={client_count})"
+            f"verify_ssl={self._verify_ssl}, proxy={redact_url(self._proxy)!r}, "
+            f"clients={len(self._clients)})"
         )

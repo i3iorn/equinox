@@ -141,7 +141,7 @@ class _EnvironmentMixin:
     def _manage_oauth_clients(self) -> None:
         from equinox.gui.dialogs.saved_credentials_dialog import SavedCredentialsDialog
 
-        SavedCredentialsDialog(self.db, cast(QWidget, self)).exec()
+        SavedCredentialsDialog.launch(self.db, cast(QWidget, self))
 
     def _manage_secret_managers(self) -> None:
         from equinox.gui.dialogs.secret_manager_settings_dialog import SecretManagerSettingsDialog

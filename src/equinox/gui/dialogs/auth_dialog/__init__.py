@@ -423,11 +423,14 @@ class AuthDialog(QDialog):
             )
             return
 
-        dlg = SavedCredentialsDialog(self.db, self)
-        # The manager emits this on every mutation; an unconditional refresh
-        # afterwards could re-select the default and overwrite typed-in fields.
-        dlg.credentials_changed.connect(self._refresh_client_picker)
-        dlg.exec()
+        # The manager emits `credentials_changed` on every mutation; an
+        # unconditional refresh afterwards could re-select the default and
+        # overwrite typed-in fields, so the slot is wired before exec.
+        SavedCredentialsDialog.launch(
+            self.db,
+            self,
+            on_credentials_changed=self._refresh_client_picker,
+        )
 
     # ── Saving ────────────────────────────────────────────────────────
 

@@ -8,10 +8,17 @@ from typing import Any
 from urllib.parse import parse_qsl, quote
 
 from equinox.core.interpolation import VariableInterpolator
+from equinox.security import redact_url
 
 from .parsing import _lowercase_netloc_host, _parse_url
 
 logger = logging.getLogger(__name__)
+
+# Dedup guard so a single bad URL doesn't flood the WARNING log when it is
+# processed repeatedly (history indexing, recommender, validation all call
+# expansion). Bounded to avoid unbounded memory growth.
+_WARNED_EXPANSION_KEYS: set[str] = set()
+_MAX_WARNED_KEYS = 256
 
 _UUID_RE = re.compile(
     r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}" r"-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
@@ -44,13 +51,32 @@ def _build_canonical_url(
 
 
 def expand_placeholders(url: str, variables: dict[str, str] | None = None) -> str:
-    """Expand {{VAR}} placeholders in URL strings before parsing."""
+    """Expand {{VAR}} placeholders in URL strings before parsing.
+
+    Interpolation failures are best-effort: the original URL is returned
+    unchanged so callers (history indexing, recommender, validation) keep
+    working with raw ``{{...}}`` tokens instead of crashing. Failures are
+    surfaced at WARNING level (deduplicated per distinct URL/error pair) so
+    silent misconfiguration is visible in production logs.
+
+    Security note: the URL is redacted before logging so query-string
+    secrets (tokens, API keys) are not written to log files.
+    """
     if not variables:
         return url
     try:
         return VariableInterpolator.interpolate(url, variables)
     except Exception as exc:
-        logger.debug("Placeholder expansion failed for url %r: %s", url, exc)
+        key = f"{url}|{type(exc).__name__}"
+        if key not in _WARNED_EXPANSION_KEYS:
+            if len(_WARNED_EXPANSION_KEYS) >= _MAX_WARNED_KEYS:
+                _WARNED_EXPANSION_KEYS.clear()
+            _WARNED_EXPANSION_KEYS.add(key)
+            logger.warning(
+                "Placeholder expansion failed for url %r: %s — returning the URL unchanged",
+                redact_url(url),
+                exc,
+            )
         return url
 
 

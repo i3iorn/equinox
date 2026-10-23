@@ -760,6 +760,33 @@ class SavedCredentialsDialog(SavedCredentialsView):
         self._service = SavedCredentialsService(db=db)
         self._controller = SavedCredentialsController(view=self, service=self._service)
 
+    @classmethod
+    def launch(
+        cls,
+        db: Database,
+        parent: QWidget | None = None,
+        *,
+        on_credentials_changed: Callable[[], None] | None = None,
+    ) -> None:
+        """Open the credential manager modal from any host (congruent entry point).
+
+        Both the Environment window and the request editor's auth dialog
+        must open this dialog identically; they should never build it by
+        hand.  Any future wiring (e.g. pre-selection, permissions) belongs
+        here so every entry point stays congruent.
+
+        Args:
+            db: Database handle for credential persistence.
+            parent: Optional parent widget for modality.
+            on_credentials_changed: Optional slot connected to the dialog's
+                ``credentials_changed`` signal before it opens — used by
+                hosts that must refresh a live view of the credential list.
+        """
+        dialog = cls(db, parent)
+        if on_credentials_changed is not None:
+            dialog.credentials_changed.connect(on_credentials_changed)
+        dialog.exec()
+
     # Convenience passthroughs so callers can drive the dialog directly.
 
     def _refresh_list(self, select_id: int | None = None) -> None:

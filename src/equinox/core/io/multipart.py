@@ -8,6 +8,8 @@ import logging
 import os
 from typing import Any
 
+from equinox.core.exceptions import ValidationError
+
 logger = logging.getLogger(__name__)
 
 
@@ -42,12 +44,13 @@ def build_multipart_files(
                     logger.debug("Multipart: added file field %s", field_key)
                     multipart_files.append((field_key, (resolved.name, file_handle)))
                 else:
-                    logger.warning(
-                        "Multipart: file %r not found for field %s, sending empty part",
-                        file_path,
-                        field_key,
+                    # Fail fast rather than silently uploading an empty part:
+                    # a truncated/corrupt upload looks like success to the
+                    # user, and silent partial data is an integrity risk.
+                    raise ValidationError(
+                        f"File for multipart field '{field_key}' not found: "
+                        f"{file_path or '(empty path)'}",
                     )
-                    multipart_files.append((field_key, (None, b"")))
             else:
                 raw_value = field.get("value")
                 if isinstance(raw_value, str):
