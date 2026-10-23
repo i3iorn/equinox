@@ -123,10 +123,13 @@ class HttpxDispatcher:
         """Update the in-memory cookie jar from *response* and push to httpx.
 
         Combines the two-step cookie sync into a single call so no caller
-        needs to reach into the dispatcher's private helpers.
+        needs to reach into the dispatcher's private helpers. The jar rebuild
+        is skipped when the response carried no Set-Cookie headers, avoiding
+        an O(jar) clear+rebuild on every response.
         """
-        self._cookie_handler.update_from_response(response, url)
-        self._sync_cookies_to_client()
+        updated = self._cookie_handler.update_from_response(response, url)
+        if updated:
+            self._sync_cookies_to_client()
 
     def _sync_cookies_to_client(self) -> None:
         """Merge the latest CookieManager state into the live httpx.Client jar."""
