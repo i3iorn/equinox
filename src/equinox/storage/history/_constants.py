@@ -7,6 +7,7 @@ __all__ = [
     "_STATUS_CODE_RANGES",
     "_HISTORY_LIST_COLUMNS",
     "_HISTORY_STREAM_COLUMNS",
+    "_HISTORY_BODY_SEARCH_PREFIX_CHARS",
 ]
 
 # SQLite LIKE escape clause — used with ESCAPE '\\' so % and _ match literally.
@@ -19,6 +20,12 @@ _STATUS_CODE_RANGES: dict[str, tuple[int, int]] = {
     "4xx": (400, 499),
     "5xx": (500, 599),
 }
+
+# Bounded body search: `LIKE '%q%'` over request_body cannot use any index and
+# forces SQLite to read every full body BLOB. Restricting the match to the
+# first N chars via substr() keeps the same search semantics for typical
+# payloads while avoiding full-BLOB materialization per row.
+_HISTORY_BODY_SEARCH_PREFIX_CHARS = 4096
 
 # Column projections for list/search fast paths. ``request_body`` and
 # ``response_body`` hold the full BLOBs (up to MAX_BODY_SIZE each); they are
