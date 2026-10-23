@@ -126,7 +126,7 @@ class AuthDialog(QDialog):
         self.current_auth = current_auth
         self._saved_auth: AuthStrategy | None = None
         self._auth_type_to_tab: dict[str, int] = {}
-        self._auth_config_appliers: dict[str, Callable[[dict[str, Any]], None]] = {}
+        self._auth_tabs: dict[str, AuthDialogTab] = {}
 
         self.setWindowTitle(self._WINDOW_TITLE)
         self.setMinimumSize(self._MINIMUM_WIDTH, self._MINIMUM_HEIGHT)
@@ -201,13 +201,13 @@ class AuthDialog(QDialog):
         layout.addLayout(btns)
 
     def _init_auth_config_appliers(self) -> None:
-        """Register handlers used to apply saved authentication configuration."""
-        self._auth_config_appliers = {
-            AuthType.OAUTH2: self._apply_oauth2_config,
-            AuthType.API_KEY: self._apply_api_key_config,
-            AuthType.BASIC: self._apply_basic_config,
-            AuthType.BEARER: self._apply_bearer_config,
-            AuthType.AWS_SIGV4: self._apply_aws_sigv4_config,
+        """Map auth types to the shared tab widgets that apply configurations."""
+        self._auth_tabs = {
+            AuthType.OAUTH2: self.oauth2,
+            AuthType.API_KEY: self.api_key,
+            AuthType.BASIC: self.basic,
+            AuthType.BEARER: self.bearer,
+            AuthType.AWS_SIGV4: self.aws,
         }
 
     def _load_current_auth(self) -> None:
@@ -249,43 +249,66 @@ class AuthDialog(QDialog):
 
     def _load_basic_auth(self, auth: BasicAuth) -> None:
         self._select_tab(AuthType.BASIC)
-        self.basic.username.setText(self._auth_text(auth, AuthConfigKey.USERNAME))
-        self.basic.password.setText(self._auth_text(auth, AuthConfigKey.PASSWORD))
+        self.basic.set_auth_config(
+            {
+                AuthConfigKey.USERNAME: self._auth_text(auth, AuthConfigKey.USERNAME),
+                AuthConfigKey.PASSWORD: self._auth_text(auth, AuthConfigKey.PASSWORD),
+            },
+        )
 
     def _load_bearer_auth(self, auth: BearerAuth) -> None:
         self._select_tab(AuthType.BEARER)
-        self.bearer.token.setText(self._auth_text(auth, AuthConfigKey.TOKEN))
+        self.bearer.set_auth_config(
+            {
+                AuthConfigKey.TOKEN: self._auth_text(auth, AuthConfigKey.TOKEN),
+            },
+        )
 
     def _load_oauth2_auth(self, auth: OAuth2Auth) -> None:
         self._select_tab(AuthType.OAUTH2)
-        self.oauth2.token_url.setText(self._auth_text(auth, AuthConfigKey.TOKEN_URL))
-        self.oauth2.client_id.setText(self._auth_text(auth, AuthConfigKey.CLIENT_ID))
-        self.oauth2.client_secret.setText(self._auth_text(auth, AuthConfigKey.CLIENT_SECRET))
-        self.oauth2.scope.setText(self._auth_text(auth, AuthConfigKey.SCOPE))
-        self.oauth2.access_token.setText(self._auth_text(auth, "access_token"))
-        self.oauth2.refresh_token.setText(self._auth_text(auth, "refresh_token"))
-        self.oauth2.verify_ssl.setChecked(
-            getattr(auth, AuthConfigKey.VERIFY_SSL, True) is not False,
+        self.oauth2.set_auth_config(
+            {
+                AuthConfigKey.TOKEN_URL: self._auth_text(auth, AuthConfigKey.TOKEN_URL),
+                AuthConfigKey.CLIENT_ID: self._auth_text(auth, AuthConfigKey.CLIENT_ID),
+                AuthConfigKey.CLIENT_SECRET: self._auth_text(auth, AuthConfigKey.CLIENT_SECRET),
+                AuthConfigKey.SCOPE: self._auth_text(auth, AuthConfigKey.SCOPE),
+                "access_token": self._auth_text(auth, "access_token"),
+                "refresh_token": self._auth_text(auth, "refresh_token"),
+                AuthConfigKey.TOKEN_AUTH: (
+                    self._auth_text(auth, AuthConfigKey.TOKEN_AUTH) or self._DEFAULT_TOKEN_AUTH
+                ),
+                AuthConfigKey.VERIFY_SSL: getattr(auth, AuthConfigKey.VERIFY_SSL, True)
+                is not False,
+                "extra_params": getattr(auth, "extra_params", None),
+                "token_field_name": self._auth_text(auth, "token_field_name") or "access_token",
+                "token_request_headers": getattr(auth, "token_request_headers", None),
+                "default_token_ttl_seconds": getattr(auth, "default_token_ttl_seconds", 3600),
+            },
         )
-
-        token_auth = self._auth_text(auth, AuthConfigKey.TOKEN_AUTH) or self._DEFAULT_TOKEN_AUTH
-        token_auth_index = self.oauth2.token_auth.findData(token_auth)
-        self.oauth2.token_auth.setCurrentIndex(max(token_auth_index, 0))
 
     def _load_api_key_auth(self, auth: APIKeyAuth) -> None:
         self._select_tab(AuthType.API_KEY)
-        self.api_key.key_name.setText(self._auth_text(auth, AuthConfigKey.KEY))
-        self.api_key.key_value.setText(self._auth_text(auth, AuthConfigKey.VALUE))
-        location = self._auth_text(auth, AuthConfigKey.LOCATION).lower()
-        self.api_key.location.setCurrentIndex(1 if location == ApiKeyLocation.QUERY else 0)
+        self.api_key.set_auth_config(
+            {
+                AuthConfigKey.KEY: self._auth_text(auth, AuthConfigKey.KEY),
+                AuthConfigKey.VALUE: self._auth_text(auth, AuthConfigKey.VALUE),
+                AuthConfigKey.LOCATION: (
+                    self._auth_text(auth, AuthConfigKey.LOCATION).lower() or ApiKeyLocation.HEADER
+                ),
+            },
+        )
 
     def _load_aws_sigv4_auth(self, auth: AWSSigV4Auth) -> None:
         self._select_tab(AuthType.AWS_SIGV4)
-        self.aws.access_key.setText(self._auth_text(auth, AuthConfigKey.ACCESS_KEY))
-        self.aws.secret_key.setText(self._auth_text(auth, AuthConfigKey.SECRET_KEY))
-        self.aws.region.setText(self._auth_text(auth, AuthConfigKey.REGION))
-        self.aws.service.setText(self._auth_text(auth, AuthConfigKey.SERVICE))
-        self.aws.session_token.setText(self._auth_text(auth, AuthConfigKey.SESSION_TOKEN))
+        self.aws.set_auth_config(
+            {
+                AuthConfigKey.ACCESS_KEY: self._auth_text(auth, AuthConfigKey.ACCESS_KEY),
+                AuthConfigKey.SECRET_KEY: self._auth_text(auth, AuthConfigKey.SECRET_KEY),
+                AuthConfigKey.REGION: self._auth_text(auth, AuthConfigKey.REGION),
+                AuthConfigKey.SERVICE: self._auth_text(auth, AuthConfigKey.SERVICE),
+                AuthConfigKey.SESSION_TOKEN: self._auth_text(auth, AuthConfigKey.SESSION_TOKEN),
+            },
+        )
 
     def _refresh_client_picker(self) -> None:
         """Reload the saved-credential combo from the database."""
@@ -364,68 +387,20 @@ class AuthDialog(QDialog):
         self._select_and_apply_config(auth_type, config)
 
     def _select_and_apply_config(self, auth_type: str, config: dict[str, Any]) -> None:
-        """Switch to the relevant tab and apply saved configuration."""
+        """Switch to the relevant tab and apply saved configuration.
+
+        The saved credential's config dict is handed straight to the shared
+        tab widget, so both the request dialog and the credentials manager
+        interpret configuration identically.
+        """
         self._select_tab(auth_type)
 
-        apply_config = self._auth_config_appliers.get(auth_type)
-        if apply_config is None:
+        tab = self._auth_tabs.get(auth_type)
+        if tab is None:
             LOGGER.warning("Unsupported saved credential authentication type.")
             return
 
-        apply_config(config)
-
-    def _apply_oauth2_config(self, cfg: dict[str, Any]) -> None:
-        """Apply OAuth2 settings from a saved credential."""
-        self.oauth2.token_url.setText(str(cfg.get(AuthConfigKey.TOKEN_URL, "")))
-        self.oauth2.client_id.setText(str(cfg.get(AuthConfigKey.CLIENT_ID, "")))
-        self.oauth2.client_secret.setText(str(cfg.get(AuthConfigKey.CLIENT_SECRET, "")))
-        self.oauth2.scope.setText(str(cfg.get(AuthConfigKey.SCOPE, "")))
-
-        verify_ssl = cfg.get(AuthConfigKey.VERIFY_SSL, True)
-        self.oauth2.verify_ssl.setChecked(verify_ssl is True)
-
-        token_auth = str(
-            cfg.get(AuthConfigKey.TOKEN_AUTH, self._DEFAULT_TOKEN_AUTH) or self._DEFAULT_TOKEN_AUTH,
-        )
-        token_auth_index = self.oauth2.token_auth.findData(token_auth)
-        self.oauth2.token_auth.setCurrentIndex(max(token_auth_index, 0))
-
-        self.oauth2.access_token.clear()
-        self.oauth2.refresh_token.clear()
-
-    def _apply_api_key_config(self, cfg: dict[str, Any]) -> None:
-        """Apply API key settings from a saved credential."""
-        key_name = str(cfg.get(AuthConfigKey.KEY, self._DEFAULT_API_KEY_NAME))
-        key_value = str(cfg.get(AuthConfigKey.VALUE, ""))
-        location = str(cfg.get(AuthConfigKey.LOCATION, ApiKeyLocation.HEADER)).lower()
-
-        self.api_key.key_name.setText(key_name)
-        self.api_key.key_value.setText(key_value)
-
-        location_index_by_value = {
-            ApiKeyLocation.HEADER: 0,
-            ApiKeyLocation.QUERY: 1,
-        }
-        self.api_key.location.setCurrentIndex(
-            location_index_by_value.get(location, location_index_by_value[ApiKeyLocation.HEADER]),
-        )
-
-    def _apply_basic_config(self, cfg: dict[str, Any]) -> None:
-        """Apply Basic Auth settings from a saved credential."""
-        self.basic.username.setText(str(cfg.get(AuthConfigKey.USERNAME, "")))
-        self.basic.password.setText(str(cfg.get(AuthConfigKey.PASSWORD, "")))
-
-    def _apply_bearer_config(self, cfg: dict[str, Any]) -> None:
-        """Apply Bearer Token settings from a saved credential."""
-        self.bearer.token.setText(str(cfg.get(AuthConfigKey.TOKEN, "")))
-
-    def _apply_aws_sigv4_config(self, cfg: dict[str, Any]) -> None:
-        """Apply AWS SigV4 settings from a saved credential."""
-        self.aws.access_key.setText(str(cfg.get(AuthConfigKey.ACCESS_KEY, "")))
-        self.aws.secret_key.setText(str(cfg.get(AuthConfigKey.SECRET_KEY, "")))
-        self.aws.region.setText(str(cfg.get(AuthConfigKey.REGION, "")))
-        self.aws.service.setText(str(cfg.get(AuthConfigKey.SERVICE, "")))
-        self.aws.session_token.setText(str(cfg.get(AuthConfigKey.SESSION_TOKEN, "")))
+        tab.set_auth_config(config)
 
     def _open_client_manager(self) -> None:
         """Open the saved-credentials manager dialog."""
@@ -503,6 +478,13 @@ class AuthDialog(QDialog):
         build = builders.get(auth_type or "")
         if build is None or not isinstance(tab, AuthDialogTab):
             return None
+
+        # The shared tab owns its validation rules, so the request dialog and
+        # the credentials manager reject exactly the same incomplete forms.
+        error = tab.validate()
+        if error is not None:
+            return self._warn_missing(error)
+
         return build(self._sanitized_config(dict(tab.get_auth_config())))
 
     def _current_auth_type(self) -> str | None:
@@ -526,36 +508,32 @@ class AuthDialog(QDialog):
         return _MISSING
 
     def _build_basic_auth(self, cfg: dict[str, Any]) -> AuthStrategy | Any:
-        username = cfg.get(AuthConfigKey.USERNAME) or ""
-        password = cfg.get(AuthConfigKey.PASSWORD) or ""
-        if not username or not password:
-            return self._warn_missing("Enter both username and password.")
-        return BasicAuth(username=username, password=password)
+        # Required-field validation lives in the shared tab (validate()).
+        return BasicAuth(
+            username=cfg.get(AuthConfigKey.USERNAME) or "",
+            password=cfg.get(AuthConfigKey.PASSWORD) or "",
+        )
 
     def _build_bearer_auth(self, cfg: dict[str, Any]) -> AuthStrategy | Any:
-        token = cfg.get(AuthConfigKey.TOKEN) or ""
-        if not token:
-            return self._warn_missing("Enter a bearer token.")
-        return BearerAuth(token=token)
+        return BearerAuth(token=cfg.get(AuthConfigKey.TOKEN) or "")
 
     def _build_oauth2_auth(self, cfg: dict[str, Any]) -> AuthStrategy | Any:
-        token_url = cfg.get(AuthConfigKey.TOKEN_URL) or ""
-        client_id = cfg.get(AuthConfigKey.CLIENT_ID) or ""
-        if not token_url or not client_id:
-            return self._warn_missing("Token URL and Client ID are required.")
-
         token_auth: Literal["body", "basic"] = (
             "basic" if cfg.get(AuthConfigKey.TOKEN_AUTH) == "basic" else "body"
         )
         auth = OAuth2Auth(
-            token_url=token_url,
-            client_id=client_id,
+            token_url=cfg.get(AuthConfigKey.TOKEN_URL) or "",
+            client_id=cfg.get(AuthConfigKey.CLIENT_ID) or "",
             client_secret=cfg.get(AuthConfigKey.CLIENT_SECRET) or None,
             scope=cfg.get(AuthConfigKey.SCOPE) or None,
             access_token=cfg.get("access_token") or None,
             refresh_token=cfg.get("refresh_token") or None,
             verify_ssl=bool(cfg.get(AuthConfigKey.VERIFY_SSL, True)),
             token_auth=token_auth,
+            extra_params=cfg.get("extra_params") or None,
+            token_field_name=cfg.get("token_field_name") or "access_token",
+            token_request_headers=cfg.get("token_request_headers") or None,
+            default_token_ttl_seconds=int(cfg.get("default_token_ttl_seconds") or 3600),
         )
         self._carry_forward_expiry(auth)
         return auth
@@ -574,30 +552,22 @@ class AuthDialog(QDialog):
             auth.expires_at = fetched.expires_at
 
     def _build_api_key_auth(self, cfg: dict[str, Any]) -> AuthStrategy | Any:
-        key = cfg.get(AuthConfigKey.KEY) or ""
-        value = cfg.get(AuthConfigKey.VALUE) or ""
-        if not key or not value:
-            return self._warn_missing("Enter both key name and value.")
         location: Literal["header", "query"] = (
             "query"
             if str(cfg.get(AuthConfigKey.LOCATION, "")).lower() == ApiKeyLocation.QUERY
             else "header"
         )
-        return APIKeyAuth(key=key, value=value, location=location)
+        return APIKeyAuth(
+            key=cfg.get(AuthConfigKey.KEY) or "",
+            value=cfg.get(AuthConfigKey.VALUE) or "",
+            location=location,
+        )
 
     def _build_aws_sigv4_auth(self, cfg: dict[str, Any]) -> AuthStrategy | Any:
-        access_key = cfg.get(AuthConfigKey.ACCESS_KEY) or ""
-        secret_key = cfg.get(AuthConfigKey.SECRET_KEY) or ""
-        region = cfg.get(AuthConfigKey.REGION) or ""
-        service = cfg.get(AuthConfigKey.SERVICE) or ""
-        if not access_key or not secret_key or not region or not service:
-            return self._warn_missing(
-                "Access Key, Secret Key, Region and Service are required.",
-            )
         return AWSSigV4Auth(
-            access_key=access_key,
-            secret_key=secret_key,
-            region=region,
-            service=service,
+            access_key=cfg.get(AuthConfigKey.ACCESS_KEY) or "",
+            secret_key=cfg.get(AuthConfigKey.SECRET_KEY) or "",
+            region=cfg.get(AuthConfigKey.REGION) or "",
+            service=cfg.get(AuthConfigKey.SERVICE) or "",
             session_token=cfg.get(AuthConfigKey.SESSION_TOKEN) or None,
         )

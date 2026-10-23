@@ -47,6 +47,11 @@ class OAuth2TokenController(QObject):
         """
         return self._last_fetched_auth
 
+    # Grants the request-editor fetch flow can honour.  The credentials
+    # manager's tester covers all four grant types; the request flow builds
+    # an ``OAuth2Auth`` strategy, which only implements these two.
+    _SUPPORTED_GRANTS = ("client_credentials", "refresh_token")
+
     def fetch_token(self) -> None:
         """Validate inputs, build OAuth2Auth, and start background fetch."""
         config: dict[str, Any] = self._tab.get_auth_config()
@@ -63,6 +68,14 @@ class OAuth2TokenController(QObject):
             self._tab.status.setText(str(exc))
             return
 
+        grant_type = str(config.get("grant_type") or "client_credentials")
+        if grant_type not in self._SUPPORTED_GRANTS:
+            self._tab.status.setText(
+                "Request-flow token fetch supports the client_credentials and "
+                f"refresh_token grants (selected: {grant_type}).",
+            )
+            return
+
         variables = self._load_interpolation_variables()
         interpolate = self._build_interpolator(variables)
 
@@ -74,14 +87,23 @@ class OAuth2TokenController(QObject):
             interpolate,
             self._as_optional_str(config.get("scope")),
         )
+        refresh_token = self._optional_interpolated(
+            interpolate,
+            self._as_optional_str(config.get("refresh_token")),
+        )
 
         auth = OAuth2Auth(
             token_url=interpolate(token_url),
             client_id=interpolate(client_id),
             client_secret=client_secret,
             scope=scope,
+            refresh_token=refresh_token,
             verify_ssl=bool(config.get("verify_ssl", True)),
             token_auth=token_auth,
+            extra_params=config.get("extra_params") or None,
+            token_field_name=str(config.get("token_field_name") or "access_token"),
+            token_request_headers=config.get("token_request_headers") or None,
+            default_token_ttl_seconds=int(config.get("default_token_ttl_seconds") or 3600),
         )
 
         self._prepare_ui_for_fetch()
