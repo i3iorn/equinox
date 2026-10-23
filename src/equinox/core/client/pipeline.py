@@ -264,14 +264,15 @@ class RequestPipeline:
                 original error remains available via ``original_error`` and
                 ``__cause__``.
         """
-        logger.debug(
-            "RequestPipeline.execute: starting",
-            extra={
-                "request_method": request.method,
-                "request_url": redact_url(request.url),
-                "request_id": request.correlation_id,
-            },
-        )
+        if logger.isEnabledFor(logging.DEBUG):
+            logger.debug(
+                "RequestPipeline.execute: starting",
+                extra={
+                    "request_method": request.method,
+                    "request_url": redact_url(request.url),
+                    "request_id": request.correlation_id,
+                },
+            )
         try:
             logger.debug("RequestPipeline.execute: running pre-request interceptors")
             request = self._interceptors.process_request(request)
@@ -287,34 +288,36 @@ class RequestPipeline:
                 status_code=response.status_code,
                 request_id=request.correlation_id,
             )
-            logger.debug(
-                "RequestPipeline.execute: completed method=%s status=%d elapsed=%.2fs",
-                request.method,
-                response.status_code,
-                response.elapsed,
-                extra={
-                    "request_method": request.method,
-                    "status_code": response.status_code,
-                    "elapsed_seconds": response.elapsed,
-                    "request_url": redact_url(request.url),
-                    "request_id": request.correlation_id,
-                },
-            )
+            if logger.isEnabledFor(logging.DEBUG):
+                logger.debug(
+                    "RequestPipeline.execute: completed method=%s status=%d elapsed=%.2fs",
+                    request.method,
+                    response.status_code,
+                    response.elapsed,
+                    extra={
+                        "request_method": request.method,
+                        "status_code": response.status_code,
+                        "elapsed_seconds": response.elapsed,
+                        "request_url": redact_url(request.url),
+                        "request_id": request.correlation_id,
+                    },
+                )
             return response
 
         except Exception as exc:
-            logger.debug(
-                "RequestPipeline.execute: caught %s — %s",
-                type(exc).__name__,
-                (redact_body(str(exc), max_length=200) or ""),
-                extra={
-                    "error_type": type(exc).__name__,
-                    "error_message": redact_body(str(exc), max_length=200),
-                    "request_url": redact_url(request.url),
-                    "request_method": request.method,
-                    "request_id": request.correlation_id,
-                },
-            )
+            if logger.isEnabledFor(logging.DEBUG):
+                logger.debug(
+                    "RequestPipeline.execute: caught %s — %s",
+                    type(exc).__name__,
+                    (redact_body(str(exc), max_length=200) or ""),
+                    extra={
+                        "error_type": type(exc).__name__,
+                        "error_message": redact_body(str(exc), max_length=200),
+                        "request_url": redact_url(request.url),
+                        "request_method": request.method,
+                        "request_id": request.correlation_id,
+                    },
+                )
             self._handle_error(request, exc)
             # _handle_error returned normally: an interceptor suppressed the error.
             # Preserve the domain error's identity instead of raising a bare
@@ -322,16 +325,17 @@ class RequestPipeline:
             # genuine generic failure, and the original survives as __cause__.
             safe_msg = redact_body(str(exc), max_length=500) or ""
             exc_name = type(exc).__name__
-            logger.info(
-                "Error interceptor suppressed %s",
-                exc_name,
-                extra={
-                    "error_type": exc_name,
-                    "error_message": safe_msg,
-                    "request_url": redact_url(request.url),
-                    "request_id": request.correlation_id,
-                },
-            )
+            if logger.isEnabledFor(logging.INFO):
+                logger.info(
+                    "Error interceptor suppressed %s",
+                    exc_name,
+                    extra={
+                        "error_type": exc_name,
+                        "error_message": safe_msg,
+                        "request_url": redact_url(request.url),
+                        "request_id": request.correlation_id,
+                    },
+                )
             raise SuppressedRequestError(
                 f"Request suppressed by an error interceptor: {exc_name}: {safe_msg}",
                 original_error=exc,
