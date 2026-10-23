@@ -35,6 +35,10 @@ class HistoryManager:
     MAX_HISTORY_ENTRIES = 100_000
     DEFAULT_LIMIT = 100
 
+    # Run the (index-scan) prune COUNT only every N saves — see
+    # `_prune_oldest_entry_if_limit_reached`.
+    _PRUNE_CHECK_INTERVAL = 50
+
     # Backward-compatible aliases — canonical values live on the helpers.
     MAX_BODY_SIZE = _HistorySerializer.MAX_BODY_SIZE
     MAX_HEADERS_SIZE = _HistorySerializer.MAX_HEADERS_SIZE
@@ -48,6 +52,7 @@ class HistoryManager:
         self._serializer = _HistorySerializer()
         self._indexer = _HistoryIndexer(db)
         self._searcher = _HistorySearcher(db, self._serializer)
+        self._saves_since_prune_check = 0
 
     # ── Public write API ──────────────────────────────────────────────────────
 
@@ -73,29 +78,41 @@ class HistoryManager:
         error_str = self._serializer.truncate_error(error)
 
         try:
-            history_id = self.db.insert(
-                """
-                INSERT INTO history
-                (request_id, method, url, status_code, reason, request_headers,
-                 request_body, response_headers, response_body, elapsed, error,
-                 request_correlation_id)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """,
-                (
-                    getattr(request, "id", None),
+            # The main insert and the history_index row must land together:
+            # a single transaction halves WAL fsyncs and keeps the index
+            # consistent with the history table on failure.
+            with self.db.transaction() as tx:
+                history_id = tx.insert(
+                    """
+                    INSERT INTO history
+                    (request_id, method, url, status_code, reason, request_headers,
+                     request_body, response_headers, response_body, elapsed, error,
+                     request_correlation_id)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        getattr(request, "id", None),
+                        req["method"],
+                        req["url"],
+                        resp["status_code"],
+                        resp["reason"],
+                        req["headers_json"],
+                        req["body"],
+                        resp["headers_json"],
+                        resp["body"],
+                        resp["elapsed"],
+                        error_str,
+                        req["request_correlation_id"],
+                    ),
+                )
+                self._indexer.index(
+                    history_id,
                     req["method"],
                     req["url"],
                     resp["status_code"],
-                    resp["reason"],
-                    req["headers_json"],
-                    req["body"],
-                    resp["headers_json"],
-                    resp["body"],
-                    resp["elapsed"],
-                    error_str,
-                    req["request_correlation_id"],
-                ),
-            )
+                    response,
+                    tx=tx,
+                )
         except (ValidationError, SecurityError, StorageError):
             raise
         except Exception as exc:
@@ -110,7 +127,6 @@ class HistoryManager:
             resp["status_code"] or "error",
             resp["elapsed"] or 0,
         )
-        self._indexer.index(history_id, req["method"], req["url"], resp["status_code"], response)
         return int(history_id)
 
     def delete_history(self, history_id: int) -> None:
@@ -298,7 +314,17 @@ class HistoryManager:
     # ── Private helpers ───────────────────────────────────────────────────────
 
     def _prune_oldest_entry_if_limit_reached(self) -> None:
-        """Delete the oldest ~1 % of entries when the history cap is reached."""
+        """Delete the oldest ~1 % of entries when the history cap is reached.
+
+        The COUNT(*) check runs only every ``_PRUNE_CHECK_INTERVAL`` saves
+        (and once on the first save). Between checks the cap may be exceeded
+        by at most ``_PRUNE_CHECK_INTERVAL`` entries, which is negligible
+        against the ~1 % prune batch.
+        """
+        self._saves_since_prune_check += 1
+        if self._saves_since_prune_check < self._PRUNE_CHECK_INTERVAL:
+            return
+        self._saves_since_prune_check = 0
         count_row = self.db.fetchone("SELECT COUNT(*) as count FROM history")
         if count_row and count_row["count"] >= self.MAX_HISTORY_ENTRIES:
             prune_count = max(1, self.MAX_HISTORY_ENTRIES // 100)
