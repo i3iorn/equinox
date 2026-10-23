@@ -140,6 +140,14 @@ class InterceptorChain:
     # -------- Error --------
 
     def process_error(self, request: Request, error: Exception) -> Exception | None:
+        """Run the error interceptors over *error*.
+
+        Returns:
+            ``None`` when an interceptor suppressed the error (the pipeline
+            then raises a ``SuppressedRequestError`` preserving the original
+            error for callers), or the (possibly interceptor-replaced)
+            exception that the pipeline should raise.
+        """
         context = InterceptorContext(request=request, error=error)
         logger.debug(
             "Processing error through %d interceptor(s): %s",
@@ -172,6 +180,9 @@ class InterceptorChain:
 
             if result.action == InterceptorAction.SUPPRESS:
                 logger.debug("Error suppressed by %s", type(interceptor).__name__)
+                # A ``None`` return signals suppression: the pipeline raises a
+                # SuppressedRequestError preserving the original domain error,
+                # so callers can still inspect what was suppressed.
                 return None
 
             if result.action == InterceptorAction.REPLACE:

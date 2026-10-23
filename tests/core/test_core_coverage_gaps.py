@@ -500,10 +500,10 @@ class TestMultipart:
         assert result[0][0] == "name"
 
     def test_file_field_not_found(self):
+        """Missing files fail fast instead of silently uploading empty parts."""
         data = [{"key": "upload", "type": "file", "value": "/nonexistent/file.txt"}]
-        result, handles = build_multipart_files(data)
-        assert result is not None
-        assert len(handles) == 0  # no file handles opened
+        with pytest.raises(ValidationError, match="upload"):
+            build_multipart_files(data)
 
     def test_file_field_with_real_file(self, tmp_path):
         f = tmp_path / "test.txt"

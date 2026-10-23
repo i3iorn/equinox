@@ -4,7 +4,7 @@ import logging
 from collections.abc import Callable, Iterable
 from typing import Any, Protocol, TypedDict
 
-from equinox.core.exceptions import EquinoxError, RequestError
+from equinox.core.exceptions import EquinoxError, RequestError, SuppressedRequestError
 from equinox.core.interceptors.chain import InterceptorChain
 from equinox.core.request import Request, Response
 from equinox.security import redact_body, redact_url
@@ -138,7 +138,8 @@ class RequestPipeline:
         Raises the interceptor-transformed (or original) error when the chain
         does not suppress it.  Returns normally *only* when an interceptor
         suppresses the error; :meth:`execute` is then responsible for raising
-        a sentinel ``RequestError``.
+        a :class:`~equinox.core.exceptions.SuppressedRequestError` that
+        preserves the original error.
         """
         if audit_tag:
             self._audit_log_request(
@@ -257,7 +258,11 @@ class RequestPipeline:
 
         Raises:
             :class:`~equinox.core.exceptions.RequestError`: On any transport or
-                processing failure not suppressed by an error interceptor.
+                processing failure.
+            :class:`~equinox.core.exceptions.SuppressedRequestError`: When an
+                error interceptor suppressed the original failure — the
+                original error remains available via ``original_error`` and
+                ``__cause__``.
         """
         logger.debug(
             "RequestPipeline.execute: starting",
@@ -312,4 +317,23 @@ class RequestPipeline:
             )
             self._handle_error(request, exc)
             # _handle_error returned normally: an interceptor suppressed the error.
-            raise RequestError("Request suppressed by an error interceptor") from exc
+            # Preserve the domain error's identity instead of raising a bare
+            # generic RequestError — callers can distinguish suppression from a
+            # genuine generic failure, and the original survives as __cause__.
+            safe_msg = redact_body(str(exc), max_length=500) or ""
+            exc_name = type(exc).__name__
+            logger.info(
+                "Error interceptor suppressed %s",
+                exc_name,
+                extra={
+                    "error_type": exc_name,
+                    "error_message": safe_msg,
+                    "request_url": redact_url(request.url),
+                    "request_id": request.correlation_id,
+                },
+            )
+            raise SuppressedRequestError(
+                f"Request suppressed by an error interceptor: {exc_name}: {safe_msg}",
+                original_error=exc,
+                details={"original_error": exc_name},
+            ) from exc
