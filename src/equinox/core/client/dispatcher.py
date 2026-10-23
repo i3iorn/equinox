@@ -199,15 +199,11 @@ class HttpxDispatcher:
         files: dict[str, Any] = {}
         opened_handles: list[IO[bytes]] = []
 
-        request_files = getattr(request, "files", {}) or {}
         for field, value in request_files.items():
             if isinstance(value, (str, Path)):
-                fh = Path(value).open("rb")
-                try:
+                with Path(value).open("rb") as fh:
                     opened_handles.append(fh)
                     files[field] = (Path(value).name, fh)
-                finally:
-                    fh.close()
             elif isinstance(value, tuple) and len(value) in (2, 3):
                 files[field] = value
             else:
@@ -334,13 +330,10 @@ class HttpxDispatcher:
         }
 
         try:
-            req_url = redact_url(str(raw.request.url))
-            info["sent_url"] = req_url
+            info["sent_url"] = redact_url(str(raw.request.url))
         except Exception:
-            req_url = redact_url(request.url)
-            info["sent_url"] = req_url
+            info["sent_url"] = redact_url(request.url)
 
-        stream = None
         try:
             ext = getattr(raw, "extensions", {}) or {}
             stream = ext.get("network_stream") or ext.get("stream")
@@ -526,8 +519,7 @@ class HttpxDispatcher:
         except httpx.TimeoutException as exc:
             # Translate raw httpx timeouts into the domain error so the retry
             # loop in ``RetryPolicy.execute`` (which wraps this dispatch) can
-            # act on them. Unmapped, httpx timeouts would bypass retries
-            # entirely and only be mapped by the pipeline afterwards.
+            # act on them; unmapped, they would bypass retries entirely.
             url = redact_url(request.url) or "unknown URL"
             message = {
                 httpx.ConnectTimeout: "Connection timed out",
@@ -551,8 +543,8 @@ class HttpxDispatcher:
     def __repr__(self) -> str:
         with self._client_lock:
             state = "open" if self._clients else "closed"
-            client_count = len(self._clients)
         return (
             f"HttpxDispatcher(state={state!r}, timeout={self._timeout}, "
-            f"verify_ssl={self._verify_ssl}, proxy={redact_url(self._proxy)!r}, clients={client_count})"
+            f"verify_ssl={self._verify_ssl}, proxy={redact_url(self._proxy)!r}, "
+            f"clients={len(self._clients)})"
         )
