@@ -14,6 +14,8 @@ from equinox.storage.database import Database
 from equinox.storage.utils import coerce_body_to_str
 from equinox.storage.utils import safe_json_loads
 
+from ._constants import _HISTORY_LIST_COLUMNS
+from ._constants import _HISTORY_STREAM_COLUMNS
 from ._constants import _LIKE_ESCAPE_CLAUSE
 from ._constants import _STATUS_CODE_RANGES
 from ._serializer import _HistorySerializer
@@ -120,7 +122,7 @@ class _HistorySearcher:
         limit: int,
         offset: int,
     ) -> list[dict[str, Any]]:
-        sql = "SELECT * FROM history "
+        sql = f"SELECT {_HISTORY_LIST_COLUMNS} FROM history "
         if where_clause:
             sql += where_clause + " "
         sql += "ORDER BY executed_at DESC LIMIT ? OFFSET ?"
@@ -148,7 +150,7 @@ class _HistorySearcher:
         cursor_offset = offset
         batch_size = max(limit * 4, 200)
         # where_clause is built solely from hardcoded SQL fragments; user values are in params.
-        sql_template = "SELECT * FROM history "
+        sql_template = f"SELECT {_HISTORY_STREAM_COLUMNS} FROM history "
         if where_clause:
             sql_template += where_clause + " "
         sql_template += "ORDER BY executed_at DESC LIMIT ? OFFSET ?"

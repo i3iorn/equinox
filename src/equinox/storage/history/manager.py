@@ -14,6 +14,7 @@ from equinox.security import redact_url
 from equinox.storage.database import Database
 from equinox.storage.utils import require_positive_int as _require_positive_int
 
+from ._constants import _HISTORY_LIST_COLUMNS
 from ._indexer import _HistoryIndexer
 from ._searcher import _HistorySearcher
 from ._serializer import _HistorySerializer
@@ -197,12 +198,15 @@ class HistoryManager:
         if request_id is not None:
             _require_positive_int(request_id, "Request ID")
             sql = (
-                "SELECT * FROM history WHERE request_id = ? "
+                f"SELECT {_HISTORY_LIST_COLUMNS} FROM history WHERE request_id = ? "
                 "ORDER BY executed_at DESC LIMIT ? OFFSET ?"
             )
             params: tuple[Any, ...] = (request_id, limit, offset)
         else:
-            sql = "SELECT * FROM history ORDER BY executed_at DESC LIMIT ? OFFSET ?"
+            sql = (
+                f"SELECT {_HISTORY_LIST_COLUMNS} FROM history "
+                "ORDER BY executed_at DESC LIMIT ? OFFSET ?"
+            )
             params = (limit, offset)
 
         rows = self.db.fetchall(sql, params)
