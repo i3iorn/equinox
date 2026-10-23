@@ -65,6 +65,30 @@ class RequestError(EquinoxError):
     pass
 
 
+class SuppressedRequestError(RequestError):
+    """An error interceptor suppressed the original domain error.
+
+    Raised by the request pipeline after an error interceptor returned
+    ``SUPPRESS``.  It subclasses :class:`RequestError` so existing callers
+    that catch generic request failures keep working, while also carrying
+    the original error for callers that need to distinguish suppression
+    from a genuine generic failure.
+
+    Attributes:
+        original_error: The domain/transport error that was suppressed.
+            Also available as ``__cause__``.
+    """
+
+    def __init__(
+        self,
+        message: str,
+        original_error: Exception,
+        details: dict[str, Any] | None = None,
+    ) -> None:
+        super().__init__(message, details=details)
+        self.original_error = original_error
+
+
 class AuthError(EquinoxError):
     """Authentication or authorization error."""
 
