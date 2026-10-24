@@ -5,7 +5,7 @@ from __future__ import annotations
 import pytest
 
 from equinox.core.client.pipeline import RequestPipeline
-from equinox.core.exceptions import RequestError
+from equinox.core.exceptions import RequestError, SuppressedRequestError
 from equinox.core.interceptors._base import (
     ErrorInterceptor,
     InterceptorResult,
@@ -128,8 +128,15 @@ def test_pipeline_raises_sentinel_error_when_error_interceptor_suppresses() -> N
     def _dispatch(_req: Request) -> Response:
         raise RuntimeError("transport down")
 
-    with pytest.raises(RequestError, match="suppressed"):
+    with pytest.raises(SuppressedRequestError, match="suppressed") as exc_info:
         pipeline.execute(request, _dispatch)
+
+    # Suppression must preserve the original error's identity (issue #51):
+    # the raised error is the specific SuppressedRequestError type, and the
+    # original survives as both `original_error` and `__cause__`.
+    assert exc_info.value.original_error is exc_info.value.__cause__
+    assert isinstance(exc_info.value.original_error, RuntimeError)
+    assert exc_info.value.details == {"original_error": "RuntimeError"}
 
     assert len(audit.events) == 1
     assert audit.events[0]["error"] == "RuntimeError"

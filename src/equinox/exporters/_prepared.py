@@ -17,7 +17,7 @@ from equinox.core import urls
 from equinox.core.exceptions import ValidationError
 from equinox.importers._utils import json_to_dict as _json_to_dict
 from equinox.importers._utils import parse_url_parts, write_json_file
-from equinox.security import redact_body, redact_headers, redact_params
+from equinox.security import redact_body, redact_headers, redact_params, redact_url
 from equinox.storage.collections import CollectionManager
 from equinox.storage.database import Database
 
@@ -89,7 +89,11 @@ class _PreparedRequest:
             name=row.get("name", "Unnamed"),
             description=row.get("description", ""),
             method=row.get("method", "GET"),
-            raw_url=row.get("url", ""),
+            # Redact the raw URL too: sensitive query params and userinfo in
+            # the URL itself would otherwise leak through Postman's `url.raw`
+            # (and equivalent fields in other formats) even though the parsed
+            # `query` array is scrubbed (issue #61).
+            raw_url=redact_url(row.get("url", "")) or "",
             body=redact_body(row.get("body") or None),
             headers={
                 str(k): str(v) for k, v in (redact_headers(headers) or {}).items() if v is not None
