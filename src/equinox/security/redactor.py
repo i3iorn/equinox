@@ -76,6 +76,21 @@ _URL_SECRET_PARAMS: re.Pattern[str] = re.compile(
     re.IGNORECASE,
 )
 
+# JWT-shaped substrings: `eyJ` base64url header + two dot-separated segments
+# with base64url characters. Masked regardless of field name so a JWT inside
+# a free-form error message or a non-standard field (issue #69) is caught.
+_JWT_SHAPE: re.Pattern[str] = re.compile(
+    r"eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+",
+)
+_MASKED_JWT: str = "eyJ[REDACTED-JWT]"
+
+
+def mask_jwt_shaped(text: str) -> str:
+    """Mask JWT-shaped substrings regardless of field name (issue #69)."""
+    if not text:
+        return text
+    return _JWT_SHAPE.sub(_MASKED_JWT, text)
+
 
 def redact_headers(headers: dict[str, Any]) -> dict[str, Any | None]:
     if not headers:
@@ -83,6 +98,19 @@ def redact_headers(headers: dict[str, Any]) -> dict[str, Any | None]:
     return {
         k: (_REDACTED if k.lower() in SENSITIVE_HEADER_NAMES else v) for k, v in headers.items()
     }
+
+
+def redact_params(params: dict[str, Any]) -> dict[str, Any | None]:
+    """Redact query-parameter values whose keys match sensitive patterns.
+
+    Same policy as :func:`redact_headers` but keyed on
+    :data:`SENSITIVE_PAYLOAD_KEYS` (API-key-in-query, tokens, secrets, etc.)
+    so exporters and payload builders never carry live credentials by key
+    name.
+    """
+    if not params:
+        return {}
+    return {k: (_REDACTED if k.lower() in SENSITIVE_PAYLOAD_KEYS else v) for k, v in params.items()}
 
 
 def redact_body(body: str | None, *, max_length: int = 0, max_len: int = 0) -> str | None:

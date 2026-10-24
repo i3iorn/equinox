@@ -2,6 +2,10 @@
 
 This guide helps AI agents understand Equinox architecture and development practices to avoid common mistakes and ramp up quickly.
 
+All package paths below (`gui/`, `core/`, `storage/`, ...) live under `src/equinox/`.
+
+**Branch model**: `dev` is the integration branch — PRs target `dev`. `master` is release-only (changes arrive via the dev → master promotion PR); a `no-commit-to-branch` pre-commit hook blocks direct commits to master.
+
 ## Critical Commands
 
 ```bash
@@ -22,14 +26,19 @@ pytest tests/core/test_security_comprehensive.py  # Security tests
 pytest tests/core/test_auth_encryption.py  # Auth encryption boundary
 pytest tests/storage/test_request_persistence.py  # Autosave & path_params
 
-# Lint / typecheck
-ruff check .
-ruff format --check .
+# Lint / typecheck (CI lints src/ and tests/ only)
+ruff check src/ tests/
+ruff format --check src/ tests/
 mypy src  # Must pass strict — matches CI (CI's typecheck gate runs `mypy src` only; tests are not type-checked in CI)
 bandit -r src/equinox --severity-level=medium -s "B102,B113,B318,B608"
+
+# Run only tests affected by changed/staged modules
+python scripts/run_affected_tests.py
 ```
 
-**Note:** CI runs `mypy src` (strict comes from `pyproject.toml`'s `[tool.mypy] strict = true`), and the pre-commit `mypy-strict` hook checks changed files with the same config.
+**Note:** CI runs `mypy src` (strict comes from `pyproject.toml`'s `[tool.mypy] strict = true`), and the pre-commit `mypy-strict` hook checks changed files with the same config. `pyproject.toml` also sets `platform = "linux"`, so mypy results match CI even when run locally on Windows.
+
+**CI environment**: test matrix is Python 3.10–3.14 (default 3.11); GUI tests run headless with `QT_QPA_PLATFORM=offscreen` — set this if Qt tests fail locally on Linux.
 
 ## Architecture (Key Boundaries)
 
@@ -128,7 +137,8 @@ if not self.parent or not self.parent.isVisible():
 
 ## References
 
+- **WORKFLOW.md**: Documentation map / entry point for navigating docs
 - **DEVELOPMENT.md**: Step-by-step workflow and common tasks
-- **CONTRIBUTING.md**: Code standards and PR process (note: coverage figure "87%" in docs is stale — pyproject.toml `fail_under = 74` is the actual threshold)
+- **CONTRIBUTING.md**: Code standards and PR process (stale claims: says "87% coverage enforced by CI" — pyproject.toml `fail_under = 74` is actual; README's keyboard shortcuts say Ctrl but code uses Alt)
 - **README.md**: Architecture snapshot, commands, troubleshooting
-- This file (`AGENTS.md`): Deep-dive architecture details for AI agents
+- **docs/packaging.md**: Why PyPI name is `equinox-api` while the import package stays `equinox`

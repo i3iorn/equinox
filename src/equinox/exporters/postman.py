@@ -7,6 +7,7 @@ import warnings
 from typing import Any
 
 from equinox.exporters._prepared import _BaseCollectionExporter, _PreparedRequest
+from equinox.security import redact_params
 from equinox.storage.collections import CollectionManager
 from equinox.storage.database import Database
 
@@ -65,7 +66,15 @@ class PostmanExporter(_BaseCollectionExporter):
         try:
             var_list = CollectionManager(db).list_collection_variables(collection_id)
             # Storage schema uses "key"/"value" columns — not "name"/"value".
-            variables = [{"key": v["key"], "value": v["value"], "type": "string"} for v in var_list]
+            # Variable values are scrubbed by key name so secrets (API keys,
+            # tokens, etc.) stored in collection variables are redacted too.
+            var_dict = {v["key"]: v["value"] for v in var_list}
+            redacted = redact_params(var_dict)
+            variables = [
+                {"key": k, "value": v, "type": "string"}
+                for k, v in redacted.items()
+                if v is not None
+            ]
         except Exception as exc:
             logger.warning(
                 "Failed to export collection variables (%d variable(s) skipped): %s",

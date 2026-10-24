@@ -106,16 +106,26 @@ def get_from_os_store() -> bytes | None:
         ) from exc
 
 
-def set_in_os_store(key: bytes) -> None:
+def set_in_os_store(key: bytes) -> bool:
+    """Store *key* in the OS keyring.
+
+    Returns:
+        ``True`` when the write succeeded, ``False`` when the feature is
+        disabled/unavailable or the write failed. Callers that mint a *new*
+        key must verify this — storing an unpersisted key silently orphans
+        everything encrypted under it (issue #63).
+    """
     if not _env_os_keystore_enabled() or not _os_keyring_available():
-        return
+        return False
     kr = keyring
     if kr is None:
-        return
+        return False
     try:
         kr.set_password(SERVICE, ACCOUNT, base64.b64encode(key).decode("ascii"))
     except Exception:
         logger.exception("Failed to store encryption key in OS keyring")
+        return False
+    return True
 
 
 def _os_store_has_backend() -> bool:
@@ -166,5 +176,13 @@ def get_or_create_os_key() -> bytes | None:
         return None
 
     key = os.urandom(32)
-    set_in_os_store(key)
+    if not set_in_os_store(key):
+        # Fail loud rather than returning an unpersisted key: every run
+        # would mint a fresh key and previously encrypted values would
+        # become permanently undecryptable (issue #63).
+        raise KeystoreUnavailableError(
+            "OS keyring is enabled but the encryption key could not be stored. "
+            "Refusing to use an unpersisted key. Disable the OS keyring with "
+            "EQUINOX_USE_OS_KEYRING=0 to use the file key.",
+        )
     return key

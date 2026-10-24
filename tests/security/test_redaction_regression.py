@@ -7,7 +7,13 @@ from __future__ import annotations
 
 import pytest
 
-from equinox.security import redact_body, redact_headers, redact_url, sanitize_details
+from equinox.security import (
+    redact_body,
+    redact_headers,
+    redact_params,
+    redact_url,
+    sanitize_details,
+)
 
 
 @pytest.mark.parametrize(
@@ -46,6 +52,25 @@ def test_redact_url_masks_credentials_and_secret_params() -> None:
     assert "abc123" not in out
     assert "***:***" in out
     assert "[REDACTED]" in out
+
+
+def test_redact_params_masks_sensitive_keys_and_keeps_others() -> None:
+    params = {
+        "api_key": "abc123",  # pragma: allowlist secret
+        "token": "topsecret",  # pragma: allowlist secret
+        "limit": "10",
+        "user": "alice",
+    }
+    out = redact_params(params)
+    assert out["api_key"] == "[REDACTED]"
+    assert out["token"] == "[REDACTED]"
+    assert out["limit"] == "10"
+    assert out["user"] == "alice"
+
+
+def test_redact_params_empty_and_none_values() -> None:
+    assert redact_params({}) == {}
+    assert redact_params({"api_key": None}) == {"api_key": "[REDACTED]"}
 
 
 def test_sanitize_details_nested_payloads() -> None:

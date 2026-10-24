@@ -19,6 +19,7 @@ from sqlite3 import Connection
 
 from cryptography.fernet import Fernet
 from equinox.core.config.flags import is_strict_secret_rotation_enabled
+from equinox.security.auth_cipher import reset_fernet_cache
 
 _SALT_FILE = Path.home() / ".equinox" / "salt.bin"
 _MASTER_PW_ENV = "EQUINOX_MASTER_PASSWORD"
@@ -105,10 +106,17 @@ def get_master_password() -> str | None:
 
 
 def set_master_password(password: str) -> None:
-    """Explicitly set the master password for the current process."""
+    """Explicitly set the master password for the current process.
+
+    Resets the cipher cache in ``security.auth_cipher`` so the new password
+    takes effect immediately — otherwise a cached master-password Fernet
+    ("always wins" in ``get_fernet``) keeps new secrets encrypted under the
+    old password until the process restarts.
+    """
     global _cached_password, _cached_fernet
     _cached_password = password
     _cached_fernet = None
+    reset_fernet_cache()
 
 
 def set_master_password_prompt(callback: Callable[[], str | None] | None) -> None:

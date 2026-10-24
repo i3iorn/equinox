@@ -64,6 +64,14 @@ def get_fernet(
         if cached is not None:
             return cached
 
+        logger.warning(
+            "Encryption is active WITHOUT a master password: secrets are protected "
+            "by the file key in ~/.equinox/.key, which lives beside the database. "
+            "Any backup or sync of the home directory exfiltrates key and ciphertext "
+            "together (issue #66). Set EQUINOX_MASTER_PASSWORD or configure a master "
+            "password in the app to protect secrets with PBKDF2 derivation instead.",
+        )
+
         key = get_or_create_key()
         fernet_obj = crypto.make_fernet(key)
         if not isinstance(fernet_obj, Fernet):
