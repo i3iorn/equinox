@@ -198,6 +198,7 @@ class HttpxDispatcher:
 
         for field, value in request_files.items():
             if isinstance(value, (str, Path)):
+                Validator.validate_file_path(str(value))
                 with Path(value).open("rb") as fh:
                     opened_handles.append(fh)
                     files[field] = (Path(value).name, fh)
