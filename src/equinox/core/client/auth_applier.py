@@ -114,17 +114,18 @@ class AuthApplier:
             RequestError: If strategy.apply() raises any exception.
         """
         verify_ssl = bool(getattr(request, "verify_ssl", True))
-        logger.debug(
-            "Applying auth strategy: %s",
-            type(strategy).__name__,
-            extra={
-                "strategy_type": type(strategy).__name__,
-                "request_url": redact_url(request.url),
-                "request_method": request.method,
-                "proxy": proxy or "none",
-                "verify_ssl": verify_ssl,
-            },
-        )
+        if logger.isEnabledFor(logging.DEBUG):
+            logger.debug(
+                "Applying auth strategy: %s",
+                type(strategy).__name__,
+                extra={
+                    "strategy_type": type(strategy).__name__,
+                    "request_url": redact_url(request.url),
+                    "request_method": request.method,
+                    "proxy": proxy or "none",
+                    "verify_ssl": verify_ssl,
+                },
+            )
         try:
             # Prefer explicit runtime context over mutating strategy internals.
             apply_with_context = getattr(strategy, "apply_with_context", None)

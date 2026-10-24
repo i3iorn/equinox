@@ -14,6 +14,9 @@ from equinox.storage.database import Database
 from equinox.storage.utils import coerce_body_to_str
 from equinox.storage.utils import safe_json_loads
 
+from ._constants import _HISTORY_BODY_SEARCH_PREFIX_CHARS
+from ._constants import _HISTORY_LIST_COLUMNS
+from ._constants import _HISTORY_STREAM_COLUMNS
 from ._constants import _LIKE_ESCAPE_CLAUSE
 from ._constants import _STATUS_CODE_RANGES
 from ._serializer import _HistorySerializer
@@ -120,7 +123,7 @@ class _HistorySearcher:
         limit: int,
         offset: int,
     ) -> list[dict[str, Any]]:
-        sql = "SELECT * FROM history "
+        sql = f"SELECT {_HISTORY_LIST_COLUMNS} FROM history "
         if where_clause:
             sql += where_clause + " "
         sql += "ORDER BY executed_at DESC LIMIT ? OFFSET ?"
@@ -148,7 +151,7 @@ class _HistorySearcher:
         cursor_offset = offset
         batch_size = max(limit * 4, 200)
         # where_clause is built solely from hardcoded SQL fragments; user values are in params.
-        sql_template = "SELECT * FROM history "
+        sql_template = f"SELECT {_HISTORY_STREAM_COLUMNS} FROM history "
         if where_clause:
             sql_template += where_clause + " "
         sql_template += "ORDER BY executed_at DESC LIMIT ? OFFSET ?"
@@ -220,8 +223,15 @@ class _HistorySearcher:
     ) -> None:
         if query and isinstance(query, str):
             like = f"%{self._escape_like(query)}%"
+            # Bound the body scan to the first N chars: `LIKE '%q%'` over the
+            # full request_body BLOB is un-indexable and would materialize
+            # every stored body for a multi-second scan at 100k rows.
+            body_probe = (
+                f"substr(request_body, 1, {_HISTORY_BODY_SEARCH_PREFIX_CHARS})"
+                f" LIKE ? {_LIKE_ESCAPE_CLAUSE}"
+            )
             conditions.append(
-                f"(url LIKE ? {_LIKE_ESCAPE_CLAUSE} OR request_body LIKE ? {_LIKE_ESCAPE_CLAUSE})",
+                f"(url LIKE ? {_LIKE_ESCAPE_CLAUSE} OR {body_probe})",
             )
             params.extend([like, like])
 

@@ -94,6 +94,12 @@ class Request:
     params: dict[str, str] = field(default_factory=dict)
     body: str | bytes | None = None
 
+    # Cache for the utf-8 encoding of a string body so multi-MB payloads
+    # aren't re-encoded on every retry attempt. The reference is kept so the
+    # cache is invalidated when the body object is replaced.
+    _encoded_body: bytes | None = field(default=None, repr=False, compare=False)
+    _encoded_body_ref: Any = field(default=None, repr=False, compare=False)
+
     auth: Any | None = None
 
     timeout: float = field(default=DEFAULT_TIMEOUT)

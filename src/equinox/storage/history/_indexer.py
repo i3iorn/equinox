@@ -38,10 +38,11 @@ class _HistoryIndexer:
         url: str,
         status_code: int | None,
         response_obj: Any,
+        tx: Any | None = None,
     ) -> None:
         """Insert a normalized index row for *history_id* (best-effort)."""
         try:
-            self._do_index(history_id, method, url, status_code, response_obj)
+            self._do_index(history_id, method, url, status_code, response_obj, tx=tx)
         except Exception as exc:
             logger.debug("Indexing history row %d failed: %s", history_id, exc)
 
@@ -54,7 +55,17 @@ class _HistoryIndexer:
         url: str,
         status_code: int | None,
         response_obj: Any,
+        tx: Any | None = None,
     ) -> None:
+        """Insert a history_index row.
+
+        Args:
+            tx: Optional transaction executor (e.g. ``Database._TransactionHelper``)
+                that exposes the same ``insert`` duck type as :class:`Database`.
+                When provided, the insert participates in the caller's open
+                transaction instead of committing on its own connection
+                wrapper.
+        """
         expanded_url = urls.expand_placeholders(url, None)
         parts = urls.normalized_parts(expanded_url)
         normalized_url = parts.get("normalized_url")
@@ -69,7 +80,7 @@ class _HistoryIndexer:
         response_success = 1 if isinstance(status_code, int) and 200 <= status_code < 300 else 0
         executed_at = _dt.now(_tz.utc).strftime("%Y-%m-%d %H:%M:%S")
 
-        self._db.insert(
+        (tx or self._db).insert(
             """
             INSERT INTO history_index
             (history_id, method, normalized_url, path_segments, query_params,
