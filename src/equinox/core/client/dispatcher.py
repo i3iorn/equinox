@@ -196,6 +196,7 @@ class HttpxDispatcher:
         files: dict[str, Any] = {}
         opened_handles: list[IO[bytes]] = []
 
+        # Traversal-style values raise ValidationError (issue #70).
         for field, value in request_files.items():
             if isinstance(value, (str, Path)):
                 Validator.validate_file_path(str(value))
