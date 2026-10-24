@@ -296,3 +296,30 @@ def test_sync_cookies_to_client_with_no_open_clients():
     dispatcher._sync_cookies_to_client()
 
     assert dispatcher._clients == {}
+
+
+def test_legacy_files_branch_rejects_traversal_paths(tmp_path):
+    """The legacy request.files dict path must validate like production.
+
+    Issue #70: the legacy branch (programmatic/test callers) used to open
+    paths without Validator.validate_file_path, breaking zero-trust
+    consistency with the multipart_data path. Traversal-style values must
+    raise ValidationError instead of being opened.
+    """
+    dispatcher = _make_dispatcher()
+
+    request = _MultipartRequest()
+    request.files = {"secret": "../../etc/passwd"}
+
+    with pytest.raises(ValidationError):
+        dispatcher._build_multipart_files(request)
+
+
+def test_legacy_files_branch_rejects_url_encoded_traversal():
+    dispatcher = _make_dispatcher()
+
+    request = _MultipartRequest()
+    request.files = {"secret": "..%2F..%2Fetc%2Fpasswd"}
+
+    with pytest.raises(ValidationError):
+        dispatcher._build_multipart_files(request)
