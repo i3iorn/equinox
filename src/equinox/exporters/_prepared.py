@@ -17,7 +17,7 @@ from equinox.core import urls
 from equinox.core.exceptions import ValidationError
 from equinox.importers._utils import json_to_dict as _json_to_dict
 from equinox.importers._utils import parse_url_parts, write_json_file
-from equinox.security import redact_headers
+from equinox.security import redact_body, redact_headers, redact_params
 from equinox.storage.collections import CollectionManager
 from equinox.storage.database import Database
 
@@ -90,11 +90,13 @@ class _PreparedRequest:
             description=row.get("description", ""),
             method=row.get("method", "GET"),
             raw_url=row.get("url", ""),
-            body=row.get("body") or None,
+            body=redact_body(row.get("body") or None),
             headers={
                 str(k): str(v) for k, v in (redact_headers(headers) or {}).items() if v is not None
             },
-            params=params,
+            params={
+                str(k): str(v) for k, v in (redact_params(params) or {}).items() if v is not None
+            },
             path_params=path_params,
             auth_obj=auth_obj,
             content_type=headers.get("Content-Type", "application/json"),

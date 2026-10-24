@@ -16,6 +16,7 @@ from .redactor import (  #
     mask_secret,
     redact_body,
     redact_headers,
+    redact_params,
     redact_url,
     sanitize_details,
 )
@@ -24,6 +25,7 @@ __all__ = [
     "redact_headers",
     "redact_url",
     "redact_body",
+    "redact_params",
     "mask_secret",
     "sanitize_details",
     "SENSITIVE_HEADER_NAMES",

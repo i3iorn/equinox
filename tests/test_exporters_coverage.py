@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from typing import Any
 from unittest.mock import MagicMock, patch
 
@@ -262,3 +263,44 @@ class TestPostmanIncludeHistoryWarning:
         ):
             with pytest.warns(FutureWarning, match="include_history"):
                 PostmanExporter.export_collection(db, 1, include_history=True)
+
+
+class TestExportSecretRedaction:
+    """Exports must be safe to share: query params, bodies, and collection
+    variables are scrubbed by key name (issue #61)."""
+
+    def test_query_params_body_and_variables_are_redacted(self) -> None:
+        db = MagicMock()
+        collection = {"id": 1, "name": "Test", "description": ""}
+        requests = [
+            _row(
+                method="GET",
+                params='{"api_key": "abc123", "limit": "10"}',  # pragma: allowlist secret
+                body='{"password": "hunter2", "user": "alice"}',  # pragma: allowlist secret
+                headers='{"Content-Type": "application/json"}',
+            ),
+        ]
+        variables = [
+            {"key": "api_key", "value": "var-secret-value"},
+            {"key": "base_url", "value": "https://api.example.com"},
+        ]
+        with (
+            patch("equinox.exporters._prepared.CollectionManager") as MockCM,
+            patch("equinox.exporters.postman.CollectionManager") as MockPM,
+        ):
+            MockCM.return_value.get_collection.return_value = collection
+            MockCM.return_value.list_requests_in_collection.return_value = requests
+            MockPM.return_value.list_collection_variables.return_value = variables
+
+            exported = PostmanExporter.export_collection(db, 1)
+
+        blob = json.dumps(exported)
+        assert "abc123" not in blob  # query param secret
+        assert "hunter2" not in blob  # body secret
+        assert "var-secret-value" not in blob  # collection variable secret
+        # Non-sensitive values survive untouched
+        assert "10" in blob
+        assert "alice" in blob
+        assert "https://api.example.com" in blob
+        # Redaction placeholders present
+        assert "[REDACTED]" in blob

@@ -85,6 +85,19 @@ def redact_headers(headers: dict[str, Any]) -> dict[str, Any | None]:
     }
 
 
+def redact_params(params: dict[str, Any]) -> dict[str, Any | None]:
+    """Redact query-parameter values whose keys match sensitive patterns.
+
+    Same policy as :func:`redact_headers` but keyed on
+    :data:`SENSITIVE_PAYLOAD_KEYS` (API-key-in-query, tokens, secrets, etc.)
+    so exporters and payload builders never carry live credentials by key
+    name.
+    """
+    if not params:
+        return {}
+    return {k: (_REDACTED if k.lower() in SENSITIVE_PAYLOAD_KEYS else v) for k, v in params.items()}
+
+
 def redact_body(body: str | None, *, max_length: int = 0, max_len: int = 0) -> str | None:
     if not body:
         return body
