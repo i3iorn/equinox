@@ -14,6 +14,8 @@ Fernet objects directly so they never read or create the real key/salt files.
 
 from __future__ import annotations
 
+import logging
+
 import pytest
 from cryptography.fernet import Fernet
 
@@ -90,3 +92,21 @@ def test_reset_fernet_cache_clears_master_password_flag(monkeypatch):
 
     assert auth_cipher._fernet is None
     assert auth_cipher._fernet_from_master_password is False
+
+
+def test_file_key_fallback_warns_at_warning_level(monkeypatch, caplog):
+    """Encryption without a master password must be visible, not silent.
+
+    Falling back to the file key (~/.equinox/.key beside the DB) is a real
+    strength degradation; the issue requires a WARNING-level notice, not a
+    debug line (issue #66).
+    """
+    _reset(monkeypatch)
+
+    with caplog.at_level("WARNING", logger="equinox.security.auth_cipher"):
+        auth_cipher.get_fernet(master_password_loader=lambda: None)
+
+    warnings = [r for r in caplog.records if r.levelno >= logging.WARNING]
+    assert warnings, "file-key fallback must emit a WARNING"
+    assert any("WITHOUT a master password" in r.getMessage() for r in warnings)
+    assert any(".key" in r.getMessage() for r in warnings)
