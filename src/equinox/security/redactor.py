@@ -76,6 +76,21 @@ _URL_SECRET_PARAMS: re.Pattern[str] = re.compile(
     re.IGNORECASE,
 )
 
+# JWT-shaped substrings: `eyJ` base64url header + two dot-separated segments
+# with base64url characters. Masked regardless of field name so a JWT inside
+# a free-form error message or a non-standard field (issue #69) is caught.
+_JWT_SHAPE: re.Pattern[str] = re.compile(
+    r"eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+",
+)
+_MASKED_JWT: str = "eyJ[REDACTED-JWT]"
+
+
+def mask_jwt_shaped(text: str) -> str:
+    """Mask JWT-shaped substrings regardless of field name (issue #69)."""
+    if not text:
+        return text
+    return _JWT_SHAPE.sub(_MASKED_JWT, text)
+
 
 def redact_headers(headers: dict[str, Any]) -> dict[str, Any | None]:
     if not headers:
