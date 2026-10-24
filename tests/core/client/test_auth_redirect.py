@@ -147,3 +147,61 @@ class TestRedirectSafeAuthRepr:
     def test_repr_multiple_keys_sorted(self):
         auth = _RedirectSafeAuth({"X-Key": "x", "Authorization": "tok"})
         assert repr(auth) == "_RedirectSafeAuth(headers=['Authorization', 'X-Key'])"
+
+
+# ---------------------------------------------------------------------------
+# End-to-end redirect security properties (issue #64)
+# ---------------------------------------------------------------------------
+
+
+class TestRedirectCredentialContainment:
+    """Drive real redirects through httpx with _RedirectSafeAuth attached.
+
+    The adapter injects headers only on the initial leg; httpx's own
+    ``_redirect_headers`` policy must strip ``Authorization`` on cross-origin
+    hops (scheme upgrades excepted) and always drop ``Cookie``. These tests
+    pin the containment property end-to-end so a future change that re-runs
+    ``auth_flow`` per hop cannot silently reintroduce the leak.
+    """
+
+    def _send_with_redirect(self, location: str) -> list[httpx.Request]:
+        """Send a request that 302-redirects to *location*; return seen requests."""
+        seen: list[httpx.Request] = []
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            seen.append(request)
+            if len(seen) == 1:
+                return httpx.Response(302, headers={"location": location})
+            return httpx.Response(200)
+
+        with httpx.Client(
+            transport=httpx.MockTransport(handler),
+            follow_redirects=True,
+        ) as client:
+            client.get(self.start_url, auth=self.auth)
+        return seen
+
+    def setup_method(self) -> None:
+        self.auth = _RedirectSafeAuth(
+            {"Authorization": "Bearer topsecret", "Cookie": "session=abc"},
+        )
+        self.start_url = "https://origin.example.com/start"
+
+    def test_cross_origin_redirect_strips_credentials(self):
+        seen = self._send_with_redirect("https://evil.example.com/harvest")
+
+        assert len(seen) == 2
+        assert seen[0].headers["Authorization"] == "Bearer topsecret"
+        # The hop to the attacker-controlled host must carry neither header.
+        assert "authorization" not in seen[1].headers
+        assert "cookie" not in seen[1].headers
+
+    def test_scheme_upgrade_redirect_keeps_authorization(self):
+        # http -> https same-host upgrade keeps Authorization (the OAuth2
+        # load-balancer case) but still drops Cookie.
+        self.start_url = "http://origin.example.com/start"
+        seen = self._send_with_redirect("https://origin.example.com/upgrade")
+
+        assert len(seen) == 2
+        assert seen[1].headers["Authorization"] == "Bearer topsecret"
+        assert "cookie" not in seen[1].headers
