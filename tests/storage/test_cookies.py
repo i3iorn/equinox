@@ -296,3 +296,31 @@ class TestCookieValidation:
             mgr.add_cookie(f"c{i}", "v", domain=f"d{i}.com")
         with pytest.raises(StorageError, match="full"):
             mgr.add_cookie("overflow", "v", domain="new.com")
+
+
+# ???? Value encryption at rest (issue #65) ?????????????????????????????????????
+
+
+class TestCookieValueEncryption:
+    def test_value_encrypted_at_rest(self, db, mgr):
+        """The raw stored value must be Fernet ciphertext, never plaintext."""
+        mgr.add_cookie("session", "plaintext-secret", domain="example.com")
+        row = db.fetchone("SELECT value FROM cookies WHERE name = 'session'")
+        stored = str(row["value"])
+        assert stored.startswith("enc:")
+        assert "plaintext-secret" not in stored
+
+    def test_roundtrip_decrypts(self, db, mgr):
+        mgr.add_cookie("session", "roundtrip-value", domain="example.com")
+        assert mgr.list_cookies()[0]["value"] == "roundtrip-value"
+        assert mgr.to_httpx_cookies()["session"] == "roundtrip-value"
+
+    def test_legacy_plaintext_row_still_reads_back(self, db, mgr):
+        """Rows written before encryption store plaintext; reads must fall
+        back to returning the raw value instead of failing."""
+        db.execute(
+            "INSERT INTO cookies (name, value, domain, path) VALUES (?, ?, ?, ?)",
+            ("legacy", "old-plain-value", "example.com", "/"),
+        )
+        cookies = mgr.list_cookies()
+        assert cookies[0]["value"] == "old-plain-value"
