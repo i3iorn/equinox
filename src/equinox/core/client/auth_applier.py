@@ -74,8 +74,9 @@ class AuthApplier:
 
         auth_strategy = explicit_auth or request.auth
         if not auth_strategy:
-            safe_url = redact_url(request.url) if request.url else ""
-            logger.debug("No auth strategy active for %s %s", request.method, safe_url)
+            if logger.isEnabledFor(logging.DEBUG):
+                safe_url = redact_url(request.url) if request.url else ""
+                logger.debug("No auth strategy active for %s %s", request.method, safe_url)
             return {}
 
         pre_keys = set(headers.keys())
