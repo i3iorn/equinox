@@ -111,22 +111,37 @@ class _HistorySerializer:
         self,
         row: dict[str, Any],
         row_id: int | None = None,
+        *,
+        parse_headers: bool = True,
     ) -> dict[str, str | int | float | bool | object]:
         """Return a copy of *row* with header columns decoded from JSON to dicts.
 
-        *row* is never mutated.
+        *row* is never mutated. With ``parse_headers=False`` the header
+        columns are left as raw JSON strings — the streaming search path uses
+        this to skip JSON parsing for rows the post-filters will reject, then
+        decodes headers only for matching rows via
+        :meth:`decode_headers_inplace` (issue #73).
         """
         out = dict(row)
+        if parse_headers:
+            self.decode_headers_inplace(out, row_id=row_id)
+        return out
+
+    def decode_headers_inplace(
+        self,
+        row: dict[str, Any],
+        row_id: int | None = None,
+    ) -> None:
+        """Decode *row*'s raw header JSON columns to dicts, in place."""
         for col in ("request_headers", "response_headers"):
-            val = out.get(col)
+            val = row.get(col)
             if not val:
-                out[col] = {}
+                row[col] = {}
             else:
                 try:
-                    out[col] = safe_json_loads(val, row_id=row_id)
+                    row[col] = safe_json_loads(val, row_id=row_id)
                 except Exception:
-                    out[col] = {}
-        return out
+                    row[col] = {}
 
     # ── Private helpers ───────────────────────────────────────────────────────
 
