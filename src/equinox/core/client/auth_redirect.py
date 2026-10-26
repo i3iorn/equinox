@@ -15,18 +15,24 @@ logger = logging.getLogger(__name__)
 
 
 class _RedirectSafeAuth(httpx.Auth):
-    """httpx ``Auth`` adapter that re-injects auth headers on every request leg.
+    """httpx ``Auth`` adapter carrying auth headers on the initial request leg.
 
-    httpx strips ``Authorization`` (and ``Cookie``) headers when following
-    cross-origin redirects (different scheme, host, or port).  This is
-    correct per RFC 7235 §2.2 for untrusted redirects, but breaks many
-    real-world OAuth2/Bearer flows where the same auth is required after a
-    scheme upgrade (HTTP → HTTPS) or a load-balancer redirect.
+    httpx's native ``auth`` parameter injects the adapter's headers on the
+    initial request leg, then handles redirect legs itself.  Verified against
+    httpx's ``_redirect_headers`` (``_client.py``) — on redirect hops:
 
-    Passing auth through httpx's native ``auth`` parameter causes
-    ``auth_flow`` to be re-executed on *every* leg of the redirect chain,
-    ensuring the injected headers are always present regardless of origin
-    changes.
+    * ``Authorization`` is **stripped** for non-same-origin hops, *except*
+      direct HTTP→HTTPS scheme upgrades, which keep it (the OAuth2
+      load-balancer/scheme-upgrade use case below).
+    * ``Cookie`` is **always dropped** — the client cookie store governs
+      cookies on hops.
+
+    ``auth_flow`` is executed **once per ``send``**: it is re-invoked via
+    ``auth_flow.send(response)`` only for multi-yield (single-sign-on) flows,
+    which this adapter is not.  The earlier claim that it was re-executed on
+    every redirect leg was factually wrong and is what motivated this module;
+    a regression test (``tests/core/client/test_auth_redirect.py``) pins the
+    actual security property so the false claim cannot silently return.
 
     Args:
         auth_headers: Dict of HTTP headers to inject (must not be empty).
@@ -46,8 +52,10 @@ class _RedirectSafeAuth(httpx.Auth):
     def auth_flow(self, request: httpx.Request) -> Generator[httpx.Request, httpx.Response, None]:
         """Inject stored auth headers then yield the request for sending.
 
-        Re-executed on every redirect leg, ensuring auth headers persist
-        across origin changes (scheme, host, port).
+        Executed once per ``send`` on the initial request leg.  Redirect hops
+        are governed by httpx's own ``_redirect_headers`` policy: cross-origin
+        hops strip ``Authorization`` (scheme upgrades excepted) and always
+        drop ``Cookie`` — see the class docstring.
 
         Args:
             request: The HTTP request being sent.

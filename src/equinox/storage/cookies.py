@@ -11,6 +11,7 @@ import logging
 from typing import Any
 
 from equinox.core import urls
+from equinox.core.auth_cipher import decrypt_auth_data, encrypt_auth_data
 from equinox.core.exceptions import StorageError, ValidationError
 from equinox.storage.database import Database
 from equinox.storage.utils import require_positive_int
@@ -73,6 +74,28 @@ class CookieJarManager:
         if expires is not None:
             _validate_str_field("expires", expires, 100)
 
+    # ── Value cipher helpers ──────────────────────────────────────────────────
+
+    def _encrypt_value(self, plaintext: str) -> str:
+        """Encrypt a cookie value for the ``value`` column (issues #65).
+
+        Session cookies are bearer credentials; the rest of the app Fernet-
+        encrypts every other secret, so cookie values route through the same
+        cipher path. Plaintext length limits still apply to the *plaintext*
+        (validated before encryption) — the stored token is longer.
+        """
+        return encrypt_auth_data(plaintext)
+
+    def _decrypt_value(self, stored: str) -> str:
+        """Decrypt a cookie value with legacy-plaintext fallback.
+
+        Rows written before this change store plaintext; they are re-encrypted
+        naturally the next time the cookie is re-saved via ``Set-Cookie``.
+        """
+        if not stored:
+            return stored
+        return decrypt_auth_data(stored, field_name="cookie_value") or ""
+
     # ── Public API ────────────────────────────────────────────────────────────
 
     def list_cookies(self) -> list[dict[str, Any]]:
@@ -81,7 +104,7 @@ class CookieJarManager:
             "SELECT id, name, value, domain, path, secure, http_only, expires, created_at "
             "FROM cookies ORDER BY domain, name",
         )
-        return [self._row_to_dict(r) for r in rows]
+        return [self._row_to_dict(r, decrypt_value=True) for r in rows]
 
     def get(self, cookie_id: int) -> dict[str, Any] | None:
         """Return a single cookie by id, or None if not found."""
@@ -91,7 +114,7 @@ class CookieJarManager:
             "FROM cookies WHERE id = ?",
             (cookie_id,),
         )
-        return self._row_to_dict(row) if row else None
+        return self._row_to_dict(row, decrypt_value=True) if row else None
 
     def add_cookie(
         self,
@@ -132,7 +155,15 @@ class CookieJarManager:
                     http_only = excluded.http_only,
                     expires   = excluded.expires
                 """,
-                (name, value, domain or "", path or "/", int(secure), int(http_only), expires),
+                (
+                    name,
+                    self._encrypt_value(value),
+                    domain or "",
+                    path or "/",
+                    int(secure),
+                    int(http_only),
+                    expires,
+                ),
             )
             # lastrowid is 0 on an upsert-update — look up the real id
             if not row_id:
@@ -164,7 +195,7 @@ class CookieJarManager:
         if value is not None:
             self._validate_value(value)
             updates.append("value = ?")
-            params.append(value)
+            params.append(self._encrypt_value(value))
         if secure is not None:
             updates.append("secure = ?")
             params.append(int(secure))
@@ -220,7 +251,7 @@ class CookieJarManager:
     def to_httpx_cookies(self) -> dict[str, str]:
         """Return a flat ``{name: value}`` dict for ``httpx.Client(cookies=...)``."""
         rows = self.db.fetchall("SELECT name, value FROM cookies")
-        return {row["name"]: row["value"] for row in rows}
+        return {row["name"]: self._decrypt_value(str(row["value"])) for row in rows}
 
     def to_httpx_cookie_records(self) -> list[dict[str, str]]:
         """Return scoped cookie records for safe domain/path-aware httpx syncing."""
@@ -228,7 +259,7 @@ class CookieJarManager:
         return [
             {
                 "name": str(row["name"]),
-                "value": str(row["value"]),
+                "value": self._decrypt_value(str(row["value"])),
                 "domain": str(row["domain"] or ""),
                 "path": str(row["path"] or "/"),
             }
@@ -244,12 +275,14 @@ class CookieJarManager:
         )
         return row["id"] if row else -1
 
-    @staticmethod
-    def _row_to_dict(row: Any) -> dict[str, Any]:
+    def _row_to_dict(self, row: Any, *, decrypt_value: bool = False) -> dict[str, Any]:
+        value = row["value"]
+        if decrypt_value:
+            value = self._decrypt_value(str(value))
         return {
             "id": row["id"],
             "name": row["name"],
-            "value": row["value"],
+            "value": value,
             "domain": row["domain"],
             "path": row["path"],
             "secure": bool(row["secure"]),

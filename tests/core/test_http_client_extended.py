@@ -183,10 +183,6 @@ class TestHTTPClientValidation:
         calls = []
 
         monkeypatch.setattr(
-            "equinox.core.validation.Validator.validate_resolved_url",
-            lambda value: calls.append(("url", value)),
-        )
-        monkeypatch.setattr(
             "equinox.core.validation.Validator.validate_method",
             lambda value: calls.append(("method", value)),
         )
@@ -205,7 +201,10 @@ class TestHTTPClientValidation:
 
         client._validate_request(request)
 
-        assert calls[0][0] == "url"
+        # Resolved-URL SSRF validation now lives in the dispatcher's per-hop
+        # request hook (the redirect-aware path) and is intentionally NOT
+        # re-run here — the method check is the first validation.
+        assert calls[0][0] == "method"
         assert any(item[0] == "body" and item[2] == "application/json" for item in calls)
 
     def test_check_proxy_reachable_without_proxy_raises(self):

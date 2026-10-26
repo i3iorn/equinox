@@ -36,6 +36,7 @@ env/
 # Testing
 .pytest_cache/
 .coverage
+bandit_report.json
 htmlcov/
 .tox/
 

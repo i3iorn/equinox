@@ -38,7 +38,7 @@ from equinox.auth._oauth2.operations import (
     try_client_credentials_fallback,
 )
 from equinox.core.util.time import utc_now
-from equinox.security import mask_secret, redact_url, sanitize_details
+from equinox.security import mask_jwt_shaped, mask_secret, redact_url, sanitize_details
 from equinox.security.secure_storage import SecureStorage
 
 logger = logging.getLogger(__name__)
@@ -403,7 +403,9 @@ class OAuth2Auth(AuthStrategy):
             pass
         try:
             raw = response.text
-            return sanitize_details({"_raw": raw[:_TOKEN_RESPONSE_RAW_MAX] if raw else ""})
+            return sanitize_details(
+                {"_raw": mask_jwt_shaped(raw[:_TOKEN_RESPONSE_RAW_MAX] if raw else "")},
+            )
         except Exception:
             return {}
 

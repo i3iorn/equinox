@@ -306,6 +306,26 @@ class TestUrls:
             result = expand_placeholders("https://{{host}}/api", {"host": "x"})
         assert result == "https://{{host}}/api"
 
+    def test_expand_placeholders_failure_warns_once_per_url(self, caplog):
+        """Failures are surfaced at WARNING (deduplicated per URL/error pair),
+        with the URL redacted so query-string secrets stay out of logs."""
+        from equinox.core.urls import normalizer as normalizer_mod
+
+        url = "https://{{host}}/api?token=supersecret"
+        with patch(
+            "equinox.core.urls.VariableInterpolator.interpolate",
+            side_effect=RuntimeError("boom"),
+        ):
+            with caplog.at_level("WARNING", logger="equinox.core.urls.normalizer"):
+                normalizer_mod._WARNED_EXPANSION_KEYS.clear()
+                for _ in range(3):
+                    assert expand_placeholders(url, {"host": "x"}) == url
+
+        warnings = [r for r in caplog.records if r.levelno == logging.WARNING]
+        assert len(warnings) == 1  # deduplicated across repeat calls
+        assert "supersecret" not in warnings[0].getMessage()  # redacted
+        assert "{{host}}" in warnings[0].getMessage()
+
     def test_normalized_parts_stdlib_path(self):
         """When the urlps parser is replaced with the stdlib parser, output is correct."""
         from urllib.parse import urlparse

@@ -120,13 +120,10 @@ class HttpxDispatcher:
     # ── Cookie sync ───────────────────────────────────────────────────────────
 
     def flush_cookies(self, response: Response, url: str) -> None:
-        """Update the in-memory cookie jar from *response* and push to httpx.
-
-        Combines the two-step cookie sync into a single call so no caller
-        needs to reach into the dispatcher's private helpers.
-        """
-        self._cookie_handler.update_from_response(response, url)
-        self._sync_cookies_to_client()
+        """Update the cookie jar from *response*; skip rebuild if no Set-Cookie headers."""
+        updated = self._cookie_handler.update_from_response(response, url)
+        if updated:
+            self._sync_cookies_to_client()
 
     def _sync_cookies_to_client(self) -> None:
         """Merge the latest CookieManager state into the live httpx.Client jar."""
@@ -199,8 +196,10 @@ class HttpxDispatcher:
         files: dict[str, Any] = {}
         opened_handles: list[IO[bytes]] = []
 
+        # Traversal-style values raise ValidationError (issue #70).
         for field, value in request_files.items():
             if isinstance(value, (str, Path)):
+                Validator.validate_file_path(str(value))
                 with Path(value).open("rb") as fh:
                     opened_handles.append(fh)
                     files[field] = (Path(value).name, fh)
@@ -223,10 +222,9 @@ class HttpxDispatcher:
         elapsed: float,
         sent_headers: dict[str, str] | None = None,
     ) -> Response:
-        # Explicitly read the body to ensure it's properly consumed
         body = raw.content
         logger.debug(
-            "HttpxDispatcher._wrap_response: status=%d body_len=%d headers_count=%d",
+            "HttpxDispatcher._wrap_response: status=%d body_len=%d hdrs=%d",
             raw.status_code,
             len(body),
             len(raw.headers),
@@ -374,16 +372,12 @@ class HttpxDispatcher:
     def _log_redirect_chain(raw: httpx.Response) -> None:
         if not raw.history:
             return
-        chain = " → ".join(
-            f"{r.status_code} {redact_url(r.headers.get('location', '?')) or '?'}"
-            for r in raw.history
-        )
-        logger.info(
-            "Request followed %d redirect(s): %s → %d",
-            len(raw.history),
-            chain,
-            raw.status_code,
-        )
+        if logger.isEnabledFor(logging.INFO):
+            hops = " → ".join(
+                f"{r.status_code} {redact_url(r.headers.get('location', '?')) or '?'}"
+                for r in raw.history
+            )
+            logger.info("Request followed %d redirect(s): %s", len(raw.history), hops)
 
     # ── Execute ───────────────────────────────────────────────────────────────
 
@@ -438,11 +432,12 @@ class HttpxDispatcher:
         )
 
     def _log_request_start(self, request: Request) -> None:
-        logger.debug(
-            "HttpxDispatcher: sending %s %s",
-            request.method,
-            Sanitizer.sanitize_for_display(request.url, 100),
-        )
+        if logger.isEnabledFor(logging.DEBUG):
+            logger.debug(
+                "HttpxDispatcher: sending %s %s",
+                request.method,
+                Sanitizer.sanitize_for_display(request.url, 100),
+            )
 
     def _log_request_complete(self, response: httpx.Response, elapsed: float) -> None:
         logger.debug(
@@ -477,9 +472,14 @@ class HttpxDispatcher:
     ) -> httpx.Request:
         content = None
         if request.body and not multipart_files:
-            content = (
-                request.body.encode("utf-8") if isinstance(request.body, str) else request.body
-            )
+            if isinstance(request.body, str):
+                # Reuse cached encoding if the body object hasn't changed.
+                if request._encoded_body_ref is not request.body:
+                    request._encoded_body = request.body.encode("utf-8")
+                    request._encoded_body_ref = request.body
+                content = request._encoded_body
+            else:
+                content = request.body
 
         httpx_request = client.build_request(
             method=request.method,

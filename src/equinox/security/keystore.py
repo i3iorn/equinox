@@ -29,6 +29,10 @@ logger = logging.getLogger(__name__)
 SERVICE = "equinox"
 ACCOUNT = "encryption-key"
 
+# Fernet requires exactly this many key bytes; anything else read from the
+# store is corruption, not a usable key (issue #68).
+KEY_SIZE = 32
+
 
 def _os_keyring_available() -> bool:
     return keyring is not None
@@ -98,24 +102,61 @@ def get_from_os_store() -> bytes | None:
     if not b64:
         return None
     try:
-        return base64.b64decode(b64.encode("ascii"))
-    except Exception as exc:
-        logger.exception("OS keyring value is not valid base64")
+        decoded = _decode_key_b64(b64)
+    except ValueError as exc:
+        logger.error("OS keyring value failed key validation: %s", exc)
         raise KeystoreUnavailableError(
-            "The key stored in the OS keyring is corrupt (not valid base64).",
+            "The key stored in the OS keyring is corrupt "
+            f"({exc}). Restore it from a backup, or disable the OS keyring "
+            "with EQUINOX_USE_OS_KEYRING=0 to use the file key.",
         ) from exc
+    return decoded
 
 
-def set_in_os_store(key: bytes) -> None:
+def _decode_key_b64(b64: str) -> bytes:
+    """Decode and validate a stored base64 key; raise ``ValueError`` if unusable.
+
+    Three independent guards (issue #68):
+
+    1. ``b64decode(validate=True)`` — without it, non-alphabet characters are
+       silently discarded, so a partially corrupted value would decode to a
+       *wrong key* instead of failing.
+    2. Strict length check — a truncated/garbled decode must not be handed to
+       Fernet, which would fail later with an undiagnosable InvalidToken.
+    3. The decoded bytes must differ from an all-zero buffer — a wiped store
+       value must fail loud, not produce a deterministic "key".
+
+    The base64 payload is written by this app itself, so strict validation
+    cannot reject legitimate keys.
+    """
+    raw = base64.b64decode(b64.encode("ascii"), validate=True)
+    if len(raw) != KEY_SIZE:
+        raise ValueError(f"expected {KEY_SIZE} bytes, got {len(raw)}")
+    if raw == b"\x00" * KEY_SIZE:
+        raise ValueError("key is all-zero")
+    return raw
+
+
+def set_in_os_store(key: bytes) -> bool:
+    """Store *key* in the OS keyring.
+
+    Returns:
+        ``True`` when the write succeeded, ``False`` when the feature is
+        disabled/unavailable or the write failed. Callers that mint a *new*
+        key must verify this — storing an unpersisted key silently orphans
+        everything encrypted under it (issue #63).
+    """
     if not _env_os_keystore_enabled() or not _os_keyring_available():
-        return
+        return False
     kr = keyring
     if kr is None:
-        return
+        return False
     try:
         kr.set_password(SERVICE, ACCOUNT, base64.b64encode(key).decode("ascii"))
     except Exception:
         logger.exception("Failed to store encryption key in OS keyring")
+        return False
+    return True
 
 
 def _os_store_has_backend() -> bool:
@@ -165,6 +206,14 @@ def get_or_create_os_key() -> bytes | None:
     if not _os_store_has_backend():
         return None
 
-    key = os.urandom(32)
-    set_in_os_store(key)
+    key = os.urandom(KEY_SIZE)
+    if not set_in_os_store(key):
+        # Fail loud rather than returning an unpersisted key: every run
+        # would mint a fresh key and previously encrypted values would
+        # become permanently undecryptable (issue #63).
+        raise KeystoreUnavailableError(
+            "OS keyring is enabled but the encryption key could not be stored. "
+            "Refusing to use an unpersisted key. Disable the OS keyring with "
+            "EQUINOX_USE_OS_KEYRING=0 to use the file key.",
+        )
     return key

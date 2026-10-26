@@ -14,6 +14,9 @@ from equinox.storage.database import Database
 from equinox.storage.utils import coerce_body_to_str
 from equinox.storage.utils import safe_json_loads
 
+from ._constants import _HISTORY_BODY_SEARCH_PREFIX_CHARS
+from ._constants import _HISTORY_LIST_COLUMNS
+from ._constants import _HISTORY_STREAM_COLUMNS
 from ._constants import _LIKE_ESCAPE_CLAUSE
 from ._constants import _STATUS_CODE_RANGES
 from ._serializer import _HistorySerializer
@@ -120,7 +123,7 @@ class _HistorySearcher:
         limit: int,
         offset: int,
     ) -> list[dict[str, Any]]:
-        sql = "SELECT * FROM history "
+        sql = f"SELECT {_HISTORY_LIST_COLUMNS} FROM history "
         if where_clause:
             sql += where_clause + " "
         sql += "ORDER BY executed_at DESC LIMIT ? OFFSET ?"
@@ -148,7 +151,7 @@ class _HistorySearcher:
         cursor_offset = offset
         batch_size = max(limit * 4, 200)
         # where_clause is built solely from hardcoded SQL fragments; user values are in params.
-        sql_template = "SELECT * FROM history "
+        sql_template = f"SELECT {_HISTORY_STREAM_COLUMNS} FROM history "
         if where_clause:
             sql_template += where_clause + " "
         sql_template += "ORDER BY executed_at DESC LIMIT ? OFFSET ?"
@@ -164,7 +167,17 @@ class _HistorySearcher:
             for row in batch:
                 if len(result) >= limit:
                     break
-                decoded = self._serializer.decode_row(dict(row), row_id=row["id"])
+                # Post-filters match on the raw response_body text, so skip
+                # the header JSON parse for rows they will reject: with a
+                # body regex over 100k rows, header parsing dominated the
+                # scan cost (issue #73). Headers are decoded only for rows
+                # that survive every filter, keeping result shape identical
+                # to the fast path.
+                decoded = self._serializer.decode_row(
+                    dict(row),
+                    row_id=row["id"],
+                    parse_headers=False,
+                )
                 if compiled_regex and not self._matches_body_regex(decoded, compiled_regex):
                     continue
                 if parsed_jsonpath and not self._matches_jsonpath(
@@ -173,8 +186,12 @@ class _HistorySearcher:
                     jsonpath_value,
                 ):
                     continue
-                if header_name and not self._matches_header(decoded, header_name, header_val):
-                    continue
+                if header_name:
+                    self._serializer.decode_headers_inplace(decoded, row_id=row["id"])
+                    if not self._matches_header(decoded, header_name, header_val):
+                        continue
+                else:
+                    self._serializer.decode_headers_inplace(decoded, row_id=row["id"])
                 result.append(decoded)
 
             if len(batch) < batch_size:
@@ -220,8 +237,15 @@ class _HistorySearcher:
     ) -> None:
         if query and isinstance(query, str):
             like = f"%{self._escape_like(query)}%"
+            # Bound the body scan to the first N chars: `LIKE '%q%'` over the
+            # full request_body BLOB is un-indexable and would materialize
+            # every stored body for a multi-second scan at 100k rows.
+            body_probe = (
+                f"substr(request_body, 1, {_HISTORY_BODY_SEARCH_PREFIX_CHARS})"
+                f" LIKE ? {_LIKE_ESCAPE_CLAUSE}"
+            )
             conditions.append(
-                f"(url LIKE ? {_LIKE_ESCAPE_CLAUSE} OR request_body LIKE ? {_LIKE_ESCAPE_CLAUSE})",
+                f"(url LIKE ? {_LIKE_ESCAPE_CLAUSE} OR {body_probe})",
             )
             params.extend([like, like])
 

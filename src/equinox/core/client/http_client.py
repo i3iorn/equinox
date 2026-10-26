@@ -14,7 +14,6 @@ from typing import TYPE_CHECKING, Any, cast
 if TYPE_CHECKING:
     from equinox.auth import AuthStrategy
 
-from equinox.core import urls
 from equinox.core.audit import get_audit_logger
 from equinox.core.client.auth_applier import AuthApplier
 from equinox.core.client.concurrency_guard import ConcurrencyGuard
@@ -246,8 +245,6 @@ class HTTPClient:
             time.sleep(seconds)
 
     def _validate_request(self, request: Request) -> None:
-        resolved_url = urls.expand_placeholders(request.url, getattr(request, "path_params", None))
-        Validator.validate_resolved_url(resolved_url)
         Validator.validate_method(request.method)
         if request.headers:
             Validator.validate_headers(request.headers, strict=False)
@@ -281,14 +278,18 @@ class HTTPClient:
         auth: AuthStrategy | None,
     ) -> Response:
         """Perform one HTTP round-trip: apply auth, dispatch, sync cookies."""
-        logger.debug(
-            "HTTPClient._execute_single_attempt: applying auth and dispatching",
-            extra={
-                "request_method": request.method,
-                "request_url": redact_url(request.url),
-                "auth_type": type(auth).__name__ if auth else "none",
-            },
-        )
+        # extra= values are evaluated eagerly even when DEBUG is disabled;
+        # guard the redaction passes so the hot path pays nothing when the
+        # log is off (issue #77).
+        if logger.isEnabledFor(logging.DEBUG):
+            logger.debug(
+                "HTTPClient._execute_single_attempt: applying auth and dispatching",
+                extra={
+                    "request_method": request.method,
+                    "request_url": redact_url(request.url),
+                    "auth_type": type(auth).__name__ if auth else "none",
+                },
+            )
         headers = dict(request.headers) if request.headers else {}
         auth_headers = self._auth_applier.apply(
             request=request,
@@ -316,15 +317,16 @@ class HTTPClient:
         request: Request,
         auth: AuthStrategy | None,
     ) -> Response:
-        logger.debug(
-            "HTTPClient._dispatch_with_retries: starting retry policy",
-            extra={
-                "request_method": request.method,
-                "request_url": redact_url(request.url),
-                "max_retries": self.MAX_RETRIES,
-                "max_http_retries": self.MAX_HTTP_RETRIES,
-            },
-        )
+        if logger.isEnabledFor(logging.DEBUG):
+            logger.debug(
+                "HTTPClient._dispatch_with_retries: starting retry policy",
+                extra={
+                    "request_method": request.method,
+                    "request_url": redact_url(request.url),
+                    "max_retries": self.MAX_RETRIES,
+                    "max_http_retries": self.MAX_HTTP_RETRIES,
+                },
+            )
         response = self._retry_policy.execute_with_http_overload(
             lambda: self._execute_single_attempt(request, auth),
         )
@@ -406,22 +408,23 @@ class HTTPClient:
         request.correlation_id = req_id
         corr_token = set_current_request_id(req_id)
         effective_auth = auth or request.auth
-        logger.info(
-            "HTTPClient.send(): method=%s url=%s auth=%s",
-            request.method,
-            Sanitizer.sanitize_for_display(request.url, 80),
-            type(effective_auth).__name__ if effective_auth else "None",
-            extra={
-                "request_id": req_id,
-                "method": request.method,
-                "url": redact_url(request.url),
-                "auth_type": type(effective_auth).__name__ if effective_auth else "none",
-                "verify_ssl": request.verify_ssl if hasattr(request, "verify_ssl") else True,
-                "proxy": self.proxy or "none",
-                "active_requests": self._concurrency.active,
-                "max_concurrent": self.max_concurrent_requests,
-            },
-        )
+        if logger.isEnabledFor(logging.INFO):
+            logger.info(
+                "HTTPClient.send(): method=%s url=%s auth=%s",
+                request.method,
+                Sanitizer.sanitize_for_display(request.url, 80),
+                type(effective_auth).__name__ if effective_auth else "None",
+                extra={
+                    "request_id": req_id,
+                    "method": request.method,
+                    "url": redact_url(request.url),
+                    "auth_type": type(effective_auth).__name__ if effective_auth else "none",
+                    "verify_ssl": request.verify_ssl if hasattr(request, "verify_ssl") else True,
+                    "proxy": self.proxy or "none",
+                    "active_requests": self._concurrency.active,
+                    "max_concurrent": self.max_concurrent_requests,
+                },
+            )
 
         self._validate_request(request)
         try:

@@ -13,9 +13,11 @@ from .crypto import get_or_create_fernet, get_or_create_raw_key, make_fernet
 from .redactor import (  #
     SENSITIVE_HEADER_NAMES,
     SENSITIVE_PAYLOAD_KEYS,
+    mask_jwt_shaped,
     mask_secret,
     redact_body,
     redact_headers,
+    redact_params,
     redact_url,
     sanitize_details,
 )
@@ -24,6 +26,8 @@ __all__ = [
     "redact_headers",
     "redact_url",
     "redact_body",
+    "redact_params",
+    "mask_jwt_shaped",
     "mask_secret",
     "sanitize_details",
     "SENSITIVE_HEADER_NAMES",

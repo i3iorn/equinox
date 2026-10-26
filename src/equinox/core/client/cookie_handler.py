@@ -48,15 +48,20 @@ class CookieHandler:
             for name, value in self._manager.to_httpx_cookies().items()
         ]
 
-    def update_from_response(self, response: Response | None, url: str) -> None:
+    def update_from_response(self, response: Response | None, url: str) -> bool:
         """Persist any ``Set-Cookie`` headers from *response* into the jar.
 
         No-ops silently when no manager is configured or *response* is ``None``.
         Cookie-update errors are caught and logged at DEBUG level because
         cookie handling is always best-effort.
+
+        Returns:
+            ``True`` when the manager may have been updated (i.e. the response
+            carried Set-Cookie headers), ``False`` otherwise. Callers use this
+            to skip the otherwise unconditional cookie-jar rebuild.
         """
         if self._manager is None or response is None:
-            return
+            return False
 
         try:
             set_cookie_headers = list(getattr(response, "set_cookie_headers", []) or [])
@@ -66,7 +71,7 @@ class CookieHandler:
                     redact_url(url),
                 )
                 self._manager.update_from_set_cookie_headers(set_cookie_headers, url)
-                return
+                return True
 
             headers = dict(response.headers)
             if any(k.lower() == "set-cookie" for k in headers):
@@ -75,8 +80,10 @@ class CookieHandler:
                     redact_url(url),
                 )
                 self._manager.update_from_response(headers, url)
+                return True
         except Exception as exc:
             logger.debug("CookieHandler: cookie update failed for %s: %s", redact_url(url), exc)
+        return False
 
     # ── Dunder helpers ────────────────────────────────────────────────────────
 

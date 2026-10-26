@@ -528,8 +528,14 @@ class ResponseDisplayMixin:
             lines.append(f"Server address: {server_addr}")
         self.connection_text.set_code("\n".join(lines))
 
-    @staticmethod
-    def _format_request_body(body: Any) -> str:
+    # Bodies larger than this skip the JSON parse/pretty-print pass on the GUI
+    # thread: a ~100 KB JSON round-trip costs 150 ms+ of main-thread CPU, and
+    # the cost scales linearly. The raw text is displayed instead, matching
+    # the deferred-rendering behavior of oversized response bodies.
+    _REQUEST_BODY_PRETTY_PRINT_MAX_LEN = 512 * 1024
+
+    @classmethod
+    def _format_request_body(cls, body: Any) -> str:
         """Format request body as display string (try JSON first)."""
         try:
             if isinstance(body, (dict, list)):
@@ -537,6 +543,11 @@ class ResponseDisplayMixin:
             if isinstance(body, (bytes, bytearray)):
                 body = body.decode("utf-8", errors="replace")
             if isinstance(body, str):
+                # Skip the parse/pretty-print round-trip for very large
+                # bodies — it blocks the GUI thread for a long time and the
+                # result is not meaningfully more readable.
+                if len(body) > cls._REQUEST_BODY_PRETTY_PRINT_MAX_LEN:
+                    return body
                 return json.dumps(json.loads(body), indent=2, ensure_ascii=False)
         except Exception:
             pass
