@@ -167,7 +167,17 @@ class _HistorySearcher:
             for row in batch:
                 if len(result) >= limit:
                     break
-                decoded = self._serializer.decode_row(dict(row), row_id=row["id"])
+                # Post-filters match on the raw response_body text, so skip
+                # the header JSON parse for rows they will reject: with a
+                # body regex over 100k rows, header parsing dominated the
+                # scan cost (issue #73). Headers are decoded only for rows
+                # that survive every filter, keeping result shape identical
+                # to the fast path.
+                decoded = self._serializer.decode_row(
+                    dict(row),
+                    row_id=row["id"],
+                    parse_headers=False,
+                )
                 if compiled_regex and not self._matches_body_regex(decoded, compiled_regex):
                     continue
                 if parsed_jsonpath and not self._matches_jsonpath(
@@ -176,8 +186,12 @@ class _HistorySearcher:
                     jsonpath_value,
                 ):
                     continue
-                if header_name and not self._matches_header(decoded, header_name, header_val):
-                    continue
+                if header_name:
+                    self._serializer.decode_headers_inplace(decoded, row_id=row["id"])
+                    if not self._matches_header(decoded, header_name, header_val):
+                        continue
+                else:
+                    self._serializer.decode_headers_inplace(decoded, row_id=row["id"])
                 result.append(decoded)
 
             if len(batch) < batch_size:

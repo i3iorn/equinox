@@ -278,14 +278,18 @@ class HTTPClient:
         auth: AuthStrategy | None,
     ) -> Response:
         """Perform one HTTP round-trip: apply auth, dispatch, sync cookies."""
-        logger.debug(
-            "HTTPClient._execute_single_attempt: applying auth and dispatching",
-            extra={
-                "request_method": request.method,
-                "request_url": redact_url(request.url),
-                "auth_type": type(auth).__name__ if auth else "none",
-            },
-        )
+        # extra= values are evaluated eagerly even when DEBUG is disabled;
+        # guard the redaction passes so the hot path pays nothing when the
+        # log is off (issue #77).
+        if logger.isEnabledFor(logging.DEBUG):
+            logger.debug(
+                "HTTPClient._execute_single_attempt: applying auth and dispatching",
+                extra={
+                    "request_method": request.method,
+                    "request_url": redact_url(request.url),
+                    "auth_type": type(auth).__name__ if auth else "none",
+                },
+            )
         headers = dict(request.headers) if request.headers else {}
         auth_headers = self._auth_applier.apply(
             request=request,
@@ -313,15 +317,16 @@ class HTTPClient:
         request: Request,
         auth: AuthStrategy | None,
     ) -> Response:
-        logger.debug(
-            "HTTPClient._dispatch_with_retries: starting retry policy",
-            extra={
-                "request_method": request.method,
-                "request_url": redact_url(request.url),
-                "max_retries": self.MAX_RETRIES,
-                "max_http_retries": self.MAX_HTTP_RETRIES,
-            },
-        )
+        if logger.isEnabledFor(logging.DEBUG):
+            logger.debug(
+                "HTTPClient._dispatch_with_retries: starting retry policy",
+                extra={
+                    "request_method": request.method,
+                    "request_url": redact_url(request.url),
+                    "max_retries": self.MAX_RETRIES,
+                    "max_http_retries": self.MAX_HTTP_RETRIES,
+                },
+            )
         response = self._retry_policy.execute_with_http_overload(
             lambda: self._execute_single_attempt(request, auth),
         )

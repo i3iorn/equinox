@@ -102,3 +102,58 @@ def test_cookie_handler_swallows_update_exceptions() -> None:
 
     # Should not raise when manager update fails.
     handler.update_from_response(_make_response({"set-cookie": "x=1"}), "https://example.com")
+
+
+# ---------------------------------------------------------------------------
+# Dispatcher flush short-circuit (issue #74)
+# ---------------------------------------------------------------------------
+
+
+def test_flush_cookies_skips_rebuild_without_set_cookie() -> None:
+    """No Set-Cookie in the response -> the client jar is not rebuilt.
+
+    The rebuild is O(jar size) per client; it must not run when nothing
+    changed (issue #74).
+    """
+    from unittest.mock import MagicMock
+
+    from equinox.core.client.dispatcher import HttpxDispatcher
+
+    handler = CookieHandler(cast(Any, _ManagerWithRecords()))
+    dispatcher = HttpxDispatcher(
+        timeout=10.0,
+        follow_redirects=True,
+        verify_ssl=True,
+        proxy=None,
+        cookie_handler=handler,
+    )
+    dispatcher._sync_cookies_to_client = MagicMock()  # type: ignore[method-assign]
+
+    response = _make_response({"content-type": "application/json"})
+    dispatcher.flush_cookies(response, "https://example.com")
+
+    dispatcher._sync_cookies_to_client.assert_not_called()
+
+
+def test_flush_cookies_rebuilds_on_set_cookie() -> None:
+    from unittest.mock import MagicMock
+
+    from equinox.core.client.dispatcher import HttpxDispatcher
+
+    handler = CookieHandler(cast(Any, _ManagerWithRecords()))
+    dispatcher = HttpxDispatcher(
+        timeout=10.0,
+        follow_redirects=True,
+        verify_ssl=True,
+        proxy=None,
+        cookie_handler=handler,
+    )
+    dispatcher._sync_cookies_to_client = MagicMock()  # type: ignore[method-assign]
+
+    response = _make_response(
+        {"set-cookie": "session=abc; Domain=example.com"},
+        set_cookie_headers=["session=abc; Domain=example.com"],
+    )
+    dispatcher.flush_cookies(response, "https://example.com")
+
+    dispatcher._sync_cookies_to_client.assert_called_once_with()

@@ -275,6 +275,7 @@ class TestExportSecretRedaction:
         requests = [
             _row(
                 method="GET",
+                url="https://api.example.com/users?api_key=urlsecret123&page=1",  # pragma: allowlist secret
                 params='{"api_key": "abc123", "limit": "10"}',  # pragma: allowlist secret
                 body='{"password": "hunter2", "user": "alice"}',  # pragma: allowlist secret
                 headers='{"Content-Type": "application/json"}',
@@ -298,9 +299,11 @@ class TestExportSecretRedaction:
         assert "abc123" not in blob  # query param secret
         assert "hunter2" not in blob  # body secret
         assert "var-secret-value" not in blob  # collection variable secret
+        assert "urlsecret123" not in blob  # secret in the raw URL (url.raw)
         # Non-sensitive values survive untouched
         assert "10" in blob
         assert "alice" in blob
+        assert "page=1" in blob
         assert "https://api.example.com" in blob
         # Redaction placeholders present
         assert "[REDACTED]" in blob

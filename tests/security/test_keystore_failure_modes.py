@@ -101,26 +101,24 @@ def test_corrupt_stored_value_raises(monkeypatch: pytest.MonkeyPatch) -> None:
         keystore.get_from_os_store()
 
 
-def test_partially_corrupt_value_raises_not_wrong_key(
+def test_write_failure_refuses_to_use_unpersisted_key(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Non-alphabet characters in the stored value must fail loudly.
+    """A backend that reads fine but fails writes must not yield a key.
 
-    Without ``b64decode(validate=True)`` the corrupt characters are silently
-    discarded and a *wrong 32-byte key* is returned, surfacing later as
-    undiagnosable Fernet InvalidToken failures (issue #68).
+    Run 1 would mint K1, fail to persist it, and encrypt everything under it;
+    run 2 would mint K2 and orphan all of run 1's ciphertext. Fail loud
+    instead (issue #63).
     """
-    import base64
-
-    good_key = os.urandom(32)
-    corrupt_b64 = base64.b64encode(good_key).decode("ascii")[:-4] + "!!??"
     fake = types.SimpleNamespace(
-        get_password=lambda _service, _account: corrupt_b64,
-        set_password=lambda _service, _account, _password: None,
+        get_password=lambda _service, _account: None,  # store reads empty
+        set_password=lambda _service, _account, _password: (_ for _ in ()).throw(
+            _BackendError("keychain is read-only"),
+        ),
     )
     monkeypatch.setattr(keystore, "keyring", fake)
     monkeypatch.setattr(keystore, "_env_os_keystore_enabled", lambda: True)
     monkeypatch.setattr(keystore, "_os_keyring_available", lambda: True)
 
-    with pytest.raises(keystore.KeystoreUnavailableError, match="corrupt"):
-        keystore.get_from_os_store()
+    with pytest.raises(keystore.KeystoreUnavailableError, match="could not be stored"):
+        keystore.get_or_create_os_key()

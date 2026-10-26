@@ -432,11 +432,12 @@ class HttpxDispatcher:
         )
 
     def _log_request_start(self, request: Request) -> None:
-        logger.debug(
-            "HttpxDispatcher: sending %s %s",
-            request.method,
-            Sanitizer.sanitize_for_display(request.url, 100),
-        )
+        if logger.isEnabledFor(logging.DEBUG):
+            logger.debug(
+                "HttpxDispatcher: sending %s %s",
+                request.method,
+                Sanitizer.sanitize_for_display(request.url, 100),
+            )
 
     def _log_request_complete(self, response: httpx.Response, elapsed: float) -> None:
         logger.debug(
