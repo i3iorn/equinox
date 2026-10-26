@@ -197,3 +197,28 @@ def test_write_failure_refuses_to_use_unpersisted_key(
 
     with pytest.raises(keystore.KeystoreUnavailableError, match="could not be stored"):
         keystore.get_or_create_os_key()
+
+
+def test_partially_corrupt_value_raises_not_wrong_key(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Non-alphabet characters in the stored value must fail loudly.
+
+    Without ``b64decode(validate=True)`` the corrupt characters are silently
+    discarded and a *wrong 32-byte key* is returned, surfacing later as
+    undiagnosable Fernet InvalidToken failures (issue #68).
+    """
+    import base64
+
+    good_key = os.urandom(32)
+    corrupt_b64 = base64.b64encode(good_key).decode("ascii")[:-4] + "!!??"
+    fake = types.SimpleNamespace(
+        get_password=lambda _service, _account: corrupt_b64,
+        set_password=lambda _service, _account, _password: None,
+    )
+    monkeypatch.setattr(keystore, "keyring", fake)
+    monkeypatch.setattr(keystore, "_env_os_keystore_enabled", lambda: True)
+    monkeypatch.setattr(keystore, "_os_keyring_available", lambda: True)
+
+    with pytest.raises(keystore.KeystoreUnavailableError, match="corrupt"):
+        keystore.get_from_os_store()
