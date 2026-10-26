@@ -304,6 +304,9 @@ class TestExportSecretRedaction:
         assert "10" in blob
         assert "alice" in blob
         assert "page=1" in blob
-        assert "https://api.example.com" in blob
+        # Non-sensitive values survive untouched — check the parsed value
+        # exactly rather than a substring (CodeQL flags arbitrary-position
+        # URL substring checks on "sanitized" data as ineffective).
+        assert any(v["value"] == "https://api.example.com" for v in exported["variable"])
         # Redaction placeholders present
         assert "[REDACTED]" in blob
