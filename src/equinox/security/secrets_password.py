@@ -4,6 +4,18 @@ This module provides a password-based key derivation for encrypting secrets
 at rest, replacing the previous file-based Fernet key approach when a master
 password is configured. It also provides a lightweight rotation helper to
 re-encrypt plaintext secrets with a new master password.
+
+In-memory limitation: the master password is held in an immutable Python
+``str`` (``_cached_password``) and the derived Fernet stays cached for the
+process lifetime. Python strings cannot be zeroized, so the password cannot
+be wiped from memory — this is a documented property of the design, not an
+oversight. Prefer supplying the password via the GUI prompt callback or a
+short-lived environment variable over persistent configuration.
+
+Environment exposure: when ``EQUINOX_MASTER_PASSWORD`` is used, the password
+is readable via ``/proc/<pid>/environ``, crash dumps, and shell history.
+A WARNING is logged so the trade-off is visible in production logs
+(issue #71).
 """
 
 from __future__ import annotations
@@ -19,9 +31,11 @@ from sqlite3 import Connection
 
 from cryptography.fernet import Fernet
 from equinox.core.config.flags import is_strict_secret_rotation_enabled
+from equinox.core.exceptions import SecurityError
 from equinox.security.auth_cipher import reset_fernet_cache
 
 _SALT_FILE = Path.home() / ".equinox" / "salt.bin"
+_SALT_BYTES = 16
 _MASTER_PW_ENV = "EQUINOX_MASTER_PASSWORD"
 
 # In-memory cache for performance and to preserve password during runtime
@@ -45,7 +59,20 @@ def _read_or_create_salt() -> bytes:
     _salt_dir = _SALT_FILE.parent
     _salt_dir.mkdir(parents=True, exist_ok=True)
     if _SALT_FILE.exists():
-        return _SALT_FILE.read_bytes()
+        salt = _SALT_FILE.read_bytes()
+        if len(salt) != _SALT_BYTES:
+            # Fail loud: a truncated or tampered salt silently changes the
+            # derived key, which would only surface as undecryptable
+            # ciphertext later (issue #71). Regenerating here would be wrong
+            # whenever encrypted data already exists under the real salt.
+            raise SecurityError(
+                f"{_SALT_FILE} is corrupt: expected {_SALT_BYTES} bytes, "
+                f"found {len(salt)}. If it was truncated or tampered with, "
+                "restore it from backup — regenerating it makes existing "
+                "encrypted secrets undecryptable.",
+                details={"salt_bytes": len(salt)},
+            )
+        return salt
     # 16-byte salt is ample for PBKDF2
     import secrets as _secrets
 
@@ -78,6 +105,14 @@ def get_master_password() -> str | None:
     # First, an environment variable can supply the password (non-interactive setup)
     pw = os.environ.get(_MASTER_PW_ENV)
     if pw:
+        # Env vars leak via /proc/<pid>/environ, crash dumps, and shell
+        # history; warn so the trade-off is visible (issue #71).
+        logger.warning(
+            "Using master password from %s environment variable; prefer the "
+            "GUI prompt callback — environment variables are exposed via "
+            "/proc/<pid>/environ, crash dumps, and shell history",
+            _MASTER_PW_ENV,
+        )
         _cached_password = pw
         return pw
     # GUI can register a secure prompt callback to avoid terminal prompts.
