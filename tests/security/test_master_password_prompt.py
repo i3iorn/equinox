@@ -1,4 +1,4 @@
-from equinox.security import secrets_password
+from equinox.security import auth_cipher, secrets_password
 
 
 def _reset_master_password_state(monkeypatch) -> None:
@@ -42,3 +42,26 @@ def test_prompt_callback_cancel_does_not_fallback_to_getpass(monkeypatch):
     secrets_password.set_master_password_prompt(_prompt_none)
 
     assert secrets_password.get_master_password() is None
+
+
+def test_set_master_password_invalidates_auth_cipher_cache(monkeypatch):
+    """Runtime rotation must not keep encrypting under the old password.
+
+    ``set_master_password(B)`` must clear the process-wide Fernet cached in
+    ``security.auth_cipher`` (issue #62); otherwise ``get_fernet()`` keeps
+    returning a Fernet derived from the old password A until restart, and
+    secrets written in the meantime become undecryptable on the next run.
+    """
+    from cryptography.fernet import Fernet
+
+    _reset_master_password_state(monkeypatch)
+    stale = Fernet(Fernet.generate_key())
+    monkeypatch.setattr(auth_cipher, "_fernet", stale)
+    monkeypatch.setattr(auth_cipher, "_fernet_from_master_password", True)
+
+    secrets_password.set_master_password("brand-new")  # pragma: allowlist secret
+
+    assert secrets_password._cached_password == "brand-new"  # pragma: allowlist secret
+    assert secrets_password._cached_fernet is None
+    assert auth_cipher._fernet is None
+    assert auth_cipher._fernet_from_master_password is False
