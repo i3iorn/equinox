@@ -98,3 +98,26 @@ def test_corrupt_stored_value_raises(monkeypatch: pytest.MonkeyPatch) -> None:
 
     with pytest.raises(keystore.KeystoreUnavailableError):
         keystore.get_from_os_store()
+
+
+def test_write_failure_refuses_to_use_unpersisted_key(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A backend that reads fine but fails writes must not yield a key.
+
+    Run 1 would mint K1, fail to persist it, and encrypt everything under it;
+    run 2 would mint K2 and orphan all of run 1's ciphertext. Fail loud
+    instead (issue #63).
+    """
+    fake = types.SimpleNamespace(
+        get_password=lambda _service, _account: None,  # store reads empty
+        set_password=lambda _service, _account, _password: (_ for _ in ()).throw(
+            _BackendError("keychain is read-only"),
+        ),
+    )
+    monkeypatch.setattr(keystore, "keyring", fake)
+    monkeypatch.setattr(keystore, "_env_os_keystore_enabled", lambda: True)
+    monkeypatch.setattr(keystore, "_os_keyring_available", lambda: True)
+
+    with pytest.raises(keystore.KeystoreUnavailableError, match="could not be stored"):
+        keystore.get_or_create_os_key()
