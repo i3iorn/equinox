@@ -12,6 +12,11 @@ from equinox.security.auth_cipher import decode_utf8, decrypt_token_to_bytes, en
 from equinox.security.secrets_password import ensure_master_password_initialized
 
 _ENC_PREFIX = "enc:"
+# Every Fernet token starts with "gAAAAA": the 0x80 version byte followed by
+# a big-endian timestamp whose high bytes are zero for the foreseeable
+# future. Used to distinguish a legacy *plaintext* that literally begins
+# with "enc:" from genuine (corrupt or key-mismatched) ciphertext.
+_FERNET_TOKEN_PREFIX = "gAAAAA"
 logger = logging.getLogger(__name__)
 
 
@@ -54,6 +59,21 @@ def decrypt_auth_storage_value(stored: str | None, field_name: str = "auth_data"
         return stored
 
     ciphertext = strip_encryption_prefix(stored)
+    if not ciphertext.startswith(_FERNET_TOKEN_PREFIX):
+        # The value starts with "enc:" but the remainder is not a Fernet
+        # token: this is a legacy *plaintext* secret that literally begins
+        # with "enc:" (e.g. a pasted API key), not ciphertext. Returning the
+        # raw value beats a confusing SecurityError (issue #67). A genuine
+        # token-shaped value that fails decryption below is still corruption
+        # and keeps failing loudly.
+        logger.warning(
+            "Value for %s has the %r prefix but is not Fernet ciphertext; "
+            "treating it as legacy plaintext",
+            field_name,
+            _ENC_PREFIX,
+        )
+        return stored
+
     plaintext_bytes = decrypt_token_to_bytes(
         ciphertext,
         field_name,
