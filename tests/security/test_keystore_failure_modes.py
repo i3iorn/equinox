@@ -16,6 +16,7 @@ They monkeypatch the module-level ``keyring`` binding directly rather than
 from __future__ import annotations
 
 import base64
+import os
 import types
 
 import pytest
