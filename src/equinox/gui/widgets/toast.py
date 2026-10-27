@@ -1,8 +1,14 @@
 """Non-blocking toast notifications for transient GUI feedback.
 
-Toasts appear briefly at the bottom of the main window (above the status bar)
-and auto-dismiss. They are intentionally lightweight: no modal, no focus
-stealing, and no user action required. Multiple toasts stack vertically.
+Toasts appear briefly above the request/response area and auto-dismiss. They
+are intentionally lightweight: no modal, no focus stealing, and no user
+action required. Multiple toasts stack vertically.
+
+Animations are deliberately omitted: a ``QGraphicsOpacityEffect`` plus
+``QPropertyAnimation`` pair targeting a child effect object can dangle during
+interpreter shutdown (notably on Python 3.14 where Qt's child destruction
+order changed), causing a segmentation fault in ``QObject::deleteChildren``.
+Showing/hiding instantly keeps the same UX benefit without the crash risk.
 """
 
 from __future__ import annotations
@@ -10,11 +16,8 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from PyQt6.QtCore import QEasingCurve
-from PyQt6.QtCore import QPropertyAnimation
 from PyQt6.QtCore import QTimer
 from PyQt6.QtCore import Qt
-from PyQt6.QtWidgets import QGraphicsOpacityEffect
 from PyQt6.QtWidgets import QHBoxLayout
 from PyQt6.QtWidgets import QLabel
 from PyQt6.QtWidgets import QToolButton
@@ -25,15 +28,13 @@ logger = logging.getLogger(__name__)
 
 # Default auto-dismiss duration (ms)
 _TOAST_DURATION_MS = 4000
-# Animation duration (ms)
-_ANIM_DURATION_MS = 220
 
 
 class ToastWidget(QWidget):
     """A single dismissible toast banner.
 
-    Slides up from below its container, holds, then fades out and removes
-    itself from its layout.
+    Shows instantly, holds for *duration_ms*, then removes itself from its
+    parent layout. Dismissible early via the ``✕`` button.
     """
 
     def __init__(
@@ -46,11 +47,6 @@ class ToastWidget(QWidget):
     ) -> None:
         super().__init__(parent)
         self.setObjectName("toastWidget")
-
-        # Fade-in / fade-out effect.
-        self._opacity = QGraphicsOpacityEffect(self)
-        self._opacity.setOpacity(0.0)
-        self.setGraphicsEffect(self._opacity)
 
         layout = QHBoxLayout(self)
         layout.setContentsMargins(10, 8, 10, 8)
@@ -84,18 +80,14 @@ class ToastWidget(QWidget):
         dismiss.clicked.connect(self.dismiss)
         layout.addWidget(dismiss)
 
-        # Start hidden, then animate in.
-        self._opacity.setOpacity(0.0)
-        self.hide()
-
         # Auto-dismiss timer.
         self._timer = QTimer(self)
         self._timer.setSingleShot(True)
         self._timer.timeout.connect(self.dismiss)
         self._duration_ms = duration_ms
 
-        # Apply kind-specific styling via dynamic property so the QSS can target
-        # it without hardcoding colors here.
+        # Apply kind-specific styling via dynamic property so the QSS can
+        # target it without hardcoding colors here.
         self.setProperty("toastKind", kind)
         style = self.style()
         if style is not None:
@@ -104,36 +96,11 @@ class ToastWidget(QWidget):
 
     def showEvent(self, event: Any) -> None:
         super().showEvent(event)
-        self._animate_in()
         self._timer.start(self._duration_ms)
 
-    def _animate_in(self) -> None:
-        """Fade the toast in from fully transparent."""
-        self.show()
-        self._opacity.setOpacity(0.0)
-        anim = QPropertyAnimation(self._opacity, b"opacity", self)
-        anim.setDuration(_ANIM_DURATION_MS)
-        anim.setStartValue(0.0)
-        anim.setEndValue(1.0)
-        anim.setEasingCurve(QEasingCurve.Type.InOutQuad)
-        anim.start(QPropertyAnimation.DeletionPolicy.DeleteWhenStopped)
-        # Keep a reference so GC doesn't collect mid-animation.
-        self._show_anim = anim
-
     def dismiss(self) -> None:
-        """Fade out and remove this toast from its parent layout."""
+        """Remove this toast from its parent layout and schedule deletion."""
         self._timer.stop()
-        anim = QPropertyAnimation(self._opacity, b"opacity", self)
-        anim.setDuration(_ANIM_DURATION_MS)
-        anim.setStartValue(self._opacity.opacity())
-        anim.setEndValue(0.0)
-        anim.setEasingCurve(QEasingCurve.Type.InOutQuad)
-        anim.finished.connect(self._remove_self)
-        anim.start(QPropertyAnimation.DeletionPolicy.DeleteWhenStopped)
-        self._hide_anim = anim
-
-    def _remove_self(self) -> None:
-        """Remove this widget from its parent layout and schedule deletion."""
         parent = self.parentWidget()
         layout = parent.layout() if parent is not None else None
         if layout is not None:
