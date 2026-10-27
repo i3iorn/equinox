@@ -60,7 +60,6 @@ dev = [
     "pre-commit>=3.0.0",
     "setuptools>=84.1.0",
     # Security floors for transitive tooling (CVE gate: blocking).
-    "filelock>=4.2.1",
     "black>=26.10.1",
     "opentelemetry-api>=1.45.1",
     "uv>=0.13.4",
