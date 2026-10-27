@@ -7,7 +7,12 @@ from pathlib import Path
 from .settings import get_small_text_size
 
 
-def build_stylesheet(base_pt: int, colors: dict[str, str]) -> str:
+def _pad(base_px: int, density_scale: float) -> str:
+    """Return a padding value scaled by density, as a CSS ``px`` string."""
+    return f"{max(1, round(base_px * density_scale))}px"
+
+
+def build_stylesheet(base_pt: int, colors: dict[str, str], density_scale: float = 1.0) -> str:
     """Generate the application-wide stylesheet string."""
     c = colors
     sm = get_small_text_size(base_pt)
@@ -37,5 +42,12 @@ def build_stylesheet(base_pt: int, colors: dict[str, str]) -> str:
         stylesheet = stylesheet.replace(pattern, c[name])
 
     stylesheet = stylesheet.replace("{SM}", str(sm)).replace("{ME}", str(me))
+
+    # Density-scaled padding variables.
+    stylesheet = stylesheet.replace("{PAD_BTN}", _pad(6, density_scale))
+    stylesheet = stylesheet.replace("{PAD_INPUT}", _pad(5, density_scale))
+    stylesheet = stylesheet.replace("{PAD_GROUP}", _pad(10, density_scale))
+    stylesheet = stylesheet.replace("{PAD_FORM}", _pad(8, density_scale))
+    stylesheet = stylesheet.replace("{PAD_TAB}", _pad(10, density_scale))
 
     return stylesheet
