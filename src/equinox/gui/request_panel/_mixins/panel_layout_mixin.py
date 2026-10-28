@@ -186,7 +186,6 @@ class RequestPanelLayoutMixin:
         container_layout = QVBoxLayout(container)
         container_layout.setContentsMargins(0, 0, 0, 0)
         container_layout.setSpacing(12)
-        container_layout.addStretch(1)
 
         card = QWidget()
         card.setObjectName("emptyStateCard")
@@ -214,7 +213,6 @@ class RequestPanelLayoutMixin:
         card_layout.addWidget(sample_btn, alignment=Qt.AlignmentFlag.AlignLeft)
 
         container_layout.addWidget(card, alignment=Qt.AlignmentFlag.AlignHCenter)
-        container_layout.addStretch(1)
 
         return container
 
