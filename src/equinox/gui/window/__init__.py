@@ -172,12 +172,13 @@ class MainWindow(
         right_layout.setContentsMargins(0, 0, 0, 0)
 
         # Toast notification area — appears above the request/response splitter.
+        # No stretch is added so the container collapses to zero height when no
+        # toasts are visible and never pushes the request/response panel down.
         self._toast_container = QWidget()
         self._toast_container.setObjectName("toastContainer")
         self._toast_layout = QVBoxLayout(self._toast_container)
         self._toast_layout.setContentsMargins(0, 0, 0, 0)
         self._toast_layout.setSpacing(6)
-        self._toast_layout.addStretch()
         right_layout.addWidget(self._toast_container)
         self._toasts = ToastManager(self._toast_container, self._toast_layout)
 
