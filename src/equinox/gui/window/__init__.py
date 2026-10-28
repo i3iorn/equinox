@@ -34,6 +34,8 @@ from ..logging_utils import log_gui_event
 from ..ui_common import configure_tab_bar_elision
 from ..ui_common import get_gui_settings
 from ..ui_usage_tracker import UIUsageTracker
+from ..widgets.toast import ToastManager
+from equinox.gui.theme import get_use_native_title_bar
 from ._environment import _EnvironmentMixin
 from ._frameless import _FramelessMixin
 from ._history import _HistoryMixin
@@ -101,7 +103,10 @@ class MainWindow(
         self._pending_panel_refreshes: set[Any] = set()
         self.setWindowTitle("Equinox - API Testing")
         self.setGeometry(_WINDOW_X, _WINDOW_Y, _WINDOW_W, _WINDOW_H)
-        self.setWindowFlag(Qt.WindowType.FramelessWindowHint, True)
+        # Frameless window is the default; native title bars can be enabled in
+        # Preferences (requires a restart to take effect).
+        if not get_use_native_title_bar():
+            self.setWindowFlag(Qt.WindowType.FramelessWindowHint, True)
         self.setMouseTracking(True)
         app = QApplication.instance()
         if app is not None:
@@ -165,6 +170,17 @@ class MainWindow(
         right_widget = QWidget()
         right_layout = QVBoxLayout(right_widget)
         right_layout.setContentsMargins(0, 0, 0, 0)
+
+        # Toast notification area — appears above the request/response splitter.
+        self._toast_container = QWidget()
+        self._toast_container.setObjectName("toastContainer")
+        self._toast_layout = QVBoxLayout(self._toast_container)
+        self._toast_layout.setContentsMargins(0, 0, 0, 0)
+        self._toast_layout.setSpacing(6)
+        self._toast_layout.addStretch()
+        right_layout.addWidget(self._toast_container)
+        self._toasts = ToastManager(self._toast_container, self._toast_layout)
+
         self._req_resp_splitter = QSplitter(Qt.Orientation.Vertical)
         self.request_panel = RequestPanel(self.db, self, cookie_manager=self._cookie_manager)
         self.response_panel = ResponsePanel(
@@ -239,10 +255,18 @@ class MainWindow(
         self._left_tabs.setTabToolTip(index, tooltip)
 
     def _install_navigation_shortcuts(self) -> None:
-        """Register keyboard shortcuts for the left sidebar tabs."""
+        """Register keyboard shortcuts for the left sidebar tabs.
+
+        Shortcuts use ``Qt.ApplicationShortcut`` so they fire regardless of
+        which widget has focus (e.g. inside the URL or body editors). Qt still
+        delivers key events to the focused widget first, so editors that
+        explicitly handle a shortcut (such as Ctrl+Return in a multi-line
+        editor) keep their own behavior.
+        """
         self._left_tab_shortcuts = []
         for index, label in enumerate(_LEFT_TAB_LABELS, start=1):
             shortcut = QShortcut(QKeySequence(f"Alt+{index}"), self)
+            shortcut.setContext(Qt.ShortcutContext.ApplicationShortcut)
             shortcut.activated.connect(lambda idx=index - 1: self._activate_left_tab(idx))
             self._left_tab_shortcuts.append(shortcut)
 
@@ -331,6 +355,26 @@ class MainWindow(
             size /= 1024.0
         return f"{size:.1f} TB"
 
+    def show_toast(
+        self,
+        message: str,
+        *,
+        kind: str = "info",
+        duration_ms: int = 4000,
+    ) -> None:
+        """Show a non-blocking toast notification above the request/response area."""
+        toast_manager = getattr(self, "_toasts", None)
+        if toast_manager is None:
+            return
+        if kind == "success":
+            toast_manager.success(message, duration_ms=duration_ms)
+        elif kind == "warning":
+            toast_manager.warning(message, duration_ms=duration_ms)
+        elif kind == "error":
+            toast_manager.error(message, duration_ms=duration_ms)
+        else:
+            toast_manager.info(message, duration_ms=duration_ms)
+
     def _build_status_message(self, response: Response) -> str:
         size_str = self._format_byte_size(float(response.size))
         status_msg = (
@@ -381,6 +425,12 @@ class MainWindow(
     def _on_response_received(self, response: Response) -> None:
         try:
             self.status_bar.showMessage(self._build_status_message(response), _STATUS_TIMEOUT_MS)
+            if getattr(response, "status_code", 0) < 400:
+                self.show_toast(
+                    f"{response.status_code} {response.reason} — {self._format_byte_size(float(response.size))} in {int(float(response.elapsed) * 1000)} ms",
+                    kind="success",
+                    duration_ms=2500,
+                )
         except Exception:
             logger.exception("Failed to update status bar after response", exc_info=True)
 
