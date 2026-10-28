@@ -155,6 +155,7 @@ class RequestLoadingMixin(QWidgetHostMixin):
         self._try_ui(self._clear_dirty)
         self._try_ui(self._update_tab_labels)
         self._try_ui(self._update_url_suffix)
+        self._try_ui(self._update_empty_state_visibility)
 
     def clear(self: Any) -> None:
         """Reset the request editor to its default scratch-request state."""
@@ -168,6 +169,7 @@ class RequestLoadingMixin(QWidgetHostMixin):
         self._try_ui(self._clear_dirty)
         self._try_ui(self._update_tab_labels)
         self._try_ui(self._update_url_suffix)
+        self._try_ui(self._update_empty_state_visibility)
 
     def _reset_request_widgets(self: Any) -> None:
         """Reset all request widgets except session variables and auth."""

@@ -7,12 +7,19 @@ from typing import Any
 
 from equinox.gui.error_presenter import ErrorPresenter
 from equinox.gui.theme import DEFAULT_FONT_SIZE
+from equinox.gui.theme import DENSITY_COMFORTABLE
+from equinox.gui.theme import DENSITY_LABELS
+from equinox.gui.theme import DENSITY_MODES
 from equinox.gui.theme import get_font_size
 from equinox.gui.theme import get_theme_mode
+from equinox.gui.theme import get_ui_density
+from equinox.gui.theme import get_use_native_title_bar
 from equinox.gui.theme import MAX_FONT_SIZE
 from equinox.gui.theme import MIN_FONT_SIZE
+from equinox.gui.theme import save_use_native_title_bar
 from equinox.gui.theme import set_font_size
 from equinox.gui.theme import set_theme_mode
+from equinox.gui.theme import set_ui_density
 from equinox.gui.theme import THEME_LABELS
 from equinox.gui.theme import THEME_MODES
 from equinox.gui.theme import THEME_SYSTEM
@@ -57,6 +64,8 @@ class PreferencesDialog(QDialog):
         self.setMinimumWidth(440)
         self._original_size = get_font_size()
         self._original_theme = get_theme_mode()
+        self._original_density = get_ui_density()
+        self._original_native_title = get_use_native_title_bar()
         self._analyzer_checks: list[QCheckBox] = []
         self._init_ui()
 
@@ -119,6 +128,20 @@ class PreferencesDialog(QDialog):
         size_row.addWidget(self._slider, 1)
         size_row.addWidget(self._spin)
         form.addRow("Font size:", size_row)
+
+        # UI density — Compact / Comfortable / Spacious scales paddings and text.
+        self._density_combo = QComboBox()
+        for mode in DENSITY_MODES:
+            self._density_combo.addItem(DENSITY_LABELS[mode], userData=mode)
+        self._density_combo.setCurrentIndex(list(DENSITY_MODES).index(get_ui_density()))
+        self._density_combo.currentIndexChanged.connect(self._on_density_changed)
+        form.addRow("UI density:", self._density_combo)
+
+        # Native window decorations — requires a restart to take effect.
+        self._native_title_cb = QCheckBox("Use native OS title bar (restart required)")
+        self._native_title_cb.setChecked(get_use_native_title_bar())
+        self._native_title_cb.stateChanged.connect(self._on_native_title_changed)
+        form.addRow("", self._native_title_cb)
 
         # Live preview — the label's actual size/theme comes from the
         # app-wide stylesheet, which set_font_size()/set_theme_mode() below
@@ -251,9 +274,17 @@ class PreferencesDialog(QDialog):
     def _on_size_changed(self, size: int) -> None:
         set_font_size(size)
 
+    def _on_density_changed(self, _index: int) -> None:
+        set_ui_density(self._density_combo.currentData())
+
+    def _on_native_title_changed(self, state: int) -> None:
+        save_use_native_title_bar(Qt.CheckState(state) == Qt.CheckState.Checked)
+
     def _restore_defaults(self) -> None:
         self._spin.setValue(DEFAULT_FONT_SIZE)
         self._theme_combo.setCurrentIndex(list(THEME_MODES).index(THEME_SYSTEM))
+        self._density_combo.setCurrentIndex(list(DENSITY_MODES).index(DENSITY_COMFORTABLE))
+        self._native_title_cb.setChecked(False)
         self._proxy_host.clear()
         self._proxy_port.setValue(0)
 
@@ -295,4 +326,6 @@ class PreferencesDialog(QDialog):
         """
         set_font_size(self._original_size)
         set_theme_mode(self._original_theme)
+        set_ui_density(self._original_density)
+        save_use_native_title_bar(self._original_native_title)
         super().reject()
