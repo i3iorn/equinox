@@ -200,7 +200,11 @@ class PostmanImporter:
                         description="Imported from Postman collection variable",
                     )
                 except Exception:
-                    pass
+                    logger.exception(
+                        "Failed to add collection variable %s",
+                        var_name,
+                        exc_info=True,
+                    )
             for request in requests:
                 try:
                     self.collection_manager.save_request(request, collection_id)

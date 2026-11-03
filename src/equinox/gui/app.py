@@ -109,6 +109,7 @@ def _qt_exception_hook(
         )
     except Exception:
         # Dialog itself failed; exception is already logged above
+        logger.exception("Failed to open API spec dialog: %s", exc_info=True)
         pass
 
 
