@@ -85,6 +85,11 @@ class TestValidatorURLs:
         with pytest.raises(ValidationError):
             Validator.validate_url("https://example.com/onclick=alert('xss')")
 
+    def test_url_encoded_script_path(self):
+        """Percent-encoded script payloads are caught via urlps findings (urlps #78)."""
+        with pytest.raises(ValidationError, match="malicious"):
+            Validator.validate_url("https://example.com/%3Cscript%3Ealert(1)%3C/script%3E")
+
     def test_relative_url(self):
         """Test relative URL is allowed at import stage."""
         url = Validator.validate_url("/api/users")

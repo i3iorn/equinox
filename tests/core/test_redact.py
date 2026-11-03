@@ -116,8 +116,8 @@ class TestRedactUrl:
         url = "https://admin:s3cret@api.example.com/v1/users"
         safe = redact_url(url)
         assert "s3cret" not in safe
-        assert "admin" not in safe
-        assert "***:***@" in safe
+        # urlps contract: username kept (verifiable), password masked as ***
+        assert "admin:***@" in safe
         assert "api.example.com/v1/users" in safe
 
     def test_secret_query_params(self):
@@ -131,6 +131,21 @@ class TestRedactUrl:
         url = "https://api.example.com/data?token=xyz123"
         safe = redact_url(url)
         assert "xyz123" not in safe
+
+    def test_bearer_query_param(self):
+        """``bearer`` is Equinox's extra sensitive key (urlps #74)."""
+        url = "https://api.example.com/data?bearer=abc&x=1"
+        safe = redact_url(url)
+        assert "abc" not in safe
+        assert "bearer=[REDACTED]" in safe
+        assert "x=1" in safe
+
+    def test_jwt_under_nonsensitive_key_masked(self):
+        """JWT-shaped values are masked regardless of key name (issue #69)."""
+        url = "https://api.example.com/data?q=eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOjF9.sig"  # pragma: allowlist secret
+        safe = redact_url(url)
+        assert "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOjF9.sig" not in safe  # pragma: allowlist secret
+        assert "[REDACTED-JWT]" in safe
 
     def test_clean_url_unchanged(self):
         url = "https://api.example.com/v1/users?page=1&limit=20"

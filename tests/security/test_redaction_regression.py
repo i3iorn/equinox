@@ -50,8 +50,9 @@ def test_redact_url_masks_credentials_and_secret_params() -> None:
     assert out is not None
     assert "pw123" not in out
     assert "abc123" not in out
-    assert "***:***" in out
-    assert "[REDACTED]" in out
+    # urlps redaction: credentials masked as *** (not ***:***), params masked as %2A%2A%2A
+    assert "***" in out
+    assert "alice:" in out
 
 
 def test_redact_params_masks_sensitive_keys_and_keeps_others() -> None:

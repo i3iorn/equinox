@@ -12,8 +12,7 @@ Internal structure (one concern per module)
   _limits    — ``_Limits``         — all size/count thresholds + ``VALID_HTTP_METHODS``
   _patterns  — ``_Patterns``       — pre-compiled regex patterns
   _guards    — ``_Guards``         — low-level assertion helpers
-  _ssrf      — ``_SsrfGuard``      — SSRF / private-network protection (+ ``_DnsPool``)
-  _url       — ``_UrlValidator``   — URL string and structural validation
+  _url       — ``_UrlValidator``   — URL string and structural validation (delegated to urlps)
   _headers   — ``_HeaderValidator``— header name/value validation
   _body      — ``_BodyValidator``  — request body validation
   _params    — ``_ParamValidator`` — query-parameter validation
@@ -33,7 +32,6 @@ from ._env import _EnvVarValidator
 from ._headers import _HeaderValidator
 from ._params import _ParamValidator
 from ._path import _PathValidator
-from ._ssrf import _SsrfGuard
 from ._url import _UrlValidator
 
 __all__ = ["VALID_HTTP_METHODS", "Validator", "Sanitizer"]
@@ -93,8 +91,8 @@ class Validator:
     ) -> str:
         """Full structural URL validation after placeholder expansion.
 
-        ``tolerate_dns_failure`` relaxes only the SSRF guard's DNS step; see
-        :meth:`_SsrfGuard.check`.
+        ``tolerate_dns_failure`` relaxes urlps DNS resolution steps; see
+        urlps SecurityPolicy documentation.
         """
         return _UrlValidator.validate_resolved(url, tolerate_dns_failure=tolerate_dns_failure)
 
@@ -198,9 +196,17 @@ class Validator:
 
     @classmethod
     def validate_hostname(cls, hostname: str) -> str:
-        """Raise ``ValidationError`` if *hostname* targets a private network."""
+        """Raise ``ValidationError`` if *hostname* targets a private network.
+
+        Delegates to urlps' security policy (DNS resolution, SSRF risk,
+        cloud metadata endpoints, private/loopback/link-local literals).
+        The ``EQUINOX_SSRF_ALLOW_ON_DNS_FAILURE`` flag relaxes only the
+        DNS-dependent step.
+        """
+        from ._url import _enforce_security_policy
+
         _Guards.require_nonempty_str(hostname, "Hostname")
-        _SsrfGuard.check(hostname)
+        _enforce_security_policy(f"http://{hostname}/", tolerate_dns_failure=False)
         return hostname
 
     @classmethod

@@ -33,7 +33,7 @@ dependencies = [
     "python-dotenv>=1.0.0,<2.0.0",
     "cryptography>=50.0,<51.0",
     "certifi>=2026.10.19",
-    "urlps>=1.2.0",
+    "urlps>=2.1.0",
     "websockets>=12.0,<13.0.0",
     "typing_extensions>=4.0.0,<5.0.0",
 ]

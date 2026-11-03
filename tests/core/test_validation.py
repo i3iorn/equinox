@@ -36,7 +36,7 @@ class TestURLValidation:
 
     def test_missing_hostname_resolved(self):
         """Fully resolved URL without hostname rejected by validate_resolved_url."""
-        with pytest.raises(ValidationError, match="hostname"):
+        with pytest.raises(ValidationError, match="hostname|Host is required"):
             Validator.validate_resolved_url("https://")
 
     def test_resolved_url_valid(self, monkeypatch):
@@ -45,7 +45,9 @@ class TestURLValidation:
         def _public_dns(*_args, **_kwargs):
             return [(2, 1, 6, "", ("93.184.216.34", 0))]
 
-        monkeypatch.setattr("equinox.core.validation._ssrf.socket.getaddrinfo", _public_dns)
+        # urlps resolves via socket.getaddrinfo (urlps._security.dns_guard);
+        # patch it globally so no network is required.
+        monkeypatch.setattr("socket.getaddrinfo", _public_dns)
 
         url = "https://api.example.com/v1/data"
         assert Validator.validate_resolved_url(url) == url
