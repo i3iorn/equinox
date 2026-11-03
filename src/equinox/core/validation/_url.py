@@ -13,6 +13,7 @@ from __future__ import annotations
 import dataclasses
 import logging
 import re
+from importlib.metadata import PackageNotFoundError, version as _pkg_version
 
 import urlps
 from urlps import SecurityPolicy
@@ -31,6 +32,29 @@ _VALID_SCHEMES: frozenset[str] = frozenset({"http", "https"})
 _PLACEHOLDER_RE = re.compile(r"\{\{[^}]*\}\}")
 
 _logger = logging.getLogger(__name__)
+
+
+def _ensure_urlps_compatible() -> None:
+    """Fail fast with an actionable message when the installed urlps is stale.
+
+    Equinox requires ``urlps>=2.1.0`` (declared in ``pyproject.toml``), but a
+    stale editable install or bundled environment can still carry an older
+    package. In that case ``SecurityPolicy(**{...})`` would fail deep inside
+    :func:`dataclasses.replace` with a confusing ``TypeError`` about an
+    unexpected keyword — this check surfaces the real problem instead.
+    """
+    if not hasattr(SecurityPolicy, "flag_injection_payloads"):
+        try:
+            installed = _pkg_version("urlps")
+        except PackageNotFoundError:
+            installed = "unknown"
+        raise ImportError(
+            f"Equinox requires urlps>=2.1.0 but installed urlps is {installed}. "
+            "Upgrade with: pip install --upgrade 'urlps>=2.1.0'",
+        )
+
+
+_ensure_urlps_compatible()
 
 
 def _strip_placeholders(url: str) -> str:
