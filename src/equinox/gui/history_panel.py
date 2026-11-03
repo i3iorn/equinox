@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json as _json
 import logging
 from collections.abc import Callable
 from datetime import date
@@ -17,6 +18,7 @@ from equinox.gui.ui_common import AutoRefreshMixin
 from equinox.gui.ui_common import confirm_yes_no
 from equinox.gui.ui_common import create_muted_label
 from equinox.gui.ui_common import create_panel_layout
+from equinox.gui.ui_common import get_gui_settings
 from equinox.storage import Database
 from PyQt6.QtCore import pyqtSignal
 from PyQt6.QtCore import QPoint
@@ -50,6 +52,8 @@ logger = logging.getLogger(__name__)
 HistoryEntry = dict[str, Any]
 ContextActionSpec = tuple[str, str, Callable[[], None], bool]
 
+_FAV_KEY = "history/favorited_ids"
+
 
 # ── History panel ─────────────────────────────────────────────────────────────
 
@@ -70,6 +74,7 @@ class HistoryPanel(AutoRefreshMixin, QWidget):
         self.db = db
         self._history = history_facade or HistoryFacade(db)
         self.auto_refresh_enabled = True
+        self._favorited_ids: set[int] = self._load_favorited_ids()
         self._init_ui()
         self._setup_auto_refresh()
         self.refresh()
@@ -169,6 +174,11 @@ class HistoryPanel(AutoRefreshMixin, QWidget):
         row.addWidget(self.search_input, 2)
         row.addWidget(self.method_filter)
         row.addWidget(self.status_filter)
+
+        self.favorites_only_cb = QCheckBox("★ Favorites")
+        self.favorites_only_cb.setToolTip("Show only favorited history entries")
+        self.favorites_only_cb.stateChanged.connect(self._apply_filters)
+        row.addWidget(self.favorites_only_cb)
 
         self._search_timer = QTimer(self)
         self._search_timer.setSingleShot(True)
@@ -334,6 +344,7 @@ class HistoryPanel(AutoRefreshMixin, QWidget):
         status = self.status_filter.currentText()
         status = "" if status == "All Status" else status.lower()
         query = self.search_input.text().strip()
+        favorites_only = bool(self.favorites_only_cb.isChecked())
 
         # Advanced filter values — widgets are always present after _init_ui().
         body_regex = self.regex_input.text().strip()
@@ -362,6 +373,11 @@ class HistoryPanel(AutoRefreshMixin, QWidget):
             self.filter_error_label.setText(str(exc))
             self.filter_error_label.setVisible(True)
             return
+
+        if favorites_only:
+            entries = [e for e in entries if self._is_favorite(int(e.get("id", 0)))]
+        # Favorites sort to the top, then by recency (search order).
+        entries.sort(key=lambda e: (not self._is_favorite(int(e.get("id", 0))),))
 
         self._populate_list(entries)
 
@@ -427,9 +443,11 @@ class HistoryPanel(AutoRefreshMixin, QWidget):
                 elapsed = entry.get("elapsed")
                 elapsed_str = f"  {int(elapsed * 1000)} ms" if elapsed else ""
 
-                text = f"[{status}] {method}  {url}\n{ts}{elapsed_str}"
+                entry_id = int(entry.get("id", 0))
+                star = "★ " if self._is_favorite(entry_id) else "☆ "
+                text = f"{star}[{status}] {method}  {url}\n{ts}{elapsed_str}"
                 item = QListWidgetItem(text)
-                item.setData(Qt.ItemDataRole.UserRole, entry["id"])
+                item.setData(Qt.ItemDataRole.UserRole, entry_id)
 
                 if entry.get("error"):
                     item.setForeground(QColor(Colors.RED))
@@ -464,7 +482,34 @@ class HistoryPanel(AutoRefreshMixin, QWidget):
         except Exception as exc:
             logger.error("Failed to load history stats: %s", exc, exc_info=True)
 
-    # ── Slots ─────────────────────────────────────────────────────────────────
+    # ── Favorites ───────────────────────────────────────────────────────────────
+
+    def _load_favorited_ids(self) -> set[int]:
+        """Load the set of favorited history IDs from QSettings."""
+        settings = get_gui_settings()
+        raw = settings.value(_FAV_KEY, "[]")
+        try:
+            ids = _json.loads(raw) if raw else []
+        except _json.JSONDecodeError:
+            return set()
+        return {int(i) for i in ids if str(i).isdigit()}
+
+    def _save_favorited_ids(self) -> None:
+        """Persist the favorited ID set to QSettings."""
+        settings = get_gui_settings()
+        settings.setValue(_FAV_KEY, _json.dumps(sorted(self._favorited_ids)))
+
+    def _toggle_favorite(self, history_id: int) -> None:
+        """Star or unstar a history entry and refresh the list."""
+        if history_id in self._favorited_ids:
+            self._favorited_ids.discard(history_id)
+        else:
+            self._favorited_ids.add(history_id)
+        self._save_favorited_ids()
+        self.refresh()
+
+    def _is_favorite(self, history_id: int) -> bool:
+        return history_id in self._favorited_ids
 
     def _on_item_double_clicked(self, item: QListWidgetItem) -> None:
         history_id = item.data(Qt.ItemDataRole.UserRole)
@@ -539,6 +584,12 @@ class HistoryPanel(AutoRefreshMixin, QWidget):
                 "replay",
                 "▶  Replay",
                 lambda: self.history_replay.emit(int(history_id)),
+                False,
+            ),
+            (
+                "favorite",
+                "☆ Unfavorite" if self._is_favorite(int(history_id)) else "★ Favorite",
+                lambda: self._toggle_favorite(int(history_id)),
                 False,
             ),
             (

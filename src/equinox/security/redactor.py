@@ -6,10 +6,10 @@ from equinox.security.redactor import redact_headers, redact_body, redact_url.
 from __future__ import annotations
 
 import re
+import urlps
 from typing import Any
 
 _REDACTED: str = "[REDACTED]"
-_MASKED_CREDENTIALS: str = "***:***"
 _MASKED_SHORT: str = "***"
 _TRUNCATION_SUFFIX: str = "… [TRUNCATED]"
 _ELLIPSIS: str = "…"
@@ -70,11 +70,6 @@ _JSON_SECRET_KEYS: re.Pattern[str] = re.compile(
     rf'("(?:{_SECRET_KEYS_PATTERN})"\s*:\s*")([^\"]+)(")',
     re.IGNORECASE,
 )
-_URL_CREDENTIALS: re.Pattern[str] = re.compile(r"(https?://)([^@/:]+):([^@/]+)@", re.IGNORECASE)
-_URL_SECRET_PARAMS: re.Pattern[str] = re.compile(
-    rf"((?:\?|&)(?:{_SECRET_KEYS_PATTERN})=)([^&#]+)",
-    re.IGNORECASE,
-)
 
 # JWT-shaped substrings: `eyJ` base64url header + two dot-separated segments
 # with base64url characters. Masked regardless of field name so a JWT inside
@@ -127,12 +122,36 @@ def redact_body(body: str | None, *, max_length: int = 0, max_len: int = 0) -> s
     return result
 
 
+def _decode_urlps_masks(sanitized: str) -> str:
+    """Normalize urlps' mask tokens to Equinox's ``[REDACTED]`` vocabulary.
+
+    urlps marks masked query values as ``%2A%2A%2A``; Equinox renders all
+    redactions as ``[REDACTED]`` (history UI, exports, logs), so the token
+    is translated for a consistent display contract. Userinfo passwords are
+    masked as ``***`` by urlps, which matches Equinox's own short-mask.
+    """
+    return sanitized.replace("%2A%2A%2A", _REDACTED)
+
+
+# urlps' built-in sensitive-key set does not include ``bearer`` (urlps
+# issue #74 discussion); everything else Equinox masks is covered upstream.
+_URL_EXTRA_SENSITIVE_KEYS: tuple[str, ...] = ("bearer",)
+
+
 def redact_url(url: str | None) -> str | None:
+    """Offload string-level URL redaction to urlps (``redact_url_for_logs``).
+
+    Works on the raw string, so URLs that fail host grammar (``{{host}}``
+    templates, malformed input) are still masked instead of leaking, and
+    URLs with nothing to mask pass through byte-identical. ``bearer`` is
+    provided as an extra sensitive key because urlps' built-in set does not
+    cover it; JWT-shaped substrings under non-sensitive keys are masked
+    locally (issue #69).
+    """
     if url is None:
         return None
-    s = _URL_CREDENTIALS.sub(r"\g<1>" + _MASKED_CREDENTIALS + "@", url)
-    s = _URL_SECRET_PARAMS.sub(r"\g<1>" + _REDACTED, s)
-    return s
+    sanitized = urlps.redact_url_for_logs(url, extra_sensitive_keys=_URL_EXTRA_SENSITIVE_KEYS)
+    return mask_jwt_shaped(_decode_urlps_masks(sanitized))
 
 
 def mask_secret(value: str | None, *, keep: int = _DEFAULT_MASK_KEEP_CHARS) -> str:

@@ -211,8 +211,9 @@ def test_proxy_credentials_redacted_in_repr():
 
     assert "secret" not in repr(dispatcher)
     assert "secret" not in repr(client)
-    assert "***:***" in repr(dispatcher)
-    assert "***:***" in repr(client)
+    # urlps redaction masks the password component as ***
+    assert "user:***@" in repr(dispatcher)
+    assert "user:***@" in repr(client)
 
 
 def test_build_multipart_files_supports_paths_and_tuples(tmp_path):

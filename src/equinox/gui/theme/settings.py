@@ -17,6 +17,69 @@ MAX_FONT_SIZE = 20
 _SM_FONT_REDUCTION = 2
 _SM_MIN_PT = 7
 
+# UI Density modes and their padding/font scaling multipliers.
+DENSITY_COMPACT = "compact"
+DENSITY_COMFORTABLE = "comfortable"
+DENSITY_SPACIOUS = "spacious"
+
+DENSITY_MODES = (DENSITY_COMPACT, DENSITY_COMFORTABLE, DENSITY_SPACIOUS)
+DENSITY_LABELS = {
+    DENSITY_COMPACT: "Compact",
+    DENSITY_COMFORTABLE: "Comfortable",
+    DENSITY_SPACIOUS: "Spacious",
+}
+# Multiplier applied to base padding (relative to Comfortable = 1.0).
+DENSITY_PADDING_SCALE = {
+    DENSITY_COMPACT: 0.75,
+    DENSITY_COMFORTABLE: 1.0,
+    DENSITY_SPACIOUS: 1.35,
+}
+# Multiplier applied to base font size.
+DENSITY_FONT_SCALE = {
+    DENSITY_COMPACT: 0.9,
+    DENSITY_COMFORTABLE: 1.0,
+    DENSITY_SPACIOUS: 1.1,
+}
+
+_DENSITY_KEY = "appearance/ui_density"
+
+
+def get_ui_density() -> str:
+    value = _settings().value(_DENSITY_KEY, DENSITY_COMFORTABLE, type=str)
+    return value if value in DENSITY_MODES else DENSITY_COMFORTABLE
+
+
+def save_ui_density(density: str) -> None:
+    if density not in DENSITY_MODES:
+        density = DENSITY_COMFORTABLE
+    settings = _settings()
+    settings.setValue(_DENSITY_KEY, density)
+    settings.sync()
+
+
+def get_density_padding_scale() -> float:
+    return DENSITY_PADDING_SCALE[get_ui_density()]
+
+
+def get_density_font_scale() -> float:
+    return DENSITY_FONT_SCALE[get_ui_density()]
+
+
+# ── Native window decorations ──────────────────────────────────────────────
+_NATIVE_TITLE_BAR_KEY = "window/native_title_bar"
+
+
+def get_use_native_title_bar() -> bool:
+    value = _settings().value(_NATIVE_TITLE_BAR_KEY, False, type=bool)
+    return bool(value)
+
+
+def save_use_native_title_bar(enabled: bool) -> None:
+    settings = _settings()
+    settings.setValue(_NATIVE_TITLE_BAR_KEY, bool(enabled))
+    settings.sync()
+
+
 _PLATFORM_MONO_FONTS = {
     "win32": [
         "Consolas",

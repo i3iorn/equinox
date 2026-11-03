@@ -18,7 +18,7 @@ QLabel:disabled, QCheckBox:disabled, QRadioButton:disabled {
 
 /* -- Buttons -- */
 QPushButton {
-    padding: 4px 10px;
+    padding: {PAD_BTN} {PAD_TAB};
     border: 1px solid {BORDER};
     border-radius: 4px;
     background: {BG};
@@ -26,7 +26,7 @@ QPushButton {
     min-height: 1.5em;
 }
 QToolButton {
-    padding: 2px 4px;
+    padding: {PAD_INPUT} {PAD_BTN};
     border: 1px solid {BORDER};
     border-radius: 4px;
     background: {BG};
@@ -72,7 +72,7 @@ QPushButton#cancelBtn {
 QLineEdit, QTextEdit, QPlainTextEdit {
     border: 1px solid {BORDER};
     border-radius: 4px;
-    padding: 4px 6px;
+    padding: {PAD_INPUT} {PAD_BTN};
     background: {BG};
     color: {FG};
     selection-background-color: {SELECTION};
@@ -125,7 +125,7 @@ QTabWidget::pane {
     border-radius: 4px;
 }
 QTabBar::tab {
-    padding: 8px 16px;
+    padding: {PAD_TAB} {PAD_GROUP};
     border: 1px solid transparent;
     margin-right: 4px;
     color: {FG_MUTED};
@@ -191,7 +191,7 @@ QHeaderView::section {
     background: {BG_ALT};
     border: none;
     border-bottom: 1px solid {BORDER};
-    padding: 4px 8px;
+    padding: {PAD_FORM} {PAD_BTN};
     font-weight: bold;
     font-size: {SM}pt;
     color: {FG_MUTED};
@@ -215,18 +215,22 @@ QTreeWidget::item:hover, QListWidget::item:hover {
 
 /* -- Splitter -- */
 QSplitter::handle {
-    background: None;
+    background: {BORDER_FCS};
+    border-radius: 2px;
 }
 QSplitter::handle:horizontal {
-    width: 1px;
+    width: 6px;
     margin: 0px 2px;
 }
 QSplitter::handle:vertical {
-    height: 1px;
+    height: 6px;
     margin: 2px 0px;
 }
 QSplitter::handle:hover {
     background: {BLUE};
+}
+QSplitter::handle:pressed {
+    background: {SEND_HOVER};
 }
 
 /* -- Scrollbars -- */
@@ -307,8 +311,8 @@ QMenu::separator {
 QGroupBox {
     border: 1px solid {BORDER};
     border-radius: 4px;
-    margin-top: 8px;
-    padding-top: 16px;
+    margin-top: {PAD_GROUP};
+    padding-top: {PAD_GROUP};
     color: {FG};
 }
 QGroupBox::title {
@@ -452,6 +456,85 @@ QSpinBox {
 }
 QSpinBox:focus {
     border-color: {BORDER_FCS};
+}
+
+/* -- Empty state onboarding card -- */
+QWidget#emptyStateWidget {
+    background: transparent;
+}
+QWidget#emptyStateCard {
+    background: {BG_ALT};
+    border: 1px dashed {BORDER};
+    border-radius: 10px;
+    min-width: 320px;
+    max-width: 420px;
+}
+QLabel#emptyStateTitle {
+    color: {FG};
+    font-size: {base_pt}pt;
+    font-weight: bold;
+    background: transparent;
+    border: none;
+}
+QLabel#emptyStateBody {
+    color: {FG_MUTED};
+    font-size: {SM}pt;
+    background: transparent;
+    border: none;
+}
+QPushButton#emptyStateSampleBtn {
+    background: {BLUE};
+    color: #ffffff;
+    border: 1px solid {BLUE};
+    border-radius: 4px;
+    font-weight: bold;
+    padding: 6px 14px;
+}
+QPushButton#emptyStateSampleBtn:hover {
+    background: {SEND_HOVER};
+    border-color: {SEND_HOVER};
+}
+
+/* -- Toast notifications -- */
+QWidget#toastWidget {
+    background: {BG_ALT};
+    border: 1px solid {BORDER};
+    border-radius: 6px;
+    color: {FG};
+    font-size: {SM}pt;
+}
+QWidget#toastWidget[toastKind="success"] {
+    border-left: 4px solid {GREEN};
+}
+QWidget#toastWidget[toastKind="warning"] {
+    border-left: 4px solid {AMBER};
+}
+QWidget#toastWidget[toastKind="error"] {
+    border-left: 4px solid {RED};
+}
+QWidget#toastWidget[toastKind="info"] {
+    border-left: 4px solid {BLUE};
+}
+QLabel#toastIcon {
+    color: {FG_MUTED};
+    font-size: {ME}pt;
+    background: transparent;
+    border: none;
+}
+QLabel#toastMessage {
+    color: {FG};
+    background: transparent;
+    border: none;
+}
+QToolButton#toastDismiss {
+    color: {FG_SUBTLE};
+    background: transparent;
+    border: none;
+    padding: 0px;
+}
+QToolButton#toastDismiss:hover {
+    background: {BG_ALT};
+    color: {FG};
 }
 
 /* -- Dialog details -- */

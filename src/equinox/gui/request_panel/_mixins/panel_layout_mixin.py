@@ -78,7 +78,12 @@ class RequestPanelLayoutMixin:
         self._preflight_banner = self._build_preflight_banner()
         layout.addWidget(self._preflight_banner)
 
+        self._empty_state_widget = self._build_empty_state_widget()
+        layout.addWidget(self._empty_state_widget)
+        self._update_empty_state_visibility()
+
         self.url_input.textChanged.connect(self._on_url_changed_for_path_params)
+        self.url_input.textChanged.connect(self._on_url_changed_for_empty_state)
 
         self.tabs = QTabWidget()
         self.tabs.setObjectName("requestTabs")
@@ -169,6 +174,73 @@ class RequestPanelLayoutMixin:
         pf_row.addWidget(pf_dismiss)
         banner.setVisible(False)
         return banner
+
+    def _build_empty_state_widget(self) -> QWidget:
+        """Build the onboarding card shown when no request is active.
+
+        Encourages first-time users to create a sample request instead of
+        staring at a blank editor.
+        """
+        container = QWidget()
+        container.setObjectName("emptyStateWidget")
+        container_layout = QVBoxLayout(container)
+        container_layout.setContentsMargins(0, 0, 0, 0)
+        container_layout.setSpacing(12)
+        container_layout.addStretch(1)
+
+        card = QWidget()
+        card.setObjectName("emptyStateCard")
+        card_layout = QVBoxLayout(card)
+        card_layout.setSpacing(10)
+        card_layout.setContentsMargins(24, 24, 24, 24)
+
+        title = QLabel("Ready to make your first request?")
+        title.setObjectName("emptyStateTitle")
+        title.setWordWrap(True)
+        card_layout.addWidget(title)
+
+        body = QLabel(
+            "Enter a URL above and hit <b>Send</b>, or create a sample request "
+            "to try Equinox right away.",
+        )
+        body.setObjectName("emptyStateBody")
+        body.setWordWrap(True)
+        card_layout.addWidget(body)
+
+        sample_btn = QPushButton("Create sample request")
+        sample_btn.setObjectName("emptyStateSampleBtn")
+        sample_btn.setMinimumWidth(180)
+        sample_btn.clicked.connect(self._create_sample_request)
+        card_layout.addWidget(sample_btn, alignment=Qt.AlignmentFlag.AlignLeft)
+
+        container_layout.addWidget(card, alignment=Qt.AlignmentFlag.AlignHCenter)
+        container_layout.addStretch(1)
+
+        return container
+
+    def _update_empty_state_visibility(self) -> None:
+        """Show the empty-state card only when the editor is a blank scratch request."""
+        widget = getattr(self, "_empty_state_widget", None)
+        if widget is None:
+            return
+        url_empty = not self.url_input.text().strip()
+        has_request = getattr(self, "current_request", None) is not None
+        widget.setVisible(url_empty and not has_request)
+
+    def _on_url_changed_for_empty_state(self, _text: str) -> None:
+        """Hide the empty-state card once the user starts typing a URL."""
+        self._update_empty_state_visibility()
+
+    def _create_sample_request(self) -> None:
+        """Populate the editor with a sample GET request and focus the URL field."""
+        self.url_input.setText("https://httpbin.org/get")
+        self.method_combo.setCurrentIndex(0)
+        self._update_empty_state_visibility()
+        self.url_input.setFocus()
+        self._status_message(
+            "Sample request loaded — press Send (or Ctrl+Enter) to try it out.",
+            4000,
+        )
 
     def _build_kv_tab(
         self,

@@ -10,7 +10,7 @@ splitting implementation into focused modules:
 
 from __future__ import annotations
 
-from .manager import apply_theme, is_dark
+from .manager import apply_theme, is_dark, set_ui_density
 from .palettes import (
     THEME_DARK,
     THEME_LABELS,
@@ -25,14 +25,25 @@ from .palettes import (
 from .settings import (
     DEFAULT_FONT_SIZE,
     DEFAULT_MONO_SIZE,
+    DENSITY_COMFORTABLE,
+    DENSITY_COMPACT,
+    DENSITY_LABELS,
+    DENSITY_MODES,
+    DENSITY_SPACIOUS,
     MAX_FONT_SIZE,
     MIN_FONT_SIZE,
+    get_density_font_scale,
+    get_density_padding_scale,
     get_font_size,
     get_mono_font,
     get_theme_mode,
+    get_ui_density,
     get_ui_font,
+    get_use_native_title_bar,
     save_font_size,
     save_theme_mode,
+    save_ui_density,
+    save_use_native_title_bar,
 )
 
 __all__ = [
@@ -44,6 +55,13 @@ __all__ = [
     "get_ui_font",
     "get_theme_mode",
     "set_theme_mode",
+    "get_ui_density",
+    "set_ui_density",
+    "get_density_padding_scale",
+    "get_density_font_scale",
+    "get_use_native_title_bar",
+    "save_ui_density",
+    "save_use_native_title_bar",
     "is_dark",
     "THEME_SYSTEM",
     "THEME_LIGHT",
@@ -52,6 +70,11 @@ __all__ = [
     "THEME_OCEANIC",
     "THEME_MODES",
     "THEME_LABELS",
+    "DENSITY_LABELS",
+    "DENSITY_MODES",
+    "DENSITY_COMPACT",
+    "DENSITY_COMFORTABLE",
+    "DENSITY_SPACIOUS",
     "DEFAULT_FONT_SIZE",
     "DEFAULT_MONO_SIZE",
     "MIN_FONT_SIZE",

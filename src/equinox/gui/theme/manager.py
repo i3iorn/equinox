@@ -12,10 +12,18 @@ from .palettes import (
     set_active_palette,
     validate_palettes,
 )
-from .settings import get_font_size, get_theme_mode, get_ui_font
+from .settings import (
+    get_density_font_scale,
+    get_density_padding_scale,
+    get_font_size,
+    get_theme_mode,
+    get_ui_density,
+    get_ui_font,
+    save_ui_density,
+)
 from .stylesheet import build_stylesheet
 
-_ss_cache: dict[tuple[str, int], str] = {}
+_ss_cache: dict[tuple[str, int, str], str] = {}
 
 
 def apply_theme(app: QApplication | None = None) -> None:
@@ -32,11 +40,19 @@ def apply_theme(app: QApplication | None = None) -> None:
     validate_palettes()
 
     base_pt = get_font_size()
-    qt_app.setFont(get_ui_font(base_pt))
+    density = get_ui_density()
+    # Apply density font scale so Compact/Spacious also resize text.
+    font_scale = get_density_font_scale()
+    scaled_pt = max(6, int(round(base_pt * font_scale)))
+    qt_app.setFont(get_ui_font(scaled_pt))
 
-    cache_key = (palette_cache_key(palette), base_pt)
+    cache_key = (palette_cache_key(palette), scaled_pt, density)
     if cache_key not in _ss_cache:
-        _ss_cache[cache_key] = build_stylesheet(base_pt, palette)
+        _ss_cache[cache_key] = build_stylesheet(
+            scaled_pt,
+            palette,
+            density_scale=get_density_padding_scale(),
+        )
     qt_app.setStyleSheet(_ss_cache[cache_key])
 
     # Deferred import: equinox.gui.syntax_highlighter.base imports Colors
@@ -47,6 +63,12 @@ def apply_theme(app: QApplication | None = None) -> None:
     from equinox.gui.syntax_highlighter.base import notify_theme_changed
 
     notify_theme_changed()
+
+
+def set_ui_density(density: str) -> None:
+    """Persist a density choice and re-apply the theme so it takes effect."""
+    save_ui_density(density)
+    apply_theme()
 
 
 def is_dark() -> bool:

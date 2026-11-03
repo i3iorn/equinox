@@ -40,6 +40,7 @@ class SendWorkerMixin(QWidgetHostMixin):
         def _run_preflight_checks(self) -> list[str]: ...
         def _handle_response(self, result: object, worker: Any) -> None: ...
         def _status_message(self, message: str, timeout_ms: int = ...) -> None: ...
+        def window(self) -> Any: ...
 
     def _ensure_sendable_url(self, url: str) -> bool:
         """Warn and abort when the request URL is empty."""
@@ -114,6 +115,12 @@ class SendWorkerMixin(QWidgetHostMixin):
             self._worker = None
         self._set_sending_state(False)
         self._status_message(_MSG_CANCELLED, STATUS_DURATION_SHORT)
+        try:
+            win = self.window()
+            if win is not None and hasattr(win, "show_toast"):
+                win.show_toast("Request cancelled", kind="warning", duration_ms=2500)
+        except Exception:
+            logger.debug("Could not show cancel toast", exc_info=True)
 
     def _defer_task(self, fn: Any, *args: Any, **kwargs: Any) -> None:
         """Schedule a follow-up task on the next Qt event-loop turn."""
@@ -144,7 +151,7 @@ class SendWorkerMixin(QWidgetHostMixin):
         if sending:
             self._elapsed_secs = 0.0
             self._elapsed_timer.start()
-            self.send_button.setText("0.0s")
+            self.send_button.setText("Sending…")
             return
         self._elapsed_timer.stop()
         self.send_button.setText("Send")
@@ -152,4 +159,4 @@ class SendWorkerMixin(QWidgetHostMixin):
     def _tick_elapsed(self) -> None:
         """Update the elapsed-time indicator while a request is in flight."""
         self._elapsed_secs += 0.1
-        self.send_button.setText(f"{self._elapsed_secs:.1f}s")
+        self.send_button.setText(f"Sending… {self._elapsed_secs:.1f}s")

@@ -23,9 +23,11 @@ def test_stylesheet_cache_isolated_per_dark_variant():
         assert dark_stylesheet != oceanic_stylesheet
         assert muted_dark_stylesheet != oceanic_stylesheet
 
-        # Cache should keep one entry per resolved dark palette at this font size.
-        assert (theme.THEME_DARK, theme.get_font_size()) in theme.manager._ss_cache
-        assert (theme.THEME_MUTED_DARK, theme.get_font_size()) in theme.manager._ss_cache
-        assert (theme.THEME_OCEANIC, theme.get_font_size()) in theme.manager._ss_cache
+        # Cache should keep one entry per resolved dark palette at this font size
+        # and density setting.
+        density = theme.get_ui_density()
+        assert (theme.THEME_DARK, theme.get_font_size(), density) in theme.manager._ss_cache
+        assert (theme.THEME_MUTED_DARK, theme.get_font_size(), density) in theme.manager._ss_cache
+        assert (theme.THEME_OCEANIC, theme.get_font_size(), density) in theme.manager._ss_cache
     finally:
         theme.set_theme_mode(original_mode)
